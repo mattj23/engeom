@@ -114,7 +114,6 @@ pub fn sort_with_nan(values: &mut [f64]) {
     });
 }
 
-
 /// Sorts the slice in ascending order, NaN values are not allowed and will cause a panic. If you
 /// aren't absolutely sure that the slice does not contain any NaN values, use the
 /// `has_nan` function to check for NaN values before calling this function, or use the

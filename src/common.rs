@@ -3,7 +3,7 @@ mod discrete_domain;
 pub mod vecf64;
 
 pub use angles::{angle_to_2pi, signed_compliment_2pi, AngleDir, AngleInterval};
-pub use discrete_domain::{DiscreteDomain, linear_space};
+pub use discrete_domain::{linear_space, DiscreteDomain};
 
 /// General purpose options for resampling data over a discrete domain.
 pub enum Resample {
@@ -35,4 +35,3 @@ pub enum Smoothing {
     /// the window, and the item is replaced with the value of the polynomial at the same position
     Cubic(f64),
 }
-
