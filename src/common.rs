@@ -1,6 +1,8 @@
 mod angles;
+mod discrete_domain;
+pub mod vecf64;
 
-pub use angles::{signed_compliment_2pi, AngleInterval, AngleDir, angle_to_2pi};
+pub use angles::{angle_to_2pi, signed_compliment_2pi, AngleDir, AngleInterval};
 
 /// General purpose options for resampling data over a discrete domain.
 pub enum Resample {
@@ -16,7 +18,6 @@ pub enum Resample {
     /// spacing between points will not exceed the given value.
     ByMaxSpacing(f64),
 }
-
 
 /// General purpose options for smoothing data over a discrete domain.
 pub enum Smoothing {
@@ -60,4 +61,3 @@ pub fn linear_space(start: f64, end: f64, count: usize) -> Vec<f64> {
     }
     result
 }
-
