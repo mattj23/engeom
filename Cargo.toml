@@ -1,0 +1,26 @@
+[package]
+name = "engeom"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+stl = ["dep:stl_io"]
+
+[dependencies]
+parry3d-f64 = {version="0.13.5", features=["serde-serialize"]}
+parry2d-f64 = {version="0.13.5", features=["serde-serialize"]}
+serde = {version ="1.0", features=["derive"]}
+serde_json = "1.0"
+itertools = "0.12.0"
+rayon = "1.7.0"
+levenberg-marquardt = "0.13.0"
+rand = "0.8.5"
+kiddo = "4.0.0"
+stl_io = {version="0.7.0", optional=true}
+num-traits = "0.2"
+
+[dev-dependencies]
+test-case = "3.0"
+approx = "0.5.1"
+criterion = "0.5.1"
+rand = "0.8.5"
