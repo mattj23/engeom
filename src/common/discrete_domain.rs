@@ -7,6 +7,7 @@ use crate::common::vecf64::{are_all_finite, are_in_ascending_order};
 
 /// A discrete domain of scalar f64 values, in which all values are guaranteed to be finite and
 /// in ascending order.
+#[derive(Debug, Default)]
 pub struct DiscreteDomain {
     values: Vec<f64>,
 }
@@ -20,23 +21,21 @@ impl DiscreteDomain {
         self.values.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
     pub fn push(&mut self, value: f64) -> Result<()> {
         if !value.is_finite() {
             return Err(Box::from("Cannot add a non-finite value to a discrete domain"));
         }
-        if !self.values.is_empty() && value < self.values[self.values.len() - 1] {
+        if !self.is_empty() && value < self.values[self.values.len() - 1] {
             return Err(Box::from("Cannot add a value to a discrete domain that is less than the last value"));
         }
         self.values.push(value);
         Ok(())
     }
 
-}
-
-impl Default for DiscreteDomain {
-    fn default() -> Self {
-        Self { values: Vec::new() }
-    }
 }
 
 impl TryFrom<Vec<f64>> for DiscreteDomain {
