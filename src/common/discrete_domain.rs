@@ -5,6 +5,34 @@ use std::error::Error;
 use crate::Result;
 use crate::common::vecf64::{are_all_finite, are_in_ascending_order};
 
+/// Generate a discrete domain of values which are linearly spaced between `start` and `end` and
+/// which have a total count of `n`. The first value will be `start` and the last value will be
+/// `end`.
+///
+/// # Arguments
+///
+/// * `start`: the starting value of the domain, inclusive
+/// * `end`: the ending value of the domain, inclusive
+/// * `n`: the total number of discrete, evenly spaced values in the domain
+///
+/// returns: DiscreteDomain
+///
+/// # Examples
+///
+/// ```
+/// use engeom::common::linear_space;
+/// let domain = linear_space(0.0, 1.0, 3);
+/// assert_eq!(domain.values(), vec![0.0, 0.5, 1.0]);
+/// ```
+pub fn linear_space(start: f64, end: f64, n: usize) -> DiscreteDomain {
+    let mut values = Vec::with_capacity(n);
+    let step = (end - start) / (n - 1) as f64;
+    for i in 0..n {
+        values.push(start + i as f64 * step);
+    }
+    DiscreteDomain { values }
+}
+
 /// A discrete domain of scalar f64 values, in which all values are guaranteed to be finite and
 /// in ascending order.
 #[derive(Debug, Default)]

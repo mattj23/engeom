@@ -192,7 +192,7 @@ mod tests {
             let angle = rnd.gen_range(-2.0 * PI..2.0 * PI);
             let interval = AngleInterval::new(start, angle);
 
-            for da in linear_space(0.0, angle, 100) {
+            for da in linear_space(0.0, angle, 100).values() {
                 let test = start + da;
                 assert!(
                     interval.contains(test),
@@ -208,7 +208,7 @@ mod tests {
             let compliment = signed_compliment_2pi(angle);
             if compliment.abs() > 0.1 {
                 let to_check = linear_space(0.0, compliment, 100);
-                for da in to_check[1..to_check.len() - 2].iter() {
+                for da in to_check.values()[1..to_check.len() - 2].iter() {
                     let test = start + da;
                     assert!(
                         !interval.contains(test),

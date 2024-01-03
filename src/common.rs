@@ -3,7 +3,7 @@ mod discrete_domain;
 pub mod vecf64;
 
 pub use angles::{angle_to_2pi, signed_compliment_2pi, AngleDir, AngleInterval};
-pub use discrete_domain::DiscreteDomain;
+pub use discrete_domain::{DiscreteDomain, linear_space};
 
 /// General purpose options for resampling data over a discrete domain.
 pub enum Resample {
@@ -36,29 +36,3 @@ pub enum Smoothing {
     Cubic(f64),
 }
 
-/// Generate a vec of domain values which are linearly spaced between `start` and `end` and which
-/// have a count of `count`. The first value will be `start` and the last value will be `end`.
-///
-/// # Arguments
-///
-/// * `start`: the starting value of the domain, inclusive
-/// * `end`: the ending value of the domain, inclusive
-/// * `count`: the total number of discrete, evenly spaced values in the domain
-///
-/// returns: Vec<f64, Global>
-///
-/// # Examples
-///
-/// ```
-/// use engeom::common::linear_space;
-/// let domain = linear_space(0.0, 1.0, 3);
-/// assert_eq!(domain, vec![0.0, 0.5, 1.0]);
-/// ```
-pub fn linear_space(start: f64, end: f64, count: usize) -> Vec<f64> {
-    let mut result = Vec::with_capacity(count);
-    let step = (end - start) / (count - 1) as f64;
-    for i in 0..count {
-        result.push(start + i as f64 * step);
-    }
-    result
-}
