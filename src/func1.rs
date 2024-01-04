@@ -3,8 +3,10 @@
 
 use crate::common::DiscreteDomain;
 
+mod common_functions;
 mod polynomial;
 
+pub use common_functions::{Gaussian1, Line1};
 pub use polynomial::{Cubic, Polynomial, Quadratic, Quartic, Quintic};
 
 /// A function over a continuous one dimensional domain of scalar f64 values.
