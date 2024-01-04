@@ -4,6 +4,7 @@
 use crate::common::vecf64::{are_all_finite, are_in_ascending_order};
 use crate::Result;
 use std::error::Error;
+use std::ops::Deref;
 
 /// Generate a discrete domain of values which are linearly spaced between `start` and `end` and
 /// which have a total count of `n`. The first value will be `start` and the last value will be
@@ -88,7 +89,13 @@ impl DiscreteDomain {
         self.values.push(value);
         Ok(())
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = &f64> {
+        self.values.iter()
+    }
+
 }
+
 
 impl TryFrom<Vec<f64>> for DiscreteDomain {
     type Error = Box<dyn Error>;
@@ -108,4 +115,59 @@ impl TryFrom<Vec<f64>> for DiscreteDomain {
 
         Ok(Self { values })
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn iterate_values() {
+        let mut working = Vec::new();
+        for v in linear_space(0.0, 1.0, 3).iter() {
+            working.push(*v);
+        }
+
+        assert_eq!(working, vec![0.0, 0.5, 1.0]);
+    }
+
+    #[test]
+    fn try_linear_space() {
+        let domain = linear_space(0.0, 1.0, 3);
+        assert_eq!(domain.values(), vec![0.0, 0.5, 1.0]);
+    }
+
+    #[test]
+    fn push_value() {
+        let mut domain = DiscreteDomain::default();
+        domain.push(1.0).unwrap();
+        domain.push(2.0).unwrap();
+
+        assert_eq!(domain.values(), vec![1.0, 2.0]);
+    }
+
+    #[test]
+    fn try_from() {
+        let domain = DiscreteDomain::try_from(vec![1.0, 2.0]).unwrap();
+        assert_eq!(domain.values(), vec![1.0, 2.0]);
+    }
+
+    #[test]
+    fn try_from_with_nan() {
+        let result = DiscreteDomain::try_from(vec![1.0, f64::NAN]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn try_from_with_infinity() {
+        let result = DiscreteDomain::try_from(vec![1.0, f64::INFINITY]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn try_from_with_descending_order() {
+        let result = DiscreteDomain::try_from(vec![2.0, 1.0]);
+        assert!(result.is_err());
+    }
+
 }
