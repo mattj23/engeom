@@ -1,9 +1,11 @@
 mod angles;
 mod discrete_domain;
+mod interval;
 pub mod vecf64;
 
 pub use angles::{angle_to_2pi, signed_compliment_2pi, AngleDir, AngleInterval};
 pub use discrete_domain::{linear_space, DiscreteDomain};
+pub use interval::Interval;
 
 /// General purpose options for resampling data over a discrete domain.
 pub enum Resample {
