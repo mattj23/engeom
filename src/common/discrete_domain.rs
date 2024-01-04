@@ -2,7 +2,7 @@
 //! where the values are always ordered and only finite values are allowed.
 
 use crate::common::vecf64::{are_all_finite, are_in_ascending_order};
-use crate::Result;
+use crate::{min_max, Result};
 use std::error::Error;
 use std::ops::Deref;
 
@@ -44,6 +44,16 @@ pub struct DiscreteDomain {
 impl DiscreteDomain {
     pub fn values(&self) -> &[f64] {
         &self.values
+    }
+
+    pub fn linear(start: f64, end: f64, n: usize) -> Self {
+        let mut values = Vec::with_capacity(n);
+        let (start, end) = min_max(start, end);
+        let step = (end - start) / (n - 1) as f64;
+        for i in 0..n {
+            values.push(start + i as f64 * step);
+        }
+        DiscreteDomain { values }
     }
 
     pub fn len(&self) -> usize {
@@ -93,9 +103,15 @@ impl DiscreteDomain {
     pub fn iter(&self) -> impl Iterator<Item = &f64> {
         self.values.iter()
     }
-
 }
 
+impl Deref for DiscreteDomain {
+    type Target = [f64];
+
+    fn deref(&self) -> &Self::Target {
+        &self.values
+    }
+}
 
 impl TryFrom<Vec<f64>> for DiscreteDomain {
     type Error = Box<dyn Error>;
@@ -169,5 +185,4 @@ mod tests {
         let result = DiscreteDomain::try_from(vec![2.0, 1.0]);
         assert!(result.is_err());
     }
-
 }

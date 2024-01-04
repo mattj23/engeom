@@ -1,11 +1,17 @@
 use std::error::Error;
 
 pub mod common;
-mod func1;
+pub mod func1;
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+fn min_max(f0: f64, f1: f64) -> (f64, f64) {
+    if f0 < f1 {
+        (f0, f1)
+    } else {
+        (f1, f0)
+    }
 }
+
+#[cfg(test)]
+mod tests {}

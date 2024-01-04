@@ -3,10 +3,12 @@
 
 use crate::common::DiscreteDomain;
 
+mod polynomial;
+
+pub use polynomial::{Cubic, Polynomial, Quadratic, Quartic, Quintic};
 
 /// A function over a continuous one dimensional domain of scalar f64 values.
 pub trait Func1 {
-
     /// Evaluate the function at the given value.
     ///
     /// # Arguments
@@ -29,4 +31,3 @@ pub trait Func1 {
         xs.iter().map(|x| self.f(*x)).collect()
     }
 }
-
