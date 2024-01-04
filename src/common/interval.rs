@@ -111,10 +111,7 @@ impl Interval {
     /// assert_eq!(interval.max, 1.0);
     /// ```
     pub fn new_unchecked(min: f64, max: f64) -> Self {
-        Self {
-            min: min.min(max),
-            max: min.max(max),
-        }
+        Self { min, max }
     }
 
     /// Returns the length of the interval.
@@ -222,6 +219,114 @@ impl Interval {
             ))
         } else {
             None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_interval() {
+        let interval = Interval::new(0.0, 1.0);
+        assert_eq!(interval.min, 0.0);
+        assert_eq!(interval.max, 1.0);
+    }
+
+    #[test]
+    fn new_interval_values_flipped() {
+        let interval = Interval::new(1.0, 0.0);
+        assert_eq!(interval.min, 0.0);
+        assert_eq!(interval.max, 1.0);
+    }
+
+    #[test]
+    fn try_new_interval() {
+        if let Ok(interval) = Interval::try_new(0.0, 1.0) {
+            assert_eq!(interval.min, 0.0);
+            assert_eq!(interval.max, 1.0);
+        } else {
+            panic!("Interval::try_new returned an error");
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn new_nan() {
+        Interval::new(f64::NAN, 1.0);
+    }
+
+    #[test]
+    fn new_unchecked_nan() {
+        Interval::new_unchecked(f64::NAN, 1.0);
+    }
+
+    #[test]
+    fn new_unchecked_swapped() {
+        // This case tests that the minimum and maximum values are not fixed in the unchecked version, which should
+        // naively accept whatever the user provides.
+        let interval = Interval::new_unchecked(1.0, 0.0);
+        assert_eq!(interval.min, 1.0);
+        assert_eq!(interval.max, 0.0);
+    }
+
+    #[test]
+    fn new_unchecked() {
+        let interval = Interval::new_unchecked(0.0, 1.0);
+        assert_eq!(interval.min, 0.0);
+        assert_eq!(interval.max, 1.0);
+    }
+
+    #[test]
+    fn interval_length() {
+        let interval = Interval::new(0.0, 1.0);
+        assert_eq!(interval.length(), 1.0);
+    }
+
+    #[test]
+    fn interval_contains() {
+        let interval = Interval::new(0.0, 1.0);
+        assert!(interval.contains(0.5));
+        assert!(!interval.contains(1.5));
+    }
+
+    #[test]
+    fn interval_contains_interval() {
+        let interval = Interval::new(0.0, 1.0);
+        let other = Interval::new(0.25, 0.75);
+        assert!(interval.contains_interval(&other));
+    }
+
+    #[test]
+    fn interval_doesnt_contain_interval() {
+        let interval = Interval::new(0.0, 1.0);
+        let other = Interval::new(0.25, 1.25);
+        assert!(!interval.contains_interval(&other));
+    }
+
+    #[test]
+    fn interval_overlaps() {
+        let interval = Interval::new(0.0, 1.0);
+        let other = Interval::new(0.5, 1.5);
+        assert!(interval.overlaps(&other));
+    }
+
+    #[test]
+    fn interval_doesnt_overlap() {
+        let interval = Interval::new(0.0, 1.0);
+        let other = Interval::new(1.5, 2.5);
+        assert!(!interval.overlaps(&other));
+    }
+
+    #[test]
+    fn interval_intersection() {
+        let interval = Interval::new(0.0, 1.0);
+        let other = Interval::new(0.5, 1.5);
+        if let Some(intersection) = interval.intersection(&other) {
+            assert_eq!(intersection, Interval::new(0.5, 1.0));
+        } else {
+            panic!("interval.intersection returned None");
         }
     }
 }
