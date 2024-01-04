@@ -136,3 +136,68 @@ pub fn sort_with_nan(values: &mut [f64]) {
 pub fn sort_nan_panics(values: &mut [f64]) {
     values.sort_by(|a, b| a.partial_cmp(b).unwrap());
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn has_nan_test() {
+        let values = vec![1.0, f64::NAN, 3.0];
+        assert!(has_nan(&values));
+
+        let values = vec![1.0, 2.0, 3.0];
+        assert!(!has_nan(&values));
+    }
+
+    #[test]
+    fn are_all_finite_test() {
+        let values = vec![1.0, 2.0, 3.0];
+        assert!(are_all_finite(&values));
+
+        let values = vec![1.0, f64::INFINITY, 3.0];
+        assert!(!are_all_finite(&values));
+    }
+
+    #[test]
+    fn are_in_ascending_order_test() {
+        let values = vec![1.0, 2.0, 3.0];
+        assert!(are_in_ascending_order(&values));
+
+        let values = vec![1.0, 3.0, 2.0];
+        assert!(!are_in_ascending_order(&values));
+    }
+
+    #[test]
+    fn are_in_descending_order_test() {
+        let values = vec![3.0, 2.0, 1.0];
+        assert!(are_in_descending_order(&values));
+
+        let values = vec![1.0, 3.0, 2.0];
+        assert!(!are_in_descending_order(&values));
+    }
+
+    #[test]
+    fn sort_with_nan_test() {
+        let mut values = vec![3.0, f64::NAN, 1.0];
+        sort_with_nan(&mut values);
+        assert_eq!(values[0], 1.0);
+        assert_eq!(values[1], 3.0);
+        assert!(values[2].is_nan());
+    }
+
+    #[test]
+    fn sort_nan_panics_test() {
+        let mut values = vec![3.0, 5.0, 1.0];
+        sort_nan_panics(&mut values);
+        assert_eq!(values, vec![1.0, 3.0, 5.0]);
+    }
+
+    #[test]
+    #[should_panic]
+    fn sort_nan_panics_with_nan_test() {
+        let mut values = vec![3.0, f64::NAN, 1.0];
+        sort_nan_panics(&mut values);
+    }
+}
