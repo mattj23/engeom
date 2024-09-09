@@ -99,6 +99,144 @@ pub fn mean_point_weighted<const D: usize>(
     Point::<f64, D>::from(sum / total_weight)
 }
 
+
+/// Produces a new set of points by evenly spacing points between `start` and `end` in
+/// D-dimensional space.  The number of points to generate is specified by `num_points`.  The
+/// start and end points are included in the result.
+///
+/// # Arguments
+///
+/// * `start`: the starting point (will be included in the result)
+/// * `end`: the ending point (will be included in the result)
+/// * `num_points`: the total number of points to generate
+///
+/// returns: Vec<OPoint<f64, Const<{ D }>>, Global>
+///
+/// # Examples
+///
+/// ```
+/// use approx::assert_relative_eq;
+/// use engeom::common::points::evenly_spaced_points;
+/// use engeom::Point2;
+/// let start = Point2::new(0.0, 0.0);
+/// let end = Point2::new(2.0, 0.0);
+/// let points = evenly_spaced_points(&start, &end, 3);
+///
+/// assert_eq!(points.len(), 3);
+/// assert_relative_eq!(points[0], Point2::new(0.0, 0.0));
+/// assert_relative_eq!(points[1], Point2::new(1.0, 0.0));
+/// assert_relative_eq!(points[2], Point2::new(2.0, 0.0));
+/// ```
+pub fn evenly_spaced_points<const D: usize>(
+    start: &Point<f64, D>,
+    end: &Point<f64, D>,
+    num_points: usize,
+) -> Vec<Point<f64, D>> {
+    let mut result = Vec::new();
+    let step = (end - start) / (num_points - 1) as f64;
+    for i in 0..num_points {
+        result.push(start + step * i as f64);
+    }
+    result
+}
+
+/// Generate a new set of points by evenly spacing points between `start` and `end` in D-dimensional
+/// space.  The number of points to generate is specified by `num_points`.  The start and end points
+/// are **not** included in the result.
+///
+/// # Arguments
+///
+/// * `start`: the starting point (will not be included in the result)
+/// * `end`: the ending point (will not be included in the result)
+/// * `num_points`: the total number of points to generate
+///
+/// returns: Vec<OPoint<f64, Const<{ D }>>, Global>
+///
+/// # Examples
+///
+/// ```
+/// use approx::assert_relative_eq;
+/// use engeom::common::points::evenly_spaced_points_between;
+/// use engeom::Point2;
+/// let start = Point2::new(0.0, 0.0);
+/// let end = Point2::new(2.0, 0.0);
+/// let points = evenly_spaced_points_between(&start, &end, 3);
+///
+/// assert_eq!(points.len(), 3);
+/// assert_relative_eq!(points[0], Point2::new(0.5, 0.0));
+/// assert_relative_eq!(points[1], Point2::new(1.0, 0.0));
+/// assert_relative_eq!(points[2], Point2::new(1.5, 0.0));
+/// ```
+pub fn evenly_spaced_points_between<const D: usize> (
+    start: &Point<f64, D>,
+    end: &Point<f64, D>,
+    num_points: usize,
+) -> Vec<Point<f64, D>> {
+    let mut result = Vec::new();
+    let step = (end - start) / (num_points + 1) as f64;
+    for i in 1..num_points + 1 {
+        result.push(start + step * i as f64);
+    }
+
+    result
+}
+
+/// Creates a new vec of points from a slice of points by filling in gaps between points where the
+/// distance between them is greater than `max_dist`.  An evenly spaced set of points is inserted
+/// between the two points to satisfy the `max_dist` threshold.
+///
+/// This is the opposite of a simplification algorithm, like Ramer-Douglas-Peucker, and can be used
+/// to precondition a set of points before using an algorithm which relies on proximity.
+///
+/// # Arguments
+///
+/// * `original`: the original slice of points to fill gaps in.
+/// * `max_dist`: the maximum distance between points in the new set of points.
+///
+/// returns: Vec<OPoint<f64, Const<{ D }>>, Global>
+///
+/// # Examples
+///
+/// ```
+/// use approx::assert_relative_eq;
+/// use engeom::common::points::fill_gaps;
+/// use engeom::Point2;
+/// let points = vec![Point2::new(0.0, 0.0), Point2::new(2.0, 0.0)];
+/// let filled = fill_gaps(&points, 1.5);
+///
+/// assert_eq!(filled.len(), 3);
+/// assert_relative_eq!(filled[0], Point2::new(0.0, 0.0));
+/// assert_relative_eq!(filled[1], Point2::new(1.0, 0.0));
+/// assert_relative_eq!(filled[2], Point2::new(2.0, 0.0));
+/// ```
+pub fn fill_gaps<const D: usize>(original: &[Point<f64, D>], max_dist: f64) -> Vec<Point<f64, D>> {
+    // We fill gaps by iterating through the points, and if the distance between the current point
+    // and its predecessor is greater than some threshold, we compute the number of points that
+    // should be inserted (evenly spaced) between the two points to satisfy the `max_dist`
+    // threshold.
+    if original.len() < 2 {
+        return original.to_vec();
+    }
+
+    let mut result = vec![original[0]];
+
+    for p in original.iter().skip(1) {
+        let d = dist(p, result.last().unwrap());
+        if d > max_dist {
+            let mut n = 1;
+            while d / (n + 1) as f64 > max_dist {
+                n += 1;
+            }
+            for x in evenly_spaced_points(result.last().unwrap(), p, n) {
+                result.push(x);
+            }
+        }
+        result.push(*p);
+    }
+
+    result
+}
+
 /// Perform the Ramer-Douglas-Peucker algorithm on a set of points in D-dimensional space.  The
 /// algorithm simplifies a curve by reducing the number of points while preserving the shape of the
 /// curve.  The `tol` parameter is the maximum distance from the simplified curve to the original
@@ -249,5 +387,26 @@ mod tests {
         working.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
         let points = working.iter().map(|(_, p)| *p).collect::<Vec<_>>();
         Curve2::from_points(&points, 0.001, false).unwrap()
+    }
+
+    #[test]
+    fn single_point_between() {
+        let p0 = Point2::new(0.0, 0.0);
+        let p1 = Point2::new(2.0, 0.0);
+        let points = evenly_spaced_points_between(&p0, &p1, 1);
+
+        assert_eq!(points.len(), 1);
+        assert_relative_eq!(points[0], Point2::new(1.0, 0.0));
+    }
+
+    #[test]
+    fn test_fill_gaps() {
+        let points = vec![Point2::new(0.0, 0.0), Point2::new(2.0, 0.0)];
+        let filled = fill_gaps(&points, 1.5);
+
+        assert_eq!(filled.len(), 3);
+        assert_relative_eq!(filled[0], Point2::new(0.0, 0.0));
+        assert_relative_eq!(filled[1], Point2::new(1.0, 0.0));
+        assert_relative_eq!(filled[2], Point2::new(2.0, 0.0));
     }
 }
