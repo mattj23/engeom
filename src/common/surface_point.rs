@@ -1,5 +1,6 @@
-use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector, Unit};
+use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector, Unit, Vector};
 use serde::{Deserialize, Serialize};
+use crate::Result;
 
 /// A `SurfacePoint` is a struct which is used to represent a point on a surface (n-1 dimensional
 /// manifold) in n-dimensional space. It is defined by a point and a normal vector. Mathematically,
@@ -59,9 +60,53 @@ impl<const D: usize> SurfacePoint<D> {
         let projection = self.projection(other);
         (projection - other).norm()
     }
+
+}
+
+/// Created a vector of `SurfacePoint` instances from a vector of points and a vector of normals.
+/// If the number of points and normals are not the same, an error is returned.
+///
+/// # Arguments
+///
+/// * `points`: the vector of points, ordered to match the normals
+/// * `normals`: the vector of normals, ordered to match the points
+///
+/// returns: Result<Vec<SurfacePoint<{ D }>, Global>, Box<dyn Error, Global>>
+///
+/// # Examples
+///
+/// ```
+/// use engeom::{Point2, Vector2};
+/// use engeom::common::surface_point::surface_point_vector;
+/// use engeom::geom2::UnitVec2;
+///
+/// let points = vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)];
+/// let normals = vec![Vector2::new(0.0, 1.0), Vector2::new(1.0, 0.0)];
+///
+/// let surface_points = surface_point_vector(&points, &normals).unwrap();
+///
+/// assert_eq!(surface_points[0].point, Point2::new(0.0, 0.0));
+/// assert_eq!(surface_points[0].normal, UnitVec2::new_normalize(Vector2::new(0.0, 1.0)));
+/// assert_eq!(surface_points[1].point, Point2::new(1.0, 1.0));
+/// assert_eq!(surface_points[1].normal, UnitVec2::new_normalize(Vector2::new(1.0, 0.0)));
+/// ```
+pub fn surface_point_vector<const D: usize>(
+    points: &[Point<f64, D>],
+    normals: &[SVector<f64, D>],
+) -> Result<Vec<SurfacePoint<D>>> {
+    // Check that the number of points and normals are the same
+    if points.len() != normals.len() {
+        return Err("The number of points and normals must be the same".into());
+    }
+
+    Ok(points
+        .iter()
+        .zip(normals.iter())
+        .map(|(p, n)| SurfacePoint::new_normalize(*p, *n))
+        .collect())
 }
 
 pub trait SurfacePointCollection<const D: usize> {
-    fn points(&self) -> Vec<Point<f64, D>>;
-    fn normals(&self) -> Vec<Unit<SVector<f64, D>>>;
+    fn clone_points(&self) -> Vec<Point<f64, D>>;
+    fn clone_normals(&self) -> Vec<Unit<SVector<f64, D>>>;
 }

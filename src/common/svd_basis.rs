@@ -283,6 +283,17 @@ impl From<&SvdBasis2> for Iso2 {
     }
 }
 
+impl Into<Iso3> for SvdBasis3 {
+    fn into(self) -> Iso3 {
+        iso3_from_basis(&self.basis, &self.center)
+    }
+}
+
+impl Into<Iso2> for SvdBasis2 {
+    fn into(self) -> Iso2 {
+        iso2_from_basis(&self.basis, &self.center)
+    }
+}
 
 #[cfg(test)]
 mod tests {
