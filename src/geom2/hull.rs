@@ -2,11 +2,7 @@
 //!
 
 use crate::common::points::dist;
-use crate::geom2::circle2::Circle2;
-use crate::geom2::{
-    directed_angle, kd_tree_nearest_2d, kd_tree_within_2d, signed_angle, to_kd_tree2, Arc2, Iso2,
-    Point2, Vector2,
-};
+use crate::geom2::{directed_angle, signed_angle, Arc2, Iso2, Point2, Vector2, Circle2};
 
 use crate::Result;
 use crate::common::AngleDir;
@@ -14,6 +10,7 @@ use parry2d_f64::transformation::convex_hull_idx;
 use serde::Serialize;
 use std::collections::HashSet;
 use std::f64::consts::{FRAC_PI_2, PI};
+use crate::geom2::kd_tree2::{kd_tree_nearest_2d, kd_tree_within_2d, to_kd_tree2};
 
 /// Computes the convex hull of a set of 2d points, returning a vector of `usize` elements that
 /// specify the indices of the points in the original set which make up the hull. The indices are
@@ -149,7 +146,7 @@ pub fn ball_pivot_with_centers_2d(
     completed.insert(working_index);
 
     // The distance we must search for points is double the radius of the ball, then squared for
-    // convenience when working with the kd-tree's squared euclidean distance function.
+    // convenience when working with the kd-tree's squared Euclidean distance function.
     let search2 = (2.0 * radius).powi(2);
 
     // let mut count = 0;
@@ -273,7 +270,7 @@ pub fn ball_pivot_2d(
     points: &[Point2],
     start: BallPivotStart,
     end: BallPivotEnd,
-    pivot_direction: RotationDirection,
+    pivot_direction: AngleDir,
     radius: f64,
 ) -> Result<Vec<usize>> {
     let (result, _) = ball_pivot_with_centers_2d(points, start, end, pivot_direction, radius)?;
@@ -284,7 +281,7 @@ pub fn ball_pivot_fill_gaps_2d(
     points: &[Point2],
     start: BallPivotStart,
     end: BallPivotEnd,
-    pivot_direction: RotationDirection,
+    pivot_direction: AngleDir,
     radius: f64,
     max_spacing: f64,
 ) -> Result<Vec<Point2>> {

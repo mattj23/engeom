@@ -265,7 +265,7 @@ mod tests {
 
                 let mut naive = naive_ray_intersections(&line, &ray);
                 let mut fast: Vec<f64> =
-                    intersections(&line, &ray).iter().map(|(t, _)| *t).collect();
+                    polyline_intersections(&line, &ray).iter().map(|(t, _)| *t).collect();
                 naive.sort_by(|a, b| a.partial_cmp(b).unwrap());
                 naive.dedup_by(|a, b| (*a - *b).abs() < 1e-5);
                 fast.sort_by(|a, b| a.partial_cmp(b).unwrap());

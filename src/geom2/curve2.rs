@@ -5,7 +5,7 @@ use crate::geom2::hull::convex_hull_2d;
 use crate::geom2::{Iso2, Point2, SurfacePoint2, UnitVec2};
 use crate::Result;
 use parry2d_f64::na::{Unit};
-use parry2d_f64::query::{PointQueryWithLocation, Ray, RayCast};
+use parry2d_f64::query::{PointQueryWithLocation, Ray};
 use parry2d_f64::shape::{ConvexPolygon, Polyline};
 use crate::geom2::line2::Line2;
 use super::polyline2::polyline_intersections;
@@ -159,6 +159,10 @@ impl Curve2 {
         self.line.vertices()
     }
 
+    pub fn vtx(&self, i: usize) -> Point2 {
+        self.line.vertices()[i].clone()
+    }
+
     /// Builds a Curve2 from a sequence of points. The points will be de-duplicated within the
     /// tolerance.  If the first and last points are within the tolerance *or* the `force_closed`
     /// flag is set the curve will be considered closed.
@@ -283,8 +287,8 @@ impl Curve2 {
     }
 
     fn dir_of_edge(&self, edge_index: usize) -> UnitVec2 {
-        let v0 = self.line.vertices()[edge_index].clone();
-        let v1 = self.line.vertices()[edge_index + 1].clone();
+        let v0 = self.vtx(edge_index);
+        let v1 = self.vtx(edge_index + 1);
         Unit::new_normalize(v1 - v0)
     }
 
@@ -318,7 +322,7 @@ impl Curve2 {
             (index, 0.0)
         };
 
-        CurveStation2::new(v[index].clone(), self.dir_of_vertex(index), i, f, self)
+        CurveStation2::new(self.vtx(index), self.dir_of_vertex(index), i, f, self)
     }
 
     pub fn at_front(&self) -> CurveStation2 {
@@ -346,7 +350,7 @@ impl Curve2 {
                     let dir = self.dir_of_edge(index);
                     let remaining_len = length - self.lengths[index];
                     let f = remaining_len / (self.lengths[index + 1] - self.lengths[index]);
-                    let point = self.line.vertices().get(index) + dir.into_inner() * remaining_len;
+                    let point = self.vtx(index) + dir.into_inner() * remaining_len;
                     Some(CurveStation2::new(point, dir, index, f, self))
                 }
             }
@@ -588,7 +592,6 @@ impl Curve2 {
     pub fn ray_intersections(&self, ray: &Ray) -> Vec<(f64, usize)> {
         polyline_intersections(&self.line, ray)
     }
-
 }
 
 impl Intersection<&SurfacePoint2, Vec<f64>> for Curve2 {
@@ -856,5 +859,4 @@ mod tests {
             assert!(has_vertex(&points[index], result.line.vertices()));
         }
     }
-
 }

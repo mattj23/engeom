@@ -1,5 +1,8 @@
-
-use parry3d_f64::na::{DMatrix, Point, SVector, Unit};
+use std::f64::consts::FRAC_PI_2;
+use parry2d_f64::na::{Matrix2, Rotation2, Translation2, UnitComplex};
+use parry3d_f64::na::{DMatrix, Matrix3, Point, SVector, Translation3, Unit, UnitQuaternion};
+use crate::geom3::{Iso3, SvdBasis3, UnitVec3};
+use crate::{Iso2, SvdBasis2};
 use super::points::{mean_point, mean_point_weighted};
 
 /// This structure contains the results of using singular value decomposition to determine the
@@ -217,6 +220,57 @@ fn svd_from_vectors<const D: usize>(
     }
 }
 
+pub fn iso3_from_basis(basis: &[SVector<f64, 3>; 3], origin: &Point<f64, 3>) -> Iso3 {
+    let b0 = basis[0].normalize();
+    let b1 = basis[1].normalize();
+    let b2 = b0.cross(&b1).normalize();
+    let rot_m = Matrix3::from_columns(&[b0, b1, b2]);
+    let r = UnitQuaternion::from_matrix(&rot_m);
+    let t = Translation3::from(origin.coords);
+    Iso3::from_parts(t, r).inverse()
+}
+
+/// Create an isometry from an `x0` vector, a `y` vector, and an `origin` point. The `x0` vector
+/// is a unit vector which defines the x-axis of the transformed coordinate system, exactly as
+/// it is specified.  The `y` vector is used to derive `y0` by finding the component of `y` which
+/// is orthogonal to `x0`.  The `z0` vector will be derived from `x0` and `y0` via the right hand
+/// rule.  The `origin` point is the location of the origin of the transformed coordinate system.
+///
+/// # Arguments
+///
+/// * `x0`:
+/// * `y`:
+/// * `origin`:
+///
+/// returns: Isometry<f64, Unit<Quaternion<f64>>, 3>
+///
+/// # Examples
+///
+/// ```
+///
+/// ```
+pub fn iso3_from_xyo(x0: &UnitVec3, y: &UnitVec3, origin: &Point<f64, 3>) -> Iso3 {
+    // Project y onto x and then normalize to ensure it is a unit vector and orthogonal
+    let y0 = Unit::new_normalize(y.into_inner() - x0.into_inner() * x0.dot(y));
+
+    let z0 = x0.cross(&y0).normalize();
+
+    let rot_m = Matrix3::from_columns(&[x0.into_inner(), y0.into_inner(), z0]);
+    let r = UnitQuaternion::from_matrix(&rot_m);
+    let t = Translation3::from(origin.coords);
+    Iso3::from_parts(t, r).inverse()
+}
+
+pub fn iso2_from_basis(basis: &[SVector<f64, 2>; 2], origin: &Point<f64, 2>) -> Iso2 {
+    let b0 = basis[0].normalize();
+    let b1 = Rotation2::new(FRAC_PI_2) * b0;
+    let rot_m = Matrix2::from_columns(&[b0, b1]);
+    let r = UnitComplex::from_matrix(&rot_m);
+    let t = Translation2::from(origin.coords);
+    Iso2::from_parts(t, r).inverse()
+}
+
+
 impl From<&SvdBasis3> for Iso3 {
     fn from(value: &SvdBasis3) -> Self {
         iso3_from_basis(&value.basis, &value.center)
@@ -232,6 +286,7 @@ impl From<&SvdBasis2> for Iso2 {
 
 #[cfg(test)]
 mod tests {
+    use std::f64::consts::{PI, SQRT_2};
     use super::*;
     use approx::assert_relative_eq;
     use crate::geom3::{Point3, Vector3};
@@ -253,5 +308,56 @@ mod tests {
         assert_eq!(result.n, 4);
     }
 
+    fn rot_z() -> [Vector3; 3] {
+        let iso = Iso3::from_parts(
+            Translation3::identity(),
+            UnitQuaternion::from_euler_angles(0.0, 0.0, PI / 4.0),
+        );
+
+        let basis = [
+            iso * Vector3::new(1.0, 0.0, 0.0),
+            iso * Vector3::new(0.0, 1.0, 0.0),
+            iso * Vector3::new(0.0, 0.0, 1.0),
+        ];
+
+        basis
+    }
+
+    #[test]
+    fn test_forward_no_shift() {
+        let basis = rot_z();
+
+        let origin = Point3::origin();
+        let iso = iso3_from_basis(&basis, &origin);
+
+        let test_point = Point3::new(1.0, 1.0, 0.0);
+        let result = iso * test_point;
+
+        assert_relative_eq!(result, Point3::new(SQRT_2, 0.0, 0.0), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn test_forward_with_shift_0() {
+        let basis = rot_z();
+        let origin = Point3::new(1.0, 1.0, 0.0);
+        let iso = iso3_from_basis(&basis, &origin);
+
+        let test_point = Point3::new(2.0, 2.0, 0.0);
+        let result = iso * test_point;
+
+        assert_relative_eq!(result, Point3::new(SQRT_2, 0.0, 0.0), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn test_forward_with_shift_1() {
+        let basis = rot_z();
+        let origin = Point3::new(-1.0, -1.0, 0.0);
+        let iso = iso3_from_basis(&basis, &origin);
+
+        let test_point = Point3::new(1.0, 1.0, 0.0);
+        let result = iso * test_point;
+
+        assert_relative_eq!(result, Point3::new(SQRT_2 * 2.0, 0.0, 0.0), epsilon = 1e-12);
+    }
 
 }

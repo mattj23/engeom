@@ -41,6 +41,16 @@ pub enum Smoothing {
     Cubic(f64),
 }
 
+/// General purpose options for fitting data to a model
+#[derive(Debug, Clone, Copy)]
+pub enum BestFit {
+    /// Use all samples and perform a least squares minimization
+    All,
+
+    /// De-weight samples based on their standard deviation from the mean
+    Gaussian(f64),
+}
+
 /// A trait for projecting an entity to another entity
 pub trait Project<TEntity, TResult> {
     fn project(&self, entity: TEntity) -> TResult;

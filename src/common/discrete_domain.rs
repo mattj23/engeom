@@ -2,7 +2,7 @@
 //! where the values are always ordered and only finite values are allowed.
 
 use crate::common::vec_f64::{are_all_finite, are_in_ascending_order};
-use crate::{min_max, Result};
+use crate::Result;
 use std::error::Error;
 use std::ops::Deref;
 
@@ -49,7 +49,8 @@ impl DiscreteDomain {
 
     pub fn linear(start: f64, end: f64, n: usize) -> Self {
         let mut values = Vec::with_capacity(n);
-        let (start, end) = min_max(start, end);
+        let start = start.min(end);
+        let end = start.max(end);
         let step = (end - start) / (n - 1) as f64;
         for i in 0..n {
             values.push(start + i as f64 * step);
