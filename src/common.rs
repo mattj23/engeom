@@ -1,7 +1,10 @@
 mod angles;
 mod discrete_domain;
 mod interval;
-pub mod vecf64;
+pub mod vec_f64;
+pub mod points;
+pub mod svd_basis;
+pub mod surface_point;
 
 pub use angles::{angle_to_2pi, signed_compliment_2pi, AngleDir, AngleInterval};
 pub use discrete_domain::{linear_space, DiscreteDomain};
@@ -37,3 +40,14 @@ pub enum Smoothing {
     /// the window, and the item is replaced with the value of the polynomial at the same position
     Cubic(f64),
 }
+
+/// A trait for projecting an entity to another entity
+pub trait Project<TEntity, TResult> {
+    fn project(&self, entity: TEntity) -> TResult;
+}
+
+/// A trait for intersecting an entity with another entity
+pub trait Intersection<TOther, TResult> {
+    fn intersection(&self, other: TOther) -> TResult;
+}
+

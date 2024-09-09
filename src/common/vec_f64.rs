@@ -11,7 +11,7 @@
 /// # Examples
 ///
 /// ```
-/// use engeom::common::vecf64::has_nan;
+/// use engeom::common::vec_f64::has_nan;
 /// let values = vec![1.0, f64::NAN, 3.0];
 /// assert!(has_nan(&values));
 ///
@@ -50,7 +50,7 @@ pub fn are_all_finite(values: &[f64]) -> bool {
 /// # Examples
 ///
 /// ```
-/// use engeom::common::vecf64::are_in_ascending_order;
+/// use engeom::common::vec_f64::are_in_ascending_order;
 /// let values = vec![1.0, 2.0, 3.0];
 /// assert!(are_in_ascending_order(&values));
 ///
@@ -72,7 +72,7 @@ pub fn are_in_ascending_order(values: &[f64]) -> bool {
 /// # Examples
 ///
 /// ```
-/// use engeom::common::vecf64::are_in_descending_order;
+/// use engeom::common::vec_f64::are_in_descending_order;
 /// let values = vec![3.0, 2.0, 1.0];
 /// assert!(are_in_descending_order(&values));
 ///
@@ -95,7 +95,7 @@ pub fn are_in_descending_order(values: &[f64]) -> bool {
 /// # Examples
 ///
 /// ```
-/// use engeom::common::vecf64::sort_with_nan;
+/// use engeom::common::vec_f64::sort_with_nan;
 /// let mut values = vec![3.0, f64::NAN, 1.0];
 /// sort_with_nan(&mut values);
 /// assert_eq!(values[0], 1.0);
@@ -128,7 +128,7 @@ pub fn sort_with_nan(values: &mut [f64]) {
 /// # Examples
 ///
 /// ```
-/// use engeom::common::vecf64::sort_nan_panics;
+/// use engeom::common::vec_f64::sort_nan_panics;
 /// let mut values = vec![3.0, 5.0, 1.0];
 /// sort_nan_panics(&mut values);
 /// assert_eq!(values, vec![1.0, 3.0, 5.0]);

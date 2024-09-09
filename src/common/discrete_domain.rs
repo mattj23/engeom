@@ -1,7 +1,7 @@
 //! This module contains an abstraction for working with a discrete domain of scalar f64 values,
 //! where the values are always ordered and only finite values are allowed.
 
-use crate::common::vecf64::{are_all_finite, are_in_ascending_order};
+use crate::common::vec_f64::{are_all_finite, are_in_ascending_order};
 use crate::{min_max, Result};
 use std::error::Error;
 use std::ops::Deref;
