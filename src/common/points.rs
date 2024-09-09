@@ -227,7 +227,7 @@ pub fn fill_gaps<const D: usize>(original: &[Point<f64, D>], max_dist: f64) -> V
             while d / (n + 1) as f64 > max_dist {
                 n += 1;
             }
-            for x in evenly_spaced_points(result.last().unwrap(), p, n) {
+            for x in evenly_spaced_points_between(result.last().unwrap(), p, n) {
                 result.push(x);
             }
         }
