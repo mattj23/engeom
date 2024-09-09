@@ -188,11 +188,17 @@ pub fn ball_pivot_with_centers_2d(
             for pi in circles[working_index].intersections_with(&circles[*ni]) {
                 let di = pi - points[working_index];
                 let angle = directed_angle(&direction, &di, pivot_direction);
+                if angle < 1e-6 {
+                    continue;
+                }
+
                 let pivot = PivotPoint::new(*ni, pi, angle);
                 // debug_output.pivots.push(pivot);
                 best = pivot.better_of(best);
             }
         }
+
+        // println!("Best: {:?}", best);
 
         if let Some(best_item) = best {
             // if best_item.point_index < working_index {
