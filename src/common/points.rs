@@ -286,6 +286,44 @@ pub fn max_point_in_direction<const D: usize>(
     max_point
 }
 
+/// Compute the error of a linear interpolation between two points `p0` and `p1` with respect to a
+/// test point `p_test`.  The error is the distance between the test point and the projection of the
+/// test point onto the line defined by `p0` and `p1`.  This can be thought of as the error that
+/// would exist if the test point did not exist.
+///
+/// # Arguments
+///
+/// * `p0`: the first point of the linear interpolation
+/// * `p1`: the second point of the linear interpolation
+/// * `p_test`: a test point to project onto the line defined by `p0` and `p1`
+///
+/// returns: f64
+///
+/// # Examples
+///
+/// ```
+/// use approx::assert_relative_eq;
+/// use engeom::Point2;
+/// use engeom::common::points::linear_interpolation_error;
+///
+/// let p0 = Point2::new(0.0, 0.0);
+/// let p1 = Point2::new(2.0, 0.0);
+/// let p_test = Point2::new(1.0, 1.0);
+///
+/// let error = linear_interpolation_error(&p0, &p1, &p_test);
+/// assert_relative_eq!(error, 1.0);
+/// ```
+pub fn linear_interpolation_error<const D: usize>(
+    p0: &Point<f64, D>,
+    p1: &Point<f64, D>,
+    p_test: &Point<f64, D>,
+) -> f64 {
+    let sp = SurfacePoint::new_normalize(*p0, *p1 - *p0);
+    let proj = sp.projection(p_test);
+
+    dist(p_test, &proj)
+}
+
 /// Perform the Ramer-Douglas-Peucker algorithm on a set of points in D-dimensional space.  The
 /// algorithm simplifies a curve by reducing the number of points while preserving the shape of the
 /// curve.  The `tol` parameter is the maximum distance from the simplified curve to the original

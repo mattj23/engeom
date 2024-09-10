@@ -7,6 +7,7 @@ use crate::geom2::{directed_angle, signed_angle, Arc2, Circle2, Iso2, Point2, Ve
 use crate::common::AngleDir;
 use crate::geom2::kd_tree2::{kd_tree_nearest_2d, kd_tree_within_2d, to_kd_tree2};
 use crate::Result;
+use parry2d_f64::shape::ConvexPolygon;
 use parry2d_f64::transformation::convex_hull_idx;
 use serde::Serialize;
 use std::collections::HashSet;
@@ -25,6 +26,38 @@ use std::f64::consts::{FRAC_PI_2, PI};
 /// returns: Vec<usize, Global>
 pub fn convex_hull_2d(points: &[Point2]) -> Vec<usize> {
     convex_hull_idx(points)
+}
+
+/// Finds the indices of the two points in a convex hull which are farthest apart. This is done by
+/// calculating the distance between every pair of points in the hull and returning the indices of
+/// the pair with the greatest distance. Needs to be replaced with the rotating caliper algorithm.
+///
+/// # Arguments
+///
+/// * `hull`: the convex hull for which to find the farthest pair of points
+///
+/// returns: (usize, usize)
+///
+/// # Examples
+///
+/// ```
+///
+/// ```
+pub fn farthest_pair_indices(hull: &ConvexPolygon) -> (usize, usize) {
+    // TODO: Replace this with the rotating calipers algorithm
+    let mut max_dist = 0.0;
+    let mut max_pair = (0, 0);
+    for i in 0..hull.points().len() {
+        for j in i + 1..hull.points().len() {
+            let d = dist(&hull.points()[i], &hull.points()[j]);
+            if d > max_dist {
+                max_dist = d;
+                max_pair = (i, j);
+            }
+        }
+    }
+
+    max_pair
 }
 
 /// Estimate the direction of ordering of a set of points.  This is done by calculating and

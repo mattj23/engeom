@@ -1,6 +1,6 @@
 use std::error::Error;
 
-mod airfoil;
+pub mod airfoil;
 pub mod common;
 pub mod errors;
 pub mod func1;

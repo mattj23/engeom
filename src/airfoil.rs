@@ -7,6 +7,7 @@ mod inscribed_circle;
 
 use crate::{Curve2, Point2, Result, Vector2};
 
+use crate::airfoil::camber::extract_camber_line;
 pub use inscribed_circle::InscribedCircle;
 
 /// Enum specifying the method for trying to detect the orientation of the leading edge on the
@@ -192,5 +193,22 @@ impl AirfoilGeometry {
 ///
 /// ```
 pub fn analyze_airfoil_geometry(section: &Curve2, params: &AfParams) -> Result<AirfoilGeometry> {
-    todo!()
+    // Calculate the hull, we will need this for the inscribed circle method and the tangency
+    // line.
+    let hull = section
+        .make_hull()
+        .ok_or("Failed to calculate the hull of the airfoil section")?;
+
+    let stations = extract_camber_line(section, &hull, Some(params.tol))?;
+
+    let camber_points = stations.iter().map(|c| c.circle.center).collect::<Vec<_>>();
+    let camber = Curve2::from_points(&camber_points, params.tol, false)?;
+
+    Ok(AirfoilGeometry::new(
+        None,
+        None,
+        stations,
+        camber,
+        params.clone(),
+    ))
 }

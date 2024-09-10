@@ -1,12 +1,42 @@
 //! This module contains the implementation of airfoil camber line detection algorithms.
 
-use parry2d_f64::query::Ray;
 use crate::airfoil::inscribed_circle::InscribedCircle;
-use crate::common::points::dist;
-use crate::geom2::polyline2::{spanning_ray, SpanningRay};
-use crate::geom2::{rot270, rot90, Line2};
-use crate::{Circle2, Curve2, Point2};
+use crate::common::points::{dist, mid_point};
+use crate::geom2::hull::farthest_pair_indices;
+use crate::geom2::polyline2::SpanningRay;
+use crate::geom2::{rot90, Line2};
 use crate::AngleDir::{Ccw, Cw};
+use crate::Result;
+use crate::{Circle2, Curve2, Point2};
+use parry2d_f64::query::Ray;
+use parry2d_f64::shape::ConvexPolygon;
+
+pub fn extract_camber_line(
+    section: &Curve2,
+    hull: &ConvexPolygon,
+    tol: Option<f64>,
+) -> Result<Vec<InscribedCircle>> {
+    // The convex hull will be used to determine the starting spanning ray for the camber line
+    let (i0, i1) = farthest_pair_indices(hull);
+    let p0 = &hull.points()[i0];
+    let p1 = &hull.points()[i1];
+    let dir = p1 - p0;
+    let normal = rot90(Cw) * dir;
+    let mid_ray = Ray::new(mid_point(p0, p1), normal);
+
+    let spanning = section
+        .try_create_spanning_ray(&mid_ray)
+        .ok_or("Failed to create first spanning ray")?;
+
+    // There was an orientation step in here, but I'm not sure what it did
+    let mut stations0 = extract_half_camber_line(section, &spanning, tol)?;
+    let mut stations1 = extract_half_camber_line(section, &spanning.reversed(), tol)?;
+
+    reverse_stations(&mut stations0);
+    stations0.extend(stations1);
+
+    Ok(stations0)
+}
 
 /// Calculates the position and radius of an inscribed circle based on a spanning ray and its
 /// curve. The inscribed circle center will be located on the ray, somewhere between 0 and the ray
@@ -155,7 +185,7 @@ fn advance_search_along_ray(section: &Curve2, last_station: &InscribedCircle) ->
     let mut frac = 0.25;
     while frac > 0.05 {
         let next_center = camber_point.at_distance(frac * last_station.radius());
-        let test_dir = rot90(Cw) * camber_point.normal;
+        let test_dir = rot90(Ccw) * camber_point.normal;
         let test_ray = Ray::new(next_center, test_dir.into_inner());
 
         if let Some(ray) = section.try_create_spanning_ray(&test_ray) {
@@ -171,8 +201,7 @@ fn advance_search_along_ray(section: &Curve2, last_station: &InscribedCircle) ->
             }
 
             return RayAdvance::Valid(ray);
-        }
-        else {
+        } else {
             frac *= 0.75;
         }
     }
@@ -191,4 +220,99 @@ enum RayAdvance {
 
     /// The search has failed to find a valid spanning ray
     Failed,
+}
+
+/// Refines a stack of inscribed circles by checking the interpolation error between the circles
+/// and adding new circles between them when the error is above a certain tolerance.
+///
+/// # Arguments
+///
+/// * `section`: the airfoil section curve
+/// * `dest`: the destination vector which will receive the refined inscribed circles
+/// * `stack`: the stack of inscribed circles to refine
+/// * `tol`: the tolerance value which will determine when to add new circles between the existing
+/// circles
+///
+/// returns: ()
+fn refine_stations(
+    section: &Curve2,
+    dest: &mut Vec<InscribedCircle>,
+    stack: &mut Vec<InscribedCircle>,
+    outer_tol: f64,
+    inner_tol: f64,
+) {
+    while let Some(next) = stack.pop() {
+        if let Some(last) = dest.last() {
+            let test_ray = next.spanning_ray.symmetry(&last.spanning_ray);
+
+            if let Some(ray) = section.try_create_spanning_ray(&test_ray) {
+                let mid = inscribed_from_spanning_ray(section, &ray, inner_tol);
+                let error = mid.interpolation_error(&next, last);
+
+                // TODO: check the distance between the centers to make sure we're not stuck
+                if error > outer_tol {
+                    // We are out of tolerance, we need to put next back on the stack and then put
+                    // the mid-ray on top of it and try again
+                    stack.push(next);
+                    stack.push(mid);
+                } else {
+                    // We are within tolerance, we can put the next station in the destination
+                    dest.push(next);
+                }
+            }
+        } else {
+            dest.push(next);
+        }
+    }
+}
+
+/// Extracts the unambiguous portion of a mean camber line in the orthogonal direction to a
+/// starting spanning ray. This function will terminate when it gets close to the farthest point in
+/// the camber line direction.
+fn extract_half_camber_line(
+    curve: &Curve2,
+    starting_ray: &SpanningRay,
+    tol: Option<f64>,
+) -> Result<Vec<InscribedCircle>> {
+    let outer_tol = tol.unwrap_or(1e-3);
+    let inner_tol = outer_tol * 1e-2;
+
+    let mut stations: Vec<InscribedCircle> = Vec::new();
+    let mut refine_stack: Vec<InscribedCircle> = Vec::new();
+    let mut ray = starting_ray.clone();
+
+    loop {
+        let circle = inscribed_from_spanning_ray(curve, &ray, inner_tol);
+        refine_stack.push(circle);
+
+        refine_stations(
+            curve,
+            &mut stations,
+            &mut refine_stack,
+            outer_tol,
+            inner_tol,
+        );
+
+        let station = &stations.last().expect("Station was not transferred");
+
+        match advance_search_along_ray(curve, station) {
+            RayAdvance::Valid(r) => {
+                ray = r;
+            }
+            RayAdvance::End => {
+                break;
+            }
+            RayAdvance::Failed => {
+                return Err(Box::from("Failed to advance search along ray"));
+            }
+        };
+    }
+
+    Ok(stations)
+}
+
+/// Reverses the order of the inscribed circles in place
+fn reverse_stations(stations: &mut [InscribedCircle]) {
+    stations.reverse();
+    stations.iter_mut().for_each(|i| i.reverse_in_place());
 }

@@ -14,7 +14,7 @@ use serde::Serialize;
 /// there is a closed polyline and a ray that crosses from one side to the other.  It is a wrapper
 /// around a ray where both the ray origin and ray origin + ray direction are points on the
 /// polyline.
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Debug)]
 pub struct SpanningRay {
     ray: Ray,
 }
