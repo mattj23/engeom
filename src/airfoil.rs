@@ -8,9 +8,10 @@ pub mod helpers;
 mod inscribed_circle;
 mod orientation;
 
-use crate::{Curve2, Point2, Result, Vector2};
+use crate::{Curve2, Point2, Result};
 
 use crate::airfoil::camber::extract_camber_line;
+pub use edges::{EdgeLocation, IntersectEdge, OpenEdge};
 pub use inscribed_circle::InscribedCircle;
 pub use orientation::{CamberOrientation, TMaxFwd};
 
@@ -81,10 +82,10 @@ pub struct AfParams {
     pub orient: Box<dyn CamberOrientation>,
 
     /// The method for trying to detect the leading edge on the airfoil.
-    pub leading: Edge,
+    pub leading: Box<dyn EdgeLocation>,
 
     /// The method for trying to detect the trailing edge on the airfoil.
-    pub trailing: Edge,
+    pub trailing: Box<dyn EdgeLocation>,
 }
 
 impl AfParams {
@@ -109,8 +110,8 @@ impl AfParams {
     pub fn new(
         tol: f64,
         orient: Box<dyn CamberOrientation>,
-        leading: Edge,
-        trailing: Edge,
+        leading: Box<dyn EdgeLocation>,
+        trailing: Box<dyn EdgeLocation>,
     ) -> Self {
         AfParams {
             tol,
@@ -196,10 +197,27 @@ pub fn analyze_airfoil_geometry(section: &Curve2, params: &AfParams) -> Result<A
     let stations = params.orient.orient_camber_line(section, stations)?;
 
     // Find the leading and trailing edges
+    let (leading_edge, stations) = params
+        .leading
+        .find_edge(section, stations, true, params.tol)?;
+    let (trailing_edge, stations) = params
+        .trailing
+        .find_edge(section, stations, false, params.tol)?;
 
     // Create the camber curve
-    let camber_points = stations.iter().map(|c| c.circle.center).collect::<Vec<_>>();
+    let mut camber_points = stations.iter().map(|c| c.circle.center).collect::<Vec<_>>();
+    if let Some(leading) = leading_edge {
+        camber_points.insert(0, leading);
+    }
+    if let Some(trailing) = trailing_edge {
+        camber_points.push(trailing);
+    }
     let camber = Curve2::from_points(&camber_points, params.tol, false)?;
 
-    Ok(AirfoilGeometry::new(None, None, stations, camber))
+    Ok(AirfoilGeometry::new(
+        leading_edge,
+        trailing_edge,
+        stations,
+        camber,
+    ))
 }

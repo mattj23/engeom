@@ -44,8 +44,8 @@ impl TMaxFwd {
         TMaxFwd {}
     }
 
-    /// Create a boxed instance of the `TMaxFwd` struct.
-    pub fn boxed() -> Box<dyn CamberOrientation> {
+    /// Create a new boxed instance of the `TMaxFwd` struct.
+    pub fn make() -> Box<dyn CamberOrientation> {
         Box::new(TMaxFwd::new())
     }
 }
