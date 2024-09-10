@@ -3,34 +3,16 @@
 //! edges, computing angles, thicknesses, and other properties.
 
 mod camber;
-mod inscribed_circle;
 mod edges;
+pub mod helpers;
+mod inscribed_circle;
 mod orientation;
 
 use crate::{Curve2, Point2, Result, Vector2};
 
 use crate::airfoil::camber::extract_camber_line;
 pub use inscribed_circle::InscribedCircle;
-
-/// Enum specifying the method for trying to detect the orientation of the leading edge on the
-/// airfoil, with the default being to use the point of max thickness.
-#[derive(Debug, Clone, Copy)]
-pub enum Orientation {
-    /// This method is based on the principle that for most subsonic airfoils the point of max
-    /// thickness is closer to the leading edge than to the trailing edge along the camber line.
-    TmaxFwd,
-
-    /// This method takes a direction vector and orients the leading edge such that the vector from
-    /// the back to the front of the camber line has a positive dot product with that vector. Use
-    /// this method when you have a specific direction in mind for the leading edge.
-    Direction(Vector2),
-}
-
-impl Default for Orientation {
-    fn default() -> Self {
-        Orientation::TmaxFwd
-    }
-}
+pub use orientation::{CamberOrientation, TMaxFwd};
 
 /// Enum specifying the method for trying to extract an edge (either leading or trailing) from the
 /// airfoil section data.  The default is to use the auto-detection method, but it is always better
@@ -89,7 +71,6 @@ impl Default for Edge {
 /// This structure contains the parameters used in the airfoil analysis algorithms.  It specifies
 /// the minimum tolerance value used in many parts of the analysis, as well as the methods for
 /// detecting the orientation of the leading edge, and the leading and trailing edges themselves.
-#[derive(Debug, Clone)]
 pub struct AfParams {
     /// The minimum tolerance value, used in many parts of the analysis.  Generally speaking, the
     /// various algorithms will attempt to iteratively refine results until the error/difference
@@ -97,7 +78,7 @@ pub struct AfParams {
     pub tol: f64,
 
     /// The method for trying to detect the orientation of the leading edge on the airfoil.
-    pub orient: Orientation,
+    pub orient: Box<dyn CamberOrientation>,
 
     /// The method for trying to detect the leading edge on the airfoil.
     pub leading: Edge,
@@ -125,24 +106,18 @@ impl AfParams {
     /// ```
     ///
     /// ```
-    pub fn new(tol: f64, orient: Orientation, leading: Edge, trailing: Edge) -> Self {
+    pub fn new(
+        tol: f64,
+        orient: Box<dyn CamberOrientation>,
+        leading: Edge,
+        trailing: Edge,
+    ) -> Self {
         AfParams {
             tol,
             orient,
             leading,
             trailing,
         }
-    }
-}
-
-impl Default for AfParams {
-    fn default() -> Self {
-        AfParams::new(
-            1e-4,
-            Orientation::default(),
-            Edge::default(),
-            Edge::default(),
-        )
     }
 }
 
@@ -163,9 +138,6 @@ pub struct AirfoilGeometry {
     /// first/last points of the curve will be the leading/trailing edge points, respectively.
     /// Otherwise, the curve will stop at the first/last inscribed circle.
     pub camber: Curve2,
-
-    /// The parameters used in the analysis.
-    pub af_params: AfParams,
 }
 
 impl AirfoilGeometry {
@@ -174,14 +146,12 @@ impl AirfoilGeometry {
         trailing_edge: Option<Point2>,
         stations: Vec<InscribedCircle>,
         camber: Curve2,
-        af_params: AfParams,
     ) -> Self {
         AirfoilGeometry {
             leading_edge,
             trailing_edge,
             stations,
             camber,
-            af_params,
         }
     }
 }
@@ -219,18 +189,17 @@ pub fn analyze_airfoil_geometry(section: &Curve2, params: &AfParams) -> Result<A
         .make_hull()
         .ok_or("Failed to calculate the hull of the airfoil section")?;
 
-    // Compute the mean camber line using the inscribed circle method, create the camber curve
+    // Compute the mean camber line using the inscribed circle method
     let stations = extract_camber_line(section, &hull, Some(params.tol))?;
+
+    // Orient the camber line
+    let stations = params.orient.orient_camber_line(section, stations)?;
+
+    // Find the leading and trailing edges
+
+    // Create the camber curve
     let camber_points = stations.iter().map(|c| c.circle.center).collect::<Vec<_>>();
     let camber = Curve2::from_points(&camber_points, params.tol, false)?;
 
-    // Now we'll attempt to detect the leading and trailing edges.
-
-    Ok(AirfoilGeometry::new(
-        None,
-        None,
-        stations,
-        camber,
-        params.clone(),
-    ))
+    Ok(AirfoilGeometry::new(None, None, stations, camber))
 }

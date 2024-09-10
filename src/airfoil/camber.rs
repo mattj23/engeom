@@ -1,5 +1,6 @@
 //! This module contains the implementation of airfoil camber line detection algorithms.
 
+use super::helpers::reverse_inscribed_circles;
 use crate::airfoil::inscribed_circle::InscribedCircle;
 use crate::common::points::{dist, mid_point};
 use crate::geom2::hull::farthest_pair_indices;
@@ -10,7 +11,6 @@ use crate::Result;
 use crate::{Circle2, Curve2, Point2};
 use parry2d_f64::query::Ray;
 use parry2d_f64::shape::ConvexPolygon;
-use crate::airfoil::Orientation;
 
 /// Attempts to calculate and extract the mean camber line from an airfoil section curve and its
 /// convex hull using the inscribed circle method.
@@ -58,27 +58,10 @@ pub fn extract_camber_line(
     let mut stations0 = extract_half_camber_line(section, &spanning, tol)?;
     let stations1 = extract_half_camber_line(section, &spanning.reversed(), tol)?;
 
-    reverse_stations(&mut stations0);
+    reverse_inscribed_circles(&mut stations0);
     stations0.extend(stations1);
 
     Ok(stations0)
-}
-
-
-/// Orients the camber line based on the specified orientation method.  This function will take
-/// ownership of the camber line and return a new camber line with the orientation applied.
-///
-/// # Arguments
-///
-/// * `section`: the same airfoil section curve used to create the camber line stations
-/// * `stations`: the camber line stations to orient
-/// * `orient`: the orientation method to apply to the camber line
-///
-/// returns: Vec<InscribedCircle, Global>
-pub fn orient_camber_line(section: &Curve2, stations: Vec<InscribedCircle>, orient: &Orientation) -> Vec<InscribedCircle>{
-    match orient {
-
-    }
 }
 
 /// Calculates the position and radius of an inscribed circle based on a spanning ray and its
@@ -309,7 +292,6 @@ fn refine_stations(
     }
 }
 
-
 /// Extracts the unambiguous portion of a mean camber line in the orthogonal direction to a
 /// starting spanning ray. This function will terminate when it gets close to the farthest point in
 /// the camber line direction.
@@ -363,10 +345,4 @@ fn extract_half_camber_line(
     }
 
     Ok(stations)
-}
-
-/// Reverses the order of the inscribed circles in place
-fn reverse_stations(stations: &mut [InscribedCircle]) {
-    stations.reverse();
-    stations.iter_mut().for_each(|i| i.reverse_in_place());
 }
