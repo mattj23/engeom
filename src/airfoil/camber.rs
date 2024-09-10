@@ -10,6 +10,7 @@ use crate::Result;
 use crate::{Circle2, Curve2, Point2};
 use parry2d_f64::query::Ray;
 use parry2d_f64::shape::ConvexPolygon;
+use crate::airfoil::Orientation;
 
 /// Attempts to calculate and extract the mean camber line from an airfoil section curve and its
 /// convex hull using the inscribed circle method.
@@ -61,6 +62,23 @@ pub fn extract_camber_line(
     stations0.extend(stations1);
 
     Ok(stations0)
+}
+
+
+/// Orients the camber line based on the specified orientation method.  This function will take
+/// ownership of the camber line and return a new camber line with the orientation applied.
+///
+/// # Arguments
+///
+/// * `section`: the same airfoil section curve used to create the camber line stations
+/// * `stations`: the camber line stations to orient
+/// * `orient`: the orientation method to apply to the camber line
+///
+/// returns: Vec<InscribedCircle, Global>
+pub fn orient_camber_line(section: &Curve2, stations: Vec<InscribedCircle>, orient: &Orientation) -> Vec<InscribedCircle>{
+    match orient {
+
+    }
 }
 
 /// Calculates the position and radius of an inscribed circle based on a spanning ray and its

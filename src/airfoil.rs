@@ -4,6 +4,8 @@
 
 mod camber;
 mod inscribed_circle;
+mod edges;
+mod orientation;
 
 use crate::{Curve2, Point2, Result, Vector2};
 
@@ -36,8 +38,26 @@ impl Default for Orientation {
 #[derive(Debug, Clone, Copy)]
 pub enum Edge {
     /// Attempts to automatically detect the edge based on the airfoil section data.  Use this
-    /// method only if you are unsure of the edge type.
+    /// method only if you can't use any of the other methods.
     Auto,
+
+    /// Will find the edge by intersecting the ray at the end of the camber line with the airfoil
+    /// section. This will work well for many different edge geometries as long as the curvature
+    /// of the camber near the edge is minimal.
+    Intersect,
+
+    /// Attempts to detect a constant radius edge, with an option to specify the radius.  This is
+    /// common on many leading edges.
+    Radius(Option<f64>),
+
+    /// Attempt to find the edge based on a point of maximum curvature.  This is common on leading
+    /// edges that don't have constant curvature but are still rounded.
+    RoundMaxCurvature,
+
+    /// This method will attempt to detect the edge by advancing or retracting the end of the
+    /// camber line until the ray intersection (like `Intersect`) converges on a point whose
+    /// tangency is perpendicular to the ray.
+    ConvergeTangent,
 
     /// Attempts to detect a rounded leading edge with or without a specified radius.  It can take
     /// two optional parameters: a boolean flag indicating whether to adjust the edge point based
