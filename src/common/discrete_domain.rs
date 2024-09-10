@@ -3,6 +3,7 @@
 
 use crate::common::vec_f64::{are_all_finite, are_in_ascending_order};
 use crate::Result;
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::ops::Deref;
 
@@ -37,7 +38,7 @@ pub fn linear_space(start: f64, end: f64, n: usize) -> DiscreteDomain {
 /// A discrete domain of scalar f64 values, in which all values are guaranteed to be finite and in ascending order.
 /// These strong guarantees are intended to allow for algorithms which can make significant performance improvements
 /// when handling a pre-sorted array of finite f64 values.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct DiscreteDomain {
     values: Vec<f64>,
 }

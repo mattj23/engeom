@@ -11,6 +11,9 @@ pub mod utility;
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
+// Common one dimensional functions
+pub use func1::{Func1, Gaussian1, Line1, Polynomial, Series1};
+
 // Extremely common angle tools
 pub use common::{AngleDir, AngleInterval};
 

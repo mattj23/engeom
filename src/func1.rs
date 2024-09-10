@@ -5,9 +5,11 @@ use crate::common::DiscreteDomain;
 
 mod common_functions;
 mod polynomial;
+mod series1;
 
 pub use common_functions::{Gaussian1, Line1};
 pub use polynomial::{Cubic, Polynomial, Quadratic, Quartic, Quintic};
+pub use series1::Series1;
 
 /// A function over a continuous one dimensional domain of scalar f64 values.
 pub trait Func1 {

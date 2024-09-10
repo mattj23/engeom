@@ -166,9 +166,9 @@ impl InscribedCircleSearchState {
 
 /// This function will attempt to extract a smaller curve from the larger airfoil section curve
 /// which has the data just for the end of the airfoil. To do so, it will attempt to segment the
-/// section into two portions, with the cuts happening at the upper and lower points of the
-/// inscribed circle.  The sub-curve which has less than 25% of the total section perimeter will be
-/// returned, or `None` if no such sub-curve can be found.
+/// section into two portions, with the cuts happening at the start and end of the spanning ray of
+/// the inscribed circle.  The sub-curve which has less than 25% of the total section perimeter
+/// will be returned, or `None` if no such sub-curve can be found.
 ///
 /// # Arguments
 ///
@@ -177,8 +177,10 @@ impl InscribedCircleSearchState {
 ///
 /// returns: Option<Curve2>
 pub fn extract_edge_sub_curve(section: &Curve2, last_station: &InscribedCircle) -> Option<Curve2> {
-    let split0 = section.at_closest_to_point(&last_station.upper);
-    let split1 = section.at_closest_to_point(&last_station.lower);
+    let split0 = section.at_closest_to_point(&last_station.spanning_ray.origin());
+    let split1 = section.at_closest_to_point(
+        &(last_station.spanning_ray.origin() + last_station.spanning_ray.dir()),
+    );
 
     let portion0 = section.between_lengths(split0.length_along(), split1.length_along());
     let portion1 = section.between_lengths(split1.length_along(), split0.length_along());
