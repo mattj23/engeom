@@ -5,8 +5,9 @@
 mod camber;
 mod inscribed_circle;
 
-use crate::airfoil::inscribed_circle::InscribedCircle;
 use crate::{Curve2, Point2, Result, Vector2};
+
+pub use inscribed_circle::InscribedCircle;
 
 /// Enum specifying the method for trying to detect the orientation of the leading edge on the
 /// airfoil, with the default being to use the point of max thickness.

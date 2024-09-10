@@ -4,7 +4,8 @@
 //! contained within the section.  Inscribed circles are used to calculate the camber line.
 
 use crate::geom2::polyline2::SpanningRay;
-use crate::{Circle2, Point2};
+use crate::geom2::rot90;
+use crate::{AngleDir, Circle2, Point2, SurfacePoint2, Vector2};
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -56,5 +57,13 @@ impl InscribedCircle {
 
     pub fn center(&self) -> Point2 {
         self.circle.center
+    }
+
+    /// Calculates a point at the inscribed circle's center facing in the direction of the camber
+    /// line. The direction is found by noting that the vector from the upper to lower contact
+    /// points is perpendicular to the direction of the camber line at the inscribed circle's center.
+    pub fn camber_point(&self) -> SurfacePoint2 {
+        let dir = rot90(AngleDir::Cw) * (self.upper - self.lower);
+        SurfacePoint2::new_normalize(self.center(), dir)
     }
 }

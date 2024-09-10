@@ -29,6 +29,26 @@ impl<const D: usize> SurfacePoint<D> {
     /// Returns the scalar projection value of another point onto the line defined by the point and
     /// normal. This can be interpreted as the physical distance along the normal line that the
     /// other point is from the surface point.
+    ///
+    /// # Arguments
+    ///
+    /// * `other`: the point to project onto the line defined by the surface point
+    ///
+    /// returns: f64
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::{Point2, SurfacePoint2, Vector2};
+    /// use approx::assert_relative_eq;
+    ///
+    /// let sp = SurfacePoint2::new_normalize(Point2::new(0.0, 0.0), Vector2::new(0.0, 1.0));
+    ///
+    /// let other = Point2::new(-1.0, -1.0);
+    /// let scalar_projection = sp.scalar_projection(&other);
+    ///
+    /// assert_relative_eq!(scalar_projection, -1.0, epsilon = 1e-6);
+    /// ```
     pub fn scalar_projection(&self, other: &Point<f64, D>) -> f64 {
         self.normal.dot(&(other - self.point))
     }

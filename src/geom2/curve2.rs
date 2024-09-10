@@ -1,11 +1,13 @@
-use super::polyline2::polyline_intersections;
-use crate::common::points::{dist, ramer_douglas_peucker, transform_points};
+use super::polyline2::{polyline_intersections, spanning_ray, SpanningRay};
+use crate::common::points::{
+    dist, max_point_in_direction, ramer_douglas_peucker, transform_points,
+};
 use crate::common::{Intersection, Resample};
 use crate::errors::InvalidGeometry;
 use crate::geom2::hull::convex_hull_2d;
 use crate::geom2::line2::Line2;
 use crate::geom2::{Iso2, Point2, SurfacePoint2, UnitVec2};
-use crate::Result;
+use crate::{Result, Vector2};
 use parry2d_f64::na::Unit;
 use parry2d_f64::query::{PointQueryWithLocation, Ray};
 use parry2d_f64::shape::{ConvexPolygon, Polyline};
@@ -509,17 +511,22 @@ impl Curve2 {
         ConvexPolygon::from_convex_hull(self.line.vertices())
     }
 
-    pub fn max_point_in_ray_direction(&self, ray: &Ray) -> Option<Point2> {
-        let mut d = f64::MIN;
-        let mut r = None;
-        for p in self.line.vertices().iter() {
-            let t = ray.projected_parameter(p);
-            if t > d {
-                d = t;
-                r = Some(p.clone())
-            }
-        }
-        r
+    /// Find the point on the curve which is the maximum in the direction of the given vector.
+    ///
+    /// # Arguments
+    ///
+    /// * `vector`: The direction vector to search for the maximum point in
+    ///
+    /// returns: Option<OPoint<f64, Const<2>>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    pub fn max_point_in_direction(&self, vector: &Vector2) -> Option<Point2> {
+        // TODO: there is probably a much more efficient way to do this using the bvh
+        max_point_in_direction(&self.points(), &vector)
     }
 
     pub fn clone_points(&self) -> Vec<Point2> {
@@ -591,6 +598,27 @@ impl Curve2 {
     /// ```
     pub fn ray_intersections(&self, ray: &Ray) -> Vec<(f64, usize)> {
         polyline_intersections(&self.line, ray)
+    }
+
+    /// Given a full ray, this method will attempt to create a `SpanningRay` which crosses the
+    /// curve.  This will require that the ray intersects the curve at exactly two points,
+    /// otherwise `None` will be returned.  The resulting ray, if successful, will have the same
+    /// direction as the full ray, but the origin will be the earliest point of intersection with
+    /// the curve.
+    ///
+    /// # Arguments
+    ///
+    /// * `full_ray`: the full test ray to attempt to span the curve
+    ///
+    /// returns: Option<SpanningRay>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    pub fn try_create_spanning_ray(&self, full_ray: &Ray) -> Option<SpanningRay> {
+        spanning_ray(&self.line, full_ray)
     }
 }
 

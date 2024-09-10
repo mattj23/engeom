@@ -235,6 +235,57 @@ pub fn fill_gaps<const D: usize>(original: &[Point<f64, D>], max_dist: f64) -> V
     result
 }
 
+/// Returns the point in a set of points which has the largest value when projected onto a vector.
+/// This is effectively the same as finding the point that is the furthest in the direction of the
+/// vector.
+///
+/// There is nothing assumed about the list of points, so it is an O(n) operation where n is the
+/// number of points in the set.
+///
+/// # Arguments
+///
+/// * `points`: the set of points to search
+/// * `vector`: the vector to project the points onto
+///
+/// returns: Option<OPoint<f64, Const<{ D }>>>
+///
+/// # Examples
+///
+/// ```
+/// use engeom::common::points::max_point_in_direction;
+/// use engeom::{Point2, Vector2};
+/// use approx::assert_relative_eq;
+///
+/// let dir = Vector2::new(-10.0, -10.0);
+///
+/// let points = vec![
+///    Point2::new(10.0, 0.0),
+///    Point2::new(11.0, 1.0),
+///    Point2::new(12.0, 2.0),
+///    Point2::new(13.0, 3.0),
+/// ];
+///
+/// let max = max_point_in_direction(&points, &dir).unwrap();
+/// assert_relative_eq!(max, Point2::new(10.0, 0.0));
+/// ```
+pub fn max_point_in_direction<const D: usize>(
+    points: &[Point<f64, D>],
+    vector: &SVector<f64, D>,
+) -> Option<Point<f64, D>> {
+    let mut max_dist = f64::MIN;
+    let mut max_point = None;
+
+    for p in points {
+        let dist = p.coords.dot(vector);
+        if dist > max_dist {
+            max_dist = dist;
+            max_point = Some(*p);
+        }
+    }
+
+    max_point
+}
+
 /// Perform the Ramer-Douglas-Peucker algorithm on a set of points in D-dimensional space.  The
 /// algorithm simplifies a curve by reducing the number of points while preserving the shape of the
 /// curve.  The `tol` parameter is the maximum distance from the simplified curve to the original
@@ -348,6 +399,7 @@ where
 mod tests {
     use super::*;
     use crate::geom2::{Curve2, Point2};
+    use crate::Vector2;
     use approx::assert_relative_eq;
 
     #[test]
@@ -405,5 +457,21 @@ mod tests {
         assert_relative_eq!(filled[0], Point2::new(0.0, 0.0));
         assert_relative_eq!(filled[1], Point2::new(1.0, 0.0));
         assert_relative_eq!(filled[2], Point2::new(2.0, 0.0));
+    }
+
+    #[test]
+    fn max_point_in_dir() {
+        let dir = Vector2::new(-10.0, -10.0);
+
+        let points = vec![
+            Point2::new(10.0, 0.0),
+            Point2::new(11.0, 1.0),
+            Point2::new(12.0, 2.0),
+            Point2::new(13.0, 3.0),
+            Point2::new(14.0, 4.0),
+        ];
+
+        let max = max_point_in_direction(&points, &dir).unwrap();
+        assert_relative_eq!(max, Point2::new(10.0, 0.0));
     }
 }
