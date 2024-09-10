@@ -199,10 +199,12 @@ pub fn analyze_airfoil_geometry(section: &Curve2, params: &AfParams) -> Result<A
         .make_hull()
         .ok_or("Failed to calculate the hull of the airfoil section")?;
 
+    // Compute the mean camber line using the inscribed circle method, create the camber curve
     let stations = extract_camber_line(section, &hull, Some(params.tol))?;
-
     let camber_points = stations.iter().map(|c| c.circle.center).collect::<Vec<_>>();
     let camber = Curve2::from_points(&camber_points, params.tol, false)?;
+
+    // Now we'll attempt to detect the leading and trailing edges.
 
     Ok(AirfoilGeometry::new(
         None,

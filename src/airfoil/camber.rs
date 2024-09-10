@@ -11,6 +11,31 @@ use crate::{Circle2, Curve2, Point2};
 use parry2d_f64::query::Ray;
 use parry2d_f64::shape::ConvexPolygon;
 
+/// Attempts to calculate and extract the mean camber line from an airfoil section curve and its
+/// convex hull using the inscribed circle method.
+///
+/// Functionally, this algorithm will work by first finding the farthest pair of points on the
+/// convex hull, then bisecting the section at the halfway point of that longest span to create the
+/// initial station. From there, the algorithm will advance along the camber direction, first in
+/// one direction and then in the other, to extract the camber line. At each inscribed circle,
+/// it will attempt to move forward by a fraction of the last circle's radius, incrementally
+/// reducing the forward motion down to a minimum threshold when it encounters problems. As it
+/// advances it looks forward for the farthest point in the section in the ever-updating camber
+/// direction, and will terminate the search when the distance to that farthest point beyond the
+/// last inscribed circle is less than a minimum threshold of the last circle's radius.
+///
+/// As it advances, it will look at the interpolation error between the inscribed circles and add
+/// new circles between them when the error is above a certain tolerance, refining the camber line
+/// to within the specified tolerance.
+///
+/// # Arguments
+///
+/// * `section`: the airfoil section curve
+/// * `hull`: the convex hull of the airfoil section
+/// * `tol`: an optional tolerance value which will determine when to add new circles between the
+/// existing circles. This value will default to 1e-3 if not specified.
+///
+/// returns: Result<Vec<InscribedCircle, Global>, Box<dyn Error, Global>>
 pub fn extract_camber_line(
     section: &Curve2,
     hull: &ConvexPolygon,
@@ -30,7 +55,7 @@ pub fn extract_camber_line(
 
     // There was an orientation step in here, but I'm not sure what it did
     let mut stations0 = extract_half_camber_line(section, &spanning, tol)?;
-    let mut stations1 = extract_half_camber_line(section, &spanning.reversed(), tol)?;
+    let stations1 = extract_half_camber_line(section, &spanning.reversed(), tol)?;
 
     reverse_stations(&mut stations0);
     stations0.extend(stations1);
@@ -266,9 +291,20 @@ fn refine_stations(
     }
 }
 
+
 /// Extracts the unambiguous portion of a mean camber line in the orthogonal direction to a
 /// starting spanning ray. This function will terminate when it gets close to the farthest point in
 /// the camber line direction.
+///
+/// # Arguments
+///
+/// * `curve`: the airfoil section curve
+/// * `starting_ray`: the starting spanning ray for the camber line, determines the direction the
+/// algorithm will advance.
+/// * `tol`: an optional tolerance value which will determine when to add new circles between the
+/// existing circles. This value will default to 1e-3 if not specified.
+///
+/// returns: Result<Vec<InscribedCircle, Global>, Box<dyn Error, Global>>
 fn extract_half_camber_line(
     curve: &Curve2,
     starting_ray: &SpanningRay,
