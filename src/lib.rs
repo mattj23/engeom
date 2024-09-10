@@ -7,6 +7,7 @@ pub mod geom3;
 pub mod errors;
 pub mod stats;
 pub mod utility;
+mod airfoil;
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 

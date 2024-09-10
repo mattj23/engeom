@@ -1,7 +1,7 @@
 mod curve2;
 pub mod hull;
 pub mod kd_tree2;
-mod polyline2;
+pub mod polyline2;
 mod angles2;
 mod line2;
 mod circle2;
