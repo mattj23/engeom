@@ -1,14 +1,14 @@
+use super::polyline2::polyline_intersections;
 use crate::common::points::{dist, ramer_douglas_peucker, transform_points};
 use crate::common::{Intersection, Resample};
 use crate::errors::InvalidGeometry;
 use crate::geom2::hull::convex_hull_2d;
+use crate::geom2::line2::Line2;
 use crate::geom2::{Iso2, Point2, SurfacePoint2, UnitVec2};
 use crate::Result;
-use parry2d_f64::na::{Unit};
+use parry2d_f64::na::Unit;
 use parry2d_f64::query::{PointQueryWithLocation, Ray};
 use parry2d_f64::shape::{ConvexPolygon, Polyline};
-use crate::geom2::line2::Line2;
-use super::polyline2::polyline_intersections;
 
 /// A `CurveStation2` is a convenience struct which represents a location on the manifold defined
 /// by the curve. It has a point, a direction, and a normal. It has an index and a fraction which
@@ -612,7 +612,10 @@ impl Intersection<&SurfacePoint2, Vec<f64>> for Curve2 {
     /// ```
     fn intersection(&self, other: &SurfacePoint2) -> Vec<f64> {
         let ray = Ray::new(other.point, other.normal.into_inner());
-        self.ray_intersections(&ray).iter().map(|(t, _)| *t).collect()
+        self.ray_intersections(&ray)
+            .iter()
+            .map(|(t, _)| *t)
+            .collect()
     }
 }
 

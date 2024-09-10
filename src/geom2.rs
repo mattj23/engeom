@@ -1,15 +1,15 @@
+mod angles2;
+mod circle2;
 mod curve2;
 pub mod hull;
 pub mod kd_tree2;
-pub mod polyline2;
-mod angles2;
 mod line2;
-mod circle2;
+pub mod polyline2;
 
-use std::ops;
-use crate::common::svd_basis::SvdBasis;
 use crate::common::surface_point::SurfacePoint;
+use crate::common::svd_basis::SvdBasis;
 use crate::common::SurfacePointCollection;
+use std::ops;
 
 pub type Point2 = parry2d_f64::na::Point2<f64>;
 pub type Vector2 = parry2d_f64::na::Vector2<f64>;
@@ -20,10 +20,10 @@ pub type SvdBasis2 = SvdBasis<2>;
 pub type Aabb2 = parry2d_f64::bounding_volume::Aabb;
 pub type Ray2 = parry2d_f64::query::Ray;
 
-pub use self::line2::Line2;
+pub use self::angles2::{directed_angle, rot270, rot90, signed_angle};
+pub use self::circle2::{Arc2, Circle2};
 pub use self::curve2::{Curve2, CurveStation2};
-pub use self::angles2::{rot90, rot270, signed_angle, directed_angle};
-pub use self::circle2::{Circle2, Arc2};
+pub use self::line2::Line2;
 
 impl ops::Mul<SurfacePoint2> for &Iso2 {
     type Output = SurfacePoint2;
@@ -60,4 +60,3 @@ impl SurfacePointCollection<2> for &Vec<SurfacePoint2> {
         self.iter().map(|sp| sp.normal).collect()
     }
 }
-

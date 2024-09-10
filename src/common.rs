@@ -1,17 +1,17 @@
 mod angles;
+mod convert_2d_3d;
 mod discrete_domain;
 mod interval;
-pub mod vec_f64;
 pub mod points;
-pub mod svd_basis;
 pub mod surface_point;
-mod convert_2d_3d;
+pub mod svd_basis;
+pub mod vec_f64;
 
 pub use angles::{angle_to_2pi, signed_compliment_2pi, AngleDir, AngleInterval};
-pub use discrete_domain::{linear_space, DiscreteDomain};
-pub use surface_point::{SurfacePoint, SurfacePointCollection};
-pub use interval::Interval;
 pub use convert_2d_3d::{To2D, To3D};
+pub use discrete_domain::{linear_space, DiscreteDomain};
+pub use interval::Interval;
+pub use surface_point::{SurfacePoint, SurfacePointCollection};
 
 /// General purpose options for resampling data over a discrete domain.
 pub enum Resample {
@@ -63,4 +63,3 @@ pub trait Project<TEntity, TResult> {
 pub trait Intersection<TOther, TResult> {
     fn intersection(&self, other: TOther) -> TResult;
 }
-

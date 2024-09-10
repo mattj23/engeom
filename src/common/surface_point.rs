@@ -1,6 +1,6 @@
+use crate::Result;
 use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector, Unit, Vector};
 use serde::{Deserialize, Serialize};
-use crate::Result;
 
 /// A `SurfacePoint` is a struct which is used to represent a point on a surface (n-1 dimensional
 /// manifold) in n-dimensional space. It is defined by a point and a normal vector. Mathematically,
@@ -60,7 +60,6 @@ impl<const D: usize> SurfacePoint<D> {
         let projection = self.projection(other);
         (projection - other).norm()
     }
-
 }
 
 /// Created a vector of `SurfacePoint` instances from a vector of points and a vector of normals.

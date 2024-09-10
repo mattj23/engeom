@@ -137,7 +137,6 @@ pub fn sort_nan_panics(values: &mut [f64]) {
     values.sort_by(|a, b| a.partial_cmp(b).unwrap());
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,14 +1,14 @@
+use super::signed_angle;
+use crate::common::points::mid_point;
 use parry2d_f64::bounding_volume::SimdAabb;
 use parry2d_f64::math::{SimdBool, SimdReal, DIM, SIMD_WIDTH};
 use parry2d_f64::na::{Isometry2, Point2, SimdPartialOrd, SimdValue, Vector2};
 use parry2d_f64::partitioning::{SimdVisitStatus, SimdVisitor};
 use parry2d_f64::query::{Ray, SimdRay};
 use parry2d_f64::shape::{Polyline, SimdCompositeShape};
-use super::signed_angle;
-use crate::common::points::{mid_point};
 
-use serde::Serialize;
 use crate::geom2::line2::{intersect_rays, Line2};
+use serde::Serialize;
 
 /// A `SpanningRay` is a special case of ray which spans two points in a polyline, typically when
 /// there is a closed polyline and a ray that crosses from one side to the other.  It is a wrapper
@@ -74,9 +74,11 @@ impl Line2 for SpanningRay {
     }
 }
 
-
 pub fn max_intersection(line: &Polyline, ray: &Ray) -> Option<f64> {
-    let ts: Vec<f64> = polyline_intersections(line, ray).iter().map(|(t, _)| *t).collect();
+    let ts: Vec<f64> = polyline_intersections(line, ray)
+        .iter()
+        .map(|(t, _)| *t)
+        .collect();
     ts.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).cloned()
 }
 
@@ -264,8 +266,10 @@ mod tests {
                 let ray = Ray::new(ai, aj);
 
                 let mut naive = naive_ray_intersections(&line, &ray);
-                let mut fast: Vec<f64> =
-                    polyline_intersections(&line, &ray).iter().map(|(t, _)| *t).collect();
+                let mut fast: Vec<f64> = polyline_intersections(&line, &ray)
+                    .iter()
+                    .map(|(t, _)| *t)
+                    .collect();
                 naive.sort_by(|a, b| a.partial_cmp(b).unwrap());
                 naive.dedup_by(|a, b| (*a - *b).abs() < 1e-5);
                 fast.sort_by(|a, b| a.partial_cmp(b).unwrap());

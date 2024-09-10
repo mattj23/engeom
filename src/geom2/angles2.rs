@@ -1,7 +1,7 @@
 //! Tools for working with angles specifically in 2D
 
-use crate::geom2::{Iso2, Vector2};
 use crate::common::AngleDir;
+use crate::geom2::{Iso2, Vector2};
 use std::f64::consts::{FRAC_PI_2, PI};
 
 /// Convenience function for creating a rotation matrix for a rotation of 90 degrees in the
@@ -118,9 +118,9 @@ pub fn directed_angle(v1: &Vector2, v2: &Vector2, direction: AngleDir) -> f64 {
     use AngleDir::{Ccw, Cw};
     let a = signed_angle(v1, v2)
         * match direction {
-        Ccw => 1.0,
-        Cw => -1.0,
-    };
+            Ccw => 1.0,
+            Cw => -1.0,
+        };
     if a < 0.0 {
         a + 2.0 * PI
     } else {

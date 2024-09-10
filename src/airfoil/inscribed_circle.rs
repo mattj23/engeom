@@ -3,9 +3,9 @@
 //! two points on the circle which are tangent to the airfoil section while being otherwise
 //! contained within the section.  Inscribed circles are used to calculate the camber line.
 
-use serde::Serialize;
-use crate::{Circle2, Point2};
 use crate::geom2::polyline2::SpanningRay;
+use crate::{Circle2, Point2};
+use serde::Serialize;
 
 #[derive(Serialize)]
 pub struct InscribedCircle {
@@ -21,12 +21,16 @@ pub struct InscribedCircle {
 
     /// The circle that is inscribed within the airfoil section
     pub circle: Circle2,
-
     // pub thk: f64,
 }
 
 impl InscribedCircle {
-    pub fn new(spanning_ray: SpanningRay, upper: Point2, lower: Point2, circle: Circle2) -> InscribedCircle {
+    pub fn new(
+        spanning_ray: SpanningRay,
+        upper: Point2,
+        lower: Point2,
+        circle: Circle2,
+    ) -> InscribedCircle {
         // let thk = dist(&upper, &lower);
         InscribedCircle {
             spanning_ray,
@@ -53,5 +57,4 @@ impl InscribedCircle {
     pub fn center(&self) -> Point2 {
         self.circle.center
     }
-
 }

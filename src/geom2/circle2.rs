@@ -1,15 +1,15 @@
-use crate::common::{signed_compliment_2pi, BestFit};
 use crate::common::points::dist;
+use crate::common::{signed_compliment_2pi, BestFit};
 use crate::geom2::{signed_angle, Iso2, Point2, Vector2};
-use crate::Result;
-use crate::{AngleInterval};
-use parry2d_f64::shape::Ball;
-use parry2d_f64::na::{Dyn, Matrix, Owned, Vector, U1, U3};
-use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
-use serde::{Deserialize, Serialize};
-use std::f64::consts::FRAC_PI_2;
 use crate::geom3::Vector3;
 use crate::stats::{compute_mean, compute_st_dev};
+use crate::AngleInterval;
+use crate::Result;
+use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
+use parry2d_f64::na::{Dyn, Matrix, Owned, Vector, U1, U3};
+use parry2d_f64::shape::Ball;
+use serde::{Deserialize, Serialize};
+use std::f64::consts::FRAC_PI_2;
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct Circle2 {
@@ -18,7 +18,6 @@ pub struct Circle2 {
 }
 
 impl Circle2 {
-
     /// Create a new circle from the x and y coordinates of its center and its radius
     ///
     /// # Arguments
@@ -163,10 +162,14 @@ impl Circle2 {
     }
 
     /// Returns the x coordinate of the circle's center
-    pub fn x(&self) -> f64 { self.center.x }
+    pub fn x(&self) -> f64 {
+        self.center.x
+    }
 
     /// Returns the y coordinate of the circle's center
-    pub fn y(&self) -> f64 { self.center.y }
+    pub fn y(&self) -> f64 {
+        self.center.y
+    }
 
     /// Returns the radius of the circle
     pub fn r(&self) -> f64 {
@@ -379,7 +382,6 @@ impl Arc2 {
         self.point_at_fraction(length / self.length())
     }
 }
-
 
 type Residuals = Matrix<f64, Dyn, U1, Owned<f64, Dyn, U1>>;
 

@@ -1,8 +1,7 @@
 //! Common operations on f64 points in D-dimensional space.
 
-use parry3d_f64::na::{Point, SVector, Isometry, AbstractRotation};
 use crate::common::surface_point::SurfacePoint;
-
+use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector};
 
 /// Returns the distance between two points in D-dimensional space.
 ///
@@ -99,7 +98,6 @@ pub fn mean_point_weighted<const D: usize>(
     Point::<f64, D>::from(sum / total_weight)
 }
 
-
 /// Produces a new set of points by evenly spacing points between `start` and `end` in
 /// D-dimensional space.  The number of points to generate is specified by `num_points`.  The
 /// start and end points are included in the result.
@@ -167,7 +165,7 @@ pub fn evenly_spaced_points<const D: usize>(
 /// assert_relative_eq!(points[1], Point2::new(1.0, 0.0));
 /// assert_relative_eq!(points[2], Point2::new(1.5, 0.0));
 /// ```
-pub fn evenly_spaced_points_between<const D: usize> (
+pub fn evenly_spaced_points_between<const D: usize>(
     start: &Point<f64, D>,
     end: &Point<f64, D>,
     num_points: usize,
@@ -262,7 +260,6 @@ pub fn ramer_douglas_peucker<const D: usize>(
     rdp.simplify(0, points.len() - 1);
     rdp.generate_points()
 }
-
 
 /// A struct for handling the state of the Ramer-Douglas-Peucker algorithm.
 struct Rdp<'a, const D: usize> {

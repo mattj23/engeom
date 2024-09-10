@@ -2,9 +2,9 @@
 //!
 //!
 
-use parry3d_f64::na::{Point, SVector};
-use crate::{Result};
 use crate::errors::FailedConversion;
+use crate::Result;
+use parry3d_f64::na::{Point, SVector};
 
 /// Takes a slice of floating point values and returns a vector of points with the specified
 /// dimensionality.  The number of values must be a multiple of the dimensionality, otherwise an
@@ -46,7 +46,6 @@ pub fn unflatten_points<const D: usize>(values: &[f64]) -> Result<Vec<Point<f64,
     Ok(points)
 }
 
-
 /// Takes a slice of floating point values and returns a `Vec` of vectors with the specified
 /// dimensionality.  The number of values must be a multiple of the dimensionality, otherwise an
 /// `InvalidCount` error will be returned.
@@ -86,7 +85,6 @@ pub fn unflatten_vectors<const D: usize>(values: &[f64]) -> Result<Vec<SVector<f
 
     Ok(vectors)
 }
-
 
 /// Flattens a slice of points into a vector of floating point values.
 ///

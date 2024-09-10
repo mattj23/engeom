@@ -2,17 +2,16 @@
 //! airfoil sections, such as calculating the camber line, identifying the leading and trailing
 //! edges, computing angles, thicknesses, and other properties.
 
-mod inscribed_circle;
 mod camber;
+mod inscribed_circle;
 
-use crate::{Curve2, Point2, Result, Vector2};
 use crate::airfoil::inscribed_circle::InscribedCircle;
+use crate::{Curve2, Point2, Result, Vector2};
 
 /// Enum specifying the method for trying to detect the orientation of the leading edge on the
 /// airfoil, with the default being to use the point of max thickness.
 #[derive(Debug, Clone, Copy)]
 pub enum Orientation {
-
     /// This method is based on the principle that for most subsonic airfoils the point of max
     /// thickness is closer to the leading edge than to the trailing edge along the camber line.
     TmaxFwd,
@@ -86,7 +85,6 @@ pub struct AfParams {
 }
 
 impl AfParams {
-
     /// Create a new set of airfoil analysis parameters with the specified tolerance value and
     /// other algorithm selections.
     ///
@@ -106,13 +104,23 @@ impl AfParams {
     ///
     /// ```
     pub fn new(tol: f64, orient: Orientation, leading: Edge, trailing: Edge) -> Self {
-        AfParams { tol, orient, leading, trailing }
+        AfParams {
+            tol,
+            orient,
+            leading,
+            trailing,
+        }
     }
 }
 
 impl Default for AfParams {
     fn default() -> Self {
-        AfParams::new(1e-4, Orientation::default(), Edge::default(), Edge::default())
+        AfParams::new(
+            1e-4,
+            Orientation::default(),
+            Edge::default(),
+            Edge::default(),
+        )
     }
 }
 
@@ -154,7 +162,6 @@ impl AirfoilGeometry {
             af_params,
         }
     }
-
 }
 
 /// Perform a geometric analysis of an airfoil section, extracting the camber line, leading and
@@ -184,6 +191,5 @@ impl AirfoilGeometry {
 ///
 /// ```
 pub fn analyze_airfoil_geometry(section: &Curve2, params: &AfParams) -> Result<AirfoilGeometry> {
-
     todo!()
 }

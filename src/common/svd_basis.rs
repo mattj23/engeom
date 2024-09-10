@@ -1,9 +1,9 @@
-use std::f64::consts::FRAC_PI_2;
-use parry2d_f64::na::{Matrix2, Rotation2, Translation2, UnitComplex};
-use parry3d_f64::na::{DMatrix, Matrix3, Point, SVector, Translation3, Unit, UnitQuaternion};
+use super::points::{mean_point, mean_point_weighted};
 use crate::geom3::{Iso3, SvdBasis3, UnitVec3};
 use crate::{Iso2, SvdBasis2};
-use super::points::{mean_point, mean_point_weighted};
+use parry2d_f64::na::{Matrix2, Rotation2, Translation2, UnitComplex};
+use parry3d_f64::na::{DMatrix, Matrix3, Point, SVector, Translation3, Unit, UnitQuaternion};
+use std::f64::consts::FRAC_PI_2;
 
 /// This structure contains the results of using singular value decomposition to determine the
 /// basis vectors of a set of points and their singular values (scales). This can be used to roughly
@@ -270,7 +270,6 @@ pub fn iso2_from_basis(basis: &[SVector<f64, 2>; 2], origin: &Point<f64, 2>) -> 
     Iso2::from_parts(t, r).inverse()
 }
 
-
 impl From<&SvdBasis3> for Iso3 {
     fn from(value: &SvdBasis3) -> Self {
         iso3_from_basis(&value.basis, &value.center)
@@ -297,10 +296,10 @@ impl Into<Iso2> for SvdBasis2 {
 
 #[cfg(test)]
 mod tests {
-    use std::f64::consts::{PI, SQRT_2};
     use super::*;
-    use approx::assert_relative_eq;
     use crate::geom3::{Point3, Vector3};
+    use approx::assert_relative_eq;
+    use std::f64::consts::{PI, SQRT_2};
 
     #[test]
     fn from_points_perfect() {
@@ -370,5 +369,4 @@ mod tests {
 
         assert_relative_eq!(result, Point3::new(SQRT_2 * 2.0, 0.0, 0.0), epsilon = 1e-12);
     }
-
 }
