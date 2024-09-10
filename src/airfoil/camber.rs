@@ -54,7 +54,6 @@ pub fn extract_camber_line(
         .try_create_spanning_ray(&mid_ray)
         .ok_or("Failed to create first spanning ray")?;
 
-    // There was an orientation step in here, but I'm not sure what it did
     let mut stations0 = extract_half_camber_line(section, &spanning, tol)?;
     let stations1 = extract_half_camber_line(section, &spanning.reversed(), tol)?;
 

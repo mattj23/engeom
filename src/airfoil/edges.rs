@@ -182,6 +182,16 @@ impl EdgeLocation for TraceToMaxCurvature {
         let mut working_stations = OrientedCircles::new(stations, front);
 
         // Now we generate the curvature
+        let curvature = edge_curve.get_curvature_series();
+
+        for (x, y) in curvature.xys() {
+            println!("{} {}", x, y);
+        }
+
+        let max_len = curvature.abs().global_maxima_x();
+        println!("Max len: {}", max_len);
+
+        let le_point = edge_curve.at_length(max_len).unwrap().point();
 
         // We're going to need to try to advance the end of the camber line closer into the edge
         // than the last station.  We have some advantages at this point compared to the general
@@ -190,7 +200,7 @@ impl EdgeLocation for TraceToMaxCurvature {
         // - We know that the curvature between here and the end of the airfoil is relatively low
 
         // First, we'll try to
-        todo!()
+        Ok((Some(le_point), working_stations.take_circles()))
     }
 }
 

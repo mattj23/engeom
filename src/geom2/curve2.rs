@@ -6,8 +6,8 @@ use crate::common::{Intersection, Resample};
 use crate::errors::InvalidGeometry;
 use crate::geom2::hull::convex_hull_2d;
 use crate::geom2::line2::Line2;
-use crate::geom2::{Iso2, Point2, SurfacePoint2, UnitVec2};
-use crate::{Result, Vector2};
+use crate::geom2::{signed_angle, Iso2, Point2, SurfacePoint2, UnitVec2};
+use crate::{Result, Series1, Vector2};
 use parry2d_f64::na::Unit;
 use parry2d_f64::query::{PointQueryWithLocation, Ray};
 use parry2d_f64::shape::{ConvexPolygon, Polyline};
@@ -701,6 +701,43 @@ impl Curve2 {
     /// ```
     pub fn try_create_spanning_ray(&self, full_ray: &Ray) -> Option<SpanningRay> {
         spanning_ray(&self.line, full_ray)
+    }
+
+    /// Get a 1D length domain series representing the curvature of the curve as a sequence of
+    /// turning angle per unit distance values along the length of the curve.
+    pub fn get_curvature_series(&self) -> Series1 {
+        let mut xs = Vec::new();
+        let mut ys = Vec::new();
+
+        for s in self.iter() {
+            let pos = s.length_along();
+
+            let previous = s.previous()
+                .map(|p| {
+                    let d0 = p.direction();
+                    let d1 = s.direction();
+                    (signed_angle(&d0, &d1), pos - p.length_along())
+                });
+
+            let next = s.next()
+                .map(|n| {
+                    let d0 = s.direction();
+                    let d1 = n.direction();
+                    (signed_angle(&d0, &d1), n.length_along() - pos)
+                });
+
+            // There are three possibilities: just a previous, just a next, or both
+            let y = match (previous, next) {
+                (Some((p, pl)), Some((n, nl))) => (n + p) / (nl + pl),
+                (Some((p, pl)), None) => p / pl,
+                (None, Some((n, nl))) => n / nl,
+                (None, None) => 0.0,
+            };
+            xs.push(pos);
+            ys.push(y);
+        }
+
+        Series1::try_new(xs, ys).unwrap()
     }
 }
 

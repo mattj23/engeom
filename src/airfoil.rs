@@ -11,63 +11,10 @@ mod orientation;
 use crate::{Curve2, Point2, Result};
 
 use crate::airfoil::camber::extract_camber_line;
-pub use edges::{ConvergeTangentEdge, EdgeLocation, IntersectEdge, OpenEdge};
+pub use edges::{ConvergeTangentEdge, EdgeLocation, IntersectEdge, OpenEdge, TraceToMaxCurvature};
 pub use inscribed_circle::InscribedCircle;
 pub use orientation::{CamberOrientation, TMaxFwd};
 
-/// Enum specifying the method for trying to extract an edge (either leading or trailing) from the
-/// airfoil section data.  The default is to use the auto-detection method, but it is always better
-/// to specify the edge detection method explicitly if you know what the edge should look like.
-#[derive(Debug, Clone, Copy)]
-pub enum Edge {
-    /// Attempts to automatically detect the edge based on the airfoil section data.  Use this
-    /// method only if you can't use any of the other methods.
-    Auto,
-
-    /// Will find the edge by intersecting the ray at the end of the camber line with the airfoil
-    /// section. This will work well for many different edge geometries as long as the curvature
-    /// of the camber near the edge is minimal.
-    Intersect,
-
-    /// Attempts to detect a constant radius edge, with an option to specify the radius.  This is
-    /// common on many leading edges.
-    Radius(Option<f64>),
-
-    /// Attempt to find the edge based on a point of maximum curvature.  This is common on leading
-    /// edges that don't have constant curvature but are still rounded.
-    RoundMaxCurvature,
-
-    /// This method will attempt to detect the edge by advancing or retracting the end of the
-    /// camber line until the ray intersection (like `Intersect`) converges on a point whose
-    /// tangency is perpendicular to the ray.
-    ConvergeTangent,
-
-    /// Attempts to detect a rounded leading edge with or without a specified radius.  It can take
-    /// two optional parameters: a boolean flag indicating whether to adjust the edge point based
-    /// on the point of furthest extension, and a floating point value indicating the expected
-    /// radius of the leading edge.
-    Round((Option<bool>, Option<f64>)),
-
-    /// Attempts to detect a square edge (one having two points of maximum curvature). This is
-    /// sometimes common on trailing edges.
-    Square,
-
-    /// Attempts to detect a sharp edge (one having a single point of maximum curvature). This is
-    /// uncommon on subsonic leading edges, but is common on some trailing edges.
-    Sharp,
-
-    /// Specify this method if only a partial airfoil section has been provided and this side is
-    /// not a closed section. For instance, if only leading edge data is provided, select `Open`
-    /// for the trailing edge to indicate that it is not present.  This will cause the edge to
-    /// be skipped.
-    Open,
-}
-
-impl Default for Edge {
-    fn default() -> Self {
-        Edge::Auto
-    }
-}
 
 /// This structure contains the parameters used in the airfoil analysis algorithms.  It specifies
 /// the minimum tolerance value used in many parts of the analysis, as well as the methods for
