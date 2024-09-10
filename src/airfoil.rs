@@ -11,7 +11,7 @@ mod orientation;
 use crate::{Curve2, Point2, Result};
 
 use crate::airfoil::camber::extract_camber_line;
-pub use edges::{EdgeLocation, IntersectEdge, OpenEdge};
+pub use edges::{ConvergeTangentEdge, EdgeLocation, IntersectEdge, OpenEdge};
 pub use inscribed_circle::InscribedCircle;
 pub use orientation::{CamberOrientation, TMaxFwd};
 

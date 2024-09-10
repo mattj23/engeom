@@ -55,10 +55,14 @@ impl<'a> CurveStation2<'a> {
         }
     }
 
+    /// Get the curve station at the vertex which is or directly precedes this station. If this
+    /// station is already at the vertex (fraction == 0.0), this will return an identical station.
     pub fn at_index(&self) -> Self {
         self.curve.at_vertex(self.index)
     }
 
+    /// Get the curve station at the vertex which directly follows this station. If this station is
+    /// at the last vertex, this will return an identical station.
     pub fn at_next_index(&self) -> Self {
         if self.index == self.curve.count() - 1 {
             self.curve.at_back()
@@ -67,6 +71,11 @@ impl<'a> CurveStation2<'a> {
         }
     }
 
+    /// Get the curve station at the vertex which directly precedes this station. If this station
+    /// is beyond its vertex (fraction > 0.0), this will return the same station as `at_index()`,
+    /// but if the station is directly on the vertex (fraction == 0.0), this will return the
+    /// station at the vertex before this one.  If it is at the first vertex, this will return
+    /// `None`.
     pub fn previous(&self) -> Option<Self> {
         // TODO: needs tests
         if self.fraction > 0.0 {
@@ -78,8 +87,10 @@ impl<'a> CurveStation2<'a> {
         }
     }
 
+    /// Get the curve station at the vertex which directly follows this station. If this station is
+    /// beyond its vertex (fraction < 1.0), this will return the same station as `at_next_index()`,
+    /// but if the station is already at the end of the curve it will return `None`.
     pub fn next(&self) -> Option<Self> {
-        // TODO: needs tests
         if self.fraction < 1.0 {
             if self.index < self.curve.count() - 1 {
                 Some(self.curve.at_vertex(self.index + 1))
@@ -142,6 +153,42 @@ impl<'a> CurveStation2<'a> {
     /// point and the direction is the same as the station's direction
     pub fn direction_point(&self) -> SurfacePoint2 {
         SurfacePoint2::new(self.point, self.direction())
+    }
+
+    /// Creates a `SurfacePoint2` from this station similar to `surface_point()`, but where the
+    /// normal is the linearly interpolated normal between the previous vertex and the next
+    /// vertex based on the fraction of the distance this station is between the two vertices.
+    /// This can be used to estimate smoothed curvature along the parent curve.
+    pub fn interpolated_surface_point(&self) -> SurfacePoint2 {
+        let n0_o = self.previous();
+        let n1_o = self.next();
+
+        if let (Some(n0), Some(n1)) = (n0_o, n1_o) {
+            let n0 = n0.normal();
+            let n1 = n1.normal();
+            let n = n0.slerp(&n1, self.fraction);
+            SurfacePoint2::new(self.point, n)
+        } else {
+            self.surface_point()
+        }
+    }
+
+    /// Creates a `SurfacePoint2` from this station similar to `surface_point()`, but where the
+    /// normal is the linearly interpolated direction between the previous vertex and the next
+    /// vertex based on the fraction of the distance this station is between the two vertices.
+    /// This can be used to estimate smoothed curvature along the parent curve.
+    pub fn interpolated_direction_point(&self) -> SurfacePoint2 {
+        let n0_o = self.previous();
+        let n1_o = self.next();
+
+        if let (Some(n0), Some(n1)) = (n0_o, n1_o) {
+            let n0 = n0.direction();
+            let n1 = n1.direction();
+            let n = n0.slerp(&n1, self.fraction);
+            SurfacePoint2::new(self.point, n)
+        } else {
+            self.surface_point()
+        }
     }
 }
 
@@ -529,6 +576,41 @@ impl Curve2 {
         max_point_in_direction(&self.points(), &vector)
     }
 
+    /// Find the maximum distance of any point on the curve in the direction of the given surface
+    /// point normal, and return that distance. The maximum point is found identically to
+    /// `max_point_in_direction()`, and then the distance is computed as the scalar projection of
+    /// that maximum point onto the surface point. The result is the component of distance only in
+    /// the direction of the normal.
+    ///
+    /// # Arguments
+    ///
+    /// * `surf_point`: the point and normal to use for the measurement
+    ///
+    /// returns: f64
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use approx::assert_relative_eq;
+    /// use engeom::geom2::{Curve2, Point2, SurfacePoint2, Vector2};
+    /// let p = vec![Point2::new(-10.0, 0.0), Point2::new(-5.0, 11.0), Point2::new(-10.0, 12.0)];
+    /// let curve = Curve2::from_points(&p, 1e-6, false).unwrap();
+    ///
+    /// let test = SurfacePoint2::new_normalize(Point2::new(0.0, 0.0), Vector2::new(1.0, 0.0));
+    ///
+    /// let d = curve.max_dist_in_direction(&test);
+    /// assert_relative_eq!(d, -5.0, epsilon = 1e-6);
+    /// ```
+    pub fn max_dist_in_direction(&self, surf_point: &SurfacePoint2) -> f64 {
+        let p = self.max_point_in_direction(&surf_point.normal);
+        if let Some(p) = p {
+            surf_point.scalar_projection(&p)
+        } else {
+            f64::NEG_INFINITY
+        }
+    }
+
+    /// Clone the points of the curve into a new vector
     pub fn clone_points(&self) -> Vec<Point2> {
         self.line.vertices().to_vec()
     }

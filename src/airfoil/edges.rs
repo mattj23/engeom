@@ -1,9 +1,15 @@
 //! This module contains tools to work with the leading and trailing edges of the airfoil section.
 
-use crate::airfoil::helpers::curve_from_inscribed_circles;
+use crate::airfoil::helpers::{
+    curve_from_inscribed_circles, extract_edge_sub_curve, inscribed_from_spanning_ray,
+    OrientedCircles,
+};
 use crate::airfoil::{AfParams, InscribedCircle};
 use crate::common::Intersection;
+use crate::geom2::rot90;
+use crate::AngleDir::Ccw;
 use crate::{Curve2, Point2, Result};
+use parry2d_f64::query::Ray;
 
 pub trait EdgeLocation {
     /// Given the airfoil section, the oriented collection of inscribed circles, and a flag
@@ -124,5 +130,94 @@ impl EdgeLocation for IntersectEdge {
                 .ok_or("Failed to find maximum intersection parameter.")?;
             Ok((Some(ray.at_distance(*t)), stations))
         }
+    }
+}
+
+/// This struct implements the `EdgeLocation` trait and attempts to locate the rounded edge of an
+/// airfoil by extending or contracting the end of the camber line until it intersects the section
+/// boundary at a location where the section tangent is perpendicular to end of the camber line.
+/// This method is useful if you know that the camber line should meet the section boundary at a
+/// right angle, which is true of most rounded edge airfoils.
+pub struct ConvergeTangentEdge {
+    tol: Option<f64>,
+}
+
+impl ConvergeTangentEdge {
+    pub fn new(tol: Option<f64>) -> Self {
+        ConvergeTangentEdge { tol }
+    }
+
+    /// Create a new boxed instance of the `ConvergeTangentEdge` struct.  The tolerance value is
+    /// the optional angular tolerance value used to determine if the tangent of the section
+    /// boundary is perpendicular to the end of the camber line.
+    pub fn make(tol: Option<f64>) -> Box<dyn EdgeLocation> {
+        Box::new(ConvergeTangentEdge::new(tol))
+    }
+}
+
+impl EdgeLocation for ConvergeTangentEdge {
+    fn find_edge(
+        &self,
+        section: &Curve2,
+        stations: Vec<InscribedCircle>,
+        front: bool,
+        af_tol: f64,
+    ) -> Result<(Option<Point2>, Vec<InscribedCircle>)> {
+        // We'll orient the camber curve so that we're working at the back end in either the
+        // leading or trailing edge cases
+        let camber = if front {
+            curve_from_inscribed_circles(&stations, section.tol())?.reversed()
+        } else {
+            curve_from_inscribed_circles(&stations, section.tol())?
+        };
+
+        // The last station will vary depending on whether we're looking for the leading or
+        // trailing edge
+        let station = if front {
+            stations
+                .first()
+                .ok_or("Empty inscribed circles container.")?
+        } else {
+            stations
+                .last()
+                .ok_or("Empty inscribed circles container.")?
+        };
+
+        // Now we'll extract a curve that has just the data past the contact points of the last
+        // station.  This much reduced dataset will allow for faster search operations. If this
+        // fails, it means that the section was open, and we are working on the open portion.
+        let edge_curve = extract_edge_sub_curve(&section, &station)
+            .ok_or("Failed to extract edge curve on converging tangent edge algorithm.")?;
+
+        // We'll re-assign the stations to the working variable, as we're going to be modifying
+        // them in place.
+        let mut working_stations = OrientedCircles::new(stations, front);
+
+        // We're going to need to try to advance the end of the camber line closer into the edge
+        // than the last station.  We have some advantages at this point compared to the general
+        // camber line extraction.
+        // - We know that the edge we're approaching should be generally rounded
+        // - We know that the curvature between here and the end of the airfoil is relatively low
+
+        // First, we'll try to advance a spanning ray halfway between here and the intersection
+        let mut working_point = camber.at_back().direction_point();
+
+        let d = *edge_curve
+            .intersection(&working_point)
+            .iter()
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .ok_or("Failed to find intersection with edge curve.")?;
+
+        let test_ray = Ray::new(
+            working_point.at_distance(d / 2.0),
+            (rot90(Ccw) * working_point.normal).into_inner(),
+        );
+        if let Some(spanning_ray) = edge_curve.try_create_spanning_ray(&test_ray) {
+            println!("Spanning ray created.");
+            let circle = inscribed_from_spanning_ray(&edge_curve, &spanning_ray, af_tol * 1e-2);
+            working_stations.push(circle);
+        }
+
+        Ok((None, working_stations.take_circles()))
     }
 }

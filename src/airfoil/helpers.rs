@@ -163,3 +163,80 @@ impl InscribedCircleSearchState {
         self.point = point;
     }
 }
+
+/// This function will attempt to extract a smaller curve from the larger airfoil section curve
+/// which has the data just for the end of the airfoil. To do so, it will attempt to segment the
+/// section into two portions, with the cuts happening at the upper and lower points of the
+/// inscribed circle.  The sub-curve which has less than 25% of the total section perimeter will be
+/// returned, or `None` if no such sub-curve can be found.
+///
+/// # Arguments
+///
+/// * `section`: The airfoil section to be segmented
+/// * `last_station`: The last inscribed circle in the provided airfoil section
+///
+/// returns: Option<Curve2>
+pub fn extract_edge_sub_curve(section: &Curve2, last_station: &InscribedCircle) -> Option<Curve2> {
+    let split0 = section.at_closest_to_point(&last_station.upper);
+    let split1 = section.at_closest_to_point(&last_station.lower);
+
+    let portion0 = section.between_lengths(split0.length_along(), split1.length_along());
+    let portion1 = section.between_lengths(split1.length_along(), split0.length_along());
+
+    let perimeter = section.length();
+
+    if let Some(p0) = portion0 {
+        if p0.length() < perimeter * 0.25 {
+            return Some(p0);
+        }
+    }
+
+    if let Some(p1) = portion1 {
+        if p1.length() < perimeter * 0.25 {
+            return Some(p1);
+        }
+    }
+
+    None
+}
+
+/// This struct provides a convenient way to store a list of inscribed circles after they've been
+/// oriented and edit the end of the collection depending on the orientation.
+pub struct OrientedCircles {
+    circles: Vec<InscribedCircle>,
+    reversed: bool,
+}
+
+impl OrientedCircles {
+    pub fn new(circles: Vec<InscribedCircle>, reversed: bool) -> OrientedCircles {
+        OrientedCircles { circles, reversed }
+    }
+
+    pub fn last(&self) -> Option<&InscribedCircle> {
+        if self.reversed {
+            self.circles.first()
+        } else {
+            self.circles.last()
+        }
+    }
+
+    pub fn push(&mut self, circle: InscribedCircle) {
+        let mut c = circle;
+
+        if let Some(last) = self.last() {
+            if last.spanning_ray.dir().dot(&c.spanning_ray.dir()) < 0.0 {
+                c.reverse_in_place();
+            }
+        }
+
+        if self.reversed {
+            self.circles.insert(0, c);
+        } else {
+            self.circles.push(c);
+        }
+    }
+
+    pub fn take_circles(self) -> Vec<InscribedCircle> {
+        self.circles
+    }
+}
