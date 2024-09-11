@@ -405,10 +405,10 @@ impl Series1 {
         maxima
     }
 
-    /// Calculates and returns the x (domain) location of the global maxima in the series. This is
+    /// Calculates and returns the x and y location of the global maxima in the series. This is
     /// the x position of the y with the highest value. If there are multiple y values with the
     /// same maximum value, the one with the lowest x value is returned.
-    pub fn global_maxima_x(&self) -> f64 {
+    pub fn global_maxima_xy(&self) -> (f64, f64) {
         let mut max_x = self.x[0];
         let mut max_y = self.y[0];
         for i in 1..self.x.len() {
@@ -417,13 +417,13 @@ impl Series1 {
                 max_y = self.y[i];
             }
         }
-        max_x
+        (max_x, max_y)
     }
 
-    /// Calculates and returns a vector of the x (domain) location of the global minima in the
-    /// series. This is the x position of the y with the lowest value. If there are multiple y
-    /// values with the same minimum value, the one with the lowest x value is returned.
-    pub fn global_minima_x(&self) -> f64 {
+    /// Calculates and returns the x and y location of the global minima in the series. This is the
+    /// the x position of the y with the lowest value. If there are multiple y values with the same
+    /// minimum value, the one with the lowest x value is returned.
+    pub fn global_minima_x(&self) -> (f64, f64) {
         let mut min_x = self.x[0];
         let mut min_y = self.y[0];
         for i in 1..self.x.len() {
@@ -432,7 +432,7 @@ impl Series1 {
                 min_y = self.y[i];
             }
         }
-        min_x
+        (min_x, min_y)
     }
 
     /// Attempts to split the series into two series at the given x value, with the first value
@@ -456,7 +456,7 @@ impl Series1 {
     /// of a local maxima.  This works by finding the value of the maxima, subtracting the
     /// tolerance, and then finding the first x value to the left and right of the maxima that has
     /// the y value of the maxima - tolerance.
-    pub fn plateau_at_maxima(&self, x: f64, tol: f64) -> Option<(f64, f64)> {
+    pub fn plateau_at_maxima(&self, x: f64, tol: f64) -> Option<Interval> {
         let v = self.interpolate(x);
         if v.is_nan() {
             return None;
@@ -466,7 +466,7 @@ impl Series1 {
         // TODO: This is a linear search, but it could be a binary search
         for xs in crossings.windows(2) {
             if xs[0] <= x && x <= xs[1] {
-                return Some((xs[0], xs[1]));
+                return Some(Interval::new(xs[0], xs[1]));
             }
         }
         None

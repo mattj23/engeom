@@ -7,7 +7,7 @@ use crate::errors::InvalidGeometry;
 use crate::geom2::hull::convex_hull_2d;
 use crate::geom2::line2::Line2;
 use crate::geom2::{signed_angle, Iso2, Point2, SurfacePoint2, UnitVec2};
-use crate::{Result, Series1, Vector2};
+use crate::{Circle2, Result, Series1, Vector2};
 use parry2d_f64::na::Unit;
 use parry2d_f64::query::{PointQueryWithLocation, Ray};
 use parry2d_f64::shape::{ConvexPolygon, Polyline};
@@ -198,6 +198,10 @@ impl<'a> CurveStation2<'a> {
 #[derive(Clone)]
 pub struct Curve2 {
     line: Polyline,
+
+    /// These will be the lengths of each vertex along the curve, where the first length is 0.0,
+    /// and the last is the total length of the curve.  This is used for efficient length-based
+    /// searches.
     lengths: Vec<f64>,
     is_closed: bool,
     tol: f64,
@@ -703,38 +707,50 @@ impl Curve2 {
         spanning_ray(&self.line, full_ray)
     }
 
-    /// Get a 1D length domain series representing the curvature of the curve as a sequence of
-    /// turning angle per unit distance values along the length of the curve.
+    /// Gets the curvature of three points as turning angle per unit length, found by the reciprocal
+    /// of the radius of the circle.
+    fn get_curvature(&self, i0: usize, i1: usize, i2: usize) -> f64 {
+        if let Ok(circle) = Circle2::from_3_points(self.vtx(i0), self.vtx(i1), self.vtx(i2)) {
+            1.0 / circle.r()
+        } else {
+            0.0
+        }
+    }
+
+    /// Get a `Series1` representing the curvature of the curve.  The x values of the series will
+    /// be the length along the curve, and the y values will be the turning angle per unit length
+    /// at that location. Larger values indicate higher curvature, while a 0 value indicates a
+    /// straight section.
+    ///
+    /// This works by first attempting to calculate the radius of curvature at each vertex, by
+    /// taking a three point circle of each vertex and its two neighbors.  If successful, the
+    /// curvature is 1/r, otherwise it is 0 (as it would be if r was infinite)
+    ///
+    /// If the curve is closed, the end points will be treated as
+    /// contiguous, otherwise the end points will have the same value as their neighbors.
     pub fn get_curvature_series(&self) -> Series1 {
-        let mut xs = Vec::new();
-        let mut ys = Vec::new();
+        let xs = self.lengths.clone();
+        let mut ys = vec![0.0; self.count()];
 
-        for s in self.iter() {
-            let pos = s.length_along();
+        for i in 1..self.count() - 1 {
+            if i == 0 {
+                if self.is_closed {
+                    ys[i] = self.get_curvature(self.count() - 2, i, i + 1);
+                }
+            }
 
-            let previous = s.previous()
-                .map(|p| {
-                    let d0 = p.direction();
-                    let d1 = s.direction();
-                    (signed_angle(&d0, &d1), pos - p.length_along())
-                });
+            if i == self.count() - 1 {
+                if self.is_closed {
+                    ys[i] = self.get_curvature(i - 1, i, 1);
+                }
+            }
 
-            let next = s.next()
-                .map(|n| {
-                    let d0 = s.direction();
-                    let d1 = n.direction();
-                    (signed_angle(&d0, &d1), n.length_along() - pos)
-                });
+            ys[i] = self.get_curvature(i - 1, i, i + 1);
+        }
 
-            // There are three possibilities: just a previous, just a next, or both
-            let y = match (previous, next) {
-                (Some((p, pl)), Some((n, nl))) => (n + p) / (nl + pl),
-                (Some((p, pl)), None) => p / pl,
-                (None, Some((n, nl))) => n / nl,
-                (None, None) => 0.0,
-            };
-            xs.push(pos);
-            ys.push(y);
+        if !self.is_closed {
+            ys[0] = ys[1];
+            ys[self.count() - 1] = ys[self.count() - 2];
         }
 
         Series1::try_new(xs, ys).unwrap()

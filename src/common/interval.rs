@@ -221,6 +221,33 @@ impl Interval {
             None
         }
     }
+
+    /// Clamps a value to the interval.
+    ///
+    /// # Arguments
+    ///
+    /// * `x`: the value to clamp
+    ///
+    /// returns: f64
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::common::Interval;
+    /// let interval = Interval::new(0.0, 1.0);
+    ///
+    /// // Clamping a value within the interval returns the value
+    /// assert_eq!(interval.clamp(0.5), 0.5);
+    ///
+    /// // Clamping a value below the minimum returns the minimum
+    /// assert_eq!(interval.clamp(-1.0), 0.0);
+    ///
+    /// // Clamping a value above the maximum returns the maximum
+    /// assert_eq!(interval.clamp(2.0), 1.0);
+    /// ```
+    pub fn clamp(&self, x: f64) -> f64 {
+        x.min(self.max).max(self.min)
+    }
 }
 
 #[cfg(test)]

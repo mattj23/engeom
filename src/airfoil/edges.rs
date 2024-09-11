@@ -2,11 +2,12 @@
 
 use crate::airfoil::helpers::{
     curve_from_inscribed_circles, extract_edge_sub_curve, inscribed_from_spanning_ray,
-    OrientedCircles,
+    refine_stations, OrientedCircles,
 };
 use crate::airfoil::{AfParams, InscribedCircle};
+use crate::common::points::{dist, mid_point};
 use crate::common::Intersection;
-use crate::geom2::rot90;
+use crate::geom2::{rot90, UnitVec2};
 use crate::AngleDir::Ccw;
 use crate::{Curve2, Point2, Result};
 use parry2d_f64::query::Ray;
@@ -103,33 +104,10 @@ impl EdgeLocation for IntersectEdge {
         front: bool,
         af_tol: f64,
     ) -> Result<(Option<Point2>, Vec<InscribedCircle>)> {
-        // We construct the camber curve and get the direction point at either the front or the
-        // back of the curve, depending on the value of the `front` flag.  If we take the front
-        // of the curve we need to reverse the direction point to get the ray that extends forward
-        // from the camber line.
-        let camber = curve_from_inscribed_circles(&stations, 1e-4)?;
-        let ray = if front {
-            camber.at_front().direction_point().reversed()
-        } else {
-            camber.at_back().direction_point()
-        };
+        let circles = OrientedCircles::new(stations, front);
+        let edge_point = circles.intersect_from_end(section);
 
-        // Find all the intersections of the ray with the airfoil section, which will be returned
-        // as distances (parameters) along the ray.
-        let ts = section.intersection(&ray);
-
-        // If there is no intersection, we return `None` for the edge point.  If there is one or
-        // more we will take the intersection with the largest parameter value, which will be the
-        // one furthest along the ray.
-        if ts.is_empty() {
-            Ok((None, stations))
-        } else {
-            let t = ts
-                .iter()
-                .max_by(|a, b| a.partial_cmp(b).unwrap())
-                .ok_or("Failed to find maximum intersection parameter.")?;
-            Ok((Some(ray.at_distance(*t)), stations))
-        }
+        Ok((Some(edge_point), circles.take_circles()))
     }
 }
 
@@ -138,16 +116,31 @@ impl EdgeLocation for IntersectEdge {
 /// last found station, then tracing its way between the last station and that maximum curvature
 /// region.  This will work OK for sections with very smooth curvature and rounded edges, but will
 /// struggle on unfiltered/smoothed data and/or sections with sharp edges.
-pub struct TraceToMaxCurvature {}
+pub struct TraceToMaxCurvature {
+    max_tol: Option<f64>,
+}
 
 impl TraceToMaxCurvature {
-    pub fn new() -> Self {
-        TraceToMaxCurvature {}
+    pub fn new(max_tol: Option<f64>) -> Self {
+        TraceToMaxCurvature { max_tol }
     }
 
-    /// Create a new boxed instance of the `TraceToMaxCurvature` struct.
-    pub fn make() -> Box<dyn EdgeLocation> {
-        Box::new(TraceToMaxCurvature::new())
+    /// Create a new boxed instance of the `TraceToMaxCurvature` struct.  The `max_tol` value is
+    /// the fractional tolerance used to determine the acceptable window of maximum tolerance. For
+    /// instance, if `max_tol` is 0.01 (1%), then the algorithm will find the point of maximum
+    /// curvature and accept the point on the end curve that is closest to the camber line
+    /// intersection with the section boundary within 1% of the maximum curvature value.
+    ///
+    /// If `max_tol` is `None`, then the algorithm will use a default value of 0.005.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_tol`: The fractional tolerance used to determine the acceptable window of maximum
+    /// curvature.  If `None`, the default value of 0.005 will be used.
+    ///
+    /// returns: Box<dyn EdgeLocation, Global>
+    pub fn make(max_tol: Option<f64>) -> Box<dyn EdgeLocation> {
+        Box::new(TraceToMaxCurvature::new(max_tol))
     }
 }
 
@@ -171,6 +164,8 @@ impl EdgeLocation for TraceToMaxCurvature {
                 .ok_or("Empty inscribed circles container.")?
         };
 
+        let last_radius = station.radius();
+
         // Now we'll extract a curve that has just the data past the contact points of the last
         // station.  This much reduced dataset will allow for faster search operations. If this
         // fails, it means that the section was open, and we are working on the open portion.
@@ -181,26 +176,49 @@ impl EdgeLocation for TraceToMaxCurvature {
         // them in place.
         let mut working_stations = OrientedCircles::new(stations, front);
 
-        // Now we generate the curvature
-        let curvature = edge_curve.get_curvature_series();
+        // Now we generate the curvature and calculate the maximal plateau
+        let curvature = edge_curve.get_curvature_series().abs();
+        let (max_x, max_y) = curvature.abs().global_maxima_xy();
+        let max = curvature
+            .plateau_at_maxima(max_x, max_y * self.max_tol.unwrap_or(0.005))
+            .ok_or("Failed to find maximum curvature plateau.")?;
 
-        for (x, y) in curvature.xys() {
-            println!("{} {}", x, y);
+        // Find the point of intersection with the existing camber line and the section boundary.
+        let intersection = working_stations.intersect_from_end(&edge_curve);
+        let length_i = edge_curve.at_closest_to_point(&intersection).length_along();
+
+        // Now we'll find the point in the interval which is closest to length_i
+        let edge_point = edge_curve
+            .at_length(max.clamp(length_i))
+            .ok_or("Failed to find edge point.")?
+            .point();
+
+        // Now that we have the edge point, we'll try to back-fill the camber line between the
+        // last inscribed station and the edge point.  We'll use the refining method.
+        let mut stack = Vec::new();
+
+        for i in 0..3 {
+            let camber_end = working_stations.get_end_curve(last_radius)?;
+            let end_point = camber_end.at_back().direction_point();
+            let mid = mid_point(&end_point.point, &edge_point);
+            let dir = rot90(Ccw) * (edge_point - end_point.point).normalize();
+            let test_ray = Ray::new(mid, dir);
+            if let Some(spanning_ray) = edge_curve.try_create_spanning_ray(&test_ray) {
+                let circle = inscribed_from_spanning_ray(&edge_curve, &spanning_ray, af_tol * 1e-2);
+                stack.push(circle);
+                refine_stations(
+                    &edge_curve,
+                    &mut working_stations,
+                    &mut stack,
+                    af_tol,
+                    af_tol * 1e-2,
+                );
+            } else {
+                break;
+            }
         }
 
-        let max_len = curvature.abs().global_maxima_x();
-        println!("Max len: {}", max_len);
-
-        let le_point = edge_curve.at_length(max_len).unwrap().point();
-
-        // We're going to need to try to advance the end of the camber line closer into the edge
-        // than the last station.  We have some advantages at this point compared to the general
-        // camber line extraction.
-        // - We know that the edge we're approaching should be generally rounded
-        // - We know that the curvature between here and the end of the airfoil is relatively low
-
-        // First, we'll try to
-        Ok((Some(le_point), working_stations.take_circles()))
+        Ok((Some(edge_point), working_stations.take_circles()))
     }
 }
 

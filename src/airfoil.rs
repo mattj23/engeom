@@ -15,7 +15,6 @@ pub use edges::{ConvergeTangentEdge, EdgeLocation, IntersectEdge, OpenEdge, Trac
 pub use inscribed_circle::InscribedCircle;
 pub use orientation::{CamberOrientation, TMaxFwd};
 
-
 /// This structure contains the parameters used in the airfoil analysis algorithms.  It specifies
 /// the minimum tolerance value used in many parts of the analysis, as well as the methods for
 /// detecting the orientation of the leading edge, and the leading and trailing edges themselves.

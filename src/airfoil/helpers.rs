@@ -2,6 +2,7 @@
 
 use crate::airfoil::InscribedCircle;
 use crate::common::points::dist;
+use crate::common::Intersection;
 use crate::geom2::polyline2::SpanningRay;
 use crate::geom2::Line2;
 use crate::{Circle2, Curve2, Point2, Result};
@@ -210,10 +211,59 @@ pub struct OrientedCircles {
 }
 
 impl OrientedCircles {
-    pub fn new(circles: Vec<InscribedCircle>, reversed: bool) -> OrientedCircles {
+    pub fn create(reversed: bool) -> Self {
+        OrientedCircles {
+            circles: Vec::new(),
+            reversed,
+        }
+    }
+
+    pub fn new(circles: Vec<InscribedCircle>, reversed: bool) -> Self {
         OrientedCircles { circles, reversed }
     }
 
+    pub fn get_end_curve(&self, distance: f64) -> Result<Curve2> {
+        let mut total = 0.0;
+        let mut points = Vec::new();
+        if self.circles.len() < 2 {
+            return Err(Box::from(
+                "Cannot create a curve from less than two circles",
+            ));
+        }
+
+        let mut i = if self.reversed {
+            0
+        } else {
+            self.circles.len() - 1
+        };
+
+        while total < distance {
+            let c = &self.circles[i];
+            if let Some(last) = points.last() {
+                total += dist(last, &c.center());
+            }
+
+            points.push(c.circle.center);
+
+            if self.reversed {
+                if i == self.circles.len() - 1 {
+                    break;
+                }
+                i += 1;
+            } else {
+                if i == 0 {
+                    break;
+                }
+
+                i -= 1;
+            }
+        }
+
+        let points = points.into_iter().rev().collect::<Vec<_>>();
+        Curve2::from_points(&points, 1e-4, false)
+    }
+
+    /// Get the inscribed circle at the end of the collection.
     pub fn last(&self) -> Option<&InscribedCircle> {
         if self.reversed {
             self.circles.first()
@@ -222,6 +272,8 @@ impl OrientedCircles {
         }
     }
 
+    /// Add a new inscribed circle to the end of the collection.  The circle will be reversed if
+    /// it is not oriented in the same direction as the last circle in the collection.
     pub fn push(&mut self, circle: InscribedCircle) {
         let mut c = circle;
 
@@ -238,7 +290,79 @@ impl OrientedCircles {
         }
     }
 
+    /// Using a camber curve generated at the end of the inscribed circles, this function will
+    /// find the intersection point between a straight projection of the camber curve end and the
+    /// airfoil section boundary.
+    ///
+    /// # Arguments
+    ///
+    /// * `section`: the airfoil section curve associated with the inscribed circles
+    ///
+    /// returns: OPoint<f64, Const<2>>
+    pub fn intersect_from_end(&self, section: &Curve2) -> Point2 {
+        let c = self.get_end_curve(self.last().unwrap().radius()).unwrap();
+        let end = c.at_back().direction_point();
+        let ts = section.intersection(&end);
+        let t = ts.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+        end.at_distance(*t)
+    }
+
+    /// Take the inscribed circles out of the container, leaving an empty container behind. The
+    /// container cannot be used after this operation.
     pub fn take_circles(self) -> Vec<InscribedCircle> {
         self.circles
+    }
+}
+
+/// Refines a stack of inscribed circles by checking the interpolation error between the circles
+/// and adding new circles between them when the error is above a certain tolerance.
+///
+/// # Arguments
+///
+/// * `section`: the airfoil section curve
+/// * `dest`: the destination vector which will receive the refined inscribed circles
+/// * `stack`: the stack of inscribed circles to refine
+/// * `tol`: the tolerance value which will determine when to add new circles between the existing
+/// circles
+///
+/// returns: ()
+pub fn refine_stations(
+    section: &Curve2,
+    dest: &mut OrientedCircles,
+    stack: &mut Vec<InscribedCircle>,
+    outer_tol: f64,
+    inner_tol: f64,
+) {
+    while let Some(next) = stack.pop() {
+        if let Some(last) = dest.last() {
+            let n = if next.spanning_ray.dir().dot(&last.spanning_ray.dir()) < 0.0 {
+                next.reversed()
+            } else {
+                next
+            };
+
+            let test_ray = n.spanning_ray.symmetry(&last.spanning_ray);
+
+            if let Some(ray) = section.try_create_spanning_ray(&test_ray) {
+                let mid = inscribed_from_spanning_ray(section, &ray, inner_tol);
+                let error = mid.interpolation_error(&n, last);
+
+                // TODO: check the distance between the centers to make sure we're not stuck
+                if error > outer_tol {
+                    // We are out of tolerance, we need to put next back on the stack and then put
+                    // the mid-ray on top of it and try again
+                    stack.push(n);
+                    stack.push(mid);
+                } else {
+                    // We are within tolerance, we can put the next station in the destination. We
+                    // will keep the mid-station since we've already gone through the trouble of
+                    // creating it.
+                    dest.push(mid);
+                    dest.push(n);
+                }
+            }
+        } else {
+            dest.push(next);
+        }
     }
 }

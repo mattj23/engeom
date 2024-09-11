@@ -1,6 +1,8 @@
 //! This module contains the implementation of airfoil camber line detection algorithms.
 
-use super::helpers::{inscribed_from_spanning_ray, reverse_inscribed_circles};
+use super::helpers::{
+    inscribed_from_spanning_ray, refine_stations, reverse_inscribed_circles, OrientedCircles,
+};
 use crate::airfoil::inscribed_circle::InscribedCircle;
 use crate::common::points::{dist, mid_point};
 use crate::geom2::hull::farthest_pair_indices;
@@ -145,53 +147,6 @@ enum RayAdvance {
     Failed,
 }
 
-/// Refines a stack of inscribed circles by checking the interpolation error between the circles
-/// and adding new circles between them when the error is above a certain tolerance.
-///
-/// # Arguments
-///
-/// * `section`: the airfoil section curve
-/// * `dest`: the destination vector which will receive the refined inscribed circles
-/// * `stack`: the stack of inscribed circles to refine
-/// * `tol`: the tolerance value which will determine when to add new circles between the existing
-/// circles
-///
-/// returns: ()
-fn refine_stations(
-    section: &Curve2,
-    dest: &mut Vec<InscribedCircle>,
-    stack: &mut Vec<InscribedCircle>,
-    outer_tol: f64,
-    inner_tol: f64,
-) {
-    while let Some(next) = stack.pop() {
-        if let Some(last) = dest.last() {
-            let test_ray = next.spanning_ray.symmetry(&last.spanning_ray);
-
-            if let Some(ray) = section.try_create_spanning_ray(&test_ray) {
-                let mid = inscribed_from_spanning_ray(section, &ray, inner_tol);
-                let error = mid.interpolation_error(&next, last);
-
-                // TODO: check the distance between the centers to make sure we're not stuck
-                if error > outer_tol {
-                    // We are out of tolerance, we need to put next back on the stack and then put
-                    // the mid-ray on top of it and try again
-                    stack.push(next);
-                    stack.push(mid);
-                } else {
-                    // We are within tolerance, we can put the next station in the destination. We
-                    // will keep the mid-station since we've already gone through the trouble of
-                    // creating it.
-                    dest.push(mid);
-                    dest.push(next);
-                }
-            }
-        } else {
-            dest.push(next);
-        }
-    }
-}
-
 /// Extracts the unambiguous portion of a mean camber line in the orthogonal direction to a
 /// starting spanning ray. This function will terminate when it gets close to the farthest point in
 /// the camber line direction.
@@ -213,7 +168,7 @@ fn extract_half_camber_line(
     let outer_tol = tol.unwrap_or(1e-3);
     let inner_tol = outer_tol * 1e-2;
 
-    let mut stations: Vec<InscribedCircle> = Vec::new();
+    let mut stations = OrientedCircles::create(false);
     let mut refine_stack: Vec<InscribedCircle> = Vec::new();
     let mut ray = starting_ray.clone();
 
@@ -244,5 +199,5 @@ fn extract_half_camber_line(
         };
     }
 
-    Ok(stations)
+    Ok(stations.take_circles())
 }
