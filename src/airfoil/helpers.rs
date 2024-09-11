@@ -222,6 +222,30 @@ impl OrientedCircles {
         OrientedCircles { circles, reversed }
     }
 
+    /// Get the full camber curve from the inscribed circles in this container. The curve will be
+    /// oriented such that the first point is away from the working edge (based on the `reversed`
+    /// flag) and the end of the curve points towards the working edge.
+    pub fn get_full_curve(&self) -> Result<Curve2> {
+        let curve = curve_from_inscribed_circles(&self.circles, 1e-4)?;
+        if self.reversed {
+            Ok(curve.reversed())
+        } else {
+            Ok(curve)
+        }
+    }
+
+    /// Discard any inscribed circles beyond the specified point.
+    pub fn discard_sections_beyond_point(&mut self, p: &Point2) {
+        let c = self.get_full_curve().unwrap();
+
+        let l = c.at_closest_to_point(p).length_along();
+
+        self.circles.retain(|cr| {
+            let d = c.at_closest_to_point(&cr.center()).length_along();
+            d < l
+        });
+    }
+
     pub fn get_end_curve(&self, distance: f64) -> Result<Curve2> {
         let mut total = 0.0;
         let mut points = Vec::new();

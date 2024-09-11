@@ -6,7 +6,7 @@ use crate::airfoil::helpers::{
 };
 use crate::airfoil::{AfParams, InscribedCircle};
 use crate::common::points::{dist, mid_point};
-use crate::common::Intersection;
+use crate::common::{linear_space, Intersection};
 use crate::geom2::{rot90, UnitVec2};
 use crate::AngleDir::Ccw;
 use crate::{Curve2, Point2, Result};
@@ -237,8 +237,17 @@ impl ConvergeTangentEdge {
     }
 
     /// Create a new boxed instance of the `ConvergeTangentEdge` struct.  The tolerance value is
-    /// the optional angular tolerance value used to determine if the tangent of the section
-    /// boundary is perpendicular to the end of the camber line.
+    /// the allowable lateral distance between the direction of the end of the camber line and the
+    /// tangent point on the section boundary perpendicular to the end of the camber line.
+    ///
+    /// The algorithm will end the camber line at the closest point to the original last station
+    /// that is within the tolerance value of the tangent point.  This accounts for the typical
+    /// increase in camber line curvature which happens as one approaches the section boundary. The
+    /// closer to the original last inscribed circle, the less overall curvature will be included
+    /// in the final camber line.
+    ///
+    /// If no tolerance value is specified, the default value of 1% of the last inscribed circle's
+    /// radius will be used.
     pub fn make(tol: Option<f64>) -> Box<dyn EdgeLocation> {
         Box::new(ConvergeTangentEdge::new(tol))
     }
@@ -252,82 +261,67 @@ impl EdgeLocation for ConvergeTangentEdge {
         front: bool,
         af_tol: f64,
     ) -> Result<(Option<Point2>, Vec<InscribedCircle>)> {
-        // We'll orient the camber curve so that we're working at the back end in either the
-        // leading or trailing edge cases
-        let camber = if front {
-            curve_from_inscribed_circles(&stations, section.tol())?.reversed()
-        } else {
-            curve_from_inscribed_circles(&stations, section.tol())?
-        };
+        // Capture the last inscribed circle
+        let temp_circles = OrientedCircles::new(stations, front);
+        let c0 = temp_circles
+            .last()
+            .ok_or("Empty inscribed circles container.")?
+            .circle
+            .clone();
 
-        // The last station will vary depending on whether we're looking for the leading or
-        // trailing edge
-        let station = if front {
-            stations
-                .first()
-                .ok_or("Empty inscribed circles container.")?
-        } else {
-            stations
-                .last()
-                .ok_or("Empty inscribed circles container.")?
-        };
+        let check_tol = self.tol.unwrap_or(c0.r() * 0.01);
 
-        // Now we'll extract a curve that has just the data past the contact points of the last
-        // station.  This much reduced dataset will allow for faster search operations. If this
-        // fails, it means that the section was open, and we are working on the open portion.
-        let edge_curve = extract_edge_sub_curve(&section, &station)
+        // Now we'll use the maximum curvature method to update the camber line
+        let max_curvature = TraceToMaxCurvature::new(Some(0.01));
+        let (_, stations) =
+            max_curvature.find_edge(section, temp_circles.take_circles(), front, af_tol)?;
+
+        let mut working_stations = OrientedCircles::new(stations, front);
+        let edge_curve = extract_edge_sub_curve(&section, &working_stations.last().unwrap())
             .ok_or("Failed to extract edge curve on converging tangent edge algorithm.")?;
 
-        // We'll re-assign the stations to the working variable, as we're going to be modifying
-        // them in place.
-        let mut working_stations = OrientedCircles::new(stations, front);
-        let mut working_points = camber.points()[camber.points().len() - 5..].to_vec();
-        let mut working_camber = Curve2::from_points(&working_points, 1e-4, false)?;
+        // We're going to sweep the edge curve from back about 2 c0 diameters to the front of the
+        // camber line, projecting a ray from the edge curve's interpolated direction and finding
+        // the max section point in that direction.  The error will be the out-of-direction
+        // distance from the ray to the located point.
+        //
+        // Ultimately, we're going to look for the point closest to c0 which is within the
+        // allowed tolerance of the ray.
 
-        // We're going to need to try to advance the end of the camber line closer into the edge
-        // than the last station.  We have some advantages at this point compared to the general
-        // camber line extraction.
-        // - We know that the edge we're approaching should be generally rounded
-        // - We know that the curvature between here and the end of the airfoil is relatively low
+        let oriented_camber = working_stations.get_full_curve()?;
+        let x0 = oriented_camber
+            .at_closest_to_point(&c0.center)
+            .length_along();
 
-        // First, we'll try to create up to eight additional inscribed circles
-        let mut count = 0;
-        while count < 30 {
-            let working_point = working_camber.at_back().direction_point();
+        let steps = 1000;
+        let x_start = x0 - 4.0 * c0.r();
+        let space = linear_space(x_start, oriented_camber.length(), steps);
+        let mut measured = Vec::new();
 
-            let d = *edge_curve
-                .intersection(&working_point)
-                .iter()
-                .max_by(|a, b| a.partial_cmp(b).unwrap())
-                .ok_or("Failed to find intersection with edge curve.")?;
+        for x in space.values().iter() {
+            let camber_point = oriented_camber.at_length(*x).unwrap();
+            let camber_dir = camber_point.interpolated_direction_point();
 
-            let test_ray = Ray::new(
-                working_point.at_distance(d * 0.1),
-                (rot90(Ccw) * working_point.normal).into_inner(),
-            );
+            let max_point = edge_curve
+                .max_point_in_direction(&camber_dir.normal)
+                .ok_or("Failed to find max point in direction, did the curve end up empty?.")?;
 
-            if let Some(spanning_ray) = edge_curve.try_create_spanning_ray(&test_ray) {
-                let circle = inscribed_from_spanning_ray(&edge_curve, &spanning_ray, af_tol * 1e-2);
-
-                // We'll look at the angle formed between the contact points and the center of
-                // the circle. When that angle drops to below 90 degrees, we'll stop.
-                let v0 = circle.upper - circle.center();
-                let v1 = circle.lower - circle.center();
-                let angle = v0.angle(&v1);
-                if angle < std::f64::consts::FRAC_PI_2 * 0.25 {
-                    break;
-                }
-
-                working_points.push(circle.center());
-                working_stations.push(circle);
-                working_camber = Curve2::from_points(&working_points, 1e-4, false)?;
-            } else {
-                break;
+            let error = camber_dir.planar_distance(&max_point);
+            if error < check_tol {
+                measured.push(((x - x0).abs(), camber_dir, max_point));
             }
-
-            count += 1;
         }
 
-        Ok((None, working_stations.take_circles()))
+        // Now we'll find the closest point to c0 that is within the tolerance
+        if let Some((_, dir, point)) = measured
+            .iter()
+            .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
+        {
+            // We now need to remove all the stations beyond the point we found
+            working_stations.discard_sections_beyond_point(&dir.point);
+            Ok((Some(*point), working_stations.take_circles()))
+        } else {
+            Ok((None, working_stations.take_circles()))
+        }
     }
 }

@@ -101,6 +101,15 @@ impl AirfoilGeometry {
             camber,
         }
     }
+
+    /// Find the inscribed circle with the maximum radius, which is typically a circle near the
+    /// center of the airfoil section.
+    pub fn find_tmax(&self) -> &InscribedCircle {
+        self.stations
+            .iter()
+            .max_by(|a, b| a.radius().partial_cmp(&b.radius()).unwrap())
+            .unwrap()
+    }
 }
 
 /// Perform a geometric analysis of an airfoil section, extracting the camber line, leading and
