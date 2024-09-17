@@ -247,7 +247,7 @@ pub fn fill_gaps<const D: usize>(original: &[Point<f64, D>], max_dist: f64) -> V
 /// * `points`: the set of points to search
 /// * `vector`: the vector to project the points onto
 ///
-/// returns: Option<OPoint<f64, Const<{ D }>>>
+/// returns: Option<(usize, OPoint<f64, Const<{ D }>>)>
 ///
 /// # Examples
 ///
@@ -265,25 +265,29 @@ pub fn fill_gaps<const D: usize>(original: &[Point<f64, D>], max_dist: f64) -> V
 ///    Point2::new(13.0, 3.0),
 /// ];
 ///
-/// let max = max_point_in_direction(&points, &dir).unwrap();
+/// let (_, max) = max_point_in_direction(&points, &dir).unwrap();
 /// assert_relative_eq!(max, Point2::new(10.0, 0.0));
 /// ```
 pub fn max_point_in_direction<const D: usize>(
     points: &[Point<f64, D>],
     vector: &SVector<f64, D>,
-) -> Option<Point<f64, D>> {
+) -> Option<(usize, Point<f64, D>)> {
     let mut max_dist = f64::MIN;
-    let mut max_point = None;
+    let mut max_i = None;
 
-    for p in points {
+    for (i, p) in points.iter().enumerate() {
         let dist = p.coords.dot(vector);
         if dist > max_dist {
             max_dist = dist;
-            max_point = Some(*p);
+            max_i = Some(i);
         }
     }
 
-    max_point
+    if let Some(max_i) = max_i {
+        Some((max_i, points[max_i]))
+    } else {
+        None
+    }
 }
 
 /// Compute the error of a linear interpolation between two points `p0` and `p1` with respect to a
@@ -509,7 +513,7 @@ mod tests {
             Point2::new(14.0, 4.0),
         ];
 
-        let max = max_point_in_direction(&points, &dir).unwrap();
+        let (_, max) = max_point_in_direction(&points, &dir).unwrap();
         assert_relative_eq!(max, Point2::new(10.0, 0.0));
     }
 }

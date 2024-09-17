@@ -90,7 +90,7 @@ fn advance_search_along_ray(section: &Curve2, last_station: &InscribedCircle) ->
 
     // We unwrap this because the only way it would fail is if the section is empty, which
     // would have prevented us from getting here in the first place.
-    let farthest = section
+    let (_, farthest) = section
         .max_point_in_direction(&camber_point.normal)
         .unwrap();
     let distance = camber_point.scalar_projection(&farthest);

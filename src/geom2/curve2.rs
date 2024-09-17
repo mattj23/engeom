@@ -7,7 +7,7 @@ use crate::errors::InvalidGeometry;
 use crate::geom2::hull::convex_hull_2d;
 use crate::geom2::line2::Line2;
 use crate::geom2::{signed_angle, Iso2, Point2, SurfacePoint2, UnitVec2};
-use crate::{Circle2, Result, Series1, Vector2};
+use crate::{Arc2, Circle2, Result, Series1, Vector2};
 use parry2d_f64::na::Unit;
 use parry2d_f64::query::{PointQueryWithLocation, Ray};
 use parry2d_f64::shape::{ConvexPolygon, Polyline};
@@ -568,14 +568,14 @@ impl Curve2 {
     ///
     /// * `vector`: The direction vector to search for the maximum point in
     ///
-    /// returns: Option<OPoint<f64, Const<2>>>
+    /// returns: Option<(usize, OPoint<f64, Const<{ D }>>)>
     ///
     /// # Examples
     ///
     /// ```
     ///
     /// ```
-    pub fn max_point_in_direction(&self, vector: &Vector2) -> Option<Point2> {
+    pub fn max_point_in_direction(&self, vector: &Vector2) -> Option<(usize, Point2)> {
         // TODO: there is probably a much more efficient way to do this using the bvh
         max_point_in_direction(&self.points(), &vector)
     }
@@ -606,8 +606,7 @@ impl Curve2 {
     /// assert_relative_eq!(d, -5.0, epsilon = 1e-6);
     /// ```
     pub fn max_dist_in_direction(&self, surf_point: &SurfacePoint2) -> f64 {
-        let p = self.max_point_in_direction(&surf_point.normal);
-        if let Some(p) = p {
+        if let Some((_, p)) = self.max_point_in_direction(&surf_point.normal) {
             surf_point.scalar_projection(&p)
         } else {
             f64::NEG_INFINITY
@@ -754,6 +753,87 @@ impl Curve2 {
         }
 
         Series1::try_new(xs, ys).unwrap()
+    }
+
+    /// Searches the curve for regions which have equivalent arcs within the given tolerance and
+    /// with at least the given number of points.  The result is a list of tuples, each containing
+    /// the start and end indices of the equivalent arc and the arc itself.
+    ///
+    /// # Arguments
+    ///
+    /// * `tol`:
+    ///
+    /// returns: Vec<(usize, usize, Arc2), Global>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    pub fn equivalent_arcs(&self, tol: f64, min_points: usize) -> Vec<(usize, usize, Arc2)> {
+        // TODO: handle the wrapping case
+        let mut arcs = Vec::new();
+        let mut i = 0;
+
+        while i < self.count() {
+            if let Some((i0, i1, arc)) = self.equivalent_arc_at(i, tol) {
+                if i1 - i0 + 1 >= min_points {
+                    arcs.push((i0, i1, arc));
+                    i = i1 + 1;
+                }
+            }
+
+            i += 1;
+        }
+
+        arcs
+    }
+
+    pub fn equivalent_arc_at(&self, seed_index: usize, tol: f64) -> Option<(usize, usize, Arc2)> {
+        // TODO: this is hacked together, fix it
+
+        // Find the initial valid ranges
+        let mut pos = 2;
+        let mut neg = 0;
+        let mut best_arc = None;
+
+        while let Some(arc) = self.in_tol_arc(seed_index, pos, neg, tol) {
+            pos += 1;
+            best_arc = Some(arc);
+        }
+
+        while let Some(arc) = self.in_tol_arc(seed_index, pos, neg, tol) {
+            neg += 1;
+            best_arc = Some(arc);
+        }
+
+        best_arc.map(|arc| (seed_index - neg, seed_index + pos, arc))
+    }
+
+    fn in_tol_arc(&self, start: usize, pos: usize, neg: usize, tol: f64) -> Option<Arc2> {
+        if neg > start || start + pos >= self.count() {
+            return None;
+        }
+
+        let i0 = start - neg;
+        let i2 = start + pos;
+        let i1 = (i0 + i2) / 2;
+
+        let c = Circle2::from_3_points(self.vtx(i0), self.vtx(i1), self.vtx(i2));
+
+        if c.is_err() {
+            return None;
+        }
+
+        let c = c.unwrap();
+
+        for i in i0..=i2 {
+            if c.distance_to(&self.vtx(i)) > tol {
+                return None;
+            }
+        }
+
+        Some(Arc2::three_points(self.vtx(i0), self.vtx(i1), self.vtx(i2)))
     }
 }
 

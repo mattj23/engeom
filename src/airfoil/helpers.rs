@@ -381,7 +381,7 @@ pub fn refine_stations(
                     // We are within tolerance, we can put the next station in the destination. We
                     // will keep the mid-station since we've already gone through the trouble of
                     // creating it.
-                    dest.push(mid);
+                    // dest.push(mid);
                     dest.push(n);
                 }
             }

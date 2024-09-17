@@ -462,7 +462,18 @@ impl Series1 {
             return None;
         }
         let y = v - tol;
-        let crossings = self.y_crossings(y);
+        let mut crossings = self.y_crossings(y);
+
+        // If the first y value is above the threshold or the last y value is below the threshold,
+        // then those points are crossings
+        if self.y[0] > y {
+            crossings.insert(0, self.x[0]);
+        }
+
+        if self.y[self.y.len() - 1] > y {
+            crossings.push(self.x[self.x.len() - 1]);
+        }
+
         // TODO: This is a linear search, but it could be a binary search
         for xs in crossings.windows(2) {
             if xs[0] <= x && x <= xs[1] {

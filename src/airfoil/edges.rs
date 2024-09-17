@@ -4,7 +4,7 @@ use crate::airfoil::helpers::{
     curve_from_inscribed_circles, extract_edge_sub_curve, inscribed_from_spanning_ray,
     refine_stations, OrientedCircles,
 };
-use crate::airfoil::{AfParams, InscribedCircle};
+use crate::airfoil::{AfParams, AirfoilEdge, EdgeGeometry, InscribedCircle};
 use crate::common::points::{dist, mid_point};
 use crate::common::{linear_space, Intersection};
 use crate::geom2::{rot90, UnitVec2};
@@ -15,11 +15,11 @@ use parry2d_f64::query::Ray;
 pub trait EdgeLocation {
     /// Given the airfoil section, the oriented collection of inscribed circles, and a flag
     /// indicating if we're searching for the edge at the front or back of the camber line, this
-    /// implementation should return a `Point2` with the actual edge point (where the camber line
-    /// meets the section boundary) and the collection of inscribed circles. If the edge point
-    /// can't be found, or if the edge point doesn't exist (in the case of an open section), the
-    /// function should return `None` for the edge point and return the collection of inscribed
-    /// circles without modification.
+    /// implementation should return an `AirfoilEdge` with the actual edge point (where the camber
+    /// line meets the section boundary), optional geometry information where it exists, and the
+    /// collection of inscribed circles. If the edge point can't be found, or if the edge point
+    /// doesn't exist (in the case of an open section), the function should return `None` for the
+    /// edge point and return the collection of inscribed circles without modification.
     ///
     /// This function will be given ownership of the existing vector of circles with the intention
     /// that it *may* make modifications to it, depending on the method. The method will return a
@@ -35,7 +35,7 @@ pub trait EdgeLocation {
     /// the camber line
     /// * `af_tol`: the tolerance value specified in the airfoil analysis parameters
     ///
-    /// returns: Result<(Option<OPoint<f64, Const<2>>>, Vec<InscribedCircle, Global>), Box<dyn Error, Global>>
+    /// returns: Result<(Option<AirfoilEdge>, Vec<InscribedCircle, Global>), Box<dyn Error, Global>>
     ///
     /// # Examples
     ///
@@ -48,7 +48,7 @@ pub trait EdgeLocation {
         stations: Vec<InscribedCircle>,
         front: bool,
         af_tol: f64,
-    ) -> Result<(Option<Point2>, Vec<InscribedCircle>)>;
+    ) -> Result<(Option<AirfoilEdge>, Vec<InscribedCircle>)>;
 }
 
 /// This struct implements the `EdgeLocation` trait and does not attempt to locate the edge of
@@ -75,7 +75,7 @@ impl EdgeLocation for OpenEdge {
         stations: Vec<InscribedCircle>,
         front: bool,
         af_tol: f64,
-    ) -> Result<(Option<Point2>, Vec<InscribedCircle>)> {
+    ) -> Result<(Option<AirfoilEdge>, Vec<InscribedCircle>)> {
         Ok((None, stations))
     }
 }
@@ -103,11 +103,14 @@ impl EdgeLocation for IntersectEdge {
         mut stations: Vec<InscribedCircle>,
         front: bool,
         af_tol: f64,
-    ) -> Result<(Option<Point2>, Vec<InscribedCircle>)> {
+    ) -> Result<(Option<AirfoilEdge>, Vec<InscribedCircle>)> {
         let circles = OrientedCircles::new(stations, front);
         let edge_point = circles.intersect_from_end(section);
 
-        Ok((Some(edge_point), circles.take_circles()))
+        Ok((
+            Some(AirfoilEdge::point_only(edge_point)),
+            circles.take_circles(),
+        ))
     }
 }
 
@@ -151,7 +154,7 @@ impl EdgeLocation for TraceToMaxCurvature {
         mut stations: Vec<InscribedCircle>,
         front: bool,
         af_tol: f64,
-    ) -> Result<(Option<Point2>, Vec<InscribedCircle>)> {
+    ) -> Result<(Option<AirfoilEdge>, Vec<InscribedCircle>)> {
         // The last station will vary depending on whether we're looking for the leading or
         // trailing edge
         let station = if front {
@@ -218,7 +221,104 @@ impl EdgeLocation for TraceToMaxCurvature {
             }
         }
 
-        Ok((Some(edge_point), working_stations.take_circles()))
+        Ok((
+            Some(AirfoilEdge::point_only(edge_point)),
+            working_stations.take_circles(),
+        ))
+    }
+}
+
+/// This struct implements the `EdgeLocation` trait in a way which attempts to locate the edge of
+/// the airfoil by searching for the largest constant radius arc region with at least five points
+/// and whose points lie on the same arc within the specified tolerance.  If no tolerance is
+/// specified the value used in the airfoil analysis parameters will be used.
+///
+/// This method is *only* useful on nominal airfoil sections where the edge is a constant radius
+/// within a very tight tolerance.  In such cases it can be very effective because it (1) will
+/// unambiguously locate the leading edge, and (2) it provides a definite last inscribed circle,
+/// giving the camber line a clear point to end and allowing the rest of the MCL to be filled in.
+pub struct ConstRadiusEdge {
+    tol: Option<f64>,
+}
+
+impl ConstRadiusEdge {
+    pub fn new(tol: Option<f64>) -> Self {
+        ConstRadiusEdge { tol }
+    }
+
+    /// Create a new boxed instance of the `ConstRadiusEdge` struct.  The tolerance value is the
+    /// allowable deviation from the radius of the arc that the edge points must lie on.  If no
+    /// tolerance value is specified, the same value that was provided for the overall airfoil
+    /// analysis tolerance will be used.
+    pub fn make(tol: Option<f64>) -> Box<dyn EdgeLocation> {
+        Box::new(ConstRadiusEdge::new(tol))
+    }
+}
+
+impl EdgeLocation for ConstRadiusEdge {
+    fn find_edge(
+        &self,
+        section: &Curve2,
+        stations: Vec<InscribedCircle>,
+        front: bool,
+        af_tol: f64,
+    ) -> Result<(Option<AirfoilEdge>, Vec<InscribedCircle>)> {
+        let check_tol = self.tol.unwrap_or(af_tol);
+
+        let mut working_stations = OrientedCircles::new(stations, front);
+
+        // Capture the last inscribed circle
+        let c0 = working_stations
+            .last()
+            .ok_or("Empty inscribed circles container.")?
+            .clone();
+
+        // Now we'll extract the edge region
+        let edge_curve = extract_edge_sub_curve(&section, &c0)
+            .ok_or("Failed to extract edge curve on constant radius edge algorithm.")?;
+
+        // We'll look for the smallest radius arc that has at least 5 points and whose points lie
+        // on the same arc within the specified tolerance.
+        let arcs = edge_curve
+            .equivalent_arcs(check_tol, 4)
+            .iter()
+            .map(|(_, _, a)| a.clone())
+            .collect::<Vec<_>>();
+
+        let best_arc = arcs
+            .iter()
+            .min_by(|a, b| a.radius().partial_cmp(&b.radius()).unwrap())
+            .ok_or("Could not find smallest constant radius arc.")?;
+
+        // The arc is a portion of the last inscribed circle, and so its center point is the end of
+        // the portion of the MCL defined by inscribed circles.  We can insert a manufactured
+        // inscribed circle at this point, and then use the refinement mechanisms to recursively
+        // fill in the rest of the MCL.  To do this, we will need to create a spanning ray and
+        // forge the upper and lower contact points.  We will use the arc endpoints as the contact
+        // points (technically the whole arc is in contact with the last circle) and have the
+        // spanning ray pass through the arc's center point in the direction of the vector from
+        // endpoint to endpoint.
+        let a0 = best_arc.point_at_fraction(0.0);
+        let a1 = best_arc.point_at_fraction(1.0);
+        let test_ray = Ray::new(best_arc.center(), a1 - a0);
+        let spanning = section
+            .try_create_spanning_ray(&test_ray)
+            .ok_or("Failed to create final spanning ray for constant radius edge algorithm.")?;
+        let last_circle = InscribedCircle::new(spanning, a0, a1, best_arc.circle);
+        working_stations.push(last_circle);
+
+        // let mut stack = vec![last_circle];
+        // refine_stations(&section, &mut working_stations, &mut stack, af_tol, af_tol * 1e-2);
+
+        // Finally, to locate the edge point, we'll intersect the end of the camber line with the
+        // section boundary.
+        let edge_point = working_stations.intersect_from_end(&edge_curve);
+
+        println!("Arc is {} in", best_arc.radius() / 25.4);
+
+        let edge = AirfoilEdge::new(edge_point, EdgeGeometry::Arc(best_arc.clone()));
+
+        Ok((Some(edge), working_stations.take_circles()))
     }
 }
 
@@ -260,7 +360,7 @@ impl EdgeLocation for ConvergeTangentEdge {
         stations: Vec<InscribedCircle>,
         front: bool,
         af_tol: f64,
-    ) -> Result<(Option<Point2>, Vec<InscribedCircle>)> {
+    ) -> Result<(Option<AirfoilEdge>, Vec<InscribedCircle>)> {
         // Capture the last inscribed circle
         let temp_circles = OrientedCircles::new(stations, front);
         let c0 = temp_circles
@@ -289,6 +389,16 @@ impl EdgeLocation for ConvergeTangentEdge {
         // allowed tolerance of the ray.
 
         let oriented_camber = working_stations.get_full_curve()?;
+
+        // Try to replace the leading edge with an arc segment
+        let (fwd_i, _) = edge_curve
+            .max_point_in_direction(&oriented_camber.at_back().normal())
+            .ok_or("Failed to find max point in direction, did the curve end up empty?.")?;
+
+        let fwd_arc = edge_curve
+            .equivalent_arc_at(fwd_i, af_tol)
+            .map(|(_, _, a)| a);
+
         let x0 = oriented_camber
             .at_closest_to_point(&c0.center)
             .length_along();
@@ -302,9 +412,16 @@ impl EdgeLocation for ConvergeTangentEdge {
             let camber_point = oriented_camber.at_length(*x).unwrap();
             let camber_dir = camber_point.interpolated_direction_point();
 
-            let max_point = edge_curve
-                .max_point_in_direction(&camber_dir.normal)
-                .ok_or("Failed to find max point in direction, did the curve end up empty?.")?;
+            // If we have a forward arc, we'll use that instead of the edge curve
+
+            let max_point = if let Some(arc) = fwd_arc {
+                arc.center() + &camber_dir.normal.into_inner() * arc.radius()
+            } else {
+                let (_, mp) = edge_curve
+                    .max_point_in_direction(&camber_dir.normal)
+                    .ok_or("Failed to find max point in direction, did the curve end up empty?.")?;
+                mp
+            };
 
             let error = camber_dir.planar_distance(&max_point);
             if error < check_tol {
@@ -319,7 +436,10 @@ impl EdgeLocation for ConvergeTangentEdge {
         {
             // We now need to remove all the stations beyond the point we found
             working_stations.discard_sections_beyond_point(&dir.point);
-            Ok((Some(*point), working_stations.take_circles()))
+            Ok((
+                Some(AirfoilEdge::point_only(*point)),
+                working_stations.take_circles(),
+            ))
         } else {
             Ok((None, working_stations.take_circles()))
         }

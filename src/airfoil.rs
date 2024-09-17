@@ -8,12 +8,18 @@ pub mod helpers;
 mod inscribed_circle;
 mod orientation;
 
-use crate::{Curve2, Point2, Result};
+use crate::{Arc2, Curve2, Point2, Result, SurfacePoint2};
 
 use crate::airfoil::camber::extract_camber_line;
-pub use edges::{ConvergeTangentEdge, EdgeLocation, IntersectEdge, OpenEdge, TraceToMaxCurvature};
+use crate::common::points::dist;
+use crate::geom2::hull::convex_hull_2d;
+pub use edges::{
+    ConstRadiusEdge, ConvergeTangentEdge, EdgeLocation, IntersectEdge, OpenEdge,
+    TraceToMaxCurvature,
+};
 pub use inscribed_circle::InscribedCircle;
 pub use orientation::{CamberOrientation, TMaxFwd};
+use serde::{Deserialize, Serialize};
 
 /// This structure contains the parameters used in the airfoil analysis algorithms.  It specifies
 /// the minimum tolerance value used in many parts of the analysis, as well as the methods for
@@ -68,14 +74,45 @@ impl AfParams {
     }
 }
 
+/// This enumeration represents the possible edge geometries that can be detected on an airfoil
+/// by the analysis methods, and is used to return information located by the edge detection
+/// methods.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum EdgeGeometry {
+    /// No special edge geometry was found
+    None,
+
+    /// The edge has a constant radius region represented by an arc
+    Arc(Arc2),
+}
+
+/// An airfoil edge is a generic construct used to represent the leading and trailing edges of an
+/// airfoil. When an edge is detected, it consists of a point and a geometry.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AirfoilEdge {
+    pub point: Point2,
+    pub geometry: EdgeGeometry,
+}
+
+impl AirfoilEdge {
+    fn new(point: Point2, geometry: EdgeGeometry) -> Self {
+        AirfoilEdge { point, geometry }
+    }
+
+    pub fn point_only(point: Point2) -> Self {
+        AirfoilEdge::new(point, EdgeGeometry::None)
+    }
+}
+
 /// This struct contains the results of a geometric analysis of an airfoil section.  It includes
 /// the camber line, optional leading and trailing edge information, and other properties.
+#[derive(Clone)]
 pub struct AirfoilGeometry {
     /// The leading edge point of the airfoil section, if it was detected.
-    pub leading_edge: Option<Point2>,
+    pub leading_edge: Option<AirfoilEdge>,
 
     /// The trailing edge point of the airfoil section, if it was detected.
-    pub trailing_edge: Option<Point2>,
+    pub trailing_edge: Option<AirfoilEdge>,
 
     /// A vector of inscribed circles in order from leading edge to trailing edge.
     pub stations: Vec<InscribedCircle>,
@@ -89,8 +126,8 @@ pub struct AirfoilGeometry {
 
 impl AirfoilGeometry {
     fn new(
-        leading_edge: Option<Point2>,
-        trailing_edge: Option<Point2>,
+        leading_edge: Option<AirfoilEdge>,
+        trailing_edge: Option<AirfoilEdge>,
         stations: Vec<InscribedCircle>,
         camber: Curve2,
     ) -> Self {
@@ -110,6 +147,104 @@ impl AirfoilGeometry {
             .max_by(|a, b| a.radius().partial_cmp(&b.radius()).unwrap())
             .unwrap()
     }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ChordLine {
+    pub le: Point2,
+    pub te: Point2,
+}
+
+/// This function calculates the chord line of an airfoil section using the "caliper method". The
+/// caliper method is a simple method that works on highly curved airfoils, but is an artifact of
+/// legacy airfoil analysis methods and is not recommended for use with modern airfoil sections.
+/// Don't use this method unless you know that you need it. Depending on the use case, it is
+/// unlikely that the aerodynamic properties of the airfoil will be well represented by the chord
+/// length calculated by this method.
+///
+/// The "caliper method" gained prominence when trying to measure highly cambered turbine airfoils,
+/// and replicates a physical method that would consist of the following:
+///
+/// 1. The pressure side of the airfoil is rested against a straight-edge or a flat surface, such
+///    that it makes contact with the surface at the leading and trailing edges, while its center
+///    bows up away from the surface.
+///
+/// 2. A pair of calipers is used to measure the span of the leading to trailing edge by putting
+///    tips of the jaws of the calipers in contact with the straight-edge, and then closing them
+///    until the flats of the jaw touch the airfoil somewhere near the leading and trailing edges.
+///    The jaws and the straight-edge form a rectangle with right angles that closes on the airfoil.
+///
+/// Computationally, this method involves calculating the convex hull of the airfoil points and then
+/// finding the longest straight line that can be drawn between two points on the hull. This line
+/// represents the flat surface that the airfoil would be resting against in the physical method,
+/// and is also a line of tangency sometimes used to measure airfoil twist.
+///
+/// Once the line of tangency from leading to trailing edge is found, all points in the airfoil
+/// section are projected onto the line and the two extremes are found.  These points would
+/// represent the location of the tips of the calipers in the physical method, and the distance
+/// between them is the chord length found by this technique.
+///
+/// # Arguments
+///
+/// * `section`: the airfoil section to analyze
+/// * `camber`: the mean camber line associated with the airfoil section
+///
+/// returns: Result<ChordLine, Box<dyn Error, Global>>
+///
+/// # Examples
+///
+/// ```
+///
+/// ```
+pub fn caliper_chord_line(section: &Curve2, camber: &Curve2) -> Result<ChordLine> {
+    // The tangent chord line is found through the caliper method.  We look at the convex hull and
+    // find the longest straight line that can be drawn between two points on the hull.  This line
+    // is the line of tangency for the section.  Next we find the furthest forward and furthest
+    // backwards projections of the airfoil outer boundary onto this line.  These points are the
+    // leading and trailing edges of the chord, and the distance between them is equivalent to the
+    // result of the caliper chord method, problematic as it is.
+
+    let hull_indices = convex_hull_2d(section.points());
+
+    // First find the longest leg of the hull
+    let mut max_dist = 0.0;
+    let mut max_p1 = Point2::origin();
+    let mut max_p2 = Point2::origin();
+
+    for i in 0..hull_indices.len() {
+        let i1 = hull_indices[i];
+        let i2 = hull_indices[(i + 1) % hull_indices.len()];
+        let p1 = section.points()[i1];
+        let p2 = section.points()[i2];
+        let d = dist(&p1, &p2);
+        if d > max_dist {
+            max_dist = d;
+            max_p1 = p1;
+            max_p2 = p2;
+        }
+    }
+
+    // Now orient it from the leading edge to the trailing edge
+    let camber_le = camber.at_front().point();
+    let chord = if dist(&max_p1, &camber_le) < dist(&max_p2, &camber_le) {
+        SurfacePoint2::new_normalize(max_p1, max_p2 - max_p1)
+    } else {
+        SurfacePoint2::new_normalize(max_p2, max_p1 - max_p2)
+    };
+
+    // Now find the highest and lowest projection parameters on the chord line
+    let mut min_proj = f64::INFINITY;
+    let mut max_proj = f64::NEG_INFINITY;
+    for p in section.points() {
+        let proj = chord.scalar_projection(p);
+        min_proj = min_proj.min(proj);
+        max_proj = max_proj.max(proj);
+    }
+
+    Ok(ChordLine {
+        le: chord.at_distance(min_proj),
+        te: chord.at_distance(max_proj),
+    })
 }
 
 /// Perform a geometric analysis of an airfoil section, extracting the camber line, leading and
@@ -161,11 +296,11 @@ pub fn analyze_airfoil_geometry(section: &Curve2, params: &AfParams) -> Result<A
 
     // Create the camber curve
     let mut camber_points = stations.iter().map(|c| c.circle.center).collect::<Vec<_>>();
-    if let Some(leading) = leading_edge {
-        camber_points.insert(0, leading);
+    if let Some(leading) = &leading_edge {
+        camber_points.insert(0, leading.point);
     }
-    if let Some(trailing) = trailing_edge {
-        camber_points.push(trailing);
+    if let Some(trailing) = &trailing_edge {
+        camber_points.push(trailing.point);
     }
     let camber = Curve2::from_points(&camber_points, params.tol, false)?;
 

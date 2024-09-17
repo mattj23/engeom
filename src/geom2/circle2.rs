@@ -1,8 +1,9 @@
 use crate::common::points::dist;
 use crate::common::{signed_compliment_2pi, BestFit};
-use crate::geom2::{signed_angle, Iso2, Point2, Vector2};
+use crate::geom2::{directed_angle, signed_angle, Iso2, Point2, Vector2};
 use crate::geom3::Vector3;
 use crate::stats::{compute_mean, compute_st_dev};
+use crate::AngleDir::{Ccw, Cw};
 use crate::AngleInterval;
 use crate::Result;
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
@@ -340,18 +341,40 @@ pub struct Arc2 {
 }
 
 impl Arc2 {
-    pub fn circle_angles(center: Point2, radius: f64, angle0: f64, angle: f64) -> Arc2 {
-        Arc2 {
+    pub fn circle_angles(center: Point2, radius: f64, angle0: f64, angle: f64) -> Self {
+        Self {
             circle: Circle2::from_point(center, radius),
             angle0,
             angle,
         }
     }
 
-    pub fn circle_point_angle(center: Point2, radius: f64, point: Point2, angle: f64) -> Arc2 {
+    pub fn circle_point_angle(center: Point2, radius: f64, point: Point2, angle: f64) -> Self {
         let circle = Circle2::from_point(center, radius);
         let angle0 = circle.angle_of_point(&point);
-        Arc2 {
+        Self {
+            circle,
+            angle0,
+            angle,
+        }
+    }
+
+    pub fn three_points(p0: Point2, p1: Point2, p2: Point2) -> Self {
+        let circle = Circle2::from_3_points(p0, p1, p2).unwrap();
+        let angle0 = circle.angle_of_point(&p0);
+        let v0 = p0 - circle.center;
+        let v2 = p2 - circle.center;
+
+        let det = (p1.x - p0.x) * (p1.y + p0.y)
+            + (p2.x - p1.x) * (p2.y + p1.y)
+            + (p0.x - p2.x) * (p0.y + p2.y);
+        let angle = if det < 0.0 {
+            directed_angle(&v0, &v2, Ccw)
+        } else {
+            -directed_angle(&v0, &v2, Cw)
+        };
+
+        Self {
             circle,
             angle0,
             angle,
@@ -531,6 +554,7 @@ impl<'a> LeastSquaresProblem<f64, Dyn, U3> for CircleFit<'a> {
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
+    use std::f64::consts::PI;
     use test_case::test_case;
 
     #[test_case((0.0, 0.0, 1.0), 0.0, (1.0, 0.0))]
@@ -558,5 +582,31 @@ mod tests {
         assert_relative_eq!(result[0].y, 0.8660254037844386, epsilon = 1.0e-10);
         assert_relative_eq!(result[1].x, 0.5, epsilon = 1.0e-10);
         assert_relative_eq!(result[1].y, -0.8660254037844386, epsilon = 1.0e-10);
+    }
+
+    #[test]
+    fn three_point_arc_ccw() {
+        let p0 = Point2::new(1.0, 0.0);
+        let p1 = Point2::new(0.0, 1.0);
+        let p2 = Point2::new(0.0, -1.0);
+        let arc = Arc2::three_points(p0, p1, p2);
+
+        assert_relative_eq!(Point2::origin(), arc.center());
+        assert_relative_eq!(1.0, arc.radius());
+        assert_relative_eq!(0.0, arc.angle0);
+        assert_relative_eq!(3.0 * PI / 2.0, arc.angle);
+    }
+
+    #[test]
+    fn three_point_arc_cw() {
+        let p2 = Point2::new(1.0, 0.0);
+        let p1 = Point2::new(0.0, 1.0);
+        let p0 = Point2::new(0.0, -1.0);
+        let arc = Arc2::three_points(p0, p1, p2);
+
+        assert_relative_eq!(Point2::origin(), arc.center());
+        assert_relative_eq!(1.0, arc.radius());
+        assert_relative_eq!(-PI / 2.0, arc.angle0);
+        assert_relative_eq!(-3.0 * PI / 2.0, arc.angle);
     }
 }

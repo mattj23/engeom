@@ -8,13 +8,13 @@ use parry2d_f64::query::{Ray, SimdRay};
 use parry2d_f64::shape::{Polyline, SimdCompositeShape};
 
 use crate::geom2::line2::{intersect_rays, Line2};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// A `SpanningRay` is a special case of ray which spans two points in a polyline, typically when
 /// there is a closed polyline and a ray that crosses from one side to the other.  It is a wrapper
 /// around a ray where both the ray origin and ray origin + ray direction are points on the
 /// polyline.
-#[derive(Clone, Serialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct SpanningRay {
     ray: Ray,
 }
