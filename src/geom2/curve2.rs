@@ -5,7 +5,7 @@ use crate::common::points::{
 use crate::common::{Intersection, Resample};
 use crate::errors::InvalidGeometry;
 use crate::geom2::hull::convex_hull_2d;
-use crate::geom2::line2::Line2;
+use crate::geom2::line2::{Line2, Segment2};
 use crate::geom2::{signed_angle, Iso2, Point2, SurfacePoint2, UnitVec2};
 use crate::{Arc2, Circle2, Result, Series1, Vector2};
 use parry2d_f64::na::Unit;
@@ -834,6 +834,25 @@ impl Curve2 {
         }
 
         Some(Arc2::three_points(self.vtx(i0), self.vtx(i1), self.vtx(i2)))
+    }
+}
+
+impl Intersection<&Circle2, Vec<Point2>> for Curve2 {
+    fn intersection(&self, other: &Circle2) -> Vec<Point2> {
+        let mut stations = Vec::new();
+        let up_to = if self.is_closed { self.count() } else { self.count() - 1 };
+        for i in 0..up_to {
+            let a = self.vtx(i);
+            let b = self.vtx((i + 1) % self.count());
+            if let Ok(seg) = Segment2::try_new(a, b) {
+                let intersections = other.intersection(&seg);
+                for t in intersections {
+                    stations.push(self.at_closest_to_point(&t).point);
+                }
+            }
+        }
+
+        stations
     }
 }
 

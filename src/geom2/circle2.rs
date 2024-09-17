@@ -1,6 +1,6 @@
 use crate::common::points::dist;
-use crate::common::{signed_compliment_2pi, BestFit};
-use crate::geom2::{directed_angle, signed_angle, Iso2, Point2, Vector2};
+use crate::common::{signed_compliment_2pi, BestFit, Intersection};
+use crate::geom2::{directed_angle, signed_angle, Iso2, Line2, Point2, Vector2};
 use crate::geom3::Vector3;
 use crate::stats::{compute_mean, compute_st_dev};
 use crate::AngleDir::{Ccw, Cw};
@@ -11,6 +11,7 @@ use parry2d_f64::na::{Dyn, Matrix, Owned, Vector, U1, U3};
 use parry2d_f64::shape::Ball;
 use serde::{Deserialize, Serialize};
 use std::f64::consts::FRAC_PI_2;
+use crate::geom2::line2::Segment2;
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct Circle2 {
@@ -330,6 +331,35 @@ impl Circle2 {
     /// ```
     pub fn distance_to(&self, point: &Point2) -> f64 {
         dist(&self.center, point) - self.ball.radius
+    }
+}
+
+impl Intersection<&Segment2, Vec<Point2>> for Circle2 {
+    fn intersection(&self, other: &Segment2) -> Vec<Point2> {
+        let line_point = other.projected_point(&self.center);
+        let d = dist(&self.center, &line_point);
+
+        let mut candidates = Vec::new();
+        if d > self.ball.radius {
+            // Too far away for any intersections
+            return candidates;
+        }
+
+
+        if (d - self.ball.radius).abs() < 1.0e-10 {
+            // Just touching at tangency
+            candidates.push(line_point);
+        }
+
+        // The line intersects at two points. The distance from the line point to the
+        // intersection point is the height of a right triangle with the circle radius as the
+        // hypotenuse, and the base as `d`. The height is `h = sqrt(r^2 - d^2)`.
+        let h = (self.ball.radius.powi(2) - d.powi(2)).sqrt();
+        candidates.push(line_point + other.dir() * h);
+        candidates.push(line_point - other.dir() * h);
+
+        // Filter out any points that are not on the segment
+        candidates.into_iter().filter(|p| other.is_on(p)).collect()
     }
 }
 

@@ -1,13 +1,14 @@
-use parry2d_f64::na::{Isometry2, Point2, Vector2};
+use crate::{Point2, Vector2, Iso2, Result};
 use parry2d_f64::query::Ray;
+use crate::common::points::dist;
 
 /// Compute the intersection parameters between two parameterized lines. Will return None if
 /// the two directions are parallel to each other
 pub fn intersection_param(
-    a0: &Point2<f64>,
-    ad: &Vector2<f64>,
-    b0: &Point2<f64>,
-    bd: &Vector2<f64>,
+    a0: &Point2,
+    ad: &Vector2,
+    b0: &Point2,
+    bd: &Vector2,
 ) -> Option<(f64, f64)> {
     let det: f64 = bd.x * ad.y - bd.y * ad.x;
     if det.abs() < 1e-12 {
@@ -25,23 +26,23 @@ pub fn intersect_rays(r0: &Ray, r1: &Ray) -> Option<(f64, f64)> {
 }
 
 pub trait Line2 {
-    fn origin(&self) -> Point2<f64>;
-    fn dir(&self) -> Vector2<f64>;
-    fn at(&self, t: f64) -> Point2<f64>;
+    fn origin(&self) -> Point2;
+    fn dir(&self) -> Vector2;
+    fn at(&self, t: f64) -> Point2;
 
-    fn projected_parameter(&self, p: &Point2<f64>) -> f64 {
+    fn projected_parameter(&self, p: &Point2) -> f64 {
         let n = p - self.origin();
         self.dir().dot(&n) / self.dir().dot(&self.dir())
     }
 
-    fn projected_point(&self, p: &Point2<f64>) -> Point2<f64> {
+    fn projected_point(&self, p: &Point2) -> Point2 {
         self.at(self.projected_parameter(p))
     }
 
     /// Returns the direction of the vector turned in its orthogonal direction by rotating it
     /// -90 degrees, this is typically used as a normal
-    fn orthogonal(&self) -> Vector2<f64> {
-        Isometry2::rotation(-std::f64::consts::PI / 2.0) * self.dir()
+    fn orthogonal(&self) -> Vector2 {
+        Iso2::rotation(-std::f64::consts::PI / 2.0) * self.dir()
     }
 
     /// Returns a ray that has rotated this entity by 90 degrees
@@ -55,18 +56,56 @@ pub trait Line2 {
 }
 
 impl Line2 for Ray {
-    fn origin(&self) -> Point2<f64> {
-        self.origin
+    fn origin(&self) -> Point2 {
+        self.origin.clone()
     }
 
-    fn dir(&self) -> Vector2<f64> {
+    fn dir(&self) -> Vector2 {
         self.dir
     }
 
-    fn at(&self, t: f64) -> Point2<f64> {
+    fn at(&self, t: f64) -> Point2 {
         self.point_at(t)
     }
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct Segment2 {
+    pub a: Point2,
+    pub b: Point2,
+}
+
+impl Segment2 {
+    pub fn try_new(a: Point2, b: Point2) -> Result<Self> {
+        if dist(&a, &b) < 1e-12 {
+            Err("The two points are too close to each other".into())
+        } else {
+            Ok(Self { a, b })
+        }
+    }
+
+    pub fn is_on(&self, p: &Point2) -> bool {
+        let ap = p - self.a;
+        let bp = p - self.b;
+        ap.dot(&bp) <= 0.0
+    }
+
+}
+
+impl Line2 for Segment2 {
+    fn origin(&self) -> Point2 {
+        self.a
+    }
+
+    fn dir(&self) -> Vector2 {
+        self.b - self.a
+    }
+
+    fn at(&self, t: f64) -> Point2 {
+        self.a + self.dir() * t
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
