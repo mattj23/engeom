@@ -5,11 +5,13 @@ pub mod hull;
 pub mod kd_tree2;
 mod line2;
 pub mod polyline2;
+pub mod align2;
 
 use crate::common::surface_point::SurfacePoint;
 use crate::common::svd_basis::SvdBasis;
 use crate::common::SurfacePointCollection;
 use std::ops;
+use parry2d_f64::na::UnitComplex;
 
 pub type Point2 = parry2d_f64::na::Point2<f64>;
 pub type Vector2 = parry2d_f64::na::Vector2<f64>;
@@ -19,6 +21,7 @@ pub type Iso2 = parry2d_f64::na::Isometry2<f64>;
 pub type SvdBasis2 = SvdBasis<2>;
 pub type Aabb2 = parry2d_f64::bounding_volume::Aabb;
 pub type Ray2 = parry2d_f64::query::Ray;
+pub type Align2 = crate::common::align::Alignment<UnitComplex<f64>, 2>;
 
 pub use self::angles2::{directed_angle, rot270, rot90, signed_angle};
 pub use self::circle2::{Arc2, Circle2};

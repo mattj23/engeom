@@ -6,6 +6,7 @@ pub mod points;
 pub mod surface_point;
 pub mod svd_basis;
 pub mod vec_f64;
+pub mod align;
 
 pub use angles::{angle_to_2pi, signed_compliment_2pi, AngleDir, AngleInterval};
 pub use convert_2d_3d::{To2D, To3D};
