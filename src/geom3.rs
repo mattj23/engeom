@@ -1,5 +1,5 @@
 pub mod kd_tree3;
-mod mesh;
+pub mod mesh;
 mod points;
 
 use crate::common::surface_point::{SurfacePoint, SurfacePointCollection};

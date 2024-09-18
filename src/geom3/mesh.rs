@@ -8,7 +8,7 @@ mod uv_mapping;
 use crate::{Iso3, Point2, Point3, SurfacePoint3};
 use std::f64::consts::PI;
 
-pub use self::serialization::MeshData;
+pub use self::serialization::{MeshData, MeshFlatData};
 pub use self::uv_mapping::UvMapping;
 use crate::common::indices::index_vec;
 use crate::common::SurfacePointCollection;
@@ -55,6 +55,10 @@ impl Mesh {
 
     pub fn vertices(&self) -> &[Point3] {
         self.shape.vertices()
+    }
+
+    pub fn triangles(&self) -> &[[u32; 3]] {
+        self.shape.indices()
     }
 
     pub fn transform(&mut self, transform: &Iso3) {
