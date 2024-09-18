@@ -149,10 +149,22 @@ impl AirfoilGeometry {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct ChordLine {
     pub le: Point2,
     pub te: Point2,
+}
+
+impl ChordLine {
+    pub fn new(le: Point2, te: Point2) -> Self {
+        ChordLine { le, te }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct CaliperChord {
+    pub chord: ChordLine,
+    pub tangent: ChordLine,
 }
 
 /// This function calculates the chord line of an airfoil section using the "caliper method". The
@@ -189,14 +201,14 @@ pub struct ChordLine {
 /// * `section`: the airfoil section to analyze
 /// * `camber`: the mean camber line associated with the airfoil section
 ///
-/// returns: Result<ChordLine, Box<dyn Error, Global>>
+/// returns: Result<CaliperChord, Box<dyn Error, Global>>
 ///
 /// # Examples
 ///
 /// ```
 ///
 /// ```
-pub fn caliper_chord_line(section: &Curve2, camber: &Curve2) -> Result<ChordLine> {
+pub fn caliper_chord_line(section: &Curve2, camber: &Curve2) -> Result<CaliperChord> {
     // The tangent chord line is found through the caliper method.  We look at the convex hull and
     // find the longest straight line that can be drawn between two points on the hull.  This line
     // is the line of tangency for the section.  Next we find the furthest forward and furthest
@@ -233,17 +245,18 @@ pub fn caliper_chord_line(section: &Curve2, camber: &Curve2) -> Result<ChordLine
     };
 
     // Now find the highest and lowest projection parameters on the chord line
-    let mut min_proj = f64::INFINITY;
-    let mut max_proj = f64::NEG_INFINITY;
-    for p in section.points() {
-        let proj = chord.scalar_projection(p);
-        min_proj = min_proj.min(proj);
-        max_proj = max_proj.max(proj);
-    }
+    let te = section.max_point_in_direction(&chord.normal).ok_or("Failed to find trailing edge")?;
+    let le = section.max_point_in_direction(&-chord.normal).ok_or("Failed to find leading edge")?;
 
-    Ok(ChordLine {
-        le: chord.at_distance(min_proj),
-        te: chord.at_distance(max_proj),
+    let chord_line = ChordLine::new(le.1, te.1);
+    let tangent_line = ChordLine::new(
+        chord.projection(&le.1),
+        chord.projection(&te.1),
+    );
+
+    Ok(CaliperChord {
+        chord: chord_line,
+        tangent: tangent_line,
     })
 }
 
