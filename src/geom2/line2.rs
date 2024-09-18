@@ -1,6 +1,6 @@
-use crate::{Point2, Vector2, Iso2, Result};
-use parry2d_f64::query::Ray;
 use crate::common::points::dist;
+use crate::{Iso2, Point2, Result, Vector2};
+use parry2d_f64::query::Ray;
 
 /// Compute the intersection parameters between two parameterized lines. Will return None if
 /// the two directions are parallel to each other
@@ -89,7 +89,6 @@ impl Segment2 {
         let bp = p - self.b;
         ap.dot(&bp) <= 0.0
     }
-
 }
 
 impl Line2 for Segment2 {
@@ -105,7 +104,6 @@ impl Line2 for Segment2 {
         self.a + self.dir() * t
     }
 }
-
 
 #[cfg(test)]
 mod tests {

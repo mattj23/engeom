@@ -6,7 +6,7 @@
 use crate::common::points::linear_interpolation_error;
 use crate::geom2::polyline2::SpanningRay;
 use crate::geom2::rot90;
-use crate::{AngleDir, Circle2, Point2, SurfacePoint2, Vector2};
+use crate::{AngleDir, Circle2, Point2, SurfacePoint2};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone)]

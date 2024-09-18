@@ -1,6 +1,6 @@
-use kiddo::SquaredEuclidean;
 use crate::geom3::kd_tree3::KdTree3;
 use crate::Point3;
+use kiddo::SquaredEuclidean;
 
 pub fn points_sample_poisson_disk(points: &[Point3], radius: f64, indices: &[usize]) -> Vec<usize> {
     let mut results = Vec::new();
@@ -17,4 +17,3 @@ pub fn points_sample_poisson_disk(points: &[Point3], radius: f64, indices: &[usi
 
     results
 }
-

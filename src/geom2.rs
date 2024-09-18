@@ -1,3 +1,4 @@
+pub mod align2;
 mod angles2;
 mod circle2;
 mod curve2;
@@ -5,13 +6,12 @@ pub mod hull;
 pub mod kd_tree2;
 mod line2;
 pub mod polyline2;
-pub mod align2;
 
 use crate::common::surface_point::SurfacePoint;
 use crate::common::svd_basis::SvdBasis;
 use crate::common::SurfacePointCollection;
-use std::ops;
 use parry2d_f64::na::UnitComplex;
+use std::ops;
 
 pub type Point2 = parry2d_f64::na::Point2<f64>;
 pub type Vector2 = parry2d_f64::na::Vector2<f64>;

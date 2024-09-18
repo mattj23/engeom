@@ -393,16 +393,16 @@ fn find_start_on_index(points: &[Point2], index: usize, radius: f64) -> Result<(
     }
 }
 
-#[derive(Serialize)]
-struct DebugOutput {
-    points: Vec<Point2>,
-    working_index: usize,
-    working_direction: Vector2,
-    radius: f64,
-    results: Vec<usize>,
-    neighbors: Vec<usize>,
-    pivots: Vec<PivotPoint>,
-}
+// #[derive(Serialize)]
+// struct DebugOutput {
+//     points: Vec<Point2>,
+//     working_index: usize,
+//     working_direction: Vector2,
+//     radius: f64,
+//     results: Vec<usize>,
+//     neighbors: Vec<usize>,
+//     pivots: Vec<PivotPoint>,
+// }
 
 #[derive(Copy, Clone, Serialize, Debug)]
 struct PivotPoint {

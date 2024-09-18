@@ -1,6 +1,6 @@
+pub mod kd_tree3;
 mod mesh;
 mod points;
-mod kd_tree3;
 
 use crate::common::surface_point::{SurfacePoint, SurfacePointCollection};
 use crate::common::svd_basis::SvdBasis;

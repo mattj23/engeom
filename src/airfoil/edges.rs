@@ -1,15 +1,14 @@
 //! This module contains tools to work with the leading and trailing edges of the airfoil section.
 
 use crate::airfoil::helpers::{
-    curve_from_inscribed_circles, extract_edge_sub_curve, inscribed_from_spanning_ray,
-    refine_stations, OrientedCircles,
+    extract_edge_sub_curve, inscribed_from_spanning_ray, refine_stations, OrientedCircles,
 };
-use crate::airfoil::{AfParams, AirfoilEdge, EdgeGeometry, InscribedCircle};
-use crate::common::points::{dist, mid_point};
-use crate::common::{linear_space, Intersection};
-use crate::geom2::{rot90, UnitVec2};
+use crate::airfoil::{AirfoilEdge, EdgeGeometry, InscribedCircle};
+use crate::common::linear_space;
+use crate::common::points::mid_point;
+use crate::geom2::rot90;
 use crate::AngleDir::Ccw;
-use crate::{Curve2, Point2, Result};
+use crate::{Curve2, Result};
 use parry2d_f64::query::Ray;
 
 pub trait EdgeLocation {
@@ -71,10 +70,10 @@ impl OpenEdge {
 impl EdgeLocation for OpenEdge {
     fn find_edge(
         &self,
-        section: &Curve2,
+        _section: &Curve2,
         stations: Vec<InscribedCircle>,
-        front: bool,
-        af_tol: f64,
+        _front: bool,
+        _af_tol: f64,
     ) -> Result<(Option<AirfoilEdge>, Vec<InscribedCircle>)> {
         Ok((None, stations))
     }
@@ -100,9 +99,9 @@ impl EdgeLocation for IntersectEdge {
     fn find_edge(
         &self,
         section: &Curve2,
-        mut stations: Vec<InscribedCircle>,
+        stations: Vec<InscribedCircle>,
         front: bool,
-        af_tol: f64,
+        _af_tol: f64,
     ) -> Result<(Option<AirfoilEdge>, Vec<InscribedCircle>)> {
         let circles = OrientedCircles::new(stations, front);
         let edge_point = circles.intersect_from_end(section);
@@ -151,7 +150,7 @@ impl EdgeLocation for TraceToMaxCurvature {
     fn find_edge(
         &self,
         section: &Curve2,
-        mut stations: Vec<InscribedCircle>,
+        stations: Vec<InscribedCircle>,
         front: bool,
         af_tol: f64,
     ) -> Result<(Option<AirfoilEdge>, Vec<InscribedCircle>)> {
@@ -200,7 +199,7 @@ impl EdgeLocation for TraceToMaxCurvature {
         // last inscribed station and the edge point.  We'll use the refining method.
         let mut stack = Vec::new();
 
-        for i in 0..3 {
+        for _i in 0..3 {
             let camber_end = working_stations.get_end_curve(last_radius)?;
             let end_point = camber_end.at_back().direction_point();
             let mid = mid_point(&end_point.point, &edge_point);

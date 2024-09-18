@@ -1,5 +1,6 @@
 use crate::common::points::dist;
 use crate::common::{signed_compliment_2pi, BestFit, Intersection};
+use crate::geom2::line2::Segment2;
 use crate::geom2::{directed_angle, signed_angle, Iso2, Line2, Point2, Vector2};
 use crate::geom3::Vector3;
 use crate::stats::{compute_mean, compute_st_dev};
@@ -11,7 +12,6 @@ use parry2d_f64::na::{Dyn, Matrix, Owned, Vector, U1, U3};
 use parry2d_f64::shape::Ball;
 use serde::{Deserialize, Serialize};
 use std::f64::consts::FRAC_PI_2;
-use crate::geom2::line2::Segment2;
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct Circle2 {
@@ -344,7 +344,6 @@ impl Intersection<&Segment2, Vec<Point2>> for Circle2 {
             // Too far away for any intersections
             return candidates;
         }
-
 
         if (d - self.ball.radius).abs() < 1.0e-10 {
             // Just touching at tangency

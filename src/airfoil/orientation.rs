@@ -53,7 +53,7 @@ impl TMaxFwd {
 impl CamberOrientation for TMaxFwd {
     fn orient_camber_line(
         &self,
-        section: &Curve2,
+        _section: &Curve2,
         stations: Vec<InscribedCircle>,
     ) -> Result<Vec<InscribedCircle>> {
         // We're going to edit this in place, so we'll move it to a mutable variable.

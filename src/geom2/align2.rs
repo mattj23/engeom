@@ -5,7 +5,7 @@ mod jacobian;
 mod points_to_curve;
 mod rc_params2;
 
-use crate::geom2::{Iso2};
+use crate::geom2::Iso2;
 use parry2d_f64::na::Vector3;
 
 type T2Storage = Vector3<f64>;

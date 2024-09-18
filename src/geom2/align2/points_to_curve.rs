@@ -1,12 +1,11 @@
-
+use crate::common::points::mean_point;
 use crate::geom2::align2::jacobian::{copy_jacobian, point_surface_jacobian};
 use crate::geom2::align2::RcParams2;
-use crate::geom2::curve2::{Curve2};
+use crate::geom2::curve2::Curve2;
 use crate::geom2::{Align2, Iso2, Point2, SurfacePoint2};
 use crate::Result;
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use parry2d_f64::na::{Dyn, Matrix, Owned, Vector, U1, U3};
-use crate::common::points::mean_point;
 
 struct PointsToCurve<'a> {
     /// The original, unmodified points to be aligned.
@@ -119,10 +118,10 @@ pub fn points_to_curve(points: &[Point2], curve: &Curve2, initial: &Iso2) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geom2::align2::iso2_from_param;
     use approx::assert_relative_eq;
     use parry3d_f64::na::Vector3;
     use std::f64::consts::PI;
-    use crate::geom2::align2::iso2_from_param;
 
     fn to_pts(v: &[(f64, f64)]) -> Vec<Point2> {
         v.iter().map(|(x, y)| Point2::new(*x, *y)).collect()

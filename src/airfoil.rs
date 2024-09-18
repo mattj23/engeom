@@ -245,14 +245,15 @@ pub fn caliper_chord_line(section: &Curve2, camber: &Curve2) -> Result<CaliperCh
     };
 
     // Now find the highest and lowest projection parameters on the chord line
-    let te = section.max_point_in_direction(&chord.normal).ok_or("Failed to find trailing edge")?;
-    let le = section.max_point_in_direction(&-chord.normal).ok_or("Failed to find leading edge")?;
+    let te = section
+        .max_point_in_direction(&chord.normal)
+        .ok_or("Failed to find trailing edge")?;
+    let le = section
+        .max_point_in_direction(&-chord.normal)
+        .ok_or("Failed to find leading edge")?;
 
     let chord_line = ChordLine::new(le.1, te.1);
-    let tangent_line = ChordLine::new(
-        chord.projection(&le.1),
-        chord.projection(&te.1),
-    );
+    let tangent_line = ChordLine::new(chord.projection(&le.1), chord.projection(&te.1));
 
     Ok(CaliperChord {
         chord: chord_line,

@@ -1,7 +1,7 @@
 //! This module contains an abstraction for mapping triangles in a mesh to a 2D UV space.
 
-use crate::geom2::{Point2, Vector2};
-use crate::{To2D, To3D};
+use crate::geom2::Point2;
+use crate::To3D;
 use parry3d_f64::query::PointQueryWithLocation;
 use parry3d_f64::shape::TriMesh;
 

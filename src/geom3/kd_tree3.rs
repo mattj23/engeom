@@ -15,7 +15,7 @@ pub fn kd_tree_nearest_3d(tree: &KdTree3, point: &Point3) -> usize {
 }
 
 pub fn kd_tree_within_3d(tree: &KdTree3, point: &Point3, radius_squared: f64) -> Vec<usize> {
-    let result = tree.within::<SquaredEuclidean>( &[point.x, point.y, point.z], radius_squared );
+    let result = tree.within::<SquaredEuclidean>(&[point.x, point.y, point.z], radius_squared);
     result.iter().map(|r| r.item).collect::<Vec<_>>()
 }
 

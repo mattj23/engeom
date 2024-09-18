@@ -1,5 +1,5 @@
 use crate::Result;
-use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector, Unit, Vector};
+use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector, Unit};
 use serde::{Deserialize, Serialize};
 
 /// A `SurfacePoint` is a struct which is used to represent a point on a surface (n-1 dimensional

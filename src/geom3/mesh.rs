@@ -5,18 +5,18 @@
 mod serialization;
 mod uv_mapping;
 
-use crate::{Point2, Iso3, Point3, SurfacePoint3};
+use crate::{Iso3, Point2, Point3, SurfacePoint3};
 use std::f64::consts::PI;
 
+pub use self::serialization::MeshData;
+pub use self::uv_mapping::UvMapping;
+use crate::common::indices::index_vec;
+use crate::common::SurfacePointCollection;
+use crate::geom3::points::points_sample_poisson_disk;
 use parry3d_f64::query::{PointProjection, PointQueryWithLocation};
 use parry3d_f64::shape::{TriMesh, TrianglePointLocation};
 use rand::prelude::SliceRandom;
 use rand::thread_rng;
-use crate::common::indices::index_vec;
-use crate::common::SurfacePointCollection;
-use crate::geom3::points::points_sample_poisson_disk;
-pub use self::serialization::MeshData;
-pub use self::uv_mapping::UvMapping;
 
 #[derive(Clone)]
 pub struct Mesh {
@@ -171,7 +171,10 @@ impl Mesh {
     ) -> Vec<usize> {
         let mut result = Vec::new();
         for (i, point) in points.iter().enumerate() {
-            if self.project_with_tol(point, max_dist, max_angle, transform).is_some() {
+            if self
+                .project_with_tol(point, max_dist, max_angle, transform)
+                .is_some()
+            {
                 result.push(i);
             }
         }
