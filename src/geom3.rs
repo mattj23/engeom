@@ -1,12 +1,14 @@
 pub mod kd_tree3;
 pub mod mesh;
 mod points;
+mod plane3;
 
 use crate::common::surface_point::{SurfacePoint, SurfacePointCollection};
 use crate::common::svd_basis::SvdBasis;
 use std::ops;
 
 pub use mesh::{Mesh, MeshData, UvMapping};
+pub use plane3::Plane3;
 
 pub type Point3 = parry3d_f64::na::Point3<f64>;
 pub type Vector3 = parry3d_f64::na::Vector3<f64>;
