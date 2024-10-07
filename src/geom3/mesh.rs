@@ -4,6 +4,7 @@
 
 mod serialization;
 mod uv_mapping;
+mod patches;
 
 use crate::{Iso3, Point2, Point3, SurfacePoint3};
 use std::f64::consts::PI;
@@ -311,6 +312,24 @@ impl Mesh {
         }
 
         sampled
+    }
+
+    pub fn get_patches(&self) -> Vec<Vec<usize>> {
+        patches::compute_patch_indices(self)
+    }
+
+    /// Gets the boundary points of each patch in the mesh.  This function will return a list of
+    /// lists of points, where each list of points is the boundary of a patch.  Note that this
+    /// function will not work on non-manifold meshes.
+    ///
+    /// returns: Vec<Vec<usize, Global>, Global>
+    pub fn get_patch_boundary_points(&self) -> Vec<Vec<Point3>> {
+        let patches = self.get_patches();
+        patches
+            .iter()
+            .map(|patch| patches::compute_boundary_points(self, patch))
+            .flatten()
+            .collect()
     }
 }
 
