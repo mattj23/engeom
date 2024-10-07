@@ -6,6 +6,7 @@
                  name="Help Instance"
                   start-page="Overview.md">
 
+    <toc-element topic="Airfoils.md"/>
     <toc-element topic="Overview.md"/>
     <toc-element topic="Common-Constructs.md"/>
 </instance-profile>
