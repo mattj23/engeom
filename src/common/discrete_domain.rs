@@ -44,10 +44,22 @@ pub struct DiscreteDomain {
 }
 
 impl DiscreteDomain {
+    /// Access the values of the domain as a slice
     pub fn values(&self) -> &[f64] {
         &self.values
     }
 
+    /// Generate a discrete domain of values which are linearly spaced between `start` and `end` and
+    /// which have a total count of `n`. The first value will be `start` and the last value will be
+    /// `end`.
+    ///
+    /// # Arguments
+    ///
+    /// * `start`: the starting value of the domain, inclusive
+    /// * `end`: the ending value of the domain, inclusive
+    /// * `n`: the total number of discrete, evenly spaced values in the domain
+    ///
+    /// returns: DiscreteDomain
     pub fn linear(start: f64, end: f64, n: usize) -> Self {
         let mut values = Vec::with_capacity(n);
         let start = start.min(end);
@@ -59,6 +71,7 @@ impl DiscreteDomain {
         DiscreteDomain { values }
     }
 
+    /// Get the total number of values in the domain
     pub fn len(&self) -> usize {
         self.values.len()
     }

@@ -6,9 +6,9 @@ pub mod errors;
 pub mod func1;
 pub mod geom2;
 pub mod geom3;
+pub mod io;
 pub mod stats;
 pub mod utility;
-pub mod io;
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -24,10 +24,10 @@ pub use geom2::{
 };
 
 // Extremely common 3D types
-pub use geom3::{Iso3, Point3, SurfacePoint3, Vector3, Plane3};
+pub use geom3::{Iso3, Plane3, Point3, SurfacePoint3, Vector3};
 
 // Extremely common conversion tools
-pub use common::{To2D, To3D};
+pub use common::{To2D, To3D, TransformBy};
 
 #[cfg(test)]
 mod tests {}

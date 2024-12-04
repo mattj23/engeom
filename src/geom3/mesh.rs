@@ -2,9 +2,9 @@
 //! indices into the vertex list.  This abstraction is built around the `TriMesh` type from the
 //! `parry3d` crate.
 
+mod patches;
 mod serialization;
 mod uv_mapping;
-mod patches;
 
 use crate::{Iso3, Point2, Point3, SurfacePoint3};
 use std::f64::consts::PI;

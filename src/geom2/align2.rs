@@ -3,6 +3,7 @@
 
 mod jacobian;
 mod points_to_curve;
+mod points_to_curve_zone;
 mod rc_params2;
 
 use crate::geom2::Iso2;

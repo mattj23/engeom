@@ -1,11 +1,11 @@
-use std::error::Error;
-use crate::Result;
 use crate::geom2::Point2;
 use crate::geom3::mesh::{Mesh, UvMapping};
 use crate::geom3::Point3;
+use crate::utility::unflatten_points;
+use crate::Result;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use crate::utility::unflatten_points;
+use std::error::Error;
 
 /// A serializable, editable representation of a mesh.
 #[derive(Deserialize, Serialize, Clone)]
@@ -16,7 +16,10 @@ pub struct MeshFlatData {
 
 impl MeshFlatData {
     pub fn new(vertices: Vec<f64>, triangles: Vec<u32>) -> Self {
-        Self { vertices, triangles }
+        Self {
+            vertices,
+            triangles,
+        }
     }
 }
 
@@ -25,7 +28,12 @@ impl TryFrom<MeshFlatData> for Mesh {
 
     fn try_from(value: MeshFlatData) -> Result<Self> {
         let vertices = unflatten_points::<3>(&value.vertices)?;
-        let triangles = value.triangles.iter().tuples().map(|(a, b, c)| [*a, *b, *c]).collect();
+        let triangles = value
+            .triangles
+            .iter()
+            .tuples()
+            .map(|(a, b, c)| [*a, *b, *c])
+            .collect();
         Ok(Mesh::new(vertices, triangles, false))
     }
 }

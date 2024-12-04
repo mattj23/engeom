@@ -1,12 +1,13 @@
 pub mod kd_tree3;
 pub mod mesh;
-mod points;
 mod plane3;
+mod points;
 
 use crate::common::surface_point::{SurfacePoint, SurfacePointCollection};
 use crate::common::svd_basis::SvdBasis;
 use std::ops;
 
+use crate::TransformBy;
 pub use mesh::{Mesh, MeshData, UvMapping};
 pub use plane3::Plane3;
 
@@ -41,5 +42,17 @@ impl SurfacePointCollection<3> for Vec<SurfacePoint3> {
 
     fn clone_normals(&self) -> Vec<UnitVec3> {
         self.iter().map(|sp| sp.normal).collect()
+    }
+}
+
+impl TransformBy<Iso3, Vec<Point3>> for &[Point3] {
+    fn transform_by(&self, transform: &Iso3) -> Vec<Point3> {
+        self.iter().map(|p| transform * p).collect()
+    }
+}
+
+impl TransformBy<Iso3, Vec<Point3>> for &Vec<Point3> {
+    fn transform_by(&self, transform: &Iso3) -> Vec<Point3> {
+        self.iter().map(|p| transform * p).collect()
     }
 }

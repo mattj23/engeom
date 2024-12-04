@@ -1,6 +1,6 @@
-use std::collections::{HashMap, HashSet};
 use crate::geom3::Mesh;
-use crate::{Result, Point3};
+use crate::{Point3, Result};
+use std::collections::{HashMap, HashSet};
 
 fn edge_key(i: usize, f: &[u32; 3]) -> (u32, u32) {
     (f[i], f[(i + 1) % 3])
@@ -32,7 +32,9 @@ pub fn compute_boundary_edges(mesh: &Mesh, patch: &[usize]) -> Vec<(u32, u32)> {
         }
     }
 
-    keys.into_iter().filter(|k| edge_counts[&make_sym(k)] == 1).collect()
+    keys.into_iter()
+        .filter(|k| edge_counts[&make_sym(k)] == 1)
+        .collect()
 }
 
 fn take_one_boundary(order: &mut HashMap<u32, u32>) -> Option<Vec<u32>> {
@@ -66,7 +68,14 @@ pub fn compute_boundary_points(mesh: &Mesh, patch: &[usize]) -> Vec<Vec<Point3>>
         sequences.push(sequence);
     }
 
-    sequences.into_iter().map(|seq| seq.into_iter().map(|v| mesh.vertices()[v as usize]).collect()).collect()
+    sequences
+        .into_iter()
+        .map(|seq| {
+            seq.into_iter()
+                .map(|v| mesh.vertices()[v as usize])
+                .collect()
+        })
+        .collect()
 }
 
 /// Uses the adjacency information of the mesh to compute a list of patches of connected faces. This
@@ -109,9 +118,18 @@ pub fn compute_patch_indices(mesh: &Mesh) -> Vec<Vec<usize>> {
         remaining_faces.remove(&face_index);
 
         // Add the edges of the face to the working queue
-        working_queue.push((mesh.triangles()[face_index][0], mesh.triangles()[face_index][1]));
-        working_queue.push((mesh.triangles()[face_index][1], mesh.triangles()[face_index][2]));
-        working_queue.push((mesh.triangles()[face_index][2], mesh.triangles()[face_index][0]));
+        working_queue.push((
+            mesh.triangles()[face_index][0],
+            mesh.triangles()[face_index][1],
+        ));
+        working_queue.push((
+            mesh.triangles()[face_index][1],
+            mesh.triangles()[face_index][2],
+        ));
+        working_queue.push((
+            mesh.triangles()[face_index][2],
+            mesh.triangles()[face_index][0],
+        ));
 
         let mut patch = vec![face_index];
 

@@ -2,6 +2,7 @@ pub mod align2;
 mod angles2;
 mod circle2;
 mod curve2;
+mod domain_tolerance_map;
 pub mod hull;
 pub mod kd_tree2;
 mod line2;
