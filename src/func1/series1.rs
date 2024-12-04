@@ -420,8 +420,23 @@ impl Series1 {
         (max_x, max_y)
     }
 
+    /// Calculates and returns the x and y location of the global minima in the series. This is
+    /// the x position of the y with the lowest value. If there are multiple y values with the
+    /// same minimum value, the one with the lowest x value is returned.
+    pub fn global_minima_xy(&self) -> (f64, f64) {
+        let mut min_x = self.x[0];
+        let mut min_y = self.y[0];
+        for i in 1..self.x.len() {
+            if self.y[i] < min_y {
+                min_x = self.x[i];
+                min_y = self.y[i];
+            }
+        }
+        (min_x, min_y)
+    }
+
     /// Calculates and returns the x and y location of the global minima in the series. This is the
-    /// the x position of the y with the lowest value. If there are multiple y values with the same
+    /// x position of the y with the lowest value. If there are multiple y values with the same
     /// minimum value, the one with the lowest x value is returned.
     pub fn global_minima_x(&self) -> (f64, f64) {
         let mut min_x = self.x[0];
