@@ -481,6 +481,40 @@ impl Curve2 {
         self.between_lengths(0.0, self.length() - length)
     }
 
+    /// Returns a curve portion between the station at lengths `a` and `b` *which includes* the
+    /// part of the curve passing through the control length.  This is useful for partitioning a
+    /// closed curve into a part when you know the endpoints and any point in the middle, but you
+    /// don't necessarily know the order of the points.
+    ///
+    /// # Arguments
+    ///
+    /// * `a`: a length along the curve to be the start or end of the new curve
+    /// * `b`: a length along the curve to be the start or end of the new curve
+    /// * `control`: a length along the curve which must be included in the new curve
+    ///
+    /// returns: Option<Curve2>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    pub fn between_lengths_by_control(&self, a: f64, b: f64, control: f64) -> Option<Self> {
+        if control > self.length() {
+            return None;
+        }
+
+        let lower = a.min(b);
+        let upper = a.max(b);
+        if lower < control && control < upper {
+            self.between_lengths(lower, upper)
+        } else if control < lower || control > upper && self.is_closed {
+            self.between_lengths(upper, lower)
+        } else {
+            None
+        }
+    }
+
     /// Returns a curve portion between the section at length l0 and l1. If the curve is not closed,
     /// the case where l1 < l0 will return None. If the curve is closed, the portion of the curve
     /// which is returned will depend on whether l0 is larger or smaller than l1.
@@ -943,10 +977,15 @@ fn resample_at_positions(curve: &Curve2, positions: &[f64]) -> Result<Curve2> {
 
 #[cfg(test)]
 mod tests {
+    use num_traits::Signed;
     use super::*;
     use crate::geom2::Vector2;
     use approx::assert_relative_eq;
     use test_case::test_case;
+
+    use rand::distributions::Uniform;
+    use rand::prelude::Distribution;
+    use rand::thread_rng;
 
     fn sample1() -> Vec<(f64, f64)> {
         vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
@@ -962,6 +1001,39 @@ mod tests {
 
     fn sample_points_scaled(p: &[(f64, f64)], f: f64) -> Vec<Point2> {
         p.iter().map(|(a, b)| Point2::new(*a * f, *b * f)).collect()
+    }
+
+
+    #[test]
+    fn stress_between_lengths_by_control() {
+        let points = sample_points(&sample1());
+        let curve = Curve2::from_points(&points, 1e-6, true).unwrap();
+        let mut rng = thread_rng();
+        let dist = Uniform::new(0.0, curve.length());
+
+        for _ in 0..5000 {
+            let a = dist.sample(&mut rng);
+            let mut b = dist.sample(&mut rng);
+            while (a - b).abs() < 1e-6 {
+                b = dist.sample(&mut rng);
+            }
+
+            let mut c = dist.sample(&mut rng);
+            while (a - c).abs() < 1e-6 || (b - c).abs() < 1e-6 {
+                c = dist.sample(&mut rng);
+            }
+
+            let p_a = curve.at_length(a).unwrap().point;
+            let p_b = curve.at_length(b).unwrap().point;
+            let p_c = curve.at_length(c).unwrap().point;
+
+            let segment = curve.between_lengths_by_control(a, b, c);
+            assert!(segment.is_some());
+            let segment = segment.unwrap();
+
+            let cp = segment.at_closest_to_point(&p_c).point();
+            assert_relative_eq!((cp - p_c).norm(), 0.0, epsilon = 1e-6);
+        }
     }
 
     #[test]
