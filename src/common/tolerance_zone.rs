@@ -22,11 +22,41 @@ impl TolZone {
     /// Create a new tolerance zone with the given nominal value and bounds, checking that the
     /// bounds are valid. Returns an error if the bounds are not valid. The bounds are valid if
     /// `lower` <= `upper`.
-    pub fn new(lower: f64, upper: f64) -> Result<Self> {
+    pub fn try_new(lower: f64, upper: f64) -> Result<Self> {
         if lower <= upper {
             Ok(Self { lower, upper })
         } else {
             Err("Invalid tolerance zone bounds".into())
+        }
+    }
+
+    /// Create a new tolerance zone with the given nominal value and half width. The tolerance
+    /// zone will extend from `center - half_width.abs()` to `center + half_width.abs()`.
+    ///
+    /// # Arguments
+    ///
+    /// * `center`: the nominal value of the tolerance zone
+    /// * `half_width`: the half width of the tolerance zone. If a negative value is given, it
+    /// will be converted to a positive value.
+    ///
+    /// returns: TolZone
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::common::TolZone;
+    /// let zone = TolZone::symmetrical(0.0, 1.0);
+    /// assert_eq!(zone.lower, -1.0);
+    /// assert_eq!(zone.upper, 1.0);
+    ///
+    /// let zone = TolZone::symmetrical(2.0, 1.0);
+    /// assert_eq!(zone.lower, 1.0);
+    /// assert_eq!(zone.upper, 3.0);
+    /// ```
+    pub fn symmetrical(center: f64, half_width: f64) -> Self {
+        Self {
+            lower: center - half_width.abs(),
+            upper: center + half_width.abs(),
         }
     }
 

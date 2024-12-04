@@ -2,6 +2,7 @@
 //! where the values are always ordered and only finite values are allowed.
 
 use crate::common::vec_f64::{are_all_finite, are_in_ascending_order};
+use crate::common::Interval;
 use crate::Result;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
@@ -71,6 +72,46 @@ impl DiscreteDomain {
         DiscreteDomain { values }
     }
 
+    /// Find the index of a value in the domain, or `None` if the value is outside the bounds of
+    /// the domain. If the search value is between two values in the domain, the index of the
+    /// lower value is returned.
+    ///
+    /// # Arguments
+    ///
+    /// * `value`: the value to search for in the domain
+    ///
+    /// returns: Option<usize>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::common::DiscreteDomain;
+    /// let domain = DiscreteDomain::try_from(vec![1.0, 2.0, 3.0]).unwrap();
+    ///
+    /// assert_eq!(domain.index_of(0.5), None);
+    /// assert_eq!(domain.index_of(1.0), Some(0));
+    /// assert_eq!(domain.index_of(1.5), Some(0));
+    /// assert_eq!(domain.index_of(3.0), Some(2));
+    /// assert_eq!(domain.index_of(3.5), None);
+    /// ```
+    pub fn index_of(&self, value: f64) -> Option<usize> {
+        if self.is_empty() {
+            return None;
+        }
+
+        let search_result = self.binary_search_by(|v| v.partial_cmp(&value).unwrap());
+        match search_result {
+            Ok(index) => Some(index),
+            Err(index_after) => {
+                if self.bounds_unchecked().contains(value) {
+                    Some(index_after - 1)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
     /// Get the total number of values in the domain
     pub fn len(&self) -> usize {
         self.values.len()
@@ -119,6 +160,20 @@ impl DiscreteDomain {
     pub fn iter(&self) -> impl Iterator<Item = &f64> {
         self.values.iter()
     }
+
+    /// Get the bounds of the domain as an `Interval`. If the domain is empty, `None` is returned.
+    pub fn bounds(&self) -> Option<Interval> {
+        if self.is_empty() {
+            return None;
+        }
+        Some(self.bounds_unchecked())
+    }
+
+    /// Get the bounds of the domain as an `Interval`. If the domain is empty, this function will
+    /// attempt to read out of bounds and will panic.
+    pub fn bounds_unchecked(&self) -> Interval {
+        Interval::new(self.values[0], self.values[self.values.len() - 1])
+    }
 }
 
 impl Deref for DiscreteDomain {
@@ -152,6 +207,7 @@ impl TryFrom<Vec<f64>> for DiscreteDomain {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_case::test_case;
 
     #[test]
     fn iterate_values() {
@@ -200,5 +256,17 @@ mod tests {
     fn try_from_with_descending_order() {
         let result = DiscreteDomain::try_from(vec![2.0, 1.0]);
         assert!(result.is_err());
+    }
+
+    #[test_case(0.5, None)]
+    #[test_case(1.0, Some(0))]
+    #[test_case(1.5, Some(0))]
+    #[test_case(2.0, Some(1))]
+    #[test_case(2.5, Some(1))]
+    #[test_case(3.0, Some(2))]
+    #[test_case(3.5, None)]
+    fn index_of_value(x: f64, expected: Option<usize>) {
+        let domain = DiscreteDomain::try_from(vec![1.0, 2.0, 3.0]).unwrap();
+        assert_eq!(domain.index_of(x), expected);
     }
 }
