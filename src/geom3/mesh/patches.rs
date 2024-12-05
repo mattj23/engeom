@@ -1,5 +1,5 @@
 use crate::geom3::Mesh;
-use crate::{Point3, Result};
+use crate::Point3;
 use std::collections::{HashMap, HashSet};
 
 fn edge_key(i: usize, f: &[u32; 3]) -> (u32, u32) {

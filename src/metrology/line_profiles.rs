@@ -6,7 +6,7 @@ use crate::metrology::{SurfaceDeviation2, SurfaceDeviationSet2};
 /// can represent actual geometry using either `Curve2` or a slice of `Point2` points.
 /// Currently, this module is based on the ASME Y14.5 standard for line profiles, but eventually
 /// if I acquire a copy of the ISO specification, I will implement that as well.
-use crate::{Curve2, CurveStation2, Point2, Result, SurfacePoint2};
+use crate::{Curve2, CurveStation2, Point2, SurfacePoint2};
 
 pub fn point_curve2_deviation(station: &CurveStation2, point: &Point2) -> SurfaceDeviation2 {
     // TODO: is there a better way to handle corners?

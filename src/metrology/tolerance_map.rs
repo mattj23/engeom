@@ -1,7 +1,6 @@
 use crate::common::DiscreteDomain;
 use crate::metrology::Tolerance;
 use crate::Result;
-use std::error::Error;
 
 pub trait ToleranceMap {
     fn get(&self, x: f64) -> Option<Tolerance>;

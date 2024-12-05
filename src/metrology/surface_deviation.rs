@@ -1,7 +1,6 @@
 use crate::common::SurfacePoint;
 use parry3d_f64::na::Point;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::ops::{Deref, Index};
 
 /// A `SurfaceDeviation` is a struct which is used to represent a point on a reference surface
