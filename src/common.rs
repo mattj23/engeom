@@ -7,7 +7,6 @@ mod interval;
 pub mod points;
 pub mod surface_point;
 pub mod svd_basis;
-mod tolerance_zone;
 pub mod vec_f64;
 
 pub use angles::{angle_to_2pi, signed_compliment_2pi, AngleDir, AngleInterval};
@@ -15,7 +14,6 @@ pub use convert_2d_3d::{To2D, To3D};
 pub use discrete_domain::{linear_space, DiscreteDomain};
 pub use interval::Interval;
 pub use surface_point::{SurfacePoint, SurfacePointCollection};
-pub use tolerance_zone::TolZone;
 
 /// General purpose options for resampling data over a discrete domain.
 pub enum Resample {

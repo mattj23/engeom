@@ -977,10 +977,10 @@ fn resample_at_positions(curve: &Curve2, positions: &[f64]) -> Result<Curve2> {
 
 #[cfg(test)]
 mod tests {
-    use num_traits::Signed;
     use super::*;
     use crate::geom2::Vector2;
     use approx::assert_relative_eq;
+    use num_traits::Signed;
     use test_case::test_case;
 
     use rand::distributions::Uniform;
@@ -1002,7 +1002,6 @@ mod tests {
     fn sample_points_scaled(p: &[(f64, f64)], f: f64) -> Vec<Point2> {
         p.iter().map(|(a, b)| Point2::new(*a * f, *b * f)).collect()
     }
-
 
     #[test]
     fn stress_between_lengths_by_control() {

@@ -76,6 +76,9 @@ impl DiscreteDomain {
     /// the domain. If the search value is between two values in the domain, the index of the
     /// lower value is returned.
     ///
+    /// Internally, this uses a binary search which is O(log n) in the size of the domain, taking
+    /// advantage of the fact that the domain is always sorted.
+    ///
     /// # Arguments
     ///
     /// * `value`: the value to search for in the domain

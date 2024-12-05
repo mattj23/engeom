@@ -7,6 +7,7 @@ pub mod func1;
 pub mod geom2;
 pub mod geom3;
 pub mod io;
+pub mod metrology;
 pub mod stats;
 pub mod utility;
 
