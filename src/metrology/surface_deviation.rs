@@ -113,6 +113,23 @@ impl<const D: usize> SurfaceDeviationSet<D> {
     pub fn to_with_stats(&self) -> SurfaceDeviationSetWithStats<D> {
         todo!("Implement this method")
     }
+
+    /// Calculates the symmetrical GD&T zone size of the set of deviations. This is the minimum
+    /// sized symmetrical zone centered on the nominal value which contains all the deviations.
+    ///
+    /// **Note**: this is a GD&T specific calculation and is not necessarily a useful or intuitive
+    /// measure outside of that context. It is not the same as the range of the deviations.
+    /// Instead, it takes the larger of the absolute values of the maximum and minimum deviations
+    /// and returns the double of that value.
+    pub fn symmetrical_zone_size(&self) -> f64 {
+        if self.is_empty() {
+            return 0.0;
+        }
+        let v0 = self.max().unwrap().deviation.abs();
+        let v1 = self.min().unwrap().deviation.abs();
+
+        v0.max(v1) * 2.0
+    }
 }
 
 /// This struct is used to represent a set of `SurfaceDeviation` items along with calculated
