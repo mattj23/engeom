@@ -1,0 +1,35 @@
+site_name: Engeom Documentation
+theme:
+  name: material
+nav:
+  - Home: index.md
+  - Common Concepts:
+      - common/core_space.md
+      - Angles: common/angles.md
+      - SVD Basis: common/svd_basis.md
+      - Discrete Domain: common/discrete_domain.md
+  - 2D Geometry:
+      - Points and Vectors: geom2/points_vectors2.md
+      - Primitive Shapes: geom2/shapes.md
+      - 2D Curve: geom2/curve.md
+      - Alignments: geom2/alignment.md
+  - Airfoils:
+      - Overview: airfoils/overview.md
+
+markdown_extensions:
+  - pymdownx.arithmatex:
+      generic: true
+  - attr_list
+  - md_in_html
+  - pymdownx.blocks.caption
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
