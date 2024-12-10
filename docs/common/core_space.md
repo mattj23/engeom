@@ -213,6 +213,75 @@ Transformations in `engeom` are represented by the `engeom::Iso2` and `engeom::I
 aliases for the underlying `Isometry<f64, R, D>` type from `nalgebra`. These types are used to represent a rigid 
 transformation of points and vectors in 2D and 3D space.
 
+There are many options for creating a new isometry, but be aware that they differ significantly between 2D and 3D due to the handling of the rotation component.  The following examples demonstrates the creation of both types of isometries.
+
+```rust
+use engeom::{Iso2, Iso3, Vector2, Vector3};
+use std::f64::consts::PI;
+
+fn main() {
+    // There is a shortcut for creating an identity isometry
+    let identity = Iso2::identity();
+    let identity = Iso3::identity();
+  
+    // 2D Isometries
+    // =============================================================
+    // Creating a new 2D isometry is done by providing a translation 
+    // vector and a rotation angle
+    let a = Iso2::new(Vector2::new(1.0, 2.0), PI / 2.0);
+    let a = Iso2::new([1.0, 2.0].into(), PI / 2.0);
+  
+    // They can also be created as a translation or rotation only
+    let b = Iso2::translation(1.0, 2.0);
+    let c = Iso2::rotation(PI / 2.0);
+  
+    // 3D Isometries
+    // =============================================================
+    // Creating a new 2D isometry is done by providing a translation 
+    // vector and an axis-angle rotation, in which the angle is 
+    // specified by a vector whose direction is the axis of rotation
+    // and whose magnitude is the angle of rotation
+    let a = Iso3::new(Vector3::new(1.0, 2.0, 3.0), 
+                      Vector3::new(0.0, 0.0, PI / 2.0));
+  
+    let a = Iso3::new([1.0, 2.0, 3.0].into(),
+                      [0.0, 0.0, PI / 2.0].into());
+  
+    // They can also be created as a translation or rotation only
+    let b = crate::Iso3::translation(1.0, 2.0, 3.0);
+    let c = crate::Iso3::rotation(Vector3::new(0.0, 0.0, PI / 2.0));
+}
+```
+
+Transformations can be applied to points, vectors, and other isometries using multiplication, as well as through special transformation methods. The following example demonstrates some of these capabilities, using the 2D version for simplicity, although the syntax will be the same for both 2D and 3D.
+
+```rust
+use engeom::{Iso2, Point2, Vector2, SurfacePoint2};
+
+fn main() {
+  // Create a new 2D isometry that translates by (1.0, 2.0) and rotates by -90 degrees
+  let iso = Iso2::new(Vector2::new(1.0, 2.0), -PI / 2.0);
 
 
+  // When applying an isometry to a point, the point will be both translated and rotated
+  // and the result will be a new point
+  let p = Point2::new(1.0, 1.0);
+  let pt: Point2 = iso * p;
+  
+  // When applying an isometry to a vector, the vector will only be rotated, and
+  // the result will be a new vector
+  let v = Vector2::new(1.0, 1.0);
+  let vt: Vector2 = iso * v;
+  
+  // When applying an isometry to another isometry, the result will be a new isometry,
+  // which is the composition of left isometry applied to the right isometry
+  let i = Iso2::rotation(PI / 2.0);
+  let it: Iso2 = iso * i;
 
+  // When applying an isometry to a surface point, the point will be transformed 
+  // and rotated as a point, and the normal will be rotated as a vector. The result
+  // will be a new surface point
+  let sp = SurfacePoint2::new_normalize(p, v);
+  let spt: SurfacePoint2 = &iso * sp;
+}
+```

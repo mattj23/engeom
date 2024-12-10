@@ -63,3 +63,20 @@ impl SurfacePointCollection<2> for &Vec<SurfacePoint2> {
         self.iter().map(|sp| sp.normal).collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::f64::consts::PI;
+    use super::*;
+    use crate::common::linear_space;
+    use approx::assert_relative_eq;
+
+    #[test]
+    fn iso2_only_rotates_vector() {
+        let iso = Iso2::new(Vector2::new(1.0, 2.0), -PI / 2.0);
+        let v = Vector2::new(1.0, 1.0);
+        let vt = iso * v;
+        assert_relative_eq!(vt, Vector2::new(1.0, -1.0), epsilon = 1e-6);
+    }
+
+}
