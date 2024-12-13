@@ -9,12 +9,13 @@ nav:
       - SVD Basis: common/svd_basis.md
       - Discrete Domain: common/discrete_domain.md
   - 2D Geometry:
-      - Points and Vectors: geom2/points_vectors2.md
+      - Point Collections (2D): geom2/point_collections.md
+      - Curve (2D): geom2/curve.md
       - Primitive Shapes: geom2/shapes.md
-      - 2D Curve: geom2/curve.md
       - Alignments: geom2/alignment.md
   - Airfoils:
       - Overview: airfoils/overview.md
+      - Camber Line: airfoils/camber.md
 
 markdown_extensions:
   - pymdownx.arithmatex:
@@ -28,7 +29,9 @@ markdown_extensions:
       pygments_lang_class: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
+  - pymdownx.details
   - pymdownx.superfences
+  - admonition
 
 extra_javascript:
   - javascripts/mathjax.js
