@@ -4,8 +4,8 @@ use crate::airfoil::InscribedCircle;
 use crate::common::points::dist;
 use crate::common::Intersection;
 use crate::geom2::polyline2::SpanningRay;
-use crate::geom2::Line2;
-use crate::{Circle2, Curve2, Point2, Result};
+use crate::geom2::{intersection_param, Line2, Segment2, UnitVec2};
+use crate::{Circle2, Curve2, Point2, Result, SurfacePoint2};
 
 /// Reverse the order of the inscribed circles in the container. This will additionally
 /// reverse the order of the points on the circles so that the upper and lower points are
@@ -335,6 +335,34 @@ impl OrientedCircles {
     /// container cannot be used after this operation.
     pub fn take_circles(self) -> Vec<InscribedCircle> {
         self.circles
+    }
+
+    /// Get a surface point at the end of the inscribed circles. This will be the point at the
+    /// center of the last circle in the collection, with the direction vector pointing directly
+    /// away from the center of the second-to-last circle in the collection. If there are less than
+    /// two circles in the collection, an error will be returned.
+    pub fn end_sp(&self) -> Result<SurfacePoint2> {
+        if self.circles.len() < 2 {
+            Err(Box::from("Cannot create a curve from less than two circles"))
+        } else {
+            let (p0, p1) = if self.reversed {
+                (self.circles[1].circle.center, self.circles[0].circle.center)
+            } else {
+                (self.circles[self.circles.len() - 2].circle.center, self.circles.last().unwrap().circle.center)
+            };
+
+            let d = UnitVec2::try_new(p1 - p0, 1e-12).ok_or("Failed to create direction vector")?;
+            Ok(SurfacePoint2::new(p1, d))
+        }
+    }
+
+    pub fn end_intersection_with_seg(&self, seg: &Segment2) -> Result<Point2> {
+        let sp = self.end_sp()?;
+        if let Some((t0, _)) = intersection_param(&sp.point, &sp.normal.into_inner(), &seg.a, &seg.dir()) {
+            Ok(sp.at_distance(t0))
+        } else {
+            Err("Failed to find camber end intersection with segment".into())
+        }
     }
 }
 

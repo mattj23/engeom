@@ -15,10 +15,10 @@ use crate::common::points::dist;
 use crate::geom2::hull::convex_hull_2d;
 pub use edges::{
     ConstRadiusEdge, ConvergeTangentEdge, EdgeLocation, IntersectEdge, OpenEdge,
-    TraceToMaxCurvature,
+    TraceToMaxCurvature, OpenIntersectGap,
 };
 pub use inscribed_circle::InscribedCircle;
-pub use orientation::{CamberOrientation, TMaxFwd};
+pub use orientation::{CamberOrientation, TMaxFwd, DirectionFwd};
 use serde::{Deserialize, Serialize};
 
 /// This structure contains the parameters used in the airfoil analysis algorithms.  It specifies

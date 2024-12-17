@@ -5,8 +5,8 @@ use crate::airfoil::helpers::{
 };
 use crate::airfoil::{AirfoilEdge, EdgeGeometry, InscribedCircle};
 use crate::common::linear_space;
-use crate::common::points::mid_point;
-use crate::geom2::rot90;
+use crate::common::points::{dist, mid_point};
+use crate::geom2::{intersection_param, rot90, Line2, Segment2};
 use crate::AngleDir::Ccw;
 use crate::{Curve2, Result};
 use parry2d_f64::query::Ray;
@@ -76,6 +76,73 @@ impl EdgeLocation for OpenEdge {
         _af_tol: f64,
     ) -> Result<(Option<AirfoilEdge>, Vec<InscribedCircle>)> {
         Ok((None, stations))
+    }
+}
+
+/// This struct implements the `EdgeLocation` trait for an open section edge, similar to `OpenEdge`,
+/// except that it will continue to seek the edge point by advancing the camber line as far into
+/// the gap as it can and then projecting an intersection from the end of the camber line to a
+/// line segment spanning the open gap. On sections that are open in a region of low or moderate
+/// curvature, this can reasonably extend the camber line out to the edge of the data.
+pub struct OpenIntersectGap {
+    max_iterations: usize,
+}
+
+impl OpenIntersectGap {
+    pub fn new(max_iterations: usize) -> Self {
+        OpenIntersectGap {max_iterations}
+    }
+
+    /// Create a new boxed instance of the `OpenIntersectGap` struct.
+    pub fn make(max_iterations: usize) -> Box<dyn EdgeLocation> {
+        Box::new(OpenIntersectGap::new(max_iterations))
+    }
+}
+
+impl EdgeLocation for OpenIntersectGap {
+    fn find_edge(
+        &self,
+        section: &Curve2,
+        stations: Vec<InscribedCircle>,
+        front: bool,
+        af_tol: f64,
+    ) -> Result<(Option<AirfoilEdge>, Vec<InscribedCircle>)> {
+        let mut working_stations = OrientedCircles::new(stations, front);
+
+        // end_cap is a segment that spans the first and last points of the open section
+        let end_cap = Segment2::try_new(section.at_front().point(), section.at_back().point())?;
+
+        let mut end_point = working_stations.end_intersection_with_seg(&end_cap)?;
+        let mut drift = f64::INFINITY;
+        let mut iterations = 0;
+
+        while drift > af_tol {
+            let end_sp = working_stations.end_sp()?;
+            let max_dist = end_sp.scalar_projection(&end_cap.a).min(end_sp.scalar_projection(&end_cap.b));
+            if max_dist < 0.0 {
+                return Err("Failed to find intersection with open section edge.".into());
+            }
+            let d = max_dist / 2.0;
+
+            let test_ray = Ray::new(end_sp.at_distance(d), rot90(Ccw) * end_sp.normal.into_inner());
+            if let Some(spanning_ray) = section.try_create_spanning_ray(&test_ray) {
+                let mut stack = Vec::new();
+                let circle = inscribed_from_spanning_ray(&section, &spanning_ray, af_tol * 1e-2);
+                stack.push(circle);
+
+                refine_stations(&section, &mut working_stations, &mut stack, af_tol, af_tol * 1e-2);
+            }
+
+            let next_end_point = working_stations.end_intersection_with_seg(&end_cap)?;
+            drift = dist(&end_point, &next_end_point);
+            end_point = next_end_point;
+
+            if iterations > self.max_iterations {
+                return Err("Exceeded maximum iterations in open intersect gap algorithm.".into());
+            }
+            iterations += 1;
+        }
+        Ok((Some(AirfoilEdge::point_only(end_point)), working_stations.take_circles()))
     }
 }
 
@@ -312,9 +379,6 @@ impl EdgeLocation for ConstRadiusEdge {
         // Finally, to locate the edge point, we'll intersect the end of the camber line with the
         // section boundary.
         let edge_point = working_stations.intersect_from_end(&edge_curve);
-
-        println!("Arc is {} in", best_arc.radius() / 25.4);
-
         let edge = AirfoilEdge::new(edge_point, EdgeGeometry::Arc(best_arc.clone()));
 
         Ok((Some(edge), working_stations.take_circles()))

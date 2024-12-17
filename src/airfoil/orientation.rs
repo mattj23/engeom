@@ -1,6 +1,6 @@
 use super::helpers::{curve_from_inscribed_circles, find_tmax_circle, reverse_inscribed_circles};
 use crate::airfoil::InscribedCircle;
-use crate::{Curve2, Result};
+use crate::{Curve2, Result, Vector2};
 
 /// This trait defines an interface to perform orientation of the camber line of an airfoil
 /// section, specifically referring to its order and its relationship to the leading edge. A
@@ -73,6 +73,54 @@ impl CamberOrientation for TMaxFwd {
         let fraction = l / camber.length();
 
         if fraction > 0.5 {
+            // The circle is closer to the trailing edge than the leading edge, so we need to
+            // reverse the order of the circles.
+            reverse_inscribed_circles(&mut moved);
+        }
+
+        Ok(moved)
+    }
+}
+
+
+/// This struct implements the `CamberOrientation` trait and orients the camber line of an airfoil
+/// such that the leading edge is the camber line's end that is more in the direction of a
+/// specified vector. This is useful if you know the direction of the leading edge already.
+pub struct DirectionFwd {
+    pub direction: Vector2,
+}
+
+impl DirectionFwd {
+    pub fn new(direction: Vector2) -> Self {
+        DirectionFwd { direction }
+    }
+
+    /// Create a new boxed instance of the `DirectionFwd` struct.
+    pub fn make(direction: Vector2) -> Box<dyn CamberOrientation> {
+        Box::new(DirectionFwd::new(direction))
+    }
+}
+
+impl CamberOrientation for DirectionFwd {
+    fn orient_camber_line(
+        &self,
+        _section: &Curve2,
+        stations: Vec<InscribedCircle>,
+    ) -> Result<Vec<InscribedCircle>> {
+        // We're going to edit this in place, so we'll move it to a mutable variable.
+        let mut moved = stations;
+
+        let c0 = moved.first()
+            .ok_or("Empty inscribed circles container during camber orientation.")?
+            .circle
+            .center;
+
+        let c1 = moved.last()
+            .ok_or("Empty inscribed circles container during camber orientation.")?
+            .circle
+            .center;
+
+        if self.direction.dot(&c0.coords) < self.direction.dot(&c1.coords) {
             // The circle is closer to the trailing edge than the leading edge, so we need to
             // reverse the order of the circles.
             reverse_inscribed_circles(&mut moved);

@@ -26,7 +26,7 @@ pub type Align2 = crate::common::align::Alignment<UnitComplex<f64>, 2>;
 pub use self::angles2::{directed_angle, rot270, rot90, signed_angle};
 pub use self::circle2::{Arc2, Circle2};
 pub use self::curve2::{Curve2, CurveStation2};
-pub use self::line2::Line2;
+pub use self::line2::{Line2, Segment2, intersection_param, intersect_rays};
 
 impl ops::Mul<SurfacePoint2> for &Iso2 {
     type Output = SurfacePoint2;
