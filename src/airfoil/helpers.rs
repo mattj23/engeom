@@ -177,7 +177,8 @@ impl InscribedCircleSearchState {
 /// * `last_station`: The last inscribed circle in the provided airfoil section
 ///
 /// returns: Option<Curve2>
-pub fn extract_edge_sub_curve(section: &Curve2, last_station: &InscribedCircle) -> Option<Curve2> {
+pub fn extract_edge_sub_curve(section: &Curve2, last_station: &InscribedCircle, tol_fraction: Option<f64>) -> Option<Curve2> {
+    let frac = tol_fraction.unwrap_or(0.25);
     let split0 = section.at_closest_to_point(&last_station.spanning_ray.origin());
     let split1 = section.at_closest_to_point(
         &(last_station.spanning_ray.origin() + last_station.spanning_ray.dir()),
@@ -189,13 +190,13 @@ pub fn extract_edge_sub_curve(section: &Curve2, last_station: &InscribedCircle) 
     let perimeter = section.length();
 
     if let Some(p0) = portion0 {
-        if p0.length() < perimeter * 0.25 {
+        if p0.length() < perimeter * frac {
             return Some(p0);
         }
     }
 
     if let Some(p1) = portion1 {
-        if p1.length() < perimeter * 0.25 {
+        if p1.length() < perimeter * frac {
             return Some(p1);
         }
     }
@@ -343,12 +344,17 @@ impl OrientedCircles {
     /// two circles in the collection, an error will be returned.
     pub fn end_sp(&self) -> Result<SurfacePoint2> {
         if self.circles.len() < 2 {
-            Err(Box::from("Cannot create a curve from less than two circles"))
+            Err(Box::from(
+                "Cannot create a curve from less than two circles",
+            ))
         } else {
             let (p0, p1) = if self.reversed {
                 (self.circles[1].circle.center, self.circles[0].circle.center)
             } else {
-                (self.circles[self.circles.len() - 2].circle.center, self.circles.last().unwrap().circle.center)
+                (
+                    self.circles[self.circles.len() - 2].circle.center,
+                    self.circles.last().unwrap().circle.center,
+                )
             };
 
             let d = UnitVec2::try_new(p1 - p0, 1e-12).ok_or("Failed to create direction vector")?;
@@ -358,7 +364,9 @@ impl OrientedCircles {
 
     pub fn end_intersection_with_seg(&self, seg: &Segment2) -> Result<Point2> {
         let sp = self.end_sp()?;
-        if let Some((t0, _)) = intersection_param(&sp.point, &sp.normal.into_inner(), &seg.a, &seg.dir()) {
+        if let Some((t0, _)) =
+            intersection_param(&sp.point, &sp.normal.into_inner(), &seg.a, &seg.dir())
+        {
             Ok(sp.at_distance(t0))
         } else {
             Err("Failed to find camber end intersection with segment".into())

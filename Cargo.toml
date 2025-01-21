@@ -7,11 +7,11 @@ edition = "2021"
 stl = ["dep:stl_io"]
 
 [dependencies]
-parry3d-f64 = {version= "0.17.1", features=["serde-serialize"]}
-parry2d-f64 = {version= "0.17.1", features=["serde-serialize"]}
+parry3d-f64 = {version= "0.18.0", features=["serde-serialize"]}
+parry2d-f64 = {version= "0.18.0", features=["serde-serialize"]}
 serde = {version ="1.0", features=["derive"]}
 serde_json = "1.0"
-itertools = "0.13.0"
+itertools = "0.14.0"
 rayon = "1.7.0"
 levenberg-marquardt = "0.14.0"
 rand = "0.8.5"

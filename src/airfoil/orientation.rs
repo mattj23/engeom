@@ -82,7 +82,6 @@ impl CamberOrientation for TMaxFwd {
     }
 }
 
-
 /// This struct implements the `CamberOrientation` trait and orients the camber line of an airfoil
 /// such that the leading edge is the camber line's end that is more in the direction of a
 /// specified vector. This is useful if you know the direction of the leading edge already.
@@ -110,12 +109,14 @@ impl CamberOrientation for DirectionFwd {
         // We're going to edit this in place, so we'll move it to a mutable variable.
         let mut moved = stations;
 
-        let c0 = moved.first()
+        let c0 = moved
+            .first()
             .ok_or("Empty inscribed circles container during camber orientation.")?
             .circle
             .center;
 
-        let c1 = moved.last()
+        let c1 = moved
+            .last()
             .ok_or("Empty inscribed circles container during camber orientation.")?
             .circle
             .center;

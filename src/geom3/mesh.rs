@@ -28,7 +28,7 @@ pub struct Mesh {
 
 impl Mesh {
     pub fn new(vertices: Vec<Point3>, triangles: Vec<[u32; 3]>, is_solid: bool) -> Self {
-        let shape = TriMesh::new(vertices, triangles);
+        let shape = TriMesh::new(vertices, triangles).expect("Failed to create TriMesh");
         Self {
             shape,
             is_solid,
@@ -42,7 +42,8 @@ impl Mesh {
         is_solid: bool,
         uv: Option<UvMapping>,
     ) -> Self {
-        let shape = TriMesh::new(vertices, triangles);
+        let shape = TriMesh::new(vertices, triangles)
+            .expect("Failed to create TriMesh with UV mapping");
         Self {
             shape,
             is_solid,

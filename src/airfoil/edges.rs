@@ -90,7 +90,7 @@ pub struct OpenIntersectGap {
 
 impl OpenIntersectGap {
     pub fn new(max_iterations: usize) -> Self {
-        OpenIntersectGap {max_iterations}
+        OpenIntersectGap { max_iterations }
     }
 
     /// Create a new boxed instance of the `OpenIntersectGap` struct.
@@ -118,19 +118,30 @@ impl EdgeLocation for OpenIntersectGap {
 
         while drift > af_tol {
             let end_sp = working_stations.end_sp()?;
-            let max_dist = end_sp.scalar_projection(&end_cap.a).min(end_sp.scalar_projection(&end_cap.b));
+            let max_dist = end_sp
+                .scalar_projection(&end_cap.a)
+                .min(end_sp.scalar_projection(&end_cap.b));
             if max_dist < 0.0 {
                 return Err("Failed to find intersection with open section edge.".into());
             }
             let d = max_dist / 2.0;
 
-            let test_ray = Ray::new(end_sp.at_distance(d), rot90(Ccw) * end_sp.normal.into_inner());
+            let test_ray = Ray::new(
+                end_sp.at_distance(d),
+                rot90(Ccw) * end_sp.normal.into_inner(),
+            );
             if let Some(spanning_ray) = section.try_create_spanning_ray(&test_ray) {
                 let mut stack = Vec::new();
                 let circle = inscribed_from_spanning_ray(&section, &spanning_ray, af_tol * 1e-2);
                 stack.push(circle);
 
-                refine_stations(&section, &mut working_stations, &mut stack, af_tol, af_tol * 1e-2);
+                refine_stations(
+                    &section,
+                    &mut working_stations,
+                    &mut stack,
+                    af_tol,
+                    af_tol * 1e-2,
+                );
             }
 
             let next_end_point = working_stations.end_intersection_with_seg(&end_cap)?;
@@ -142,7 +153,10 @@ impl EdgeLocation for OpenIntersectGap {
             }
             iterations += 1;
         }
-        Ok((Some(AirfoilEdge::point_only(end_point)), working_stations.take_circles()))
+        Ok((
+            Some(AirfoilEdge::point_only(end_point)),
+            working_stations.take_circles(),
+        ))
     }
 }
 
@@ -238,7 +252,7 @@ impl EdgeLocation for TraceToMaxCurvature {
         // Now we'll extract a curve that has just the data past the contact points of the last
         // station.  This much reduced dataset will allow for faster search operations. If this
         // fails, it means that the section was open, and we are working on the open portion.
-        let edge_curve = extract_edge_sub_curve(&section, &station)
+        let edge_curve = extract_edge_sub_curve(&section, &station, Some(0.4))
             .ok_or("Failed to extract edge curve on trace to max curvature algorithm.")?;
 
         // We'll re-assign the stations to the working variable, as we're going to be modifying
@@ -340,7 +354,7 @@ impl EdgeLocation for ConstRadiusEdge {
             .clone();
 
         // Now we'll extract the edge region
-        let edge_curve = extract_edge_sub_curve(&section, &c0)
+        let edge_curve = extract_edge_sub_curve(&section, &c0, Some(0.4))
             .ok_or("Failed to extract edge curve on constant radius edge algorithm.")?;
 
         // We'll look for the smallest radius arc that has at least 5 points and whose points lie
@@ -440,7 +454,10 @@ impl EdgeLocation for ConvergeTangentEdge {
             max_curvature.find_edge(section, temp_circles.take_circles(), front, af_tol)?;
 
         let mut working_stations = OrientedCircles::new(stations, front);
-        let edge_curve = extract_edge_sub_curve(&section, &working_stations.last().unwrap())
+        let station = working_stations
+            .last()
+            .ok_or("Empty inscribed circles container.")?;
+        let edge_curve = extract_edge_sub_curve(&section, &station, Some(0.4))
             .ok_or("Failed to extract edge curve on converging tangent edge algorithm.")?;
 
         // We're going to sweep the edge curve from back about 2 c0 diameters to the front of the
@@ -467,12 +484,16 @@ impl EdgeLocation for ConvergeTangentEdge {
             .length_along();
 
         let steps = 1000;
-        let x_start = x0 - 4.0 * c0.r();
-        let space = linear_space(x_start, oriented_camber.length(), steps);
+        let x_start = 0.0;
+        let space = linear_space(x_start, oriented_camber.length() - 1.0e-6, steps);
         let mut measured = Vec::new();
 
         for x in space.values().iter() {
-            let camber_point = oriented_camber.at_length(*x).unwrap();
+            let camber_point = oriented_camber.at_length(*x).ok_or(format!(
+                "Failed to find camber point at length {} on curve of length {}.",
+                x,
+                oriented_camber.length()
+            ))?;
             let camber_dir = camber_point.interpolated_direction_point();
 
             // If we have a forward arc, we'll use that instead of the edge curve
@@ -490,6 +511,11 @@ impl EdgeLocation for ConvergeTangentEdge {
             if error < check_tol {
                 measured.push(((x - x0).abs(), camber_dir, max_point));
             }
+        }
+
+        // Check that all values are finite
+        if measured.iter().any(|(d, _, _)| !d.is_finite()) {
+            return Err("Non-finite values found in converging tangent edge algorithm.".into());
         }
 
         // Now we'll find the closest point to c0 that is within the tolerance

@@ -1,7 +1,7 @@
 //! This module contains an abstraction for mapping triangles in a mesh to a 2D UV space.
 
 use crate::geom2::Point2;
-use crate::To3D;
+use crate::{Result, To3D};
 use parry3d_f64::query::PointQueryWithLocation;
 use parry3d_f64::shape::TriMesh;
 
@@ -12,12 +12,12 @@ pub struct UvMapping {
 }
 
 impl UvMapping {
-    pub fn new(triangles: Vec<[Point2; 3]>) -> Self {
-        let tri_map = tri_map_from_triangles(&triangles);
-        Self { triangles, tri_map }
+    pub fn new(triangles: Vec<[Point2; 3]>) -> Result<Self> {
+        let tri_map = tri_map_from_triangles(&triangles)?;
+        Ok(Self { triangles, tri_map })
     }
 
-    pub fn new_from_vertices(vertices: &[Point2]) -> Self {
+    pub fn new_from_vertices(vertices: &[Point2]) -> Result<Self> {
         let mut triangles = Vec::new();
         for tri in vertices.chunks_exact(3) {
             triangles.push([tri[0], tri[1], tri[2]]);
@@ -73,7 +73,7 @@ impl UvMapping {
     }
 }
 
-fn tri_map_from_triangles(tris: &[[Point2; 3]]) -> TriMesh {
+fn tri_map_from_triangles(tris: &[[Point2; 3]]) -> Result<TriMesh> {
     let mut vertices = Vec::new();
     let mut triangles: Vec<[u32; 3]> = Vec::new();
 
@@ -87,4 +87,5 @@ fn tri_map_from_triangles(tris: &[[Point2; 3]]) -> TriMesh {
     }
 
     TriMesh::new(vertices, triangles)
+        .map_err(|e| format!("Failed to create TriMesh from triangles: {:?}", e).into())
 }

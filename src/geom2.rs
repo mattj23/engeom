@@ -26,7 +26,7 @@ pub type Align2 = crate::common::align::Alignment<UnitComplex<f64>, 2>;
 pub use self::angles2::{directed_angle, rot270, rot90, signed_angle};
 pub use self::circle2::{Arc2, Circle2};
 pub use self::curve2::{Curve2, CurveStation2};
-pub use self::line2::{Line2, Segment2, intersection_param, intersect_rays};
+pub use self::line2::{intersect_rays, intersection_param, Line2, Segment2};
 
 impl ops::Mul<SurfacePoint2> for &Iso2 {
     type Output = SurfacePoint2;
@@ -66,10 +66,10 @@ impl SurfacePointCollection<2> for &Vec<SurfacePoint2> {
 
 #[cfg(test)]
 mod tests {
-    use std::f64::consts::PI;
     use super::*;
     use crate::common::linear_space;
     use approx::assert_relative_eq;
+    use std::f64::consts::PI;
 
     #[test]
     fn iso2_only_rotates_vector() {
@@ -78,5 +78,4 @@ mod tests {
         let vt = iso * v;
         assert_relative_eq!(vt, Vector2::new(1.0, -1.0), epsilon = 1e-6);
     }
-
 }

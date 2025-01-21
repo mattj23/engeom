@@ -10,15 +10,15 @@ mod orientation;
 
 use crate::{Arc2, Curve2, Point2, Result, SurfacePoint2};
 
-use crate::airfoil::camber::extract_camber_line;
 use crate::common::points::dist;
 use crate::geom2::hull::convex_hull_2d;
 pub use edges::{
-    ConstRadiusEdge, ConvergeTangentEdge, EdgeLocation, IntersectEdge, OpenEdge,
-    TraceToMaxCurvature, OpenIntersectGap,
+    ConstRadiusEdge, ConvergeTangentEdge, EdgeLocation, IntersectEdge, OpenEdge, OpenIntersectGap,
+    TraceToMaxCurvature,
 };
+pub use camber::extract_camber_line;
 pub use inscribed_circle::InscribedCircle;
-pub use orientation::{CamberOrientation, TMaxFwd, DirectionFwd};
+pub use orientation::{CamberOrientation, DirectionFwd, TMaxFwd};
 use serde::{Deserialize, Serialize};
 
 /// This structure contains the parameters used in the airfoil analysis algorithms.  It specifies
@@ -295,18 +295,25 @@ pub fn analyze_airfoil_geometry(section: &Curve2, params: &AfParams) -> Result<A
         .ok_or("Failed to calculate the hull of the airfoil section")?;
 
     // Compute the mean camber line using the inscribed circle method
-    let stations = extract_camber_line(section, &hull, Some(params.tol))?;
+    let stations = extract_camber_line(section, &hull, Some(params.tol))
+        .map_err(|e| format!("Error during initial camber line extraction: {e}"))?;
 
     // Orient the camber line
-    let stations = params.orient.orient_camber_line(section, stations)?;
+    let stations = params
+        .orient
+        .orient_camber_line(section, stations)
+        .map_err(|e| format!("Error orienting the initial camber line: {e}"))?;
 
     // Find the leading and trailing edges
     let (leading_edge, stations) = params
         .leading
-        .find_edge(section, stations, true, params.tol)?;
+        .find_edge(section, stations, true, params.tol)
+        .map_err(|e| format!("Error finding the leading edge: {e}"))?;
+
     let (trailing_edge, stations) = params
         .trailing
-        .find_edge(section, stations, false, params.tol)?;
+        .find_edge(section, stations, false, params.tol)
+        .map_err(|e| format!("Error finding the trailing edge: {e}"))?;
 
     // Create the camber curve
     let mut camber_points = stations.iter().map(|c| c.circle.center).collect::<Vec<_>>();
@@ -316,7 +323,8 @@ pub fn analyze_airfoil_geometry(section: &Curve2, params: &AfParams) -> Result<A
     if let Some(trailing) = &trailing_edge {
         camber_points.push(trailing.point);
     }
-    let camber = Curve2::from_points(&camber_points, params.tol, false)?;
+    let camber = Curve2::from_points(&camber_points, params.tol, false)
+        .map_err(|e| format!("Error creating the final camber curve: {e}"))?;
 
     Ok(AirfoilGeometry::new(
         leading_edge,
