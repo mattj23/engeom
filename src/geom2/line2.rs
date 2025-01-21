@@ -1,6 +1,7 @@
 use crate::common::points::dist;
 use crate::{Iso2, Point2, Result, Vector2};
 use parry2d_f64::query::Ray;
+use crate::geom2::Ray2;
 
 /// Compute the intersection parameters between two parameterized lines. Will return None if
 /// the two directions are parallel to each other
@@ -55,7 +56,7 @@ pub trait Line2 {
     }
 }
 
-impl Line2 for Ray {
+impl Line2 for Ray2 {
     fn origin(&self) -> Point2 {
         self.origin.clone()
     }

@@ -334,31 +334,64 @@ impl Circle2 {
     }
 }
 
+/// Computes the intersection parameters of a line and a circle. The intersection parameters are
+/// the values of the line's parameter at the intersection points. There will be zero, one, or two
+/// intersection parameters.  The intersection points can be recovered from the parameters by
+/// calling `line.at(t)`.
+///
+/// # Arguments
+///
+/// * `line`:
+/// * `circle`:
+///
+/// returns: Vec<f64, Global>
+///
+/// # Examples
+///
+/// ```
+///
+/// ```
+pub fn intersection_line_circle(line: &dyn Line2, circle: &Circle2) -> Vec<f64> {
+    // Get the parameter of the circle center onto the line
+    let tc = line.projected_parameter(&circle.center);
+
+    let d = dist(&circle.center, &line.projected_point(&circle.center));
+
+    if (d - circle.ball.radius).abs() < 1.0e-10 {
+        // If the distance from the center to the line is equal to the radius, then there is one
+        // single intersection point at the tangency point
+        vec![tc]
+    } else if d > circle.ball.radius {
+        // If the distance from the center to the line is greater than the radius, then there
+        // are no intersection points
+        Vec::new()
+    } else {
+        // There are two intersection points. The distance from the tangency point to the
+        // intersection points is the height of a right triangle with hypotenuse `r` and base
+        // `d`.
+        let h = (circle.ball.radius.powi(2) - d.powi(2)).sqrt();
+
+        // We can't simply add and subtract `h` from `tc` because the line may not be
+        // normalized, so we need to scale the value `h` by the norm of the line's direction
+        // vector.
+        let th = h / line.dir().norm();
+
+        vec![tc - th, tc + th]
+    }
+}
+
 impl Intersection<&Segment2, Vec<Point2>> for Circle2 {
     fn intersection(&self, other: &Segment2) -> Vec<Point2> {
-        let line_point = other.projected_point(&self.center);
-        let d = dist(&self.center, &line_point);
-
-        let mut candidates = Vec::new();
-        if d > self.ball.radius {
-            // Too far away for any intersections
-            return candidates;
-        }
-
-        if (d - self.ball.radius).abs() < 1.0e-10 {
-            // Just touching at tangency
-            candidates.push(line_point);
-        }
-
-        // The line intersects at two points. The distance from the line point to the
-        // intersection point is the height of a right triangle with the circle radius as the
-        // hypotenuse, and the base as `d`. The height is `h = sqrt(r^2 - d^2)`.
-        let h = (self.ball.radius.powi(2) - d.powi(2)).sqrt();
-        candidates.push(line_point + other.dir() * h);
-        candidates.push(line_point - other.dir() * h);
-
-        // Filter out any points that are not on the segment
-        candidates.into_iter().filter(|p| other.is_on(p)).collect()
+        let ts = intersection_line_circle(other, self);
+        ts.iter()
+            .filter_map(|&t| {
+                if t >= -1.0e-10 && t <= 1.0 + 1.0e-10 {
+                    Some(other.at(t))
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 }
 
@@ -582,9 +615,27 @@ impl<'a> LeastSquaresProblem<f64, Dyn, U3> for CircleFit<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geom2::{Line2, Ray2};
     use approx::assert_relative_eq;
     use std::f64::consts::PI;
     use test_case::test_case;
+
+    #[test_case((0.0, 0.0), (1.0, 0.0), vec![-1.0, 1.0])]
+    #[test_case((0.0, 0.0), (2.0, 0.0), vec![-0.5, 0.5])]
+    #[test_case((1.0, 0.0), (1.0, 0.0), vec![-2.0, 0.0])]
+    #[test_case((0.0, 1.0), (1.0, 0.0), vec![0.0])]
+    #[test_case((0.0, 1.5), (1.0, 0.0), Vec::<f64>::new())]
+    fn simple_line_intersection(s: (f64, f64), d: (f64, f64), e: Vec<f64>) {
+        let c = Circle2::new(0.0, 0.0, 1.0);
+        let l = Ray2::new(Point2::new(s.0, s.1), Vector2::new(d.0, d.1));
+
+        // let result = c.intersection(&l);
+        let result = intersection_line_circle(&l, &c);
+        assert_eq!(result.len(), e.len());
+        for (r, e) in result.iter().zip(e.iter()) {
+            assert_relative_eq!(*e, *r, epsilon = 1.0e-10);
+        }
+    }
 
     #[test_case((0.0, 0.0, 1.0), 0.0, (1.0, 0.0))]
     #[test_case((0.0, 0.0, 1.0), 90.0, (0.0, 1.0))]

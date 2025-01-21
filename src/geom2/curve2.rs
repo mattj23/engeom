@@ -872,25 +872,33 @@ impl Curve2 {
 }
 
 impl Intersection<&Circle2, Vec<Point2>> for Curve2 {
+    /// Computes a set of intersections between this curve and a circle.  The result is a list of
+    /// points which are on both the curve and the circle.
+    ///
+    /// # Arguments
+    ///
+    /// * `other`:
+    ///
+    /// returns: Vec<OPoint<f64, Const<2>>, Global>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
     fn intersection(&self, other: &Circle2) -> Vec<Point2> {
-        let mut stations = Vec::new();
-        let up_to = if self.is_closed {
-            self.count()
-        } else {
-            self.count() - 1
-        };
-        for i in 0..up_to {
-            let a = self.vtx(i);
-            let b = self.vtx((i + 1) % self.count());
-            if let Ok(seg) = Segment2::try_new(a, b) {
-                let intersections = other.intersection(&seg);
-                for t in intersections {
-                    stations.push(self.at_closest_to_point(&t).point);
+        let mut points = Vec::new();
+
+        // TODO: We should be able to use the bvh to prune the segments we need to check
+        for i in 0..self.count() - 1 {
+            if let Ok(seg) = Segment2::try_new(self.vtx(i), self.vtx(i + 1)) {
+                for p in other.intersection(&seg) {
+                    points.push(p);
                 }
             }
         }
 
-        stations
+        points
     }
 }
 
