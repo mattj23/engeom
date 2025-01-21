@@ -266,12 +266,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6f4e5af126dafd0741c2ad62d47f68b28602550102e5f0dd45c8a97fc8b49c29"
 
 [[package]]
+name = "ena"
+version = "0.14.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d248bdd43ce613d87415282f69b9bb99d947d290b10962dd6c56233312c2ad5"
+dependencies = [
+ "log",
+]
+
+[[package]]
 name = "engeom"
 version = "0.1.0"
 dependencies = [
  "approx",
  "criterion",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "kiddo",
  "levenberg-marquardt",
  "num-traits",
@@ -423,6 +432,15 @@ name = "itertools"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
+dependencies = [
+ "either",
+]
+
+[[package]]
+name = "itertools"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
 dependencies = [
  "either",
 ]
@@ -630,15 +648,16 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 
 [[package]]
 name = "parry2d-f64"
-version = "0.17.1"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9ef77dcfb95073cf0fb746ae2ba87a747d0bc3eaf3c3fd207a53af5f33fb642"
+checksum = "6cb6ad7b4b94d153e501bea7bee863fc83015db2f936a0a0c6745021853f1043"
 dependencies = [
  "approx",
  "arrayvec",
  "bitflags",
  "downcast-rs",
  "either",
+ "ena",
  "log",
  "nalgebra",
  "num-derive",
@@ -655,15 +674,16 @@ dependencies = [
 
 [[package]]
 name = "parry3d-f64"
-version = "0.17.1"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dffd3e480c045388fd95acc8b2c1e42706c84112f3d72c25e25c106c36105912"
+checksum = "c8b2e297ab09d7c3b746e59c23f5bd44e235540424dcccbf28314db9ccf0938f"
 dependencies = [
  "approx",
  "arrayvec",
  "bitflags",
  "downcast-rs",
  "either",
+ "ena",
  "log",
  "nalgebra",
  "num-derive",

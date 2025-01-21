@@ -185,7 +185,7 @@ impl EdgeLocation for IntersectEdge {
         _af_tol: f64,
     ) -> Result<(Option<AirfoilEdge>, Vec<InscribedCircle>)> {
         let circles = OrientedCircles::new(stations, front);
-        let edge_point = circles.intersect_from_end(section);
+        let edge_point = circles.intersect_from_end(section)?;
 
         Ok((
             Some(AirfoilEdge::point_only(edge_point)),
@@ -267,7 +267,7 @@ impl EdgeLocation for TraceToMaxCurvature {
             .ok_or("Failed to find maximum curvature plateau.")?;
 
         // Find the point of intersection with the existing camber line and the section boundary.
-        let intersection = working_stations.intersect_from_end(&edge_curve);
+        let intersection = working_stations.intersect_from_end(&edge_curve)?;
         let length_i = edge_curve.at_closest_to_point(&intersection).length_along();
 
         // Now we'll find the point in the interval which is closest to length_i
@@ -392,7 +392,7 @@ impl EdgeLocation for ConstRadiusEdge {
 
         // Finally, to locate the edge point, we'll intersect the end of the camber line with the
         // section boundary.
-        let edge_point = working_stations.intersect_from_end(&edge_curve);
+        let edge_point = working_stations.intersect_from_end(&edge_curve)?;
         let edge = AirfoilEdge::new(edge_point, EdgeGeometry::Arc(best_arc.clone()));
 
         Ok((Some(edge), working_stations.take_circles()))

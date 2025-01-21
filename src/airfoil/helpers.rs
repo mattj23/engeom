@@ -324,12 +324,18 @@ impl OrientedCircles {
     /// * `section`: the airfoil section curve associated with the inscribed circles
     ///
     /// returns: OPoint<f64, Const<2>>
-    pub fn intersect_from_end(&self, section: &Curve2) -> Point2 {
-        let c = self.get_end_curve(self.last().unwrap().radius()).unwrap();
+    pub fn intersect_from_end(&self, section: &Curve2) -> Result<Point2> {
+        let last = self.last().ok_or("No inscribed circles in container")?;
+        let c = self.get_end_curve(last.radius())?;
+
         let end = c.at_back().direction_point();
         let ts = section.intersection(&end);
-        let t = ts.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
-        end.at_distance(*t)
+        if ts.is_empty() {
+            Err("Failed to find intersection with airfoil section".into())
+        } else {
+            let t = ts.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+            Ok(end.at_distance(*t))
+        }
     }
 
     /// Take the inscribed circles out of the container, leaving an empty container behind. The
