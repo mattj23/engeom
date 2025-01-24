@@ -201,7 +201,20 @@ impl Series1 {
         savitzky_golay_5(self)
     }
 
-    /// Return the x values where the series crosses the line y = y_equals
+    /// Return the x values of the places where the series crosses the y value `y_equals`. The
+    /// values will be sorted from smallest to largest and will be unique.
+    ///
+    /// # Arguments
+    ///
+    /// * `y_equals`: the y value at which to find the corresponding x values
+    ///
+    /// returns: Vec<f64, Global>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
     pub fn y_crossings(&self, y_equals: f64) -> Vec<f64> {
         let mut crossings = Vec::new();
         for j in 0..self.y.len() - 1 {

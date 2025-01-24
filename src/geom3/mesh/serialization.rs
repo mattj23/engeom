@@ -69,21 +69,25 @@ impl MeshData {
 
 impl From<MeshData> for Mesh {
     fn from(value: MeshData) -> Self {
-        let uv_map = value.uv.map(|uv| UvMapping::new_from_vertices(&uv).expect("Failed to create UV mapping"));
+        let uv_map = value
+            .uv
+            .map(|uv| UvMapping::new_from_vertices(&uv).expect("Failed to create UV mapping"));
         Mesh::new_with_uv(value.vertices, value.triangles, value.is_solid, uv_map)
     }
 }
 
 impl From<&MeshData> for Mesh {
     fn from(value: &MeshData) -> Self {
-        let uv_map = value.uv.as_ref()
+        let uv_map = value
+            .uv
+            .as_ref()
             .map(|uv| UvMapping::new_from_vertices(uv).expect("Failed to create UV mapping"));
 
         Mesh::new_with_uv(
             value.vertices.clone(),
             value.triangles.clone(),
             value.is_solid,
-            uv_map
+            uv_map,
         )
     }
 }

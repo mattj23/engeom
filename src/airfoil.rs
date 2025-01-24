@@ -12,11 +12,11 @@ use crate::{Arc2, Curve2, Point2, Result, SurfacePoint2};
 
 use crate::common::points::dist;
 use crate::geom2::hull::convex_hull_2d;
-pub use edges::{
-    ConstRadiusEdge, ConvergeTangentEdge, EdgeLocation, IntersectEdge, OpenEdge, OpenIntersectGap,
-    TraceToMaxCurvature,
-};
 pub use camber::extract_camber_line;
+pub use edges::{
+    ConstRadiusEdge, ConvergeTangentEdge, EdgeLocation, FitRadiusEdge, IntersectEdge, OpenEdge,
+    OpenIntersectGap, TraceToMaxCurvature,
+};
 pub use inscribed_circle::InscribedCircle;
 pub use orientation::{CamberOrientation, DirectionFwd, TMaxFwd};
 use serde::{Deserialize, Serialize};

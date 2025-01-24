@@ -5,7 +5,7 @@ use crate::common::points::dist;
 use crate::common::Intersection;
 use crate::geom2::polyline2::SpanningRay;
 use crate::geom2::{intersection_param, Line2, Segment2, UnitVec2};
-use crate::{Circle2, Curve2, Point2, Result, SurfacePoint2};
+use crate::{Circle2, Curve2, Point2, Result, SurfacePoint2, Vector2};
 
 /// Reverse the order of the inscribed circles in the container. This will additionally
 /// reverse the order of the points on the circles so that the upper and lower points are
@@ -165,6 +165,57 @@ impl InscribedCircleSearchState {
     }
 }
 
+fn portion_weight(portion: &Curve2, sp: &SurfacePoint2) -> f64 {
+    let mut total = 0.0;
+
+    for i in 0..portion.points().len() - 1 {
+        let p0 = portion.points()[i];
+        let p1 = portion.points()[i + 1];
+
+        let w = 0.5 * (sp.scalar_projection(&p0) + sp.scalar_projection(&p1));
+        let l = dist(&p0, &p1);
+        total += w * l;
+    }
+
+    total / portion.length()
+}
+
+pub fn extract_curve_beyond_station(
+    section: &Curve2,
+    last_station: &InscribedCircle,
+    direction: &UnitVec2,
+) -> Option<Curve2> {
+    let split0 = section.at_closest_to_point(&last_station.upper);
+    let split1 = section.at_closest_to_point(&last_station.lower);
+
+    let portion0 = section.between_lengths(split0.length_along(), split1.length_along());
+    let portion1 = section.between_lengths(split1.length_along(), split0.length_along());
+
+    let sp = SurfacePoint2::new(last_station.center(), *direction);
+
+    match (portion0, portion1) {
+        (Some(p0), Some(p1)) => {
+            let w0 = portion_weight(&p0, &sp);
+            let w1 = portion_weight(&p1, &sp);
+            Some(if w0 > w1 { p0 } else { p1 })
+        }
+        (Some(p0), None) => {
+            if portion_weight(&p0, &sp) > 0.0 {
+                Some(p0)
+            } else {
+                None
+            }
+        }
+        (None, Some(p1)) => {
+            if portion_weight(&p1, &sp) > 0.0 {
+                Some(p1)
+            } else {
+                None
+            }
+        }
+        (None, None) => None,
+    }
+}
 /// This function will attempt to extract a smaller curve from the larger airfoil section curve
 /// which has the data just for the end of the airfoil. To do so, it will attempt to segment the
 /// section into two portions, with the cuts happening at the start and end of the spanning ray of
@@ -177,7 +228,11 @@ impl InscribedCircleSearchState {
 /// * `last_station`: The last inscribed circle in the provided airfoil section
 ///
 /// returns: Option<Curve2>
-pub fn extract_edge_sub_curve(section: &Curve2, last_station: &InscribedCircle, tol_fraction: Option<f64>) -> Option<Curve2> {
+pub fn extract_edge_sub_curve(
+    section: &Curve2,
+    last_station: &InscribedCircle,
+    tol_fraction: Option<f64>,
+) -> Option<Curve2> {
     let frac = tol_fraction.unwrap_or(0.25);
     let split0 = section.at_closest_to_point(&last_station.spanning_ray.origin());
     let split1 = section.at_closest_to_point(

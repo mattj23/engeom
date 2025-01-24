@@ -42,8 +42,8 @@ impl Mesh {
         is_solid: bool,
         uv: Option<UvMapping>,
     ) -> Self {
-        let shape = TriMesh::new(vertices, triangles)
-            .expect("Failed to create TriMesh with UV mapping");
+        let shape =
+            TriMesh::new(vertices, triangles).expect("Failed to create TriMesh with UV mapping");
         Self {
             shape,
             is_solid,

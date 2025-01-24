@@ -1,14 +1,16 @@
 //! This module contains tools to work with the leading and trailing edges of the airfoil section.
 
 use crate::airfoil::helpers::{
-    extract_edge_sub_curve, inscribed_from_spanning_ray, refine_stations, OrientedCircles,
+    extract_curve_beyond_station, extract_edge_sub_curve, inscribed_from_spanning_ray,
+    refine_stations, OrientedCircles,
 };
 use crate::airfoil::{AirfoilEdge, EdgeGeometry, InscribedCircle};
-use crate::common::linear_space;
 use crate::common::points::{dist, mid_point};
+use crate::common::{linear_space, BestFit};
 use crate::geom2::{intersection_param, rot90, Line2, Segment2};
+use crate::metrology::Tolerance;
 use crate::AngleDir::Ccw;
-use crate::{Curve2, Result};
+use crate::{Arc2, Circle2, Curve2, Result, SurfacePoint2};
 use parry2d_f64::query::Ray;
 
 pub trait EdgeLocation {
@@ -306,6 +308,90 @@ impl EdgeLocation for TraceToMaxCurvature {
             working_stations.take_circles(),
         ))
     }
+}
+
+pub struct FitRadiusEdge {
+    tol: Option<f64>,
+}
+
+impl FitRadiusEdge {
+    pub fn new(tol: Option<f64>) -> Self {
+        FitRadiusEdge { tol }
+    }
+
+    pub fn make(tol: Option<f64>) -> Box<dyn EdgeLocation> {
+        Box::new(FitRadiusEdge::new(tol))
+    }
+}
+
+impl EdgeLocation for FitRadiusEdge {
+    fn find_edge(
+        &self,
+        section: &Curve2,
+        stations: Vec<InscribedCircle>,
+        front: bool,
+        af_tol: f64,
+    ) -> Result<(Option<AirfoilEdge>, Vec<InscribedCircle>)> {
+        let check_tol = self.tol.unwrap_or(af_tol);
+        let mut working_stations = OrientedCircles::new(stations, front);
+        let mut iterations = 0;
+
+        while iterations < 1000 {
+            // We're going to keep on advancing until what's left is all within the tolerance of the
+            // last inscribed circle.
+            let station = working_stations
+                .last()
+                .ok_or("Empty inscribed circles container.")?;
+
+            let end_sp = working_stations.end_sp()?.normal;
+            let edge_curve = extract_curve_beyond_station(&section, &station, &end_sp)
+                .ok_or("Failed to extract edge curve on fit radius edge algorithm.")?;
+
+            // Fit a circle
+            let test = Circle2::fitting_circle(
+                &edge_curve.points(),
+                &station.circle,
+                BestFit::Gaussian(2.0),
+            )?;
+
+            // To finish, the distance between the last inscribed circle and the test fit circle should
+            // be less than the tolerance and the max circle residual should be less than the tolerance.
+            // let circle_err = dist(&test.center, &station.circle.center);
+            let residual = max_circle_residual(&edge_curve, &test);
+
+            if residual < check_tol {
+                // Find the intersection point with the end of the section
+                let edge_point = working_stations.intersect_from_end(&edge_curve)?;
+                let arc = station.contact_arc(&end_sp);
+                let edge = AirfoilEdge::new(edge_point, EdgeGeometry::Arc(arc));
+                return Ok((Some(edge), working_stations.take_circles()));
+            }
+
+            // If we're not done, we want to advance the camber line. We'll take the center of the
+            // test fit circle and go halfway in that direction.
+            let shift = (test.center - station.circle.center) * 0.5;
+            let test_ray = Ray::new(station.circle.center + shift, rot90(Ccw) * shift);
+
+            if let Some(ray) = section.try_create_spanning_ray(&test_ray) {
+                let result = inscribed_from_spanning_ray(&section, &ray, af_tol * 1e-2);
+                working_stations.push(result);
+            } else {
+                return Err("Failed to create spanning ray in fit radius edge algorithm.".into());
+            }
+
+            iterations += 1;
+        }
+
+        Err("Exceeded maximum iterations in fit radius edge algorithm.".into())
+    }
+}
+
+fn max_circle_residual(curve: &Curve2, circle: &Circle2) -> f64 {
+    curve
+        .points()
+        .iter()
+        .map(|p| circle.distance_to(p).abs())
+        .fold(0.0, |a, b| a.max(b))
 }
 
 /// This struct implements the `EdgeLocation` trait in a way which attempts to locate the edge of

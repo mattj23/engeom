@@ -25,7 +25,7 @@ pub use geom2::{
 };
 
 // Extremely common 3D types
-pub use geom3::{Iso3, Plane3, Point3, SurfacePoint3, Vector3};
+pub use geom3::{Iso3, Plane3, Point3, SurfacePoint3, Vector3, Curve3, CurveStation3};
 
 // Extremely common conversion tools
 pub use common::{To2D, To3D, TransformBy};

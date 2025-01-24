@@ -107,12 +107,12 @@ impl Circle2 {
     /// ];
     ///
     /// let guess = Circle2::new(-1.0, 1.0, 0.1);
-    /// let circle = Circle2::fitting_circle(&points, guess, All).unwrap();
+    /// let circle = Circle2::fitting_circle(&points, &guess, All).unwrap();
     /// assert_relative_eq!(circle.x(), 0.0);
     /// assert_relative_eq!(circle.y(), 0.0);
     /// assert_relative_eq!(circle.r(), 1.0);
     /// ```
-    pub fn fitting_circle(points: &[Point2], guess: Circle2, mode: BestFit) -> Result<Circle2> {
+    pub fn fitting_circle(points: &[Point2], guess: &Circle2, mode: BestFit) -> Result<Circle2> {
         fit_circle(points, &guess, mode)
     }
 
@@ -206,6 +206,30 @@ impl Circle2 {
         self.center + (t * v)
     }
 
+    /// Given a point, project it onto the perimeter of the circle. If the point is within 1.0e-10
+    /// of the center, then `None` is returned.
+    ///
+    /// # Arguments
+    ///
+    /// * `point`:
+    ///
+    /// returns: Option<OPoint<f64, Const<2>>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    pub fn project_point_to_perimeter(&self, point: &Point2) -> Option<Point2> {
+        let v = point - self.center;
+        if v.norm() < 1.0e-10 {
+            None
+        } else {
+            let n = v.normalize();
+            Some(self.center + (n * self.ball.radius))
+        }
+    }
+
     /// Determines the angle of the given point relative to the circle's center, measured in
     /// radians where zero is the x-axis and positive angles are counter-clockwise.
     ///
@@ -297,11 +321,34 @@ impl Circle2 {
         result
     }
 
+    /// Create a full arc of the circle, starting at zero and extending for 2π radians.
     pub fn to_arc(&self) -> Arc2 {
         Arc2 {
             circle: *self,
             angle0: 0.0,
             angle: 2.0 * std::f64::consts::PI,
+        }
+    }
+
+    /// Create a partial arc of the circle, starting at `angle0` and extending for `angle` radians.
+    ///
+    /// # Arguments
+    ///
+    /// * `angle0`:
+    /// * `angle`:
+    ///
+    /// returns: Arc2
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    pub fn to_partial_arc(&self, angle0: f64, angle: f64) -> Arc2 {
+        Arc2 {
+            circle: *self,
+            angle0,
+            angle,
         }
     }
 
