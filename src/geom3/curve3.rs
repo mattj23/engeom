@@ -3,7 +3,7 @@ use crate::common::points::{
 };
 use crate::errors::InvalidGeometry;
 use crate::geom3::{Iso3, Plane3, Point3, SvdBasis3, UnitVec3};
-use crate::{Point2, Result};
+use crate::{Point2, Result, SurfacePoint3};
 use parry3d_f64::na::Unit;
 use parry3d_f64::query::PointQueryWithLocation;
 use parry3d_f64::shape::Polyline;
@@ -45,6 +45,12 @@ impl<'a> CurveStation3<'a> {
 
     pub fn direction(&self) -> UnitVec3 {
         self.direction
+    }
+
+    /// Returns a SurfacePoint3 at the same position in 3d space as the station, but with a normal
+    /// pointing in the direction of the next vertex on the curve.
+    pub fn direction_point(&self) -> SurfacePoint3 {
+        SurfacePoint3::new(self.point, self.direction)
     }
 
     pub fn index(&self) -> usize {

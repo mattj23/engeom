@@ -6,6 +6,57 @@ use crate::errors::FailedConversion;
 use crate::Result;
 use parry3d_f64::na::{Point, SVector};
 
+/// Converts a slice of arrays of floating point values into a vector of points with the specified
+/// dimensionality.
+///
+/// # Arguments
+///
+/// * `slice`: the slice of [f64; D] arrays of floating point values to be converted
+///
+/// returns: Vec<OPoint<f64, Const<{ D }>>, Global>
+///
+/// # Examples
+///
+/// ```
+/// use engeom::Point2;
+/// use engeom::utility::slice_to_points;
+/// let slice = vec![[0.0, 0.5], [1.0, 1.5], [2.0, 2.5]];
+/// let points = slice_to_points(&slice);
+/// assert_eq!(points.len(), 3);
+/// assert_eq!(points[0], Point2::new(0.0, 0.5));
+/// assert_eq!(points[1], Point2::new(1.0, 1.5));
+/// assert_eq!(points[2], Point2::new(2.0, 2.5));
+/// ```
+pub fn slice_to_points<const D: usize>(slice: &[[f64; D]]) -> Vec<Point<f64, D>> {
+    slice.iter().map(|p| Point::from(*p)).collect()
+}
+
+
+/// Converts a slice of arrays of floating point values into a vector of vectors with the specified
+/// dimensionality.
+///
+/// # Arguments
+///
+/// * `slice`: the slice of [f64; D] arrays of floating point values to be converted
+///
+/// returns: Vec<Matrix<f64, Const<{ D }>, Const<1>, ArrayStorage<f64, { D }, 1>>, Global>
+///
+/// # Examples
+///
+/// ```
+/// use engeom::Vector2;
+/// use engeom::utility::slice_to_vectors;
+/// let slice = vec![[0.0, 0.5], [1.0, 1.5], [2.0, 2.5]];
+/// let vectors = slice_to_vectors(&slice);
+/// assert_eq!(vectors.len(), 3);
+/// assert_eq!(vectors[0], Vector2::new(0.0, 0.5));
+/// assert_eq!(vectors[1], Vector2::new(1.0, 1.5));
+/// assert_eq!(vectors[2], Vector2::new(2.0, 2.5));
+/// ```
+pub fn slice_to_vectors<const D: usize>(slice: &[[f64; D]]) -> Vec<SVector<f64, D>> {
+    slice.iter().map(|p| SVector::from(*p)).collect()
+}
+
 /// Takes a slice of floating point values and returns a vector of points with the specified
 /// dimensionality.  The number of values must be a multiple of the dimensionality, otherwise an
 /// `InvalidCount` error will be returned.
