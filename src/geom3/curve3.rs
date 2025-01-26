@@ -1,13 +1,11 @@
-use crate::common::points::{
-    dist, ramer_douglas_peucker,
-};
+use crate::common::points::{dist, ramer_douglas_peucker};
+use crate::common::Resample;
 use crate::errors::InvalidGeometry;
 use crate::geom3::{Iso3, Plane3, Point3, SvdBasis3, UnitVec3};
 use crate::{Point2, Result, SurfacePoint3};
 use parry3d_f64::na::Unit;
 use parry3d_f64::query::PointQueryWithLocation;
 use parry3d_f64::shape::Polyline;
-use crate::common::Resample;
 
 #[derive(Copy, Clone)]
 pub struct CurveStation3<'a> {
@@ -95,7 +93,6 @@ pub struct Curve3 {
 }
 
 impl Curve3 {
-
     pub fn vtx(&self, i: usize) -> Point3 {
         self.line.vertices()[i].clone()
     }
@@ -248,9 +245,7 @@ impl Curve3 {
         let new_points = ramer_douglas_peucker(self.line.vertices(), tol);
         Self::from_points(&new_points, tol).unwrap()
     }
-
 }
-
 
 fn resample_by_max_spacing(curve: &Curve3, max_spacing: f64) -> Curve3 {
     // Find the number of points it will take to ensure that the spacing is less than the max

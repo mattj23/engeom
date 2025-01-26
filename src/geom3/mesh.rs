@@ -6,7 +6,7 @@ mod patches;
 mod serialization;
 mod uv_mapping;
 
-use crate::{Iso3, Point2, Point3, SurfacePoint3};
+use crate::{Iso3, Plane3, Point2, Point3, SurfacePoint3};
 use std::f64::consts::PI;
 
 pub use self::serialization::{MeshData, MeshFlatData};
@@ -14,7 +14,7 @@ pub use self::uv_mapping::UvMapping;
 use crate::common::indices::index_vec;
 use crate::common::SurfacePointCollection;
 use crate::geom3::points::points_sample_poisson_disk;
-use parry3d_f64::query::{PointProjection, PointQueryWithLocation};
+use parry3d_f64::query::{PointProjection, PointQueryWithLocation, SplitResult};
 use parry3d_f64::shape::{TriMesh, TrianglePointLocation};
 use rand::prelude::SliceRandom;
 use rand::thread_rng;
@@ -29,6 +29,13 @@ pub struct Mesh {
 impl Mesh {
     pub fn new(vertices: Vec<Point3>, triangles: Vec<[u32; 3]>, is_solid: bool) -> Self {
         let shape = TriMesh::new(vertices, triangles).expect("Failed to create TriMesh");
+        Self {
+            shape,
+            is_solid,
+            uv: None,
+        }
+    }
+    pub fn new_take_trimesh(shape: TriMesh, is_solid: bool) -> Self {
         Self {
             shape,
             is_solid,
@@ -331,6 +338,19 @@ impl Mesh {
             .map(|patch| patches::compute_boundary_points(self, patch))
             .flatten()
             .collect()
+    }
+
+    pub fn split(&self, plane: &Plane3) -> SplitResult<Mesh> {
+        let result = self.shape.local_split(&plane.normal, plane.d, 1.0e-6);
+        match result {
+            SplitResult::Pair(a, b) => {
+                let mesh_a = Mesh::new_take_trimesh(a, false);
+                let mesh_b = Mesh::new_take_trimesh(b, false);
+                SplitResult::Pair(mesh_a, mesh_b)
+            }
+            SplitResult::Negative => SplitResult::Negative,
+            SplitResult::Positive => SplitResult::Positive,
+        }
     }
 }
 

@@ -21,11 +21,13 @@ pub use common::{AngleDir, AngleInterval};
 
 // Extremely common 2D types
 pub use geom2::{
-    Arc2, Circle2, Curve2, CurveStation2, Iso2, Point2, SurfacePoint2, SvdBasis2, Vector2,
+    Arc2, Circle2, Curve2, CurveStation2, Iso2, Point2, SurfacePoint2, SvdBasis2, UnitVec2, Vector2,
 };
 
 // Extremely common 3D types
-pub use geom3::{Iso3, Plane3, Point3, SurfacePoint3, Vector3, Curve3, CurveStation3};
+pub use geom3::{
+    Curve3, CurveStation3, Iso3, Mesh, Plane3, Point3, SurfacePoint3, UnitVec3, Vector3,
+};
 
 // Extremely common conversion tools
 pub use common::{To2D, To3D, TransformBy};

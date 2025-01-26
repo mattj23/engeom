@@ -26,7 +26,6 @@ impl Plane3 {
 
 // TODO: should this be a Result?
 impl From<(&Point3, &Point3, &Point3)> for Plane3 {
-
     /// Create a Plane3 from three points
     ///
     /// # Arguments

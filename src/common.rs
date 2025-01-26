@@ -16,6 +16,7 @@ pub use angles::{
 pub use convert_2d_3d::{To2D, To3D};
 pub use discrete_domain::{linear_space, DiscreteDomain};
 pub use interval::Interval;
+pub use parry3d_f64::query::SplitResult;
 pub use surface_point::{SurfacePoint, SurfacePointCollection};
 
 /// General purpose options for resampling data over a discrete domain.

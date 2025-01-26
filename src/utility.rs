@@ -31,7 +31,6 @@ pub fn slice_to_points<const D: usize>(slice: &[[f64; D]]) -> Vec<Point<f64, D>>
     slice.iter().map(|p| Point::from(*p)).collect()
 }
 
-
 /// Converts a slice of arrays of floating point values into a vector of vectors with the specified
 /// dimensionality.
 ///
