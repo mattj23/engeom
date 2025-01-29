@@ -6,7 +6,7 @@ mod patches;
 mod serialization;
 mod uv_mapping;
 
-use crate::{Iso3, Plane3, Point2, Point3, SurfacePoint3};
+use crate::{Iso3, Plane3, Point2, Point3, SurfacePoint3, Result};
 use std::f64::consts::PI;
 
 pub use self::serialization::{MeshData, MeshFlatData};
@@ -41,6 +41,15 @@ impl Mesh {
             is_solid,
             uv: None,
         }
+    }
+
+    pub fn append(&mut self, other: &Mesh) -> Result<()> {
+        // For now, both meshes must have an empty UV mapping
+        if self.uv.is_some() || other.uv.is_some() {
+            return Err("Cannot append meshes with UV mappings".into());
+        }
+
+        Ok(self.shape.append(&other.shape))
     }
 
     pub fn new_with_uv(
