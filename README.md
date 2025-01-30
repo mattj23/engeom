@@ -2,6 +2,17 @@
 
 The goal of this library is to provide a comprehensive set of metrology-focused tools for working with 2D and 3D geometry in Rust.  The primary use case is engineering applications such as GD&T and quality/dimensional inspection, and the library contains a wide set of tools to help work with every step of the process starting with raw data formats such as meshes and point clouds.
 
+## Documentation
+
+The documentation for this project is built with mkdocs-material.  To set up the documentation locally, use a virtual environment and run `mkdocs serve`.
+
+```bash
+pip install mkdocs-material
+
+# Run mkdocs serve from the folder containing the mkdocs.yml file
+mkdocs serve
+```
+
 ##  General Principles
 
 Because this is a metrology-focused library, the order of priority for algorithms and methods is:
