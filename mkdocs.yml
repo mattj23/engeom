@@ -3,6 +3,7 @@ theme:
   name: material
 nav:
   - Home: index.md
+  - Python and Rust: python_rust.md
   - Common Concepts:
       - common/core_space.md
       - Angles: common/angles.md

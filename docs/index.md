@@ -1,6 +1,6 @@
 # Overview
 
-The `engeom` library is a set of tools for engineering geometry applications in Rust, with a focus on metrology, GD&T, and inspection.  
+The `engeom` library is a set of tools for engineering geometry applications in Rust (with a reduced set of bindings in Python), with a focus on metrology, GD&T, and inspection.  
 
 While there is significant overlap with other computational geometry applications (computer graphics, CAD, etc.), `engeom` was built on a set of base principles that favors metrology and fills the gap left by other libraries and approaches.
 
