@@ -12,7 +12,11 @@ use stl_io;
 use crate::geom3::Mesh;
 
 #[cfg(feature = "stl")]
-pub fn read_mesh_stl(path: &Path) -> Result<Mesh> {
+pub fn read_mesh_stl(
+    path: &Path,
+    merge_duplicates: bool,
+    delete_degenerate: bool,
+) -> Result<Mesh> {
     let mut file = OpenOptions::new().read(true).open(path)?;
     let mesh = stl_io::read_stl(&mut file)?;
 
@@ -34,7 +38,7 @@ pub fn read_mesh_stl(path: &Path) -> Result<Mesh> {
         })
         .collect::<Vec<_>>();
 
-    Ok(Mesh::new(vertices, triangles, false))
+    Mesh::new_with_options(vertices, triangles, false, merge_duplicates, delete_degenerate, None)
 }
 
 #[cfg(feature = "stl")]

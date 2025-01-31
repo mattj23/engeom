@@ -6,7 +6,7 @@ mod patches;
 mod serialization;
 mod uv_mapping;
 
-use crate::{Iso3, Plane3, Point2, Point3, SurfacePoint3, Result};
+use crate::{Iso3, Plane3, Point2, Point3, SurfacePoint3, Result, Curve3};
 use std::f64::consts::PI;
 
 pub use self::serialization::{MeshData, MeshFlatData};
@@ -14,8 +14,8 @@ pub use self::uv_mapping::UvMapping;
 use crate::common::indices::index_vec;
 use crate::common::SurfacePointCollection;
 use crate::geom3::points::points_sample_poisson_disk;
-use parry3d_f64::query::{PointProjection, PointQueryWithLocation, SplitResult};
-use parry3d_f64::shape::{TriMesh, TrianglePointLocation};
+use parry3d_f64::query::{IntersectResult, PointProjection, PointQueryWithLocation, SplitResult};
+use parry3d_f64::shape::{TriMesh, TriMeshFlags, TrianglePointLocation};
 use rand::prelude::SliceRandom;
 use rand::thread_rng;
 
@@ -27,6 +27,51 @@ pub struct Mesh {
 }
 
 impl Mesh {
+    /// Create a new mesh from a list of vertices and a list of triangles.  Additional options can
+    /// be set to merge duplicate vertices and delete degenerate triangles.
+    ///
+    /// # Arguments
+    ///
+    /// * `vertices`:
+    /// * `triangles`:
+    /// * `is_solid`:
+    /// * `merge_duplicates`:
+    /// * `delete_degenerate`:
+    /// * `uv`:
+    ///
+    /// returns: Result<Mesh, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    pub fn new_with_options(
+        vertices: Vec<Point3>,
+        triangles: Vec<[u32; 3]>,
+        is_solid: bool,
+        merge_duplicates: bool,
+        delete_degenerate: bool,
+        uv: Option<UvMapping>,
+    ) -> Result<Self> {
+        let mut flags = TriMeshFlags::empty();
+        if merge_duplicates {
+            flags |= TriMeshFlags::MERGE_DUPLICATE_VERTICES;
+            flags |= TriMeshFlags::DELETE_DUPLICATE_TRIANGLES;
+        }
+        if delete_degenerate {
+            flags |= TriMeshFlags::DELETE_BAD_TOPOLOGY_TRIANGLES;
+            flags |= TriMeshFlags::DELETE_DEGENERATE_TRIANGLES;
+        }
+
+        let shape = TriMesh::with_flags(vertices, triangles, flags)?;
+        Ok(Self {
+            shape,
+            is_solid,
+            uv,
+        })
+    }
+
     pub fn new(vertices: Vec<Point3>, triangles: Vec<[u32; 3]>, is_solid: bool) -> Self {
         let shape = TriMesh::new(vertices, triangles).expect("Failed to create TriMesh");
         Self {
@@ -359,6 +404,18 @@ impl Mesh {
             }
             SplitResult::Negative => SplitResult::Negative,
             SplitResult::Positive => SplitResult::Positive,
+        }
+    }
+
+    pub fn section(&self, plane: &Plane3) -> Result<Vec<Curve3>> {
+        let mut collected = Vec::new();
+        let result = self.shape.intersection_with_local_plane(&plane.normal, plane.d, 1.0e-6);
+
+        if let IntersectResult::Intersect(pline) = result {
+
+            todo!()
+        } else {
+            Ok(collected)
         }
     }
 }
