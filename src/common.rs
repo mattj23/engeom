@@ -4,7 +4,9 @@ mod convert_2d_3d;
 mod discrete_domain;
 pub mod indices;
 mod interval;
+pub mod kd_tree;
 pub mod points;
+pub mod poisson_disk;
 pub mod surface_point;
 pub mod svd_basis;
 pub mod vec_f64;
@@ -54,7 +56,7 @@ pub enum Smoothing {
 /// General purpose options for fitting data to a model
 #[derive(Debug, Clone, Copy)]
 pub enum BestFit {
-    /// Use all samples and perform a least squares minimization
+    /// Use all samples and perform a least-squares minimization
     All,
 
     /// De-weight samples based on their standard deviation from the mean

@@ -4,9 +4,9 @@
 use crate::common::points::dist;
 use crate::geom2::{directed_angle, signed_angle, Arc2, Circle2, Iso2, Point2, Vector2};
 
+use crate::common::kd_tree::KdTreeSearch;
 use crate::common::AngleDir;
-use crate::geom2::kd_tree2::{kd_tree_nearest_2d, kd_tree_within_2d, to_kd_tree2};
-use crate::Result;
+use crate::{KdTree2, Result};
 use parry2d_f64::shape::ConvexPolygon;
 use parry2d_f64::transformation::convex_hull_idx;
 use serde::Serialize;
@@ -145,7 +145,7 @@ pub fn ball_pivot_with_centers_2d(
     // with the ball radius. These circles represent the arc of the ball's movement around
     // each point, not the actual ball itself. We use these to find the intersections between the
     // ball trajectories.
-    let tree = to_kd_tree2(points);
+    let tree = KdTree2::new(points);
     let circles = points
         .iter()
         .map(|p| Circle2::new(p.x, p.y, radius))
@@ -178,14 +178,13 @@ pub fn ball_pivot_with_centers_2d(
     let mut completed = HashSet::new();
     completed.insert(working_index);
 
-    // The distance we must search for points is double the radius of the ball, then squared for
-    // convenience when working with the kd-tree's squared Euclidean distance function.
-    let search2 = (2.0 * radius).powi(2);
+    // The distance we must search for points is double the radius of the ball
+    let search2 = radius * 2.0;
 
     // let mut count = 0;
     loop {
         // Get the neighborhood of points within 2x the radius
-        let neighbors = kd_tree_within_2d(&tree, &points[working_index], search2);
+        let neighbors = tree.within(&points[working_index], search2);
 
         // let mut debug_output = DebugOutput {
         //     points: points.to_vec(),
@@ -211,9 +210,9 @@ pub fn ball_pivot_with_centers_2d(
         // between circles. The one with the intersection that has the smallest positive angle to
         // the last ball contact point is the one we choose to pivot on
         let mut best: Option<PivotPoint> = None;
-        for ni in neighbors.iter() {
+        for (ni, _) in neighbors.iter() {
             // We want to skip the neighbor two elements back, because that's the one we just came
-            // from and it will otherwise have a perfect intersection at 0 degrees.
+            // from, and it will otherwise have a perfect intersection at 0 degrees.
             if results.len() >= 2 && *ni == results[results.len() - 2] {
                 continue;
             }
@@ -369,7 +368,7 @@ fn find_start_on_index(points: &[Point2], index: usize, radius: f64) -> Result<(
         .filter(|(i, _)| *i != index)
         .map(|(_, p)| *p)
         .collect::<Vec<_>>();
-    let tree = to_kd_tree2(&tree_points);
+    let tree = KdTree2::new(&tree_points);
 
     let circle = Circle2::from_point(points[index], radius);
     let mut best_distance = 0.0;
@@ -378,8 +377,8 @@ fn find_start_on_index(points: &[Point2], index: usize, radius: f64) -> Result<(
     for i in 0..1000 {
         let angle = (i as f64 / 1000.0) * 2.0 * PI;
         let p = circle.point_at_angle(angle);
-        let ni = kd_tree_nearest_2d(&tree, &p);
-        let d = dist(&p, &tree_points[ni]);
+        let (_ni, d) = tree.nearest_one(&p);
+
         if d > best_distance {
             best_distance = d;
             best_angle = angle;

@@ -3,7 +3,6 @@ mod angles2;
 mod circle2;
 mod curve2;
 pub mod hull;
-pub mod kd_tree2;
 mod line2;
 pub mod polyline2;
 
@@ -22,6 +21,7 @@ pub type SvdBasis2 = SvdBasis<2>;
 pub type Aabb2 = parry2d_f64::bounding_volume::Aabb;
 pub type Ray2 = parry2d_f64::query::Ray;
 pub type Align2 = crate::common::align::Alignment<UnitComplex<f64>, 2>;
+pub type KdTree2 = crate::common::kd_tree::KdTree<2>;
 
 pub use self::angles2::{directed_angle, rot270, rot90, signed_angle};
 pub use self::circle2::{Arc2, Circle2};

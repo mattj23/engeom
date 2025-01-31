@@ -1,9 +1,7 @@
 pub mod align3;
 mod curve3;
-pub mod kd_tree3;
 pub mod mesh;
 mod plane3;
-mod points;
 
 use crate::common::surface_point::{SurfacePoint, SurfacePointCollection};
 use crate::common::svd_basis::SvdBasis;
@@ -20,6 +18,7 @@ pub type Vector3 = parry3d_f64::na::Vector3<f64>;
 pub type UnitVec3 = parry3d_f64::na::Unit<Vector3>;
 pub type SurfacePoint3 = SurfacePoint<3>;
 pub type Iso3 = parry3d_f64::na::Isometry3<f64>;
+pub type KdTree3 = crate::common::kd_tree::KdTree<3>;
 
 pub type SvdBasis3 = SvdBasis<3>;
 pub type Align3 = crate::common::align::Alignment<UnitQuaternion<f64>, 3>;

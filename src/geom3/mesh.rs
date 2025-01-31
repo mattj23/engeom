@@ -12,8 +12,8 @@ use std::f64::consts::PI;
 pub use self::serialization::{MeshData, MeshFlatData};
 pub use self::uv_mapping::UvMapping;
 use crate::common::indices::{chained_indices, index_vec};
+use crate::common::poisson_disk::sample_poisson_disk;
 use crate::common::SurfacePointCollection;
-use crate::geom3::points::points_sample_poisson_disk;
 use parry3d_f64::query::{IntersectResult, PointProjection, PointQueryWithLocation, SplitResult};
 use parry3d_f64::shape::{TriMesh, TriMeshFlags, TrianglePointLocation};
 use rand::prelude::SliceRandom;
@@ -328,7 +328,7 @@ impl Mesh {
         let mut indices = index_vec(None, starting.len());
         indices.shuffle(&mut rng);
 
-        let to_take = points_sample_poisson_disk(&points, radius, &indices);
+        let to_take = sample_poisson_disk(&points, &indices, radius);
         to_take.into_iter().map(|i| starting[i]).collect()
     }
 
