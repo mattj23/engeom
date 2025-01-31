@@ -26,7 +26,7 @@ pub use geom2::{
 
 // Extremely common 3D types
 pub use geom3::{
-    Curve3, CurveStation3, Iso3, Mesh, Plane3, Point3, SurfacePoint3, UnitVec3, Vector3, SvdBasis3,
+    Curve3, CurveStation3, Iso3, Mesh, Plane3, Point3, SurfacePoint3, SvdBasis3, UnitVec3, Vector3,
 };
 
 // Extremely common conversion tools

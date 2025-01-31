@@ -6,12 +6,12 @@ mod patches;
 mod serialization;
 mod uv_mapping;
 
-use crate::{Iso3, Plane3, Point2, Point3, SurfacePoint3, Result, Curve3};
+use crate::{Curve3, Iso3, Plane3, Point2, Point3, Result, SurfacePoint3};
 use std::f64::consts::PI;
 
 pub use self::serialization::{MeshData, MeshFlatData};
 pub use self::uv_mapping::UvMapping;
-use crate::common::indices::index_vec;
+use crate::common::indices::{chained_indices, index_vec};
 use crate::common::SurfacePointCollection;
 use crate::geom3::points::points_sample_poisson_disk;
 use parry3d_f64::query::{IntersectResult, PointProjection, PointQueryWithLocation, SplitResult};
@@ -407,16 +407,42 @@ impl Mesh {
         }
     }
 
-    pub fn section(&self, plane: &Plane3) -> Result<Vec<Curve3>> {
+    /// Perform a section of the mesh with a plane, returning a list of `Curve3` objects that
+    /// trace the intersection of the mesh with the plane.
+    ///
+    /// # Arguments
+    ///
+    /// * `plane`:
+    /// * `tol`:
+    ///
+    /// returns: Result<Vec<Curve3, Global>, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    pub fn section(&self, plane: &Plane3, tol: Option<f64>) -> Result<Vec<Curve3>> {
+        let tol = tol.unwrap_or(1.0e-6);
         let mut collected = Vec::new();
-        let result = self.shape.intersection_with_local_plane(&plane.normal, plane.d, 1.0e-6);
+        let result = self
+            .shape
+            .intersection_with_local_plane(&plane.normal, plane.d, 1.0e-6);
 
         if let IntersectResult::Intersect(pline) = result {
-
-            todo!()
-        } else {
-            Ok(collected)
+            let chains = chained_indices(pline.indices());
+            for chain in chains.iter() {
+                let points = chain
+                    .iter()
+                    .map(|&i| pline.vertices()[i as usize])
+                    .collect::<Vec<_>>();
+                if let Ok(curve) = Curve3::from_points(&points, tol) {
+                    collected.push(curve);
+                }
+            }
         }
+
+        Ok(collected)
     }
 }
 

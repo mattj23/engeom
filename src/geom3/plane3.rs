@@ -37,7 +37,6 @@ impl Plane3 {
         self.normal.dot(&point.coords) - self.d
     }
 
-
     /// Measure and return the distance from the plane to a point in 3D space. The distance is
     /// always positive, and indicates the shortest distance from the point to the plane. If you
     /// need to know whether the point is above or below the plane, use `signed_distance_to_point`.
