@@ -982,7 +982,6 @@ mod tests {
     use super::*;
     use crate::geom2::Vector2;
     use approx::assert_relative_eq;
-    use num_traits::Signed;
     use test_case::test_case;
 
     use rand::distr::Uniform;

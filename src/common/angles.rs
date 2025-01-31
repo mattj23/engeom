@@ -232,7 +232,7 @@ mod tests {
     use crate::common::linear_space;
     use crate::{Circle2, Iso2};
     use approx::assert_relative_eq;
-    use rand::{thread_rng, Rng};
+    use rand::Rng;
     use test_case::test_case;
 
     #[test_case(90.0, -270.0)]
@@ -248,9 +248,9 @@ mod tests {
 
     #[test]
     fn stress_test_angle_to_2pi() {
-        let mut rnd = thread_rng();
+        let mut rnd = rand::rng();
         for _ in 0..1000 {
-            let angle = rnd.gen_range(-8.0 * PI..8.0 * PI);
+            let angle = rnd.random_range(-8.0 * PI..8.0 * PI);
             let test = angle_to_2pi(angle);
             assert!(
                 test >= 0.0 && test < 2.0 * PI,
@@ -266,9 +266,9 @@ mod tests {
 
     #[test]
     fn stress_test_angle_signed_pi() {
-        let mut rnd = thread_rng();
+        let mut rnd = rand::rng();
         for _ in 0..1000 {
-            let angle = rnd.gen_range(-8.0 * PI..8.0 * PI);
+            let angle = rnd.random_range(-8.0 * PI..8.0 * PI);
             let test = angle_signed_pi(angle);
             assert!(
                 test >= -PI && test < PI,
@@ -284,12 +284,12 @@ mod tests {
 
     #[test]
     fn stress_test_angle_in_direction_counterclockwise() {
-        let mut rnd = thread_rng();
+        let mut rnd = rand::rng();
         let c = Circle2::new(0.0, 0.0, 1.0);
 
         for _ in 0..1000 {
-            let start = rnd.gen_range(-2.0 * PI..2.0 * PI);
-            let end = rnd.gen_range(-2.0 * PI..2.0 * PI);
+            let start = rnd.random_range(-2.0 * PI..2.0 * PI);
+            let end = rnd.random_range(-2.0 * PI..2.0 * PI);
 
             let v0 = c.point_at_angle(start);
             let v1 = c.point_at_angle(end);
@@ -314,12 +314,12 @@ mod tests {
     }
     #[test]
     fn stress_test_angle_in_direction_clockwise() {
-        let mut rnd = thread_rng();
+        let mut rnd = rand::rng();
         let c = Circle2::new(0.0, 0.0, 1.0);
 
         for _ in 0..1000 {
-            let start = rnd.gen_range(-2.0 * PI..2.0 * PI);
-            let end = rnd.gen_range(-2.0 * PI..2.0 * PI);
+            let start = rnd.random_range(-2.0 * PI..2.0 * PI);
+            let end = rnd.random_range(-2.0 * PI..2.0 * PI);
 
             let v0 = c.point_at_angle(start);
             let v1 = c.point_at_angle(end);
@@ -345,10 +345,10 @@ mod tests {
 
     #[test]
     fn test_angle_includes() {
-        let mut rnd = thread_rng();
+        let mut rnd = rand::rng();
         for _ in 0..1000 {
-            let start = rnd.gen_range(-2.0 * PI..2.0 * PI);
-            let angle = rnd.gen_range(-2.0 * PI..2.0 * PI);
+            let start = rnd.random_range(-2.0 * PI..2.0 * PI);
+            let angle = rnd.random_range(-2.0 * PI..2.0 * PI);
             let interval = AngleInterval::new(start, angle);
 
             for da in linear_space(0.0, angle, 100).values() {

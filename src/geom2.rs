@@ -67,7 +67,6 @@ impl SurfacePointCollection<2> for &Vec<SurfacePoint2> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::linear_space;
     use approx::assert_relative_eq;
     use std::f64::consts::PI;
 

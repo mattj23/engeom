@@ -662,7 +662,7 @@ impl LeastSquaresProblem<f64, Dyn, U3> for CircleFit<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geom2::{Line2, Ray2};
+    use crate::geom2::Ray2;
     use approx::assert_relative_eq;
     use std::f64::consts::PI;
     use test_case::test_case;

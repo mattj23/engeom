@@ -87,7 +87,7 @@ mod tests {
     use super::*;
     use crate::geom3::{Point3, Vector3};
     use approx::assert_relative_eq;
-    use rand::{thread_rng, Rng};
+    use rand::Rng;
     use std::f64::consts::PI;
 
     const NUMERIC_EPSILON: f64 = 1e-8;
@@ -160,12 +160,12 @@ mod tests {
 
     #[test]
     fn test_wpr_rot_mat_round_trip_stress() {
-        let mut rnd = thread_rng();
+        let mut rnd = rand::rng();
         for _ in 0..1000 {
             let m0 = RotationMatrices::from_euler(
-                rnd.gen_range(-PI..PI),
-                rnd.gen_range(-PI..PI),
-                rnd.gen_range(-PI..PI),
+                rnd.random_range(-PI..PI),
+                rnd.random_range(-PI..PI),
+                rnd.random_range(-PI..PI),
             );
             let t0 = to_matrix(&m0.q);
 

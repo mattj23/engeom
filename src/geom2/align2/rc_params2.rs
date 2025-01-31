@@ -174,7 +174,6 @@ mod tests {
     use crate::geom2::Iso2;
     use crate::geom2::Point2;
     use approx::assert_relative_eq;
-    use parry2d_f64::na::{Translation2, UnitComplex};
     use std::f64::consts::FRAC_PI_2;
 
     #[test]
