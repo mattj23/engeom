@@ -991,9 +991,9 @@ mod tests {
     use num_traits::Signed;
     use test_case::test_case;
 
-    use rand::distributions::Uniform;
+    use rand::distr::Uniform;
     use rand::prelude::Distribution;
-    use rand::thread_rng;
+    use rand::rng;
 
     fn sample1() -> Vec<(f64, f64)> {
         vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
@@ -1015,19 +1015,19 @@ mod tests {
     fn stress_between_lengths_by_control() {
         let points = sample_points(&sample1());
         let curve = Curve2::from_points(&points, 1e-6, true).unwrap();
-        let mut rng = thread_rng();
-        let dist = Uniform::new(0.0, curve.length());
+        let mut rn = rng();
+        let dist = Uniform::new(0.0, curve.length()).unwrap();
 
         for _ in 0..5000 {
-            let a = dist.sample(&mut rng);
-            let mut b = dist.sample(&mut rng);
+            let a = dist.sample(&mut rn);
+            let mut b = dist.sample(&mut rn);
             while (a - b).abs() < 1e-6 {
-                b = dist.sample(&mut rng);
+                b = dist.sample(&mut rn);
             }
 
-            let mut c = dist.sample(&mut rng);
+            let mut c = dist.sample(&mut rn);
             while (a - c).abs() < 1e-6 || (b - c).abs() < 1e-6 {
-                c = dist.sample(&mut rng);
+                c = dist.sample(&mut rn);
             }
 
             let p_a = curve.at_length(a).unwrap().point;

@@ -37,7 +37,7 @@ impl Tolerance {
     ///
     /// * `center`: the nominal value of the tolerance zone
     /// * `half_width`: the half width of the tolerance zone. If a negative value is given, it
-    /// will be converted to a positive value.
+    ///   will be converted to a positive value.
     ///
     /// returns: TolZone
     ///

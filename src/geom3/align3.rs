@@ -147,21 +147,21 @@ mod tests {
     use super::*;
     use crate::geom3::Vector3;
     use approx::assert_relative_eq;
-    use rand::distributions::Uniform;
+    use rand::distr::Uniform;
     use rand::prelude::*;
     use std::f64::consts::PI;
 
     fn random_iso3() -> Iso3 {
-        let mut rng = thread_rng();
+        let mut rn = rand::rng();
         let v = Vector3::new(
-            Uniform::from(-10.0..10.0).sample(&mut rng),
-            Uniform::from(-10.0..10.0).sample(&mut rng),
-            Uniform::from(-10.0..10.0).sample(&mut rng),
+            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rn),
+            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rn),
+            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rn),
         );
         let e = Vector3::new(
-            Uniform::from(-PI..PI).sample(&mut rng),
-            Uniform::from(-PI..PI).sample(&mut rng),
-            Uniform::from(-PI..PI).sample(&mut rng),
+            Uniform::try_from(-PI..PI).unwrap().sample(&mut rn),
+            Uniform::try_from(-PI..PI).unwrap().sample(&mut rn),
+            Uniform::try_from(-PI..PI).unwrap().sample(&mut rn),
         );
         Iso3::from_parts(
             Translation3::from(v),
@@ -170,11 +170,11 @@ mod tests {
     }
 
     fn random_point3() -> Point3 {
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         Point3::new(
-            Uniform::from(-10.0..10.0).sample(&mut rng),
-            Uniform::from(-10.0..10.0).sample(&mut rng),
-            Uniform::from(-10.0..10.0).sample(&mut rng),
+            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rng),
+            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rng),
+            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rng),
         )
     }
 

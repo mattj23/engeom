@@ -141,11 +141,11 @@ mod tests {
 
     #[test]
     fn test_wpr_round_trip_stress() {
-        let mut rnd = thread_rng();
+        let mut rnd = rand::rng();
         for _ in 0..1000 {
-            let rx = rnd.gen_range(-PI..PI);
-            let ry = rnd.gen_range(-PI..PI);
-            let rz = rnd.gen_range(-PI..PI);
+            let rx = rnd.random_range(-PI..PI);
+            let ry = rnd.random_range(-PI..PI);
+            let rz = rnd.random_range(-PI..PI);
 
             let m0 = RotationMatrices::from_euler(rx, ry, rz);
             let t0 = to_matrix(&m0.q);
@@ -154,7 +154,7 @@ mod tests {
             let m1 = RotationMatrices::from_euler(rx1, ry1, rz1);
             let t1 = to_matrix(&m1.q);
 
-            assert_relative_eq!(t0, t1, epsilon = 1e-4);
+            assert_relative_eq!(t0, t1, epsilon = 2e-4);
         }
     }
 

@@ -61,9 +61,9 @@ mod tests {
     use crate::geom2::{Iso2, Vector2};
     use approx::assert_relative_eq;
     use parry2d_f64::na::{Translation2, UnitComplex};
-    use rand::distributions::Uniform;
+    use rand::distr::Uniform;
     use rand::prelude::Distribution;
-    use rand::thread_rng;
+    use rand::rng;
     use std::f64::consts::{FRAC_PI_2, PI};
 
     const NUMERIC_EPS: f64 = 1e-8;
@@ -288,26 +288,29 @@ mod tests {
     }
 
     fn random_iso2() -> Iso2 {
-        let mut rng = thread_rng();
+        let mut rn = rng();
         let v = Vector2::new(
-            Uniform::from(-10.0..10.0).sample(&mut rng),
-            Uniform::from(-10.0..10.0).sample(&mut rng),
+            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rn),
+            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rn),
         );
-        let r = Uniform::from(-PI..PI).sample(&mut rng);
+        let r = Uniform::try_from(-PI..PI).unwrap().sample(&mut rn);
         Iso2::from_parts(Translation2::from(v), UnitComplex::new(r))
     }
 
     fn random_point() -> Point2 {
-        let mut rng = thread_rng();
+        let mut rn = rng();
         Point2::new(
-            Uniform::from(-10.0..10.0).sample(&mut rng),
-            Uniform::from(-10.0..10.0).sample(&mut rng),
+            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rn),
+            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rn),
         )
     }
 
     fn random_dir() -> f64 {
-        let mut rng = thread_rng();
-        Uniform::from(-1.0..1.0_f64).sample(&mut rng).signum()
+        let mut rn = rng();
+        Uniform::try_from(-1.0..1.0_f64)
+            .unwrap()
+            .sample(&mut rn)
+            .signum()
     }
 
     #[test]
