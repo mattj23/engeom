@@ -213,7 +213,7 @@ impl Curve2 {
     }
 
     pub fn vtx(&self, i: usize) -> Point2 {
-        self.line.vertices()[i].clone()
+        self.line.vertices()[i]
     }
 
     /// Builds a Curve2 from a sequence of points. The points will be de-duplicated within the
@@ -224,7 +224,7 @@ impl Curve2 {
         pts.dedup_by(|a, b| dist(a, b) <= tol);
 
         if pts.len() < 2 {
-            return Err(Box::try_from(InvalidGeometry::NotEnoughPoints).unwrap());
+            return Err(Box::from(InvalidGeometry::NotEnoughPoints));
         }
 
         // Check if the curve is supposed to be closed
@@ -272,7 +272,7 @@ impl Curve2 {
     /// * `points`: The points to build the curve from, must be in sequence
     /// * `tol`: The general tolerance to use for the curve, used for de-duplication of points
     /// * `force_closed`: If true, the curve will be closed even if the first and last points are
-    /// not within the tolerance of each other
+    ///   not within the tolerance of each other
     ///
     /// returns: Result<Curve2, Box<dyn Error, Global>>
     ///
@@ -611,7 +611,7 @@ impl Curve2 {
     /// ```
     pub fn max_point_in_direction(&self, vector: &Vector2) -> Option<(usize, Point2)> {
         // TODO: there is probably a much more efficient way to do this using the bvh
-        max_point_in_direction(&self.points(), &vector)
+        max_point_in_direction(self.points(), vector)
     }
 
     /// Find the maximum distance of any point on the curve in the direction of the given surface
@@ -659,7 +659,7 @@ impl Curve2 {
     /// # Arguments
     ///
     /// * `tol`: The maximum allowable distance between any point on the old curve and its closest
-    /// projection onto the new curve
+    ///   projection onto the new curve
     ///
     /// returns: Curve2
     pub fn simplify(&self, tol: f64) -> Self {
@@ -765,20 +765,14 @@ impl Curve2 {
         let xs = self.lengths.clone();
         let mut ys = vec![0.0; self.count()];
 
-        for i in 1..self.count() - 1 {
-            if i == 0 {
-                if self.is_closed {
-                    ys[i] = self.get_curvature(self.count() - 2, i, i + 1);
-                }
+        for (i, yi) in ys.iter_mut().enumerate().take(self.count() - 1).skip(1) {
+            *yi = if i == 0 && self.is_closed {
+                self.get_curvature(self.count() - 2, i, i + 1)
+            } else if i == self.count() - 1 && self.is_closed {
+                self.get_curvature(i - 1, i, 1)
+            } else {
+                self.get_curvature(i - 1, i, i + 1)
             }
-
-            if i == self.count() - 1 {
-                if self.is_closed {
-                    ys[i] = self.get_curvature(i - 1, i, 1);
-                }
-            }
-
-            ys[i] = self.get_curvature(i - 1, i, i + 1);
         }
 
         if !self.is_closed {

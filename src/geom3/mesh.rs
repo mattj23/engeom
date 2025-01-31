@@ -17,7 +17,6 @@ use crate::geom3::points::points_sample_poisson_disk;
 use parry3d_f64::query::{IntersectResult, PointProjection, PointQueryWithLocation, SplitResult};
 use parry3d_f64::shape::{TriMesh, TriMeshFlags, TrianglePointLocation};
 use rand::prelude::SliceRandom;
-use rand::thread_rng;
 
 #[derive(Clone)]
 pub struct Mesh {
@@ -94,7 +93,8 @@ impl Mesh {
             return Err("Cannot append meshes with UV mappings".into());
         }
 
-        Ok(self.shape.append(&other.shape))
+        self.shape.append(&other.shape);
+        Ok(())
     }
 
     pub fn new_with_uv(
@@ -180,7 +180,7 @@ impl Mesh {
     /// * `max_angle`: the max allowable angle deviation between the mesh normal at the projection
     ///   and the vector from the projection to the test point
     /// * `transform`: an optional transform to apply to the test point before projecting it onto
-    ///  the mesh
+    ///   the mesh
     ///
     /// returns: Option<(PointProjection, u32, TrianglePointLocation)>
     pub fn project_with_tol(
@@ -200,7 +200,7 @@ impl Mesh {
             .shape
             .project_local_point_and_get_location_with_max_dist(&point, self.is_solid, max_dist);
         if let Some((prj, (id, loc))) = result {
-            let local = point - &prj.point;
+            let local = point - prj.point;
             let triangle = self.shape.triangle(id);
             if let Some(normal) = triangle.normal() {
                 let angle = normal.angle(&local).abs();
@@ -324,7 +324,7 @@ impl Mesh {
         let starting = self.sample_dense(radius * 0.5);
         // TODO: this can be more efficient without all the copying
         let points = starting.clone_points();
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         let mut indices = index_vec(None, starting.len());
         indices.shuffle(&mut rng);
 
@@ -336,14 +336,14 @@ impl Mesh {
         let mut sampled = Vec::new();
         for face in self.shape.triangles() {
             // Find the angle closest to 90 degrees
-            let ua = &face.b - &face.a;
-            let va = &face.c - &face.a;
+            let ua = face.b - face.a;
+            let va = face.c - face.a;
 
-            let ub = &face.a - &face.b;
-            let vb = &face.c - &face.b;
+            let ub = face.a - face.b;
+            let vb = face.c - face.b;
 
-            let uc = &face.a - &face.c;
-            let vc = &face.b - &face.c;
+            let uc = face.a - face.c;
+            let vc = face.b - face.c;
 
             let aa = ua.angle(&va).abs() - PI / 2.0;
             let ab = ub.angle(&vb).abs() - PI / 2.0;
@@ -389,8 +389,7 @@ impl Mesh {
         let patches = self.get_patches();
         patches
             .iter()
-            .map(|patch| patches::compute_boundary_points(self, patch))
-            .flatten()
+            .flat_map(|patch| patches::compute_boundary_points(self, patch))
             .collect()
     }
 

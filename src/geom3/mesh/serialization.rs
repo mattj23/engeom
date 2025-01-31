@@ -97,8 +97,8 @@ impl From<&Mesh> for MeshData {
         let uv = value.uv().map(|uv| uv.to_vertices());
         let tri_mesh = value.tri_mesh();
         Self::new(
-            tri_mesh.vertices().iter().map(|v| *v).collect_vec(),
-            tri_mesh.indices().iter().map(|t| *t).collect_vec(),
+            tri_mesh.vertices().iter().copied().collect_vec(),
+            tri_mesh.indices().iter().copied().collect_vec(),
             uv,
             value.is_solid(),
         )

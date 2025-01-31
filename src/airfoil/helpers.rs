@@ -5,7 +5,7 @@ use crate::common::points::dist;
 use crate::common::Intersection;
 use crate::geom2::polyline2::SpanningRay;
 use crate::geom2::{intersection_param, Line2, Segment2, UnitVec2};
-use crate::{Circle2, Curve2, Point2, Result, SurfacePoint2, Vector2};
+use crate::{Circle2, Curve2, Point2, Result, SurfacePoint2};
 
 /// Reverse the order of the inscribed circles in the container. This will additionally
 /// reverse the order of the points on the circles so that the upper and lower points are
@@ -31,8 +31,8 @@ pub fn reverse_inscribed_circles(stations: &mut [InscribedCircle]) {
 ///
 /// * `stations`: The list of inscribed circles to generate the curve from.
 /// * `tol`: The tolerance value for the curve itself (the distance at which two points on the
-/// curve are considered equal), this can be a small value for camber curves (~1e-4 for inches.
-/// 1e-3 for millimeters) without causing problems.
+///   curve are considered equal), this can be a small value for camber curves (~1e-4 for inches.
+///   1e-3 for millimeters) without causing problems.
 ///
 /// returns: Result<Curve2, Box<dyn Error, Global>>
 pub fn curve_from_inscribed_circles(stations: &[InscribedCircle], tol: f64) -> Result<Curve2> {
@@ -84,8 +84,8 @@ pub fn find_tmax_circle(stations: &[InscribedCircle]) -> Option<&InscribedCircle
 /// * `curve`: the airfoil section curve which the inscribed circle is being found for
 /// * `ray`: a spanning ray on the curve which the inscribed circle center will be coincident with
 /// * `tol`: a tolerance value which will terminate the search when the distance between the
-/// limit in one direction and the limit in the other direction is less than this value. This is
-/// typically the inner_tol value, or the airfoil parameters tolerance * 1e-2
+///   limit in one direction and the limit in the other direction is less than this value. This is
+///   typically the inner_tol value, or the airfoil parameters tolerance * 1e-2
 ///
 /// returns: InscribedCircle
 pub fn inscribed_from_spanning_ray(curve: &Curve2, ray: &SpanningRay, tol: f64) -> InscribedCircle {
@@ -444,7 +444,7 @@ impl OrientedCircles {
 /// * `dest`: the destination vector which will receive the refined inscribed circles
 /// * `stack`: the stack of inscribed circles to refine
 /// * `tol`: the tolerance value which will determine when to add new circles between the existing
-/// circles
+///   circles
 ///
 /// returns: ()
 pub fn refine_stations(

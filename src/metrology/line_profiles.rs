@@ -14,12 +14,10 @@ pub fn point_curve2_deviation(station: &CurveStation2, point: &Point2) -> Surfac
     let vector = point - station.point();
     let normal = if vector.norm() < 1e-6 {
         sp.normal
+    } else if vector.dot(&sp.normal) < 0.0 {
+        UnitVec2::new_normalize(-vector)
     } else {
-        if vector.dot(&sp.normal) < 0.0 {
-            UnitVec2::new_normalize(-vector)
-        } else {
-            UnitVec2::new_normalize(vector)
-        }
+        UnitVec2::new_normalize(vector)
     };
 
     SurfaceDeviation2::new(

@@ -40,14 +40,14 @@ impl SpanningRay {
     }
 
     pub fn reversed(&self) -> Self {
-        Self::new(self.ray.point_at(1.0), self.ray.origin.clone())
+        Self::new(self.ray.point_at(1.0), self.ray.origin)
     }
 }
 
 pub fn ray_intersect_with_edge(line: &Polyline, ray: &Ray, edge_index: usize) -> Option<f64> {
-    let v0 = line.vertices()[edge_index].clone();
-    let v1 = line.vertices()[edge_index + 1].clone();
-    let dir = v1 - &v0;
+    let v0 = line.vertices()[edge_index];
+    let v1 = line.vertices()[edge_index + 1];
+    let dir = v1 - v0;
     let edge_ray = Ray::new(v0, dir);
     if let Some((t0, t1)) = intersect_rays(ray, &edge_ray) {
         if (0.0..=1.0).contains(&t1) {
@@ -62,7 +62,7 @@ pub fn ray_intersect_with_edge(line: &Polyline, ray: &Ray, edge_index: usize) ->
 
 impl Line2 for SpanningRay {
     fn origin(&self) -> Point2<f64> {
-        self.ray.origin.clone()
+        self.ray.origin
     }
 
     fn dir(&self) -> Vector2<f64> {
@@ -88,7 +88,7 @@ pub fn farthest_point_direction_distance(line: &Polyline, ray: &Ray) -> f64 {
     let mut farthest = f64::MIN;
     let n = ray.dir.normalize();
     for v in line.vertices().iter() {
-        farthest = farthest.max(n.dot(&(v - ray.origin.clone())));
+        farthest = farthest.max(n.dot(&(v - ray.origin)));
     }
 
     farthest

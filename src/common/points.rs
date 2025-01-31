@@ -82,7 +82,7 @@ pub fn mean_point<const D: usize>(points: &[Point<f64, D>]) -> Point<f64, D> {
 ///
 /// * `points`: the points to compute the weighted mean of
 /// * `weights`: a slice of weights for each point. The length of this slice must be the same as
-/// the length of the `points` slice
+///   the length of the `points` slice
 ///
 /// returns: OPoint<f64, Const<{ D }>>
 pub fn mean_point_weighted<const D: usize>(
@@ -283,11 +283,7 @@ pub fn max_point_in_direction<const D: usize>(
         }
     }
 
-    if let Some(max_i) = max_i {
-        Some((max_i, points[max_i]))
-    } else {
-        None
-    }
+    max_i.map(|max_i| (max_i, points[max_i]))
 }
 
 /// Compute the error of a linear interpolation between two points `p0` and `p1` with respect to a

@@ -1,8 +1,8 @@
 use crate::common::points::{dist, ramer_douglas_peucker};
 use crate::common::Resample;
 use crate::errors::InvalidGeometry;
-use crate::geom3::{Iso3, Plane3, Point3, SvdBasis3, UnitVec3};
-use crate::{Point2, Result, SurfacePoint3};
+use crate::geom3::{Iso3, Plane3, Point3, UnitVec3};
+use crate::{Result, SurfacePoint3};
 use parry3d_f64::na::Unit;
 use parry3d_f64::query::PointQueryWithLocation;
 use parry3d_f64::shape::Polyline;
@@ -94,7 +94,7 @@ pub struct Curve3 {
 
 impl Curve3 {
     pub fn vtx(&self, i: usize) -> Point3 {
-        self.line.vertices()[i].clone()
+        self.line.vertices()[i]
     }
 
     pub fn points(&self) -> &[Point3] {
@@ -115,7 +115,7 @@ impl Curve3 {
         let mut points = points.to_vec();
         points.dedup_by(|a, b| dist(a, b) <= tol);
         if points.len() < 2 {
-            return Err(Box::try_from(InvalidGeometry::NotEnoughPoints).unwrap());
+            return Err(Box::from(InvalidGeometry::NotEnoughPoints));
         }
 
         let line = Polyline::new(points, None);
@@ -162,7 +162,7 @@ impl Curve3 {
         };
 
         CurveStation3::new(
-            self.line.vertices()[index].clone(),
+            self.line.vertices()[index],
             self.dir_of_vertex(index),
             i,
             f,

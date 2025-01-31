@@ -91,7 +91,7 @@ impl Plane3 {
         let pos = self.normal.into_inner() * self.d;
         let repr = SurfacePoint3::new(pos.into(), self.normal);
 
-        let new_repr = repr.transformed(&iso);
+        let new_repr = repr.transformed(iso);
         Self::from(&new_repr)
     }
 }

@@ -53,7 +53,7 @@ impl<'a> PointsToCurve<'a> {
     }
 }
 
-impl<'a> LeastSquaresProblem<f64, Dyn, U3> for PointsToCurve<'a> {
+impl LeastSquaresProblem<f64, Dyn, U3> for PointsToCurve<'_> {
     type ResidualStorage = Owned<f64, Dyn, U1>;
     type JacobianStorage = Owned<f64, Dyn, U3>;
     type ParameterStorage = Owned<f64, U3>;

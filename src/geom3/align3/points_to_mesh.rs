@@ -31,8 +31,8 @@ use parry3d_f64::na::{Dyn, Matrix, Owned, Vector, U1, U6};
 /// * `mesh`: the reference mesh entity onto which the points are being projected
 /// * `initial`: an initial guess for the alignment transform
 /// * `mode`: using `DistMode::ToPoint` will minimize the distance between the points and their
-/// closest corresponding point on the mesh, while using `DistMode::ToPlane` will do the same
-/// except that it will ignore the component of the distance orthogonal to the surface normal.
+///   closest corresponding point on the mesh, while using `DistMode::ToPlane` will do the same
+///   except that it will ignore the component of the distance orthogonal to the surface normal.
 ///
 /// returns: Result<Alignment<Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
 ///
@@ -119,7 +119,7 @@ impl<'a> PointsToMesh<'a> {
     }
 }
 
-impl<'a> LeastSquaresProblem<f64, Dyn, U6> for PointsToMesh<'a> {
+impl LeastSquaresProblem<f64, Dyn, U6> for PointsToMesh<'_> {
     type ResidualStorage = Owned<f64, Dyn, U1>;
     type JacobianStorage = Owned<f64, Dyn, U6>;
     type ParameterStorage = Owned<f64, U6>;

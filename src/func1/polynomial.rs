@@ -94,9 +94,8 @@ impl<const K: usize> Polynomial<K> {
                 rhs[(k, 0)] += wxk * ys[i];
                 sums[k] += wxk;
             }
-            for k in K + 1..=2 * K {
-                let xk = xs[i].powi(k as i32);
-                sums[k] += w * xk;
+            for (k, sums_k) in sums.iter_mut().enumerate().take(2 * K + 1).skip(K + 1) {
+                *sums_k += w * xs[i].powi(k as i32);
             }
         }
 

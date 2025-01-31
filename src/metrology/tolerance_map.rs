@@ -75,12 +75,10 @@ impl ToleranceMap for DiscreteDomainTolMap {
     fn get(&self, x: f64) -> Option<Tolerance> {
         if self.domain.is_empty() {
             None
+        } else if let Some(i) = self.domain.index_of(x) {
+            Some(self.tol_zones[i])
         } else {
-            if let Some(i) = self.domain.index_of(x) {
-                Some(self.tol_zones[i])
-            } else {
-                Some(self.tol_zones[self.tol_zones.len() - 1])
-            }
+            Some(self.tol_zones[self.tol_zones.len() - 1])
         }
     }
 }

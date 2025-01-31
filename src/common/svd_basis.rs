@@ -282,15 +282,15 @@ impl From<&SvdBasis2> for Iso2 {
     }
 }
 
-impl Into<Iso3> for SvdBasis3 {
-    fn into(self) -> Iso3 {
-        iso3_from_basis(&self.basis, &self.center)
+impl From<SvdBasis3> for Iso3 {
+    fn from(val: SvdBasis3) -> Self {
+        iso3_from_basis(&val.basis, &val.center)
     }
 }
 
-impl Into<Iso2> for SvdBasis2 {
-    fn into(self) -> Iso2 {
-        iso2_from_basis(&self.basis, &self.center)
+impl From<SvdBasis2> for Iso2 {
+    fn from(val: SvdBasis2) -> Self {
+        iso2_from_basis(&val.basis, &val.center)
     }
 }
 

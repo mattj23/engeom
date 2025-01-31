@@ -39,6 +39,12 @@ pub trait CamberOrientation {
 /// circles will be reversed.
 pub struct TMaxFwd {}
 
+impl Default for TMaxFwd {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TMaxFwd {
     pub fn new() -> Self {
         TMaxFwd {}

@@ -603,7 +603,7 @@ impl Series1 {
     ///
     /// * `reference`: a reference `Series1` to compare against
     /// * `d_tol`: the maximum allowable y difference between the reference and the series at any
-    ///  point
+    ///   point
     /// * `x_span`: the minimum allowable x span of any cluster
     ///
     /// returns: Vec<Vec<usize, Global>, Global>

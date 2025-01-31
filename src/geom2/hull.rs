@@ -293,16 +293,16 @@ pub fn ball_pivot_with_centers_2d(
 /// # Arguments
 ///
 /// * `points`: the set of points on which the algorithm is run. The result vector will contain
-/// indices into this vector.
+///   indices into this vector.
 /// * `start`: The starting condition for the algorithm. This can either be a specific index and
-/// direction, or it can be a request to start on one of the convex hull points with a default
-/// direction pointing out from the hull.
+///   direction, or it can be a request to start on one of the convex hull points with a default
+///   direction pointing out from the hull.
 /// * `stop`: The stopping condition for the algorithm. This can either be a specific index to
-/// stop on, or it can be a request to stop when the ball returns to a previously visited point.
+///   stop on, or it can be a request to stop when the ball returns to a previously visited point.
 /// * `pivot_direction`: The direction in which the ball should pivot. This can either be
-/// counter-clockwise or clockwise.
+///   counter-clockwise or clockwise.
 /// * `radius`: The radius of the ball to use for the algorithm. The maximum gap which the
-/// algorithm will be able to traverse is twice this radius.
+///   algorithm will be able to traverse is twice this radius.
 ///
 /// returns: Vec<usize, Global>
 pub fn ball_pivot_2d(

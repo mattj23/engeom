@@ -53,12 +53,12 @@ fn take_one_boundary(order: &mut HashMap<u32, u32>) -> Option<Vec<u32>> {
 pub fn compute_boundary_points(mesh: &Mesh, patch: &[usize]) -> Vec<Vec<Point3>> {
     let mut order = HashMap::new();
     let mut remaining = HashSet::new();
-    let edges = compute_boundary_edges(&mesh, patch);
+    let edges = compute_boundary_edges(mesh, patch);
     for (v0, v1) in edges {
-        if order.contains_key(&v0) {
-            panic!("Duplicate boundary point found!");
+        if let std::collections::hash_map::Entry::Vacant(e) = order.entry(v0) {
+            e.insert(v1);
         } else {
-            order.insert(v0, v1);
+            panic!("Duplicate boundary point found!");
         }
         remaining.insert(v0);
     }
@@ -133,8 +133,7 @@ pub fn compute_patch_indices(mesh: &Mesh) -> Vec<Vec<usize>> {
 
         let mut patch = vec![face_index];
 
-        while !working_queue.is_empty() {
-            let (v0, v1) = working_queue.pop().unwrap();
+        while let Some((v0, v1)) = working_queue.pop() {
             let e0 = (v0, v1);
             let e1 = (v1, v0);
 

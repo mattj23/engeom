@@ -131,7 +131,7 @@ impl DiscreteDomain {
     /// # Arguments
     ///
     /// * `value`: a finite value to add to the domain, must be greater than the last value in the
-    /// domain (unless the domain is empty)
+    ///   domain (unless the domain is empty)
     ///
     /// returns: Result<(), Box<dyn Error, Global>>
     ///

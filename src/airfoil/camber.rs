@@ -36,7 +36,7 @@ use parry2d_f64::shape::ConvexPolygon;
 /// * `section`: the airfoil section curve
 /// * `hull`: the convex hull of the airfoil section
 /// * `tol`: an optional tolerance value which will determine when to add new circles between the
-/// existing circles. This value will default to 1e-3 if not specified.
+///   existing circles. This value will default to 1e-3 if not specified.
 ///
 /// returns: Result<Vec<InscribedCircle, Global>, Box<dyn Error, Global>>
 pub fn extract_camber_line(
@@ -155,9 +155,9 @@ enum RayAdvance {
 ///
 /// * `curve`: the airfoil section curve
 /// * `starting_ray`: the starting spanning ray for the camber line, determines the direction the
-/// algorithm will advance.
+///   algorithm will advance.
 /// * `tol`: an optional tolerance value which will determine when to add new circles between the
-/// existing circles. This value will default to 1e-3 if not specified.
+///   existing circles. This value will default to 1e-3 if not specified.
 ///
 /// returns: Result<Vec<InscribedCircle, Global>, Box<dyn Error, Global>>
 fn extract_half_camber_line(

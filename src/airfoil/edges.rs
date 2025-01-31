@@ -7,10 +7,9 @@ use crate::airfoil::helpers::{
 use crate::airfoil::{AirfoilEdge, EdgeGeometry, InscribedCircle};
 use crate::common::points::{dist, mid_point};
 use crate::common::{linear_space, BestFit};
-use crate::geom2::{intersection_param, rot90, Line2, Segment2};
-use crate::metrology::Tolerance;
+use crate::geom2::{rot90, Segment2};
 use crate::AngleDir::Ccw;
-use crate::{Arc2, Circle2, Curve2, Result, SurfacePoint2};
+use crate::{Circle2, Curve2, Result};
 use parry2d_f64::query::Ray;
 
 pub trait EdgeLocation {
@@ -31,9 +30,9 @@ pub trait EdgeLocation {
     ///
     /// * `section`: the airfoil section curve
     /// * `stations`: the inscribed circles in the airfoil section, already oriented from
-    /// leading to trailing edge
+    ///   leading to trailing edge
     /// * `front`: a flag indicating if we're searching for the edge at the front or the back of
-    /// the camber line
+    ///   the camber line
     /// * `af_tol`: the tolerance value specified in the airfoil analysis parameters
     ///
     /// returns: Result<(Option<AirfoilEdge>, Vec<InscribedCircle, Global>), Box<dyn Error, Global>>
@@ -57,6 +56,12 @@ pub trait EdgeLocation {
 /// inscribed circles. Use it in cases where you have a partial airfoil section, and you know that
 /// this edge of the section is open.
 pub struct OpenEdge {}
+
+impl Default for OpenEdge {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl OpenEdge {
     pub fn new() -> Self {
@@ -134,11 +139,11 @@ impl EdgeLocation for OpenIntersectGap {
             );
             if let Some(spanning_ray) = section.try_create_spanning_ray(&test_ray) {
                 let mut stack = Vec::new();
-                let circle = inscribed_from_spanning_ray(&section, &spanning_ray, af_tol * 1e-2);
+                let circle = inscribed_from_spanning_ray(section, &spanning_ray, af_tol * 1e-2);
                 stack.push(circle);
 
                 refine_stations(
-                    &section,
+                    section,
                     &mut working_stations,
                     &mut stack,
                     af_tol,
@@ -166,6 +171,12 @@ impl EdgeLocation for OpenIntersectGap {
 /// section by projecting the ray at the end of the camber line until it intersects the section
 /// boundary. If the ray does not intersect the boundary, the edge point will be `None`.
 pub struct IntersectEdge {}
+
+impl Default for IntersectEdge {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl IntersectEdge {
     pub fn new() -> Self {
@@ -221,7 +232,7 @@ impl TraceToMaxCurvature {
     /// # Arguments
     ///
     /// * `max_tol`: The fractional tolerance used to determine the acceptable window of maximum
-    /// curvature.  If `None`, the default value of 0.005 will be used.
+    ///   curvature.  If `None`, the default value of 0.005 will be used.
     ///
     /// returns: Box<dyn EdgeLocation, Global>
     pub fn make(max_tol: Option<f64>) -> Box<dyn EdgeLocation> {
@@ -254,7 +265,7 @@ impl EdgeLocation for TraceToMaxCurvature {
         // Now we'll extract a curve that has just the data past the contact points of the last
         // station.  This much reduced dataset will allow for faster search operations. If this
         // fails, it means that the section was open, and we are working on the open portion.
-        let edge_curve = extract_edge_sub_curve(&section, &station, Some(0.4))
+        let edge_curve = extract_edge_sub_curve(section, station, Some(0.4))
             .ok_or("Failed to extract edge curve on trace to max curvature algorithm.")?;
 
         // We'll re-assign the stations to the working variable, as we're going to be modifying
@@ -344,12 +355,12 @@ impl EdgeLocation for FitRadiusEdge {
                 .ok_or("Empty inscribed circles container.")?;
 
             let end_sp = working_stations.end_sp()?.normal;
-            let edge_curve = extract_curve_beyond_station(&section, &station, &end_sp)
+            let edge_curve = extract_curve_beyond_station(section, station, &end_sp)
                 .ok_or("Failed to extract edge curve on fit radius edge algorithm.")?;
 
             // Fit a circle
             let test = Circle2::fitting_circle(
-                &edge_curve.points(),
+                edge_curve.points(),
                 &station.circle,
                 BestFit::Gaussian(2.0),
             )?;
@@ -373,7 +384,7 @@ impl EdgeLocation for FitRadiusEdge {
             let test_ray = Ray::new(station.circle.center + shift, rot90(Ccw) * shift);
 
             if let Some(ray) = section.try_create_spanning_ray(&test_ray) {
-                let result = inscribed_from_spanning_ray(&section, &ray, af_tol * 1e-2);
+                let result = inscribed_from_spanning_ray(section, &ray, af_tol * 1e-2);
                 working_stations.push(result);
             } else {
                 return Err("Failed to create spanning ray in fit radius edge algorithm.".into());
@@ -440,7 +451,7 @@ impl EdgeLocation for ConstRadiusEdge {
             .clone();
 
         // Now we'll extract the edge region
-        let edge_curve = extract_edge_sub_curve(&section, &c0, Some(0.4))
+        let edge_curve = extract_edge_sub_curve(section, &c0, Some(0.4))
             .ok_or("Failed to extract edge curve on constant radius edge algorithm.")?;
 
         // We'll look for the smallest radius arc that has at least 5 points and whose points lie
@@ -448,7 +459,7 @@ impl EdgeLocation for ConstRadiusEdge {
         let arcs = edge_curve
             .equivalent_arcs(check_tol, 4)
             .iter()
-            .map(|(_, _, a)| a.clone())
+            .map(|(_, _, a)| *a)
             .collect::<Vec<_>>();
 
         let best_arc = arcs
@@ -479,7 +490,7 @@ impl EdgeLocation for ConstRadiusEdge {
         // Finally, to locate the edge point, we'll intersect the end of the camber line with the
         // section boundary.
         let edge_point = working_stations.intersect_from_end(&edge_curve)?;
-        let edge = AirfoilEdge::new(edge_point, EdgeGeometry::Arc(best_arc.clone()));
+        let edge = AirfoilEdge::new(edge_point, EdgeGeometry::Arc(*best_arc));
 
         Ok((Some(edge), working_stations.take_circles()))
     }
@@ -529,8 +540,7 @@ impl EdgeLocation for ConvergeTangentEdge {
         let c0 = temp_circles
             .last()
             .ok_or("Empty inscribed circles container.")?
-            .circle
-            .clone();
+            .circle;
 
         let check_tol = self.tol.unwrap_or(c0.r() * 0.01);
 
@@ -543,7 +553,7 @@ impl EdgeLocation for ConvergeTangentEdge {
         let station = working_stations
             .last()
             .ok_or("Empty inscribed circles container.")?;
-        let edge_curve = extract_edge_sub_curve(&section, &station, Some(0.4))
+        let edge_curve = extract_edge_sub_curve(section, station, Some(0.4))
             .ok_or("Failed to extract edge curve on converging tangent edge algorithm.")?;
 
         // We're going to sweep the edge curve from back about 2 c0 diameters to the front of the
@@ -585,7 +595,7 @@ impl EdgeLocation for ConvergeTangentEdge {
             // If we have a forward arc, we'll use that instead of the edge curve
 
             let max_point = if let Some(arc) = fwd_arc {
-                arc.center() + &camber_dir.normal.into_inner() * arc.radius()
+                arc.center() + camber_dir.normal.into_inner() * arc.radius()
             } else {
                 let (_, mp) = edge_curve
                     .max_point_in_direction(&camber_dir.normal)

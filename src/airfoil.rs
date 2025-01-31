@@ -47,7 +47,7 @@ impl AfParams {
     /// # Arguments
     ///
     /// * `tol`: the minimum tolerance value used in many parts of the analysis, generally used to
-    /// refine results until the error/difference falls below this value.
+    ///   refine results until the error/difference falls below this value.
     /// * `orient`: the method for trying to detect the orientation of the leading edge
     /// * `leading`: the method for trying to detect the leading edge
     /// * `trailing`: the method for trying to detect the trailing edge
@@ -276,9 +276,9 @@ pub fn caliper_chord_line(section: &Curve2, camber: &Curve2) -> Result<CaliperCh
 /// # Arguments
 ///
 /// * `section`: a `Curve2` representing the airfoil section geometry. This curve should be closed
-/// if the section is intended to be closed. No specific orientation is required.
+///   if the section is intended to be closed. No specific orientation is required.
 /// * `params`: the `AfParams` structure containing the parameters used in the analysis. Select the
-/// appropriate values for the tolerance, orientation, and edge detection methods with care.
+///   appropriate values for the tolerance, orientation, and edge detection methods with care.
 ///
 /// returns: Result<AnalyzedAirfoil, Box<dyn Error, Global>>
 ///

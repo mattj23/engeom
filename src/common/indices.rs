@@ -1,7 +1,5 @@
 //! This module should have tools for working with indices
 
-use std::collections::HashSet;
-
 pub fn index_vec(indices: Option<&[usize]>, len: usize) -> Vec<usize> {
     if let Some(items) = indices {
         items.to_vec()

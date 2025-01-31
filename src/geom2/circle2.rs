@@ -113,7 +113,7 @@ impl Circle2 {
     /// assert_relative_eq!(circle.r(), 1.0);
     /// ```
     pub fn fitting_circle(points: &[Point2], guess: &Circle2, mode: BestFit) -> Result<Circle2> {
-        fit_circle(points, &guess, mode)
+        fit_circle(points, guess, mode)
     }
 
     /// Attempt to create a fitting circle from three points. Will return an `Err` if the points
@@ -432,7 +432,7 @@ impl Intersection<&Segment2, Vec<Point2>> for Circle2 {
         let ts = intersection_line_circle(other, self);
         ts.iter()
             .filter_map(|&t| {
-                if t >= -1.0e-10 && t <= 1.0 + 1.0e-10 {
+                if (-1.0e-10..=1.0 + 1.0e-10).contains(&t) {
                     Some(other.at(t))
                 } else {
                     None
@@ -616,7 +616,7 @@ fn compute_weights_mut(residuals: &Residuals, weights: &mut Residuals, mode: Bes
     }
 }
 
-impl<'a> LeastSquaresProblem<f64, Dyn, U3> for CircleFit<'a> {
+impl LeastSquaresProblem<f64, Dyn, U3> for CircleFit<'_> {
     type ResidualStorage = Owned<f64, Dyn, U1>;
     type JacobianStorage = Owned<f64, Dyn, U3>;
     type ParameterStorage = Owned<f64, U3>;
