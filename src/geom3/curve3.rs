@@ -101,6 +101,16 @@ impl Curve3 {
         self.line.vertices()
     }
 
+    pub fn transformed_by(&self, iso: &Iso3) -> Self {
+        let points = self
+            .line
+            .vertices()
+            .iter()
+            .map(|p| iso * p)
+            .collect::<Vec<_>>();
+        Self::from_points(&points, self.tol).unwrap()
+    }
+
     pub fn from_points(points: &[Point3], tol: f64) -> Result<Self> {
         let mut points = points.to_vec();
         points.dedup_by(|a, b| dist(a, b) <= tol);
