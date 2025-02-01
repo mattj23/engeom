@@ -119,6 +119,24 @@ pub struct PartialKdTree<const D: usize> {
 }
 
 impl<const D: usize> PartialKdTree<D> {
+    /// Create a new partial kd-tree from a list of points and a list of indices into the original.
+    ///
+    /// The `indices` array should be a list of indices into the `all_points` array. The tree will
+    /// be built using only the points at those indices, *however*, the indices returned by the
+    /// search methods will be the indices into the original `all_points` array.
+    ///
+    /// # Arguments
+    ///
+    /// * `all_points`: A slice of points.
+    /// * `indices`: A slice of indices into the `all_points` array to use for the tree.
+    ///
+    /// returns: PartialKdTree<{ D }>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
     pub fn new(all_points: &[Point<f64, D>], indices: &[usize]) -> Self {
         let points = indices.iter().map(|i| all_points[*i]).collect::<Vec<_>>();
         let tree = KdTree::new(&points);
@@ -126,6 +144,7 @@ impl<const D: usize> PartialKdTree<D> {
         Self { tree, index_map }
     }
 
+    /// Get the number of points in the partial kd-tree.
     pub fn len(&self) -> usize {
         self.tree.len()
     }
