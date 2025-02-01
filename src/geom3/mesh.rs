@@ -12,6 +12,7 @@ use std::f64::consts::PI;
 pub use self::serialization::{MeshData, MeshFlatData};
 pub use self::uv_mapping::UvMapping;
 use crate::common::indices::{chained_indices, index_vec};
+use crate::common::points::{dist, mean_point};
 use crate::common::poisson_disk::sample_poisson_disk;
 use crate::common::SurfacePointCollection;
 use parry3d_f64::query::{IntersectResult, PointProjection, PointQueryWithLocation, SplitResult};
@@ -335,6 +336,16 @@ impl Mesh {
     pub fn sample_dense(&self, max_spacing: f64) -> Vec<SurfacePoint3> {
         let mut sampled = Vec::new();
         for face in self.shape.triangles() {
+            // If the triangle is too small, just add the center point.
+            let center = mean_point(&[face.a, face.b, face.c]);
+            if dist(&face.a, &center) < max_spacing
+                && dist(&face.b, &center) < max_spacing
+                && dist(&face.c, &center) < max_spacing
+            {
+                sampled.push(SurfacePoint3::new(center, face.normal().unwrap()));
+                continue;
+            }
+
             // Find the angle closest to 90 degrees
             let ua = face.b - face.a;
             let va = face.c - face.a;
