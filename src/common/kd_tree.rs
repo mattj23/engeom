@@ -7,6 +7,11 @@ pub trait KdTreeSearch<const D: usize> {
     fn nearest_one(&self, point: &Point<f64, D>) -> (usize, f64);
     fn nearest(&self, point: &Point<f64, D>, count: NonZero<usize>) -> Vec<(usize, f64)>;
     fn within(&self, point: &Point<f64, D>, radius: f64) -> Vec<(usize, f64)>;
+
+    fn len(&self) -> usize;
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 /// An immutable k-dimensional tree for fast searches on points in D dimensions
@@ -30,11 +35,6 @@ impl<const D: usize> KdTree<D> {
         Self {
             tree: kdtree::ImmutableKdTree::new_from_slice(&entries),
         }
-    }
-
-    /// Get the number of points in the kd-tree.
-    pub fn len(&self) -> usize {
-        self.tree.size()
     }
 }
 
@@ -108,6 +108,11 @@ impl<const D: usize> KdTreeSearch<D> for KdTree<D> {
             .map(|r| (r.item, r.distance.sqrt()))
             .collect::<Vec<_>>()
     }
+
+    /// Get the number of points in the kd-tree.
+    fn len(&self) -> usize {
+        self.tree.size()
+    }
 }
 
 /// A wrapper around a KdTree and a list of indices into an original list of points. This allows
@@ -143,11 +148,6 @@ impl<const D: usize> PartialKdTree<D> {
         let index_map = indices.to_vec();
         Self { tree, index_map }
     }
-
-    /// Get the number of points in the partial kd-tree.
-    pub fn len(&self) -> usize {
-        self.tree.len()
-    }
 }
 
 impl<const D: usize> KdTreeSearch<D> for PartialKdTree<D> {
@@ -170,6 +170,11 @@ impl<const D: usize> KdTreeSearch<D> for PartialKdTree<D> {
             .iter()
             .map(|(i, d)| (self.index_map[*i], *d))
             .collect::<Vec<_>>()
+    }
+
+    /// Get the number of points in the kd-tree.
+    fn len(&self) -> usize {
+        self.tree.len()
     }
 }
 

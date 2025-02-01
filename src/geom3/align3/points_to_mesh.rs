@@ -14,7 +14,7 @@ use parry3d_f64::na::{Dyn, Matrix, Owned, Vector, U1, U6};
 /// on the mesh, and the residuals being minimized are the distance between the projected point and
 /// the surface point.
 ///
-/// The `mode` parameter determines whether the residuals being minimized are the entire euclidean
+/// The `mode` parameter determines whether the residuals being minimized are the entire Euclidean
 /// distance between the points and their closest corresponding point on the surface of the mesh, or
 /// just the component of that distance orthogonal to the surface normal:
 ///

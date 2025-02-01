@@ -2,6 +2,7 @@ pub mod align3;
 mod curve3;
 pub mod mesh;
 mod plane3;
+mod point_cloud;
 
 use crate::common::surface_point::{SurfacePoint, SurfacePointCollection};
 use crate::common::svd_basis::SvdBasis;
@@ -12,6 +13,7 @@ pub use curve3::{Curve3, CurveStation3};
 pub use mesh::{Mesh, MeshData, UvMapping};
 use parry3d_f64::na::{try_convert, Matrix4, UnitQuaternion};
 pub use plane3::Plane3;
+pub use point_cloud::{PointCloud, PointCloudFeatures, PointCloudKdTree};
 
 pub type Point3 = parry3d_f64::na::Point3<f64>;
 pub type Vector3 = parry3d_f64::na::Vector3<f64>;
