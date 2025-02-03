@@ -8,7 +8,7 @@ mod uv_mapping;
 
 use crate::{Curve3, Iso3, Plane3, Point2, Point3, Result, SurfacePoint3};
 use std::f64::consts::PI;
-
+use parry3d_f64::bounding_volume::Aabb;
 pub use self::serialization::{MeshData, MeshFlatData};
 pub use self::uv_mapping::UvMapping;
 use crate::common::indices::{chained_indices, index_vec};
@@ -18,6 +18,7 @@ use crate::common::SurfacePointCollection;
 use parry3d_f64::query::{IntersectResult, PointProjection, PointQueryWithLocation, SplitResult};
 use parry3d_f64::shape::{TriMesh, TriMeshFlags, TrianglePointLocation};
 use rand::prelude::SliceRandom;
+use crate::geom3::Aabb3;
 
 #[derive(Clone)]
 pub struct Mesh {
@@ -86,6 +87,10 @@ impl Mesh {
             is_solid,
             uv: None,
         }
+    }
+
+    pub fn aabb(&self) -> Aabb3 {
+        *self.shape.local_aabb()
     }
 
     pub fn append(&mut self, other: &Mesh) -> Result<()> {
