@@ -6,7 +6,7 @@ use crate::common::{Intersection, Resample};
 use crate::errors::InvalidGeometry;
 use crate::geom2::hull::convex_hull_2d;
 use crate::geom2::line2::Segment2;
-use crate::geom2::{Iso2, Point2, SurfacePoint2, UnitVec2};
+use crate::geom2::{Aabb2, Iso2, Point2, SurfacePoint2, UnitVec2};
 use crate::{Arc2, Circle2, Result, Series1, Vector2};
 use parry2d_f64::na::Unit;
 use parry2d_f64::query::{PointQueryWithLocation, Ray};
@@ -214,6 +214,10 @@ impl Curve2 {
 
     pub fn vtx(&self, i: usize) -> Point2 {
         self.line.vertices()[i]
+    }
+
+    pub fn aabb(&self) -> &Aabb2 {
+        self.line.local_aabb()
     }
 
     /// Builds a Curve2 from a sequence of points. The points will be de-duplicated within the

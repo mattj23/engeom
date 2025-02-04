@@ -7,9 +7,9 @@ use crate::airfoil::helpers::{
 use crate::airfoil::{AirfoilEdge, EdgeGeometry, InscribedCircle};
 use crate::common::points::{dist, mid_point};
 use crate::common::{linear_space, BestFit};
-use crate::geom2::{rot90, Segment2};
+use crate::geom2::{rot90, Ray2, Segment2};
 use crate::AngleDir::Ccw;
-use crate::{Circle2, Curve2, Result};
+use crate::{Circle2, Curve2, Result, UnitVec2};
 use parry2d_f64::query::Ray;
 use rand::distr::{Distribution, Uniform};
 use rand::rngs::StdRng;
@@ -681,6 +681,30 @@ impl EdgeLocation for RansacRadiusEdge {
             Some(station.radius()),
         )?;
 
-        todo!()
+        // Find the tangency segments. The segments b points are on the last circle
+        let (s0, s1) = station.circle.outer_tangents_to(&last_circle)
+            .ok_or("Failed to find tangents between last station and RANSAC circle.")?;
+
+        // Create a fudged spanning ray. We'll consider s0.b to be the upper contact point and s1.b
+        // to be the lower contact point. The working stations will reverse the circle if it
+        // doesn't match the previous station.
+        let ray_dir = s0.b - s1.b;
+        let ray = Ray2::new(last_circle.center, ray_dir);
+        let spanning = section
+            .try_create_spanning_ray(&ray)
+            .ok_or("Failed to create spanning ray in RANSAC radius edge algorithm.")?;
+        let inscribed = InscribedCircle::new(spanning, s0.b, s1.b, last_circle);
+        working_stations.push(inscribed);
+
+        // Create the end point
+        let edge_point = working_stations.intersect_from_end(&edge_curve)?;
+
+        // Create the end arc geometry
+        let end_arc = working_stations.last()
+            .ok_or("Empty inscribed circles container.")?
+            .contact_arc(&end_sp);
+
+        let edge = AirfoilEdge::new(edge_point, EdgeGeometry::Arc(end_arc));
+        Ok((Some(edge), working_stations.take_circles()))
     }
 }

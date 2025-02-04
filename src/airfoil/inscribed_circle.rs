@@ -16,10 +16,12 @@ pub struct InscribedCircle {
     /// is located.
     pub spanning_ray: SpanningRay,
 
-    /// The contact point of the circle with the upper surface of the airfoil section.
+    /// The contact point of the circle with the upper surface of the airfoil section. This is the
+    /// contact point in the positive direction of the spanning ray.
     pub upper: Point2,
 
-    /// The contact point of the circle with the lower surface of the airfoil section.
+    /// The contact point of the circle with the lower surface of the airfoil section. This is the
+    /// contact point in the negative direction of the spanning ray.
     pub lower: Point2,
 
     /// The circle that is inscribed within the airfoil section

@@ -1,7 +1,7 @@
 use crate::common::points::dist;
 use crate::common::{signed_compliment_2pi, BestFit, Intersection};
 use crate::geom2::line2::Segment2;
-use crate::geom2::{directed_angle, signed_angle, Iso2, Line2, Point2, Vector2};
+use crate::geom2::{directed_angle, signed_angle, Aabb2, Iso2, Line2, Point2, Vector2};
 use crate::geom3::Vector3;
 use crate::stats::{compute_mean, compute_st_dev};
 use crate::AngleDir::{Ccw, Cw};
@@ -232,6 +232,13 @@ impl Circle2 {
                 ball: Ball::new(radius),
             })
         }
+    }
+
+    pub fn aabb(&self) -> Aabb2 {
+        Aabb2::new(
+            self.center - Vector2::repeat(self.ball.radius),
+            self.center + Vector2::repeat(self.ball.radius),
+        )
     }
 
     /// Returns the x coordinate of the circle's center
