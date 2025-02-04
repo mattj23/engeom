@@ -681,7 +681,6 @@ impl EdgeLocation for RansacRadiusEdge {
             Some(station.radius()),
         )?;
 
-
         todo!()
     }
 }

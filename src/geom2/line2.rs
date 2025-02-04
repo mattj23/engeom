@@ -112,12 +112,12 @@ impl Segment2 {
     /// let b = Point2::new(1.0, 0.0);
     /// let s = Segment2::try_new(a, b).unwrap();
     ///
-    /// let s1 = s.shifted(1.0);
+    /// let s1 = s.offsetted(1.0);
     ///
     /// assert_relative_eq!(s1.a, Point2::new(0.0, -1.0), epsilon = 1.0e-6);
     /// assert_relative_eq!(s1.b, Point2::new(1.0, -1.0), epsilon = 1.0e-6);
     /// ```
-    pub fn shifted(&self, d: f64) -> Self {
+    pub fn offsetted(&self, d: f64) -> Self {
         let n = UnitVec2::new_normalize(self.orthogonal());
         Self {
             a: self.a + n.into_inner() * d,

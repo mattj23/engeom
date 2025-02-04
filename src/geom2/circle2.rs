@@ -454,9 +454,10 @@ impl Circle2 {
     /// Compute and return the two tangent points on the circle from a given point. If the point is
     /// on or within the circle, then `None` is returned.
     ///
-    /// Otherwise, the first point will be the tangent point to the right of the line connecting the
-    /// circle center and the test point, and the second point will be the tangent point on the
-    /// left.
+    /// If they exist, the tangent points will always be returned in the same order relative to the
+    /// line passing through the test point in the direction of the circle center. The first point
+    /// will be in the negative normal direction (to the left) of the line, and the second point
+    /// will be in the positive normal direction (to the right).
     ///
     /// # Arguments
     ///
@@ -504,8 +505,11 @@ impl Circle2 {
     /// start on the tangency point on *this* circle and end on the tangency point on the other
     /// circle. The segments will be symmetric about the line connecting the two circle centers.
     ///
-    /// The first segment will be the one to the right of the line connecting the two centers, and
-    /// the second segment will be the one to the left.
+    /// The segments will always be returned in the same order relative to the line passing through
+    /// this circle center in the direction of the other circle center. The first segment will be
+    /// the one in the negative half-space of the line (the negative normal direction, to the left),
+    /// and the second segment will be in the positive half-space of the line (the positive normal
+    /// direction, to the right).
     ///
     /// # Arguments
     ///
@@ -526,7 +530,10 @@ impl Circle2 {
             // If the circles have the same radius, the outer tangent method must be computed
             // by a simpler, special case
             let s = Segment2::try_new(self.center, other.center).unwrap();
-            Some((s.shifted(self.ball.radius), s.shifted(-self.ball.radius)))
+            Some((
+                s.offsetted(self.ball.radius),
+                s.offsetted(-self.ball.radius),
+            ))
         } else if self.ball.radius > other.ball.radius {
             if let Some((seg0, seg1)) = other.outer_tangents_to(self) {
                 // Swap the segments and reverse them
@@ -541,11 +548,12 @@ impl Circle2 {
             // https://upload.wikimedia.org/wikipedia/commons/7/7c/Aeussere_tangente_computation.svg
             // where we re-frame the problem as the point-to-circle tangent problem.
             let proxy = Circle2::new(other.x(), other.y(), other.r() - self.r());
+            // p0 is in the negative half space and p1 is in the positive half space
             let (p0, p1) = proxy.tangent_points_to(&self.center).unwrap();
             let s0 = Segment2::try_new(self.center, p0).unwrap();
             let s1 = Segment2::try_new(self.center, p1).unwrap();
 
-            Some((s0.shifted(self.r()), s1.shifted(-self.r())))
+            Some((s0.offsetted(-self.r()), s1.offsetted(self.r())))
         }
     }
 }
@@ -835,6 +843,30 @@ mod tests {
     use approx::assert_relative_eq;
     use std::f64::consts::PI;
     use test_case::test_case;
+
+    #[test_case((0.0, 0.0, 2.0), None)]
+    #[test_case((1.0, 0.0, 1.0), Some(((0.0, -1.0, 1.0, -1.0), (0.0, 1.0, 1.0, 1.0))))]
+    #[test_case((2.0, 2.0, 3.0), Some(((-1.0, 0.0, -1.0, 2.0), (0.0, -1.0, 2.0, -1.0))))]
+    #[test_case((0.5, 0.5, 0.5), Some(((0.0, 1.0, 0.5, 1.0), (1.0, 0.0, 1.0, 0.5))))]
+    fn outer_tangencies(
+        c: (f64, f64, f64),
+        e: Option<((f64, f64, f64, f64), (f64, f64, f64, f64))>,
+    ) {
+        let c0 = Circle2::new(0.0, 0.0, 1.0);
+        let c1 = Circle2::new(c.0, c.1, c.2);
+        let result = c0.outer_tangents_to(&c1);
+
+        if let Some((e0, e1)) = e {
+            assert!(result.is_some());
+            let (s0, s1) = result.unwrap();
+            assert_relative_eq!(s0.a, Point2::new(e0.0, e0.1));
+            assert_relative_eq!(s0.b, Point2::new(e0.2, e0.3));
+            assert_relative_eq!(s1.a, Point2::new(e1.0, e1.1));
+            assert_relative_eq!(s1.b, Point2::new(e1.2, e1.3));
+        } else {
+            assert!(result.is_none());
+        }
+    }
 
     #[test_case((0.0, 0.0), (1.0, 0.0), vec![-1.0, 1.0])]
     #[test_case((0.0, 0.0), (2.0, 0.0), vec![-0.5, 0.5])]
