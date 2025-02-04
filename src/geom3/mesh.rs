@@ -6,19 +6,19 @@ mod patches;
 mod serialization;
 mod uv_mapping;
 
-use crate::{Curve3, Iso3, Plane3, Point2, Point3, Result, SurfacePoint3};
-use std::f64::consts::PI;
-use parry3d_f64::bounding_volume::Aabb;
 pub use self::serialization::{MeshData, MeshFlatData};
 pub use self::uv_mapping::UvMapping;
 use crate::common::indices::{chained_indices, index_vec};
 use crate::common::points::{dist, mean_point};
 use crate::common::poisson_disk::sample_poisson_disk;
 use crate::common::SurfacePointCollection;
+use crate::geom3::Aabb3;
+use crate::{Curve3, Iso3, Plane3, Point2, Point3, Result, SurfacePoint3};
+use parry3d_f64::bounding_volume::Aabb;
 use parry3d_f64::query::{IntersectResult, PointProjection, PointQueryWithLocation, SplitResult};
 use parry3d_f64::shape::{TriMesh, TriMeshFlags, TrianglePointLocation};
 use rand::prelude::SliceRandom;
-use crate::geom3::Aabb3;
+use std::f64::consts::PI;
 
 #[derive(Clone)]
 pub struct Mesh {

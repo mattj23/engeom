@@ -11,6 +11,9 @@ use crate::geom2::{rot90, Segment2};
 use crate::AngleDir::Ccw;
 use crate::{Circle2, Curve2, Result};
 use parry2d_f64::query::Ray;
+use rand::distr::{Distribution, Uniform};
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 
 pub trait EdgeLocation {
     /// Given the airfoil section, the oriented collection of inscribed circles, and a flag
@@ -628,5 +631,57 @@ impl EdgeLocation for ConvergeTangentEdge {
         } else {
             Ok((None, working_stations.take_circles()))
         }
+    }
+}
+
+/// This struct implements the `EdgeLocation` trait in a way which performs a RANSAC search for
+/// a constant radius arc region fitting the edge of the airfoil within a specified tolerance.
+pub struct RansacRadiusEdge {
+    in_tol: f64,
+    iterations: usize,
+}
+
+impl RansacRadiusEdge {
+    pub fn new(in_tol: f64, iterations: usize) -> Self {
+        RansacRadiusEdge { in_tol, iterations }
+    }
+
+    /// Create a new boxed instance of the `RansacRadiusEdge` struct.  The `in_tol` value is the
+    /// allowable deviation from the perimeter of the arc that the edge points must lie on to be
+    /// considered inliers, and the `iterations` value is the number of iterations to run the RANSAC
+    /// algorithm.
+    pub fn make(in_tol: f64, iterations: usize) -> Box<dyn EdgeLocation> {
+        Box::new(RansacRadiusEdge::new(in_tol, iterations))
+    }
+}
+
+impl EdgeLocation for RansacRadiusEdge {
+    fn find_edge(
+        &self,
+        section: &Curve2,
+        stations: Vec<InscribedCircle>,
+        front: bool,
+        af_tol: f64,
+    ) -> Result<(Option<AirfoilEdge>, Vec<InscribedCircle>)> {
+        let mut working_stations = OrientedCircles::new(stations, front);
+
+        let station = working_stations
+            .last()
+            .ok_or("Empty inscribed circles container.")?;
+
+        let end_sp = working_stations.end_sp()?.normal;
+        let edge_curve = extract_curve_beyond_station(section, station, &end_sp)
+            .ok_or("Failed to extract edge curve on RANSAC radius edge algorithm.")?;
+
+        let last_circle = Circle2::ransac(
+            edge_curve.points(),
+            self.in_tol,
+            Some(self.iterations),
+            None,
+            Some(station.radius()),
+        )?;
+
+
+        todo!()
     }
 }

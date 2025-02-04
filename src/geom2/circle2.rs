@@ -5,11 +5,14 @@ use crate::geom2::{directed_angle, signed_angle, Iso2, Line2, Point2, Vector2};
 use crate::geom3::Vector3;
 use crate::stats::{compute_mean, compute_st_dev};
 use crate::AngleDir::{Ccw, Cw};
-use crate::AngleInterval;
 use crate::Result;
+use crate::{AngleInterval, UnitVec2};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use parry2d_f64::na::{Dyn, Matrix, Owned, Vector, U1, U3};
 use parry2d_f64::shape::Ball;
+use rand::distr::{Distribution, Uniform};
+use rand::prelude::StdRng;
+use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 use std::f64::consts::FRAC_PI_2;
 
@@ -75,7 +78,7 @@ impl Circle2 {
 
     /// Attempt to create a fitting circle from the given points and an initial guess. The fitting
     /// is an unconstrained Levenberg-Marquardt minimization of the sum of squared errors between
-    /// the points and the boundary of the circle..
+    /// the points and the boundary of the circle.
     ///
     /// The initial guess is used to provide an initial estimate of the circle's center and radius,
     /// for best results this should at least be in the general vicinity of the test points.
@@ -114,6 +117,74 @@ impl Circle2 {
     /// ```
     pub fn fitting_circle(points: &[Point2], guess: &Circle2, mode: BestFit) -> Result<Circle2> {
         fit_circle(points, guess, mode)
+    }
+
+    /// Given a set of points, attempt to fit a circle to them using the RANSAC algorithm.
+    ///
+    /// # Arguments
+    ///
+    /// * `points`: a slice of points to fit the circle to
+    /// * `tol`: The tolerance to use for the RANSAC algorithm. If a point is within this distance
+    ///   of the circle's perimeter, it is considered an inlier.
+    /// * `iterations`: An optional number of iterations to run the RANSAC algorithm. If not
+    ///   provided, the default is 500.
+    /// * `min_r`: An optional minimum radius for the circle. If provided, the circle's radius must
+    ///   be greater than or equal to this value to be considered a valid candidate.
+    /// * `max_r`: An optional maximum radius for the circle. If provided, the circle's radius must
+    ///  be less than or equal to this value to be considered a valid candidate.
+    ///
+    /// returns: Result<Circle2, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    pub fn ransac(
+        points: &[Point2],
+        tol: f64,
+        iterations: Option<usize>,
+        min_r: Option<f64>,
+        max_r: Option<f64>,
+    ) -> Result<Circle2> {
+        let iterations = iterations.unwrap_or(500);
+        let min_r = min_r.unwrap_or(0.0);
+        let max_r = max_r.unwrap_or(f64::INFINITY);
+
+        let mut best_count = 0;
+        let mut best_circle = None;
+
+        let mut rng = StdRng::seed_from_u64(24601);
+        let u = Uniform::new(0, points.len())?;
+
+        let n = iterations.max(10);
+        for _ in 0..n {
+            let i0 = u.sample(&mut rng);
+            let i1 = u.sample(&mut rng);
+            let i2 = u.sample(&mut rng);
+
+            if let Ok(c) = Circle2::from_3_points(points[i0], points[i1], points[i2]) {
+                // Check that the circle is smaller than that of the last station
+                if c.r() > max_r || c.r() < min_r {
+                    continue;
+                }
+
+                // Count the number of inliers
+                let mut count = 0;
+                for p in points {
+                    if c.distance_to(p).abs() < tol {
+                        count += 1;
+                    }
+                }
+
+                if count > best_count {
+                    best_count = count;
+                    best_circle = Some(c);
+                }
+            }
+        }
+
+        best_circle.ok_or("Failed to find a single valid RANSAC circle candidate".into())
     }
 
     /// Attempt to create a fitting circle from three points. Will return an `Err` if the points
@@ -378,6 +449,104 @@ impl Circle2 {
     /// ```
     pub fn distance_to(&self, point: &Point2) -> f64 {
         dist(&self.center, point) - self.ball.radius
+    }
+
+    /// Compute and return the two tangent points on the circle from a given point. If the point is
+    /// on or within the circle, then `None` is returned.
+    ///
+    /// Otherwise, the first point will be the tangent point to the right of the line connecting the
+    /// circle center and the test point, and the second point will be the tangent point on the
+    /// left.
+    ///
+    /// # Arguments
+    ///
+    /// * `point`: the test point
+    ///
+    /// returns: Option<(OPoint<f64, Const<2>>, OPoint<f64, Const<2>>)>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use approx::assert_relative_eq;
+    /// use engeom::{Circle2, Point2};
+    /// let c = Circle2::new(0.0, 0.0, 1.0);
+    /// let p = Point2::new(-1.0, -1.0);
+    /// let (p0, p1) = c.tangent_points_to(&p).unwrap();
+    /// assert_relative_eq!(p0, Point2::new(-1.0, 0.0));
+    /// assert_relative_eq!(p1, Point2::new(0.0, -1.0));
+    /// ```
+    pub fn tangent_points_to(&self, point: &Point2) -> Option<(Point2, Point2)> {
+        let d = dist(&self.center, point);
+        if d <= self.ball.radius {
+            return None;
+        }
+
+        let angle = f64::asin(self.ball.radius / d);
+        let theta = f64::atan2(point.y - self.center.y, point.x - self.center.x);
+
+        let p0 = Point2::new(
+            self.center.x + self.ball.radius * f64::cos(theta - angle),
+            self.center.y + self.ball.radius * f64::sin(theta - angle),
+        );
+
+        let p1 = Point2::new(
+            self.center.x + self.ball.radius * f64::cos(theta + angle),
+            self.center.y + self.ball.radius * f64::sin(theta + angle),
+        );
+
+        Some((p0, p1))
+    }
+
+    /// Compute and return two segments which are the outer tangents between this circle and another
+    /// circle.
+    ///
+    /// If the circles are concentric, the result will be `None`. Otherwise, both segments will
+    /// start on the tangency point on *this* circle and end on the tangency point on the other
+    /// circle. The segments will be symmetric about the line connecting the two circle centers.
+    ///
+    /// The first segment will be the one to the right of the line connecting the two centers, and
+    /// the second segment will be the one to the left.
+    ///
+    /// # Arguments
+    ///
+    /// * `other`:
+    ///
+    /// returns: Option<(Segment2, Segment2)>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    pub fn outer_tangents_to(&self, other: &Circle2) -> Option<(Segment2, Segment2)> {
+        if dist(&self.center, &other.center) < 1.0e-10 {
+            // If the circles are concentric, there will be no outer tangents
+            None
+        } else if (self.ball.radius - other.ball.radius).abs() < 1.0e-10 {
+            // If the circles have the same radius, the outer tangent method must be computed
+            // by a simpler, special case
+            let s = Segment2::try_new(self.center, other.center).unwrap();
+            Some((s.shifted(self.ball.radius), s.shifted(-self.ball.radius)))
+        } else if self.ball.radius > other.ball.radius {
+            if let Some((seg0, seg1)) = other.outer_tangents_to(self) {
+                // Swap the segments and reverse them
+                Some((seg1.reversed(), seg0.reversed()))
+            } else {
+                // Shouldn't happen
+                None
+            }
+        } else {
+            // General case. At this point we know that this circle is smaller than the other, and
+            // that the circles are not concentric. From here we use the method shown in
+            // https://upload.wikimedia.org/wikipedia/commons/7/7c/Aeussere_tangente_computation.svg
+            // where we re-frame the problem as the point-to-circle tangent problem.
+            let proxy = Circle2::new(other.x(), other.y(), other.r() - self.r());
+            let (p0, p1) = proxy.tangent_points_to(&self.center).unwrap();
+            let s0 = Segment2::try_new(self.center, p0).unwrap();
+            let s1 = Segment2::try_new(self.center, p1).unwrap();
+
+            Some((s0.shifted(self.r()), s1.shifted(-self.r())))
+        }
     }
 }
 
@@ -735,5 +904,14 @@ mod tests {
         assert_relative_eq!(1.0, arc.radius());
         assert_relative_eq!(-PI / 2.0, arc.angle0);
         assert_relative_eq!(-3.0 * PI / 2.0, arc.angle);
+    }
+
+    #[test]
+    fn tangent_points_to_simple() {
+        let c = Circle2::new(0.0, 0.0, 1.0);
+        let p = Point2::new(-1.0, -1.0);
+        let (p0, p1) = c.tangent_points_to(&p).unwrap();
+        assert_relative_eq!(p0, Point2::new(-1.0, 0.0));
+        assert_relative_eq!(p1, Point2::new(0.0, -1.0));
     }
 }

@@ -15,7 +15,7 @@ use crate::geom2::hull::convex_hull_2d;
 pub use camber::extract_camber_line;
 pub use edges::{
     ConstRadiusEdge, ConvergeTangentEdge, EdgeLocation, FitRadiusEdge, IntersectEdge, OpenEdge,
-    OpenIntersectGap, TraceToMaxCurvature,
+    OpenIntersectGap, RansacRadiusEdge, TraceToMaxCurvature,
 };
 pub use inscribed_circle::InscribedCircle;
 pub use orientation::{CamberOrientation, DirectionFwd, TMaxFwd};

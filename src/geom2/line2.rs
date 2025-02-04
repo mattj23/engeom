@@ -1,6 +1,6 @@
 use crate::common::points::dist;
 use crate::geom2::Ray2;
-use crate::{Iso2, Point2, Result, Vector2};
+use crate::{Iso2, Point2, Result, TransformBy, UnitVec2, Vector2};
 use parry2d_f64::query::Ray;
 
 /// Compute the intersection parameters between two parameterized lines. Will return None if
@@ -46,14 +46,15 @@ pub trait Line2 {
         Iso2::rotation(-std::f64::consts::PI / 2.0) * self.dir()
     }
 
-    /// Returns a ray that has rotated this entity by 90 degrees
-    fn turned(&self) -> Ray {
-        Ray::new(self.origin(), self.orthogonal())
-    }
-
-    fn reversed(&self) -> Ray {
-        Ray::new(self.origin() + self.dir(), -self.dir())
-    }
+    // TODO: Remove if nothing breaks
+    // /// Returns a ray that has rotated this entity by 90 degrees
+    // fn turned(&self) -> Ray {
+    //     Ray::new(self.origin(), self.orthogonal())
+    // }
+    //
+    // fn reversed(&self) -> Ray {
+    //     Ray::new(self.origin() + self.dir(), -self.dir())
+    // }
 }
 
 impl Line2 for Ray2 {
@@ -89,6 +90,56 @@ impl Segment2 {
         let ap = p - self.a;
         let bp = p - self.b;
         ap.dot(&bp) <= 0.0
+    }
+
+    /// Create a new segment that is shifted by distance `d` in the direction of the segment
+    /// normal vector. The normal vector is the direction vector rotated by 90 degrees clockwise,
+    /// in keeping with the general convention of a normal vector pointing outwards from a
+    /// counter-clockwise wound polyline.
+    ///
+    /// # Arguments
+    ///
+    /// * `d`: the distance to shift the segment along its normal vector
+    ///
+    /// returns: Segment2
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use approx::assert_relative_eq;
+    /// use engeom::geom2::{Point2, Segment2};
+    /// let a = Point2::new(0.0, 0.0);
+    /// let b = Point2::new(1.0, 0.0);
+    /// let s = Segment2::try_new(a, b).unwrap();
+    ///
+    /// let s1 = s.shifted(1.0);
+    ///
+    /// assert_relative_eq!(s1.a, Point2::new(0.0, -1.0), epsilon = 1.0e-6);
+    /// assert_relative_eq!(s1.b, Point2::new(1.0, -1.0), epsilon = 1.0e-6);
+    /// ```
+    pub fn shifted(&self, d: f64) -> Self {
+        let n = UnitVec2::new_normalize(self.orthogonal());
+        Self {
+            a: self.a + n.into_inner() * d,
+            b: self.b + n.into_inner() * d,
+        }
+    }
+
+    /// Create a new segment with the points reversed
+    pub fn reversed(&self) -> Self {
+        Self {
+            a: self.b,
+            b: self.a,
+        }
+    }
+}
+
+impl TransformBy<Iso2, Segment2> for Segment2 {
+    fn transform_by(&self, t: &Iso2) -> Self {
+        Self {
+            a: t.transform_point(&self.a),
+            b: t.transform_point(&self.b),
+        }
     }
 }
 
