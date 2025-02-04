@@ -16,13 +16,13 @@ pub struct InscribedCircle {
     /// is located.
     pub spanning_ray: SpanningRay,
 
-    /// The contact point of the circle with the upper surface of the airfoil section. This is the
-    /// contact point in the positive direction of the spanning ray.
-    pub upper: Point2,
+    /// The contact point of the circle with the surface of the airfoil section in the positive
+    /// direction of the spanning ray.
+    pub contact_pos: Point2,
 
-    /// The contact point of the circle with the lower surface of the airfoil section. This is the
-    /// contact point in the negative direction of the spanning ray.
-    pub lower: Point2,
+    /// The contact point of the circle with the surface of the airfoil section in the negative
+    /// direction of the spanning ray.
+    pub contact_neg: Point2,
 
     /// The circle that is inscribed within the airfoil section
     pub circle: Circle2,
@@ -32,15 +32,15 @@ pub struct InscribedCircle {
 impl InscribedCircle {
     pub fn new(
         spanning_ray: SpanningRay,
-        upper: Point2,
-        lower: Point2,
+        contact_pos: Point2,
+        contact_neg: Point2,
         circle: Circle2,
     ) -> InscribedCircle {
         // let thk = dist(&upper, &lower);
         InscribedCircle {
             spanning_ray,
-            upper,
-            lower,
+            contact_pos,
+            contact_neg,
             circle,
             // thk,
         }
@@ -49,8 +49,8 @@ impl InscribedCircle {
     pub fn reversed(&self) -> InscribedCircle {
         InscribedCircle::new(
             self.spanning_ray.reversed(),
-            self.lower,
-            self.upper,
+            self.contact_neg,
+            self.contact_pos,
             self.circle,
         )
     }
@@ -71,8 +71,8 @@ impl InscribedCircle {
     ///
     /// ```
     pub fn contact_arc(&self, direction: &UnitVec2) -> Arc2 {
-        let angle_u = self.circle.angle_of_point(&self.upper);
-        let angle_l = self.circle.angle_of_point(&self.lower);
+        let angle_u = self.circle.angle_of_point(&self.contact_pos);
+        let angle_l = self.circle.angle_of_point(&self.contact_neg);
 
         // Arc from upper to lower
         let arc0 = self
@@ -107,7 +107,7 @@ impl InscribedCircle {
     /// line. The direction is found by noting that the vector from the upper to lower contact
     /// points is perpendicular to the direction of the camber line at the inscribed circle's center.
     pub fn camber_point(&self) -> SurfacePoint2 {
-        let dir = rot90(AngleDir::Cw) * (self.upper - self.lower);
+        let dir = rot90(AngleDir::Cw) * (self.contact_pos - self.contact_neg);
         SurfacePoint2::new_normalize(self.center(), dir)
     }
 
@@ -126,8 +126,8 @@ impl InscribedCircle {
     ///
     /// returns: f64
     pub fn interpolation_error(&self, s0: &Self, s1: &Self) -> f64 {
-        let upper = linear_interpolation_error(&s0.upper, &s1.upper, &self.upper);
-        let lower = linear_interpolation_error(&s0.lower, &s1.lower, &self.lower);
+        let upper = linear_interpolation_error(&s0.contact_pos, &s1.contact_pos, &self.contact_pos);
+        let lower = linear_interpolation_error(&s0.contact_neg, &s1.contact_neg, &self.contact_neg);
         let center = linear_interpolation_error(&s0.center(), &s1.center(), &self.center());
 
         upper.max(lower).max(center)
@@ -136,6 +136,6 @@ impl InscribedCircle {
     /// Reverses the direction of the spanning ray and swaps the upper and lower contact points.
     pub fn reverse_in_place(&mut self) {
         self.spanning_ray = self.spanning_ray.reversed();
-        std::mem::swap(&mut self.upper, &mut self.lower);
+        std::mem::swap(&mut self.contact_pos, &mut self.contact_neg);
     }
 }

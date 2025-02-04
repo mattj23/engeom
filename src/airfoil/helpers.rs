@@ -185,8 +185,8 @@ pub fn extract_curve_beyond_station(
     last_station: &InscribedCircle,
     direction: &UnitVec2,
 ) -> Option<Curve2> {
-    let split0 = section.at_closest_to_point(&last_station.upper);
-    let split1 = section.at_closest_to_point(&last_station.lower);
+    let split0 = section.at_closest_to_point(&last_station.contact_pos);
+    let split1 = section.at_closest_to_point(&last_station.contact_neg);
 
     let portion0 = section.between_lengths(split0.length_along(), split1.length_along());
     let portion1 = section.between_lengths(split1.length_along(), split0.length_along());

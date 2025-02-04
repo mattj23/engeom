@@ -5,8 +5,8 @@ use crate::geom2::{directed_angle, signed_angle, Aabb2, Iso2, Line2, Point2, Vec
 use crate::geom3::Vector3;
 use crate::stats::{compute_mean, compute_st_dev};
 use crate::AngleDir::{Ccw, Cw};
+use crate::AngleInterval;
 use crate::Result;
-use crate::{AngleInterval, UnitVec2};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use parry2d_f64::na::{Dyn, Matrix, Owned, Vector, U1, U3};
 use parry2d_f64::shape::Ball;
@@ -131,7 +131,7 @@ impl Circle2 {
     /// * `min_r`: An optional minimum radius for the circle. If provided, the circle's radius must
     ///   be greater than or equal to this value to be considered a valid candidate.
     /// * `max_r`: An optional maximum radius for the circle. If provided, the circle's radius must
-    ///  be less than or equal to this value to be considered a valid candidate.
+    ///   be less than or equal to this value to be considered a valid candidate.
     ///
     /// returns: Result<Circle2, Box<dyn Error, Global>>
     ///

@@ -1,35 +1,6 @@
 use super::helpers::{curve_from_inscribed_circles, find_tmax_circle, reverse_inscribed_circles};
-use crate::airfoil::InscribedCircle;
+use crate::airfoil::{CamberOrient, InscribedCircle};
 use crate::{Curve2, Result, Vector2};
-
-/// This trait defines an interface to perform orientation of the camber line of an airfoil
-/// section, specifically referring to its order and its relationship to the leading edge. A
-/// camber line begins at the leading edge and ends at the trailing edge.
-pub trait CamberOrientation {
-    /// Orient the camber line of an airfoil section based on the method specified by the
-    /// implementation. The camber line at this stage is a series of inscribed circles whose
-    /// adjacency in space is coupled to their ordering in the container. However, the orientation
-    /// (whether the first circle is at the leading edge or the trailing edge) is not yet known.
-    ///
-    /// This method will return a new container of inscribed circles with the camber line oriented
-    /// so that the first circle is closest to the leading edge and the last circle is closest to
-    /// the trailing edge. The order of the circles will be preserved.
-    ///
-    /// This method will take ownership of the input container and return a new container with the
-    /// circles in the correct order.
-    ///
-    /// # Arguments
-    ///
-    /// * `section`: the airfoil section curve used to generate the inscribed circles
-    /// * `stations`: the inscribed circles in the airfoil section
-    ///
-    /// returns: Vec<InscribedCircle, Global>
-    fn orient_camber_line(
-        &self,
-        section: &Curve2,
-        stations: Vec<InscribedCircle>,
-    ) -> Result<Vec<InscribedCircle>>;
-}
 
 /// This struct implements the `CamberOrientation` trait and orients the camber line of an airfoil
 /// based on the principle that for most subsonic airfoils the point of max thickness is closer to
@@ -51,12 +22,12 @@ impl TMaxFwd {
     }
 
     /// Create a new boxed instance of the `TMaxFwd` struct.
-    pub fn make() -> Box<dyn CamberOrientation> {
+    pub fn make() -> Box<dyn CamberOrient> {
         Box::new(TMaxFwd::new())
     }
 }
 
-impl CamberOrientation for TMaxFwd {
+impl CamberOrient for TMaxFwd {
     fn orient_camber_line(
         &self,
         _section: &Curve2,
@@ -101,12 +72,12 @@ impl DirectionFwd {
     }
 
     /// Create a new boxed instance of the `DirectionFwd` struct.
-    pub fn make(direction: Vector2) -> Box<dyn CamberOrientation> {
+    pub fn make(direction: Vector2) -> Box<dyn CamberOrient> {
         Box::new(DirectionFwd::new(direction))
     }
 }
 
-impl CamberOrientation for DirectionFwd {
+impl CamberOrient for DirectionFwd {
     fn orient_camber_line(
         &self,
         _section: &Curve2,

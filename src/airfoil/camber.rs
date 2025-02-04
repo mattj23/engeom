@@ -5,14 +5,40 @@ use super::helpers::{
 };
 use crate::airfoil::inscribed_circle::InscribedCircle;
 use crate::common::points::{dist, mid_point};
+use crate::common::BestFit;
+use crate::common::Resample::ByCount;
 use crate::geom2::hull::farthest_pair_indices;
 use crate::geom2::polyline2::SpanningRay;
 use crate::geom2::{rot90, Line2};
 use crate::AngleDir::{Ccw, Cw};
-use crate::Curve2;
 use crate::Result;
+use crate::{Circle2, Curve2, UnitVec2};
 use parry2d_f64::query::Ray;
 use parry2d_f64::shape::ConvexPolygon;
+
+/// Given a curve representing a camber line, attempt to detect the direction of the upper
+/// (suction, convex) side of the airfoil section. To do so, we will resample the curve to a
+/// finite number of points and then best-fit a circle to the points. The circle center should be
+/// on the concave (lower, pressure) side of the camber curve, so the direction from the circle
+/// center to the center of the camber curve will be the direction of the upper airfoil side.
+///
+/// # Arguments
+///
+/// * `camber_line`: the curve representing the camber line of the airfoil section
+///
+/// returns: Result<Unit<Matrix<f64, Const<2>, Const<1>, ArrayStorage<f64, 2, 1>>>, Box<dyn Error, Global>>
+pub fn camber_detect_upper_dir(camber_line: &Curve2) -> Result<UnitVec2> {
+    let mid_point = camber_line.at_fraction(0.5).unwrap().point();
+    let resampled = camber_line.resample(ByCount(50))?;
+    let guess = Circle2::from_3_points(
+        camber_line.at_front().point(),
+        mid_point,
+        camber_line.at_back().point(),
+    )?;
+    let circle = Circle2::fitting_circle(resampled.points(), &guess, BestFit::All)?;
+
+    Ok(UnitVec2::new_normalize(mid_point - circle.center))
+}
 
 /// Attempts to calculate and extract the mean camber line from an airfoil section curve and its
 /// convex hull using the inscribed circle method.
@@ -117,7 +143,7 @@ fn advance_search_along_ray(section: &Curve2, last_station: &InscribedCircle) ->
             // First, we want to test if the new ray spans at least 50% of the last station's
             // distance between the upper and lower contact points.  This is a heuristic to ensure
             // we haven't taken a step where the section thickness is dropping off too quickly.
-            let last_dist = dist(&last_station.upper, &last_station.lower);
+            let last_dist = dist(&last_station.contact_pos, &last_station.contact_neg);
             let new_dist = ray.dir().norm();
 
             if new_dist < 0.5 * last_dist {

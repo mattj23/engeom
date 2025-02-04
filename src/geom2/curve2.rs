@@ -590,6 +590,92 @@ impl Curve2 {
         }
     }
 
+    /// If the curve is open, this will attempt to split it into two parts with the division at the
+    /// specified length from the curve start.  If the curve is closed, or if this results in a
+    /// segment which has fewer than 2 points, this will return an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `length`: The length along the curve at which to split
+    ///
+    /// returns: Result<(Curve2, Curve2), Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use approx::assert_relative_eq;
+    /// use engeom::geom2::{Curve2, Point2};
+    /// let points = vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0), Point2::new(1.0, 2.0)];
+    /// let curve = Curve2::from_points(&points, 1e-6, false).unwrap();
+    /// let (a, b) = curve.split_open_at_length(2.0).unwrap();
+    ///
+    /// assert_relative_eq!(a.length(), 2.0, epsilon = 1e-6);
+    /// assert_relative_eq!(b.length(), 1.0, epsilon = 1e-6);
+    /// ```
+    pub fn split_open_at_length(&self, length: f64) -> Result<(Self, Self)> {
+        if self.is_closed {
+            Err("Cannot split_open_at_length a closed curve"
+                .to_string()
+                .into())
+        } else {
+            let a = self.between_lengths(0.0, length).ok_or(format!(
+                "Failed to extract curve start 0.0->{} of {}",
+                length,
+                self.length()
+            ))?;
+            let b = self.between_lengths(length, self.length()).ok_or(format!(
+                "Failed to extract curve end {}->{}",
+                length,
+                self.length()
+            ))?;
+
+            Ok((a, b))
+        }
+    }
+
+    /// If the curve is closed, this will attempt to split it into two parts with the divisions at
+    /// the specified lengths from the curve start.  If the curve is open, or if this results in a
+    /// segment which has fewer than 2 points, this will return an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `length0`: the first length along the curve at which to split
+    /// * `length1`: the second length along the curve at which to split
+    ///
+    /// returns: Result<(<unknown>, <unknown>), Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use approx::assert_relative_eq;
+    /// use engeom::geom2::{Curve2, Point2};
+    /// let points = vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0), Point2::new(1.0, 2.0),
+    ///                   Point2::new(0.0, 2.0)];
+    /// let curve = Curve2::from_points(&points, 1e-6, true).unwrap();
+    /// let (a, b) = curve.split_closed_at_lengths(2.0, 4.0).unwrap();
+    ///
+    /// assert_relative_eq!(a.length(), 2.0, epsilon = 1e-6);
+    /// assert_relative_eq!(b.length(), 4.0, epsilon = 1e-6);
+    /// ```
+    pub fn split_closed_at_lengths(&self, length0: f64, length1: f64) -> Result<(Self, Self)> {
+        if !self.is_closed {
+            Err("Cannot split_closed_at_lengths an open curve"
+                .to_string()
+                .into())
+        } else {
+            let a = self.between_lengths(length0, length1).ok_or(format!(
+                "Failed to extract curve between {}->{}",
+                length0, length1
+            ))?;
+            let b = self.between_lengths(length1, length0).ok_or(format!(
+                "Failed to extract curve between {}->{}",
+                length1, length0
+            ))?;
+
+            Ok((a, b))
+        }
+    }
+
     pub fn reversed(&self) -> Self {
         let mut points = self.clone_points();
         points.reverse();

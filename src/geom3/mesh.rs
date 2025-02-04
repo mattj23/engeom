@@ -14,7 +14,6 @@ use crate::common::poisson_disk::sample_poisson_disk;
 use crate::common::SurfacePointCollection;
 use crate::geom3::Aabb3;
 use crate::{Curve3, Iso3, Plane3, Point2, Point3, Result, SurfacePoint3};
-use parry3d_f64::bounding_volume::Aabb;
 use parry3d_f64::query::{IntersectResult, PointProjection, PointQueryWithLocation, SplitResult};
 use parry3d_f64::shape::{TriMesh, TriMeshFlags, TrianglePointLocation};
 use rand::prelude::SliceRandom;

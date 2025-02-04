@@ -4,55 +4,13 @@ use crate::airfoil::helpers::{
     extract_curve_beyond_station, extract_edge_sub_curve, inscribed_from_spanning_ray,
     refine_stations, OrientedCircles,
 };
-use crate::airfoil::{AirfoilEdge, EdgeGeometry, InscribedCircle};
+use crate::airfoil::{AirfoilEdge, EdgeGeometry, EdgeLocate, InscribedCircle};
 use crate::common::points::{dist, mid_point};
 use crate::common::{linear_space, BestFit};
 use crate::geom2::{rot90, Ray2, Segment2};
 use crate::AngleDir::Ccw;
-use crate::{Circle2, Curve2, Result, UnitVec2};
+use crate::{Circle2, Curve2, Result};
 use parry2d_f64::query::Ray;
-use rand::distr::{Distribution, Uniform};
-use rand::rngs::StdRng;
-use rand::SeedableRng;
-
-pub trait EdgeLocation {
-    /// Given the airfoil section, the oriented collection of inscribed circles, and a flag
-    /// indicating if we're searching for the edge at the front or back of the camber line, this
-    /// implementation should return an `AirfoilEdge` with the actual edge point (where the camber
-    /// line meets the section boundary), optional geometry information where it exists, and the
-    /// collection of inscribed circles. If the edge point can't be found, or if the edge point
-    /// doesn't exist (in the case of an open section), the function should return `None` for the
-    /// edge point and return the collection of inscribed circles without modification.
-    ///
-    /// This function will be given ownership of the existing vector of circles with the intention
-    /// that it *may* make modifications to it, depending on the method. The method will return a
-    /// vector of circles that may end up being the same as the input vector, may be different,
-    /// or may be the original vector modified.
-    ///
-    /// # Arguments
-    ///
-    /// * `section`: the airfoil section curve
-    /// * `stations`: the inscribed circles in the airfoil section, already oriented from
-    ///   leading to trailing edge
-    /// * `front`: a flag indicating if we're searching for the edge at the front or the back of
-    ///   the camber line
-    /// * `af_tol`: the tolerance value specified in the airfoil analysis parameters
-    ///
-    /// returns: Result<(Option<AirfoilEdge>, Vec<InscribedCircle, Global>), Box<dyn Error, Global>>
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
-    fn find_edge(
-        &self,
-        section: &Curve2,
-        stations: Vec<InscribedCircle>,
-        front: bool,
-        af_tol: f64,
-    ) -> Result<(Option<AirfoilEdge>, Vec<InscribedCircle>)>;
-}
 
 /// This struct implements the `EdgeLocation` trait and does not attempt to locate the edge of
 /// the airfoil section. It will return `None` for the edge point and the original collection of
@@ -72,12 +30,12 @@ impl OpenEdge {
     }
 
     /// Create a new boxed instance of the `OpenEdge` struct.
-    pub fn make() -> Box<dyn EdgeLocation> {
+    pub fn make() -> Box<dyn EdgeLocate> {
         Box::new(OpenEdge::new())
     }
 }
 
-impl EdgeLocation for OpenEdge {
+impl EdgeLocate for OpenEdge {
     fn find_edge(
         &self,
         _section: &Curve2,
@@ -85,7 +43,10 @@ impl EdgeLocation for OpenEdge {
         _front: bool,
         _af_tol: f64,
     ) -> Result<(Option<AirfoilEdge>, Vec<InscribedCircle>)> {
-        Ok((None, stations))
+        Ok((
+            Some(AirfoilEdge::open(stations.last().unwrap().circle.center)),
+            stations,
+        ))
     }
 }
 
@@ -104,12 +65,12 @@ impl OpenIntersectGap {
     }
 
     /// Create a new boxed instance of the `OpenIntersectGap` struct.
-    pub fn make(max_iterations: usize) -> Box<dyn EdgeLocation> {
+    pub fn make(max_iterations: usize) -> Box<dyn EdgeLocate> {
         Box::new(OpenIntersectGap::new(max_iterations))
     }
 }
 
-impl EdgeLocation for OpenIntersectGap {
+impl EdgeLocate for OpenIntersectGap {
     fn find_edge(
         &self,
         section: &Curve2,
@@ -164,7 +125,7 @@ impl EdgeLocation for OpenIntersectGap {
             iterations += 1;
         }
         Ok((
-            Some(AirfoilEdge::point_only(end_point)),
+            Some(AirfoilEdge::open(end_point)),
             working_stations.take_circles(),
         ))
     }
@@ -187,12 +148,12 @@ impl IntersectEdge {
     }
 
     /// Create a new boxed instance of the `IntersectEdge` struct.
-    pub fn make() -> Box<dyn EdgeLocation> {
+    pub fn make() -> Box<dyn EdgeLocate> {
         Box::new(IntersectEdge::new())
     }
 }
 
-impl EdgeLocation for IntersectEdge {
+impl EdgeLocate for IntersectEdge {
     fn find_edge(
         &self,
         section: &Curve2,
@@ -204,7 +165,7 @@ impl EdgeLocation for IntersectEdge {
         let edge_point = circles.intersect_from_end(section)?;
 
         Ok((
-            Some(AirfoilEdge::point_only(edge_point)),
+            Some(AirfoilEdge::closed_only(edge_point)),
             circles.take_circles(),
         ))
     }
@@ -238,12 +199,12 @@ impl TraceToMaxCurvature {
     ///   curvature.  If `None`, the default value of 0.005 will be used.
     ///
     /// returns: Box<dyn EdgeLocation, Global>
-    pub fn make(max_tol: Option<f64>) -> Box<dyn EdgeLocation> {
+    pub fn make(max_tol: Option<f64>) -> Box<dyn EdgeLocate> {
         Box::new(TraceToMaxCurvature::new(max_tol))
     }
 }
 
-impl EdgeLocation for TraceToMaxCurvature {
+impl EdgeLocate for TraceToMaxCurvature {
     fn find_edge(
         &self,
         section: &Curve2,
@@ -318,7 +279,7 @@ impl EdgeLocation for TraceToMaxCurvature {
         }
 
         Ok((
-            Some(AirfoilEdge::point_only(edge_point)),
+            Some(AirfoilEdge::closed_only(edge_point)),
             working_stations.take_circles(),
         ))
     }
@@ -333,12 +294,12 @@ impl FitRadiusEdge {
         FitRadiusEdge { tol }
     }
 
-    pub fn make(tol: Option<f64>) -> Box<dyn EdgeLocation> {
+    pub fn make(tol: Option<f64>) -> Box<dyn EdgeLocate> {
         Box::new(FitRadiusEdge::new(tol))
     }
 }
 
-impl EdgeLocation for FitRadiusEdge {
+impl EdgeLocate for FitRadiusEdge {
     fn find_edge(
         &self,
         section: &Curve2,
@@ -430,12 +391,12 @@ impl ConstRadiusEdge {
     /// allowable deviation from the radius of the arc that the edge points must lie on.  If no
     /// tolerance value is specified, the same value that was provided for the overall airfoil
     /// analysis tolerance will be used.
-    pub fn make(tol: Option<f64>) -> Box<dyn EdgeLocation> {
+    pub fn make(tol: Option<f64>) -> Box<dyn EdgeLocate> {
         Box::new(ConstRadiusEdge::new(tol))
     }
 }
 
-impl EdgeLocation for ConstRadiusEdge {
+impl EdgeLocate for ConstRadiusEdge {
     fn find_edge(
         &self,
         section: &Curve2,
@@ -525,12 +486,12 @@ impl ConvergeTangentEdge {
     ///
     /// If no tolerance value is specified, the default value of 1% of the last inscribed circle's
     /// radius will be used.
-    pub fn make(tol: Option<f64>) -> Box<dyn EdgeLocation> {
+    pub fn make(tol: Option<f64>) -> Box<dyn EdgeLocate> {
         Box::new(ConvergeTangentEdge::new(tol))
     }
 }
 
-impl EdgeLocation for ConvergeTangentEdge {
+impl EdgeLocate for ConvergeTangentEdge {
     fn find_edge(
         &self,
         section: &Curve2,
@@ -625,7 +586,7 @@ impl EdgeLocation for ConvergeTangentEdge {
             // We now need to remove all the stations beyond the point we found
             working_stations.discard_sections_beyond_point(&dir.point);
             Ok((
-                Some(AirfoilEdge::point_only(*point)),
+                Some(AirfoilEdge::closed_only(*point)),
                 working_stations.take_circles(),
             ))
         } else {
@@ -650,18 +611,18 @@ impl RansacRadiusEdge {
     /// allowable deviation from the perimeter of the arc that the edge points must lie on to be
     /// considered inliers, and the `iterations` value is the number of iterations to run the RANSAC
     /// algorithm.
-    pub fn make(in_tol: f64, iterations: usize) -> Box<dyn EdgeLocation> {
+    pub fn make(in_tol: f64, iterations: usize) -> Box<dyn EdgeLocate> {
         Box::new(RansacRadiusEdge::new(in_tol, iterations))
     }
 }
 
-impl EdgeLocation for RansacRadiusEdge {
+impl EdgeLocate for RansacRadiusEdge {
     fn find_edge(
         &self,
         section: &Curve2,
         stations: Vec<InscribedCircle>,
         front: bool,
-        af_tol: f64,
+        _af_tol: f64,
     ) -> Result<(Option<AirfoilEdge>, Vec<InscribedCircle>)> {
         let mut working_stations = OrientedCircles::new(stations, front);
 
@@ -682,7 +643,9 @@ impl EdgeLocation for RansacRadiusEdge {
         )?;
 
         // Find the tangency segments. The segments b points are on the last circle
-        let (s0, s1) = station.circle.outer_tangents_to(&last_circle)
+        let (s0, s1) = station
+            .circle
+            .outer_tangents_to(&last_circle)
             .ok_or("Failed to find tangents between last station and RANSAC circle.")?;
 
         // Create a fudged spanning ray. We'll consider s0.b to be the upper contact point and s1.b
@@ -700,11 +663,14 @@ impl EdgeLocation for RansacRadiusEdge {
         let edge_point = working_stations.intersect_from_end(&edge_curve)?;
 
         // Create the end arc geometry
-        let end_arc = working_stations.last()
+        let end_arc = working_stations
+            .last()
             .ok_or("Empty inscribed circles container.")?
             .contact_arc(&end_sp);
 
-        let edge = AirfoilEdge::new(edge_point, EdgeGeometry::Arc(end_arc));
-        Ok((Some(edge), working_stations.take_circles()))
+        Ok((
+            Some(AirfoilEdge::arc(edge_point, end_arc)),
+            working_stations.take_circles(),
+        ))
     }
 }

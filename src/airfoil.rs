@@ -8,18 +8,107 @@ pub mod helpers;
 mod inscribed_circle;
 mod orientation;
 
-use crate::{Arc2, Curve2, Point2, Result, SurfacePoint2};
+use crate::{Arc2, Curve2, Point2, Result, SurfacePoint2, UnitVec2, Vector2};
 
+use crate::airfoil::camber::camber_detect_upper_dir;
 use crate::common::points::dist;
+use crate::common::Intersection;
 use crate::geom2::hull::convex_hull_2d;
+use crate::stats::compute_mean;
 pub use camber::extract_camber_line;
 pub use edges::{
-    ConstRadiusEdge, ConvergeTangentEdge, EdgeLocation, FitRadiusEdge, IntersectEdge, OpenEdge,
-    OpenIntersectGap, RansacRadiusEdge, TraceToMaxCurvature,
+    ConstRadiusEdge, ConvergeTangentEdge, FitRadiusEdge, IntersectEdge, OpenEdge, OpenIntersectGap,
+    RansacRadiusEdge, TraceToMaxCurvature,
 };
 pub use inscribed_circle::InscribedCircle;
-pub use orientation::{CamberOrientation, DirectionFwd, TMaxFwd};
+pub use orientation::{DirectionFwd, TMaxFwd};
 use serde::{Deserialize, Serialize};
+//=================================================================================================
+// Airfoil analysis parameters and interfaces
+//-------------------------------------------------------------------------------------------------
+// This section has enumerations and traits which specify how algorithms for different analysis
+// methods will be identified and/or given to downstream code.
+//=================================================================================================
+
+/// This enumeration represents the possible methods for detecting which of the two surfaces of
+/// an airfoil is the upper (suction/convex) surface and which is the lower (pressure/concave)
+/// surface.
+#[derive(Serialize, Deserialize, Clone)]
+pub enum FaceOrient {
+    Detect,
+    Direction(Vector2),
+}
+
+/// This trait defines an interface to perform orientation of the camber line of an airfoil
+/// section, specifically referring to its order and its relationship to the leading edge. A
+/// camber line begins at the leading edge and ends at the trailing edge.
+pub trait CamberOrient {
+    /// Orient the camber line of an airfoil section based on the method specified by the
+    /// implementation. The camber line at this stage is a series of inscribed circles whose
+    /// adjacency in space is coupled to their ordering in the container. However, the orientation
+    /// (whether the first circle is at the leading edge or the trailing edge) is not yet known.
+    ///
+    /// This method will return a new container of inscribed circles with the camber line oriented
+    /// so that the first circle is closest to the leading edge and the last circle is closest to
+    /// the trailing edge. The order of the circles will be preserved.
+    ///
+    /// This method will take ownership of the input container and return a new container with the
+    /// circles in the correct order.
+    ///
+    /// # Arguments
+    ///
+    /// * `section`: the airfoil section curve used to generate the inscribed circles
+    /// * `stations`: the inscribed circles in the airfoil section
+    ///
+    /// returns: Vec<InscribedCircle, Global>
+    fn orient_camber_line(
+        &self,
+        section: &Curve2,
+        stations: Vec<InscribedCircle>,
+    ) -> Result<Vec<InscribedCircle>>;
+}
+
+/// This trait defines an interface to locate the edge (leading or trailing) of an airfoil
+/// cross-section to identify the specific point where the camber line meets the section boundary
+/// and any additional geometry information that may be present.
+pub trait EdgeLocate {
+    /// Given the airfoil section, the oriented collection of inscribed circles, and a flag
+    /// indicating if we're searching for the edge at the front or back of the camber line, this
+    /// implementation should return an `AirfoilEdge` with the actual edge point (where the camber
+    /// line meets the section boundary), optional geometry information where it exists, and the
+    /// collection of inscribed circles. If the edge point can't be found, or if the edge point
+    /// doesn't exist (in the case of an open section), the function should return `None` for the
+    /// edge point and return the collection of inscribed circles without modification.
+    ///
+    /// This function will be given ownership of the existing vector of circles with the intention
+    /// that it *may* make modifications to it, depending on the method. The method will return a
+    /// vector of circles that may end up being the same as the input vector, may be different,
+    /// or may be the original vector modified.
+    ///
+    /// # Arguments
+    ///
+    /// * `section`: the airfoil section curve
+    /// * `stations`: the inscribed circles in the airfoil section, already oriented from
+    ///   leading to trailing edge
+    /// * `front`: a flag indicating if we're searching for the edge at the front or the back of
+    ///   the camber line
+    /// * `af_tol`: the tolerance value specified in the airfoil analysis parameters
+    ///
+    /// returns: Result<(Option<AirfoilEdge>, Vec<InscribedCircle, Global>), Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    fn find_edge(
+        &self,
+        section: &Curve2,
+        stations: Vec<InscribedCircle>,
+        front: bool,
+        af_tol: f64,
+    ) -> Result<(Option<AirfoilEdge>, Vec<InscribedCircle>)>;
+}
 
 /// This structure contains the parameters used in the airfoil analysis algorithms.  It specifies
 /// the minimum tolerance value used in many parts of the analysis, as well as the methods for
@@ -31,58 +120,34 @@ pub struct AfParams {
     pub tol: f64,
 
     /// The method for trying to detect the orientation of the leading edge on the airfoil.
-    pub orient: Box<dyn CamberOrientation>,
+    pub orient: Box<dyn CamberOrient>,
 
     /// The method for trying to detect the leading edge on the airfoil.
-    pub leading: Box<dyn EdgeLocation>,
+    pub leading: Box<dyn EdgeLocate>,
 
     /// The method for trying to detect the trailing edge on the airfoil.
-    pub trailing: Box<dyn EdgeLocation>,
+    pub trailing: Box<dyn EdgeLocate>,
 }
 
-impl AfParams {
-    /// Create a new set of airfoil analysis parameters with the specified tolerance value and
-    /// other algorithm selections.
-    ///
-    /// # Arguments
-    ///
-    /// * `tol`: the minimum tolerance value used in many parts of the analysis, generally used to
-    ///   refine results until the error/difference falls below this value.
-    /// * `orient`: the method for trying to detect the orientation of the leading edge
-    /// * `leading`: the method for trying to detect the leading edge
-    /// * `trailing`: the method for trying to detect the trailing edge
-    ///
-    /// returns: AfParams
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
-    pub fn new(
-        tol: f64,
-        orient: Box<dyn CamberOrientation>,
-        leading: Box<dyn EdgeLocation>,
-        trailing: Box<dyn EdgeLocation>,
-    ) -> Self {
-        AfParams {
-            tol,
-            orient,
-            leading,
-            trailing,
-        }
-    }
-}
+//=================================================================================================
+// Airfoil result structures
+//-------------------------------------------------------------------------------------------------
+// This section has structures and enumerations which represent a common set of outputs for
+// different analysis methods that perform the same function.
+//=================================================================================================
 
 /// This enumeration represents the possible edge geometries that can be detected on an airfoil
 /// by the analysis methods, and is used to return information located by the edge detection
 /// methods.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum EdgeGeometry {
-    /// No special edge geometry was found
-    None,
+    /// No special geometry was found, but the section is known to be closed at this edge.
+    Closed,
 
-    /// The edge has a constant radius region represented by an arc
+    /// The section is known to be open at this edge
+    Open,
+
+    /// The edge is closed and has a constant radius region represented by an arc
     Arc(Arc2),
 }
 
@@ -90,7 +155,12 @@ pub enum EdgeGeometry {
 /// airfoil. When an edge is detected, it consists of a point and a geometry.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AirfoilEdge {
+    /// The leading or trailing edge point of the airfoil section. This point should lie on both
+    /// the camber line and the airfoil section boundary, unless the edge is open.
     pub point: Point2,
+
+    /// The geometry of the edge, if any special geometry was detected.  This can be used to provide
+    /// additional information about the edge, such as a constant radius region.
     pub geometry: EdgeGeometry,
 }
 
@@ -99,8 +169,16 @@ impl AirfoilEdge {
         AirfoilEdge { point, geometry }
     }
 
-    pub fn point_only(point: Point2) -> Self {
-        AirfoilEdge::new(point, EdgeGeometry::None)
+    fn open(point: Point2) -> Self {
+        AirfoilEdge::new(point, EdgeGeometry::Open)
+    }
+
+    fn closed_only(point: Point2) -> Self {
+        AirfoilEdge::new(point, EdgeGeometry::Closed)
+    }
+
+    fn arc(point: Point2, arc: Arc2) -> Self {
+        AirfoilEdge::new(point, EdgeGeometry::Arc(arc))
     }
 }
 
@@ -122,21 +200,159 @@ pub struct AirfoilGeometry {
     /// first/last points of the curve will be the leading/trailing edge points, respectively.
     /// Otherwise, the curve will stop at the first/last inscribed circle.
     pub camber: Curve2,
+
+    /// The upper (suction) surface of the airfoil section, represented as a curve oriented in the
+    /// same winding order as the original section. The first point may be at either the leading or
+    /// trailing edge based on the coordinate system of the original section.
+    pub upper: Option<Curve2>,
+
+    /// The lower (pressure) surface of the airfoil section, represented as a curve oriented in the
+    /// same winding order as the original section. The first point may be at either the leading or
+    /// trailing edge based on the coordinate system of the original section.
+    pub lower: Option<Curve2>,
+
+    /// The tolerance value used in the analysis
+    pub core_tol: f64,
+
+    /// The tolerance value of curves used in this analysis
+    pub curve_tol: f64,
 }
 
 impl AirfoilGeometry {
-    fn new(
-        leading_edge: Option<AirfoilEdge>,
-        trailing_edge: Option<AirfoilEdge>,
-        stations: Vec<InscribedCircle>,
-        camber: Curve2,
-    ) -> Self {
-        AirfoilGeometry {
+    /// Attempt to extract the airfoil geometry from the given section using only the geometric data
+    /// of the section.
+    ///
+    /// The mean camber line will be extracted iteratively using the inscribed circle method with
+    /// no prior knowledge about the section shape. The orientation of the leading edge direction,
+    /// the pressure/suction surfaces, and the locations of the leading and trailing edges must be
+    /// found with methods that don't need additional information.
+    ///
+    /// This geometry-only analysis is suitable for use with very clean airfoil section data, such
+    /// as nominal geometry from CAD or sections generated mathematically. It will work best if
+    /// you can specify good, specific methods for feature identification based on knowledge you
+    /// have of the section.
+    ///
+    /// It is less suitable for use with measured data, which can have noise that can "poison" the
+    /// geometry enough that features may not be detected as expected. For measured data, especially
+    /// data with noise or large deviations from ideal geometry (such as damage, wear, or
+    /// significant warping), an analysis using a nominal reference airfoil is recommended instead.
+    ///
+    /// # Arguments
+    ///
+    /// * `section`: The `Curve2` representing the airfoil section geometry. This curve should be
+    ///   closed if the section is intended to be closed. No specific orientation is required.
+    /// * `core_tol`: a tolerance value used in many parts of the analysis, generally used to refine
+    ///   results until the error/difference falls below this value.
+    /// * `camber_orient`: the method for trying to detect which side of the mean camber line is
+    ///   at the leading edge and which is at the trailing edge.
+    /// * `leading`: the algorithm for trying to detect the leading edge of the airfoil section
+    /// * `trailing`: the algorithm for trying to detect the trailing edge of the airfoil section
+    /// * `face_orient`: the method to use to try to detect which surface of the airfoil is the
+    ///   upper (suction/convex) surface and which is the lower (pressure/concave) surface.
+    ///
+    /// returns: Result<AirfoilGeometry, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    pub fn try_analyze(
+        section: &Curve2,
+        core_tol: f64,
+        camber_orient: Box<dyn CamberOrient>,
+        leading: Box<dyn EdgeLocate>,
+        trailing: Box<dyn EdgeLocate>,
+        face_orient: FaceOrient,
+    ) -> Result<Self> {
+        // Calculate the hull, we will need this for the inscribed circle method and the tangency
+        // line.
+        let hull = section
+            .make_hull()
+            .ok_or("Failed to calculate the hull of the airfoil section")?;
+
+        // Compute the mean camber line using the inscribed circle method
+        let stations = extract_camber_line(section, &hull, Some(core_tol))
+            .map_err(|e| format!("Error during initial camber line extraction: {e}"))?;
+
+        // Orient the camber line
+        let stations = camber_orient
+            .orient_camber_line(section, stations)
+            .map_err(|e| format!("Error orienting the initial camber line: {e}"))?;
+
+        // Find the leading and trailing edges
+        let (leading_edge, stations) = leading
+            .find_edge(section, stations, true, core_tol)
+            .map_err(|e| format!("Error finding the leading edge: {e}"))?;
+
+        let (trailing_edge, stations) = trailing
+            .find_edge(section, stations, false, core_tol)
+            .map_err(|e| format!("Error finding the trailing edge: {e}"))?;
+
+        // Create the camber curve
+        let mut camber_points = stations.iter().map(|c| c.circle.center).collect::<Vec<_>>();
+        if let Some(leading) = &leading_edge {
+            camber_points.insert(0, leading.point);
+        }
+        if let Some(trailing) = &trailing_edge {
+            camber_points.push(trailing.point);
+        }
+
+        let camber = Curve2::from_points(&camber_points, section.tol(), false)
+            .map_err(|e| format!("Error creating the final camber curve: {e}"))?;
+
+        let upper_dir = match face_orient {
+            FaceOrient::Detect => camber_detect_upper_dir(&camber)?,
+            FaceOrient::Direction(dir) => UnitVec2::new_normalize(dir),
+        };
+
+        // Split the airfoil section into upper and lower curves. For this to work we need both
+        // the leading and the trailing edge to have been located.
+        let pieces = if let (Some(le), Some(te)) = (&leading_edge, &trailing_edge) {
+            // One of the two may be open
+            match (&le.geometry, &te.geometry) {
+                (EdgeGeometry::Open, _) => {
+                    // Leading edge is open, we have a trailing edge
+                    let l = section.at_closest_to_point(&te.point).length_along();
+                    Some(section.split_open_at_length(l)?)
+                }
+                (_, EdgeGeometry::Open) => {
+                    // Trailing edge is open, we have a leading edge
+                    let l = section.at_closest_to_point(&le.point).length_along();
+                    Some(section.split_open_at_length(l)?)
+                }
+                (_, _) => {
+                    let l0 = section.at_closest_to_point(&le.point).length_along();
+                    let l1 = section.at_closest_to_point(&te.point).length_along();
+                    Some(section.split_closed_at_lengths(l0, l1)?)
+                }
+            }
+        } else {
+            // In this case, we don't have enough information to perform the split
+            None
+        };
+
+        let (upper, lower) = if let Some((a, b)) = pieces {
+            let camber_mid = camber
+                .at_fraction(0.5)
+                .ok_or("Failed to find camber midpoint, this shouldn't happen")?
+                .point();
+            let test_point = SurfacePoint2::new(camber_mid, upper_dir);
+            order_faces(a, b, test_point)?
+        } else {
+            (None, None)
+        };
+
+        Ok(AirfoilGeometry {
             leading_edge,
             trailing_edge,
             stations,
             camber,
-        }
+            upper,
+            lower,
+            core_tol,
+            curve_tol: section.tol(),
+        })
     }
 
     /// Find the inscribed circle with the maximum radius, which is typically a circle near the
@@ -146,6 +362,41 @@ impl AirfoilGeometry {
             .iter()
             .max_by(|a, b| a.radius().partial_cmp(&b.radius()).unwrap())
             .unwrap()
+    }
+}
+
+/// Order the curves based on their direction from the test point.  The curve that is in the
+/// direction of the upper surface is returned as the first element of the tuple, and the curve
+/// that is in the direction of the lower surface is returned as the second element of the tuple.
+///
+/// # Arguments
+///
+/// * `a`:
+/// * `b`:
+/// * `test_point`:
+///
+/// returns: Result<(Option<Curve2>, Option<Curve2>), Box<dyn Error, Global>>
+fn order_faces(
+    a: Curve2,
+    b: Curve2,
+    test_point: SurfacePoint2,
+) -> Result<(Option<Curve2>, Option<Curve2>)> {
+    let a_t = a.intersection(&test_point);
+    let b_t = b.intersection(&test_point);
+
+    // We should have intersections with both curves. If the outline is clean, we will have exactly
+    // one intersection with each, but if not we might have more than one at a similar distance.
+    if a_t.is_empty() || b_t.is_empty() {
+        Err("Failed to find intersections with the test point".into())
+    } else {
+        let a_m = compute_mean(&a_t)?;
+        let b_m = compute_mean(&b_t)?;
+
+        if a_m > b_m {
+            Ok((Some(a), Some(b)))
+        } else {
+            Ok((Some(b), Some(a)))
+        }
     }
 }
 
@@ -259,77 +510,4 @@ pub fn caliper_chord_line(section: &Curve2, camber: &Curve2) -> Result<CaliperCh
         chord: chord_line,
         tangent: tangent_line,
     })
-}
-
-/// Perform a geometric analysis of an airfoil section, extracting the camber line, leading and
-/// trailing edges, and other properties. Geometric airfoil section analysis is centered around the
-/// MCL (mean camber line) extraction through the inscribed circle method, and detects features of
-/// the airfoil based solely on the geometry of the section.  It is suitable for use with very
-/// clean airfoil section data, especially nominal geometry such as that from CAD or sections
-/// generated mathematically.
-///
-/// It is less suitable for use with measured data, which has noise that can "poison" the geometry
-/// enough that features will not be detected as expected. For measured data, especially measured
-/// data which can have noise or large deviations from ideal geometry (such as damage, wear, or
-/// significant warping), an analysis using a nominal reference airfoil is recommended.
-///
-/// # Arguments
-///
-/// * `section`: a `Curve2` representing the airfoil section geometry. This curve should be closed
-///   if the section is intended to be closed. No specific orientation is required.
-/// * `params`: the `AfParams` structure containing the parameters used in the analysis. Select the
-///   appropriate values for the tolerance, orientation, and edge detection methods with care.
-///
-/// returns: Result<AnalyzedAirfoil, Box<dyn Error, Global>>
-///
-/// # Examples
-///
-/// ```
-///
-/// ```
-pub fn analyze_airfoil_geometry(section: &Curve2, params: &AfParams) -> Result<AirfoilGeometry> {
-    // Calculate the hull, we will need this for the inscribed circle method and the tangency
-    // line.
-    let hull = section
-        .make_hull()
-        .ok_or("Failed to calculate the hull of the airfoil section")?;
-
-    // Compute the mean camber line using the inscribed circle method
-    let stations = extract_camber_line(section, &hull, Some(params.tol))
-        .map_err(|e| format!("Error during initial camber line extraction: {e}"))?;
-
-    // Orient the camber line
-    let stations = params
-        .orient
-        .orient_camber_line(section, stations)
-        .map_err(|e| format!("Error orienting the initial camber line: {e}"))?;
-
-    // Find the leading and trailing edges
-    let (leading_edge, stations) = params
-        .leading
-        .find_edge(section, stations, true, params.tol)
-        .map_err(|e| format!("Error finding the leading edge: {e}"))?;
-
-    let (trailing_edge, stations) = params
-        .trailing
-        .find_edge(section, stations, false, params.tol)
-        .map_err(|e| format!("Error finding the trailing edge: {e}"))?;
-
-    // Create the camber curve
-    let mut camber_points = stations.iter().map(|c| c.circle.center).collect::<Vec<_>>();
-    if let Some(leading) = &leading_edge {
-        camber_points.insert(0, leading.point);
-    }
-    if let Some(trailing) = &trailing_edge {
-        camber_points.push(trailing.point);
-    }
-    let camber = Curve2::from_points(&camber_points, params.tol, false)
-        .map_err(|e| format!("Error creating the final camber curve: {e}"))?;
-
-    Ok(AirfoilGeometry::new(
-        leading_edge,
-        trailing_edge,
-        stations,
-        camber,
-    ))
 }

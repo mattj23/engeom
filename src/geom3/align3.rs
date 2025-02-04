@@ -1,5 +1,5 @@
-mod jacobian;
-mod multi_param;
+pub mod jacobian;
+pub mod multi_param;
 mod points_to_mesh;
 mod rotations;
 
