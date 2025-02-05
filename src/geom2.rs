@@ -10,6 +10,7 @@ pub mod polyline2;
 use crate::common::surface_point::SurfacePoint;
 use crate::common::svd_basis::SvdBasis;
 use crate::common::SurfacePointCollection;
+use crate::AngleDir::Cw;
 use parry2d_f64::na::UnitComplex;
 use std::ops;
 
@@ -66,6 +67,34 @@ impl SurfacePointCollection<2> for &Vec<SurfacePoint2> {
 
     fn clone_normals(&self) -> Vec<UnitVec2> {
         self.iter().map(|sp| sp.normal).collect()
+    }
+}
+
+impl SurfacePoint2 {
+    /// Shift a surface point in the direction orthogonal to its normal (sideways) by the given
+    /// distance. The direction of travel is the surface point's normal vector rotated by 90 degrees
+    /// in the *clockwise* direction. If the normal is pointing up, a positive distance will move
+    /// the point to the right, and a negative distance will move the point to the left.
+    ///
+    /// # Arguments
+    ///
+    /// * `distance`: the distance to shift the point
+    ///
+    /// returns: SurfacePoint<2>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use approx::assert_relative_eq;
+    /// use engeom::SurfacePoint2;
+    ///
+    /// let sp = SurfacePoint2::new_normalize([0.0, 0.0].into(), [0.0, 1.0].into());
+    /// let shifted = sp.shift_orthogonal(1.0);
+    /// assert_relative_eq!(shifted.point, [1.0, 0.0].into(), epsilon = 1e-6);
+    /// ```
+    pub fn shift_orthogonal(&self, distance: f64) -> Self {
+        let shift = rot90(Cw) * self.normal.into_inner() * distance;
+        Self::new(self.point + shift, self.normal)
     }
 }
 
