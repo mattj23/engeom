@@ -8,12 +8,13 @@ pub mod helpers;
 mod inscribed_circle;
 mod orientation;
 
-use crate::{Arc2, Curve2, Point2, Result, SurfacePoint2, UnitVec2, Vector2};
+use crate::{Arc2, Circle2, Curve2, Point2, Result, SurfacePoint2, UnitVec2, Vector2};
 
 use crate::airfoil::camber::camber_detect_upper_dir;
 use crate::common::points::dist;
 use crate::common::Intersection;
 use crate::geom2::hull::convex_hull_2d;
+use crate::metrology::Length2;
 use crate::stats::compute_mean;
 pub use camber::extract_camber_line;
 pub use edges::{
@@ -29,6 +30,12 @@ use serde::{Deserialize, Serialize};
 // This section has enumerations and traits which specify how algorithms for different analysis
 // methods will be identified and/or given to downstream code.
 //=================================================================================================
+
+#[derive(Serialize, Deserialize, Clone, Copy)]
+pub enum AfGage {
+    OnCamber(f64),
+    Radius(f64),
+}
 
 /// This enumeration represents the possible methods for detecting which of the two surfaces of
 /// an airfoil is the upper (suction/convex) surface and which is the lower (pressure/concave)
@@ -343,6 +350,156 @@ impl AirfoilGeometry {
             .iter()
             .max_by(|a, b| a.radius().partial_cmp(&b.radius()).unwrap())
             .unwrap()
+    }
+
+    /// Take a thickness measurement of the airfoil at the given gage location.
+    ///
+    /// # Arguments
+    ///
+    /// * `gage`:
+    ///
+    /// returns: Result<Length2, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    pub fn get_thickness(&self, gage: AfGage) -> Result<Length2> {
+        let (upper, lower) = match gage {
+            AfGage::OnCamber(x) => {
+                let l = if x < 0.0 { self.camber.length() + x } else { x };
+                let sp = self
+                    .camber
+                    .at_length(l)
+                    .ok_or("Invalid camber length")?
+                    .surface_point();
+                let ut = self
+                    .upper
+                    .as_ref()
+                    .ok_or("Upper surface not found")?
+                    .intersection(&sp);
+                if ut.is_empty() {
+                    return Err("Failed to find upper surface intersection".into());
+                }
+
+                let lt = self
+                    .lower
+                    .as_ref()
+                    .ok_or("Lower surface not found")?
+                    .intersection(&sp);
+                if lt.is_empty() {
+                    return Err("Failed to find lower surface intersection".into());
+                }
+
+                // Take the minimum absolute value of each set
+                let u = ut
+                    .iter()
+                    .min_by(|a, b| a.abs().partial_cmp(&b.abs()).unwrap())
+                    .ok_or("Failed to find upper surface intersection")?;
+
+                let l = lt
+                    .iter()
+                    .min_by(|a, b| a.abs().partial_cmp(&b.abs()).unwrap())
+                    .ok_or("Failed to find lower surface intersection")?;
+
+                (sp.at_distance(*u), sp.at_distance(*l))
+            }
+            AfGage::Radius(r) => {
+                let c = if r < 0.0 {
+                    Circle2::from_point(
+                        self.trailing_edge
+                            .as_ref()
+                            .ok_or("Trailing edge not found")?
+                            .point,
+                        -r,
+                    )
+                } else {
+                    Circle2::from_point(
+                        self.leading_edge
+                            .as_ref()
+                            .ok_or("Leading edge not found")?
+                            .point,
+                        r,
+                    )
+                };
+
+                let u = self
+                    .upper
+                    .as_ref()
+                    .ok_or("Upper surface not found")?
+                    .intersection(&c);
+                let l = self
+                    .lower
+                    .as_ref()
+                    .ok_or("Lower surface not found")?
+                    .intersection(&c);
+
+                if u.is_empty() || l.is_empty() {
+                    return Err("Failed to find upper or lower surface intersection".into());
+                }
+
+                // Find the point which is the closest to the camber line
+                let u = u
+                    .iter()
+                    .min_by(|a, b| {
+                        self.camber
+                            .dist_to_point(a)
+                            .partial_cmp(&self.camber.dist_to_point(b))
+                            .unwrap()
+                    })
+                    .ok_or("Failed to find upper surface intersection")?;
+                let l = l
+                    .iter()
+                    .min_by(|a, b| {
+                        self.camber
+                            .dist_to_point(a)
+                            .partial_cmp(&self.camber.dist_to_point(b))
+                            .unwrap()
+                    })
+                    .ok_or("Failed to find lower surface intersection")?;
+
+                (u.clone(), l.clone())
+            }
+        };
+
+        Ok(Length2::new(upper, lower, None))
+    }
+
+    pub fn get_thickness_max(&self) -> Result<Length2> {
+        let tmax = self.find_tmax();
+        let (upper, lower) = self.order_points(&tmax.contact_neg, &tmax.contact_pos)?;
+        Ok(Length2::new(upper, lower, None))
+    }
+
+    /// Order the points so that the first point returned is on the upper surface and the second
+    /// point returned is on the lower surface. If the upper and lower surfaces are not known,
+    /// this will return an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `a`: the first point to order
+    /// * `b`: the second point to order
+    ///
+    /// returns: Result<(OPoint<f64, Const<2>>, OPoint<f64, Const<2>>), Box<dyn Error, Global>>
+    fn order_points(&self, a: &Point2, b: &Point2) -> Result<(Point2, Point2)> {
+        let upper_dist = self
+            .upper
+            .as_ref()
+            .ok_or("Upper surface not found")?
+            .dist_to_point(a);
+
+        let lower_dist = self
+            .lower
+            .as_ref()
+            .ok_or("Lower surface not found")?
+            .dist_to_point(a);
+
+        if upper_dist < lower_dist {
+            Ok((a.clone(), b.clone()))
+        } else {
+            Ok((b.clone(), a.clone()))
+        }
     }
 }
 
