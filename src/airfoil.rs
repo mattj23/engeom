@@ -459,7 +459,7 @@ impl AirfoilGeometry {
                     })
                     .ok_or("Failed to find lower surface intersection")?;
 
-                (u.clone(), l.clone())
+                (*u, *l)
             }
         };
 
@@ -496,9 +496,9 @@ impl AirfoilGeometry {
             .dist_to_point(a);
 
         if upper_dist < lower_dist {
-            Ok((a.clone(), b.clone()))
+            Ok((*a, *b))
         } else {
-            Ok((b.clone(), a.clone()))
+            Ok((*b, *a))
         }
     }
 }
