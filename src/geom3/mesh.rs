@@ -2,6 +2,7 @@
 //! indices into the vertex list.  This abstraction is built around the `TriMesh` type from the
 //! `parry3d` crate.
 
+mod filtering;
 mod patches;
 mod serialization;
 mod uv_mapping;
