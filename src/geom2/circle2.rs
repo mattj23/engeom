@@ -1,7 +1,8 @@
 use crate::common::points::dist;
 use crate::common::{signed_compliment_2pi, BestFit, Intersection};
+use crate::geom2::aabb2::{arc_aabb2, circle_aabb2};
 use crate::geom2::line2::Segment2;
-use crate::geom2::{directed_angle, signed_angle, Aabb2, Iso2, Line2, Point2, Vector2};
+use crate::geom2::{directed_angle, signed_angle, Aabb2, HasBounds2, Iso2, Line2, Point2, Vector2};
 use crate::geom3::Vector3;
 use crate::stats::{compute_mean, compute_st_dev};
 use crate::AngleDir::{Ccw, Cw};
@@ -20,6 +21,7 @@ use std::f64::consts::FRAC_PI_2;
 pub struct Circle2 {
     pub center: Point2,
     pub ball: Ball,
+    aabb: Aabb2,
 }
 
 impl Circle2 {
@@ -43,11 +45,9 @@ impl Circle2 {
     /// assert_eq!(circle.y(), 2.0);
     /// assert_eq!(circle.r(), 3.0);
     /// ```
-    pub fn new(x: f64, y: f64, r: f64) -> Circle2 {
-        Circle2 {
-            center: Point2::new(x, y),
-            ball: Ball::new(r),
-        }
+    pub fn new(x: f64, y: f64, r: f64) -> Self {
+        let center = Point2::new(x, y);
+        Self::from_point(center, r)
     }
 
     /// Create a new circle from a center point and a radius
@@ -70,9 +70,11 @@ impl Circle2 {
     /// assert_eq!(circle.r(), 3.0);
     /// ```
     pub fn from_point(center: Point2, r: f64) -> Circle2 {
+        let aabb = circle_aabb2(&center, r);
         Circle2 {
             center,
             ball: Ball::new(r),
+            aabb,
         }
     }
 
@@ -227,18 +229,8 @@ impl Circle2 {
             let cy = ((p0.x - p1.x) * cd - (p1.x - p2.x) * bc) / det;
 
             let radius = ((cx - p0.x).powi(2) + (cy - p0.y).powi(2)).sqrt();
-            Ok(Circle2 {
-                center: Point2::new(cx, cy),
-                ball: Ball::new(radius),
-            })
+            Ok(Self::new(cx, cy, radius))
         }
-    }
-
-    pub fn aabb(&self) -> Aabb2 {
-        Aabb2::new(
-            self.center - Vector2::repeat(self.ball.radius),
-            self.center + Vector2::repeat(self.ball.radius),
-        )
     }
 
     /// Returns the x coordinate of the circle's center
@@ -405,6 +397,7 @@ impl Circle2 {
             circle: *self,
             angle0: 0.0,
             angle: 2.0 * std::f64::consts::PI,
+            aabb: self.aabb,
         }
     }
 
@@ -423,10 +416,12 @@ impl Circle2 {
     ///
     /// ```
     pub fn to_partial_arc(&self, angle0: f64, angle: f64) -> Arc2 {
+        let aabb = arc_aabb2(self, angle0, angle);
         Arc2 {
             circle: *self,
             angle0,
             angle,
+            aabb,
         }
     }
 
@@ -565,6 +560,12 @@ impl Circle2 {
     }
 }
 
+impl HasBounds2 for Circle2 {
+    fn aabb(&self) -> &Aabb2 {
+        &self.aabb
+    }
+}
+
 /// Computes the intersection parameters of a line and a circle. The intersection parameters are
 /// the values of the line's parameter at the intersection points. There will be zero, one, or two
 /// intersection parameters.  The intersection points can be recovered from the parameters by
@@ -631,27 +632,88 @@ pub struct Arc2 {
     pub circle: Circle2,
     pub angle0: f64,
     pub angle: f64,
+    aabb: Aabb2,
 }
 
 impl Arc2 {
+    /// Create an arc from a center point, a radius, starting at `angle0` and extending for
+    /// `angle` radians.
+    ///
+    /// # Arguments
+    ///
+    /// * `center`: The arc center point
+    /// * `radius`: The arc radius
+    /// * `angle0`: The angle in radians (with respect to the x-axis) at which the arc starts
+    /// * `angle`: The angle in radians which the arc sweeps through, beginning at `angle0`. A
+    ///   positive value indicates a counter-clockwise sweep, while a negative value indicates a
+    ///   clockwise sweep.
+    ///
+    /// returns: Arc2
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
     pub fn circle_angles(center: Point2, radius: f64, angle0: f64, angle: f64) -> Self {
-        Self {
-            circle: Circle2::from_point(center, radius),
-            angle0,
-            angle,
-        }
-    }
-
-    pub fn circle_point_angle(center: Point2, radius: f64, point: Point2, angle: f64) -> Self {
         let circle = Circle2::from_point(center, radius);
-        let angle0 = circle.angle_of_point(&point);
+        let aabb = arc_aabb2(&circle, angle0, angle);
         Self {
             circle,
             angle0,
             angle,
+            aabb,
         }
     }
 
+    /// Create an arc from a center point, a radius, a point on the perimeter, and an included
+    /// angle starting at the point.
+    ///
+    /// # Arguments
+    ///
+    /// * `center`: The arc center point
+    /// * `radius`: The arc radius
+    /// * `point`: A point on the perimeter of the arc at which the arc starting point should be
+    ///   located
+    /// * `angle`: The angle in radians which the arc sweeps through, beginning at the point. A
+    ///   positive value indicates a counter-clockwise sweep, while a negative value indicates a
+    ///   clockwise sweep.
+    ///
+    /// returns: Arc2
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    pub fn circle_point_angle(center: Point2, radius: f64, point: Point2, angle: f64) -> Self {
+        let circle = Circle2::from_point(center, radius);
+        let angle0 = circle.angle_of_point(&point);
+        let aabb = arc_aabb2(&circle, angle0, angle);
+        Self {
+            circle,
+            angle0,
+            angle,
+            aabb,
+        }
+    }
+
+    /// Create an arc from three points. The arc will begin at the first point, pass through the
+    /// second point, and end at the third point.
+    ///
+    /// # Arguments
+    ///
+    /// * `p0`: The starting point of the arc
+    /// * `p1`: A point on the arc, between the start and end points
+    /// * `p2`: The ending point of the arc
+    ///
+    /// returns: Arc2
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
     pub fn three_points(p0: Point2, p1: Point2, p2: Point2) -> Self {
         let circle = Circle2::from_3_points(p0, p1, p2).unwrap();
         let angle0 = circle.angle_of_point(&p0);
@@ -667,10 +729,12 @@ impl Arc2 {
             -directed_angle(&v0, &v2, Cw)
         };
 
+        let aabb = arc_aabb2(&circle, angle0, angle);
         Self {
             circle,
             angle0,
             angle,
+            aabb,
         }
     }
 
@@ -696,6 +760,20 @@ impl Arc2 {
 
     pub fn point_at_length(&self, length: f64) -> Point2 {
         self.point_at_fraction(length / self.length())
+    }
+
+    pub fn start(&self) -> Point2 {
+        self.point_at_angle(0.0)
+    }
+
+    pub fn end(&self) -> Point2 {
+        self.point_at_angle(self.angle)
+    }
+}
+
+impl HasBounds2 for Arc2 {
+    fn aabb(&self) -> &Aabb2 {
+        &self.aabb
     }
 }
 

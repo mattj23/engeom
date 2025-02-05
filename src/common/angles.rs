@@ -143,6 +143,14 @@ pub fn signed_compliment_2pi(radians: f64) -> f64 {
     }
 }
 
+/// An `AngleInterval` represents a continuous range of angles, specified by a starting angle and
+/// a positive (counter-clockwise) included length.  This is similar to an interval on a number
+/// line, but with the added complexity that angles wrap.
+///
+/// When defining an `AngleInterval`, remember that all directions are positive (counter-clockwise).
+/// To represent an interval with a negative length (for instance, starting at 0 and going to -π),
+/// the interval must be defined as starting at -π and having a length of π. Some of the original
+/// information is lost in this representation.
 #[derive(Copy, Clone, Debug)]
 pub struct AngleInterval {
     /// The starting angle of the interval, in radians. Will always take a value in the range
@@ -155,6 +163,28 @@ pub struct AngleInterval {
 }
 
 impl AngleInterval {
+    /// Create a new `AngleInterval` with the given starting angle and included angle.  The
+    /// included angle *may* be positive or negative, but if it is negative, the start and end
+    /// will be reversed and the included angle will be inverted, and the directional information
+    /// will be lost.
+    ///
+    /// In all cases, both the start angle and included angle will be converted and clamped into
+    /// the range [0, 2pi].
+    ///
+    /// # Arguments
+    ///
+    /// * `start`: The starting angle of the interval, in radians
+    /// * `angle`: The included angle of the interval, in radians. The end of the interval is
+    ///   essentially `start + angle`. If `angle` is negative, the start and end will be swapped and
+    ///   the included angle will be made positive.
+    ///
+    /// returns: AngleInterval
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
     pub fn new(start: f64, angle: f64) -> Self {
         if angle < 0.0 {
             let start = angle_to_2pi(start + angle);

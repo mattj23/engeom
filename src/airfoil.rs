@@ -36,7 +36,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Clone)]
 pub enum FaceOrient {
     Detect,
-    Direction(Vector2),
+    UpperDir(Vector2),
 }
 
 /// This trait defines an interface to perform orientation of the camber line of an airfoil
@@ -108,25 +108,6 @@ pub trait EdgeLocate {
         front: bool,
         af_tol: f64,
     ) -> Result<(Option<AirfoilEdge>, Vec<InscribedCircle>)>;
-}
-
-/// This structure contains the parameters used in the airfoil analysis algorithms.  It specifies
-/// the minimum tolerance value used in many parts of the analysis, as well as the methods for
-/// detecting the orientation of the leading edge, and the leading and trailing edges themselves.
-pub struct AfParams {
-    /// The minimum tolerance value, used in many parts of the analysis.  Generally speaking, the
-    /// various algorithms will attempt to iteratively refine results until the error/difference
-    /// falls below this value.
-    pub tol: f64,
-
-    /// The method for trying to detect the orientation of the leading edge on the airfoil.
-    pub orient: Box<dyn CamberOrient>,
-
-    /// The method for trying to detect the leading edge on the airfoil.
-    pub leading: Box<dyn EdgeLocate>,
-
-    /// The method for trying to detect the trailing edge on the airfoil.
-    pub trailing: Box<dyn EdgeLocate>,
 }
 
 //=================================================================================================
@@ -303,7 +284,7 @@ impl AirfoilGeometry {
 
         let upper_dir = match face_orient {
             FaceOrient::Detect => camber_detect_upper_dir(&camber)?,
-            FaceOrient::Direction(dir) => UnitVec2::new_normalize(dir),
+            FaceOrient::UpperDir(dir) => UnitVec2::new_normalize(dir),
         };
 
         // Split the airfoil section into upper and lower curves. For this to work we need both

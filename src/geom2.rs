@@ -1,3 +1,4 @@
+pub mod aabb2;
 pub mod align2;
 mod angles2;
 mod circle2;
@@ -18,15 +19,19 @@ pub type UnitVec2 = parry2d_f64::na::Unit<Vector2>;
 pub type SurfacePoint2 = SurfacePoint<2>;
 pub type Iso2 = parry2d_f64::na::Isometry2<f64>;
 pub type SvdBasis2 = SvdBasis<2>;
-pub type Aabb2 = parry2d_f64::bounding_volume::Aabb;
 pub type Ray2 = parry2d_f64::query::Ray;
 pub type Align2 = crate::common::align::Alignment<UnitComplex<f64>, 2>;
 pub type KdTree2 = crate::common::kd_tree::KdTree<2>;
 
+pub use self::aabb2::Aabb2;
 pub use self::angles2::{directed_angle, rot270, rot90, signed_angle};
 pub use self::circle2::{Arc2, Circle2};
 pub use self::curve2::{Curve2, CurveStation2};
 pub use self::line2::{intersect_rays, intersection_param, Line2, Segment2};
+
+pub trait HasBounds2 {
+    fn aabb(&self) -> &Aabb2;
+}
 
 impl ops::Mul<SurfacePoint2> for &Iso2 {
     type Output = SurfacePoint2;
