@@ -36,6 +36,7 @@ pub enum Selection {
 pub enum SelectOp {
     Add,
     Remove,
+    Keep,
 }
 
 /// General purpose options for resampling data over a discrete domain.

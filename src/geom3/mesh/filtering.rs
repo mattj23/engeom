@@ -25,14 +25,14 @@ impl<'a> TriangleFilter<'a> {
 
     /// Get the indices of the triangles which would need to be checked for an operation of the
     /// specified type. If the operation is `SelectOp::Add`, then the triangles that are not in the
-    /// current selection will be returned. If the operation is `SelectOp::Remove`, then the
-    /// triangles that are in the current selection will be returned.
+    /// current selection will be returned. If the operation is `SelectOp::Remove`, or
+    /// `SelectOp::Keep` then the triangles that are in the current selection will be returned.
     fn to_check(&self, mode: SelectOp) -> Vec<usize> {
         match mode {
             SelectOp::Add => (0..self.mesh.faces().len())
                 .filter(|i| !self.indices.contains(i))
                 .collect(),
-            SelectOp::Remove => self.indices.iter().map(|i| *i).collect(),
+            SelectOp::Remove | SelectOp::Keep => self.indices.iter().map(|i| *i).collect(),
         }
     }
     fn mutate_pass_list(mut self, mode: SelectOp, pass_list: Vec<usize>) -> Self {
@@ -46,6 +46,10 @@ impl<'a> TriangleFilter<'a> {
                 for i in pass_list {
                     self.indices.remove(&i);
                 }
+            }
+            SelectOp::Keep => {
+                let check_set: HashSet<usize> = pass_list.into_iter().collect();
+                self.indices.retain(|i| check_set.contains(i));
             }
         };
 
@@ -63,6 +67,9 @@ impl<'a> TriangleFilter<'a> {
             }
             SelectOp::Remove => {
                 self.indices.retain(|&i| !predicate(i, self.mesh));
+            }
+            SelectOp::Keep => {
+                self.indices.retain(|&i| predicate(i, self.mesh));
             }
         };
 
