@@ -22,7 +22,7 @@ pub fn compute_boundary_edges(mesh: &Mesh, patch: &[usize]) -> Vec<(u32, u32)> {
     let mut keys = HashSet::new();
 
     for face_index in patch {
-        let face = &mesh.triangles()[*face_index];
+        let face = &mesh.faces()[*face_index];
         for i in 0..3 {
             let rk = edge_key(i, face);
             let sk = make_sym(&rk);
@@ -100,7 +100,7 @@ pub fn compute_patch_indices(mesh: &Mesh) -> Vec<Vec<usize>> {
     let mut edge_table = HashMap::new();
     let mut remaining_faces = HashSet::new();
 
-    for (i, face) in mesh.triangles().iter().enumerate() {
+    for (i, face) in mesh.faces().iter().enumerate() {
         edge_table.insert((face[0], face[1]), i);
         edge_table.insert((face[1], face[2]), i);
         edge_table.insert((face[2], face[0]), i);
@@ -118,18 +118,9 @@ pub fn compute_patch_indices(mesh: &Mesh) -> Vec<Vec<usize>> {
         remaining_faces.remove(&face_index);
 
         // Add the edges of the face to the working queue
-        working_queue.push((
-            mesh.triangles()[face_index][0],
-            mesh.triangles()[face_index][1],
-        ));
-        working_queue.push((
-            mesh.triangles()[face_index][1],
-            mesh.triangles()[face_index][2],
-        ));
-        working_queue.push((
-            mesh.triangles()[face_index][2],
-            mesh.triangles()[face_index][0],
-        ));
+        working_queue.push((mesh.faces()[face_index][0], mesh.faces()[face_index][1]));
+        working_queue.push((mesh.faces()[face_index][1], mesh.faces()[face_index][2]));
+        working_queue.push((mesh.faces()[face_index][2], mesh.faces()[face_index][0]));
 
         let mut patch = vec![face_index];
 
@@ -141,9 +132,9 @@ pub fn compute_patch_indices(mesh: &Mesh) -> Vec<Vec<usize>> {
                 if remaining_faces.contains(f0) {
                     patch.push(*f0);
                     remaining_faces.remove(f0);
-                    working_queue.push((mesh.triangles()[*f0][0], mesh.triangles()[*f0][1]));
-                    working_queue.push((mesh.triangles()[*f0][1], mesh.triangles()[*f0][2]));
-                    working_queue.push((mesh.triangles()[*f0][2], mesh.triangles()[*f0][0]));
+                    working_queue.push((mesh.faces()[*f0][0], mesh.faces()[*f0][1]));
+                    working_queue.push((mesh.faces()[*f0][1], mesh.faces()[*f0][2]));
+                    working_queue.push((mesh.faces()[*f0][2], mesh.faces()[*f0][0]));
                 }
             }
 
@@ -151,9 +142,9 @@ pub fn compute_patch_indices(mesh: &Mesh) -> Vec<Vec<usize>> {
                 if remaining_faces.contains(f1) {
                     patch.push(*f1);
                     remaining_faces.remove(f1);
-                    working_queue.push((mesh.triangles()[*f1][0], mesh.triangles()[*f1][1]));
-                    working_queue.push((mesh.triangles()[*f1][1], mesh.triangles()[*f1][2]));
-                    working_queue.push((mesh.triangles()[*f1][2], mesh.triangles()[*f1][0]));
+                    working_queue.push((mesh.faces()[*f1][0], mesh.faces()[*f1][1]));
+                    working_queue.push((mesh.faces()[*f1][1], mesh.faces()[*f1][2]));
+                    working_queue.push((mesh.faces()[*f1][2], mesh.faces()[*f1][0]));
                 }
             }
         }

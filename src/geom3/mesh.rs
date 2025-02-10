@@ -2,30 +2,62 @@
 //! indices into the vertex list.  This abstraction is built around the `TriMesh` type from the
 //! `parry3d` crate.
 
+mod conformal;
+mod edges;
 pub mod filtering;
 mod patches;
+mod queries;
+mod sampling;
 mod serialization;
 mod uv_mapping;
 mod measurement;
 
 pub use self::serialization::{MeshData, MeshFlatData};
 pub use self::uv_mapping::UvMapping;
-use crate::common::indices::{chained_indices, index_vec};
-use crate::common::points::{dist, mean_point};
-use crate::common::poisson_disk::sample_poisson_disk;
 use crate::common::SurfacePointCollection;
 use crate::geom3::Aabb3;
-use crate::{Curve3, Iso3, Plane3, Point2, Point3, Result, SurfacePoint3};
-use parry3d_f64::query::{IntersectResult, PointProjection, PointQueryWithLocation, SplitResult};
-use parry3d_f64::shape::{TriMesh, TriMeshFlags, TrianglePointLocation};
+use crate::{Iso3, Point2, Point3, Result, SurfacePoint3};
+pub use edges::MeshEdges;
+use parry3d_f64::query::PointQueryWithLocation;
+use parry3d_f64::shape::{TriMesh, TriMeshFlags};
 use rand::prelude::SliceRandom;
-use std::f64::consts::PI;
 
 #[derive(Clone)]
 pub struct Mesh {
     shape: TriMesh,
     is_solid: bool,
     uv: Option<UvMapping>,
+}
+
+// Core access
+impl Mesh {
+    /// Get a reference to the AABB of the underlying mesh in the local coordinate system.
+    pub fn aabb(&self) -> &Aabb3 {
+        self.shape.local_aabb()
+    }
+
+    /// Gets a reference to the underlying `TriMesh` object to provide direct access to
+    /// the `parry3d` API.
+    pub fn tri_mesh(&self) -> &TriMesh {
+        &self.shape
+    }
+
+    /// Return a flag indicating whether the mesh is considered "solid" or not for the purposes of
+    /// distance queries. If a mesh is "solid", then distance queries for points on the inside of
+    /// the mesh will return a zero distance.
+    pub fn is_solid(&self) -> bool {
+        self.is_solid
+    }
+
+    /// Get a reference to the vertices of the mesh.
+    pub fn vertices(&self) -> &[Point3] {
+        self.shape.vertices()
+    }
+
+    /// Get a reference to the face indices of the mesh.
+    pub fn faces(&self) -> &[[u32; 3]] {
+        self.shape.indices()
+    }
 }
 
 impl Mesh {
@@ -90,10 +122,6 @@ impl Mesh {
         }
     }
 
-    pub fn aabb(&self) -> Aabb3 {
-        *self.shape.local_aabb()
-    }
-
     pub fn append(&mut self, other: &Mesh) -> Result<()> {
         // For now, both meshes must have an empty UV mapping
         if self.uv.is_some() || other.uv.is_some() {
@@ -122,27 +150,8 @@ impl Mesh {
     pub fn uv(&self) -> Option<&UvMapping> {
         self.uv.as_ref()
     }
-
-    pub fn vertices(&self) -> &[Point3] {
-        self.shape.vertices()
-    }
-
-    pub fn triangles(&self) -> &[[u32; 3]] {
-        self.shape.indices()
-    }
-
     pub fn transform(&mut self, transform: &Iso3) {
         self.shape.transform_vertices(transform);
-    }
-
-    pub fn surf_closest_to(&self, point: &Point3) -> SurfacePoint3 {
-        let result = self
-            .shape
-            .project_local_point_and_get_location(point, self.is_solid);
-        let (projection, (tri_id, _location)) = result;
-        let triangle = self.shape.triangle(tri_id);
-        let normal = triangle.normal().unwrap(); // When could this fail? On a degenerate tri?
-        SurfacePoint3::new(projection.point, normal)
     }
 
     pub fn uv_to_3d(&self, uv: &Point2) -> Option<SurfacePoint3> {
@@ -151,108 +160,6 @@ impl Mesh {
         let coords = t.a.coords * bc[0] + t.b.coords * bc[1] + t.c.coords * bc[2];
 
         t.normal().map(|n| SurfacePoint3::new(coords.into(), n))
-    }
-
-    pub fn point_closest_to(&self, point: &Point3) -> Point3 {
-        let (result, _) = self
-            .shape
-            .project_local_point_and_get_location(point, self.is_solid);
-        result.point
-    }
-
-    pub fn project_with_max_dist(
-        &self,
-        point: &Point3,
-        max_dist: f64,
-    ) -> Option<(PointProjection, u32, TrianglePointLocation)> {
-        self.shape
-            .project_local_point_and_get_location_with_max_dist(point, self.is_solid, max_dist)
-            .map(|(prj, (id, loc))| (prj, id, loc))
-    }
-
-    /// Given a test point, return its projection onto the mesh *if and only if* it is within the
-    /// given distance tolerance from the mesh and the angle between the normal of the triangle and
-    /// the +/- vector from the triangle to the point is less than the given angle tolerance.
-    ///
-    /// When a test point projects onto to the face of a triangle, the vector from the triangle
-    /// point to the test point will be parallel to the triangle normal, by definition.  The angle
-    /// tolerance will come into effect when the test point projects to an edge or vertex.  This
-    /// will happen occasionally when the test point is near an edge with two triangles that reflex
-    /// away from the point, and it will happen when the test point is beyond the edge of the mesh.
-    ///
-    /// # Arguments
-    ///
-    /// * `point`: the test point to project onto the mesh
-    /// * `max_dist`: the maximum search distance from the test point to find a projection
-    /// * `max_angle`: the max allowable angle deviation between the mesh normal at the projection
-    ///   and the vector from the projection to the test point
-    /// * `transform`: an optional transform to apply to the test point before projecting it onto
-    ///   the mesh
-    ///
-    /// returns: Option<(PointProjection, u32, TrianglePointLocation)>
-    pub fn project_with_tol(
-        &self,
-        point: &Point3,
-        max_dist: f64,
-        max_angle: f64,
-        transform: Option<&Iso3>,
-    ) -> Option<(PointProjection, u32, TrianglePointLocation)> {
-        let point = if let Some(transform) = transform {
-            transform * point
-        } else {
-            *point
-        };
-
-        let result = self
-            .shape
-            .project_local_point_and_get_location_with_max_dist(&point, self.is_solid, max_dist);
-        if let Some((prj, (id, loc))) = result {
-            let local = point - prj.point;
-            let triangle = self.shape.triangle(id);
-            if let Some(normal) = triangle.normal() {
-                let angle = normal.angle(&local).abs();
-                if angle < max_angle || angle > PI - max_angle {
-                    Some((prj, id, loc))
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
-
-    /// Return the indices of the points in the given list that project onto the mesh within the
-    /// given distance tolerance and angle tolerance.  An optional transform can be provided to
-    /// transform the points before projecting them onto the mesh.
-    ///
-    /// # Arguments
-    ///
-    /// * `points`:
-    /// * `max_dist`:
-    /// * `max_angle`:
-    /// * `transform`:
-    ///
-    /// returns: Vec<usize, Global>
-    pub fn indices_in_tol(
-        &self,
-        points: &[Point3],
-        max_dist: f64,
-        max_angle: f64,
-        transform: Option<&Iso3>,
-    ) -> Vec<usize> {
-        let mut result = Vec::new();
-        for (i, point) in points.iter().enumerate() {
-            if self
-                .project_with_tol(point, max_dist, max_angle, transform)
-                .is_some()
-            {
-                result.push(i);
-            }
-        }
-        result
     }
 
     pub fn uv_with_tol(
@@ -287,110 +194,9 @@ impl Mesh {
         }
     }
 
-    pub fn tri_mesh(&self) -> &TriMesh {
-        &self.shape
-    }
-
-    pub fn is_solid(&self) -> bool {
-        self.is_solid
-    }
-
     pub fn create_box(width: f64, height: f64, depth: f64, is_solid: bool) -> Self {
         let (vertices, triangles) = box_geom(width, height, depth);
         Self::new(vertices, triangles, is_solid)
-    }
-
-    pub fn sample_uniform(&self, n: usize) -> Vec<SurfacePoint3> {
-        let mut cumulative_areas = Vec::new();
-        let mut total_area = 0.0;
-        for tri in self.shape.triangles() {
-            total_area += tri.area();
-            cumulative_areas.push(total_area);
-        }
-
-        let mut result = Vec::new();
-        for _ in 0..n {
-            let r = rand::random::<f64>() * total_area;
-            let tri_id = cumulative_areas
-                .binary_search_by(|a| a.partial_cmp(&r).unwrap())
-                .unwrap_or_else(|i| i);
-            let tri = self.shape.triangle(tri_id as u32);
-            let r1 = rand::random::<f64>();
-            let r2 = rand::random::<f64>();
-            let a = 1.0 - r1.sqrt();
-            let b = r1.sqrt() * (1.0 - r2);
-            let c = r1.sqrt() * r2;
-            let v = tri.a.coords * a + tri.b.coords * b + tri.c.coords * c;
-            result.push(SurfacePoint3::new(Point3::from(v), tri.normal().unwrap()));
-        }
-
-        result
-    }
-
-    pub fn sample_poisson(&self, radius: f64) -> Vec<SurfacePoint3> {
-        let starting = self.sample_dense(radius * 0.5);
-        // TODO: this can be more efficient without all the copying
-        let points = starting.clone_points();
-        let mut rng = rand::rng();
-        let mut indices = index_vec(None, starting.len());
-        indices.shuffle(&mut rng);
-
-        let to_take = sample_poisson_disk(&points, &indices, radius);
-        to_take.into_iter().map(|i| starting[i]).collect()
-    }
-
-    pub fn sample_dense(&self, max_spacing: f64) -> Vec<SurfacePoint3> {
-        let mut sampled = Vec::new();
-        for face in self.shape.triangles() {
-            // If the triangle is too small, just add the center point.
-            let center = mean_point(&[face.a, face.b, face.c]);
-            if dist(&face.a, &center) < max_spacing
-                && dist(&face.b, &center) < max_spacing
-                && dist(&face.c, &center) < max_spacing
-            {
-                sampled.push(SurfacePoint3::new(center, face.normal().unwrap()));
-                continue;
-            }
-
-            // Find the angle closest to 90 degrees
-            let ua = face.b - face.a;
-            let va = face.c - face.a;
-
-            let ub = face.a - face.b;
-            let vb = face.c - face.b;
-
-            let uc = face.a - face.c;
-            let vc = face.b - face.c;
-
-            let aa = ua.angle(&va).abs() - PI / 2.0;
-            let ab = ub.angle(&vb).abs() - PI / 2.0;
-            let ac = uc.angle(&vc).abs() - PI / 2.0;
-
-            let (u, v, p) = if aa < ab && aa < ac {
-                (ua, va, face.a)
-            } else if ab < aa && ab < ac {
-                (ub, vb, face.b)
-            } else {
-                (uc, vc, face.c)
-            };
-
-            let nu = u.norm() / max_spacing;
-            let nv = v.norm() / max_spacing;
-
-            for ui in 0..nu as usize {
-                for vi in 0..nv as usize {
-                    let uf = ui as f64 / nu;
-                    let vf = vi as f64 / nv;
-                    if uf + vf <= 1.0 {
-                        let p = p + u * uf + v * vf;
-                        let sp = SurfacePoint3::new(p, face.normal().unwrap());
-                        sampled.push(sp);
-                    }
-                }
-            }
-        }
-
-        sampled
     }
 
     pub fn get_patches(&self) -> Vec<Vec<usize>> {
@@ -408,57 +214,6 @@ impl Mesh {
             .iter()
             .flat_map(|patch| patches::compute_boundary_points(self, patch))
             .collect()
-    }
-
-    pub fn split(&self, plane: &Plane3) -> SplitResult<Mesh> {
-        let result = self.shape.local_split(&plane.normal, plane.d, 1.0e-6);
-        match result {
-            SplitResult::Pair(a, b) => {
-                let mesh_a = Mesh::new_take_trimesh(a, false);
-                let mesh_b = Mesh::new_take_trimesh(b, false);
-                SplitResult::Pair(mesh_a, mesh_b)
-            }
-            SplitResult::Negative => SplitResult::Negative,
-            SplitResult::Positive => SplitResult::Positive,
-        }
-    }
-
-    /// Perform a section of the mesh with a plane, returning a list of `Curve3` objects that
-    /// trace the intersection of the mesh with the plane.
-    ///
-    /// # Arguments
-    ///
-    /// * `plane`:
-    /// * `tol`:
-    ///
-    /// returns: Result<Vec<Curve3, Global>, Box<dyn Error, Global>>
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
-    pub fn section(&self, plane: &Plane3, tol: Option<f64>) -> Result<Vec<Curve3>> {
-        let tol = tol.unwrap_or(1.0e-6);
-        let mut collected = Vec::new();
-        let result = self
-            .shape
-            .intersection_with_local_plane(&plane.normal, plane.d, 1.0e-6);
-
-        if let IntersectResult::Intersect(pline) = result {
-            let chains = chained_indices(pline.indices());
-            for chain in chains.iter() {
-                let points = chain
-                    .iter()
-                    .map(|&i| pline.vertices()[i as usize])
-                    .collect::<Vec<_>>();
-                if let Ok(curve) = Curve3::from_points(&points, tol) {
-                    collected.push(curve);
-                }
-            }
-        }
-
-        Ok(collected)
     }
 }
 

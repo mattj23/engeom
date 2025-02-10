@@ -88,7 +88,7 @@ impl<'a> TriangleFilter<'a> {
         let mut check = MeshNearCheck::new(self.mesh, other);
 
         self.indices.retain(|&i| {
-            let tri = self.mesh.triangles()[i];
+            let tri = self.mesh.faces()[i];
             let face = self.mesh.shape.triangle(i as u32);
 
             if all_points {
@@ -111,7 +111,7 @@ impl Mesh {
     pub fn filter_triangles(&self) -> TriangleFilter {
         TriangleFilter {
             mesh: self,
-            indices: index_vec(None, self.triangles().len()),
+            indices: index_vec(None, self.faces().len()),
         }
     }
 
@@ -143,7 +143,7 @@ impl Mesh {
     /// let indices = mesh.filter_triangles().facing(&Vector3::z()).collect();
     /// let new_mesh = mesh.create_from_indices(&indices);
     ///
-    /// assert_eq!(new_mesh.triangles().len(), 2);
+    /// assert_eq!(new_mesh.faces().len(), 2);
     /// assert_eq!(new_mesh.vertices().len(), 4);
     /// ```
     pub fn create_from_indices(&self, indices: &[usize]) -> Self {
@@ -163,7 +163,7 @@ impl Mesh {
         let triangles = indices
             .iter()
             .map(|i| {
-                let t = self.triangles()[*i];
+                let t = self.faces()[*i];
                 [map_back[&t[0]], map_back[&t[1]], map_back[&t[2]]]
             })
             .collect_vec();
@@ -174,7 +174,7 @@ impl Mesh {
     fn unique_vertices(&self, triangle_indices: &[usize]) -> Vec<u32> {
         let mut to_save = HashSet::new();
         for i in triangle_indices {
-            let t = self.triangles()[*i];
+            let t = self.faces()[*i];
             to_save.insert(t[0]);
             to_save.insert(t[1]);
             to_save.insert(t[2]);
@@ -272,7 +272,7 @@ mod tests {
         assert_eq!(indices.len(), 2);
 
         let new_mesh = mesh.create_from_indices(&indices);
-        assert_eq!(new_mesh.triangles().len(), 2);
+        assert_eq!(new_mesh.faces().len(), 2);
 
         for t in new_mesh.tri_mesh().triangles() {
             let n = t.normal().unwrap();
