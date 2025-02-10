@@ -1,55 +1,86 @@
 //! This module has implementations of different ways of filtering/reducing a mesh
 
 use crate::common::indices::index_vec;
+use crate::common::{SelectOp, Selection};
 use crate::{Mesh, Point3, SurfacePoint3, UnitVec3, Vector3};
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 
 pub struct TriangleFilter<'a> {
     mesh: &'a Mesh,
-    indices: Vec<usize>,
+    indices: HashSet<usize>,
 }
 
 impl<'a> TriangleFilter<'a> {
     /// Collect the indices of the triangles that have been filtered
     pub fn collect(self) -> Vec<usize> {
-        self.indices
+        self.indices.into_iter().collect()
     }
 
     /// Create a new mesh from the filtered indices
     pub fn create_mesh(self) -> Mesh {
-        self.mesh.create_from_indices(&self.indices)
+        let i = self.indices.into_iter().collect_vec();
+        self.mesh.create_from_indices(&i)
     }
 
-    /// Reduce the list of indices to only include triangles that have a positive dot product with
-    /// the specified direction vector.
-    ///
-    /// # Arguments
-    ///
-    /// * `normal`: a test normal direction to check against the triangle normals
-    ///
-    /// returns: Vec<usize, Global>
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use engeom::{Mesh, Vector3};
-    /// let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
-    /// let indices = mesh.filter_triangles().facing(&Vector3::z()).collect();
-    /// assert_eq!(indices.len(), 2);
-    /// ```
-    pub fn facing(mut self, normal: &Vector3) -> Self {
-        self.indices.retain(|&i| {
-            if let Some(n) = self.mesh.shape.triangle(i as u32).normal() {
-                n.dot(normal) > 0.0
-            } else {
-                false
+    /// Get the indices of the triangles which would need to be checked for an operation of the
+    /// specified type. If the operation is `SelectOp::Add`, then the triangles that are not in the
+    /// current selection will be returned. If the operation is `SelectOp::Remove`, then the
+    /// triangles that are in the current selection will be returned.
+    fn to_check(&self, mode: SelectOp) -> Vec<usize> {
+        match mode {
+            SelectOp::Add => (0..self.mesh.faces().len())
+                .filter(|i| !self.indices.contains(i))
+                .collect(),
+            SelectOp::Remove => self.indices.iter().map(|i| *i).collect(),
+        }
+    }
+    fn mutate_pass_list(mut self, mode: SelectOp, pass_list: Vec<usize>) -> Self {
+        match mode {
+            SelectOp::Add => {
+                for i in pass_list {
+                    self.indices.insert(i);
+                }
             }
-        });
+            SelectOp::Remove => {
+                for i in pass_list {
+                    self.indices.remove(&i);
+                }
+            }
+        };
+
         self
     }
 
-    /// Reduce the list of indices to only include triangles that are within a certain distance of
+    fn mutate(mut self, mode: SelectOp, predicate: &dyn Fn(usize, &Mesh) -> bool) -> Self {
+        match mode {
+            SelectOp::Add => {
+                for i in 0..self.mesh.faces().len() {
+                    if !self.indices.contains(&i) && predicate(i, self.mesh) {
+                        self.indices.insert(i);
+                    }
+                }
+            }
+            SelectOp::Remove => {
+                self.indices.retain(|&i| !predicate(i, self.mesh));
+            }
+        };
+
+        self
+    }
+
+    pub fn facing(self, normal: &Vector3, angle: f64, mode: SelectOp) -> Self {
+        self.mutate(mode, &|i, m| {
+            let n = m.shape.triangle(i as u32).normal();
+            if let Some(nv) = n {
+                nv.angle(normal) < angle
+            } else {
+                false
+            }
+        })
+    }
+
+    /// Modify the list of indices to only include triangles that are within a certain distance of
     /// their closest projection onto another mesh. The distance can require that all points of the
     /// triangle are within the tolerance, or just one.
     ///
@@ -84,38 +115,61 @@ impl<'a> TriangleFilter<'a> {
         distance_tol: f64,
         planar_tol: Option<f64>,
         angle_tol: Option<f64>,
+        mode: SelectOp,
     ) -> Self {
-        let mut check = MeshNearCheck::new(self.mesh, other);
+        let mut check = MeshNearCheck::new(self.mesh, other, distance_tol, planar_tol, angle_tol);
+        let to_check = self.to_check(mode);
+        let passes = to_check
+            .into_iter()
+            .filter(|&i| {
+                let tri = self.mesh.faces()[i];
+                let face = self.mesh.shape.triangle(i as u32);
 
-        self.indices.retain(|&i| {
-            let tri = self.mesh.faces()[i];
-            let face = self.mesh.shape.triangle(i as u32);
+                if all_points {
+                    check.near_check(tri[0], face.normal())
+                        && check.near_check(tri[1], face.normal())
+                        && check.near_check(tri[2], face.normal())
+                } else {
+                    check.near_check(tri[0], face.normal())
+                        || check.near_check(tri[1], face.normal())
+                        || check.near_check(tri[2], face.normal())
+                }
+            })
+            .collect::<Vec<_>>();
 
-            if all_points {
-                check.near_check(tri[0], distance_tol, planar_tol, angle_tol, face.normal())
-                    && check.near_check(tri[1], distance_tol, planar_tol, angle_tol, face.normal())
-                    && check.near_check(tri[2], distance_tol, planar_tol, angle_tol, face.normal())
-            } else {
-                check.near_check(tri[0], distance_tol, planar_tol, angle_tol, face.normal())
-                    || check.near_check(tri[1], distance_tol, planar_tol, angle_tol, face.normal())
-                    || check.near_check(tri[2], distance_tol, planar_tol, angle_tol, face.normal())
-            }
-        });
-
-        self
+        self.mutate_pass_list(mode, passes)
     }
 }
 
 impl Mesh {
-    /// Get a filter handle for the mesh
-    pub fn filter_triangles(&self) -> TriangleFilter {
-        TriangleFilter {
-            mesh: self,
-            indices: index_vec(None, self.faces().len()),
+    /// Start an operation to filter the faces of the mesh. This function will return a filter
+    /// handle that can be used to add or remove faces from the selection while maintaining
+    /// an immutable reference to the mesh.
+    ///
+    /// The filter can be started with no faces selected (`Selection::None`), all faces selected
+    /// (`Selection::All`), or a specific set of faces selected (`Selection::Indices(Vec<usize>)`).
+    /// Each successive filter operation will modify the selection the selected indices.
+    ///
+    /// # Arguments
+    ///
+    /// * `start`: The initial selection of faces to start with, either `Selection::None`,
+    ///   `Selection::All`, or `Selection::Indices(Vec<usize>)`
+    ///
+    /// returns: TriangleFilter
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    pub fn face_select(&self, start: Selection) -> TriangleFilter {
+        let indices = match start {
+            Selection::None => vec![],
+            Selection::All => index_vec(None, self.faces().len()),
+            Selection::Indices(i) => i,
         }
-    }
-
-    pub fn filter_triangles_starting_with(&self, indices: Vec<usize>) -> TriangleFilter {
+        .into_iter()
+        .collect();
         TriangleFilter {
             mesh: self,
             indices,
@@ -138,9 +192,12 @@ impl Mesh {
     /// # Examples
     ///
     /// ```
-    /// use engeom::{Mesh, Vector3};
+    /// use std::f64::consts::PI;
+    /// use engeom::{Mesh, Vector3, SelectOp, Selection};
     /// let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
-    /// let indices = mesh.filter_triangles().facing(&Vector3::z()).collect();
+    /// let indices = mesh.face_select(Selection::None)
+    ///     .facing(&Vector3::z(), PI / 2.0, SelectOp::Add)
+    ///     .collect();
     /// let new_mesh = mesh.create_from_indices(&indices);
     ///
     /// assert_eq!(new_mesh.faces().len(), 2);
@@ -192,14 +249,26 @@ struct MeshNearCheck<'a> {
     this_mesh: &'a Mesh,
     ref_mesh: &'a Mesh,
     checked: HashMap<u32, bool>,
+    distance_tol: f64,
+    planar_tol: Option<f64>,
+    angle_tol: Option<f64>,
 }
 
 impl<'a> MeshNearCheck<'a> {
-    fn new(this_mesh: &'a Mesh, ref_mesh: &'a Mesh) -> Self {
+    fn new(
+        this_mesh: &'a Mesh,
+        ref_mesh: &'a Mesh,
+        distance_tol: f64,
+        planar_tol: Option<f64>,
+        angle_tol: Option<f64>,
+    ) -> Self {
         Self {
             this_mesh,
             ref_mesh,
             checked: HashMap::new(),
+            distance_tol,
+            planar_tol,
+            angle_tol,
         }
     }
 
@@ -208,35 +277,28 @@ impl<'a> MeshNearCheck<'a> {
         result
     }
 
-    fn near_check(
-        &mut self,
-        vertex_index: u32,
-        distance_tol: f64,
-        planar_tol: Option<f64>,
-        angle_tol: Option<f64>,
-        face_normal: Option<UnitVec3>,
-    ) -> bool {
+    fn near_check(&mut self, vertex_index: u32, face_normal: Option<UnitVec3>) -> bool {
         if let Some(&checked) = self.checked.get(&vertex_index) {
             checked
         } else {
             let p = self.this_mesh.vertices()[vertex_index as usize];
 
             let is_ok = if let Some((prj, ri, _loc)) =
-                self.ref_mesh.project_with_max_dist(&p, distance_tol)
+                self.ref_mesh.project_with_max_dist(&p, self.distance_tol)
             {
-                if planar_tol.is_none() && angle_tol.is_none() {
+                if self.planar_tol.is_none() && self.angle_tol.is_none() {
                     true
                 } else if let Some(rn) = self.ref_mesh.shape.triangle(ri).normal() {
                     // We need to get the normal of the reference triangle
                     let rsp = SurfacePoint3::new(prj.point, rn);
 
-                    let check_planar = if let Some(planar_tol) = planar_tol {
+                    let check_planar = if let Some(planar_tol) = self.planar_tol {
                         rsp.planar_distance(&p) <= planar_tol
                     } else {
                         true
                     };
 
-                    let check_angle = if let Some(angle_tol) = angle_tol {
+                    let check_angle = if let Some(angle_tol) = self.angle_tol {
                         if let Some(face_normal) = face_normal {
                             face_normal.angle(&rn) <= angle_tol
                         } else {
@@ -262,12 +324,16 @@ impl<'a> MeshNearCheck<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::f64::consts::PI;
+    use crate::SelectOp::Add;
     use super::*;
 
     #[test]
     fn test_triangles_facing() {
         let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
-        let indices = mesh.filter_triangles().facing(&Vector3::z()).collect();
+        let indices = mesh.face_select(Selection::None)
+            .facing(&Vector3::z(), PI / 2.0, Add)
+            .collect();
 
         assert_eq!(indices.len(), 2);
 

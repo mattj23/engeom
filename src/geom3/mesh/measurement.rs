@@ -1,8 +1,8 @@
 //! This module contains features for taking measurements on meshes
 
 use crate::common::DistMode;
-use crate::{Mesh, Point3, UnitVec3};
 use crate::metrology::Length3;
+use crate::{Mesh, Point3, UnitVec3};
 
 impl Mesh {
     /// Compute the deviation of a point from this mesh (this mesh is considered the reference) and
@@ -49,11 +49,10 @@ impl Mesh {
                 } else {
                     -UnitVec3::new_normalize(v)
                 }
-            },
+            }
             DistMode::ToPlane => closest.normal,
         };
 
         Length3::new(closest.point, *point, Some(d))
     }
-
 }

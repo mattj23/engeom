@@ -15,8 +15,11 @@ pub struct Length<const D: usize> {
 }
 
 impl<const D: usize> Length<D> {
-
-    pub fn new(a: Point<f64, D>, b: Point<f64, D>, direction: Option<Unit<SVector<f64, D>>>) -> Self {
+    pub fn new(
+        a: Point<f64, D>,
+        b: Point<f64, D>,
+        direction: Option<Unit<SVector<f64, D>>>,
+    ) -> Self {
         let direction = direction.unwrap_or(Unit::new_normalize(b - a));
         Self { a, b, direction }
     }
@@ -40,4 +43,3 @@ impl<const D: usize> Measurement for Length<D> {
         self.direction.dot(&(self.b - self.a))
     }
 }
-

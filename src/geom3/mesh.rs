@@ -5,12 +5,12 @@
 mod conformal;
 mod edges;
 pub mod filtering;
+mod measurement;
 mod patches;
 mod queries;
 mod sampling;
 mod serialization;
 mod uv_mapping;
-mod measurement;
 
 pub use self::serialization::{MeshData, MeshFlatData};
 pub use self::uv_mapping::UvMapping;

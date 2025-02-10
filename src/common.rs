@@ -22,6 +22,22 @@ pub use interval::Interval;
 pub use parry3d_f64::query::SplitResult;
 pub use surface_point::{SurfacePoint, SurfacePointCollection};
 
+/// General purpose option for starting the selection of a set of items, either from everything,
+/// nothing, or a specific set of indices
+#[derive(Debug, Clone)]
+pub enum Selection {
+    None,
+    All,
+    Indices(Vec<usize>),
+}
+
+/// General purpose option for selecting or deselecting items from a set
+#[derive(Debug, Clone, Copy)]
+pub enum SelectOp {
+    Add,
+    Remove,
+}
+
 /// General purpose options for resampling data over a discrete domain.
 pub enum Resample {
     /// Resample by a given number of points, evenly spaced over the domain

@@ -34,5 +34,8 @@ pub use geom3::{
 // Extremely common conversion tools
 pub use common::{To2D, To3D, TransformBy};
 
+// Common options
+pub use common::{Resample, SelectOp, Selection, Smoothing, BestFit};
+
 #[cfg(test)]
 mod tests {}
