@@ -4,7 +4,6 @@ use serde::Serialize;
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::Path;
-
 #[cfg(feature = "stl")]
 use stl_io;
 

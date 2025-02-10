@@ -6,9 +6,9 @@ use crate::{Point3, Result};
 use parry3d_f64::shape::TriMesh;
 use std::collections::{HashMap, HashSet};
 
-pub struct MeshEdges {
+pub struct MeshEdges<'a> {
     /// The original mesh associated with the edge structure
-    mesh: Mesh,
+    mesh: &'a Mesh,
 
     /// A list of edges in the mesh. Each edge consists of two indices into the `vertices` list,
     /// which are the two vertices of the edge. The order of the vertices in the edge is not
@@ -29,27 +29,43 @@ pub struct MeshEdges {
     pub boundary_loops: Vec<Vec<u32>>,
 }
 
-impl MeshEdges {
+// impl MeshEdges {
+//     pub fn mesh(&self) -> &Mesh {
+//         &self.mesh
+//     }
+//
+//     /// Get a reference to the AABB of the underlying mesh in the local coordinate system.
+//     pub fn aabb(&self) -> &Aabb3 {
+//         self.mesh.shape.local_aabb()
+//     }
+//
+//     /// Gets a reference to the underlying `TriMesh` object to provide direct access to
+//     /// the `parry3d` API.
+//     pub fn tri_mesh(&self) -> &TriMesh {
+//         &self.mesh.shape
+//     }
+//
+//     /// Return a flag indicating whether the mesh is considered "solid" or not for the purposes of
+//     /// distance queries. If a mesh is "solid", then distance queries for points on the inside of
+//     /// the mesh will return a zero distance.
+//     pub fn is_solid(&self) -> bool {
+//         self.mesh.is_solid
+//     }
+//
+//     /// Get a reference to the vertices of the mesh.
+//     pub fn vertices(&self) -> &[Point3] {
+//         self.mesh.shape.vertices()
+//     }
+//
+//     /// Get a reference to the face indices of the mesh.
+//     pub fn faces(&self) -> &[[u32; 3]] {
+//         self.mesh.shape.indices()
+//     }
+// }
+
+impl<'a> MeshEdges<'a> {
     pub fn mesh(&self) -> &Mesh {
         &self.mesh
-    }
-
-    /// Get a reference to the AABB of the underlying mesh in the local coordinate system.
-    pub fn aabb(&self) -> &Aabb3 {
-        self.mesh.shape.local_aabb()
-    }
-
-    /// Gets a reference to the underlying `TriMesh` object to provide direct access to
-    /// the `parry3d` API.
-    pub fn tri_mesh(&self) -> &TriMesh {
-        &self.mesh.shape
-    }
-
-    /// Return a flag indicating whether the mesh is considered "solid" or not for the purposes of
-    /// distance queries. If a mesh is "solid", then distance queries for points on the inside of
-    /// the mesh will return a zero distance.
-    pub fn is_solid(&self) -> bool {
-        self.mesh.is_solid
     }
 
     /// Get a reference to the vertices of the mesh.
@@ -61,18 +77,8 @@ impl MeshEdges {
     pub fn faces(&self) -> &[[u32; 3]] {
         self.mesh.shape.indices()
     }
-}
 
-impl From<MeshEdges> for Mesh {
-    fn from(mesh_edges: MeshEdges) -> Self {
-        mesh_edges.mesh
-    }
-}
-
-impl TryFrom<Mesh> for MeshEdges {
-    type Error = Box<dyn std::error::Error>;
-
-    fn try_from(mesh: Mesh) -> Result<Self> {
+    pub fn new(mesh: &'a Mesh) -> Result<Self> {
         let (edges, face_edges, boundary_loops) = identify_edges(&mesh.faces())?;
 
         let edge_lengths = edges
@@ -143,6 +149,7 @@ fn boundary_loops(boundary_map: HashMap<u32, u32>) -> Vec<Vec<u32>> {
 
             if *working.first().unwrap() == next_id {
                 working.reverse();
+                all_loops.push(working);
                 working = Vec::new();
             } else {
                 working.push(next_id);

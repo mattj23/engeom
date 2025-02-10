@@ -12,7 +12,7 @@ use std::f64::consts::PI;
 
 type SparseMat = SparseColMat<u32, f64>;
 
-impl MeshEdges {
+impl<'a> MeshEdges<'a> {
     pub fn boundary_first_flatten(&self) -> Result<Vec<Point2>> {
         let n_vert = self.vertices().len();
 

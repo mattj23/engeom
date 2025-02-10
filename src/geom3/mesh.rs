@@ -11,6 +11,7 @@ mod queries;
 mod sampling;
 mod serialization;
 mod uv_mapping;
+mod faces;
 
 pub use self::serialization::{MeshData, MeshFlatData};
 pub use self::uv_mapping::UvMapping;
@@ -61,6 +62,10 @@ impl Mesh {
 }
 
 impl Mesh {
+    pub fn calc_edges(&self) -> Result<MeshEdges> {
+        MeshEdges::new(&self)
+    }
+
     /// Create a new mesh from a list of vertices and a list of triangles.  Additional options can
     /// be set to merge duplicate vertices and delete degenerate triangles.
     ///
