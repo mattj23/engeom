@@ -6,6 +6,7 @@ pub mod filtering;
 mod patches;
 mod serialization;
 mod uv_mapping;
+mod measurement;
 
 pub use self::serialization::{MeshData, MeshFlatData};
 pub use self::uv_mapping::UvMapping;

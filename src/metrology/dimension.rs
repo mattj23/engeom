@@ -1,21 +1,23 @@
 //! This module has representations of different types of dimensions
 
-use crate::{Point2, SurfacePoint2, UnitVec2};
+use crate::common::surface_point::SurfacePoint;
+use parry3d_f64::na::{Point, SVector, Unit};
 
-pub trait Dimension {
+pub trait Measurement {
     fn value(&self) -> f64;
 }
 
 /// Represents a length measurement in two dimensions
-pub struct Length2 {
-    pub a: Point2,
-    pub b: Point2,
-    pub direction: UnitVec2,
+pub struct Length<const D: usize> {
+    pub a: Point<f64, D>,
+    pub b: Point<f64, D>,
+    pub direction: Unit<SVector<f64, D>>,
 }
 
-impl Length2 {
-    pub fn new(a: Point2, b: Point2, direction: Option<UnitVec2>) -> Self {
-        let direction = direction.unwrap_or(UnitVec2::new_normalize(b - a));
+impl<const D: usize> Length<D> {
+
+    pub fn new(a: Point<f64, D>, b: Point<f64, D>, direction: Option<Unit<SVector<f64, D>>>) -> Self {
+        let direction = direction.unwrap_or(Unit::new_normalize(b - a));
         Self { a, b, direction }
     }
 
@@ -27,14 +29,15 @@ impl Length2 {
         }
     }
 
-    pub fn center(&self) -> SurfacePoint2 {
+    pub fn center(&self) -> SurfacePoint<D> {
         let v = self.a - self.b;
-        SurfacePoint2::new(self.b + v * 0.5, self.direction)
+        SurfacePoint::new(self.b + v * 0.5, self.direction)
     }
 }
 
-impl Dimension for Length2 {
+impl<const D: usize> Measurement for Length<D> {
     fn value(&self) -> f64 {
         self.direction.dot(&(self.b - self.a))
     }
 }
+
