@@ -13,7 +13,6 @@ mod serialization;
 mod uv_mapping;
 mod faces;
 
-pub use self::serialization::{MeshData, MeshFlatData};
 pub use self::uv_mapping::UvMapping;
 use crate::common::SurfacePointCollection;
 use crate::geom3::Aabb3;

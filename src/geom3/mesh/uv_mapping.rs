@@ -30,10 +30,10 @@ impl UvMapping {
     ///
     /// returns: OPoint<f64, Const<2>>
     pub fn point(&self, tri_id: usize, barycentric: [f64; 3]) -> Point2 {
-        let tri = self.triangles()[tri_id];
-        let p = tri[0].coords * barycentric[0]
-            + tri[1].coords * barycentric[1]
-            + tri[2].coords * barycentric[2];
+        let tri = self.tri_map.triangle(tri_id as u32);
+        let p = tri.a.coords * barycentric[0]
+            + tri.b.coords * barycentric[1]
+            + tri.c.coords * barycentric[2];
         Point2::from(p)
     }
 
@@ -48,7 +48,7 @@ impl UvMapping {
     pub fn triangle(&self, point: &Point2) -> Option<(usize, [f64; 3])> {
         let result = self
             .tri_map
-            .project_local_point_and_get_location(&point.to_3d(), false);
+            .project_local_point_and_get_location(&point, false);
         let (_, (t_id, loc)) = result;
         Some((t_id as usize, loc.barycentric_coordinates().unwrap()))
     }

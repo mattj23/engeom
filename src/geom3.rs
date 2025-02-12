@@ -10,7 +10,7 @@ use std::ops;
 
 use crate::{Result, TransformBy};
 pub use curve3::{Curve3, CurveStation3};
-pub use mesh::{Mesh, MeshData, UvMapping};
+pub use mesh::{Mesh, UvMapping};
 use parry3d_f64::na::{try_convert, Matrix4, UnitQuaternion};
 pub use plane3::Plane3;
 pub use point_cloud::{PointCloud, PointCloudFeatures, PointCloudKdTree};
