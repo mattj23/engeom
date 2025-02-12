@@ -11,7 +11,7 @@ pub struct TriangleFilter<'a> {
     indices: HashSet<usize>,
 }
 
-impl<'a> TriangleFilter<'a> {
+impl TriangleFilter<'_> {
     /// Collect the indices of the triangles that have been filtered
     pub fn collect(self) -> Vec<usize> {
         self.indices.into_iter().collect()
@@ -32,7 +32,7 @@ impl<'a> TriangleFilter<'a> {
             SelectOp::Add => (0..self.mesh.faces().len())
                 .filter(|i| !self.indices.contains(i))
                 .collect(),
-            SelectOp::Remove | SelectOp::Keep => self.indices.iter().map(|i| *i).collect(),
+            SelectOp::Remove | SelectOp::Keep => self.indices.iter().copied().collect(),
         }
     }
     fn mutate_pass_list(mut self, mode: SelectOp, pass_list: Vec<usize>) -> Self {
@@ -116,7 +116,7 @@ impl<'a> TriangleFilter<'a> {
     ///
     /// ```
     pub fn near_mesh(
-        mut self,
+        self,
         other: &Mesh,
         all_points: bool,
         distance_tol: f64,
@@ -245,7 +245,7 @@ impl Mesh {
         }
 
         // Now we can sort them in order
-        let mut keep_order = to_save.iter().map(|i| *i).collect_vec();
+        let mut keep_order = to_save.iter().copied().collect_vec();
         keep_order.sort_unstable();
 
         keep_order
@@ -331,14 +331,15 @@ impl<'a> MeshNearCheck<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::f64::consts::PI;
-    use crate::SelectOp::Add;
     use super::*;
+    use crate::SelectOp::Add;
+    use std::f64::consts::PI;
 
     #[test]
     fn test_triangles_facing() {
         let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
-        let indices = mesh.face_select(Selection::None)
+        let indices = mesh
+            .face_select(Selection::None)
             .facing(&Vector3::z(), PI / 2.0, Add)
             .collect();
 

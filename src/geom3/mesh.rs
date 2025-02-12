@@ -4,6 +4,7 @@
 
 mod conformal;
 mod edges;
+mod faces;
 pub mod filtering;
 mod measurement;
 mod patches;
@@ -11,16 +12,12 @@ mod queries;
 mod sampling;
 mod serialization;
 mod uv_mapping;
-mod faces;
 
 pub use self::uv_mapping::UvMapping;
-use crate::common::SurfacePointCollection;
 use crate::geom3::Aabb3;
 use crate::{Iso3, Point2, Point3, Result, SurfacePoint3};
 pub use edges::MeshEdges;
-use parry3d_f64::query::PointQueryWithLocation;
 use parry3d_f64::shape::{TriMesh, TriMeshFlags};
-use rand::prelude::SliceRandom;
 
 #[derive(Clone)]
 pub struct Mesh {
@@ -62,7 +59,7 @@ impl Mesh {
 
 impl Mesh {
     pub fn calc_edges(&self) -> Result<MeshEdges> {
-        MeshEdges::new(&self)
+        MeshEdges::new(self)
     }
 
     /// Create a new mesh from a list of vertices and a list of triangles.  Additional options can

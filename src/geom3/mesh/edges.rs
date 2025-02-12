@@ -1,9 +1,7 @@
 //! Mesh edge structure
 
 use super::Mesh;
-use crate::geom3::Aabb3;
 use crate::{Point3, Result};
-use parry3d_f64::shape::TriMesh;
 use std::collections::{HashMap, HashSet};
 
 pub struct MeshEdges<'a> {
@@ -65,7 +63,7 @@ pub struct MeshEdges<'a> {
 
 impl<'a> MeshEdges<'a> {
     pub fn mesh(&self) -> &Mesh {
-        &self.mesh
+        self.mesh
     }
 
     /// Get a reference to the vertices of the mesh.
@@ -79,7 +77,7 @@ impl<'a> MeshEdges<'a> {
     }
 
     pub fn new(mesh: &'a Mesh) -> Result<Self> {
-        let (edges, face_edges, boundary_loops) = identify_edges(&mesh.faces())?;
+        let (edges, face_edges, boundary_loops) = identify_edges(mesh.faces())?;
 
         let edge_lengths = edges
             .iter()

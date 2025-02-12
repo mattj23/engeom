@@ -35,7 +35,7 @@ pub use geom3::{
 pub use common::{To2D, To3D, TransformBy};
 
 // Common options
-pub use common::{Resample, SelectOp, Selection, Smoothing, BestFit};
+pub use common::{BestFit, Resample, SelectOp, Selection, Smoothing};
 
 #[cfg(test)]
 mod tests {}

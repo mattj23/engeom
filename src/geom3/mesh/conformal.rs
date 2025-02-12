@@ -12,7 +12,7 @@ use std::f64::consts::PI;
 
 type SparseMat = SparseColMat<u32, f64>;
 
-impl<'a> MeshEdges<'a> {
+impl MeshEdges<'_> {
     pub fn boundary_first_flatten(&self) -> Result<Vec<Point2>> {
         let n_vert = self.vertices().len();
 
@@ -36,7 +36,7 @@ impl<'a> MeshEdges<'a> {
         // against the boundary vertices, respectively.
         let triplets =
             cotan_laplacian_triplets(&face_angles, n_vert, &self.edges, &self.face_edges)?;
-        let (a, aii, aib, abb) = laplacian_set(n_vert, &i_inner, &i_bound, &triplets)?;
+        let (a, aii, aib, abb) = laplacian_set(n_vert, &i_inner, i_bound, &triplets)?;
 
         // We'll pre-factor the A matrix and the A_ii matrix, the latter which will be used while
         // setting the dirichlet boundary condition and determining the positions of the boundary
@@ -46,21 +46,20 @@ impl<'a> MeshEdges<'a> {
         let aii_lu = aii.sp_lu()?;
 
         // Calculate the angle defects to be used in the dirichlet boundary condition.
-        let angle_defects = calc_angle_defects(n_vert, &i_bound, &face_angles, &self.faces())?;
+        let angle_defects = calc_angle_defects(n_vert, i_bound, &face_angles, self.faces())?;
 
         // The ub vector is set to zeroes when using the minimum distortion boundary condition.
         let ub = Mat::<f64>::zeros(i_bound.len(), 1);
 
         // Set the target im_k vector for the boundary vertices.
-        let im_k =
-            dirichlet_boundary(&ub, &aii_lu, &aib, &abb, &i_inner, &i_bound, &angle_defects)?;
+        let im_k = dirichlet_boundary(&ub, &aii_lu, &aib, &abb, &i_inner, i_bound, &angle_defects)?;
 
         // Calculate the uv positions of the boundary vertices in the final layout
         let boundary_edge_len = boundary_edge_lengths(self.vertices(), i_bound);
         let uvb = best_fit_curve(&ub, &im_k, &boundary_edge_len)?;
 
         // Finally, extend the boundary vertices into the interior of the layout.
-        let uv = extend_curve(&a_lu, &aii_lu, &aib, &uvb, n_vert, &i_bound, &i_inner)?;
+        let uv = extend_curve(&a_lu, &aii_lu, &aib, &uvb, n_vert, i_bound, &i_inner)?;
 
         Ok(uv.iter().map(|row| Point2::new(row[0], row[1])).collect())
     }

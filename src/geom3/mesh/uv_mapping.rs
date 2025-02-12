@@ -1,8 +1,8 @@
 //! This module contains an abstraction for mapping triangles in a mesh to a 2D UV space.
 
-use parry2d_f64::query::PointQueryWithLocation;
 use crate::geom2::Point2;
-use crate::{Result, To3D};
+use crate::Result;
+use parry2d_f64::query::PointQueryWithLocation;
 use parry2d_f64::shape::TriMesh;
 
 #[derive(Clone)]
@@ -17,7 +17,7 @@ impl UvMapping {
     }
 
     pub fn faces(&self) -> &[[u32; 3]] {
-        &self.tri_map.indices()
+        self.tri_map.indices()
     }
 
     /// Given a triangle ID and a barycentric coordinate, return the corresponding point in the
@@ -48,7 +48,7 @@ impl UvMapping {
     pub fn triangle(&self, point: &Point2) -> Option<(usize, [f64; 3])> {
         let result = self
             .tri_map
-            .project_local_point_and_get_location(&point, false);
+            .project_local_point_and_get_location(point, false);
         let (_, (t_id, loc)) = result;
         Some((t_id as usize, loc.barycentric_coordinates().unwrap()))
     }
