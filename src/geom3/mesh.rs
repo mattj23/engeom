@@ -10,7 +10,6 @@ mod measurement;
 mod patches;
 mod queries;
 mod sampling;
-mod serialization;
 mod uv_mapping;
 
 pub use self::uv_mapping::UvMapping;

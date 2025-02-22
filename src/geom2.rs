@@ -13,6 +13,7 @@ use crate::common::SurfacePointCollection;
 use crate::AngleDir::Cw;
 use parry2d_f64::na::UnitComplex;
 use std::ops;
+use crate::AngleDir;
 
 pub type Point2 = parry2d_f64::na::Point2<f64>;
 pub type Vector2 = parry2d_f64::na::Vector2<f64>;
@@ -95,6 +96,57 @@ impl SurfacePoint2 {
     pub fn shift_orthogonal(&self, distance: f64) -> Self {
         let shift = rot90(Cw) * self.normal.into_inner() * distance;
         Self::new(self.point + shift, self.normal)
+    }
+
+    /// Rotate the normal vector of a surface point by the given angle. The angle is in radians and
+    /// is measured counterclockwise from the positive x-axis. If the normal is pointing up, a
+    /// positive angle will rotate it to the left, and a negative angle will rotate it to the right.
+    ///
+    /// # Arguments
+    ///
+    /// * `angle`: the angle to rotate the normal vector by
+    ///
+    /// returns: SurfacePoint<2>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use approx::assert_relative_eq;
+    /// use engeom::{SurfacePoint2, Vector2, UnitVec2};
+    ///
+    /// let sp = SurfacePoint2::new_normalize([0.0, 0.0].into(), [0.0, 1.0].into());
+    /// let rotated = sp.rot_normal(std::f64::consts::PI / 2.0);
+    /// let expected = UnitVec2::new_normalize(Vector2::new(-1.0, 0.0));
+    /// assert_relative_eq!(rotated.normal, expected, epsilon = 1e-6);
+    /// ```
+    pub fn rot_normal(&self, angle: f64) -> Self {
+        let n = Iso2::rotation(angle) * self.normal.into_inner();
+        Self::new_normalize(self.point, n)
+    }
+
+    /// Rotate the normal vector of a surface point by 90 degrees in the given direction. If the
+    /// normal is pointing up, rotating it clockwise will make it point to the right, and rotating
+    /// it counterclockwise will make it point to the left.
+    ///
+    /// # Arguments
+    ///
+    /// * `dir`: the direction to rotate the normal vector
+    ///
+    /// returns: SurfacePoint<2>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use approx::assert_relative_eq;
+    /// use engeom::{SurfacePoint2, AngleDir, Vector2, UnitVec2};
+    ///
+    /// let sp = SurfacePoint2::new_normalize([0.0, 0.0].into(), [0.0, 1.0].into());
+    /// let rotated = sp.rot_normal_90(AngleDir::Cw);
+    /// let expected = UnitVec2::new_normalize(Vector2::new(1.0, 0.0));
+    /// assert_relative_eq!(rotated.normal, expected, epsilon = 1e-6);
+    /// ```
+    pub fn rot_normal_90(&self, dir: AngleDir) -> Self {
+        Self::new_normalize(self.point, rot90(dir) * self.normal.into_inner())
     }
 }
 
