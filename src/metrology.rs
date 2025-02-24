@@ -14,5 +14,5 @@ pub type SurfaceDeviationSet2 = surface_deviation::SurfaceDeviationSet<2>;
 pub type SurfaceDeviation3 = surface_deviation::SurfaceDeviation<3>;
 pub type SurfaceDeviationSet3 = surface_deviation::SurfaceDeviationSet<3>;
 
-pub type Length2 = dimension::Length<2>;
-pub type Length3 = dimension::Length<3>;
+pub type Distance2 = dimension::Distance<2>;
+pub type Distance3 = dimension::Distance<3>;

@@ -14,7 +14,7 @@ use crate::airfoil::camber::camber_detect_upper_dir;
 use crate::common::points::dist;
 use crate::common::Intersection;
 use crate::geom2::hull::convex_hull_2d;
-use crate::metrology::Length2;
+use crate::metrology::Distance2;
 use crate::stats::compute_mean;
 pub use camber::extract_camber_line;
 pub use edges::{
@@ -358,14 +358,14 @@ impl AirfoilGeometry {
     ///
     /// * `gage`:
     ///
-    /// returns: Result<Length2, Box<dyn Error, Global>>
+    /// returns: Result<Distance2, Box<dyn Error, Global>>
     ///
     /// # Examples
     ///
     /// ```
     ///
     /// ```
-    pub fn get_thickness(&self, gage: AfGage) -> Result<Length2> {
+    pub fn get_thickness(&self, gage: AfGage) -> Result<Distance2> {
         let (upper, lower) = match gage {
             AfGage::OnCamber(x) => {
                 let l = if x < 0.0 { self.camber.length() + x } else { x };
@@ -463,13 +463,13 @@ impl AirfoilGeometry {
             }
         };
 
-        Ok(Length2::new(upper, lower, None))
+        Ok(Distance2::new(upper, lower, None))
     }
 
-    pub fn get_thickness_max(&self) -> Result<Length2> {
+    pub fn get_thickness_max(&self) -> Result<Distance2> {
         let tmax = self.find_tmax();
         let (upper, lower) = self.order_points(&tmax.contact_neg, &tmax.contact_pos)?;
-        Ok(Length2::new(upper, lower, None))
+        Ok(Distance2::new(upper, lower, None))
     }
 
     /// Order the points so that the first point returned is on the upper surface and the second

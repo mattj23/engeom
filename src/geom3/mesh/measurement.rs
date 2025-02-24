@@ -1,7 +1,7 @@
 //! This module contains features for taking measurements on meshes
 
 use crate::common::DistMode;
-use crate::metrology::Length3;
+use crate::metrology::Distance3;
 use crate::{Mesh, Point3, UnitVec3};
 
 impl Mesh {
@@ -33,7 +33,7 @@ impl Mesh {
     /// ```
     ///
     /// ```
-    pub fn measure_point_deviation(&self, point: &Point3, dist_mode: DistMode) -> Length3 {
+    pub fn measure_point_deviation(&self, point: &Point3, dist_mode: DistMode) -> Distance3 {
         let closest = self.surf_closest_to(point);
 
         // In both cases, the measurement point `b` will remain the test point and `a` will be the
@@ -53,6 +53,6 @@ impl Mesh {
             DistMode::ToPlane => closest.normal,
         };
 
-        Length3::new(closest.point, *point, Some(d))
+        Distance3::new(closest.point, *point, Some(d))
     }
 }
