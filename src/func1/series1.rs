@@ -640,7 +640,7 @@ impl Series1 {
             clusters.push(current);
         }
 
-        // Now go through each cluster and if it is large enough, add all of the indices to the
+        // Now go through each cluster and if it is large enough, add all the indices to the
         // result vector
         let mut results = Vec::new();
         for cluster in clusters {

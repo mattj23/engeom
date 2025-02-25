@@ -463,13 +463,13 @@ impl AirfoilGeometry {
             }
         };
 
-        Ok(Distance2::new(upper, lower, None))
+        Ok(Distance2::new(lower, upper, None))
     }
 
     pub fn get_thickness_max(&self) -> Result<Distance2> {
         let tmax = self.find_tmax();
         let (upper, lower) = self.order_points(&tmax.contact_neg, &tmax.contact_pos)?;
-        Ok(Distance2::new(upper, lower, None))
+        Ok(Distance2::new(lower, upper, None))
     }
 
     /// Order the points so that the first point returned is on the upper surface and the second
@@ -525,7 +525,7 @@ fn order_faces(
     // We should have intersections with both curves. If the outline is clean, we will have exactly
     // one intersection with each, but if not we might have more than one at a similar distance.
     if a_t.is_empty() || b_t.is_empty() {
-        Err("Failed to find intersections with the test point".into())
+        Err("Failed to find intersections with the test point while ordering faces".into())
     } else {
         let a_m = compute_mean(&a_t)?;
         let b_m = compute_mean(&b_t)?;
