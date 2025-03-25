@@ -10,6 +10,7 @@ pub mod io;
 pub mod metrology;
 pub mod stats;
 pub mod utility;
+pub mod raster3;
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
