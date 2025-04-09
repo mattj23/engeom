@@ -1,8 +1,8 @@
 //! This module has representations of different types of dimensions
 
+use crate::common::points::mid_point;
 use crate::common::surface_point::SurfacePoint;
 use parry3d_f64::na::{Point, SVector, Unit};
-use crate::common::points::mid_point;
 
 pub trait Measurement {
     fn value(&self) -> f64;

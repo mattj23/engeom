@@ -1,8 +1,6 @@
 //! This module contains tools for working with 3D voxel grids.
 
-
 use std::collections::HashSet;
-
 
 /// This function takes a set of coordinates in a 3D grid and returns a list of clusters of
 /// connected voxel coordinates.

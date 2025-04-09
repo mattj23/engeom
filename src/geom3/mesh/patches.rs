@@ -1,5 +1,5 @@
 use crate::geom3::Mesh;
-use crate::Point3;
+use crate::{Point3, Result};
 use std::collections::{HashMap, HashSet};
 
 fn edge_key(i: usize, f: &[u32; 3]) -> (u32, u32) {
@@ -50,7 +50,7 @@ fn take_one_boundary(order: &mut HashMap<u32, u32>) -> Option<Vec<u32>> {
     Some(sequence)
 }
 
-pub fn compute_boundary_points(mesh: &Mesh, patch: &[usize]) -> Vec<Vec<Point3>> {
+pub fn compute_boundary_points(mesh: &Mesh, patch: &[usize]) -> Result<Vec<Vec<Point3>>> {
     let mut order = HashMap::new();
     let mut remaining = HashSet::new();
     let edges = compute_boundary_edges(mesh, patch);
@@ -58,7 +58,7 @@ pub fn compute_boundary_points(mesh: &Mesh, patch: &[usize]) -> Vec<Vec<Point3>>
         if let std::collections::hash_map::Entry::Vacant(e) = order.entry(v0) {
             e.insert(v1);
         } else {
-            panic!("Duplicate boundary point found!");
+            return Err("Duplicate boundary point found!".into());
         }
         remaining.insert(v0);
     }
@@ -68,14 +68,14 @@ pub fn compute_boundary_points(mesh: &Mesh, patch: &[usize]) -> Vec<Vec<Point3>>
         sequences.push(sequence);
     }
 
-    sequences
+    Ok(sequences
         .into_iter()
         .map(|seq| {
             seq.into_iter()
                 .map(|v| mesh.vertices()[v as usize])
                 .collect()
         })
-        .collect()
+        .collect())
 }
 
 /// Uses the adjacency information of the mesh to compute a list of patches of connected faces. This

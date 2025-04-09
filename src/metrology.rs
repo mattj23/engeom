@@ -7,8 +7,8 @@ mod tolerance_map;
 pub use tolerance::Tolerance;
 pub use tolerance_map::{ConstantTolMap, DiscreteDomainTolMap, ToleranceMap};
 
-pub use dimension::Measurement;
 use crate::{Iso3, To2D, To3D};
+pub use dimension::Measurement;
 
 pub type SurfaceDeviation2 = surface_deviation::SurfaceDeviation<2>;
 pub type SurfaceDeviationSet2 = surface_deviation::SurfaceDeviationSet<2>;
@@ -17,7 +17,6 @@ pub type SurfaceDeviationSet3 = surface_deviation::SurfaceDeviationSet<3>;
 
 pub type Distance2 = dimension::Distance<2>;
 pub type Distance3 = dimension::Distance<3>;
-
 
 // Conversions between 2D and 3D distances
 impl Distance2 {

@@ -7,6 +7,7 @@ mod edges;
 mod faces;
 pub mod filtering;
 mod measurement;
+mod outline;
 mod patches;
 mod queries;
 mod sampling;
@@ -14,7 +15,7 @@ mod uv_mapping;
 
 pub use self::uv_mapping::UvMapping;
 use crate::geom3::Aabb3;
-use crate::{Iso3, Point2, Point3, Result, SurfacePoint3};
+use crate::{Iso3, Point2, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
 pub use edges::MeshEdges;
 use parry3d_f64::shape::{TriMesh, TriMeshFlags};
 
@@ -207,13 +208,52 @@ impl Mesh {
     /// lists of points, where each list of points is the boundary of a patch.  Note that this
     /// function will not work on non-manifold meshes.
     ///
-    /// returns: Vec<Vec<usize, Global>, Global>
-    pub fn get_patch_boundary_points(&self) -> Vec<Vec<Point3>> {
+    /// returns: Result<Vec<Vec<usize, Global>, Global>>
+    pub fn get_patch_boundary_points(&self) -> Result<Vec<Vec<Point3>>> {
         let patches = self.get_patches();
-        patches
-            .iter()
-            .flat_map(|patch| patches::compute_boundary_points(self, patch))
-            .collect()
+        let mut result = Vec::new();
+        for patch in patches.iter() {
+            result.extend(patches::compute_boundary_points(self, patch)?);
+        }
+
+        Ok(result)
+    }
+
+    pub fn get_face_normals(&self) -> Result<Vec<UnitVec3>> {
+        let mut result = Vec::new();
+        for t in self.shape.triangles() {
+            if let Some(n) = t.normal() {
+                result.push(n.clone());
+            } else {
+                return Err("Failed to get normal".into());
+            }
+        }
+
+        Ok(result)
+    }
+
+    pub fn get_vertex_normals(&self) -> Vec<Vector3> {
+        let mut sums: Vec<Vector3> = vec![Vector3::new(0.0, 0.0, 0.0); self.shape.vertices().len()];
+        let mut counts = vec![0; self.shape.vertices().len()];
+
+        for (indices, tri) in self.shape.indices().iter().zip(self.shape.triangles()) {
+            if let Some(n) = tri.normal() {
+                for i in indices {
+                    sums[*i as usize] += n.into_inner();
+                    counts[*i as usize] += 1;
+                }
+            }
+        }
+
+        // Normalize the normals
+        for i in 0..sums.len() {
+            if counts[i] > 0 {
+                let v = sums[i] / counts[i] as f64;
+                sums[i] = v.normalize();
+            }
+        }
+
+        sums
     }
 }
 

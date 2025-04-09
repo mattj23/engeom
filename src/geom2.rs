@@ -10,10 +10,10 @@ pub mod polyline2;
 use crate::common::surface_point::SurfacePoint;
 use crate::common::svd_basis::SvdBasis;
 use crate::common::SurfacePointCollection;
+use crate::AngleDir;
 use crate::AngleDir::Cw;
 use parry2d_f64::na::UnitComplex;
 use std::ops;
-use crate::AngleDir;
 
 pub type Point2 = parry2d_f64::na::Point2<f64>;
 pub type Vector2 = parry2d_f64::na::Vector2<f64>;

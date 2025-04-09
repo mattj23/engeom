@@ -8,9 +8,9 @@ pub mod geom2;
 pub mod geom3;
 pub mod io;
 pub mod metrology;
+pub mod raster3;
 pub mod stats;
 pub mod utility;
-pub mod raster3;
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 

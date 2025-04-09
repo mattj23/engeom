@@ -10,8 +10,8 @@ use crate::geom2::hull::farthest_pair_indices;
 use crate::geom2::polyline2::SpanningRay;
 use crate::geom2::{rot90, Line2, Segment2};
 use crate::AngleDir::{Ccw, Cw};
-use crate::{Curve2, UnitVec2};
 use crate::Result;
+use crate::{Curve2, UnitVec2};
 use parry2d_f64::query::Ray;
 use parry2d_f64::shape::ConvexPolygon;
 
@@ -23,8 +23,11 @@ use parry2d_f64::shape::ConvexPolygon;
 ///
 /// returns: Result<Unit<Matrix<f64, Const<2>, Const<1>, ArrayStorage<f64, 2, 1>>>, Box<dyn Error, Global>>
 pub fn camber_detect_upper_dir(camber_line: &Curve2) -> Result<UnitVec2> {
-    let check = Segment2::try_new(camber_line.at_front().point(), camber_line.at_back().point())
-        .map_err(|_| "Failed to create segment from camber line while detecting face orientation")?;
+    let check = Segment2::try_new(
+        camber_line.at_front().point(),
+        camber_line.at_back().point(),
+    )
+    .map_err(|_| "Failed to create segment from camber line while detecting face orientation")?;
 
     let resampled = camber_line.resample(ByCount(50))?;
 

@@ -100,7 +100,7 @@ impl<'a> MeshEdges<'a> {
 
 /// Given an edge, return a key that can be used to identify the vertices that are connected by the
 /// edge without regard to the order of the vertices.
-fn edge_key(edge: &[u32; 2]) -> [u32; 2] {
+pub fn edge_key(edge: &[u32; 2]) -> [u32; 2] {
     let x = edge[0].min(edge[1]);
     let y = edge[0].max(edge[1]);
     [x, y]
@@ -110,7 +110,7 @@ fn edge_key(edge: &[u32; 2]) -> [u32; 2] {
 /// the faces are presented. The edges are not deduplicated nor their direction normalized. The
 /// resulting list will be 3x the length of the original faces. Elements 0-2 will be from face 0,
 /// elements 3-5 will be from face 1, and so on.
-fn naive_edges(faces: &[[u32; 3]]) -> Vec<[u32; 2]> {
+pub fn naive_edges(faces: &[[u32; 3]]) -> Vec<[u32; 2]> {
     let mut edges = Vec::new();
     for face in faces {
         edges.push([face[1], face[2]]);
@@ -122,7 +122,7 @@ fn naive_edges(faces: &[[u32; 3]]) -> Vec<[u32; 2]> {
 
 /// Given a reference list of all edges, return a sorted list of unique edges and the number of
 /// times each edge appeared in the original list.
-fn unique_edges(all_edges: &[[u32; 2]]) -> Vec<([u32; 2], usize)> {
+pub fn unique_edges(all_edges: &[[u32; 2]]) -> Vec<([u32; 2], usize)> {
     let mut unique = HashMap::new();
     for edge in all_edges {
         let key = edge_key(edge);
