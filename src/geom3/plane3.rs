@@ -94,6 +94,17 @@ impl Plane3 {
         let new_repr = repr.transformed(iso);
         Self::from(&new_repr)
     }
+
+    pub fn intersection_distance(&self, sp: &SurfacePoint3) -> Option<f64> {
+        let p0 = Point3::from(self.normal.into_inner() * self.d);
+
+        let denom = self.normal.dot(&sp.normal);
+        if denom <= 1e-6 {
+            None
+        } else {
+            Some((p0 - sp.point).dot(&self.normal) / denom)
+        }
+    }
 }
 
 // TODO: should this be a Result?
