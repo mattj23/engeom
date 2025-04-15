@@ -255,6 +255,7 @@ impl Curve3 {
         let new_points = ramer_douglas_peucker(self.line.vertices(), tol);
         Self::from_points(&new_points, tol).unwrap()
     }
+
 }
 
 fn resample_by_max_spacing(curve: &Curve3, max_spacing: f64) -> Curve3 {

@@ -200,6 +200,29 @@ impl Mesh {
         Self::new(vertices, triangles, is_solid)
     }
 
+    pub fn create_cylinder(radius: f64, height: f64, steps: usize) -> Self {
+        let mut vertices = Vec::new();
+        let mut faces: Vec<[u32; 3]> = Vec::new();
+
+        for i in 0..steps {
+            let angle = i as f64 * 2.0 * std::f64::consts::PI / (steps as f64);
+            let x = radius * angle.cos();
+            let y = radius * angle.sin();
+
+            // First vertex is i * 2
+            vertices.push(Point3::new(x, y, 0.0));
+            // Second vertex is i * 2 + 1
+            vertices.push(Point3::new(x, y, height));
+
+            let k = (i + 1) % steps;
+
+            faces.push([(i * 2) as u32, (i * 2 + 1) as u32, (k * 2 + 1) as u32]);
+            faces.push([(i * 2) as u32, (k * 2) as u32, (k * 2 + 1) as u32]);
+        }
+
+        Mesh::new(vertices, faces, false)
+    }
+
     pub fn get_patches(&self) -> Vec<Vec<usize>> {
         patches::compute_patch_indices(self)
     }

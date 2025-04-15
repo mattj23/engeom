@@ -80,6 +80,33 @@ impl<const D: usize> SurfacePoint<D> {
         let projection = self.projection(other);
         (projection - other).norm()
     }
+
+    /// Returns a new surface point shifted from the original surface point by the given distance
+    /// along the normal. This is useful for creating a new surface point that is a certain distance
+    /// away from the original surface point, in the direction of the normal.
+    ///
+    /// # Arguments
+    ///
+    /// * `shift`: the distance to offset the surface point along the normal
+    ///
+    /// returns: SurfacePoint<{ D }>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::{Point2, SurfacePoint2, Vector2};
+    /// use approx::assert_relative_eq;
+    ///
+    /// let sp = SurfacePoint2::new_normalize(Point2::new(0.0, 0.0), Vector2::new(0.0, 1.0));
+    ///
+    /// let shifted = sp.shift(2.0);
+    /// assert_relative_eq!(shifted.point, Point2::new(0.0, 2.0), epsilon = 1e-6);
+    /// assert_relative_eq!(shifted.normal.into_inner(), Vector2::new(0.0, 1.0), epsilon = 1e-6);
+    /// ```
+    pub fn shift(&self, offset: f64) -> Self {
+        let new_point = self.point + self.normal.as_ref() * offset;
+        Self::new(new_point, self.normal)
+    }
 }
 
 /// Created a vector of `SurfacePoint` instances from a vector of points and a vector of normals.
