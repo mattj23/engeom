@@ -16,6 +16,10 @@ pub trait IsoExtensions3 {
     fn try_from_basis_yx(e1: &Vector3, e0: &Vector3, origin: Option<Point3>) -> Result<Iso3>;
     fn try_from_basis_zx(e2: &Vector3, e0: &Vector3, origin: Option<Point3>) -> Result<Iso3>;
     fn try_from_basis_zy(e2: &Vector3, e1: &Vector3, origin: Option<Point3>) -> Result<Iso3>;
+
+    fn from_rx(angle: f64) -> Iso3;
+    fn from_ry(angle: f64) -> Iso3;
+    fn from_rz(angle: f64) -> Iso3;
 }
 
 impl IsoExtensions3 for Iso3 {
@@ -219,6 +223,18 @@ impl IsoExtensions3 for Iso3 {
         let e0 = e1.cross(&e2).try_normalize(1e-10).ok_or("Could not normalize e0")?;
         let e1 = e2.cross(&e0).try_normalize(1e-10).ok_or("Could not normalize e2")?;
         from_bases(e0, e1, e2, origin)
+    }
+
+    fn from_rx(angle: f64) -> Iso3 {
+        Iso3::rotation(Vector3::x() * angle)
+    }
+
+    fn from_ry(angle: f64) -> Iso3 {
+        Iso3::rotation(Vector3::y() * angle)
+    }
+
+    fn from_rz(angle: f64) -> Iso3 {
+        Iso3::rotation(Vector3::z() * angle)
     }
 }
 
