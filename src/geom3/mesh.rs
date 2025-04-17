@@ -12,8 +12,10 @@ mod patches;
 mod queries;
 mod sampling;
 mod uv_mapping;
+mod collisions;
 
 pub use self::uv_mapping::UvMapping;
+pub use self::collisions::MeshCollisionSet;
 use crate::geom3::Aabb3;
 use crate::{Iso3, Point2, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
 pub use edges::MeshEdges;

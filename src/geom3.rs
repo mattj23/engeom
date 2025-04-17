@@ -13,7 +13,7 @@ use std::ops;
 
 use crate::TransformBy;
 pub use curve3::{Curve3, CurveStation3};
-pub use mesh::{Mesh, UvMapping};
+pub use mesh::{Mesh, UvMapping, MeshCollisionSet};
 pub use plane3::Plane3;
 pub use point_cloud::{PointCloud, PointCloudFeatures, PointCloudKdTree};
 pub use iso3::IsoExtensions3;
