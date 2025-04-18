@@ -20,6 +20,7 @@ use crate::geom3::Aabb3;
 use crate::{Iso3, Point2, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
 pub use edges::MeshEdges;
 use parry3d_f64::shape::{TriMesh, TriMeshFlags};
+use parry3d_f64::transformation;
 
 #[derive(Clone)]
 pub struct Mesh {
@@ -123,6 +124,12 @@ impl Mesh {
             is_solid,
             uv: None,
         }
+    }
+
+    /// Return a convex hull of the points in the mesh.
+    pub fn convex_hull(&self) -> Self {
+        let (vertices, faces) = transformation::convex_hull(self.shape.vertices());
+        Self::new(vertices, faces, true)
     }
 
     pub fn append(&mut self, other: &Mesh) -> Result<()> {
