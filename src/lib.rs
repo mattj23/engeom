@@ -15,6 +15,10 @@ pub mod sensor;
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
+// Re-export parry and nalgebra
+pub use parry3d_f64::na as na;
+pub use parry3d_f64 as parry3d;
+
 // Common one dimensional functions
 pub use func1::{Func1, Gaussian1, Line1, Polynomial, Series1};
 

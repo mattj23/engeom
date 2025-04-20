@@ -2,6 +2,7 @@
 //! indices into the vertex list.  This abstraction is built around the `TriMesh` type from the
 //! `parry3d` crate.
 
+mod collisions;
 mod conformal;
 mod edges;
 mod faces;
@@ -12,15 +13,14 @@ mod patches;
 mod queries;
 mod sampling;
 mod uv_mapping;
-mod collisions;
 
-pub use self::uv_mapping::UvMapping;
 pub use self::collisions::MeshCollisionSet;
-use crate::geom3::Aabb3;
+pub use self::uv_mapping::UvMapping;
+use crate::geom3::{Aabb3, IsoExtensions3};
 use crate::{Iso3, Point2, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
 pub use edges::MeshEdges;
 use parry3d_f64::shape::{TriMesh, TriMeshFlags};
-use parry3d_f64::transformation;
+use parry3d_f64::{shape, transformation};
 
 #[derive(Clone)]
 pub struct Mesh {
@@ -204,32 +204,79 @@ impl Mesh {
         }
     }
 
-    pub fn create_box(width: f64, height: f64, depth: f64, is_solid: bool) -> Self {
-        let (vertices, triangles) = box_geom(width, height, depth);
+    pub fn create_cone(half_height: f64, radius: f64, steps: usize) -> Self {
+        let cone = shape::Cone::new(half_height, radius);
+        let (vertices, faces) = cone.to_trimesh(steps as u32);
+
+        Self::new(vertices, faces, true)
+    }
+
+    pub fn create_capsule(
+        p0: &Point3,
+        p1: &Point3,
+        radius: f64,
+        n_theta: usize,
+        n_phi: usize,
+    ) -> Self {
+        let capsule = shape::Capsule::new(*p0, *p1, radius);
+        let (vertices, faces) = capsule.to_trimesh(n_theta as u32, n_phi as u32);
+
+        Self::new(vertices, faces, true)
+    }
+
+    pub fn create_sphere(radius: f64, n_theta: usize, n_phi: usize) -> Self {
+        let sphere = shape::Ball::new(radius);
+        let (vertices, faces) = sphere.to_trimesh(n_theta as u32, n_phi as u32);
+
+        Self::new(vertices, faces, true)
+    }
+
+    pub fn create_box(length: f64, width: f64, height: f64, is_solid: bool) -> Self {
+        let bx = shape::Cuboid::new(Vector3::new(length / 2.0, width / 2.0, height / 2.0));
+        let (vertices, triangles) = bx.to_trimesh();
         Self::new(vertices, triangles, is_solid)
     }
 
     pub fn create_cylinder(radius: f64, height: f64, steps: usize) -> Self {
-        let mut vertices = Vec::new();
-        let mut faces: Vec<[u32; 3]> = Vec::new();
+        let cyl = shape::Cylinder::new(height / 2.0, radius);
+        let (vertices, faces) = cyl.to_trimesh(steps as u32);
 
-        for i in 0..steps {
-            let angle = i as f64 * 2.0 * std::f64::consts::PI / (steps as f64);
-            let x = radius * angle.cos();
-            let y = radius * angle.sin();
+        Self::new(vertices, faces, true)
+    }
 
-            // First vertex is i * 2
-            vertices.push(Point3::new(x, y, 0.0));
-            // Second vertex is i * 2 + 1
-            vertices.push(Point3::new(x, y, height));
+    pub fn create_rect_beam_between(
+        p0: &Point3,
+        p1: &Point3,
+        width: f64,
+        height: f64,
+        up: &Vector3,
+    ) -> Result<Self> {
+        let v = *p1 - *p0;
+        let pc = *p0 + v / 2.0;
+        let box_geom = shape::Cuboid::new(Vector3::new(width / 2.0, height / 2.0, v.norm() / 2.0));
 
-            let k = (i + 1) % steps;
+        // I think this is OK?
+        let transform = Iso3::try_from_basis_zy(&v, up, Some(pc))?;
 
-            faces.push([(i * 2) as u32, (i * 2 + 1) as u32, (k * 2 + 1) as u32]);
-            faces.push([(i * 2) as u32, (k * 2) as u32, (k * 2 + 1) as u32]);
-        }
+        let (vertices, faces) = box_geom.to_trimesh();
+        let mut mesh = Self::new(vertices, faces, true);
+        mesh.transform(&transform);
+        Ok(mesh)
+    }
 
-        Mesh::new(vertices, faces, false)
+    pub fn create_cylinder_between(p0: &Point3, p1: &Point3, radius: f64, steps: usize) -> Self {
+        let v = *p1 - *p0;
+        let pc = *p0 + v / 2.0;
+        let cyl = shape::Cylinder::new(v.norm() / 2.0, radius);
+
+        // I think this is OK?
+        let transform = Iso3::try_from_basis_yz(&v, &Vector3::z(), Some(pc))
+            .unwrap_or(Iso3::try_from_basis_yx(&v, &Vector3::x(), Some(pc)).unwrap());
+
+        let (vertices, faces) = cyl.to_trimesh(steps as u32);
+        let mut mesh = Self::new(vertices, faces, true);
+        mesh.transform(&transform);
+        mesh
     }
 
     pub fn get_patches(&self) -> Vec<Vec<usize>> {

@@ -4,6 +4,7 @@ pub mod mesh;
 mod plane3;
 mod point_cloud;
 mod iso3;
+mod xyzwpr;
 
 use parry3d_f64::na::UnitQuaternion;
 
@@ -17,6 +18,7 @@ pub use mesh::{Mesh, UvMapping, MeshCollisionSet};
 pub use plane3::Plane3;
 pub use point_cloud::{PointCloud, PointCloudFeatures, PointCloudKdTree};
 pub use iso3::IsoExtensions3;
+pub use xyzwpr::XyzWpr;
 
 pub type Point3 = parry3d_f64::na::Point3<f64>;
 pub type Vector3 = parry3d_f64::na::Vector3<f64>;
