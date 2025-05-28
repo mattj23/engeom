@@ -172,7 +172,7 @@ impl AirfoilEdge {
 
 /// This struct contains the results of a geometric analysis of an airfoil section.  It includes
 /// the camber line, optional leading and trailing edge information, and other properties.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct AirfoilGeometry {
     /// The leading edge point of the airfoil section, if it was detected.
     pub leading_edge: Option<AirfoilEdge>,

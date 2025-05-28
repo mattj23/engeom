@@ -11,6 +11,7 @@ use crate::{Arc2, Circle2, Result, Series1, Vector2};
 use parry2d_f64::na::Unit;
 use parry2d_f64::query::{PointQueryWithLocation, Ray};
 use parry2d_f64::shape::{ConvexPolygon, Polyline};
+use serde::{Deserialize, Serialize};
 
 /// A `CurveStation2` is a convenience struct which represents a location on the manifold defined
 /// by the curve. It has a point, a direction, and a normal. It has an index and a fraction which
@@ -195,7 +196,7 @@ impl<'a> CurveStation2<'a> {
 /// A Curve2 is a 2-dimensional polygonal chain in which its points are connected. It optionally
 /// may include normals. This struct and its methods allow for convenient handling of distance
 /// searches, transformations, resampling, and splitting.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Curve2 {
     line: Polyline,
 
