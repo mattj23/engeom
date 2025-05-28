@@ -45,21 +45,11 @@ pub trait Line2 {
     fn orthogonal(&self) -> Vector2 {
         Iso2::rotation(-std::f64::consts::PI / 2.0) * self.dir()
     }
-
-    // TODO: Remove if nothing breaks
-    // /// Returns a ray that has rotated this entity by 90 degrees
-    // fn turned(&self) -> Ray {
-    //     Ray::new(self.origin(), self.orthogonal())
-    // }
-    //
-    // fn reversed(&self) -> Ray {
-    //     Ray::new(self.origin() + self.dir(), -self.dir())
-    // }
 }
 
 impl Line2 for Ray2 {
     fn origin(&self) -> Point2 {
-        self.origin
+        self.origin.clone()
     }
 
     fn dir(&self) -> Vector2 {

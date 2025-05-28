@@ -1,4 +1,4 @@
-use super::polyline2::{polyline_intersections, spanning_ray, SpanningRay};
+use super::polyline2::{SpanningRay, polyline_intersections, spanning_ray};
 use crate::common::points::{
     dist, max_point_in_direction, ramer_douglas_peucker, transform_points,
 };
@@ -6,7 +6,7 @@ use crate::common::{Intersection, Resample};
 use crate::errors::InvalidGeometry;
 use crate::geom2::hull::convex_hull_2d;
 use crate::geom2::line2::Segment2;
-use crate::geom2::{Aabb2, Iso2, Point2, SurfacePoint2, UnitVec2};
+use crate::geom2::{Aabb2, Iso2, Line2, Point2, SurfacePoint2, UnitVec2, intersection_param};
 use crate::{Arc2, Circle2, Result, Series1, Vector2};
 use parry2d_f64::na::Unit;
 use parry2d_f64::query::{PointQueryWithLocation, Ray};
@@ -213,8 +213,9 @@ impl Curve2 {
         self.line.vertices()
     }
 
+    /// Clones the vertex at the given index.
     pub fn vtx(&self, i: usize) -> Point2 {
-        self.line.vertices()[i]
+        self.line.vertices()[i].clone()
     }
 
     pub fn aabb(&self) -> &Aabb2 {
@@ -325,11 +326,7 @@ impl Curve2 {
             }
         }
 
-        if votes < 0.0 {
-            Ok(c.reversed())
-        } else {
-            Ok(c)
-        }
+        if votes < 0.0 { Ok(c.reversed()) } else { Ok(c) }
     }
 
     pub fn count(&self) -> usize {
@@ -677,12 +674,15 @@ impl Curve2 {
         }
     }
 
+    /// Clones and reverses the curve, such that the first point becomes the last point, and the
+    /// last point becomes the first. The original curve is unmodified.
     pub fn reversed(&self) -> Self {
         let mut points = self.clone_points();
         points.reverse();
         Curve2::from_points(&points, self.tol, false).unwrap()
     }
 
+    /// Create a convex polygon from the convex hull of the curve's vertices.
     pub fn make_hull(&self) -> Option<ConvexPolygon> {
         ConvexPolygon::from_convex_hull(self.line.vertices())
     }
@@ -758,6 +758,20 @@ impl Curve2 {
         Curve2::from_points(&new_points, self.tol, self.is_closed).unwrap()
     }
 
+    /// Resample the curve using the specified mode. This will return a new curve.
+    ///
+    /// # Arguments
+    ///
+    /// * `mode`: the resampling mode to use, which can be by count, by spacing, or by maximum
+    ///   allowable spacing.
+    ///
+    /// returns: Result<Curve2, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
     pub fn resample(&self, mode: Resample) -> Result<Self> {
         match mode {
             Resample::ByCount(n) => resample_by_count(self, n),
@@ -789,6 +803,99 @@ impl Curve2 {
     pub fn transformed_by(&self, transform: &Iso2) -> Self {
         let points = transform_points(self.line.vertices(), transform);
         Curve2::from_points(&points, self.tol, self.is_closed).unwrap()
+    }
+
+    /// Create a new curve which is the result of offsetting the vertices of this curve by the
+    /// given offset. The direction of each vertex offset will be the same as the direction of the
+    /// surface normal at the curve station corresponding to that vertex, which is the angle
+    /// bisecting the normals of the two edges that meet at the vertex.  Vertices at the ends of
+    /// the curve (on an open curve) will have the same normal as the edge they are connected to.
+    ///
+    /// Compared to `offset_segments`, this method will move the vertices of the curve while
+    /// allowing the distance between the bodies of the initial and resulting segments to change.
+    /// Generally speaking, use this method if you primarily care about the vertices and not the
+    /// segments, or if the curvature between adjacent segments is very low.
+    ///
+    /// # Arguments
+    ///
+    /// * `offset`: the offset distance to apply to the vertices of the curve
+    ///
+    /// returns: Result<Curve2, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    pub fn offset_vertices(&self, offset: f64) -> Result<Self> {
+        let mut new_points = Vec::with_capacity(self.count());
+        for i in 0..self.count() {
+            let station = self.at_vertex(i);
+            let offset_point = station.surface_point().at_distance(offset);
+            new_points.push(offset_point);
+        }
+
+        Curve2::from_points(&new_points, self.tol, self.is_closed)
+    }
+
+    /// Create a new curve which is the result of offsetting the segments of this curve by the
+    /// given offset. The direction of the offset is perpendicular to the direction of the segment,
+    /// and a positive offset will move the segment outward from the curve, while a negative offset
+    /// will move it inward.  Outward and inward are defined based on the counter-clockwise winding
+    /// convention.
+    ///
+    /// Vertices will be moved to the intersection of their adjacent segments.
+    ///
+    /// Compared to `offset_vertices`, this method will preserve the distance between the segments
+    /// bodies of the initial and resulting curves, while allowing vertices on outside corners to
+    /// get farther from the original as necessary for the segments to be straight lines.
+    ///
+    /// # Arguments
+    ///
+    /// * `offset`: the offset distance to apply to the segments of the curve
+    ///
+    /// returns: Result<Curve2, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    pub fn offset_segments(&self, offset: f64) -> Result<Self> {
+        let mut new_segments = Vec::new();
+        let mut new_points = Vec::with_capacity(self.count());
+
+        for i in 0..self.count() - 1 {
+            let seg = Segment2::try_new(self.vtx(i), self.vtx(i + 1))?;
+            new_segments.push(seg.offsetted(offset));
+        }
+
+        // Special case for the first vertex if the curve is closed
+        if self.is_closed {
+            new_points.push(vertex_between_segs(
+                new_segments.last().unwrap(),
+                new_segments.first().unwrap(),
+            )?);
+        } else {
+            new_points.push(new_segments.first().unwrap().a.clone());
+        }
+
+        // Calculate all vertices between segments
+        for i in 0..new_segments.len() - 1 {
+            let seg = &new_segments[i];
+            let next_seg = &new_segments[i + 1];
+            let new_vtx = vertex_between_segs(seg, next_seg)?;
+            new_points.push(new_vtx);
+        }
+
+        // Special case for the last vertex if the curve is closed
+        if self.is_closed {
+            new_points.push(new_points.first().unwrap().clone());
+        } else {
+            new_points.push(new_segments.last().unwrap().b.clone());
+        }
+
+        Curve2::from_points(&new_points, self.tol, self.is_closed)
     }
 
     /// Perform a ray cast against the curve, returning a list of intersections, each as a pair of
@@ -1068,6 +1175,33 @@ fn resample_at_positions(curve: &Curve2, positions: &[f64]) -> Result<Curve2> {
     Curve2::from_points(&points, curve.tol, curve.is_closed)
 }
 
+/// Generates the vertex between two offset segments, which is the point at the intersection of the
+/// two segments. This assumes that (1) segment `a` and segment `b` were originally next to each
+/// other, such that `a`'s endpoint was `b`'s starting point, and (2) the segments are offset by the
+/// same distance.
+///
+/// If the two segments were parallel, the two segments will still share the same middle vertex,
+/// which can be returned as is.
+///
+/// # Arguments
+///
+/// * `a`: the first segment, whose endpoint is the start of `b`
+/// * `b`: the second segment, whose start is the endpoint of `a`
+///
+/// returns: Result<OPoint<f64, Const<2>>, Box<dyn Error, Global>>
+fn vertex_between_segs(a: &Segment2, b: &Segment2) -> Result<Point2> {
+    if dist(&a.b, &b.a) < 1e-10 {
+        // If the segments are parallel, we can just return the endpoint of `a`
+        Ok(a.b)
+    } else {
+        if let Some((t0, _)) = intersection_param(&a.a, &a.dir(), &b.a, &b.dir()) {
+            Ok(a.at(t0))
+        } else {
+            Err("Adjacent segments do not intersect".to_string().into())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1128,7 +1262,52 @@ mod tests {
     }
 
     #[test]
-    fn test_closest_point() {
+    fn offset_segments_closed() {
+        let curve = Curve2::from_points(&sample_points(&sample2()), 1e-6, true).unwrap();
+        let offset = curve.offset_segments(0.1).unwrap();
+
+        assert!(offset.is_closed());
+        assert_eq!(offset.count(), curve.count());
+        assert_relative_eq!(Point2::new(-0.1, -0.1), offset.vtx(0), epsilon = 1e-6);
+        assert_relative_eq!(Point2::new(1.1, -0.1), offset.vtx(1), epsilon = 1e-6);
+        assert_relative_eq!(Point2::new(1.1, 1.1), offset.vtx(2), epsilon = 1e-6);
+        assert_relative_eq!(Point2::new(-0.1, 1.1), offset.vtx(3), epsilon = 1e-6);
+        assert_relative_eq!(Point2::new(-0.1, -0.1), offset.vtx(4), epsilon = 1e-6);
+    }
+
+    #[test]
+    fn offset_segments_open() {
+        let curve = Curve2::from_points(&sample_points(&sample1()), 1e-6, false).unwrap();
+        let offset = curve.offset_segments(0.1).unwrap();
+
+        assert!(!offset.is_closed());
+        assert_eq!(offset.count(), curve.count());
+        assert_relative_eq!(Point2::new(0.0, -0.1), offset.vtx(0), epsilon = 1e-6);
+        assert_relative_eq!(Point2::new(1.1, -0.1), offset.vtx(1), epsilon = 1e-6);
+        assert_relative_eq!(Point2::new(1.1, 1.1), offset.vtx(2), epsilon = 1e-6);
+        assert_relative_eq!(Point2::new(0.0, 1.1), offset.vtx(3), epsilon = 1e-6);
+    }
+
+    #[test]
+    fn offset_segments_parallel() {
+        let curve = Curve2::from_points(
+            &sample_points(&vec![(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)]),
+            1e-6,
+            false,
+        )
+        .unwrap();
+
+        let offset = curve.offset_segments(0.1).unwrap();
+        assert!(!offset.is_closed());
+        assert_eq!(offset.count(), curve.count());
+
+        assert_relative_eq!(Point2::new(0.0, -0.1), offset.vtx(0), epsilon = 1e-6);
+        assert_relative_eq!(Point2::new(1.0, -0.1), offset.vtx(1), epsilon = 1e-6);
+        assert_relative_eq!(Point2::new(2.0, -0.1), offset.vtx(2), epsilon = 1e-6);
+    }
+
+    #[test]
+    fn closest_point() {
         let points = sample_points(&sample1());
         let curve = Curve2::from_points(&points, 1e-6, true).unwrap();
 
@@ -1139,7 +1318,7 @@ mod tests {
     }
 
     #[test]
-    fn test_create_open() {
+    fn create_open() {
         let points = sample_points(&sample1());
         let curve = Curve2::from_points(&points, 1e-6, false).unwrap();
 
@@ -1148,7 +1327,7 @@ mod tests {
     }
 
     #[test]
-    fn test_create_force_closed() {
+    fn create_force_closed() {
         let points = sample_points(&sample1());
         let curve = Curve2::from_points(&points, 1e-6, true).unwrap();
 
@@ -1157,7 +1336,7 @@ mod tests {
     }
 
     #[test]
-    fn test_create_naturally_closed() {
+    fn create_naturally_closed() {
         let points = sample_points(&sample2());
         let curve = Curve2::from_points(&points, 1e-6, false).unwrap();
 
@@ -1182,7 +1361,7 @@ mod tests {
     #[test_case(0.0, (0.0, 0.0))]
     #[test_case(2.0, (1.0, 1.0))]
     #[test_case(2.25, (0.75, 1.0))]
-    fn test_points_at_length(l: f64, e: (f64, f64)) {
+    fn points_at_length(l: f64, e: (f64, f64)) {
         let points = sample_points(&sample1());
         let curve = Curve2::from_points(&points, 1e-6, true).unwrap();
         let result = curve.at_length(l).unwrap();
@@ -1200,7 +1379,7 @@ mod tests {
     #[test_case(3.0, (-1.0, 1.0))]
     #[test_case(3.5, (-1.0, 0.0))]
     #[test_case(4.0, (-1.0, -1.0))]
-    fn test_normals_at_length_closed(l: f64, ec: (f64, f64)) {
+    fn normals_at_length_closed(l: f64, ec: (f64, f64)) {
         let points = sample_points(&sample1());
         let curve = Curve2::from_points(&points, 1e-6, true).unwrap();
         let e = Unit::new_normalize(Vector2::new(ec.0, ec.1));
@@ -1217,7 +1396,7 @@ mod tests {
     #[test_case(2.0, (1.0, 1.0))]
     #[test_case(2.5, (0.0, 1.0))]
     #[test_case(3.0, (0.0, 1.0))]
-    fn test_normals_at_length_open(l: f64, ec: (f64, f64)) {
+    fn normals_at_length_open(l: f64, ec: (f64, f64)) {
         let points = sample_points(&sample1());
         let curve = Curve2::from_points(&points, 1e-6, false).unwrap();
         let e = Unit::new_normalize(Vector2::new(ec.0, ec.1));
@@ -1242,7 +1421,7 @@ mod tests {
     #[test_case(2.0)]
     #[test_case(2.1)]
     #[test_case(3.9)]
-    fn test_distance_along(l: f64) {
+    fn distance_along(l: f64) {
         let points = sample_points(&sample1());
         let curve = Curve2::from_points(&points, 1e-6, true).unwrap();
         let p = curve.at_length(l).unwrap().point;
@@ -1265,7 +1444,7 @@ mod tests {
     #[test_case((1.1, 1.8), false, Vec::<usize>::new())] // (0)      (1) |->| (2)      (3)     O/C
     #[test_case((1.1, 1.8), true, Vec::<usize>::new())] //  (0)      (1) |->| (2)      (3)     O/C
     #[test_case((3.1, 3.8), true, Vec::<usize>::new())] //  (0)      (1)      (2)      (3)|->| C
-    fn test_portioning(l: (f64, f64), c: bool, i: Vec<usize>) {
+    fn portioning(l: (f64, f64), c: bool, i: Vec<usize>) {
         let points = sample_points(&sample1());
         let curve = Curve2::from_points(&points, 1e-6, c).unwrap();
         let p0 = curve.at_length(l.0).unwrap().point;
