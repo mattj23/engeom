@@ -7,7 +7,7 @@ version = "0.2.13"
 edition = "2024"
 
 [workspace.dependencies]
-parry3d-f64 = {version= "0.21.1", features=["serde-serialize"]}
-parry2d-f64 = {version= "0.21.1", features=["serde-serialize"]}
+parry3d-f64 = { version = "0.21.1", features = ["serde-serialize"] }
+parry2d-f64 = { version = "0.21.1", features = ["serde-serialize"] }
 rand = "0.9.1"
 rayon = "1.10.0"
