@@ -10,7 +10,7 @@ use crate::metrology::Distance3;
 use engeom::PointCloudFeatures;
 use engeom::common::points::dist;
 use engeom::common::{Selection, SplitResult};
-use numpy::ndarray::{Array1, ArrayD};
+use numpy::ndarray::{Array1, Array2, ArrayD};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray2, PyReadonlyArrayDyn};
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
@@ -80,6 +80,22 @@ impl PointCloud {
             self.points = Some(array.into_pyarray(py).unbind());
         }
         self.points.as_ref().unwrap().bind(py)
+    }
+
+    #[getter]
+    fn colors<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray2<u8>>> {
+        if let Some(colors) = self.inner.colors() {
+            if self.colors.is_none() {
+                let flat_colors = colors.iter().flatten().map(|u| *u).collect::<Vec<_>>();
+                let array = Array2::from_shape_vec((self.inner.points().len(), 3), flat_colors)
+                    .expect("Failed to create color array");
+                self.colors = Some(array.into_pyarray(py).unbind());
+            }
+
+            Some(self.colors.as_ref().unwrap().bind(py))
+        } else {
+            None
+        }
     }
 
     #[getter]

@@ -151,7 +151,7 @@ mod tests {
         let mut box_mesh = Mesh::create_box(10.0, 5.0, 5.0, false);
         let adjust =
             Iso3::rotation(Vector3::new(0.7, 0.7, 0.7)) * Iso3::translation(-5.0, -2.5, -2.5);
-        box_mesh.transform(&adjust);
+        box_mesh.transform_by(&adjust);
         box_mesh
     }
 

@@ -216,7 +216,7 @@ impl PointCloud {
     /// ```
     ///
     /// ```
-    pub fn transform(&mut self, transform: &Iso3) {
+    pub fn transform_by(&mut self, transform: &Iso3) {
         for p in &mut self.points {
             *p = transform * *p;
         }

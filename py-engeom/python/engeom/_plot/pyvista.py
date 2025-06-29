@@ -8,7 +8,7 @@ from typing import List, Any, Dict, Union, Iterable, Tuple
 
 import numpy
 
-from engeom.geom3 import Mesh, Curve3, Vector3, Point3, Iso3, SurfacePoint3
+from engeom.geom3 import Mesh, Curve3, Vector3, Point3, Iso3, SurfacePoint3, PointCloud
 from engeom.metrology import Distance3
 from .common import LabelPlace
 
@@ -43,7 +43,7 @@ else:
         def add_points(self, *points, color: pyvista.ColorLike = "b", point_size: float = 5.0,
                        render_points_as_spheres: bool = True, **kwargs) -> pyvista.vtkActor:
             """
-            Add one or more points to be plotted.
+            Add one or more discrete points to be plotted.
             :param points: The points to add.
             :param color: The color to use for the point(s).
             :param point_size: The size of the point(s).
@@ -110,6 +110,24 @@ else:
             faces = numpy.hstack((prefix * 3, mesh.faces))
             data = pyvista.PolyData(mesh.vertices, faces)
             return self.plotter.add_mesh(data, **kwargs)
+
+        def add_point_cloud(self, cloud: PointCloud, use_colors: bool = True, normal_arrow_size: float = 0.0, **kwargs):
+            actors = []
+            if normal_arrow_size >= 0.0 and cloud.normals is not None:
+                arrow_color = kwargs.get("color", "gray")
+                arrow_actor = self.plotter.add_arrows(cloud.points, cloud.normals, mag=normal_arrow_size,
+                                                      color=arrow_color, reset_camera=False)
+                actors.append(arrow_actor)
+
+            if use_colors and cloud.colors is not None:
+                kwargs.pop("color", None)  # Remove color if it's set, as colors will be used from the cloud
+                kwargs["scalars"] = cloud.colors
+                kwargs["rgba"] = True
+
+            point_actor = self.plotter.add_points(cloud.points, **kwargs)
+            actors.append(point_actor)
+
+            return actors
 
         def distance(
                 self,

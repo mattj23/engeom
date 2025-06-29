@@ -160,7 +160,9 @@ impl Mesh {
     pub fn uv(&self) -> Option<&UvMapping> {
         self.uv.as_ref()
     }
-    pub fn transform(&mut self, transform: &Iso3) {
+
+    /// Transform the mesh in place by applying the given transformation to all vertices.
+    pub fn transform_by(&mut self, transform: &Iso3) {
         self.shape.transform_vertices(transform);
     }
 
@@ -260,7 +262,7 @@ impl Mesh {
 
         let (vertices, faces) = box_geom.to_trimesh();
         let mut mesh = Self::new(vertices, faces, true);
-        mesh.transform(&transform);
+        mesh.transform_by(&transform);
         Ok(mesh)
     }
 
@@ -275,7 +277,7 @@ impl Mesh {
 
         let (vertices, faces) = cyl.to_trimesh(steps as u32);
         let mut mesh = Self::new(vertices, faces, true);
-        mesh.transform(&transform);
+        mesh.transform_by(&transform);
         mesh
     }
 

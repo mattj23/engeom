@@ -91,7 +91,7 @@ impl Mesh {
     }
 
     fn transform_by(&mut self, iso: &Iso3) {
-        self.inner.transform(iso.get_inner());
+        self.inner.transform_by(iso.get_inner());
 
         self.clear_cached()
     }
