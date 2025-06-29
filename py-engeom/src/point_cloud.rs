@@ -14,6 +14,7 @@ use numpy::ndarray::{Array1, Array2, ArrayD};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray2, PyReadonlyArrayDyn};
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
+use std::path::PathBuf;
 
 #[pyclass]
 pub struct PointCloud {
@@ -59,6 +60,13 @@ impl PointCloud {
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         Ok(Self::from_inner(cloud))
+    }
+
+    #[staticmethod]
+    fn load_lptf3(path: PathBuf) -> PyResult<Self> {
+        let inner = engeom::io::load_lptf3(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
+
+        Ok(Self::from_inner(inner))
     }
 
     fn cloned(&self) -> Self {
