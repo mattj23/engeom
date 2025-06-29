@@ -1,25 +1,27 @@
-use std::time::Instant;
-use engeom::sensor::SimulatedPointSensor;
-use crate::mesh::Mesh;
-use crate::geom3::{Iso3, Point3, Vector3};
-use numpy::{IntoPyArray, PyArrayDyn, PyReadonlyArrayDyn};
-use numpy::ndarray::ArrayD;
-use pyo3::exceptions::PyValueError;
-use pyo3::{pyclass, pymethods, Bound, PyResult, Python};
 use crate::conversions::points_to_array3;
+use crate::geom3::{Iso3, Point3, Vector3};
+use crate::mesh::Mesh;
+use crate::point_cloud::PointCloud;
+use engeom::PointCloudFeatures;
+use engeom::sensors::SimulatedPointSensor;
+use numpy::ndarray::ArrayD;
+use numpy::{IntoPyArray, PyArrayDyn, PyReadonlyArrayDyn};
+use pyo3::exceptions::PyValueError;
+use pyo3::{Bound, PyResult, Python, pyclass, pymethods};
+use std::time::Instant;
 
 #[pyclass]
 #[derive(Clone)]
 pub struct LaserLine {
-    pub inner: engeom::sensor::LaserLine,
+    pub inner: engeom::sensors::LaserLine,
 }
 
 impl LaserLine {
-    pub fn get_inner(&self) -> &engeom::sensor::LaserLine {
+    pub fn get_inner(&self) -> &engeom::sensors::LaserLine {
         &self.inner
     }
 
-    pub fn from_inner(inner: engeom::sensor::LaserLine) -> Self {
+    pub fn from_inner(inner: engeom::sensors::LaserLine) -> Self {
         Self { inner }
     }
 }
@@ -38,7 +40,7 @@ impl LaserLine {
         rays: usize,
         angle_limit: Option<f64>,
     ) -> PyResult<Self> {
-        let inner = engeom::sensor::LaserLine::new(
+        let inner = engeom::sensors::LaserLine::new(
             ray_origin.get_inner().clone(),
             detect_origin.get_inner().clone(),
             line_start.get_inner().clone(),
@@ -55,31 +57,31 @@ impl LaserLine {
 
     fn get_points<'py>(
         &self,
-        py: Python<'py>,
         target: &Mesh,
         obstruction: Option<&Mesh>,
         iso: &Iso3,
-    ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
-        let result = self
-            .inner
-            .get_points(target.get_inner(), obstruction.map(|o| o.get_inner()), iso.get_inner());
-        Ok(points_to_array3(&result).into_pyarray(py))
+    ) -> PyResult<PointCloud> {
+        let (cloud, _) = self.inner.get_points(
+            target.get_inner(),
+            obstruction.map(|o| o.get_inner()),
+            iso.get_inner(),
+        );
+        Ok(PointCloud::from_inner(cloud))
     }
 }
-
 
 #[pyclass]
 #[derive(Clone)]
 pub struct PanningLaserLine {
-    pub inner: engeom::sensor::PanningLaserLine,
+    pub inner: engeom::sensors::PanningLaserLine,
 }
 
 impl PanningLaserLine {
-    pub fn get_inner(&self) -> &engeom::sensor::PanningLaserLine {
+    pub fn get_inner(&self) -> &engeom::sensors::PanningLaserLine {
         &self.inner
     }
 
-    pub fn from_inner(inner: engeom::sensor::PanningLaserLine) -> Self {
+    pub fn from_inner(inner: engeom::sensors::PanningLaserLine) -> Self {
         Self { inner }
     }
 }
@@ -87,12 +89,8 @@ impl PanningLaserLine {
 #[pymethods]
 impl PanningLaserLine {
     #[new]
-    fn new(
-        laser_line: LaserLine,
-        pan_vector: Vector3,
-        steps: usize,
-    ) -> PyResult<Self> {
-        let inner = engeom::sensor::PanningLaserLine::new(
+    fn new(laser_line: LaserLine, pan_vector: Vector3, steps: usize) -> PyResult<Self> {
+        let inner = engeom::sensors::PanningLaserLine::new(
             laser_line.get_inner().clone(),
             pan_vector.get_inner().clone(),
             steps,
@@ -103,15 +101,15 @@ impl PanningLaserLine {
 
     fn get_points<'py>(
         &self,
-        py: Python<'py>,
         target: &Mesh,
         obstruction: Option<&Mesh>,
         iso: &Iso3,
-    ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
-        // let start = Instant::now();
-        let result = self
-            .inner
-            .get_points(target.get_inner(), obstruction.map(|o| o.get_inner()), iso.get_inner());
-        Ok(points_to_array3(&result).into_pyarray(py))
+    ) -> PyResult<PointCloud> {
+        let (cloud, _) = self.inner.get_points(
+            target.get_inner(),
+            obstruction.map(|o| o.get_inner()),
+            iso.get_inner(),
+        );
+        Ok(PointCloud::from_inner(cloud))
     }
 }

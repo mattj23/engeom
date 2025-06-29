@@ -1,7 +1,7 @@
 from __future__ import annotations
 import numpy
 from .engeom import DeviationMode
-from .geom3 import Mesh, Iso3
+from .geom3 import Mesh, Iso3, PointCloud
 
 
 def points_to_mesh(
@@ -21,4 +21,12 @@ def points_to_mesh(
     and the mesh is calculated.
     :return: the isometry that best aligns the points to the mesh.
     """
+    ...
+
+def points_to_cloud(
+        points: numpy.ndarray[float],
+        cloud: PointCloud,
+        search_radius: float,
+        initial: Iso3,
+) -> Iso3:
     ...

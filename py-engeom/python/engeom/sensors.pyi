@@ -1,5 +1,5 @@
 from __future__ import annotations
-from .geom3 import Point3, Mesh, Iso3, Vector3
+from .geom3 import Point3, Mesh, Iso3, Vector3, PointCloud
 from numpy.typing import NDArray
 
 
@@ -28,7 +28,7 @@ class LaserLine:
         """
         ...
 
-    def get_points(self, target: Mesh, obstruction: Mesh | None, iso: Iso3) -> NDArray[float]:
+    def get_points(self, target: Mesh, obstruction: Mesh | None, iso: Iso3) -> PointCloud:
         """
 
         :param target:
@@ -48,7 +48,7 @@ class PanningLaserLine:
         """
         ...
 
-    def get_points(self, target: Mesh, obstruction: Mesh | None, iso: Iso3) -> NDArray[float]:
+    def get_points(self, target: Mesh, obstruction: Mesh | None, iso: Iso3) -> PointCloud:
         """
         :param target:
         :param obstruction:

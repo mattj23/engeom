@@ -387,7 +387,7 @@ dependencies = [
 
 [[package]]
 name = "engeom"
-version = "0.2.13"
+version = "0.2.14"
 dependencies = [
  "approx",
  "criterion",
@@ -1375,7 +1375,7 @@ dependencies = [
 
 [[package]]
 name = "py-engeom"
-version = "0.2.13"
+version = "0.2.14"
 dependencies = [
  "engeom",
  "numpy",

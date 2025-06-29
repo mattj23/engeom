@@ -1,13 +1,13 @@
-//! This module contains tools for simulating sensors and sensor data
+//! This module has tools for simulating laser triangulation sensors, which work by emitting a
+//! laser line into a scene and using a detector to measure the angle of the reflected laser line.
+//! These are commonly used sensors in metrology because of the relatively high performance they
+//! are capable of achieving at a disproportionately low cost compared to other technologies.
 
-use crate::{Iso3, Mesh, Point3, Result, Vector3};
-use parry3d_f64::na::Translation3;
+use crate::na::Translation3;
+use crate::sensors::SimulatedPointSensor;
+use crate::{Iso3, Mesh, Point3, PointCloud, PointCloudFeatures, UnitVec3, Vector3};
 use parry3d_f64::query::{Ray, RayCast};
 use std::f64::consts::PI;
-
-pub trait SimulatedPointSensor {
-    fn get_points(&self, target: &Mesh, obstruction: Option<&Mesh>, iso: &Iso3) -> Vec<Point3>;
-}
 
 /// Represents a laser line sensor where a line of rays are cast from a single point and must
 /// intersect a surface and be witnessed by another point in the sensor.
@@ -33,7 +33,7 @@ impl LaserLine {
         max_range: f64,
         rays: usize,
         angle_limit: Option<f64>,
-    ) -> Result<Self> {
+    ) -> crate::Result<Self> {
         if rays < 2 {
             return Err("Number of rays must be at least 2".into());
         }
@@ -50,12 +50,28 @@ impl LaserLine {
     }
 }
 
+fn obstruction_limit(obstruction: Option<&Mesh>, ray: &Ray, iso: &Iso3) -> f64 {
+    obstruction
+        .map(|ob| {
+            ob.tri_mesh()
+                .cast_ray(iso, ray, f64::MAX, false)
+                .unwrap_or(f64::MAX)
+        })
+        .unwrap_or(f64::MAX)
+}
+
 impl SimulatedPointSensor for LaserLine {
-    fn get_points(&self, target: &Mesh, obstruction: Option<&Mesh>, iso: &Iso3) -> Vec<Point3> {
+    fn get_points(
+        &self,
+        target: &Mesh,
+        obstruction: Option<&Mesh>,
+        iso: &Iso3,
+    ) -> (PointCloud, Option<Vec<f64>>) {
         let v = self.line_end - self.line_start;
         let limit = self.angle_limit.unwrap_or(PI / 2.0);
 
         let mut points = Vec::new();
+        let mut normals = Vec::new();
 
         for i in 0..self.rays {
             let f = (i as f64 / (self.rays - 1) as f64).clamp(0.0, 1.0);
@@ -66,13 +82,7 @@ impl SimulatedPointSensor for LaserLine {
 
             // Check if the emitted ray intersects with an obstruction. If it does, the ob_limit
             // will be less than the f64::MAX value
-            let ob_limit: f64 = obstruction
-                .map(|ob| {
-                    ob.tri_mesh()
-                        .cast_ray(iso, &ray, f64::MAX, false)
-                        .unwrap_or(f64::MAX)
-                })
-                .unwrap_or(f64::MAX);
+            let ob_limit = obstruction_limit(obstruction, &ray, iso);
 
             let range_limit = ob_limit.min(self.max_range);
 
@@ -98,13 +108,7 @@ impl SimulatedPointSensor for LaserLine {
                 let witness = Ray::new(self.detect_origin, &impact - self.detect_origin);
 
                 // Check if the witness ray intersects with the obstruction
-                let ob_limit: f64 = obstruction
-                    .map(|ob| {
-                        ob.tri_mesh()
-                            .cast_ray(iso, &witness, f64::MAX, false)
-                            .unwrap_or(f64::MAX)
-                    })
-                    .unwrap_or(f64::MAX);
+                let ob_limit = obstruction_limit(obstruction, &witness, iso);
                 if ob_limit < 1.0 - 1e-4 {
                     continue;
                 }
@@ -115,10 +119,14 @@ impl SimulatedPointSensor for LaserLine {
                 }
 
                 points.push(impact);
+                normals.push(UnitVec3::new_normalize(ri.normal));
             }
         }
 
-        points
+        // This should be safe because we assembled the points and normals together
+        let cloud = PointCloud::try_new(points, Some(normals), None).unwrap();
+
+        (cloud, None)
     }
 }
 
@@ -140,17 +148,26 @@ impl PanningLaserLine {
 }
 
 impl SimulatedPointSensor for PanningLaserLine {
-    fn get_points(&self, target: &Mesh, obstruction: Option<&Mesh>, iso: &Iso3) -> Vec<Point3> {
+    fn get_points(
+        &self,
+        target: &Mesh,
+        obstruction: Option<&Mesh>,
+        iso: &Iso3,
+    ) -> (PointCloud, Option<Vec<f64>>) {
         let mut points = Vec::new();
+        let mut normals = Vec::new();
 
         for i in 0..self.steps {
             let shift = Translation3::from(-self.pan_vector * i as f64);
             let inv = shift.inverse();
             let t = shift * iso;
-            let result = self.laser_line.get_points(target, obstruction, &t);
-            points.extend(result.iter().map(|p| inv * p));
+            let (cloud, _) = self.laser_line.get_points(target, obstruction, &t);
+            points.extend(cloud.points().iter().map(|p| inv * p));
+            normals.extend(cloud.normals().unwrap());
         }
 
-        points
+        let cloud = PointCloud::try_new(points, Some(normals), None).unwrap();
+
+        (cloud, None)
     }
 }

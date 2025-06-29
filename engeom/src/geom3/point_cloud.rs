@@ -80,6 +80,12 @@ impl PointCloud {
             colors,
         })
     }
+    
+    pub fn from_surface_points(points: &[SurfacePoint3]) -> Self {
+        let normals = points.iter().map(|p| p.normal).collect::<Vec<_>>();
+        let points = points.iter().map(|p| p.point).collect();
+        Self::try_new(points, Some(normals), None).unwrap()
+    }
 
     /// Merges another point cloud into this one, modifying this point cloud in place and
     /// consuming the other. The two point clouds must either both have normals or both not have
@@ -219,6 +225,16 @@ impl PointCloud {
             for n in normals {
                 *n = transform * *n;
             }
+        }
+    }
+    
+    pub fn into_with_tree(self) -> PointCloudKdTree {
+        let tree = KdTree3::new(&self.points);
+        PointCloudKdTree {
+            points: self.points,
+            normals: self.normals,
+            colors: self.colors,
+            tree,
         }
     }
 }

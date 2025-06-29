@@ -1796,3 +1796,41 @@ class RayBundle3:
         :return:
         """
         ...
+
+
+class PointCloud:
+    """
+    
+    """
+
+    def __init__(self, points: NDArray[float], normals: NDArray[float] | None = None,
+                 colors: NDArray[numpy.uint8] | None = None):
+        ...
+    
+    @property
+    def points(self) -> NDArray[float]:
+        """
+        Get the points of the point cloud as a numpy array of shape (n, 3).
+        :return: a numpy array of shape (n, 3) containing the points of the point cloud.
+        """
+        ...
+    
+    @property
+    def normals(self) -> NDArray[float] | None:
+        """
+        Get the normals of the point cloud as a numpy array of shape (n, 3). If no normals were provided, this will
+        return None.
+        :return: a numpy array of shape (n, 3) containing the normals of the point cloud, or None if no normals were
+        provided.
+        """
+        ...
+    
+    @property
+    def colors(self) -> NDArray[numpy.uint8] | None:
+        """
+        Get the colors of the point cloud as a numpy array of shape (n, 3). If no colors were provided, this will
+        return None.
+        :return: a numpy array of shape (n, 3) containing the colors of the point cloud, or None if no colors were
+        provided.
+        """
+        ...
