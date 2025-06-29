@@ -1834,3 +1834,66 @@ class PointCloud:
         provided.
         """
         ...
+    
+    def cloned(self) -> PointCloud:
+        """
+        Create a copy of the point cloud. This will return a new `PointCloud` object with the same points, normals, and
+        colors as the original.
+
+        :return: a new `PointCloud` object with the same points, normals, and colors as the original.
+        """
+        ...
+    
+    @staticmethod
+    def load_lptf3(path: str | Path) -> PointCloud:
+        """
+        Load a point cloud from a LPTF3 file. The LPTF3 format is a binary format used to store measurements from a 
+        triangulation-based laser profile sensor. 
+
+        :param path: the path to the LPTF3 file to load.
+        :return: a `PointCloud` object containing the points, normals, and colors from the file.
+        """
+        ...
+    
+    def append(self, other: PointCloud) -> PointCloud:
+        """
+        Append another point cloud to this one. The points, normals, and colors from the other point cloud will be
+        added to this point cloud.
+        
+        Will throw an error if the other point cloud has a different combination of normals and colors than this one.
+
+        :param other: the other point cloud to append.
+        :return: a new `PointCloud` object containing the combined points, normals, and colors.
+        """
+        ...
+    
+    def create_from_indices(self, indices: list[int]) -> PointCloud:
+        """
+        Create a new point cloud from a subset of the points in this point cloud, specified by the given indices.
+        The normals and colors will also be subsetted to match the points.
+
+        :param indices: a list of indices to select from the point cloud.
+        :return: a new `PointCloud` object containing the selected points, normals, and colors.
+        """
+        ...
+    
+    def sample_poisson_disk(self, radius: float) -> list[int]:
+        """
+        Sample a subset of points from the point cloud using a Poisson disk sampling algorithm. This will return a list
+        of indices of the points that were preserved. The points will be selected such that no two points are closer 
+        than the given radius.
+
+        :param radius: the minimum distance between sampled points.
+        :return: a list of indices of the points that were selected.
+        """
+        ...
+    
+    def transform_by(self, iso: Iso3) -> PointCloud:
+        """
+        Transform the point cloud by an isometry. This will return a new `PointCloud` object with the transformed
+        points, normals, and colors.
+
+        :param iso: the isometry to transform the point cloud by.
+        :return: a new `PointCloud` object with the transformed points, normals, and colors.
+        """
+        ...

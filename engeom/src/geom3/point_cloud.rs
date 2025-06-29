@@ -1,6 +1,8 @@
+use crate::common::kd_tree::{KdTreeSearch, MatchedTree};
 use crate::{Iso3, KdTree3, Point3, Result, SurfacePoint3, UnitVec3};
 use bounding_volume::Aabb;
 use parry3d_f64::bounding_volume;
+use uuid::Uuid;
 
 pub trait PointCloudFeatures {
     fn points(&self) -> &[Point3];
@@ -19,7 +21,12 @@ pub trait PointCloudFeatures {
         Aabb::from_points(self.points())
     }
 
-    fn create_from_indices(&self, indices: &[usize]) -> PointCloud {
+    fn create_from_indices(&self, indices: &[usize]) -> Result<PointCloud> {
+        // Verify that all indices are valid
+        if indices.iter().any(|&i| i >= self.len()) {
+            return Err("Index out of bounds".into());
+        }
+        
         let points = self.points();
         let normals = self.normals();
         let colors = self.colors();
@@ -28,13 +35,14 @@ pub trait PointCloudFeatures {
         let normals = normals.map(|n| indices.iter().map(|i| n[*i]).collect());
         let colors = colors.map(|c| indices.iter().map(|i| c[*i]).collect());
 
-        PointCloud::try_new(points, normals, colors).unwrap()
+        PointCloud::try_new(points, normals, colors)
     }
 }
 
 /// A mutable point cloud with optional normals and colors.
 #[derive(Clone)]
 pub struct PointCloud {
+    tree_uuid: Uuid,
     points: Vec<Point3>,
     normals: Option<Vec<UnitVec3>>,
     colors: Option<Vec<[u8; 3]>>,
@@ -75,12 +83,13 @@ impl PointCloud {
             }
         }
         Ok(Self {
+            tree_uuid: Uuid::new_v4(),
             points,
             normals,
             colors,
         })
     }
-    
+
     pub fn from_surface_points(points: &[SurfacePoint3]) -> Self {
         let normals = points.iter().map(|p| p.normal).collect::<Vec<_>>();
         let points = points.iter().map(|p| p.point).collect();
@@ -130,6 +139,8 @@ impl PointCloud {
             self.colors.as_mut().unwrap().extend(colors);
         }
 
+        self.tree_uuid = Uuid::new_v4();
+
         Ok(())
     }
 
@@ -174,6 +185,8 @@ impl PointCloud {
         if let Some(color) = color {
             self.colors.as_mut().unwrap().push(color);
         }
+
+        self.tree_uuid = Uuid::new_v4();
         Ok(())
     }
 
@@ -196,6 +209,7 @@ impl PointCloud {
     /// ```
     pub fn empty(has_normals: bool, has_colors: bool) -> Self {
         Self {
+            tree_uuid: Uuid::new_v4(),
             points: Vec::new(),
             normals: if has_normals { Some(Vec::new()) } else { None },
             colors: if has_colors { Some(Vec::new()) } else { None },
@@ -226,16 +240,16 @@ impl PointCloud {
                 *n = transform * *n;
             }
         }
+
+        self.tree_uuid = Uuid::new_v4();
     }
-    
-    pub fn into_with_tree(self) -> PointCloudKdTree {
-        let tree = KdTree3::new(&self.points);
-        PointCloudKdTree {
-            points: self.points,
-            normals: self.normals,
-            colors: self.colors,
-            tree,
+
+    pub fn create_matched_tree(&self) -> Result<MatchedTree<3>> {
+        if self.points.is_empty() {
+            return Err("Cannot create a KD tree from an empty point cloud".into());
         }
+        let tree = KdTree3::new(&self.points);
+        Ok(MatchedTree::new(self.tree_uuid, tree))
     }
 }
 
@@ -282,34 +296,52 @@ impl PointCloudFeatures for PointCloud {
     }
 }
 
-/// An immutable point cloud with optional normals and colors.
-pub struct PointCloudKdTree {
-    points: Vec<Point3>,
-    normals: Option<Vec<UnitVec3>>,
-    colors: Option<Vec<[u8; 3]>>,
-    tree: KdTree3,
+pub struct PointCloudKdTree<'a> {
+    cloud: &'a PointCloud,
+    tree: &'a MatchedTree<3>,
 }
 
-impl PointCloudKdTree {
-    pub fn into_cloud(self) -> PointCloud {
-        PointCloud::try_new(self.points, self.normals, self.colors).unwrap()
+impl<'a> PointCloudKdTree<'a> {
+    pub fn try_new(cloud: &'a PointCloud, tree: &'a MatchedTree<3>) -> Result<Self> {
+        if cloud.tree_uuid != tree.tree_uuid() {
+            return Err("The point cloud and the KD tree do not match".into());
+        }
+        Ok(Self { cloud, tree })
     }
 
     pub fn tree(&self) -> &KdTree3 {
-        &self.tree
+        self.tree.tree()
+    }
+
+    pub fn sample_poisson_disk(&self, radius: f64) -> Vec<usize> {
+        let mut mask = vec![true; self.cloud.points.len()];
+        for i in 0..self.cloud.points.len() {
+            if !mask[i] {
+                continue;
+            }
+            let neighbors = self.tree().within(&self.cloud.points[i], radius);
+            for (n, _) in neighbors {
+                mask[n] = false;
+            }
+        }
+
+        mask.iter()
+            .enumerate()
+            .filter_map(|(i, b)| if *b { Some(i) } else { None })
+            .collect::<Vec<_>>()
     }
 }
 
-impl PointCloudFeatures for PointCloudKdTree {
+impl PointCloudFeatures for PointCloudKdTree<'_> {
     fn points(&self) -> &[Point3] {
-        &self.points
+        &self.cloud.points
     }
 
     fn normals(&self) -> Option<&[UnitVec3]> {
-        self.normals.as_deref()
+        self.cloud.normals.as_deref()
     }
 
     fn colors(&self) -> Option<&[[u8; 3]]> {
-        self.colors.as_deref()
+        self.cloud.colors.as_deref()
     }
 }

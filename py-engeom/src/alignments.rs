@@ -39,20 +39,22 @@ pub fn points_to_cloud(
 ) -> PyResult<Iso3> {
     let points = array2_to_points3(&points.as_array())?;
 
-    println!("normals: {}", cloud.get_inner().normals().unwrap().len());
-    // Must be a better way to do this
-    let with_tree = cloud.get_inner().clone().into_with_tree();
-    println!("normals: {}", with_tree.normals().unwrap().len());
-
-    let result = engeom::geom3::align3::points_to_cloud(
-        &points,
-        &with_tree,
-        search_radius,
-        initial.get_inner(),
-    );
-
-    match result {
-        Ok(align) => Ok(Iso3::from_inner(*align.transform())),
-        Err(e) => Err(PyValueError::new_err(e.to_string())),
-    }
+    // println!("normals: {}", cloud.get_inner().normals().unwrap().len());
+    // // Must be a better way to do this
+    // let with_tree = cloud.get_inner().clone().into_with_tree();
+    // println!("normals: {}", with_tree.normals().unwrap().len());
+    // 
+    // let result = engeom::geom3::align3::points_to_cloud(
+    //     &points,
+    //     &with_tree,
+    //     search_radius,
+    //     initial.get_inner(),
+    // );
+    // 
+    // match result {
+    //     Ok(align) => Ok(Iso3::from_inner(*align.transform())),
+    //     Err(e) => Err(PyValueError::new_err(e.to_string())),
+    // }
+    
+    todo!()
 }

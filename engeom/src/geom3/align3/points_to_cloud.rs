@@ -11,7 +11,7 @@ use crate::common::points::{dist, mean_point};
 
 struct PointsToCloud<'a> {
     points: &'a [Point3],
-    cloud: &'a PointCloudKdTree,
+    cloud: &'a PointCloudKdTree<'a>,
     search_radius: f64,
     cloud_normals: &'a [UnitVec3],
     params: RcParams3,
@@ -159,7 +159,9 @@ mod tests {
     fn test_points_cloud_box() {
         let box_mesh = rotated_box_mesh();
 
-        let ref_cloud = PointCloud::from_surface_points(&box_mesh.sample_poisson(0.1)).into_with_tree();
+        let base_cloud = PointCloud::from_surface_points(&box_mesh.sample_poisson(0.1));
+        let tree = base_cloud.create_matched_tree().unwrap();
+        let ref_cloud = PointCloudKdTree::try_new(&base_cloud, &tree).unwrap();
         
         let disturb = Iso3::from_parts(
             Translation3::new(-1.0, 0.5, 0.5),

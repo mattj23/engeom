@@ -1,7 +1,30 @@
-use kiddo::immutable::float::kdtree;
 use kiddo::SquaredEuclidean;
+use kiddo::immutable::float::kdtree;
 use parry3d_f64::na::Point;
 use std::num::NonZero;
+use uuid::Uuid;
+
+/// A KD tree associated with a unique UUID, such that it can be checked to be matched against a
+/// specific entity.  The idea is that the UUID of the associated object will change if the object
+/// points are modified, and thus the matched tree can be validated before use.
+pub struct MatchedTree<const D: usize> {
+    tree_uuid: Uuid,
+    tree: KdTree<D>,
+}
+
+impl<const D: usize> MatchedTree<D> {
+    pub fn new(tree_uuid: Uuid, tree: KdTree<D>) -> Self {
+        Self { tree_uuid, tree }
+    }
+
+    pub fn tree_uuid(&self) -> Uuid {
+        self.tree_uuid
+    }
+
+    pub fn tree(&self) -> &KdTree<D> {
+        &self.tree
+    }
+}
 
 pub trait KdTreeSearch<const D: usize> {
     fn nearest_one(&self, point: &Point<f64, D>) -> (usize, f64);
@@ -181,8 +204,8 @@ impl<const D: usize> KdTreeSearch<D> for PartialKdTree<D> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::indices::index_vec;
     use crate::Point2;
+    use crate::common::indices::index_vec;
     use approx::assert_relative_eq;
     use rand::prelude::SliceRandom;
 

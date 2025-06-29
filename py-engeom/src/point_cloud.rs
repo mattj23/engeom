@@ -7,9 +7,9 @@ use crate::conversions::{
 use crate::geom3::{Curve3, Iso3, Plane3, Point3, SurfacePoint3, Vector3};
 use crate::mesh::Mesh;
 use crate::metrology::Distance3;
-use engeom::PointCloudFeatures;
 use engeom::common::points::dist;
 use engeom::common::{Selection, SplitResult};
+use engeom::{PointCloudFeatures, PointCloudKdTree};
 use numpy::ndarray::{Array1, Array2, ArrayD};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray2, PyReadonlyArrayDyn};
 use pyo3::exceptions::{PyIOError, PyValueError};
@@ -22,6 +22,7 @@ pub struct PointCloud {
     points: Option<Py<PyArray2<f64>>>,
     normals: Option<Py<PyArray2<f64>>>,
     colors: Option<Py<PyArray2<u8>>>,
+    matched_tree: Option<engeom::common::kd_tree::MatchedTree<3>>,
 }
 
 impl PointCloud {
@@ -29,6 +30,7 @@ impl PointCloud {
         self.points = None;
         self.normals = None;
         self.colors = None;
+        self.matched_tree = None;
     }
 
     pub fn get_inner(&self) -> &engeom::PointCloud {
@@ -41,6 +43,7 @@ impl PointCloud {
             points: None,
             normals: None,
             colors: None,
+            matched_tree: None,
         }
     }
 }
@@ -119,5 +122,36 @@ impl PointCloud {
         } else {
             None
         }
+    }
+
+    fn transform_by(&mut self, transform: &Iso3) {
+        self.clear_cached();
+        self.inner
+            .transform_by(transform.get_inner());
+    }
+
+    fn create_from_indices(&self, indices: Vec<usize>) -> PyResult<Self> {
+        let inner = self
+            .inner
+            .create_from_indices(&indices)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        Ok(Self::from_inner(inner))
+    }
+
+    fn sample_poisson_disk(&mut self, radius: f64) -> PyResult<Vec<usize>> {
+        if self.matched_tree.is_none() {
+            let tree = self
+                .inner
+                .create_matched_tree()
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+            self.matched_tree = Some(tree);
+        }
+
+        let tree = self.matched_tree.as_ref().unwrap();
+        let with_tree = PointCloudKdTree::try_new(&self.inner, tree)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        Ok(with_tree.sample_poisson_disk(radius))
     }
 }
