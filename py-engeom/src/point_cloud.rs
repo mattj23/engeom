@@ -66,8 +66,10 @@ impl PointCloud {
     }
 
     #[staticmethod]
-    fn load_lptf3(path: PathBuf) -> PyResult<Self> {
-        let inner = engeom::io::load_lptf3(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
+    #[pyo3(signature=(path, take_every=None))]
+    fn load_lptf3(path: PathBuf, take_every: Option<u32>) -> PyResult<Self> {
+        let inner = engeom::io::load_lptf3(&path, take_every)
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
         Ok(Self::from_inner(inner))
     }
@@ -126,8 +128,7 @@ impl PointCloud {
 
     fn transform_by(&mut self, transform: &Iso3) {
         self.clear_cached();
-        self.inner
-            .transform_by(transform.get_inner());
+        self.inner.transform_by(transform.get_inner());
     }
 
     fn create_from_indices(&self, indices: Vec<usize>) -> PyResult<Self> {
@@ -168,7 +169,8 @@ impl PointCloud {
         let with_tree = PointCloudKdTree::try_new(&self.inner, tree)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
-        with_tree.create_from_poisson_sample(radius)
+        with_tree
+            .create_from_poisson_sample(radius)
             .map_err(|e| PyValueError::new_err(e.to_string()))
             .map(Self::from_inner)
     }

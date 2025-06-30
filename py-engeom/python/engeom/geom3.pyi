@@ -1845,12 +1845,14 @@ class PointCloud:
         ...
 
     @staticmethod
-    def load_lptf3(path: str | Path) -> PointCloud:
+    def load_lptf3(path: str | Path, take_every : int | None = None) -> PointCloud:
         """
         Load a point cloud from a LPTF3 file. The LPTF3 format is a binary format used to store measurements from a
         triangulation-based laser profile sensor.
 
         :param path: the path to the LPTF3 file to load.
+        :param take_every: if provided, this will take every nth row from the file, and will be used to estimate the
+        spacing of the points along the profile to also sample at a rough distance
         :return: a `PointCloud` object containing the points, normals, and colors from the file.
         """
         ...

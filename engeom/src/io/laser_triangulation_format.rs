@@ -43,11 +43,11 @@ use crate::{Point3, PointCloud, Result};
 use std::io::Read;
 use std::path::Path;
 
-pub fn load_lptf3(file_path: &Path) -> Result<PointCloud> {
-    let path_str = file_path.to_str().ok_or_else(|| {
-        format!("Invalid path: {}", file_path.display())
-    })?;
-    
+pub fn load_lptf3(file_path: &Path, take_every: Option<u32>) -> Result<PointCloud> {
+    let path_str = file_path
+        .to_str()
+        .ok_or_else(|| format!("Invalid path: {}", file_path.display()))?;
+
     let raw_file = std::fs::File::open(file_path)
         .map_err(|e| format!("Failed to open file '{}': {}", path_str, e))?;
     let mut f = std::io::BufReader::new(raw_file);
@@ -80,10 +80,16 @@ pub fn load_lptf3(file_path: &Path) -> Result<PointCloud> {
         .into());
     }
 
-    // Read the y translation for motion type 0
+    // Read the y translation and skip distance for motion type 0
     let y_translation = (read_u32(&mut f)? as f64) / 1_000_000.0; // Convert from nanometers to mm
+    let skip_spacing = take_every.map(|t| t as f64 * y_translation);
+
+    // Prepare the point and color vectors
     let mut points = Vec::new();
     let mut colors = Vec::new();
+
+    // Calculate the number of bytes per point
+    let bytes_per_point = if is_32_bit { 8 } else { 4 } + if has_color { 1 } else { 0 };
 
     // Read the frames
     // Frame header size is 4 (frame index) + 4 (number of points) + 4 (x offset) +
@@ -91,42 +97,71 @@ pub fn load_lptf3(file_path: &Path) -> Result<PointCloud> {
     while let Ok(()) = f.read_exact(&mut frame_header) {
         let frame_index = u32::from_le_bytes(frame_header[0..4].try_into().unwrap());
         let num_points = u32::from_le_bytes(frame_header[4..8].try_into().unwrap());
-        let x_offset = i32::from_le_bytes(frame_header[8..12].try_into().unwrap()) as f64 / 1_000.0; // Convert from micrometers to mm
-        let z_offset =
-            i32::from_le_bytes(frame_header[12..16].try_into().unwrap()) as f64 / 1_000.0; // Convert from micrometers to mm
-        let x_resolution =
-            u32::from_le_bytes(frame_header[16..20].try_into().unwrap()) as f64 / 1_000_000.0; // Convert from nanometers to mm
-        let z_resolution =
-            u32::from_le_bytes(frame_header[20..24].try_into().unwrap()) as f64 / 1_000_000.0; // Convert from nanometers to mm
+
+        if let Some(take_n) = take_every {
+            if frame_index % take_n != 0 {
+                f.seek_relative(bytes_per_point * num_points as i64)?;
+                continue;
+            }
+        }
+
+        let x_offset = read_offset(&frame_header[8..12])?;
+        let z_offset = read_offset(&frame_header[12..16])?;
+        let x_res = read_res(&frame_header[16..20])?;
+        let z_res = read_res(&frame_header[20..24])?;
         let y_pos = y_translation * (frame_index as f64);
 
+        let skip_int = skip_spacing.map(|s| (s / x_res) as i32);
+        let mut last_x = i32::MIN;
+
         for _ in 0..num_points {
-            let x_raw = if is_32_bit {
-                read_i32(&mut f)? as f64
+            let (x_raw, z_raw) = read_raw_point(&mut f, is_32_bit)?;
+
+            let c = if has_color {
+                Some(read_u8(&mut f)?)
             } else {
-                read_i16(&mut f)? as f64
+                None
             };
 
-            let z_raw = if is_32_bit {
-                read_i32(&mut f)? as f64
-            } else {
-                read_i16(&mut f)? as f64
-            };
-
-            if has_color {
-                let c = read_u8(&mut f)?;
-                colors.push([c; 3]); // Store color as RGB triplet
+            if let Some(skip_i) = skip_int {
+                if skip_i % x_raw != 0 && x_raw - last_x < skip_i {
+                    continue;
+                }
             }
+            last_x = last_x.max(x_raw);
 
             points.push(Point3::new(
-                x_raw * x_resolution + x_offset,
+                (x_raw as f64) * x_res + x_offset,
                 y_pos,
-                z_raw * z_resolution + z_offset,
+                (z_raw as f64) * z_res + z_offset,
             ));
+
+            if let Some(color) = c {
+                colors.push([color; 3]);
+            }
         }
     }
 
     PointCloud::try_new(points, None, Some(colors))
+}
+
+fn read_raw_point<R: Read>(reader: &mut R, is_32bit: bool) -> Result<(i32, i32)> {
+    let (x, z) = if is_32bit {
+        (read_i32(reader)?, read_i32(reader)?)
+    } else {
+        (read_i16(reader)? as i32, read_i16(reader)? as i32)
+    };
+    Ok((x, z))
+}
+
+fn read_res(buffer: &[u8]) -> Result<f64> {
+    // Convert from nanometers to millimeters
+    Ok(u32::from_le_bytes(buffer[0..4].try_into()?) as f64 / 1_000_000.0)
+}
+
+fn read_offset(buffer: &[u8]) -> Result<f64> {
+    // Convert from micrometers to millimeters
+    Ok(i32::from_le_bytes(buffer[0..4].try_into()?) as f64 / 1_000.0)
 }
 
 fn read_u16<R: Read>(reader: &mut R) -> Result<u16> {
