@@ -316,24 +316,15 @@ impl<'a> PointCloudKdTree<'a> {
         self.tree.tree()
     }
 
+    /// Performs a Poisson disk sampling on the point cloud, returning a vector of indices of points
+    /// which are at least `radius` distance apart from each other.
+    ///
+    /// # Arguments
+    ///
+    /// * `radius`: The minimum distance between sampled points.
+    ///
+    /// returns: Vec<usize, Global>
     pub fn sample_poisson_disk(&self, radius: f64) -> Vec<usize> {
-        // Obviously correct way, works, but the tree never gets large
-        // let mut results = Vec::new();
-        // let mut working = Vec::new();
-        // results.push(0);
-        // working.push(self.points()[0]);
-        //
-        // let mut tree = KdTree3::new(&working);
-        //
-        // for i in 1..self.points().len() {
-        //     let point = self.points()[i];
-        //     if tree.nearest_one(&point).1 > radius {
-        //         results.push(i);
-        //         working.push(point);
-        //         tree = KdTree3::new(&working);
-        //     }
-        // }
-
         // This extra work is because it seems that kiddo does not necessarily return all points
         // within the radius.
         let mut mask = vec![true; self.cloud.points.len()];
@@ -355,34 +346,65 @@ impl<'a> PointCloudKdTree<'a> {
             next_pass = sample_poisson_disk(self.cloud.points(), &previous_pass, radius);
         }
 
-        // // Brute force check
-        // for i in 0..results.len() {
-        //     for j in (i + 1)..results.len() {
-        //         let i0 = results[i];
-        //         let i1 = results[j];
-        //         if i0 == i1 {
-        //             continue; // Skip self-comparison
-        //         }
-        //
-        //         let p0 = &self.cloud.points[i0];
-        //         let p1 = &self.cloud.points[i1];
-        //         let d = dist(p0, p1);
-        //         if d < radius {
-        //             // This should not happen, but just in case
-        //             let neb = self.tree().within(p0, radius).iter().map(|(k, _)| *k).collect::<HashSet<_>>();
-        //             // Is i1 in the neighborhood of i0?
-        //
-        //             println!("Failed on {} to {}, n_count = {}, contains: {}", i0, i1, neb.len(), neb.contains(&i1));
-        //         }
-        //     }
-        // }
-
         next_pass
     }
 
+    /// Create a new point cloud from a Poisson disk sampling of the original point cloud. The new
+    /// point cloud will contain only points that are at least `radius` distance apart from each
+    /// other.
+    ///
+    /// This is the equivalent of performing `create_from_indices` using the indices returned by
+    /// `sample_poisson_disk`.
+    ///
+    /// # Arguments
+    ///
+    /// * `radius`: The minimum distance between sampled points.
+    ///
+    /// returns: Result<PointCloud, Box<dyn Error, Global>>
     pub fn create_from_poisson_sample(&self, radius: f64) -> Result<PointCloud> {
         let indices = self.sample_poisson_disk(radius);
         self.cloud.create_from_indices(&indices)
+    }
+
+    /// Find the indices of points in this point cloud that "overlap" with points in another point
+    /// cloud by looking for reciprocity in the closest point in each direction.
+    ///
+    /// For each point in this point cloud "p_this", we will find the closest point in the other
+    /// point cloud "p_other".  Then we take "p_other" and find the closest point to it in this
+    /// point cloud, "p_recip".
+    ///
+    /// In an ideally overlapping point cloud, "p_recip" should be the same as "p_this".  We will
+    /// use a maximum distance tolerance to determine if "p_recip" is close enough to "p_this" that
+    /// "p_this" is considered to be overlapping with the other point cloud.
+    ///
+    /// # Arguments
+    ///
+    /// * `other`: the other point cloud to check for overlap with
+    /// * `max_distance`: the maximum distance between "p_this" and "p_recip" for them to be
+    ///   considered overlapping
+    ///
+    /// returns: Vec<usize, Global>
+    pub fn overlap_by_reciprocity(
+        &self,
+        other: &PointCloudKdTree,
+        max_distance: f64,
+    ) -> Vec<usize> {
+        let mut result = Vec::new();
+        for (i, p_this) in self.cloud.points.iter().enumerate() {
+            // Find the closest point in the other point cloud
+            let (j, _) = other.tree().nearest_one(p_this);
+            let p_other = other.cloud.points()[j];
+            
+            // Find the reciprocal point in this point cloud
+            let (k, _) = self.tree().nearest_one(&p_other);
+            let p_recip = self.cloud.points()[k];
+
+            if dist(&p_this, &p_recip) < max_distance {
+                result.push(i);
+            }
+        }
+        
+        result
     }
 }
 

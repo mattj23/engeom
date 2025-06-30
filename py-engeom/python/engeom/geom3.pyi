@@ -1909,3 +1909,22 @@ class PointCloud:
         :return: a new `PointCloud` object with the transformed points, normals, and colors.
         """
         ...
+    
+    def overlap_by_reciprocity(self, other: PointCloud, max_distance: float) -> list[int]:
+        """
+        Find the indices of points in this point cloud that "overlap" with points in another point
+        cloud by looking for reciprocity in the closest point in each direction.
+        
+        For each point in this point cloud "p_this", we will find the closest point in the other
+        point cloud "p_other".  Then we take "p_other" and find the closest point to it in this
+        point cloud, "p_recip".
+        
+        In an ideally overlapping point cloud, "p_recip" should be the same as "p_this".  We will
+        use a maximum distance tolerance to determine if "p_recip" is close enough to "p_this" that
+        "p_this" is considered to be overlapping with the other point cloud.
+    
+        :param other: the other point cloud to check for overlap.
+        :param max_distance: the maximum distance to consider a point as overlapping.
+        :return: a list of indices of points in this point cloud that overlap with points in the other point cloud.
+        """
+        ...

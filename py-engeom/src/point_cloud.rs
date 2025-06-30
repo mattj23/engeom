@@ -46,6 +46,20 @@ impl PointCloud {
             matched_tree: None,
         }
     }
+
+    pub fn with_tree(&mut self) -> PyResult<PointCloudKdTree> {
+        if self.matched_tree.is_none() {
+            let tree = self
+                .inner
+                .create_matched_tree()
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+            self.matched_tree = Some(tree);
+        }
+
+        let tree = self.matched_tree.as_ref().unwrap();
+        PointCloudKdTree::try_new(&self.inner, tree)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
 }
 
 impl Clone for PointCloud {
@@ -141,32 +155,16 @@ impl PointCloud {
     }
 
     fn sample_poisson_disk(&mut self, radius: f64) -> PyResult<Vec<usize>> {
-        if self.matched_tree.is_none() {
-            let tree = self
-                .inner
-                .create_matched_tree()
-                .map_err(|e| PyValueError::new_err(e.to_string()))?;
-            self.matched_tree = Some(tree);
-        }
-
-        let tree = self.matched_tree.as_ref().unwrap();
-        let with_tree = PointCloudKdTree::try_new(&self.inner, tree)
+        let with_tree = self
+            .with_tree()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         Ok(with_tree.sample_poisson_disk(radius))
     }
 
     fn create_from_poisson_sample(&mut self, radius: f64) -> PyResult<Self> {
-        if self.matched_tree.is_none() {
-            let tree = self
-                .inner
-                .create_matched_tree()
-                .map_err(|e| PyValueError::new_err(e.to_string()))?;
-            self.matched_tree = Some(tree);
-        }
-
-        let tree = self.matched_tree.as_ref().unwrap();
-        let with_tree = PointCloudKdTree::try_new(&self.inner, tree)
+        let with_tree = self
+            .with_tree()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         with_tree
@@ -175,13 +173,19 @@ impl PointCloud {
             .map(Self::from_inner)
     }
 
-    fn brute_force_check(&mut self, radius: f64) {
-        for (i, p) in self.inner.points().iter().enumerate() {
-            for (j, q) in self.inner.points().iter().enumerate() {
-                if i != j && dist(p, q) < radius {
-                    println!("Points {} and {} are within radius {}", i, j, radius);
-                }
-            }
-        }
+    fn overlap_by_reciprocity(
+        &mut self,
+        other: &mut PointCloud,
+        max_distance: f64,
+    ) -> PyResult<Vec<usize>> {
+        let this_with_tree = self
+            .with_tree()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        
+        let other_with_tree = other
+            .with_tree()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        
+        Ok(this_with_tree.overlap_by_reciprocity(&other_with_tree, max_distance))
     }
 }
