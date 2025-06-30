@@ -1,10 +1,11 @@
-use std::collections::HashSet;
 use crate::common::kd_tree::{KdTreeSearch, MatchedTree};
+use crate::common::points::dist;
+use crate::common::poisson_disk::sample_poisson_disk;
 use crate::{Iso3, KdTree3, Point3, Result, SurfacePoint3, UnitVec3};
 use bounding_volume::Aabb;
 use parry3d_f64::bounding_volume;
+use std::collections::HashSet;
 use uuid::Uuid;
-use crate::common::points::dist;
 
 pub trait PointCloudFeatures {
     fn points(&self) -> &[Point3];
@@ -333,43 +334,50 @@ impl<'a> PointCloudKdTree<'a> {
         //     }
         // }
 
+        // This extra work is because it seems that kiddo does not necessarily return all points
+        // within the radius.
         let mut mask = vec![true; self.cloud.points.len()];
-        let mut results = Vec::new();
+        let mut previous_pass = Vec::new();
         for i in 0..self.cloud.points.len() {
             if !mask[i] {
                 continue;
             }
-            results.push(i);
+            previous_pass.push(i);
             let neighbors = self.tree().within(&self.cloud.points[i], radius);
             for (n, _) in neighbors {
                 mask[n] = false;
             }
         }
 
-        // Brute force check
-        for i in 0..results.len() {
-            for j in (i + 1)..results.len() {
-                let i0 = results[i];
-                let i1 = results[j];
-                if i0 == i1 {
-                    continue; // Skip self-comparison
-                }
-                
-                let p0 = &self.cloud.points[i0];
-                let p1 = &self.cloud.points[i1];
-                let d = dist(p0, p1);
-                if d < radius {
-                    // This should not happen, but just in case
-                    let neb = self.tree().within(p0, radius).iter().map(|(k, _)| *k).collect::<HashSet<_>>();
-                    // Is i1 in the neighborhood of i0?
-                    
-                    println!("Failed on {} to {}, n_count = {}, contains: {}", i0, i1, neb.len(), neb.contains(&i1));
-                }
-            }
+        let mut next_pass = sample_poisson_disk(self.cloud.points(), &previous_pass, radius);
+        while next_pass.len() != previous_pass.len() {
+            previous_pass = next_pass;
+            next_pass = sample_poisson_disk(self.cloud.points(), &previous_pass, radius);
         }
 
+        // // Brute force check
+        // for i in 0..results.len() {
+        //     for j in (i + 1)..results.len() {
+        //         let i0 = results[i];
+        //         let i1 = results[j];
+        //         if i0 == i1 {
+        //             continue; // Skip self-comparison
+        //         }
+        //
+        //         let p0 = &self.cloud.points[i0];
+        //         let p1 = &self.cloud.points[i1];
+        //         let d = dist(p0, p1);
+        //         if d < radius {
+        //             // This should not happen, but just in case
+        //             let neb = self.tree().within(p0, radius).iter().map(|(k, _)| *k).collect::<HashSet<_>>();
+        //             // Is i1 in the neighborhood of i0?
+        //
+        //             println!("Failed on {} to {}, n_count = {}, contains: {}", i0, i1, neb.len(), neb.contains(&i1));
+        //         }
+        //     }
+        // }
 
-        results
+        next_pass
     }
 
     pub fn create_from_poisson_sample(&self, radius: f64) -> Result<PointCloud> {
