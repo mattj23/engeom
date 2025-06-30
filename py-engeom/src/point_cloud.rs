@@ -154,4 +154,32 @@ impl PointCloud {
 
         Ok(with_tree.sample_poisson_disk(radius))
     }
+
+    fn create_from_poisson_sample(&mut self, radius: f64) -> PyResult<Self> {
+        if self.matched_tree.is_none() {
+            let tree = self
+                .inner
+                .create_matched_tree()
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+            self.matched_tree = Some(tree);
+        }
+
+        let tree = self.matched_tree.as_ref().unwrap();
+        let with_tree = PointCloudKdTree::try_new(&self.inner, tree)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        with_tree.create_from_poisson_sample(radius)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+            .map(Self::from_inner)
+    }
+
+    fn brute_force_check(&mut self, radius: f64) {
+        for (i, p) in self.inner.points().iter().enumerate() {
+            for (j, q) in self.inner.points().iter().enumerate() {
+                if i != j && dist(p, q) < radius {
+                    println!("Points {} and {} are within radius {}", i, j, radius);
+                }
+            }
+        }
+    }
 }

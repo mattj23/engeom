@@ -1800,13 +1800,13 @@ class RayBundle3:
 
 class PointCloud:
     """
-    
+
     """
 
     def __init__(self, points: NDArray[float], normals: NDArray[float] | None = None,
                  colors: NDArray[numpy.uint8] | None = None):
         ...
-    
+
     @property
     def points(self) -> NDArray[float]:
         """
@@ -1814,7 +1814,7 @@ class PointCloud:
         :return: a numpy array of shape (n, 3) containing the points of the point cloud.
         """
         ...
-    
+
     @property
     def normals(self) -> NDArray[float] | None:
         """
@@ -1824,7 +1824,7 @@ class PointCloud:
         provided.
         """
         ...
-    
+
     @property
     def colors(self) -> NDArray[numpy.uint8] | None:
         """
@@ -1834,7 +1834,7 @@ class PointCloud:
         provided.
         """
         ...
-    
+
     def cloned(self) -> PointCloud:
         """
         Create a copy of the point cloud. This will return a new `PointCloud` object with the same points, normals, and
@@ -1843,30 +1843,41 @@ class PointCloud:
         :return: a new `PointCloud` object with the same points, normals, and colors as the original.
         """
         ...
-    
+
     @staticmethod
     def load_lptf3(path: str | Path) -> PointCloud:
         """
-        Load a point cloud from a LPTF3 file. The LPTF3 format is a binary format used to store measurements from a 
-        triangulation-based laser profile sensor. 
+        Load a point cloud from a LPTF3 file. The LPTF3 format is a binary format used to store measurements from a
+        triangulation-based laser profile sensor.
 
         :param path: the path to the LPTF3 file to load.
         :return: a `PointCloud` object containing the points, normals, and colors from the file.
         """
         ...
-    
+
     def append(self, other: PointCloud) -> PointCloud:
         """
         Append another point cloud to this one. The points, normals, and colors from the other point cloud will be
         added to this point cloud.
-        
+
         Will throw an error if the other point cloud has a different combination of normals and colors than this one.
 
         :param other: the other point cloud to append.
         :return: a new `PointCloud` object containing the combined points, normals, and colors.
         """
         ...
-    
+
+    def sample_poisson_disk(self, radius: float) -> list[int]:
+        """
+        Sample a subset of points from the point cloud using a Poisson disk sampling algorithm. This will return a list
+        of indices of the points that were preserved. The points will be selected such that no two points are closer
+        than the given radius.
+
+        :param radius: the minimum distance between sampled points.
+        :return: a list of indices of the points that were selected.
+        """
+        ...
+
     def create_from_indices(self, indices: list[int]) -> PointCloud:
         """
         Create a new point cloud from a subset of the points in this point cloud, specified by the given indices.
@@ -1876,18 +1887,17 @@ class PointCloud:
         :return: a new `PointCloud` object containing the selected points, normals, and colors.
         """
         ...
-    
-    def sample_poisson_disk(self, radius: float) -> list[int]:
+
+    def create_from_poisson_sample(self, radius: float) -> PointCloud:
         """
-        Sample a subset of points from the point cloud using a Poisson disk sampling algorithm. This will return a list
-        of indices of the points that were preserved. The points will be selected such that no two points are closer 
-        than the given radius.
+        Create a new point cloud from a Poisson disk sampling of the points in this point cloud. The points will be
+        selected such that no two points are closer than the given radius.
 
         :param radius: the minimum distance between sampled points.
-        :return: a list of indices of the points that were selected.
+        :return: a new `PointCloud` object containing the sampled points, normals, and colors.
         """
         ...
-    
+
     def transform_by(self, iso: Iso3) -> PointCloud:
         """
         Transform the point cloud by an isometry. This will return a new `PointCloud` object with the transformed

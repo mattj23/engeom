@@ -1,8 +1,10 @@
+use std::collections::HashSet;
 use crate::common::kd_tree::{KdTreeSearch, MatchedTree};
 use crate::{Iso3, KdTree3, Point3, Result, SurfacePoint3, UnitVec3};
 use bounding_volume::Aabb;
 use parry3d_f64::bounding_volume;
 use uuid::Uuid;
+use crate::common::points::dist;
 
 pub trait PointCloudFeatures {
     fn points(&self) -> &[Point3];
@@ -26,7 +28,7 @@ pub trait PointCloudFeatures {
         if indices.iter().any(|&i| i >= self.len()) {
             return Err("Index out of bounds".into());
         }
-        
+
         let points = self.points();
         let normals = self.normals();
         let colors = self.colors();
@@ -314,21 +316,65 @@ impl<'a> PointCloudKdTree<'a> {
     }
 
     pub fn sample_poisson_disk(&self, radius: f64) -> Vec<usize> {
+        // Obviously correct way, works, but the tree never gets large
+        // let mut results = Vec::new();
+        // let mut working = Vec::new();
+        // results.push(0);
+        // working.push(self.points()[0]);
+        //
+        // let mut tree = KdTree3::new(&working);
+        //
+        // for i in 1..self.points().len() {
+        //     let point = self.points()[i];
+        //     if tree.nearest_one(&point).1 > radius {
+        //         results.push(i);
+        //         working.push(point);
+        //         tree = KdTree3::new(&working);
+        //     }
+        // }
+
         let mut mask = vec![true; self.cloud.points.len()];
+        let mut results = Vec::new();
         for i in 0..self.cloud.points.len() {
             if !mask[i] {
                 continue;
             }
+            results.push(i);
             let neighbors = self.tree().within(&self.cloud.points[i], radius);
             for (n, _) in neighbors {
                 mask[n] = false;
             }
         }
 
-        mask.iter()
-            .enumerate()
-            .filter_map(|(i, b)| if *b { Some(i) } else { None })
-            .collect::<Vec<_>>()
+        // Brute force check
+        for i in 0..results.len() {
+            for j in (i + 1)..results.len() {
+                let i0 = results[i];
+                let i1 = results[j];
+                if i0 == i1 {
+                    continue; // Skip self-comparison
+                }
+                
+                let p0 = &self.cloud.points[i0];
+                let p1 = &self.cloud.points[i1];
+                let d = dist(p0, p1);
+                if d < radius {
+                    // This should not happen, but just in case
+                    let neb = self.tree().within(p0, radius).iter().map(|(k, _)| *k).collect::<HashSet<_>>();
+                    // Is i1 in the neighborhood of i0?
+                    
+                    println!("Failed on {} to {}, n_count = {}, contains: {}", i0, i1, neb.len(), neb.contains(&i1));
+                }
+            }
+        }
+
+
+        results
+    }
+
+    pub fn create_from_poisson_sample(&self, radius: f64) -> Result<PointCloud> {
+        let indices = self.sample_poisson_disk(radius);
+        self.cloud.create_from_indices(&indices)
     }
 }
 
