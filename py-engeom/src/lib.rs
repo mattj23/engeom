@@ -7,11 +7,11 @@ mod geom2;
 mod geom3;
 mod mesh;
 mod metrology;
+mod point_cloud;
 mod raster;
 mod ray_casting;
-mod svd_basis;
 mod sensors;
-mod point_cloud;
+mod svd_basis;
 
 use pyo3::prelude::*;
 

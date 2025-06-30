@@ -189,7 +189,6 @@ mod tests {
         assert_relative_eq!(m, e, epsilon = 1e-8);
     }
 
-
     #[test]
     fn isometry_to_xyzwpr_single() {
         let x = XyzWpr::new(

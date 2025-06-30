@@ -1,19 +1,19 @@
-use crate::common::points::dist;
-use crate::common::{signed_compliment_2pi, BestFit, Intersection};
-use crate::geom2::aabb2::{arc_aabb2, circle_aabb2};
-use crate::geom2::line2::Segment2;
-use crate::geom2::{directed_angle, signed_angle, Aabb2, HasBounds2, Iso2, Line2, Point2, Vector2};
-use crate::geom3::Vector3;
-use crate::stats::{compute_mean, compute_st_dev};
 use crate::AngleDir::{Ccw, Cw};
 use crate::AngleInterval;
 use crate::Result;
+use crate::common::points::dist;
+use crate::common::{BestFit, Intersection, signed_compliment_2pi};
+use crate::geom2::aabb2::{arc_aabb2, circle_aabb2};
+use crate::geom2::line2::Segment2;
+use crate::geom2::{Aabb2, HasBounds2, Iso2, Line2, Point2, Vector2, directed_angle, signed_angle};
+use crate::geom3::Vector3;
+use crate::stats::{compute_mean, compute_st_dev};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
-use parry2d_f64::na::{Dyn, Matrix, Owned, Vector, U1, U3};
+use parry2d_f64::na::{Dyn, Matrix, Owned, U1, U3, Vector};
 use parry2d_f64::shape::Ball;
+use rand::SeedableRng;
 use rand::distr::{Distribution, Uniform};
 use rand::prelude::StdRng;
-use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 use std::f64::consts::FRAC_PI_2;
 

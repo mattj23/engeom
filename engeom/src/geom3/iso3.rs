@@ -1,8 +1,8 @@
 //! This module has additional tools and functions for working with 3D isometries
 
 use crate::{Iso3, Point3, Result, UnitVec3, Vector3};
-use parry3d_f64::na::{try_convert, Matrix4, UnitQuaternion};
 use parry3d_f64::na::{Matrix3, Translation3};
+use parry3d_f64::na::{Matrix4, UnitQuaternion, try_convert};
 
 pub trait IsoExtensions3 {
     fn flip_around_x(&self) -> Iso3;
@@ -74,8 +74,14 @@ impl IsoExtensions3 for Iso3 {
     /// returns: Result<Isometry<f64, Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
     fn try_from_basis_xy(e0: &Vector3, e1: &Vector3, origin: Option<Point3>) -> Result<Iso3> {
         let e0 = e0.try_normalize(1e-10).ok_or("Could not normalize e0")?;
-        let e2 = e0.cross(e1).try_normalize(1e-10).ok_or("Could not normalize e2")?;
-        let e1 = e2.cross(&e0).try_normalize(1e-10).ok_or("Could not normalize e1")?;
+        let e2 = e0
+            .cross(e1)
+            .try_normalize(1e-10)
+            .ok_or("Could not normalize e2")?;
+        let e1 = e2
+            .cross(&e0)
+            .try_normalize(1e-10)
+            .ok_or("Could not normalize e1")?;
 
         from_bases(e0, e1, e2, origin)
     }
@@ -104,8 +110,14 @@ impl IsoExtensions3 for Iso3 {
     /// returns: Result<Isometry<f64, Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
     fn try_from_basis_xz(e0: &Vector3, e2: &Vector3, origin: Option<Point3>) -> Result<Iso3> {
         let e0 = e0.try_normalize(1e-10).ok_or("Could not normalize e0")?;
-        let e1 = e2.cross(&e0).try_normalize(1e-10).ok_or("Could not normalize e1")?;
-        let e2 = e0.cross(&e1).try_normalize(1e-10).ok_or("Could not normalize e2")?;
+        let e1 = e2
+            .cross(&e0)
+            .try_normalize(1e-10)
+            .ok_or("Could not normalize e1")?;
+        let e2 = e0
+            .cross(&e1)
+            .try_normalize(1e-10)
+            .ok_or("Could not normalize e2")?;
         from_bases(e0, e1, e2, origin)
     }
 
@@ -133,8 +145,14 @@ impl IsoExtensions3 for Iso3 {
     /// returns: Result<Isometry<f64, Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
     fn try_from_basis_yz(e1: &Vector3, e2: &Vector3, origin: Option<Point3>) -> Result<Iso3> {
         let e1 = e1.try_normalize(1e-10).ok_or("Could not normalize e1")?;
-        let e0 = e1.cross(&e2).try_normalize(1e-10).ok_or("Could not normalize e0")?;
-        let e2 = e0.cross(&e1).try_normalize(1e-10).ok_or("Could not normalize e2")?;
+        let e0 = e1
+            .cross(&e2)
+            .try_normalize(1e-10)
+            .ok_or("Could not normalize e0")?;
+        let e2 = e0
+            .cross(&e1)
+            .try_normalize(1e-10)
+            .ok_or("Could not normalize e2")?;
         from_bases(e0, e1, e2, origin)
     }
 
@@ -162,8 +180,14 @@ impl IsoExtensions3 for Iso3 {
     /// returns: Result<Isometry<f64, Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
     fn try_from_basis_yx(e1: &Vector3, e0: &Vector3, origin: Option<Point3>) -> Result<Iso3> {
         let e1 = e1.try_normalize(1e-10).ok_or("Could not normalize e1")?;
-        let e2 = e0.cross(&e1).try_normalize(1e-10).ok_or("Could not normalize e2")?;
-        let e0 = e1.cross(&e2).try_normalize(1e-10).ok_or("Could not normalize e0")?;
+        let e2 = e0
+            .cross(&e1)
+            .try_normalize(1e-10)
+            .ok_or("Could not normalize e2")?;
+        let e0 = e1
+            .cross(&e2)
+            .try_normalize(1e-10)
+            .ok_or("Could not normalize e0")?;
         from_bases(e0, e1, e2, origin)
     }
 
@@ -191,8 +215,14 @@ impl IsoExtensions3 for Iso3 {
     /// returns: Result<Isometry<f64, Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
     fn try_from_basis_zx(e2: &Vector3, e0: &Vector3, origin: Option<Point3>) -> Result<Iso3> {
         let e2 = e2.try_normalize(1e-10).ok_or("Could not normalize e2")?;
-        let e1 = e2.cross(&e0).try_normalize(1e-10).ok_or("Could not normalize e2")?;
-        let e0 = e1.cross(&e2).try_normalize(1e-10).ok_or("Could not normalize e0")?;
+        let e1 = e2
+            .cross(&e0)
+            .try_normalize(1e-10)
+            .ok_or("Could not normalize e2")?;
+        let e0 = e1
+            .cross(&e2)
+            .try_normalize(1e-10)
+            .ok_or("Could not normalize e0")?;
         from_bases(e0, e1, e2, origin)
     }
 
@@ -220,8 +250,14 @@ impl IsoExtensions3 for Iso3 {
     /// returns: Result<Isometry<f64, Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
     fn try_from_basis_zy(e2: &Vector3, e1: &Vector3, origin: Option<Point3>) -> Result<Iso3> {
         let e2 = e2.try_normalize(1e-10).ok_or("Could not normalize e2")?;
-        let e0 = e1.cross(&e2).try_normalize(1e-10).ok_or("Could not normalize e0")?;
-        let e1 = e2.cross(&e0).try_normalize(1e-10).ok_or("Could not normalize e2")?;
+        let e0 = e1
+            .cross(&e2)
+            .try_normalize(1e-10)
+            .ok_or("Could not normalize e0")?;
+        let e1 = e2
+            .cross(&e0)
+            .try_normalize(1e-10)
+            .ok_or("Could not normalize e2")?;
         from_bases(e0, e1, e2, origin)
     }
 
@@ -252,10 +288,10 @@ fn from_bases(e0: Vector3, e1: Vector3, e2: Vector3, origin: Option<Point3>) -> 
 
 #[cfg(test)]
 mod tests {
-    use std::f64::consts::PI;
     use super::*;
     use crate::Point3;
     use approx::assert_relative_eq;
+    use std::f64::consts::PI;
 
     struct BasisCheck {
         o: Point3,

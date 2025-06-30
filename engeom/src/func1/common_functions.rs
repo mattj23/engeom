@@ -2,8 +2,8 @@
 //! functions over the x domain.  Excluded from this set are polynomials, which are provided in
 //! the `polynomial` module.
 
-use crate::func1::Func1;
 use crate::Result;
+use crate::func1::Func1;
 
 /// A `Line1` is a linear function in one dimension, defined by slope `m` and intercept `b`.  The
 /// `Line1` type is an alias for a `Polynomial<2>` in order to take advantage of the generic

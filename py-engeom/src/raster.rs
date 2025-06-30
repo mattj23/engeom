@@ -3,8 +3,8 @@ use numpy::{IntoPyArray, PyArray1, PyArrayDyn, PyReadonlyArrayDyn, PyUntypedArra
 use pyo3::exceptions::PyValueError;
 use pyo3::types::PyIterator;
 use pyo3::{
-    pyclass, pyfunction, Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyResult,
-    Python,
+    Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyResult, Python, pyclass,
+    pyfunction,
 };
 use std::collections::HashSet;
 

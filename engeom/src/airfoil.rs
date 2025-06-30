@@ -11,8 +11,8 @@ mod orientation;
 use crate::{Arc2, Circle2, Curve2, Point2, Result, SurfacePoint2, UnitVec2, Vector2};
 
 use crate::airfoil::camber::camber_detect_upper_dir;
-use crate::common::points::dist;
 use crate::common::Intersection;
+use crate::common::points::dist;
 use crate::geom2::hull::convex_hull_2d;
 use crate::metrology::Distance2;
 use crate::stats::compute_mean;

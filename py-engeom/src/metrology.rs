@@ -1,7 +1,7 @@
 use crate::geom2::{Point2, SurfacePoint2, Vector2};
 use crate::geom3::{Iso3, Point3, SurfacePoint3, Vector3};
-use engeom::metrology::Measurement;
 use engeom::UnitVec2;
+use engeom::metrology::Measurement;
 use pyo3::prelude::*;
 
 #[pyclass]

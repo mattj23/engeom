@@ -1,4 +1,3 @@
-use std::ops::Add;
 use super::polyline2::{SpanningRay, polyline_intersections, spanning_ray};
 use crate::common::points::{
     dist, max_point_in_direction, ramer_douglas_peucker, transform_points,
@@ -13,6 +12,7 @@ use parry2d_f64::na::Unit;
 use parry2d_f64::query::{PointQueryWithLocation, Ray};
 use parry2d_f64::shape::{ConvexPolygon, Polyline};
 use serde::{Deserialize, Serialize};
+use std::ops::Add;
 
 /// A `CurveStation2` is a convenience struct which represents a location on the manifold defined
 /// by the curve. It has a point, a direction, and a normal. It has an index and a fraction which
@@ -743,27 +743,27 @@ impl Curve2 {
     pub fn clone_points(&self) -> Vec<Point2> {
         self.line.vertices().to_vec()
     }
-    
+
     /// Create a new curve which is the result of extending this curve with another curve. The
     /// tolerance of this curve will be used for the new curve.  Neither curve can be
     /// closed, and the new curve will not be closed.
-    /// 
-    /// # Arguments 
-    /// 
+    ///
+    /// # Arguments
+    ///
     /// * `other`: the curve to extend this curve with
-    /// 
-    /// returns: Result<Curve2, Box<dyn Error, Global>> 
-    /// 
-    /// # Examples 
-    /// 
+    ///
+    /// returns: Result<Curve2, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
     /// ```
-    /// 
+    ///
     /// ```
     pub fn extended(&self, other: &Curve2) -> Result<Self> {
         if self.is_closed || other.is_closed {
             return Err("Cannot extend a closed curve".into());
         }
-        
+
         let mut points = self.clone_points();
         points.extend(other.clone_points());
         Curve2::from_points(&points, self.tol, false)
@@ -1087,9 +1087,7 @@ impl Curve2 {
 
         Some(Arc2::three_points(self.vtx(i0), self.vtx(i1), self.vtx(i2)))
     }
-
 }
-
 
 impl Intersection<&Circle2, Vec<Point2>> for Curve2 {
     /// Computes a set of intersections between this curve and a circle.  The result is a list of

@@ -436,8 +436,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geom2::{Curve2, Point2};
     use crate::Vector2;
+    use crate::geom2::{Curve2, Point2};
     use approx::assert_relative_eq;
 
     #[test]

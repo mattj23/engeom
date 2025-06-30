@@ -7,8 +7,8 @@ use parry3d_f64::na::{Translation3, UnitQuaternion};
 use pyo3::exceptions::PyValueError;
 use pyo3::types::PyIterator;
 use pyo3::{
-    pyclass, pymethods, Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyResult,
-    Python,
+    Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyResult, Python, pyclass,
+    pymethods,
 };
 
 #[derive(FromPyObject)]

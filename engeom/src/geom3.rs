@@ -1,9 +1,9 @@
 pub mod align3;
 mod curve3;
+mod iso3;
 pub mod mesh;
 mod plane3;
 mod point_cloud;
-mod iso3;
 mod xyzwpr;
 
 use parry3d_f64::na::UnitQuaternion;
@@ -14,10 +14,10 @@ use std::ops;
 
 use crate::TransformBy;
 pub use curve3::{Curve3, CurveStation3};
-pub use mesh::{Mesh, UvMapping, MeshCollisionSet};
+pub use iso3::IsoExtensions3;
+pub use mesh::{Mesh, MeshCollisionSet, UvMapping};
 pub use plane3::Plane3;
 pub use point_cloud::{PointCloud, PointCloudFeatures, PointCloudKdTree};
-pub use iso3::IsoExtensions3;
 pub use xyzwpr::XyzWpr;
 
 pub type Point3 = parry3d_f64::na::Point3<f64>;
@@ -69,4 +69,3 @@ impl TransformBy<Iso3, Vec<Point3>> for &Vec<Point3> {
         self.iter().map(|p| transform * p).collect()
     }
 }
-

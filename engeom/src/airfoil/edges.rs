@@ -1,14 +1,14 @@
 //! This module contains tools to work with the leading and trailing edges of the airfoil section.
 
+use crate::AngleDir::Ccw;
 use crate::airfoil::helpers::{
-    extract_curve_beyond_station, extract_edge_sub_curve, inscribed_from_spanning_ray,
-    refine_stations, OrientedCircles,
+    OrientedCircles, extract_curve_beyond_station, extract_edge_sub_curve,
+    inscribed_from_spanning_ray, refine_stations,
 };
 use crate::airfoil::{AirfoilEdge, EdgeGeometry, EdgeLocate, InscribedCircle};
 use crate::common::points::{dist, mid_point};
-use crate::common::{linear_space, BestFit};
-use crate::geom2::{rot90, Ray2, Segment2};
-use crate::AngleDir::Ccw;
+use crate::common::{BestFit, linear_space};
+use crate::geom2::{Ray2, Segment2, rot90};
 use crate::{Circle2, Curve2, Result};
 use parry2d_f64::query::Ray;
 

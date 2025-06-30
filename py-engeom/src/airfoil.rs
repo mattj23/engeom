@@ -2,9 +2,9 @@ use crate::geom2::{Arc2, Circle2, Curve2, Point2};
 use crate::metrology::Distance2;
 use numpy::ndarray::ArrayD;
 use numpy::{IntoPyArray, PyArrayDyn};
+use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::IntoPyObjectExt;
 use rmp_serde::{from_slice, to_vec_named};
 
 // ================================================================================================

@@ -56,11 +56,11 @@ pub fn sample_poisson_disk<const D: usize>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::indices::index_vec;
     use crate::Point2;
+    use crate::common::indices::index_vec;
     use rand;
-    use rand::prelude::SliceRandom;
     use rand::Rng;
+    use rand::prelude::SliceRandom;
 
     #[test]
     fn stress_test_poisson_disk() {

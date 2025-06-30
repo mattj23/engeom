@@ -1,11 +1,11 @@
+use crate::Result;
 use crate::common::points::mean_point;
-use crate::geom2::align2::jacobian::{copy_jacobian, point_surface_jacobian};
 use crate::geom2::align2::RcParams2;
+use crate::geom2::align2::jacobian::{copy_jacobian, point_surface_jacobian};
 use crate::geom2::curve2::Curve2;
 use crate::geom2::{Align2, Iso2, Point2, SurfacePoint2};
-use crate::Result;
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
-use parry2d_f64::na::{Dyn, Matrix, Owned, Vector, U1, U3};
+use parry2d_f64::na::{Dyn, Matrix, Owned, U1, U3, Vector};
 
 struct PointsToCurve<'a> {
     /// The original, unmodified points to be aligned.

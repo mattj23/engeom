@@ -1,8 +1,8 @@
 use super::Mesh;
+use crate::common::SurfacePointCollection;
 use crate::common::indices::index_vec;
 use crate::common::points::{dist, mean_point};
 use crate::common::poisson_disk::sample_poisson_disk;
-use crate::common::SurfacePointCollection;
 use crate::{Point3, SurfacePoint3};
 use rand::prelude::SliceRandom;
 use std::f64::consts::PI;

@@ -2,8 +2,8 @@
 
 use engeom::{Point2, Point3, Vector2, Vector3};
 use numpy::ndarray::{Array2, ArrayD, ArrayView2, ArrayViewD, Dim};
-use pyo3::exceptions::PyValueError;
 use pyo3::PyResult;
+use pyo3::exceptions::PyValueError;
 
 pub fn points_to_array3_2(points: &[Point3]) -> Array2<f64> {
     let mut array = Array2::zeros((points.len(), 3));

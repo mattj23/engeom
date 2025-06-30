@@ -2,7 +2,7 @@ use crate::geom2::{Point2, Vector2};
 use crate::geom3::{Point3, Vector3};
 use numpy::{PyReadonlyArray2, PyReadonlyArrayDyn};
 use pyo3::exceptions::PyValueError;
-use pyo3::{pyclass, pymethods, PyResult};
+use pyo3::{PyResult, pyclass, pymethods};
 // ================================================================================================
 // Aabb2
 // ================================================================================================

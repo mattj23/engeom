@@ -3,10 +3,10 @@
 use super::MeshEdges;
 use crate::common::points::dist;
 use crate::{Point2, Point3, Result};
+use faer::Mat;
 use faer::linalg::solvers::Solve;
 use faer::sparse::linalg::solvers::Lu;
 use faer::sparse::{SparseColMat, Triplet};
-use faer::Mat;
 use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
 

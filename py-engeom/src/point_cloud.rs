@@ -181,11 +181,11 @@ impl PointCloud {
         let this_with_tree = self
             .with_tree()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        
+
         let other_with_tree = other
             .with_tree()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        
+
         Ok(this_with_tree.overlap_by_reciprocity(&other_with_tree, max_distance))
     }
 }

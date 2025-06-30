@@ -4,7 +4,6 @@ use crate::common::poisson_disk::sample_poisson_disk;
 use crate::{Iso3, KdTree3, Point3, Result, SurfacePoint3, UnitVec3};
 use bounding_volume::Aabb;
 use parry3d_f64::bounding_volume;
-use std::collections::HashSet;
 use uuid::Uuid;
 
 pub trait PointCloudFeatures {
@@ -394,7 +393,7 @@ impl<'a> PointCloudKdTree<'a> {
             // Find the closest point in the other point cloud
             let (j, _) = other.tree().nearest_one(p_this);
             let p_other = other.cloud.points()[j];
-            
+
             // Find the reciprocal point in this point cloud
             let (k, _) = self.tree().nearest_one(&p_other);
             let p_recip = self.cloud.points()[k];
@@ -403,7 +402,7 @@ impl<'a> PointCloudKdTree<'a> {
                 result.push(i);
             }
         }
-        
+
         result
     }
 }

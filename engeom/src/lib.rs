@@ -9,15 +9,15 @@ pub mod geom3;
 pub mod io;
 pub mod metrology;
 pub mod raster3;
+pub mod sensors;
 pub mod stats;
 pub mod utility;
-pub mod sensors;
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 // Re-export parry and nalgebra
-pub use parry3d_f64::na as na;
 pub use parry3d_f64 as parry3d;
+pub use parry3d_f64::na;
 
 // Common one dimensional functions
 pub use func1::{Func1, Gaussian1, Line1, Polynomial, Series1};

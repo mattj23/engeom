@@ -3,10 +3,10 @@ use crate::conversions::{array_to_points3, array2_to_points3};
 use crate::geom3::Iso3;
 use crate::mesh::Mesh;
 use crate::point_cloud::PointCloud;
+use engeom::PointCloudFeatures;
 use numpy::{PyReadonlyArray2, PyReadonlyArrayDyn};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use engeom::PointCloudFeatures;
 
 #[pyfunction]
 pub fn points_to_mesh(
@@ -47,7 +47,7 @@ pub fn points_to_cloud(
         search_radius,
         initial.get_inner(),
     );
-    
+
     match result {
         Ok(align) => Ok(Iso3::from_inner(*align.transform())),
         Err(e) => Err(PyValueError::new_err(e.to_string())),

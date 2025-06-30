@@ -7,11 +7,11 @@ pub mod hull;
 mod line2;
 pub mod polyline2;
 
-use crate::common::surface_point::SurfacePoint;
-use crate::common::svd_basis::SvdBasis;
-use crate::common::SurfacePointCollection;
 use crate::AngleDir;
 use crate::AngleDir::Cw;
+use crate::common::SurfacePointCollection;
+use crate::common::surface_point::SurfacePoint;
+use crate::common::svd_basis::SvdBasis;
 use parry2d_f64::na::UnitComplex;
 use std::ops;
 
@@ -26,10 +26,10 @@ pub type Align2 = crate::common::align::Alignment<UnitComplex<f64>, 2>;
 pub type KdTree2 = crate::common::kd_tree::KdTree<2>;
 
 pub use self::aabb2::Aabb2;
-pub use self::angles2::{directed_angle, rot270, rot90, signed_angle};
+pub use self::angles2::{directed_angle, rot90, rot270, signed_angle};
 pub use self::circle2::{Arc2, Circle2};
 pub use self::curve2::{Curve2, CurveStation2};
-pub use self::line2::{intersect_rays, intersection_param, Line2, Segment2};
+pub use self::line2::{Line2, Segment2, intersect_rays, intersection_param};
 
 pub trait HasBounds2 {
     fn aabb(&self) -> &Aabb2;

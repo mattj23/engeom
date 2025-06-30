@@ -1,9 +1,9 @@
 //! Mesh collision detection and distance checks
 
-use std::cmp::PartialEq;
 use crate::{Iso3, Mesh, Result};
-use std::collections::{HashMap, HashSet};
 use parry3d_f64::query::intersection_test;
+use std::cmp::PartialEq;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, PartialEq)]
 enum MeshType {
@@ -111,7 +111,9 @@ impl MeshCollisionSet {
                 let iso2 = &lookups[id2];
 
                 // Check for collision
-                if let Ok(check) = intersection_test(iso1, mesh1.mesh.tri_mesh(), iso2, mesh2.mesh.tri_mesh()) {
+                if let Ok(check) =
+                    intersection_test(iso1, mesh1.mesh.tri_mesh(), iso2, mesh2.mesh.tri_mesh())
+                {
                     if check {
                         pairs.push((id1, id2));
                         if stop_at_first {
@@ -139,12 +141,11 @@ impl MeshCollisionSet {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geom3::Mesh;
     use crate::Iso3;
+    use crate::geom3::Mesh;
 
     #[test]
     fn collision_set() {

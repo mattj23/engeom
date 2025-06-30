@@ -1,10 +1,10 @@
 //! Helper functions for implementing airfoil geometry algorithms.
 
 use crate::airfoil::InscribedCircle;
-use crate::common::points::dist;
 use crate::common::Intersection;
+use crate::common::points::dist;
 use crate::geom2::polyline2::SpanningRay;
-use crate::geom2::{intersection_param, Line2, Segment2, UnitVec2};
+use crate::geom2::{Line2, Segment2, UnitVec2, intersection_param};
 use crate::{Circle2, Curve2, Point2, Result, SurfacePoint2};
 
 /// Reverse the order of the inscribed circles in the container. This will additionally

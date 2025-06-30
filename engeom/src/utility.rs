@@ -2,8 +2,8 @@
 //!
 //!
 
-use crate::errors::FailedConversion;
 use crate::Result;
+use crate::errors::FailedConversion;
 use parry3d_f64::na::{Point, SVector};
 
 /// Converts a slice of arrays of floating point values into a vector of points with the specified

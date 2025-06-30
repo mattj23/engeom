@@ -4,10 +4,10 @@ use crate::geom3::align3::jacobian::{copy_jacobian, point_plane_jacobian, point_
 use crate::geom3::mesh::Mesh;
 use crate::geom3::{Align3, Point3, SurfacePoint3};
 
-use crate::common::points::{dist, mean_point};
 use crate::Result;
+use crate::common::points::{dist, mean_point};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
-use parry3d_f64::na::{Dyn, Matrix, Owned, Vector, U1, U6};
+use parry3d_f64::na::{Dyn, Matrix, Owned, U1, U6, Vector};
 
 /// Attempts to compute the alignment of a set of points to the surface of a mesh using a
 /// Levenberg-Marquardt solver.  The points are projected onto their closest matching surface point

@@ -2,10 +2,10 @@
 //!
 
 use crate::common::points::dist;
-use crate::geom2::{directed_angle, signed_angle, Arc2, Circle2, Iso2, Point2, Vector2};
+use crate::geom2::{Arc2, Circle2, Iso2, Point2, Vector2, directed_angle, signed_angle};
 
-use crate::common::kd_tree::KdTreeSearch;
 use crate::common::AngleDir;
+use crate::common::kd_tree::KdTreeSearch;
 use crate::{KdTree2, Result};
 use parry2d_f64::shape::ConvexPolygon;
 use parry2d_f64::transformation::convex_hull_idx;

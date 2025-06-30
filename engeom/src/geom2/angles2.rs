@@ -121,9 +121,5 @@ pub fn directed_angle(v1: &Vector2, v2: &Vector2, direction: AngleDir) -> f64 {
             Ccw => 1.0,
             Cw => -1.0,
         };
-    if a < 0.0 {
-        a + 2.0 * PI
-    } else {
-        a
-    }
+    if a < 0.0 { a + 2.0 * PI } else { a }
 }

@@ -1,13 +1,13 @@
 use super::*;
 use crate::geom3::align3::jacobian::{copy_jacobian, point_plane_jacobian, point_point_jacobian};
 
-use crate::geom3::point_cloud::{PointCloudFeatures, PointCloudKdTree};
-use crate::geom3::{Align3, Point3, SurfacePoint3, UnitVec3, Vector3};
 use crate::Result;
-use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
-use parry3d_f64::na::{Dyn, Matrix, Owned, Vector, U1, U6};
 use crate::common::kd_tree::KdTreeSearch;
 use crate::common::points::{dist, mean_point};
+use crate::geom3::point_cloud::{PointCloudFeatures, PointCloudKdTree};
+use crate::geom3::{Align3, Point3, SurfacePoint3, UnitVec3, Vector3};
+use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
+use parry3d_f64::na::{Dyn, Matrix, Owned, U1, U6, Vector};
 
 struct PointsToCloud<'a> {
     points: &'a [Point3],
@@ -60,10 +60,7 @@ impl<'a> PointsToCloud<'a> {
 
         for p in self.points {
             let m = t * *p;
-            let (i, d) = self
-                .cloud
-                .tree()
-                .nearest_one(&m);
+            let (i, d) = self.cloud.tree().nearest_one(&m);
             self.weight.push(distance_weight(d, max_dist));
             self.closest.push(i);
             self.moved.push(m);
@@ -112,10 +109,7 @@ impl<'a> LeastSquaresProblem<f64, Dyn, U6> for PointsToCloud<'a> {
             let values = if self.cloud_normals.is_empty() {
                 point_point_jacobian(p, &self.cloud.points()[*ci], &self.params)
             } else {
-                let sp = SurfacePoint3::new(
-                    self.cloud.points()[*ci],
-                    self.cloud_normals[*ci],
-                );
+                let sp = SurfacePoint3::new(self.cloud.points()[*ci], self.cloud_normals[*ci]);
                 point_plane_jacobian(p, &sp, &self.params)
             };
             copy_jacobian(&values, &mut jac, i);
@@ -162,7 +156,7 @@ mod tests {
         let base_cloud = PointCloud::from_surface_points(&box_mesh.sample_poisson(0.1));
         let tree = base_cloud.create_matched_tree().unwrap();
         let ref_cloud = PointCloudKdTree::try_new(&base_cloud, &tree).unwrap();
-        
+
         let disturb = Iso3::from_parts(
             Translation3::new(-1.0, 0.5, 0.5),
             UnitQuaternion::from_euler_angles(0.1, 0.1, 0.05),

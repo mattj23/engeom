@@ -1,7 +1,7 @@
 //! This module contains an abstraction for handling the parameters of 2d alignments re-expressed
 //! as a transformation around a rotation center point.
 
-use crate::geom2::align2::{iso2_from_param, param_from_iso2, T2Storage};
+use crate::geom2::align2::{T2Storage, iso2_from_param, param_from_iso2};
 use crate::geom2::{Iso2, Point2};
 
 /// Manages the parameters for a 2D alignment problem with a rotation center point.

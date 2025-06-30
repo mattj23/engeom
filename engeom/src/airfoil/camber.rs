@@ -1,16 +1,16 @@
 //! This module contains the implementation of airfoil camber line detection algorithms.
 
 use super::helpers::{
-    inscribed_from_spanning_ray, refine_stations, reverse_inscribed_circles, OrientedCircles,
+    OrientedCircles, inscribed_from_spanning_ray, refine_stations, reverse_inscribed_circles,
 };
-use crate::airfoil::inscribed_circle::InscribedCircle;
-use crate::common::points::{dist, mid_point};
-use crate::common::Resample::ByCount;
-use crate::geom2::hull::farthest_pair_indices;
-use crate::geom2::polyline2::SpanningRay;
-use crate::geom2::{rot90, Line2, Segment2};
 use crate::AngleDir::{Ccw, Cw};
 use crate::Result;
+use crate::airfoil::inscribed_circle::InscribedCircle;
+use crate::common::Resample::ByCount;
+use crate::common::points::{dist, mid_point};
+use crate::geom2::hull::farthest_pair_indices;
+use crate::geom2::polyline2::SpanningRay;
+use crate::geom2::{Line2, Segment2, rot90};
 use crate::{Curve2, UnitVec2};
 use parry2d_f64::query::Ray;
 use parry2d_f64::shape::ConvexPolygon;

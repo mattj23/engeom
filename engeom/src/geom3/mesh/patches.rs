@@ -7,11 +7,7 @@ fn edge_key(i: usize, f: &[u32; 3]) -> (u32, u32) {
 }
 
 fn make_sym(k: &(u32, u32)) -> (u32, u32) {
-    if k.0 < k.1 {
-        (k.0, k.1)
-    } else {
-        (k.1, k.0)
-    }
+    if k.0 < k.1 { (k.0, k.1) } else { (k.1, k.0) }
 }
 
 pub fn compute_boundary_edges(mesh: &Mesh, patch: &[usize]) -> Vec<(u32, u32)> {

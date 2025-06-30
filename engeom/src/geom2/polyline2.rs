@@ -1,13 +1,13 @@
 use super::signed_angle;
 use crate::common::points::mid_point;
 use parry2d_f64::bounding_volume::SimdAabb;
-use parry2d_f64::math::{SimdBool, SimdReal, DIM, SIMD_WIDTH};
+use parry2d_f64::math::{DIM, SIMD_WIDTH, SimdBool, SimdReal};
 use parry2d_f64::na::{Isometry2, Point2, SimdPartialOrd, SimdValue, Vector2};
 use parry2d_f64::partitioning::{SimdVisitStatus, SimdVisitor};
 use parry2d_f64::query::{Ray, SimdRay};
 use parry2d_f64::shape::{Polyline, SimdCompositeShape};
 
-use crate::geom2::line2::{intersect_rays, Line2};
+use crate::geom2::line2::{Line2, intersect_rays};
 use serde::{Deserialize, Serialize};
 
 /// A `SpanningRay` is a special case of ray which spans two points in a polyline, typically when
