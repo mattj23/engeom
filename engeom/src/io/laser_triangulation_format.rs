@@ -112,10 +112,20 @@ pub fn load_lptf3(file_path: &Path, take_every: Option<u32>) -> Result<PointClou
         let y_pos = y_translation * (frame_index as f64);
 
         let skip_int = skip_spacing.map(|s| (s / x_res) as i32);
-        let mut last_x = i32::MIN;
+        let mut last_skip_index = i32::MIN;
+        let mut skip_offset = i32::MIN;
 
         for _ in 0..num_points {
             let (x_raw, z_raw) = read_raw_point(&mut f, is_32_bit)?;
+
+            if let Some(skip_i) = skip_int {
+                // We have to calculate the skip offset based on the first point in order to
+                // pick a value large enough to ensure that the skip index will never be less than
+                // zero, otherwise it will produce a missing row when it crosses the zero boundary.
+                if skip_offset == i32::MIN {
+                    skip_offset = skip_i * ((-x_raw / skip_i) + 1);
+                }
+            }
 
             let c = if has_color {
                 Some(read_u8(&mut f)?)
@@ -124,11 +134,12 @@ pub fn load_lptf3(file_path: &Path, take_every: Option<u32>) -> Result<PointClou
             };
 
             if let Some(skip_i) = skip_int {
-                if skip_i % x_raw != 0 && x_raw - last_x < skip_i {
+                let skip_index = (x_raw + skip_offset) / skip_i;
+                if skip_index <= last_skip_index {
                     continue;
                 }
+                last_skip_index = skip_index;
             }
-            last_x = last_x.max(x_raw);
 
             points.push(Point3::new(
                 (x_raw as f64) * x_res + x_offset,
@@ -140,6 +151,7 @@ pub fn load_lptf3(file_path: &Path, take_every: Option<u32>) -> Result<PointClou
                 colors.push([color; 3]);
             }
         }
+
     }
 
     PointCloud::try_new(points, None, Some(colors))
