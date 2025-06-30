@@ -9,7 +9,7 @@ use crate::mesh::Mesh;
 use crate::metrology::Distance3;
 use engeom::common::points::dist;
 use engeom::common::{Selection, SplitResult};
-use engeom::{PointCloudFeatures, PointCloudKdTree};
+use engeom::{PointCloudFeatures, PointCloudKdTree, PointCloudOverlap};
 use numpy::ndarray::{Array1, Array2, ArrayD};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray2, PyReadonlyArrayDyn};
 use pyo3::exceptions::{PyIOError, PyValueError};
@@ -173,7 +173,7 @@ impl PointCloud {
             .map(Self::from_inner)
     }
 
-    fn overlap_by_reciprocity(
+    fn overlap_points_by_reciprocity(
         &mut self,
         other: &mut PointCloud,
         max_distance: f64,
@@ -187,5 +187,17 @@ impl PointCloud {
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         Ok(this_with_tree.overlap_by_reciprocity(&other_with_tree, max_distance))
+    }
+
+    fn overlap_mesh_by_reciprocity(
+        &mut self,
+        mesh: &Mesh,
+        max_distance: f64,
+    ) -> PyResult<Vec<usize>> {
+        let this_with_tree = self
+            .with_tree()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        Ok(this_with_tree.overlap_by_reciprocity(mesh.get_inner(), max_distance))
     }
 }

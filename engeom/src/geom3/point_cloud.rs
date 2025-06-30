@@ -1,10 +1,14 @@
 use crate::common::kd_tree::{KdTreeSearch, MatchedTree};
 use crate::common::points::dist;
 use crate::common::poisson_disk::sample_poisson_disk;
-use crate::{Iso3, KdTree3, Point3, Result, SurfacePoint3, UnitVec3};
+use crate::{Iso3, KdTree3, Mesh, Point3, Result, SurfacePoint3, UnitVec3};
 use bounding_volume::Aabb;
 use parry3d_f64::bounding_volume;
 use uuid::Uuid;
+
+pub trait PointCloudOverlap<TOther> {
+    fn overlap_by_reciprocity(&self, other: &TOther, max_distance: f64) -> Vec<usize>;
+}
 
 pub trait PointCloudFeatures {
     fn points(&self) -> &[Point3];
@@ -364,7 +368,47 @@ impl<'a> PointCloudKdTree<'a> {
         let indices = self.sample_poisson_disk(radius);
         self.cloud.create_from_indices(&indices)
     }
+}
 
+impl PointCloudOverlap<Mesh> for PointCloudKdTree<'_> {
+    /// Find the indices of points in this point cloud that "overlap" with a mesh by looking for
+    /// reciprocity in the closest point in each direction.
+    ///
+    /// For each point in this point cloud "p_this", we will find the closest point in the mesh
+    /// "p_other".  Then we take "p_other" and find the closest point to it in this point cloud,
+    /// "p_recip".
+    ///
+    /// In an ideally overlapping point cloud, "p_recip" should be the same as "p_this".  We will
+    /// use a maximum distance tolerance to determine if "p_recip" is close enough to "p_this" that
+    /// "p_this" is considered to be overlapping with the mesh.
+    ///
+    /// # Arguments
+    ///
+    /// * `mesh`: the mesh to check for overlap with
+    /// * `max_distance`: the maximum distance between "p_this" and "p_recip" for them to be
+    ///   considered overlapping
+    ///
+    /// returns: Vec<usize, Global>
+    fn overlap_by_reciprocity(&self, mesh: &Mesh, max_distance: f64) -> Vec<usize> {
+        let mut result = Vec::new();
+        for (i, p_this) in self.cloud.points.iter().enumerate() {
+            // Find the closest point in the mesh
+            let p_other = mesh.point_closest_to(p_this);
+
+            // Find the reciprocal point in this point cloud
+            let (k, _) = self.tree().nearest_one(&p_other);
+            let p_recip = self.cloud.points()[k];
+
+            if dist(&p_this, &p_recip) < max_distance {
+                result.push(i);
+            }
+        }
+
+        result
+    }
+}
+
+impl PointCloudOverlap<PointCloudKdTree<'_>> for PointCloudKdTree<'_> {
     /// Find the indices of points in this point cloud that "overlap" with points in another point
     /// cloud by looking for reciprocity in the closest point in each direction.
     ///
@@ -383,11 +427,7 @@ impl<'a> PointCloudKdTree<'a> {
     ///   considered overlapping
     ///
     /// returns: Vec<usize, Global>
-    pub fn overlap_by_reciprocity(
-        &self,
-        other: &PointCloudKdTree,
-        max_distance: f64,
-    ) -> Vec<usize> {
+    fn overlap_by_reciprocity(&self, other: &PointCloudKdTree, max_distance: f64) -> Vec<usize> {
         let mut result = Vec::new();
         for (i, p_this) in self.cloud.points.iter().enumerate() {
             // Find the closest point in the other point cloud

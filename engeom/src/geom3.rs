@@ -17,7 +17,7 @@ pub use curve3::{Curve3, CurveStation3};
 pub use iso3::IsoExtensions3;
 pub use mesh::{Mesh, MeshCollisionSet, UvMapping};
 pub use plane3::Plane3;
-pub use point_cloud::{PointCloud, PointCloudFeatures, PointCloudKdTree};
+pub use point_cloud::{PointCloud, PointCloudFeatures, PointCloudKdTree, PointCloudOverlap};
 pub use xyzwpr::XyzWpr;
 
 pub type Point3 = parry3d_f64::na::Point3<f64>;
