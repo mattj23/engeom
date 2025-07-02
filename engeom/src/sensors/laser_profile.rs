@@ -114,7 +114,7 @@ impl LaserProfile {
         file_path: &Path,
         take_every: Option<u32>,
         normal_neighborhood: Option<f64>,
-    ) -> Result<(PointCloud, PointExtras)> {
+    ) -> Result<(PointCloud, Vec<f64>, PointExtras)> {
         let mut loader = Lptf3Loader::new(file_path, take_every)?;
         let mut points = Vec::new();
         let mut colors = Vec::new();
@@ -146,10 +146,10 @@ impl LaserProfile {
         }
 
         // Do the normal estimation if requested
-        let normals = if let Some(radius) = normal_neighborhood {
+        let normal_estimates = if let Some(radius) = normal_neighborhood {
             let tree = KdTree3::new(&points);
             let estimates = estimate_by_neighborhood(&points, &to_detector, &tree, radius);
-            Some(estimates.normals)
+            Some(estimates)
         } else {
             None
         };
@@ -160,8 +160,18 @@ impl LaserProfile {
             Some(colors.iter().map(|c| [*c; 3]).collect())
         };
 
+        let (normals, certainties) = if let Some(estimates) = normal_estimates {
+            (
+                Some(estimates.normals),
+                estimates.confidence,
+            )
+        } else {
+            (None, Vec::new())
+        };
+
         Ok((
             PointCloud::try_new(points, normals, rgb)?,
+            certainties,
             PointExtras::empty(),
         ))
     }

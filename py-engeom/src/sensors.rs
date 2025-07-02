@@ -2,7 +2,9 @@ use crate::geom3::Iso3;
 use crate::mesh::Mesh;
 use crate::point_cloud::PointCloud;
 use engeom::sensors::SimulatedPointSensor;
-use pyo3::{PyResult, pyclass, pymethods};
+use numpy::ndarray::Array1;
+use numpy::{IntoPyArray, PyArray1};
+use pyo3::{Bound, PyResult, Python, pyclass, pymethods};
 use std::path::PathBuf;
 
 #[pyclass]
@@ -64,18 +66,24 @@ impl LaserProfile {
     }
 
     #[pyo3(signature=(path, take_every=None, normal_neighborhood=None))]
-    fn load_lptf3(
+    fn load_lptf3<'py>(
         &self,
+        py: Python<'py>,
         path: PathBuf,
         take_every: Option<u32>,
         normal_neighborhood: Option<f64>,
-    ) -> PyResult<PointCloud> {
-        let result = self
+    ) -> PyResult<(PointCloud, Bound<'py, PyArray1<f64>>)> {
+        let (cloud, certainties, _) = self
             .inner
             .load_lptf3(&path, take_every, normal_neighborhood)
             .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
 
-        Ok(PointCloud::from_inner(result.0))
+        let mut c = Array1::zeros(certainties.len());
+        for (i, &certainty) in certainties.iter().enumerate() {
+            c[i] = certainty;
+        }
+
+        Ok((PointCloud::from_inner(cloud), c.into_pyarray(py)))
     }
 }
 
