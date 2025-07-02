@@ -2,6 +2,16 @@
 
 The goal of this library is to provide a comprehensive set of metrology-focused tools for working with 2D and 3D geometry in Rust.  The primary use case is engineering applications such as GD&T and quality/dimensional inspection, and the library contains a wide set of tools to help work with every step of the process starting with raw data formats such as meshes and point clouds.
 
+## Python Bindings
+
+Python bindings for this library are on Pypi, and can be installed using standard Python package management tools.
+
+```bash
+pip install engeom
+```
+
+Python documentation can be found at https://mattj23.github.io/py-engeom/
+
 ## Documentation
 
 The documentation for this project is built with mkdocs-material.  To set up the documentation locally, use a virtual environment and run `mkdocs serve`.
