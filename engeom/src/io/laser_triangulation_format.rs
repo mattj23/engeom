@@ -151,7 +151,6 @@ pub fn load_lptf3(file_path: &Path, take_every: Option<u32>) -> Result<PointClou
                 colors.push([color; 3]);
             }
         }
-
     }
 
     PointCloud::try_new(points, None, Some(colors))

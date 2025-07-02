@@ -8,16 +8,16 @@ mod xyzwpr;
 
 use parry3d_f64::na::UnitQuaternion;
 
+use crate::TransformBy;
 use crate::common::surface_point::{SurfacePoint, SurfacePointCollection};
 use crate::common::svd_basis::SvdBasis;
-use std::ops;
-
-use crate::TransformBy;
 pub use curve3::{Curve3, CurveStation3};
 pub use iso3::IsoExtensions3;
 pub use mesh::{Mesh, MeshCollisionSet, UvMapping};
+use parry3d_f64::query::Ray;
 pub use plane3::Plane3;
 pub use point_cloud::{PointCloud, PointCloudFeatures, PointCloudKdTree, PointCloudOverlap};
+use std::ops;
 pub use xyzwpr::XyzWpr;
 
 pub type Point3 = parry3d_f64::na::Point3<f64>;
@@ -67,5 +67,11 @@ impl TransformBy<Iso3, Vec<Point3>> for &[Point3] {
 impl TransformBy<Iso3, Vec<Point3>> for &Vec<Point3> {
     fn transform_by(&self, transform: &Iso3) -> Vec<Point3> {
         self.iter().map(|p| transform * p).collect()
+    }
+}
+
+impl From<&SurfacePoint3> for Ray {
+    fn from(value: &SurfacePoint3) -> Self {
+        Ray::new(value.point, value.normal.into_inner())
     }
 }

@@ -110,8 +110,8 @@ fn register_raster3_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> 
 fn register_sensor_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     let child = PyModule::new(parent_module.py(), "_sensors")?;
 
-    child.add_class::<sensors::LaserLine>()?;
-    child.add_class::<sensors::PanningLaserLine>()?;
+    child.add_class::<sensors::LaserProfile>()?;
+    child.add_class::<sensors::PanningLaserProfile>()?;
 
     parent_module.add_submodule(&child)
 }
