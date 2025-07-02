@@ -40,83 +40,156 @@
 //! file.
 
 use crate::{Point3, PointCloud, Result};
-use std::io::Read;
+use std::fs::File;
+use std::io::{BufReader, Read, Seek};
 use std::path::Path;
 
-pub fn load_lptf3(file_path: &Path, take_every: Option<u32>) -> Result<PointCloud> {
-    let path_str = file_path
-        .to_str()
-        .ok_or_else(|| format!("Invalid path: {}", file_path.display()))?;
+/// This struct offers frame-by-frame loading of LPTF3 files, which allows the generalized loading
+/// process to be shared between different loading strategies. For instance, a LPTF3 file can be
+/// loaded naively, returning a point cloud.  However, loading it while knowing the sensor geometry
+/// can allow for normal direction and point quality estimation, or even color adjustment scalars
+/// based on reflection.
+///
+/// This struct contains the core logic for reading the files and is intended to be used by
+/// different loading mechanisms.
+pub struct Lptf3Loader {
+    file: BufReader<File>,
+    take_every: Option<u32>,
+    bytes_per_point: u32,
+    y_translation: f64,
+    skip_spacing: Option<f64>,
+    has_color: bool,
+    is_32_bit: bool,
+}
 
-    let raw_file = std::fs::File::open(file_path)
-        .map_err(|e| format!("Failed to open file '{}': {}", path_str, e))?;
-    let mut f = std::io::BufReader::new(raw_file);
+impl Lptf3Loader {
+    /// Creates a new instance of the Lptf3Loader.
+    pub fn new(file_path: &Path, take_every: Option<u32>) -> Result<Self> {
+        let path_str = file_path
+            .to_str()
+            .ok_or_else(|| format!("Invalid path: {}", file_path.display()))?;
 
-    // Read the magic number
-    let mut magic = [0; 5];
-    f.read_exact(&mut magic)?;
-    if &magic != b"LPTF3" {
-        return Err(format!("Invalid magic number in file '{}'", path_str).into());
+        let raw_file = File::open(file_path)
+            .map_err(|e| format!("Failed to open file '{}': {}", path_str, e))?;
+        let mut f = BufReader::new(raw_file);
+
+        // Read the magic number
+        let mut magic = [0; 5];
+        f.read_exact(&mut magic)?;
+        if &magic != b"LPTF3" {
+            return Err(format!("Invalid magic number in file '{}'", path_str).into());
+        }
+
+        // Read the version number
+        let version = read_u16(&mut f)?;
+        if version != 1 {
+            return Err(format!("Unsupported version {} in file '{}'", version, path_str).into());
+        }
+
+        // Read the data flags
+        let data_flags = read_u16(&mut f)?;
+        let is_32_bit = (data_flags & 0x0001) != 0;
+        let has_color = (data_flags & 0x0002) != 0;
+
+        // Read the motion type
+        let motion_type = read_u8(&mut f)?;
+        if motion_type != 0 {
+            return Err(format!(
+                "Unsupported motion type {} in file '{}'",
+                motion_type, path_str
+            )
+            .into());
+        }
+
+        // Read the y translation and skip distance for motion type 0
+        let y_translation = (read_u32(&mut f)? as f64) / 1_000_000.0; // Convert from nanometers to mm
+        let skip_spacing = take_every.map(|t| t as f64 * y_translation);
+
+        // Prepare the point and color vectors
+        // Calculate the number of bytes per point
+        let bytes_per_point = if is_32_bit { 8 } else { 4 } + if has_color { 1 } else { 0 };
+
+        Ok(Self {
+            file: f,
+            take_every,
+            bytes_per_point: bytes_per_point as u32,
+            y_translation,
+            skip_spacing,
+            has_color,
+            is_32_bit,
+        })
     }
 
-    // Read the version number
-    let version = read_u16(&mut f)?;
-    if version != 1 {
-        return Err(format!("Unsupported version {} in file '{}'", version, path_str).into());
-    }
+    /// This function reads the frame header at the current file position and does one of the
+    /// following actions:
+    ///
+    /// - If it can't read the frame header, it returns `HdrRd::EndOfFile`.
+    /// - If there's a reason to not take the data from this frame, it returns `HdrRd::Skip` and
+    ///   seeks forward to the position of the next frame header.
+    /// - If the frame header is valid and the number of points is greater than zero, it returns
+    ///   `HdrRd::Valid(header)` with the parsed frame header. It leaves the file cursor at the
+    ///   position of the first point in the frame.
+    /// - If it encounters an error (other than the end of the file), it returns the error.
+    fn read_next_frame_header(&mut self) -> Result<HdrRd> {
+        let mut buffer = [0; 24];
+        let read_result = self.file.read_exact(&mut buffer);
+        if read_result.is_err() {
+            return Ok(HdrRd::EndOfFile);
+        }
 
-    // Read the data flags
-    let data_flags = read_u16(&mut f)?;
-    let is_32_bit = (data_flags & 0x0001) != 0;
-    let has_color = (data_flags & 0x0002) != 0;
+        // If we can read the frame header, parse it
+        let header = FrameHeader::from_buffer(&buffer)?;
 
-    // Read the motion type
-    let motion_type = read_u8(&mut f)?;
-    if motion_type != 0 {
-        return Err(format!(
-            "Unsupported motion type {} in file '{}'",
-            motion_type, path_str
-        )
-        .into());
-    }
+        // If the number of points is zero, we return Skip (no need to seek, there are no points)
+        if header.num_points == 0 {
+            // If the number of points is zero, we skip this frame
+            return Ok(HdrRd::Skip);
+        }
 
-    // Read the y translation and skip distance for motion type 0
-    let y_translation = (read_u32(&mut f)? as f64) / 1_000_000.0; // Convert from nanometers to mm
-    let skip_spacing = take_every.map(|t| t as f64 * y_translation);
-
-    // Prepare the point and color vectors
-    let mut points = Vec::new();
-    let mut colors = Vec::new();
-
-    // Calculate the number of bytes per point
-    let bytes_per_point = if is_32_bit { 8 } else { 4 } + if has_color { 1 } else { 0 };
-
-    // Read the frames
-    // Frame header size is 4 (frame index) + 4 (number of points) + 4 (x offset) +
-    let mut frame_header = [0; 24];
-    while let Ok(()) = f.read_exact(&mut frame_header) {
-        let frame_index = u32::from_le_bytes(frame_header[0..4].try_into().unwrap());
-        let num_points = u32::from_le_bytes(frame_header[4..8].try_into().unwrap());
-
-        if let Some(take_n) = take_every {
-            if frame_index % take_n != 0 {
-                f.seek_relative(bytes_per_point * num_points as i64)?;
-                continue;
+        // If this frame is being skipped, we seek to the next frame and return Skip
+        if let Some(take_n) = self.take_every {
+            if header.frame_index % take_n != 0 {
+                let skip_bytes = self.bytes_per_point * header.num_points;
+                self.file.seek_relative(skip_bytes as i64)?;
+                return Ok(HdrRd::Skip);
             }
         }
 
-        let x_offset = read_offset(&frame_header[8..12])?;
-        let z_offset = read_offset(&frame_header[12..16])?;
-        let x_res = read_res(&frame_header[16..20])?;
-        let z_res = read_res(&frame_header[20..24])?;
-        let y_pos = y_translation * (frame_index as f64);
+        Ok(HdrRd::Valid(header))
+    }
 
-        let skip_int = skip_spacing.map(|s| (s / x_res) as i32);
+    /// Seek the file cursor forward to the next valid frame header. This function will do one of
+    /// three things:
+    /// - If it encounters an error, it returns `Err`.
+    /// - If it reaches the end of the file, it returns `Ok(None)`.
+    /// - If it finds a valid frame header, it returns `Ok(Some(header))` with the parsed frame
+    ///   header.
+    fn seek_next_valid_frame(&mut self) -> Result<Option<FrameHeader>> {
+        loop {
+            match self.read_next_frame_header()? {
+                HdrRd::Valid(header) => return Ok(Some(header)),
+                HdrRd::Skip => continue, // Skip this frame and read the next one
+                HdrRd::EndOfFile => return Ok(None), // Reached the end of the file
+            }
+        }
+    }
+
+    pub fn get_next_frame_points(&mut self) -> Result<Option<(f64, Vec<(f64, f64)>, Vec<u8>)>> {
+        let mut points = Vec::new();
+        let mut colors = Vec::new();
+
+        let header = match self.seek_next_valid_frame()? {
+            Some(h) => h,
+            None => return Ok(None), // No more frames to read
+        };
+
+        let y_pos = header.frame_index as f64 * self.y_translation;
+        let skip_int = self.skip_spacing.map(|s| (s / header.x_res) as i32);
         let mut last_skip_index = i32::MIN;
         let mut skip_offset = i32::MIN;
 
-        for _ in 0..num_points {
-            let (x_raw, z_raw) = read_raw_point(&mut f, is_32_bit)?;
+        for _ in 0..header.num_points {
+            let (x_raw, z_raw) = read_raw_point(&mut self.file, self.is_32_bit)?;
 
             if let Some(skip_i) = skip_int {
                 // We have to calculate the skip offset based on the first point in order to
@@ -127,8 +200,8 @@ pub fn load_lptf3(file_path: &Path, take_every: Option<u32>) -> Result<PointClou
                 }
             }
 
-            let c = if has_color {
-                Some(read_u8(&mut f)?)
+            let c = if self.has_color {
+                Some(read_u8(&mut self.file)?)
             } else {
                 None
             };
@@ -141,19 +214,80 @@ pub fn load_lptf3(file_path: &Path, take_every: Option<u32>) -> Result<PointClou
                 last_skip_index = skip_index;
             }
 
-            points.push(Point3::new(
-                (x_raw as f64) * x_res + x_offset,
-                y_pos,
-                (z_raw as f64) * z_res + z_offset,
+            points.push((
+                (x_raw as f64) * header.x_res + header.x_offset,
+                (z_raw as f64) * header.z_res + header.z_offset,
             ));
 
             if let Some(color) = c {
-                colors.push([color; 3]);
+                colors.push(color);
             }
+        }
+
+        Ok(Some((y_pos, points, colors)))
+    }
+}
+
+enum HdrRd {
+    Valid(FrameHeader),
+    Skip,
+    EndOfFile,
+}
+
+struct FrameHeader {
+    frame_index: u32,
+    num_points: u32,
+    x_offset: f64,
+    z_offset: f64,
+    x_res: f64,
+    z_res: f64,
+}
+
+impl FrameHeader {
+    fn from_buffer(buffer: &[u8; 24]) -> Result<Self> {
+        if buffer.len() != 24 {
+            return Err("Invalid frame header size".into());
+        }
+
+        let frame_index = u32::from_le_bytes(buffer[0..4].try_into()?);
+        let num_points = u32::from_le_bytes(buffer[4..8].try_into()?);
+        let x_offset = read_offset(&buffer[8..12])?;
+        let z_offset = read_offset(&buffer[12..16])?;
+        let x_res = read_res(&buffer[16..20])?;
+        let z_res = read_res(&buffer[20..24])?;
+
+        Ok(Self {
+            frame_index,
+            num_points,
+            x_offset,
+            z_offset,
+            x_res,
+            z_res,
+        })
+    }
+}
+
+pub fn load_lptf3(file_path: &Path, take_every: Option<u32>) -> Result<PointCloud> {
+    let mut loader = Lptf3Loader::new(file_path, take_every)?;
+    let mut points = Vec::new();
+    let mut colors = Vec::new();
+
+    while let Some((y_pos, frame_points, frame_colors)) = loader.get_next_frame_points()? {
+        for (x, z) in frame_points {
+            points.push(Point3::new(x, y_pos, z));
+        }
+        if !frame_colors.is_empty() {
+            colors.extend(frame_colors);
         }
     }
 
-    PointCloud::try_new(points, None, Some(colors))
+    let c = if loader.has_color {
+        Some(colors.iter().map(|c| [*c; 3]).collect())
+    } else {
+        None
+    };
+
+    PointCloud::try_new(points, None, c)
 }
 
 fn read_raw_point<R: Read>(reader: &mut R, is_32bit: bool) -> Result<(i32, i32)> {
