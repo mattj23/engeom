@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from .geom3 import Point3, Mesh, Iso3, Vector3, PointCloud
 
 
@@ -57,8 +59,6 @@ class LaserProfile:
           less than this limit.
         """
         ...
-    
-        
 
     def get_points(self, target: Mesh, obstruction: Mesh | None, iso: Iso3) -> PointCloud:
         """
@@ -67,6 +67,19 @@ class LaserProfile:
         :param obstruction:
         :param iso:
         :return:
+        """
+        ...
+
+    def load_lptf3(self, path: str | Path, take_every: int | None = None,
+                   normal_neighborhood: float | None = None) -> PointCloud:
+        """
+        Load a laser profile from a LPTF3 file.
+
+        :param path: The path to the LPTF3 file.
+        :param take_every: Optional parameter to take every nth row/col from the file.
+        :param normal_neighborhood: Optional parameter to specify the neighborhood size for normal
+          calculation.
+        :return: A PointCloud containing the points from the LPTF3 file.
         """
         ...
 

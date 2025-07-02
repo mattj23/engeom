@@ -1,4 +1,4 @@
-mod laser_triangulation_format;
+mod lptf3;
 
 use crate::Result;
 use parry3d_f64::na::{Point3, Vector3};
@@ -12,7 +12,7 @@ use stl_io;
 #[cfg(feature = "stl")]
 use crate::geom3::Mesh;
 
-pub use laser_triangulation_format::load_lptf3;
+pub use lptf3::{Lptf3Loader, load_lptf3};
 
 #[cfg(feature = "stl")]
 pub fn read_mesh_stl(path: &Path, merge_duplicates: bool, delete_degenerate: bool) -> Result<Mesh> {

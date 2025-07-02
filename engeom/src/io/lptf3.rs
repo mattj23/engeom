@@ -44,6 +44,44 @@ use std::fs::File;
 use std::io::{BufReader, Read, Seek};
 use std::path::Path;
 
+/// Read a lptf3 (Laser Profile Triangulation Format 3D) file and return a `PointCloud`.
+///
+/// This function reads a LPTF3 file, which is a compact file format for storing 3D point data
+/// taken from a laser profile triangulation scanner. The format is simple and compact, capable
+/// of practically storing about 200k points (with an 8-bit color value each) per MB when using a
+/// 16-bit coordinate format, or half that when using a 32-bit coordinate format.
+///
+/// # Arguments
+///
+/// * `file_path`: the path to the LPTF3 file to read.
+/// * `take_every`: skips frames that are not multiples of this value, while also skipping points
+///   that are not roughly spaced by the same gap between frames. To take only every nth frame,
+///   set this to `Some(n)`. If `None`, or `Some(1)` all frames are taken.
+///
+/// returns: Result<PointCloud, Box<dyn Error, Global>>
+pub fn load_lptf3(file_path: &Path, take_every: Option<u32>) -> Result<PointCloud> {
+    let mut loader = Lptf3Loader::new(file_path, take_every)?;
+    let mut points = Vec::new();
+    let mut colors = Vec::new();
+
+    while let Some((y_pos, frame_points, frame_colors)) = loader.get_next_frame_points()? {
+        for (x, z) in frame_points {
+            points.push(Point3::new(x, y_pos, z));
+        }
+        if !frame_colors.is_empty() {
+            colors.extend(frame_colors);
+        }
+    }
+
+    let c = if loader.has_color {
+        Some(colors.iter().map(|c| [*c; 3]).collect())
+    } else {
+        None
+    };
+
+    PointCloud::try_new(points, None, c)
+}
+
 /// This struct offers frame-by-frame loading of LPTF3 files, which allows the generalized loading
 /// process to be shared between different loading strategies. For instance, a LPTF3 file can be
 /// loaded naively, returning a point cloud.  However, loading it while knowing the sensor geometry
@@ -109,9 +147,15 @@ impl Lptf3Loader {
         // Calculate the number of bytes per point
         let bytes_per_point = if is_32_bit { 8 } else { 4 } + if has_color { 1 } else { 0 };
 
+        let take = match take_every {
+            Some(1) => None,
+            Some(n) => Some(n),
+            _ => None,
+        };
+
         Ok(Self {
             file: f,
-            take_every,
+            take_every: take,
             bytes_per_point: bytes_per_point as u32,
             y_translation,
             skip_spacing,
@@ -265,29 +309,6 @@ impl FrameHeader {
             z_res,
         })
     }
-}
-
-pub fn load_lptf3(file_path: &Path, take_every: Option<u32>) -> Result<PointCloud> {
-    let mut loader = Lptf3Loader::new(file_path, take_every)?;
-    let mut points = Vec::new();
-    let mut colors = Vec::new();
-
-    while let Some((y_pos, frame_points, frame_colors)) = loader.get_next_frame_points()? {
-        for (x, z) in frame_points {
-            points.push(Point3::new(x, y_pos, z));
-        }
-        if !frame_colors.is_empty() {
-            colors.extend(frame_colors);
-        }
-    }
-
-    let c = if loader.has_color {
-        Some(colors.iter().map(|c| [*c; 3]).collect())
-    } else {
-        None
-    };
-
-    PointCloud::try_new(points, None, c)
 }
 
 fn read_raw_point<R: Read>(reader: &mut R, is_32bit: bool) -> Result<(i32, i32)> {

@@ -3,6 +3,7 @@ use crate::mesh::Mesh;
 use crate::point_cloud::PointCloud;
 use engeom::sensors::SimulatedPointSensor;
 use pyo3::{PyResult, pyclass, pymethods};
+use std::path::PathBuf;
 
 #[pyclass]
 #[derive(Clone)]
@@ -60,6 +61,21 @@ impl LaserProfile {
             iso.get_inner(),
         );
         Ok(PointCloud::from_inner(cloud))
+    }
+
+    #[pyo3(signature=(path, take_every=None, normal_neighborhood=None))]
+    fn load_lptf3(
+        &self,
+        path: PathBuf,
+        take_every: Option<u32>,
+        normal_neighborhood: Option<f64>,
+    ) -> PyResult<PointCloud> {
+        let result = self
+            .inner
+            .load_lptf3(&path, take_every, normal_neighborhood)
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+
+        Ok(PointCloud::from_inner(result.0))
     }
 }
 

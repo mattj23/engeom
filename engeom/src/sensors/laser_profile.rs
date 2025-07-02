@@ -6,12 +6,15 @@
 //! Examples include the LMI Gocator 2D profile series, the Micro-Epsilon scanCONTROL series,
 //! and the Keyence LJ series.
 
+use crate::io::Lptf3Loader;
 use crate::na::Translation3;
 use crate::sensors::SimulatedPointSensor;
-use crate::{Iso3, Mesh, Point3, PointCloud, PointCloudFeatures, UnitVec3, Vector3};
+use crate::{Iso3, KdTree3, Mesh, Point3, PointCloud, PointCloudFeatures, UnitVec3, Vector3};
 use crate::{Result, SurfacePoint3};
 use parry3d_f64::query::{Ray, RayCast};
 use std::f64::consts::PI;
+use std::path::Path;
+use crate::geom3::point_cloud::estimate_by_neighborhood;
 
 /// Represents the geometry of a laser profile line sensor, which emits a laser line into a scene
 /// and detects the reflection of that line to triangulate the distance to points on a surface.
@@ -69,12 +72,6 @@ impl LaserProfile {
     ///   less than this limit.
     ///
     /// returns: Result<LaserProfileSensor, Box<dyn Error, Global>>
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
     pub fn new(
         emitter_z: f64,
         detector_y: f64,
@@ -94,6 +91,96 @@ impl LaserProfile {
             volume_z_max,
             resolution,
             angle_limit,
+        }
+    }
+
+    /// Load a point cloud from a file in the LPTF3 format using this sensor's geometry. This
+    /// allows for some extra information to be calculated, such as the geometric uncertainty of
+    /// the points, the general direction of normal vectors, and a brightness correction value
+    /// based on reflection from the emitter to the detector.
+    ///
+    /// # Arguments
+    ///
+    /// * `file_path`: the path to the `.lptf3` file to load
+    /// * `take_every`: an optional parameter which specifies which rows to keep from the file,
+    ///   allowing fast, grid-like downsampling of the point cloud. Every `take_every`-th row is
+    ///   kept, and the columns are downsampled to roughly match the spacing of the skipped rows.
+    /// * `normal_neighborhood`: Optional parameter which specifies the neighborhood radius to use
+    ///   when estimating the point cloud normals. If `None`, the normals will not be estimated.
+    ///
+    /// returns: Result<(PointCloud, PointExtras), Box<dyn Error, Global>>
+    pub fn load_lptf3(
+        &self,
+        file_path: &Path,
+        take_every: Option<u32>,
+        normal_neighborhood: Option<f64>,
+    ) -> Result<(PointCloud, PointExtras)> {
+        let mut loader = Lptf3Loader::new(file_path, take_every)?;
+        let mut points = Vec::new();
+        let mut colors = Vec::new();
+
+        // The vector from each point to the detector when the point was sampled
+        let mut to_detector = Vec::new();
+        // let mut to_emitter = Vec::new();
+
+        // The relative positions of the detector and the emitter for each frame at the moment the
+        // frame was sampled.
+        let detector = Point3::new(0.0, self.detector_y, self.detector_z);
+        let emitter = Point3::new(0.0, 0.0, self.emitter_z);
+
+        while let Some((y_pos, frame_points, frame_colors)) = loader.get_next_frame_points()? {
+            for (x, z) in frame_points {
+                points.push(Point3::new(x, y_pos, z));
+
+                // If we're computing the normal neighborhood, we know that the vector from the point
+                // to the detector must be in the half-space as the final normal vector, so we can
+                // record it now for later use.
+                if normal_neighborhood.is_some() {
+                    let v = detector - Point3::new(x, 0.0, z);
+                    to_detector.push(v);
+                }
+            }
+            if !frame_colors.is_empty() {
+                colors.extend(frame_colors);
+            }
+        }
+
+        // Do the normal estimation if requested
+        let normals = if let Some(radius) = normal_neighborhood {
+            let tree = KdTree3::new(&points);
+            let estimates = estimate_by_neighborhood(&points, &to_detector, &tree, radius);
+            Some(estimates.normals)
+        } else {
+            None
+        };
+
+        let rgb = if colors.is_empty() {
+            None
+        } else {
+            Some(colors.iter().map(|c| [*c; 3]).collect())
+        };
+
+        Ok((
+            PointCloud::try_new(points, normals, rgb)?,
+            PointExtras::empty(),
+        ))
+    }
+}
+
+pub struct PointExtras {
+    pub stdev: Vec<f64>,
+    pub brightness: Vec<f64>,
+}
+
+impl PointExtras {
+    pub fn new(stdev: Vec<f64>, brightness: Vec<f64>) -> Self {
+        Self { stdev, brightness }
+    }
+
+    pub fn empty() -> Self {
+        Self {
+            stdev: Vec::new(),
+            brightness: Vec::new(),
         }
     }
 }

@@ -1,3 +1,5 @@
+mod normal_estimation;
+
 use crate::common::kd_tree::{KdTreeSearch, MatchedTree};
 use crate::common::points::dist;
 use crate::common::poisson_disk::sample_poisson_disk;
@@ -5,6 +7,8 @@ use crate::{Iso3, KdTree3, Mesh, Point3, Result, SurfacePoint3, UnitVec3};
 use bounding_volume::Aabb;
 use parry3d_f64::bounding_volume;
 use uuid::Uuid;
+
+pub use normal_estimation::{estimate_by_neighborhood, NormalEstimates};
 
 pub trait PointCloudOverlap<TOther> {
     fn overlap_by_reciprocity(&self, other: &TOther, max_distance: f64) -> Vec<usize>;

@@ -3,7 +3,7 @@ mod curve3;
 mod iso3;
 pub mod mesh;
 mod plane3;
-mod point_cloud;
+pub mod point_cloud;
 mod xyzwpr;
 
 use parry3d_f64::na::UnitQuaternion;
