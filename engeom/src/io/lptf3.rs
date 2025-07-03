@@ -94,6 +94,36 @@ pub fn load_lptf3(file_path: &Path, load: Lptf3Load) -> Result<PointCloud> {
     }
 }
 
+/// Read a lptf3 (Laser Profile Triangulation Format 3D) file and return a `HalfEdgeMesh`.
+///
+/// This function reads a LPTF3 file, which is a compact file format for storing 3D point data
+/// taken from a laser profile triangulation scanner. The format is simple and compact, capable
+/// of practically storing about 200k points (with an 8-bit color value each) per MB when using a
+/// 16-bit coordinate format, or half that when using a 32-bit coordinate format.
+///
+/// There are a few different ways to load the data, controlled by the `Lptf3Load` enum:
+///   - `Lptf3Load::All`: Load all points from the file.
+///   - `Lptf3Load::TakeEveryN(n)`: Load every Nth row from the file. The loader will attempt to
+///     roughly match the x spacing of the points to the gap distance between rows, resulting in a
+///     grid-like point cloud with an approximately uniform point spacing when viewed from the
+///     X-Y plane.  This is a very fast method of retrieving a downsampled point cloud.
+///   - `Lptf3Load::SmoothSample(params)`: Load the points using a downsampling filter, which
+///     downsamples the point cloud similar to the `TakeEveryN` method, but also performs a gaussian
+///     smoothing step using the full original cloud.  This takes the longest time, but can remove
+///     a significant amount of noise from the data by making use of an adjacency structure that
+///     will be lost once the points are turned into a cloud.
+///
+/// Once the points are loaded, they will be converted into a triangle mesh by connecting points in
+/// adjacent rows with triangles that meet certain edge length criterial. The result is a fast mesh
+/// that can be built using knowledge of the LPTF3's internal structure rather than having to rely
+/// on more general techniques that can build meshes from arbitrary point clouds.
+///
+/// # Arguments
+///
+/// * `file_path`: A path to the LPTF3 file to load.
+/// * `load`: An enum specifying how to load the data from the file.
+///
+/// returns: Result<PolyMeshT<3, NaAdaptor>, Box<dyn Error, Global>>
 pub fn load_lptf3_mesh(file_path: &Path, load: Lptf3Load) -> Result<HalfEdgeMesh> {
     let (take_every, y_shift, point_rows) = match load {
         Lptf3Load::All => get_loader_point_rows(file_path, None),
