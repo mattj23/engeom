@@ -11,6 +11,12 @@ pub struct VertexBuilder<const D: usize> {
     points: Vec<Point<f64, D>>,
 }
 
+impl<const D: usize> Default for VertexBuilder<D> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<const D: usize> VertexBuilder<D> {
     pub fn new() -> Self {
         Self { points: Vec::new() }

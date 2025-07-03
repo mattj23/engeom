@@ -21,6 +21,12 @@ pub struct MeshCollisionSet {
     exceptions: HashSet<(usize, usize)>,
 }
 
+impl Default for MeshCollisionSet {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MeshCollisionSet {
     pub fn new() -> Self {
         Self {
@@ -134,7 +140,7 @@ impl MeshCollisionSet {
                 return Err(format!("Transform id {} out of bounds", id).into());
             }
 
-            lookups[id] = iso.clone();
+            lookups[id] = iso;
         }
 
         Ok(lookups)

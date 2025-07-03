@@ -3,8 +3,6 @@ use crate::common::Resample;
 use crate::conversions::{
     array_to_points2, array_to_vectors2, array2_to_points2, points_to_array2,
 };
-use crate::geom3::Point3;
-use engeom::airfoil::OpenEdge;
 use engeom::geom2::{HasBounds2, Line2};
 use engeom::{BestFit, To3D};
 use numpy::ndarray::{Array1, ArrayD};
@@ -463,7 +461,7 @@ impl Circle2 {
     ) -> PyResult<Self> {
         let points = array2_to_points2(&points.as_array())?;
         let guess = if let Some(c) = guess {
-            c.get_inner().clone()
+            *c.get_inner()
         } else {
             engeom::Circle2::new(0.0, 0.0, 1.0)
         };

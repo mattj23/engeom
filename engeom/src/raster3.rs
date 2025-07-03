@@ -25,8 +25,8 @@ pub fn clusters_from_sparse(mut indices: HashSet<(i32, i32, i32)>) -> Vec<Vec<(i
 
         to_visit.push(pop_index(&mut indices));
 
-        while !to_visit.is_empty() {
-            let current = to_visit.pop().unwrap();
+        while let Some(current) = to_visit.pop() {
+            
             working.push(current);
 
             for x in -1..=1 {
@@ -52,7 +52,7 @@ pub fn clusters_from_sparse(mut indices: HashSet<(i32, i32, i32)>) -> Vec<Vec<(i
 }
 
 fn pop_index(indices: &mut HashSet<(i32, i32, i32)>) -> (i32, i32, i32) {
-    let result = indices.iter().next().unwrap().clone();
+    let result = *indices.iter().next().unwrap();
     indices.remove(&result);
     result
 }

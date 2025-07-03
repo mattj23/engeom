@@ -3,7 +3,6 @@
 mod laser_profile;
 
 use crate::{Iso3, Mesh, PointCloud};
-use parry3d_f64::query::RayCast;
 
 pub use laser_profile::{LaserProfile, PanningLaserProfile};
 

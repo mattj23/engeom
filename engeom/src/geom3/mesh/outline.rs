@@ -201,9 +201,9 @@ impl Mesh {
             let k1 = k[1];
 
             let p0: Point3 =
-                self.shape.vertices()[k0 as usize].clone() + vert_normals[k0 as usize] * 1e-2;
+                self.shape.vertices()[k0 as usize] + vert_normals[k0 as usize] * 1e-2;
             let p1: Point3 =
-                self.shape.vertices()[k1 as usize].clone() + vert_normals[k1 as usize] * 1e-2;
+                self.shape.vertices()[k1 as usize] + vert_normals[k1 as usize] * 1e-2;
 
             let points = fill_gaps(&[p0, p1], max_edge_length);
 
@@ -262,7 +262,7 @@ impl Mesh {
     }
 
     fn classified_edge_types(&self) -> (HashSet<[u32; 2]>, HashMap<[u32; 2], [u32; 2]>) {
-        let naive = naive_edges(&self.shape.indices());
+        let naive = naive_edges(self.shape.indices());
         let unique = unique_edges(&naive);
 
         let mut boundaries = HashSet::new();

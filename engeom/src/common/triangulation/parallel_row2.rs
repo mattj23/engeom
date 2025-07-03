@@ -123,9 +123,9 @@ impl<'a> StripRowState<'a> {
 
         let max_edge = ea.max(eb).max(ec);
         if max_edge < self.max_edge_ratio * strip_width {
-            let a0 = three_point_angle(&pa, &pb, &pc);
-            let a1 = three_point_angle(&pb, &pc, &pa);
-            let a2 = three_point_angle(&pc, &pa, &pb);
+            let a0 = three_point_angle(pa, pb, pc);
+            let a1 = three_point_angle(pb, pc, pa);
+            let a2 = three_point_angle(pc, pa, pb);
 
             Some(a0.max(a1).max(a2))
         } else {

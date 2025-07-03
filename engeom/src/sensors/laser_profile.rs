@@ -258,7 +258,7 @@ impl SimulatedPointSensor for LaserProfile {
                 }
 
                 // Check if the witness ray intersects with the target before expected
-                if let Some(_) = target.tri_mesh().cast_ray(iso, &witness, 1.0 - 1e-4, false) {
+                if target.tri_mesh().cast_ray(iso, &witness, 1.0 - 1e-4, false).is_some() {
                     continue;
                 }
 

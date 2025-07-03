@@ -87,12 +87,12 @@ impl Aabb2 {
 
     #[getter]
     fn min(&self) -> Point2 {
-        Point2::from_inner(self.inner.mins.clone())
+        Point2::from_inner(self.inner.mins)
     }
 
     #[getter]
     fn max(&self) -> Point2 {
-        Point2::from_inner(self.inner.maxs.clone())
+        Point2::from_inner(self.inner.maxs)
     }
 
     #[getter]
@@ -236,12 +236,12 @@ impl Aabb3 {
 
     #[getter]
     fn min(&self) -> Point3 {
-        Point3::from_inner(self.inner.mins.clone())
+        Point3::from_inner(self.inner.mins)
     }
 
     #[getter]
     fn max(&self) -> Point3 {
-        Point3::from_inner(self.inner.maxs.clone())
+        Point3::from_inner(self.inner.maxs)
     }
 
     #[getter]

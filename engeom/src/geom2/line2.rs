@@ -49,7 +49,7 @@ pub trait Line2 {
 
 impl Line2 for Ray2 {
     fn origin(&self) -> Point2 {
-        self.origin.clone()
+        self.origin
     }
 
     fn dir(&self) -> Vector2 {

@@ -1,6 +1,6 @@
 //! This module has additional tools and functions for working with 3D isometries
 
-use crate::{Iso3, Point3, Result, UnitVec3, Vector3};
+use crate::{Iso3, Point3, Result, Vector3};
 use parry3d_f64::na::{Matrix3, Translation3};
 use parry3d_f64::na::{Matrix4, UnitQuaternion, try_convert};
 
@@ -146,7 +146,7 @@ impl IsoExtensions3 for Iso3 {
     fn try_from_basis_yz(e1: &Vector3, e2: &Vector3, origin: Option<Point3>) -> Result<Iso3> {
         let e1 = e1.try_normalize(1e-10).ok_or("Could not normalize e1")?;
         let e0 = e1
-            .cross(&e2)
+            .cross(e2)
             .try_normalize(1e-10)
             .ok_or("Could not normalize e0")?;
         let e2 = e0
@@ -216,7 +216,7 @@ impl IsoExtensions3 for Iso3 {
     fn try_from_basis_zx(e2: &Vector3, e0: &Vector3, origin: Option<Point3>) -> Result<Iso3> {
         let e2 = e2.try_normalize(1e-10).ok_or("Could not normalize e2")?;
         let e1 = e2
-            .cross(&e0)
+            .cross(e0)
             .try_normalize(1e-10)
             .ok_or("Could not normalize e2")?;
         let e0 = e1
@@ -289,7 +289,7 @@ fn from_bases(e0: Vector3, e1: Vector3, e2: Vector3, origin: Option<Point3>) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Point3;
+    use crate::{Point3, UnitVec3};
     use approx::assert_relative_eq;
     use std::f64::consts::PI;
 

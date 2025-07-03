@@ -1,7 +1,7 @@
 //! This module has tools for estimating normals from point clouds.
 
 use crate::common::kd_tree::KdTreeSearch;
-use crate::{KdTree3, Point3, Result, SvdBasis3, UnitVec3, Vector3};
+use crate::{KdTree3, Point3, SvdBasis3, UnitVec3, Vector3};
 use rayon::prelude::*;
 
 /// Estimates of normals from a point cloud, including confidence values.

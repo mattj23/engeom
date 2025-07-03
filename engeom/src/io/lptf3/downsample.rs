@@ -172,7 +172,7 @@ fn adjust_point(p: &Point3, samples: &[Point3], sigma: f64, max_move: f64) -> Po
 
     // Calculate the SVD basis from the samples
     let sp = SurfacePoint3::new(*p, UnitVec3::new_unchecked(Vector3::z()));
-    let basis = SvdBasis3::from_points(&samples, Some(&weights));
+    let basis = SvdBasis3::from_points(samples, Some(&weights));
 
     // Check that the standard deviation of the second basis is at least 10x of the last so that
     // we didn't just best-fit a plane to a line

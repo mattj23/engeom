@@ -5,7 +5,7 @@ use crate::Result;
 use crate::common::kd_tree::KdTreeSearch;
 use crate::common::points::{dist, mean_point};
 use crate::geom3::point_cloud::{PointCloudFeatures, PointCloudKdTree};
-use crate::geom3::{Align3, Point3, SurfacePoint3, UnitVec3, Vector3};
+use crate::geom3::{Align3, Point3, SurfacePoint3, UnitVec3};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use parry3d_f64::na::{Dyn, Matrix, Owned, U1, U6, Vector};
 
@@ -30,11 +30,7 @@ impl<'a> PointsToCloud<'a> {
         let mean_point = mean_point(points);
         let params = RcParams3::from_initial(initial, &mean_point);
 
-        let cloud_normals = if let Some(normals) = cloud.normals() {
-            normals
-        } else {
-            &[]
-        };
+        let cloud_normals = cloud.normals().unwrap_or_default();
 
         let mut item = Self {
             points,

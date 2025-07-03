@@ -49,9 +49,6 @@ use crate::common::triangulation::parallel_row2::{StripRowPoint, build_parallel_
 use crate::geom3::mesh::HalfEdgeMesh;
 use crate::io::lptf3::downsample::load_downsample_filter_lptf3;
 use crate::{Point3, PointCloud, Result};
-use alum::Handle;
-use rayon::prelude::*;
-use std::io::{Read, Seek};
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy)]

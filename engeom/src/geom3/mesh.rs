@@ -306,7 +306,7 @@ impl Mesh {
         let mut result = Vec::new();
         for t in self.shape.triangles() {
             if let Some(n) = t.normal() {
-                result.push(n.clone());
+                result.push(n);
             } else {
                 return Err("Failed to get normal".into());
             }

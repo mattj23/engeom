@@ -8,7 +8,6 @@ use crate::metrology::Distance3;
 use crate::point_cloud::Lptf3Load;
 use engeom::common::points::dist;
 use engeom::common::{Selection, SplitResult};
-use engeom::geom3::mesh::half_edge::HalfEdgeSmoothing;
 use numpy::ndarray::{Array1, ArrayD};
 use numpy::{IntoPyArray, PyArray1, PyArrayDyn, PyReadonlyArrayDyn};
 use pyo3::exceptions::{PyIOError, PyValueError};
@@ -386,7 +385,7 @@ impl Mesh {
         height: f64,
         up: Option<Vector3>,
     ) -> PyResult<Self> {
-        let up = up.map_or(engeom::Vector3::z(), |v| v.get_inner().clone());
+        let up = up.map_or(engeom::Vector3::z(), |v| *v.get_inner());
         let mesh = engeom::Mesh::create_rect_beam_between(
             p0.get_inner(),
             p1.get_inner(),
@@ -543,7 +542,7 @@ impl MeshCollisionSet {
     ) -> PyResult<Vec<(usize, usize)>> {
         let transforms = transforms
             .into_iter()
-            .map(|(id, iso)| (id, iso.get_inner().clone()))
+            .map(|(id, iso)| (id, *iso.get_inner()))
             .collect::<Vec<_>>();
 
         let result = self

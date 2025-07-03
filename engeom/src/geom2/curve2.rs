@@ -12,7 +12,6 @@ use parry2d_f64::na::Unit;
 use parry2d_f64::query::{PointQueryWithLocation, Ray};
 use parry2d_f64::shape::{ConvexPolygon, Polyline};
 use serde::{Deserialize, Serialize};
-use std::ops::Add;
 
 /// A `CurveStation2` is a convenience struct which represents a location on the manifold defined
 /// by the curve. It has a point, a direction, and a normal. It has an index and a fraction which
@@ -216,7 +215,7 @@ impl Curve2 {
 
     /// Clones the vertex at the given index.
     pub fn vtx(&self, i: usize) -> Point2 {
-        self.line.vertices()[i].clone()
+        self.line.vertices()[i]
     }
 
     pub fn aabb(&self) -> &Aabb2 {
@@ -581,11 +580,7 @@ impl Curve2 {
                 points.push(end.point);
             }
 
-            if let Ok(c) = Curve2::from_points(&points, self.tol, false) {
-                Some(c)
-            } else {
-                None
-            }
+            Curve2::from_points(&points, self.tol, false).ok()
         }
     }
 
@@ -903,7 +898,7 @@ impl Curve2 {
                 new_segments.first().unwrap(),
             )?);
         } else {
-            new_points.push(new_segments.first().unwrap().a.clone());
+            new_points.push(new_segments.first().unwrap().a);
         }
 
         // Calculate all vertices between segments
@@ -916,9 +911,9 @@ impl Curve2 {
 
         // Special case for the last vertex if the curve is closed
         if self.is_closed {
-            new_points.push(new_points.first().unwrap().clone());
+            new_points.push(*new_points.first().unwrap());
         } else {
-            new_points.push(new_segments.last().unwrap().b.clone());
+            new_points.push(new_segments.last().unwrap().b);
         }
 
         Curve2::from_points(&new_points, self.tol, self.is_closed)
@@ -1219,12 +1214,10 @@ fn vertex_between_segs(a: &Segment2, b: &Segment2) -> Result<Point2> {
     if dist(&a.b, &b.a) < 1e-10 {
         // If the segments are parallel, we can just return the endpoint of `a`
         Ok(a.b)
+    } else if let Some((t0, _)) = intersection_param(&a.a, &a.dir(), &b.a, &b.dir()) {
+        Ok(a.at(t0))
     } else {
-        if let Some((t0, _)) = intersection_param(&a.a, &a.dir(), &b.a, &b.dir()) {
-            Ok(a.at(t0))
-        } else {
-            Err("Adjacent segments do not intersect".to_string().into())
-        }
+        Err("Adjacent segments do not intersect".to_string().into())
     }
 }
 

@@ -1,7 +1,7 @@
 //! This module has conversion helpers for numpy arrays and other engeom types
 
 use engeom::{Point2, Point3, Vector2, Vector3};
-use numpy::ndarray::{Array2, ArrayD, ArrayView2, ArrayViewD, Dim};
+use numpy::ndarray::{Array2, ArrayD, ArrayView2, ArrayViewD};
 use pyo3::PyResult;
 use pyo3::exceptions::PyValueError;
 

@@ -1,9 +1,8 @@
-use numpy::ndarray::{Array1, ArrayD};
-use numpy::{IntoPyArray, PyArray1, PyArrayDyn, PyReadonlyArrayDyn, PyUntypedArrayMethods};
+use numpy::ndarray::ArrayD;
+use numpy::{IntoPyArray, PyArrayDyn, PyReadonlyArrayDyn, PyUntypedArrayMethods};
 use pyo3::exceptions::PyValueError;
-use pyo3::types::PyIterator;
 use pyo3::{
-    Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyResult, Python, pyclass,
+    Bound, PyResult,
     pyfunction,
 };
 use std::collections::HashSet;

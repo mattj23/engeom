@@ -3,7 +3,6 @@ use crate::conversions::{array_to_points3, array2_to_points3};
 use crate::geom3::Iso3;
 use crate::mesh::Mesh;
 use crate::point_cloud::PointCloud;
-use engeom::PointCloudFeatures;
 use numpy::{PyReadonlyArray2, PyReadonlyArrayDyn};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;

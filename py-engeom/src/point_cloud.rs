@@ -162,7 +162,7 @@ impl PointCloud {
     fn colors<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray2<u8>>> {
         if let Some(colors) = self.inner.colors() {
             if self.colors.is_none() {
-                let flat_colors = colors.iter().flatten().map(|u| *u).collect::<Vec<_>>();
+                let flat_colors = colors.iter().flatten().copied().collect::<Vec<_>>();
                 let array = Array2::from_shape_vec((self.inner.points().len(), 3), flat_colors)
                     .expect("Failed to create color array");
                 self.colors = Some(array.into_pyarray(py).unbind());

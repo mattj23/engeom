@@ -403,7 +403,7 @@ impl PointCloudOverlap<Mesh> for PointCloudKdTree<'_> {
             let (k, _) = self.tree().nearest_one(&p_other);
             let p_recip = self.cloud.points()[k];
 
-            if dist(&p_this, &p_recip) < max_distance {
+            if dist(p_this, &p_recip) < max_distance {
                 result.push(i);
             }
         }
@@ -442,7 +442,7 @@ impl PointCloudOverlap<PointCloudKdTree<'_>> for PointCloudKdTree<'_> {
             let (k, _) = self.tree().nearest_one(&p_other);
             let p_recip = self.cloud.points()[k];
 
-            if dist(&p_this, &p_recip) < max_distance {
+            if dist(p_this, &p_recip) < max_distance {
                 result.push(i);
             }
         }
