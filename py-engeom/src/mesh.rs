@@ -407,6 +407,14 @@ impl Mesh {
             engeom::Mesh::create_cylinder_between(p0.get_inner(), p1.get_inner(), radius, steps);
         Ok(Self::from_inner(mesh))
     }
+
+    #[staticmethod]
+    fn load_lptf3(file_path: PathBuf, take_every: Option<u32>) -> PyResult<Mesh> {
+        let mesh = engeom::io::load_lptf3_delaunay(&file_path, take_every)
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+
+        Ok(Self::from_inner(mesh))
+    }
 }
 
 #[pyclass]

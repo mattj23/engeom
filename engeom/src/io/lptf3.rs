@@ -39,7 +39,9 @@
 //! At the end of the point entries, there will be either another frame header or the end of the
 //! file.
 
-use crate::{Point3, PointCloud, Result};
+use crate::common::triangulation::VertexBuilder;
+use crate::common::triangulation::delaunay_row2::{DelaunayRowPoint, build_delaunay_strip};
+use crate::{Mesh, Point3, PointCloud, Result};
 use std::fs::File;
 use std::io::{BufReader, Read, Seek};
 use std::path::Path;
@@ -64,22 +66,58 @@ pub fn load_lptf3(file_path: &Path, take_every: Option<u32>) -> Result<PointClou
     let mut points = Vec::new();
     let mut colors = Vec::new();
 
-    while let Some((y_pos, frame_points, frame_colors)) = loader.get_next_frame_points()? {
-        for (x, z) in frame_points {
-            points.push(Point3::new(x, y_pos, z));
-        }
-        if !frame_colors.is_empty() {
-            colors.extend(frame_colors);
+    while let Some((y_pos, frame_points)) = loader.get_next_frame_points()? {
+        for p in frame_points {
+            points.push(p.at_y(y_pos));
+
+            if let Some(color) = p.color {
+                colors.push([color; 3]);
+            }
         }
     }
 
-    let c = if loader.has_color {
-        Some(colors.iter().map(|c| [*c; 3]).collect())
-    } else {
-        None
-    };
+    let c = if loader.has_color { Some(colors) } else { None };
 
     PointCloud::try_new(points, None, c)
+}
+
+pub fn load_lptf3_delaunay(file_path: &Path, take_every: Option<u32>) -> Result<Mesh> {
+    let mut loader = Lptf3Loader::new(file_path, take_every)?;
+
+    let mut last_delaunay_row: Option<(Vec<DelaunayRowPoint>, f64)> = None;
+
+    let mut vertices = VertexBuilder::new();
+    let mut faces: Vec<[u32; 3]> = Vec::new();
+    // let min_spacing = take_every.unwrap_or(1) as f64 * loader.y_translation * 2.0;
+    let mut row_count = 0;
+
+    while let Some((y_pos, frame_points)) = loader.get_next_frame_points()? {
+        row_count += 1;
+        let mut row = Vec::new();
+        for p in frame_points {
+            let i = vertices.push(p.at_y(y_pos));
+            row.push(DelaunayRowPoint::new(p.x, i));
+        }
+
+        if let Some((last_row, last_y_pos)) = &last_delaunay_row {
+            // if y_pos - *last_y_pos > min_spacing {
+                let result_faces = build_delaunay_strip(last_row, *last_y_pos, &row, y_pos)?;
+                for face in result_faces {
+                    faces.push([face[0] as u32, face[1] as u32, face[2] as u32]);
+                }
+            // }
+        }
+
+        last_delaunay_row = Some((row, y_pos));
+    }
+
+    if faces.is_empty() {
+        return Err("No valid faces found in the LPTF3 file".into());
+    }
+
+    let mesh = Mesh::new(vertices.take_points(), faces, false);
+
+    Ok(mesh)
 }
 
 /// This struct offers frame-by-frame loading of LPTF3 files, which allows the generalized loading
@@ -218,9 +256,18 @@ impl Lptf3Loader {
         }
     }
 
-    pub fn get_next_frame_points(&mut self) -> Result<Option<(f64, Vec<(f64, f64)>, Vec<u8>)>> {
+    /// This function reads forward in the file looking for a frame to read.  It will skip over
+    /// frames that have zero points, or would be skipped by the `take_every` parameter.  Under
+    /// normal circumstances, it will either return an Ok(None) if it has reached the end of the
+    /// file, or an Ok(Some(f64, Vec<FramePoint>)) if it has found a valid frame to read.
+    ///
+    /// In the return from a valid frame, the f64 value is the y position of the frame, and the
+    /// vector of `FramePoint` structs contains the x/z/color values for each point in the frame.
+    /// The points are sorted by their x coordinate.
+    ///
+    /// If an error occurs during the operation, it will return an `Err` with the error message.
+    pub fn get_next_frame_points(&mut self) -> Result<Option<(f64, Vec<FramePoint>)>> {
         let mut points = Vec::new();
-        let mut colors = Vec::new();
 
         let header = match self.seek_next_valid_frame()? {
             Some(h) => h,
@@ -258,17 +305,19 @@ impl Lptf3Loader {
                 last_skip_index = skip_index;
             }
 
-            points.push((
-                (x_raw as f64) * header.x_res + header.x_offset,
-                (z_raw as f64) * header.z_res + header.z_offset,
-            ));
+            let p = FramePoint {
+                x: (x_raw as f64) * header.x_res + header.x_offset,
+                z: (z_raw as f64) * header.z_res + header.z_offset,
+                color: c,
+            };
 
-            if let Some(color) = c {
-                colors.push(color);
-            }
+            points.push(p);
         }
 
-        Ok(Some((y_pos, points, colors)))
+        // Sort points by x coordinate
+        points.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal));
+
+        Ok(Some((y_pos, points)))
     }
 }
 
@@ -276,6 +325,26 @@ enum HdrRd {
     Valid(FrameHeader),
     Skip,
     EndOfFile,
+}
+
+pub struct FramePoint {
+    pub x: f64,
+    pub z: f64,
+    pub color: Option<u8>,
+}
+
+impl FramePoint {
+    pub fn new(x: f64, z: f64, color: Option<u8>) -> Self {
+        Self { x, z, color }
+    }
+
+    pub fn at_zero(&self) -> Point3 {
+        self.at_y(0.0)
+    }
+
+    pub fn at_y(&self, y: f64) -> Point3 {
+        Point3::new(self.x, y, self.z)
+    }
 }
 
 struct FrameHeader {

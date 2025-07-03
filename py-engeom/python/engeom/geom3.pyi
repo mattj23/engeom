@@ -956,6 +956,21 @@ class Mesh:
         """
         ...
 
+    @staticmethod
+    def load_lptf3(file_path: str | Path, take_every: int | None = None) -> Mesh:
+        """
+        Load a mesh from an LPTF3 Delaunay file. This will return a new mesh object containing the vertices and
+        triangles from the file. The `take_every` parameter can be used to downsample the mesh by taking every nth
+        row of points and downsampling the columns to roughly match the spacing between rows.
+
+        This will build the mesh by delaunay triangulation of adjacent frames.
+
+        :param file_path: the path to the LPTF3 Delaunay file to load.
+        :param take_every: if specified, will take every nth point from the mesh.
+        :return: the mesh object containing the data from the file.
+        """
+        ...
+
     def write_stl(self, path: str | Path):
         """
         Write the mesh to an STL file. This will write the vertices and triangles of the mesh to the file in binary

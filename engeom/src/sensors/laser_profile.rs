@@ -128,20 +128,18 @@ impl LaserProfile {
         let detector = Point3::new(0.0, self.detector_y, self.detector_z);
         let emitter = Point3::new(0.0, 0.0, self.emitter_z);
 
-        while let Some((y_pos, frame_points, frame_colors)) = loader.get_next_frame_points()? {
-            for (x, z) in frame_points {
-                points.push(Point3::new(x, y_pos, z));
+        while let Some((y_pos, frame_points)) = loader.get_next_frame_points()? {
+            for p in frame_points {
+                points.push(p.at_y(y_pos));
 
-                // If we're computing the normal neighborhood, we know that the vector from the point
-                // to the detector must be in the half-space as the final normal vector, so we can
-                // record it now for later use.
                 if normal_neighborhood.is_some() {
-                    let v = detector - Point3::new(x, 0.0, z);
+                    let v = detector - p.at_zero();
                     to_detector.push(v);
                 }
-            }
-            if !frame_colors.is_empty() {
-                colors.extend(frame_colors);
+
+                if let Some(color) = p.color {
+                    colors.push([color; 3]);
+                }
             }
         }
 
@@ -157,7 +155,7 @@ impl LaserProfile {
         let rgb = if colors.is_empty() {
             None
         } else {
-            Some(colors.iter().map(|c| [*c; 3]).collect())
+            Some(colors)
         };
 
         let (normals, certainties) = if let Some(estimates) = normal_estimates {

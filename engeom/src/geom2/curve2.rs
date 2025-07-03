@@ -967,7 +967,7 @@ impl Curve2 {
     /// Gets the curvature of three points as turning angle per unit length, found by the reciprocal
     /// of the radius of the circle.
     pub fn get_curvature(&self, i0: usize, i1: usize, i2: usize) -> f64 {
-        if let Ok(circle) = Circle2::from_3_points(self.vtx(i0), self.vtx(i1), self.vtx(i2)) {
+        if let Ok(circle) = Circle2::from_3_points(&self.vtx(i0), &self.vtx(i1), &self.vtx(i2)) {
             1.0 / circle.r()
         } else {
             0.0
@@ -1071,7 +1071,7 @@ impl Curve2 {
         let i2 = start + pos;
         let i1 = (i0 + i2) / 2;
 
-        let c = Circle2::from_3_points(self.vtx(i0), self.vtx(i1), self.vtx(i2));
+        let c = Circle2::from_3_points(&self.vtx(i0), &self.vtx(i1), &self.vtx(i2));
 
         if c.is_err() {
             return None;

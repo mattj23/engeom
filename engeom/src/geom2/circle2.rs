@@ -165,7 +165,7 @@ impl Circle2 {
             let i1 = u.sample(&mut rng);
             let i2 = u.sample(&mut rng);
 
-            if let Ok(c) = Circle2::from_3_points(points[i0], points[i1], points[i2]) {
+            if let Ok(c) = Circle2::from_3_points(&points[i0], &points[i1], &points[i2]) {
                 // Check that the circle is smaller than that of the last station
                 if c.r() > max_r || c.r() < min_r {
                     continue;
@@ -210,13 +210,13 @@ impl Circle2 {
     /// let p1 = Point2::new(0.0, 1.0);
     /// let p2 = Point2::new(1.0, 0.0);
     ///
-    /// let circle = Circle2::from_3_points(p0, p1, p2).unwrap();
+    /// let circle = Circle2::from_3_points(&p0, &p1, &p2).unwrap();
     /// assert_relative_eq!(circle.x(), 0.0);
     /// assert_relative_eq!(circle.y(), 0.0);
     /// assert_relative_eq!(circle.r(), 1.0);
     ///
     /// ```
-    pub fn from_3_points(p0: Point2, p1: Point2, p2: Point2) -> Result<Circle2> {
+    pub fn from_3_points(p0: &Point2, p1: &Point2, p2: &Point2) -> Result<Circle2> {
         let temp = p1.x.powi(2) + p1.y.powi(2);
         let bc = (p0.x.powi(2) + p0.y.powi(2) - temp) / 2.0;
         let cd = (temp - p2.x.powi(2) - p2.y.powi(2)) / 2.0;
@@ -715,7 +715,7 @@ impl Arc2 {
     ///
     /// ```
     pub fn three_points(p0: Point2, p1: Point2, p2: Point2) -> Self {
-        let circle = Circle2::from_3_points(p0, p1, p2).unwrap();
+        let circle = Circle2::from_3_points(&p0, &p1, &p2).unwrap();
         let angle0 = circle.angle_of_point(&p0);
         let v0 = p0 - circle.center;
         let v2 = p2 - circle.center;
