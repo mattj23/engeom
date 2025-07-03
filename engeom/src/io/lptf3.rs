@@ -41,7 +41,9 @@
 
 use crate::common::triangulation::VertexBuilder;
 use crate::common::triangulation::parallel_row2::{StripRowPoint, build_parallel_row_strip};
+use crate::geom3::mesh::HalfEdgeMesh;
 use crate::{Mesh, Point3, PointCloud, Result};
+use alum::Handle;
 use rayon::prelude::*;
 use std::fs::File;
 use std::io::{BufReader, Read, Seek};
@@ -82,7 +84,7 @@ pub fn load_lptf3(file_path: &Path, take_every: Option<u32>) -> Result<PointClou
     PointCloud::try_new(points, None, c)
 }
 
-pub fn load_lptf3_mesh(file_path: &Path, take_every: Option<u32>) -> Result<Mesh> {
+pub fn load_lptf3_mesh(file_path: &Path, take_every: Option<u32>) -> Result<HalfEdgeMesh> {
     let strip_r = 3.0; // The maximum edge ratio for the strip triangulation.
     let world_r = 8.0; // The maximum edge ratio for world triangulation.
 
@@ -90,32 +92,46 @@ pub fn load_lptf3_mesh(file_path: &Path, take_every: Option<u32>) -> Result<Mesh
 
     let mut last_delaunay_row: Option<(Vec<StripRowPoint>, f64)> = None;
 
-    let mut vertices = VertexBuilder::new();
+    let mut mesh = HalfEdgeMesh::new();
     let max_spacing = take_every.unwrap_or(1) as f64 * loader.y_translation * 2.0;
 
-    let mut faces = Vec::new();
     while let Some((y_pos, frame_points)) = loader.get_next_frame_points()? {
         let mut row = Vec::new();
         for p in frame_points {
-            let i = vertices.push(p.at_y(y_pos));
-            row.push(StripRowPoint::new(p.x, i));
+            let ih = mesh
+                .add_vertex(p.at_y(y_pos).coords)
+                .map_err(|e| format!("Failed to add vertex: {:?}", e))?;
+            row.push(StripRowPoint::new(p.x, ih));
         }
 
         if let Some((last_row, last_y_pos)) = &last_delaunay_row {
             if (y_pos - *last_y_pos).abs() < max_spacing {
                 let r = build_parallel_row_strip(last_row, *last_y_pos, &row, y_pos, strip_r)?;
-                for f in r {
+                for (i0, i1, i2) in r {
                     // Check the edge ratio on actual points
-                    let pa = &vertices.points()[f[0]];
-                    let pb = &vertices.points()[f[1]];
-                    let pc = &vertices.points()[f[2]];
+                    let pa: Point3 = mesh
+                        .point(i0)
+                        .map_err(|e| format!("Failed to get point {}: {:?}", i0, e))?
+                        .into();
+                    let pb: Point3 = mesh
+                        .point(i1)
+                        .map_err(|e| format!("Failed to get point {}: {:?}", i1, e))?
+                        .into();
+                    let pc: Point3 = mesh
+                        .point(i2)
+                        .map_err(|e| format!("Failed to get point {}: {:?}", i2, e))?
+                        .into();
+                    // let pa = &vertices.points()[f[0]];
+                    // let pb = &vertices.points()[f[1]];
+                    // let pc = &vertices.points()[f[2]];
                     let ea = (pa - pb).norm();
                     let eb = (pb - pc).norm();
                     let ec = (pc - pa).norm();
 
                     let edge_ratio = ea.max(eb).max(ec) / max_spacing;
                     if edge_ratio < world_r {
-                        faces.push([f[0] as u32, f[1] as u32, f[2] as u32]);
+                        mesh.add_tri_face(i0, i1, i2)
+                            .map_err(|e| format!("Failed to add face: {:?}", e))?;
                     }
                 }
             }
@@ -123,12 +139,6 @@ pub fn load_lptf3_mesh(file_path: &Path, take_every: Option<u32>) -> Result<Mesh
 
         last_delaunay_row = Some((row, y_pos));
     }
-
-    if faces.is_empty() {
-        return Err("No valid faces found in the LPTF3 file".into());
-    }
-
-    let mesh = Mesh::new(vertices.take_points(), faces, false);
 
     Ok(mesh)
 }

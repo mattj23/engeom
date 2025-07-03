@@ -411,7 +411,7 @@ impl Mesh {
     #[staticmethod]
     fn load_lptf3(file_path: PathBuf, take_every: Option<u32>) -> PyResult<Mesh> {
         let start = std::time::Instant::now();
-        let mesh = engeom::io::load_lptf3_mesh(&file_path, take_every)
+        let half_edge_mesh = engeom::io::load_lptf3_mesh(&file_path, take_every)
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
         let elapsed = start.elapsed();
         println!(
@@ -419,6 +419,9 @@ impl Mesh {
             file_path.display(),
             elapsed
         );
+
+        let mesh = engeom::Mesh::try_from(half_edge_mesh)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         Ok(Self::from_inner(mesh))
     }

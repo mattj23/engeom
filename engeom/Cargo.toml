@@ -13,6 +13,8 @@ rayon = { workspace = true }
 rand = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 
+alum = { version = "0.6.1", default-features = false, features = ["decimate", "subdiv" ]}
+
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 itertools = "0.14.0"

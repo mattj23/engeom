@@ -2,9 +2,12 @@
 //! of two parallel strips.  It's a specialized reduced algorithm that's useful for certain
 //! meshing cases, typically when a triangulation problem can be transformed into another space.
 //!
-use crate::common::kd_tree::KdTreeSearch;
-use crate::{Point2, Result};
+
 use crate::common::points::three_point_angle;
+use crate::{Point2, Result};
+use alum::VH;
+
+pub type VHFace = (VH, VH, VH);
 
 pub fn build_parallel_row_strip(
     a: &[StripRowPoint],
@@ -12,7 +15,7 @@ pub fn build_parallel_row_strip(
     b: &[StripRowPoint],
     y_b: f64,
     max_edge_ratio: f64,
-) -> Result<Vec<[usize; 3]>> {
+) -> Result<Vec<VHFace>> {
     // Initialize the indices as the first points in each row. The x positions of the points need
     // to be sorted.
     let mut state = StripRowState::try_new(a, y_a, b, y_b, max_edge_ratio)?;
@@ -131,7 +134,7 @@ impl<'a> StripRowState<'a> {
     }
 
     /// Get the next possible face by advancing the index in row 0
-    pub fn next_0(&self) -> Option<(f64, [usize; 3])> {
+    pub fn next_0(&self) -> Option<(f64, VHFace)> {
         if !self.has_next_0() {
             return None;
         }
@@ -151,10 +154,10 @@ impl<'a> StripRowState<'a> {
         let b = &self.row1[self.i1];
         let c = &self.row0[self.i0 + 1];
 
-        Some((max_edge, [a.i, b.i, c.i]))
+        Some((max_edge, (a.handle, b.handle, c.handle)))
     }
 
-    pub fn next_1(&self) -> Option<(f64, [usize; 3])> {
+    pub fn next_1(&self) -> Option<(f64, VHFace)> {
         if !self.has_next_1() {
             return None;
         }
@@ -174,7 +177,7 @@ impl<'a> StripRowState<'a> {
         let b = &self.row1[self.i1];
         let c = &self.row1[self.i1 + 1];
 
-        Some((max_edge, [a.i, b.i, c.i]))
+        Some((max_edge, (a.handle, b.handle, c.handle)))
     }
 
     pub fn is_done(&self) -> bool {
@@ -259,7 +262,7 @@ pub struct StripRowPoint {
     pub x: f64,
 
     /// The index of the point in the original (potentially untransformed) vertex set.
-    pub i: usize,
+    pub handle: VH,
 }
 
 impl StripRowPoint {
@@ -269,7 +272,7 @@ impl StripRowPoint {
     ///
     /// * `x`: The X coordinate of the point in the row.
     /// * `i`: The index of the point in the original vertex set.
-    pub fn new(x: f64, i: usize) -> Self {
-        Self { x, i }
+    pub fn new(x: f64, handle: VH) -> Self {
+        Self { x, handle }
     }
 }

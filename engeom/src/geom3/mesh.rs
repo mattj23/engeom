@@ -7,6 +7,7 @@ mod conformal;
 mod edges;
 mod faces;
 pub mod filtering;
+pub mod half_edge;
 mod measurement;
 mod outline;
 mod patches;
@@ -14,13 +15,14 @@ mod queries;
 mod sampling;
 mod uv_mapping;
 
-pub use self::collisions::MeshCollisionSet;
-pub use self::uv_mapping::UvMapping;
 use crate::geom3::{Aabb3, IsoExtensions3};
 use crate::{Iso3, Point2, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
+pub use collisions::MeshCollisionSet;
 pub use edges::MeshEdges;
+pub use half_edge::HalfEdgeMesh;
 use parry3d_f64::shape::{TriMesh, TriMeshFlags};
 use parry3d_f64::{shape, transformation};
+pub use uv_mapping::UvMapping;
 
 #[derive(Clone)]
 pub struct Mesh {
