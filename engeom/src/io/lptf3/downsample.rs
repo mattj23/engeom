@@ -1,7 +1,8 @@
 use crate::common::points::dist;
-use crate::{Plane3, Point3, PointCloud, SurfacePoint3, SvdBasis3, UnitVec3, Vector3, Result};
+use crate::io::lptf3::{Lptf3Loader, expand_colors};
+use crate::{Plane3, Point3, PointCloud, Result, SurfacePoint3, SvdBasis3, UnitVec3, Vector3};
+use rayon::prelude::*;
 use std::path::Path;
-use crate::io::lptf3::{expand_colors, Lptf3Loader};
 
 #[derive(Copy, Clone, Debug)]
 pub struct Lptf3DsParams {
@@ -34,7 +35,6 @@ pub fn load_lptf3_downfilter(file_path: &Path, params: Lptf3DsParams) -> Result<
     };
     PointCloud::try_new(final_points, None, c)
 }
-
 
 pub struct Lptf3Downsampled {
     pub rows: Vec<Vec<Point3>>,
@@ -90,49 +90,59 @@ pub fn load_downsample_filter_lptf3(
     let look_dist = look_rows as f64 * loader.y_translation * 1.25;
     let weight_sigma = params.weight_sigma * look_dist;
 
-    let mut final_rows = Vec::new();
-    let mut final_row_colors = Vec::new();
+    let working_indices = (0..row_data.len())
+        .filter(|&i| !row_data[i].is_empty())
+        .collect::<Vec<_>>();
 
-    for (row_i, to_take) in row_data.iter().enumerate() {
-        if to_take.is_empty() {
-            continue;
-        }
+    let mut combined = working_indices
+        .par_iter()
+        .map(|&row_i| {
+            let to_take = &row_data[row_i];
 
-        let mut row_points = Vec::new();
-        let mut row_colors = Vec::new();
-        for col_i in to_take.iter() {
-            // The point that we're working on
-            let p = all_points[row_i][*col_i];
+            let mut row_points = Vec::new();
+            let mut row_colors = Vec::new();
+            for col_i in to_take.iter() {
+                // The point that we're working on
+                let p = all_points[row_i][*col_i];
 
-            let mut samples = Vec::new();
-            for check_i in (row_i as i32 - look_rows)..=(row_i as i32 + look_rows) {
-                if check_i < 0 || check_i >= all_points.len() as i32 {
-                    continue; // Skip rows that are out of bounds
-                }
-                let check_row = &all_points[check_i as usize];
-
-                // Binary search for the first point that is p.x - look_dist
-                let target = p.x - look_dist;
-                let start = check_row
-                    .binary_search_by(|a| a.x.total_cmp(&target))
-                    .unwrap_or_else(|i| i);
-
-                for col in start..check_row.len() {
-                    let check_p = &check_row[col];
-                    if (check_p.x - p.x).abs() <= look_dist {
-                        samples.push(*check_p);
+                let mut samples = Vec::new();
+                for check_i in (row_i as i32 - look_rows)..=(row_i as i32 + look_rows) {
+                    if check_i < 0 || check_i >= all_points.len() as i32 {
+                        continue; // Skip rows that are out of bounds
                     }
-                    if check_p.x > p.x + look_dist {
-                        // If the point is beyond the look distance, we can stop checking this row
-                        break;
+                    let check_row = &all_points[check_i as usize];
+
+                    // Binary search for the first point that is p.x - look_dist
+                    let target = p.x - look_dist;
+                    let start = check_row
+                        .binary_search_by(|a| a.x.total_cmp(&target))
+                        .unwrap_or_else(|i| i);
+
+                    for col in start..check_row.len() {
+                        let check_p = &check_row[col];
+                        if (check_p.x - p.x).abs() <= look_dist {
+                            samples.push(*check_p);
+                        }
+                        if check_p.x > p.x + look_dist {
+                            // If the point is beyond the look distance, we can stop checking this row
+                            break;
+                        }
                     }
                 }
+
+                row_points.push(adjust_point(&p, &samples, weight_sigma, params.max_move));
+                row_colors.push(all_colors[row_i][*col_i]);
             }
 
-            row_points.push(adjust_point(&p, &samples, weight_sigma, params.max_move));
-            row_colors.push(all_colors[row_i][*col_i]);
-        }
+            (row_i, row_points, row_colors)
+        })
+        .collect::<Vec<_>>();
 
+    // Get everything back in order
+    combined.sort_by(|(row_i1, _, _), (row_i2, _, _)| row_i1.cmp(row_i2));
+    let mut final_rows = Vec::with_capacity(combined.len());
+    let mut final_row_colors = Vec::with_capacity(combined.len());
+    for (_, row_points, row_colors) in combined {
         final_rows.push(row_points);
         final_row_colors.push(row_colors);
     }
