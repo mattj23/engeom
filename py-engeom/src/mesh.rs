@@ -5,6 +5,7 @@ use crate::conversions::{
 };
 use crate::geom3::{Curve3, Iso3, Plane3, Point3, SurfacePoint3, Vector3};
 use crate::metrology::Distance3;
+use crate::point_cloud::Lptf3Load;
 use engeom::common::points::dist;
 use engeom::common::{Selection, SplitResult};
 use engeom::geom3::mesh::half_edge::HalfEdgeSmoothing;
@@ -13,7 +14,6 @@ use numpy::{IntoPyArray, PyArray1, PyArrayDyn, PyReadonlyArrayDyn};
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use std::path::PathBuf;
-use crate::point_cloud::Lptf3Load;
 
 #[pyclass]
 pub struct Mesh {

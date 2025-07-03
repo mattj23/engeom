@@ -7,7 +7,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-pub use lptf3::{Lptf3Load, load_lptf3, load_lptf3_mesh, Lptf3DsParams};
+pub use lptf3::{Lptf3DsParams, Lptf3Load, load_lptf3, load_lptf3_mesh};
 
 #[cfg(feature = "stl")]
 use stl_io;
