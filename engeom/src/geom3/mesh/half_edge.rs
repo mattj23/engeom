@@ -1,9 +1,20 @@
+//! This module provides an implementation of a half edge mesh structure using the `alum` library.
+//! The main type is `HalfEdgeMesh`, which is a polyhedral mesh that can be converted to a `Mesh`
+//! type using the `TryFrom` trait. The `NaAdaptor` struct provides the necessary adaptors for
+//! `alum` to work with `nalgebra` types.
+//!
+//! Submodules of this module wrap and compose `alum` functionality to provide tools for editing
+//! meshes and their topology.
+
+mod smoothing;
+
 use crate::{Mesh, Point3, Vector3};
 use alum;
 use alum::{
     Adaptor, CrossProductAdaptor, DotProductAdaptor, FloatScalarAdaptor, Handle, HasIterators,
     HasTopology, VectorAngleAdaptor, VectorLengthAdaptor, VectorNormalizeAdaptor,
 };
+pub use smoothing::*;
 use std::error::Error;
 
 impl TryFrom<HalfEdgeMesh> for Mesh {

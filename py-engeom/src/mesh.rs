@@ -7,6 +7,7 @@ use crate::geom3::{Curve3, Iso3, Plane3, Point3, SurfacePoint3, Vector3};
 use crate::metrology::Distance3;
 use engeom::common::points::dist;
 use engeom::common::{Selection, SplitResult};
+use engeom::geom3::mesh::half_edge::HalfEdgeSmoothing;
 use numpy::ndarray::{Array1, ArrayD};
 use numpy::{IntoPyArray, PyArray1, PyArrayDyn, PyReadonlyArrayDyn};
 use pyo3::exceptions::{PyIOError, PyValueError};
@@ -411,7 +412,7 @@ impl Mesh {
     #[staticmethod]
     fn load_lptf3(file_path: PathBuf, take_every: Option<u32>) -> PyResult<Mesh> {
         let start = std::time::Instant::now();
-        let half_edge_mesh = engeom::io::load_lptf3_mesh(&file_path, take_every)
+        let mut half_edge_mesh = engeom::io::load_lptf3_mesh(&file_path, take_every)
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
         let elapsed = start.elapsed();
         println!(
@@ -419,6 +420,10 @@ impl Mesh {
             file_path.display(),
             elapsed
         );
+
+        half_edge_mesh
+            .neighborhood_smooth()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         let mesh = engeom::Mesh::try_from(half_edge_mesh)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
