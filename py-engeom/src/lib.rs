@@ -54,6 +54,7 @@ fn register_geom3(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_class::<geom3::Curve3>()?;
     child.add_class::<geom3::CurveStation3>()?;
     child.add_class::<point_cloud::PointCloud>()?;
+    child.add_class::<point_cloud::Lptf3Load>()?;
 
     // Bounding and tools
     child.add_class::<bounding::Aabb3>()?;

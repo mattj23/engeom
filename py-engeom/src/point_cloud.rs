@@ -1,20 +1,65 @@
-use crate::bounding::Aabb3;
-use crate::common::{DeviationMode, SelectOp};
-use crate::conversions::{
-    array_to_faces, array_to_points3, array2_to_points3, faces_to_array, points_to_array3,
-    points_to_array3_2, vectors_to_array3, vectors_to_array3_2,
-};
-use crate::geom3::{Curve3, Iso3, Plane3, Point3, SurfacePoint3, Vector3};
+use crate::conversions::{array2_to_points3, points_to_array3_2, vectors_to_array3_2};
+use crate::geom3::Iso3;
 use crate::mesh::Mesh;
-use crate::metrology::Distance3;
-use engeom::common::points::dist;
-use engeom::common::{Selection, SplitResult};
 use engeom::{PointCloudFeatures, PointCloudKdTree, PointCloudOverlap};
-use numpy::ndarray::{Array1, Array2, ArrayD};
-use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray2, PyReadonlyArrayDyn};
+use numpy::ndarray::Array2;
+use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2};
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use std::path::PathBuf;
+
+#[pyclass]
+#[derive(Clone, Copy, Debug)]
+pub enum Lptf3Load {
+    All {},
+    TakeEveryN {
+        n: u32,
+    },
+    SmoothSample {
+        take_every: u32,
+        look_scale: f64,
+        weight_scale: f64,
+        max_move: f64,
+    },
+}
+
+#[pymethods]
+impl Lptf3Load {
+    fn __repr__(&self) -> String {
+        match self {
+            Lptf3Load::All {} => "Lptf3Load.All".to_string(),
+            Lptf3Load::TakeEveryN { n } => format!("Lptf3Load.TakeEveryN({})", n),
+            Lptf3Load::SmoothSample {
+                take_every,
+                look_scale,
+                weight_scale,
+                max_move,
+            } => format!(
+                "Lptf3Load.SmoothSample(take_every={}, look_scale={}, weight_scale={}, max_move={})",
+                take_every, look_scale, weight_scale, max_move
+            ),
+        }
+    }
+}
+
+impl From<Lptf3Load> for engeom::io::Lptf3Load {
+    fn from(load: Lptf3Load) -> Self {
+        match load {
+            Lptf3Load::All {} => engeom::io::Lptf3Load::All,
+            Lptf3Load::TakeEveryN { n } => engeom::io::Lptf3Load::TakeEveryN(n),
+            Lptf3Load::SmoothSample {
+                take_every,
+                look_scale,
+                weight_scale,
+                max_move,
+            } => {
+                let p =
+                    engeom::io::Lptf3DsParams::new(take_every, look_scale, weight_scale, max_move);
+                engeom::io::Lptf3Load::SmoothSample(p)
+            }
+        }
+    }
+}
 
 #[pyclass]
 pub struct PointCloud {
@@ -80,10 +125,14 @@ impl PointCloud {
     }
 
     #[staticmethod]
-    #[pyo3(signature=(path, take_every=None))]
-    fn load_lptf3(path: PathBuf, take_every: Option<u32>) -> PyResult<Self> {
-        let inner = engeom::io::load_lptf3_downfilter(&path, take_every.unwrap_or(2))
+    fn load_lptf3(path: PathBuf, params: Lptf3Load) -> PyResult<Self> {
+        let start = std::time::Instant::now();
+
+        let inner = engeom::io::load_lptf3(&path, params.into())
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
+
+        let elapsed = start.elapsed();
+        println!("Loaded/downsampled LPTF3 file in {:.2?}", elapsed);
 
         Ok(Self::from_inner(inner))
     }

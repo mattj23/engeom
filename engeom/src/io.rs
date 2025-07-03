@@ -1,4 +1,4 @@
-mod lptf3;
+pub mod lptf3;
 
 use crate::Result;
 use parry3d_f64::na::{Point3, Vector3};
@@ -6,13 +6,14 @@ use serde::Serialize;
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::Path;
+
+pub use lptf3::{Lptf3Load, load_lptf3, load_lptf3_mesh, Lptf3DsParams};
+
 #[cfg(feature = "stl")]
 use stl_io;
 
 #[cfg(feature = "stl")]
 use crate::geom3::Mesh;
-
-pub use lptf3::{Lptf3Loader, load_lptf3, load_lptf3_mesh, load_lptf3_downfilter};
 
 #[cfg(feature = "stl")]
 pub fn read_mesh_stl(path: &Path, merge_duplicates: bool, delete_degenerate: bool) -> Result<Mesh> {
