@@ -42,17 +42,17 @@
 mod downsample;
 mod loader;
 
-use crate::common::triangulation::parallel_row2::{build_parallel_row_strip, StripRowPoint};
+pub use self::downsample::Lptf3DsParams;
+use self::downsample::load_lptf3_downfilter;
+pub use self::loader::Lptf3Loader;
+use crate::common::triangulation::parallel_row2::{StripRowPoint, build_parallel_row_strip};
 use crate::geom3::mesh::HalfEdgeMesh;
+use crate::io::lptf3::downsample::load_downsample_filter_lptf3;
 use crate::{Point3, PointCloud, Result};
 use alum::Handle;
 use rayon::prelude::*;
 use std::io::{Read, Seek};
 use std::path::Path;
-
-use self::downsample::load_lptf3_downfilter;
-pub use self::downsample::Lptf3DsParams;
-pub use self::loader::Lptf3Loader;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Lptf3Load {
@@ -94,6 +94,152 @@ pub fn load_lptf3(file_path: &Path, load: Lptf3Load) -> Result<PointCloud> {
     }
 }
 
+pub fn load_lptf3_mesh(file_path: &Path, load: Lptf3Load) -> Result<HalfEdgeMesh> {
+    let (take_every, y_shift, point_rows) = match load {
+        Lptf3Load::All => get_loader_point_rows(file_path, None),
+        Lptf3Load::TakeEveryN(n) => get_loader_point_rows(file_path, Some(n)),
+        Lptf3Load::SmoothSample(params) => get_downfilter_point_rows(file_path, params),
+    }?;
+
+    // Set the edge ratios for the strip and world triangulation
+    let strip_r = 3.0; // The maximum edge ratio for the strip triangulation.
+    let world_r = 8.0; // The maximum edge ratio for world triangulation.
+
+    let max_spacing = take_every as f64 * y_shift * 2.0;
+
+    // First build the mesh vertices and the corresponding rows of strip row points
+    let mut mesh = HalfEdgeMesh::new();
+    let mut strip_rows = Vec::new();
+    for row in point_rows.iter() {
+        let mut strip_row = Vec::new();
+        for p in row.iter() {
+            let ih = mesh
+                .add_vertex(p.coords)
+                .map_err(|e| format!("Failed to add vertex: {:?}", e))?;
+            strip_row.push(StripRowPoint::new(p.x, ih));
+        }
+        strip_rows.push(strip_row);
+    }
+
+    // Now iterate through the strip rows and build the mesh
+    for row_i in 0..strip_rows.len() - 1 {
+        if point_rows[row_i].is_empty() || point_rows[row_i + 1].is_empty() {
+            continue; // Skip empty rows
+        }
+
+        let y0 = point_rows[row_i][0].y;
+        let y1 = point_rows[row_i + 1][0].y;
+
+        // If the rows are too far apart, skip the triangulation
+        if (y1 - y0).abs() > max_spacing {
+            continue;
+        }
+
+        let row0 = &strip_rows[row_i];
+        let row1 = &strip_rows[row_i + 1];
+
+        // Build the strip triangulation between the two rows
+        let r = build_parallel_row_strip(row0, y0, row1, y1, strip_r)?;
+        for (i0, i1, i2) in r {
+            // Check the edge ratio on actual points
+            let pa: Point3 = mesh
+                .point(i0)
+                .map_err(|e| format!("Failed to get point {}: {:?}", i0, e))?
+                .into();
+            let pb: Point3 = mesh
+                .point(i1)
+                .map_err(|e| format!("Failed to get point {}: {:?}", i1, e))?
+                .into();
+            let pc: Point3 = mesh
+                .point(i2)
+                .map_err(|e| format!("Failed to get point {}: {:?}", i2, e))?
+                .into();
+            let ea = (pa - pb).norm();
+            let eb = (pb - pc).norm();
+            let ec = (pc - pa).norm();
+
+            let edge_ratio = ea.max(eb).max(ec) / max_spacing;
+            if edge_ratio < world_r {
+                mesh.add_tri_face(i0, i1, i2)
+                    .map_err(|e| format!("Failed to add face: {:?}", e))?;
+            }
+        }
+    }
+
+    Ok(mesh)
+}
+
+fn load_mesh_downfilter(file_path: &Path, params: Lptf3DsParams) -> Result<HalfEdgeMesh> {
+    let result = load_downsample_filter_lptf3(file_path, params)?;
+
+    // Set the edge ratios for the strip and world triangulation
+    let strip_r = 3.0; // The maximum edge ratio for the strip triangulation.
+    let world_r = 8.0; // The maximum edge ratio for world triangulation.
+
+    let max_spacing = params.take_every as f64 * result.y_translation * 2.0;
+
+    // First build the mesh vertices and the corresponding rows of strip row points
+    let mut mesh = HalfEdgeMesh::new();
+    let mut strip_rows = Vec::new();
+    for row in result.rows.iter() {
+        let mut strip_row = Vec::new();
+        for p in row.iter() {
+            let ih = mesh
+                .add_vertex(p.coords)
+                .map_err(|e| format!("Failed to add vertex: {:?}", e))?;
+            strip_row.push(StripRowPoint::new(p.x, ih));
+        }
+        strip_rows.push(strip_row);
+    }
+
+    // Now iterate through the strip rows and build the mesh
+    for row_i in 0..strip_rows.len() - 1 {
+        if result.rows[row_i].is_empty() || result.rows[row_i + 1].is_empty() {
+            continue; // Skip empty rows
+        }
+
+        let y0 = result.rows[row_i][0].y;
+        let y1 = result.rows[row_i + 1][0].y;
+
+        // If the rows are too far apart, skip the triangulation
+        if (y1 - y0).abs() > max_spacing {
+            continue;
+        }
+
+        let row0 = &strip_rows[row_i];
+        let row1 = &strip_rows[row_i + 1];
+
+        // Build the strip triangulation between the two rows
+        let r = build_parallel_row_strip(row0, y0, row1, y1, strip_r)?;
+        for (i0, i1, i2) in r {
+            // Check the edge ratio on actual points
+            let pa: Point3 = mesh
+                .point(i0)
+                .map_err(|e| format!("Failed to get point {}: {:?}", i0, e))?
+                .into();
+            let pb: Point3 = mesh
+                .point(i1)
+                .map_err(|e| format!("Failed to get point {}: {:?}", i1, e))?
+                .into();
+            let pc: Point3 = mesh
+                .point(i2)
+                .map_err(|e| format!("Failed to get point {}: {:?}", i2, e))?
+                .into();
+            let ea = (pa - pb).norm();
+            let eb = (pb - pc).norm();
+            let ec = (pc - pa).norm();
+
+            let edge_ratio = ea.max(eb).max(ec) / max_spacing;
+            if edge_ratio < world_r {
+                mesh.add_tri_face(i0, i1, i2)
+                    .map_err(|e| format!("Failed to add face: {:?}", e))?;
+            }
+        }
+    }
+
+    Ok(mesh)
+}
+
 fn load_take_every(file_path: &Path, take_every: Option<u32>) -> Result<PointCloud> {
     let mut loader = Lptf3Loader::new(file_path, take_every, false)?;
     let mut points = Vec::new();
@@ -119,7 +265,37 @@ fn load_take_every(file_path: &Path, take_every: Option<u32>) -> Result<PointClo
     PointCloud::try_new(points, None, c)
 }
 
-pub fn load_lptf3_mesh_original(file_path: &Path, take_every: Option<u32>) -> Result<HalfEdgeMesh> {
+fn get_loader_point_rows(
+    file_path: &Path,
+    take_every: Option<u32>,
+) -> Result<(u32, f64, Vec<Vec<Point3>>)> {
+    let mut loader = Lptf3Loader::new(file_path, take_every, true)?;
+    let mut point_rows = Vec::new();
+
+    while let Some(full) = loader.get_next_frame_points()? {
+        let mut row = Vec::new();
+
+        for i in full.to_take.iter() {
+            let p = full.points[*i].at_y(full.y_pos);
+            row.push(p);
+        }
+        if !row.is_empty() {
+            point_rows.push(row);
+        }
+    }
+
+    Ok((take_every.unwrap_or(1), loader.y_translation, point_rows))
+}
+
+fn get_downfilter_point_rows(
+    file_path: &Path,
+    params: Lptf3DsParams,
+) -> Result<(u32, f64, Vec<Vec<Point3>>)> {
+    let result = load_downsample_filter_lptf3(file_path, params)?;
+    Ok((params.take_every, result.y_translation, result.rows))
+}
+
+pub fn load_mesh_take_every(file_path: &Path, take_every: Option<u32>) -> Result<HalfEdgeMesh> {
     let strip_r = 3.0; // The maximum edge ratio for the strip triangulation.
     let world_r = 8.0; // The maximum edge ratio for world triangulation.
 
@@ -174,78 +350,6 @@ pub fn load_lptf3_mesh_original(file_path: &Path, take_every: Option<u32>) -> Re
     }
 
     Ok(mesh)
-}
-
-pub fn load_lptf3_mesh(file_path: &Path, params: Lptf3DsParams) -> Result<HalfEdgeMesh> {
-    // let strip_r = 3.0; // The maximum edge ratio for the strip triangulation.
-    // let world_r = 8.0; // The maximum edge ratio for world triangulation.
-    //
-    // let result = load_downsample_filter_lptf3(file_path, params)?;
-    // let max_spacing = take_every as f64 * result.y_translation * 2.0;
-    //
-    // // let mut last_delaunay_row: Option<(Vec<StripRowPoint>, f64)> = None;
-    //
-    // // First build the mesh vertices and the corresponding rows of strip row points
-    // let mut mesh = HalfEdgeMesh::new();
-    // let mut strip_rows = Vec::new();
-    // for row in result.rows.iter() {
-    //     let mut strip_row = Vec::new();
-    //     for p in row.iter() {
-    //         let ih = mesh
-    //             .add_vertex(p.coords)
-    //             .map_err(|e| format!("Failed to add vertex: {:?}", e))?;
-    //         strip_row.push(StripRowPoint::new(p.x, ih));
-    //     }
-    //     strip_rows.push(strip_row);
-    // }
-    //
-    // // Now iterate through the strip rows and build the mesh
-    // for row_i in 0..strip_rows.len() - 1 {
-    //     if result.rows[row_i].is_empty() || result.rows[row_i + 1].is_empty() {
-    //         continue; // Skip empty rows
-    //     }
-    //
-    //     let y0 = result.rows[row_i][0].y;
-    //     let y1 = result.rows[row_i + 1][0].y;
-    //
-    //     // If the rows are too far apart, skip the triangulation
-    //     if (y1 - y0).abs() > max_spacing {
-    //         continue;
-    //     }
-    //
-    //     let row0 = &strip_rows[row_i];
-    //     let row1 = &strip_rows[row_i + 1];
-    //
-    //     // Build the strip triangulation between the two rows
-    //     let r = build_parallel_row_strip(row0, y0, row1, y1, strip_r)?;
-    //     for (i0, i1, i2) in r {
-    //         // Check the edge ratio on actual points
-    //         let pa: Point3 = mesh
-    //             .point(i0)
-    //             .map_err(|e| format!("Failed to get point {}: {:?}", i0, e))?
-    //             .into();
-    //         let pb: Point3 = mesh
-    //             .point(i1)
-    //             .map_err(|e| format!("Failed to get point {}: {:?}", i1, e))?
-    //             .into();
-    //         let pc: Point3 = mesh
-    //             .point(i2)
-    //             .map_err(|e| format!("Failed to get point {}: {:?}", i2, e))?
-    //             .into();
-    //         let ea = (pa - pb).norm();
-    //         let eb = (pb - pc).norm();
-    //         let ec = (pc - pa).norm();
-    //
-    //         let edge_ratio = ea.max(eb).max(ec) / max_spacing;
-    //         if edge_ratio < world_r {
-    //             mesh.add_tri_face(i0, i1, i2)
-    //                 .map_err(|e| format!("Failed to add face: {:?}", e))?;
-    //         }
-    //     }
-    // }
-    //
-    // Ok(mesh)
-    todo!()
 }
 
 fn expand_colors(colors: &[u8]) -> Vec<[u8; 3]> {

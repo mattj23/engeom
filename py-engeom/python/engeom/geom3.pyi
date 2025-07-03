@@ -1001,17 +1001,32 @@ class Mesh:
         ...
 
     @staticmethod
-    def load_lptf3(file_path: str | Path, take_every: int | None = None) -> Mesh:
+    def load_lptf3(path: str | Path, params: Lptf3LoadEnum) -> Mesh:
         """
-        Load a mesh from an LPTF3 Delaunay file. This will return a new mesh object containing the vertices and
-        triangles from the file. The `take_every` parameter can be used to downsample the mesh by taking every nth
-        row of points and downsampling the columns to roughly match the spacing between rows.
+        This function reads a LPTF3 file, which is a compact file format for storing 3D point data
+        taken from a laser profile triangulation scanner. The format is simple and compact, capable
+        of practically storing about 200k points (with an 8-bit color value each) per MB when using a
+        16-bit coordinate format, or half that when using a 32-bit coordinate format.
 
-        This will build the mesh by delaunay triangulation of adjacent frames.
+        There are a few different ways to load the data, controlled by the `Lptf3Load` enum:
+          - `Lptf3Load.All`: Load all points from the file.
+          - `Lptf3Load.TakeEveryN(n)`: Load every Nth row from the file. The loader will attempt to
+            roughly match the x spacing of the points to the gap distance between rows, resulting in a
+            grid-like point cloud with an approximately uniform point spacing when viewed from the
+            X-Y plane.  This is a very fast method of retrieving a downsampled set of points.
+          - `Lptf3Load.SmoothSample(params)`: Load the points using a downsampling filter, which
+            downsamples the point cloud similar to the `TakeEveryN` method, but also performs a gaussian
+            smoothing step using the full original cloud.  This takes the longest time, but can remove
+            a significant amount of noise from the data by making use of an adjacency structure that
+            will be lost once the points are turned into a mesh.
 
-        :param file_path: the path to the LPTF3 Delaunay file to load.
-        :param take_every: if specified, will take every nth point from the mesh.
-        :return: the mesh object containing the data from the file.
+        Once the points are loaded, they will be converted into a triangle mesh by connecting points in adjacent
+        rows with triangles that meet certain edge length criterial. The result is a fast mesh that can be built
+        using knowledge of the LPTF3's internal structure rather than having to rely on more general techniques
+        that can build meshes from arbitrary point clouds.
+
+        :param path: the path to the LPTF3 file to load.
+        :param params: the method and parameters to use when loading the LPTF3 file.
         """
         ...
 

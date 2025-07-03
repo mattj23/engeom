@@ -13,6 +13,7 @@ use numpy::{IntoPyArray, PyArray1, PyArrayDyn, PyReadonlyArrayDyn};
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use std::path::PathBuf;
+use crate::point_cloud::Lptf3Load;
 
 #[pyclass]
 pub struct Mesh {
@@ -410,27 +411,18 @@ impl Mesh {
     }
 
     #[staticmethod]
-    fn load_lptf3(file_path: PathBuf, take_every: Option<u32>) -> PyResult<Mesh> {
-        todo!()
-        // let start = std::time::Instant::now();
-        // let t = take_every.unwrap_or(2).max(2);
-        // let mut half_edge_mesh = engeom::io::load_lptf3_mesh(&file_path, t)
-        //     .map_err(|e| PyIOError::new_err(e.to_string()))?;
-        // let elapsed = start.elapsed();
-        // println!(
-        //     "Loaded mesh from {} in {:.2?}",
-        //     file_path.display(),
-        //     elapsed
-        // );
+    fn load_lptf3(file_path: PathBuf, params: Lptf3Load) -> PyResult<Mesh> {
+        let start = std::time::Instant::now();
 
-        // half_edge_mesh
-        //     .neighborhood_smooth()
-        //     .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        //
-        // let mesh = engeom::Mesh::try_from(half_edge_mesh)
-        //     .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        //
-        // Ok(Self::from_inner(mesh))
+        let half_edge_mesh = engeom::io::load_lptf3_mesh(&file_path, params.into())
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+
+        let elapsed = start.elapsed();
+        println!("Loaded/downsampled LPTF3 file in {:.2?}", elapsed);
+        let mesh = engeom::Mesh::try_from(half_edge_mesh)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        Ok(Self::from_inner(mesh))
     }
 }
 

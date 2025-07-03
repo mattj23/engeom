@@ -45,7 +45,7 @@ pub struct Lptf3Downsampled {
 pub fn load_downsample_filter_lptf3(
     file_path: &Path,
     params: Lptf3DsParams,
-) -> crate::Result<Lptf3Downsampled> {
+) -> Result<Lptf3Downsampled> {
     if params.take_every < 2 {
         return Err("take_every must be at least 2".into());
     }
@@ -177,7 +177,7 @@ fn adjust_point(p: &Point3, samples: &[Point3], sigma: f64, max_move: f64) -> Po
     // Check that the standard deviation of the second basis is at least 10x of the last so that
     // we didn't just best-fit a plane to a line
     let stdev = basis.basis_stdevs();
-    if stdev[1] > stdev[2] * 10.0 {
+    if stdev[1] > stdev[2] * 20.0 {
         return *p;
     }
 
