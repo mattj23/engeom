@@ -40,7 +40,7 @@
 //! file.
 
 use crate::airfoil::AirfoilGeometry;
-use crate::common::points::mean_point;
+use crate::common::points::{dist, mean_point};
 use crate::common::triangulation::VertexBuilder;
 use crate::common::triangulation::parallel_row2::{StripRowPoint, build_parallel_row_strip};
 use crate::geom3::mesh::HalfEdgeMesh;
@@ -100,15 +100,9 @@ pub fn load_lptf3_downfilter(file_path: &Path, take_every: u32) -> Result<PointC
         (take_every + 1) / 2
     } as i32;
 
-    let look_dist = look_rows as f64 * loader.y_translation * 1.75;
-    let z_axis = UnitVec3::new_unchecked(Vector3::z());
-
+    let look_dist = look_rows as f64 * loader.y_translation * 1.5;
     let mut final_points = Vec::new();
     let mut final_colors = Vec::new();
-
-    let mut finished_points = 0;
-    let mut projected = 0;
-    let start = std::time::Instant::now();
 
     for (row_i, to_take) in row_data.iter().enumerate() {
         for col_i in to_take.iter() {
@@ -140,46 +134,8 @@ pub fn load_lptf3_downfilter(file_path: &Path, take_every: u32) -> Result<PointC
                 }
             }
 
-            if samples.len() < 3 {
-                // If there are not enough samples, we skip smoothing this point
-                final_points.push(p);
-                final_colors.push(all_colors[row_i][*col_i]);
-            } else {
-                let sp = SurfacePoint3::new(p, z_axis);
-                let basis = SvdBasis3::from_points(&samples, None);
-                let stdev = basis.basis_stdevs();
-                if stdev[0] > stdev[1] * 3.0 {
-                    // If the standard deviation is too high, we skip this point
-                    // final_points.push(p);
-                    continue;
-                }
-
-                let plane = Plane3::from(&basis);
-                if let Some(t) = plane.intersection_distance(&sp) {
-                    projected += 1;
-                    final_points.push(sp.at_distance(t));
-                    final_colors.push(all_colors[row_i][*col_i]);
-                } else {
-                    // If the plane does not intersect with the point, we just use the original point
-                    final_points.push(p);
-                    final_colors.push(all_colors[row_i][*col_i]);
-                }
-            }
-            finished_points += 1;
-            if finished_points % 100000 == 0 {
-                eprintln!("Processed {}/{} points ({})", finished_points, total_points, projected);
-            }
-        }
-
-        if start.elapsed().as_secs_f64() > 20.0 {
-            eprintln!(
-                "Processed {}/{} points in {:.2} seconds",
-                finished_points,
-                total_points,
-                start.elapsed().as_secs_f64()
-            );
-            eprintln!("Aborting due to long processing time.");
-            break;
+            final_points.push(adjust_point(&p, &samples, look_dist));
+            final_colors.push(all_colors[row_i][*col_i]);
         }
     }
 
@@ -189,6 +145,40 @@ pub fn load_lptf3_downfilter(file_path: &Path, take_every: u32) -> Result<PointC
         None
     };
     PointCloud::try_new(final_points, None, c)
+}
+
+fn gaussian_weight(x: f64, sigma: f64) -> f64 {
+    (-0.5 * (x.powi(2) / sigma.powi(2))).exp()
+}
+
+fn adjust_point(p: &Point3, samples: &[Point3], look_dist: f64) -> Point3 {
+    if samples.len() < 3 {
+        return *p;
+    }
+
+    let mut weights = Vec::with_capacity(samples.len());
+    for cp in samples.iter() {
+        let d = dist(p, cp);
+        weights.push(gaussian_weight(d, look_dist));
+    }
+
+    // Calculate the SVD basis from the samples
+    let sp = SurfacePoint3::new(*p, UnitVec3::new_unchecked(Vector3::z()));
+    let basis = SvdBasis3::from_points(&samples, Some(&weights));
+
+    // Check that the standard deviation of the second basis is at least 1/3rd of the first so that
+    // we didn't just best-fit a plane to a line
+    let stdev = basis.basis_stdevs();
+    if stdev[0] > stdev[1] * 3.0 {
+        return *p;
+    }
+
+    let plane = Plane3::from(&basis);
+    if let Some(t) = plane.intersection_distance(&sp) {
+        sp.at_distance(t)
+    } else {
+        *p
+    }
 }
 
 fn expand_colors(colors: &[u8]) -> Vec<[u8; 3]> {
