@@ -414,7 +414,11 @@ impl Mesh {
         let mesh = engeom::io::load_lptf3_mesh(&file_path, take_every)
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
         let elapsed = start.elapsed();
-        println!("Loaded mesh from {} in {:.2?}", file_path.display(), elapsed);
+        println!(
+            "Loaded mesh from {} in {:.2?}",
+            file_path.display(),
+            elapsed
+        );
 
         Ok(Self::from_inner(mesh))
     }
