@@ -3,6 +3,39 @@
 use crate::common::surface_point::SurfacePoint;
 use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector};
 
+/// Measure the angle between `pc`->`p1` and `pc`->`p2` in D-dimensional space.
+///
+/// # Arguments
+///
+/// * `pc`: The common point from which the angle is measured.
+/// * `p1`: The first point to measure the angle to.
+/// * `p2`: The second point to measure the angle to.
+///
+/// returns: f64
+///
+/// # Examples
+///
+/// ```
+/// use approx::assert_relative_eq;
+/// use engeom::Point2;
+/// use engeom::common::points::three_point_angle;
+/// let pc = Point2::new(0.0, 0.0);
+/// let p1 = Point2::new(1.0, 0.0);
+/// let p2 = Point2::new(0.0, 1.0);
+/// let angle = three_point_angle(&pc, &p1, &p2);
+///
+/// assert_relative_eq!(angle, std::f64::consts::FRAC_PI_2, epsilon = 1e-6);
+/// ```
+pub fn three_point_angle<const D: usize>(
+    pc: &Point<f64, D>,
+    p1: &Point<f64, D>,
+    p2: &Point<f64, D>,
+) -> f64 {
+    let v1 = p1 - pc;
+    let v2 = p2 - pc;
+    v1.angle(&v2)
+}
+
 /// Returns the distance between two points in D-dimensional space.
 ///
 /// # Arguments

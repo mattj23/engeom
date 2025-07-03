@@ -4,6 +4,7 @@
 //!
 use crate::common::kd_tree::KdTreeSearch;
 use crate::{Point2, Result};
+use crate::common::points::three_point_angle;
 
 pub fn build_parallel_row_strip(
     a: &[StripRowPoint],
@@ -111,36 +112,19 @@ impl<'a> StripRowState<'a> {
     }
 
     fn validate_points(&self, pa: &Point2, pb: &Point2, pc: &Point2) -> Option<f64> {
-        // Get the circle
-        // let Ok(circle) = Circle2::from_3_points(pa, pb, pc) else {
-        //     // If the circle cannot be formed, we cannot form a face.
-        //     return None;
-        // };
-        //
-        // // Check for any neighbors
-        // let neighbors = self.tree.within(&circle.center, circle.r() + 1e-6);
-        // if neighbors.len() > 3 {
-        //     // If there are more than 3 neighbors, we cannot form a face.
-        //     return None;
-        // }
-        //
-        // let span = self.y1 - self.y0;
-        // if circle.y() + circle.r() > self.y1 + 4.0 * span
-        //     || circle.y() - circle.r() < self.y0 - 4.0 * span
-        // {
-        //     // If the circle is too high or too low, we cannot form a face.
-        //     return None;
-        // }
-        // // Return the maximum edge length
-        // Some((pb - pa).norm().max((pc - pb).norm()).max((pa - pc).norm()))
         let ea = (pb - pa).norm();
         let eb = (pc - pb).norm();
         let ec = (pa - pc).norm();
 
-        let min_edge = ea.min(eb).min(ec);
+        let strip_width = (self.y1 - self.y0).abs();
+
         let max_edge = ea.max(eb).max(ec);
-        if max_edge < self.max_edge_ratio * min_edge {
-            Some(max_edge)
+        if max_edge < self.max_edge_ratio * strip_width {
+            let a0 = three_point_angle(&pa, &pb, &pc);
+            let a1 = three_point_angle(&pb, &pc, &pa);
+            let a2 = three_point_angle(&pc, &pa, &pb);
+
+            Some(a0.max(a1).max(a2))
         } else {
             None
         }

@@ -83,7 +83,8 @@ pub fn load_lptf3(file_path: &Path, take_every: Option<u32>) -> Result<PointClou
 }
 
 pub fn load_lptf3_mesh(file_path: &Path, take_every: Option<u32>) -> Result<Mesh> {
-    let strip_edge_ratio = 3.0;
+    let strip_r = 3.0; // The maximum edge ratio for the strip triangulation.
+    let world_r = 8.0; // The maximum edge ratio for world triangulation.
 
     let mut loader = Lptf3Loader::new(file_path, take_every)?;
 
@@ -92,79 +93,42 @@ pub fn load_lptf3_mesh(file_path: &Path, take_every: Option<u32>) -> Result<Mesh
     let mut vertices = VertexBuilder::new();
     let max_spacing = take_every.unwrap_or(1) as f64 * loader.y_translation * 2.0;
 
-    let mut rows = Vec::new();
-
-    // First we'll construct all rows of points and add all potential vertices to the mesh.
-    let start = std::time::Instant::now();
+    let mut faces = Vec::new();
     while let Some((y_pos, frame_points)) = loader.get_next_frame_points()? {
         let mut row = Vec::new();
         for p in frame_points {
             let i = vertices.push(p.at_y(y_pos));
             row.push(StripRowPoint::new(p.x, i));
         }
-        rows.push((row, y_pos));
 
-        // if let Some((last_row, last_y_pos)) = &last_delaunay_row {
-        //     if (y_pos - *last_y_pos).abs() < max_spacing {
-        //         let result_faces =
-        //             build_parallel_row_strip(last_row, *last_y_pos, &row, y_pos, strip_edge_ratio)?;
-        //         for face in result_faces {
-        //             faces.push([face[0] as u32, face[1] as u32, face[2] as u32]);
-        //         }
-        //     }
-        // }
-        //
-        // last_delaunay_row = Some((row, y_pos));
-    }
-    let elapsed = start.elapsed();
-    println!(
-        "Loaded {} rows in {:.2?} ({} points)",
-        rows.len(),
-        elapsed,
-        vertices.points().len()
-    );
+        if let Some((last_row, last_y_pos)) = &last_delaunay_row {
+            if (y_pos - *last_y_pos).abs() < max_spacing {
+                let r = build_parallel_row_strip(last_row, *last_y_pos, &row, y_pos, strip_r)?;
+                for f in r {
+                    // Check the edge ratio on actual points
+                    let pa = &vertices.points()[f[0]];
+                    let pb = &vertices.points()[f[1]];
+                    let pc = &vertices.points()[f[2]];
+                    let ea = (pa - pb).norm();
+                    let eb = (pb - pc).norm();
+                    let ec = (pc - pa).norm();
 
-    let start = std::time::Instant::now();
-    let indices = (0..rows.len() - 1).collect::<Vec<_>>();
-    let faces = indices
-        .par_iter()
-        .map(|i| {
-            let (row0, y0) = &rows[*i];
-            let (row1, y1) = &rows[*i + 1];
-            if (*y1 - *y0).abs() < max_spacing {
-                if let Ok(f) = build_parallel_row_strip(row0, *y0, row1, *y1, strip_edge_ratio) {
-                    f
-                } else {
-                    Vec::new()
+                    let edge_ratio = ea.max(eb).max(ec) / max_spacing;
+                    if edge_ratio < world_r {
+                        faces.push([f[0] as u32, f[1] as u32, f[2] as u32]);
+                    }
                 }
-            } else {
-                Vec::new()
             }
-        })
-        .flatten()
-        .map(|f| [f[0] as u32, f[1] as u32, f[2] as u32])
-        .collect::<Vec<_>>();
-    
-    let elapsed = start.elapsed();
-    println!(
-        "Built {} faces in {:.2?}",
-        faces.len(),
-        elapsed
-    );
+        }
+
+        last_delaunay_row = Some((row, y_pos));
+    }
 
     if faces.is_empty() {
         return Err("No valid faces found in the LPTF3 file".into());
     }
 
-    let start = std::time::Instant::now();
     let mesh = Mesh::new(vertices.take_points(), faces, false);
-    let elapsed = start.elapsed();
-    println!(
-        "Created mesh with {} vertices and {} faces in {:.2?}",
-        mesh.vertices().len(),
-        mesh.faces().len(),
-        elapsed
-    );
 
     Ok(mesh)
 }
