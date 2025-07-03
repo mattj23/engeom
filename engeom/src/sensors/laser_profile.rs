@@ -115,7 +115,7 @@ impl LaserProfile {
         take_every: Option<u32>,
         normal_neighborhood: Option<f64>,
     ) -> Result<(PointCloud, Vec<f64>, PointExtras)> {
-        let mut loader = Lptf3Loader::new(file_path, take_every)?;
+        let mut loader = Lptf3Loader::new(file_path, take_every, false)?;
         let mut points = Vec::new();
         let mut colors = Vec::new();
 
@@ -128,17 +128,17 @@ impl LaserProfile {
         let detector = Point3::new(0.0, self.detector_y, self.detector_z);
         let emitter = Point3::new(0.0, 0.0, self.emitter_z);
 
-        while let Some((y_pos, frame_points)) = loader.get_next_frame_points()? {
-            for p in frame_points {
-                points.push(p.at_y(y_pos));
+        while let Some(full) = loader.get_next_frame_points()? {
+            for i in full.to_take.iter() {
+                points.push(full.points[*i].at_y(full.y_pos));
 
-                if normal_neighborhood.is_some() {
-                    let v = detector - p.at_zero();
-                    to_detector.push(v);
+                if let Some(color) = full.points[*i].color {
+                    colors.push([color; 3]);
                 }
 
-                if let Some(color) = p.color {
-                    colors.push([color; 3]);
+                if normal_neighborhood.is_some() {
+                    let v = detector - full.points[*i].at_zero();
+                    to_detector.push(v);
                 }
             }
         }

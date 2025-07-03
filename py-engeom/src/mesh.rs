@@ -421,10 +421,10 @@ impl Mesh {
             elapsed
         );
 
-        half_edge_mesh
-            .neighborhood_smooth()
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
-
+        // half_edge_mesh
+        //     .neighborhood_smooth()
+        //     .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        // 
         let mesh = engeom::Mesh::try_from(half_edge_mesh)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 

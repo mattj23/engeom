@@ -39,6 +39,7 @@
 //! At the end of the point entries, there will be either another frame header or the end of the
 //! file.
 
+use crate::airfoil::AirfoilGeometry;
 use crate::common::triangulation::VertexBuilder;
 use crate::common::triangulation::parallel_row2::{StripRowPoint, build_parallel_row_strip};
 use crate::geom3::mesh::HalfEdgeMesh;
@@ -65,15 +66,20 @@ use std::path::Path;
 ///
 /// returns: Result<PointCloud, Box<dyn Error, Global>>
 pub fn load_lptf3(file_path: &Path, take_every: Option<u32>) -> Result<PointCloud> {
-    let mut loader = Lptf3Loader::new(file_path, take_every)?;
+    let mut loader = Lptf3Loader::new(file_path, take_every, true)?;
     let mut points = Vec::new();
     let mut colors = Vec::new();
 
-    while let Some((y_pos, frame_points)) = loader.get_next_frame_points()? {
-        for p in frame_points {
-            points.push(p.at_y(y_pos));
+    while let Some(full) = loader.get_next_frame_points()? {
+        if full.header.skip {
+            // If this frame is skipped, we don't add any points to the point cloud.
+            continue;
+        }
 
-            if let Some(color) = p.color {
+        for i in full.to_take.iter() {
+            points.push(full.points[*i].at_y(full.y_pos));
+
+            if let Some(color) = full.points[*i].color {
                 colors.push([color; 3]);
             }
         }
@@ -88,25 +94,26 @@ pub fn load_lptf3_mesh(file_path: &Path, take_every: Option<u32>) -> Result<Half
     let strip_r = 3.0; // The maximum edge ratio for the strip triangulation.
     let world_r = 8.0; // The maximum edge ratio for world triangulation.
 
-    let mut loader = Lptf3Loader::new(file_path, take_every)?;
+    let mut loader = Lptf3Loader::new(file_path, take_every, true)?;
 
     let mut last_delaunay_row: Option<(Vec<StripRowPoint>, f64)> = None;
 
     let mut mesh = HalfEdgeMesh::new();
     let max_spacing = take_every.unwrap_or(1) as f64 * loader.y_translation * 2.0;
 
-    while let Some((y_pos, frame_points)) = loader.get_next_frame_points()? {
+    while let Some(full) = loader.get_next_frame_points()? {
         let mut row = Vec::new();
-        for p in frame_points {
+
+        for i in full.to_take.iter() {
             let ih = mesh
-                .add_vertex(p.at_y(y_pos).coords)
+                .add_vertex(full.points[*i].at_y(full.y_pos).coords)
                 .map_err(|e| format!("Failed to add vertex: {:?}", e))?;
-            row.push(StripRowPoint::new(p.x, ih));
+            row.push(StripRowPoint::new(full.points[*i].x, ih));
         }
 
         if let Some((last_row, last_y_pos)) = &last_delaunay_row {
-            if (y_pos - *last_y_pos).abs() < max_spacing {
-                let r = build_parallel_row_strip(last_row, *last_y_pos, &row, y_pos, strip_r)?;
+            if (full.y_pos - *last_y_pos).abs() < max_spacing {
+                let r = build_parallel_row_strip(last_row, *last_y_pos, &row, full.y_pos, strip_r)?;
                 for (i0, i1, i2) in r {
                     // Check the edge ratio on actual points
                     let pa: Point3 = mesh
@@ -137,7 +144,7 @@ pub fn load_lptf3_mesh(file_path: &Path, take_every: Option<u32>) -> Result<Half
             }
         }
 
-        last_delaunay_row = Some((row, y_pos));
+        last_delaunay_row = Some((row, full.y_pos));
     }
 
     Ok(mesh)
@@ -159,11 +166,17 @@ pub struct Lptf3Loader {
     skip_spacing: Option<f64>,
     has_color: bool,
     is_32_bit: bool,
+
+    /// If set to true, the loader will return all frames and all points in those frames, regardless
+    /// of what `take_every` is set to, however, the `to_take` field in the `FullFrame` will have
+    /// no indices in it indicating that this is a skipped frame. This data is used for neighbor
+    /// based smoothing during downsampling.
+    return_all: bool,
 }
 
 impl Lptf3Loader {
     /// Creates a new instance of the Lptf3Loader.
-    pub fn new(file_path: &Path, take_every: Option<u32>) -> Result<Self> {
+    pub fn new(file_path: &Path, take_every: Option<u32>, return_all: bool) -> Result<Self> {
         let path_str = file_path
             .to_str()
             .ok_or_else(|| format!("Invalid path: {}", file_path.display()))?;
@@ -210,7 +223,7 @@ impl Lptf3Loader {
 
         let take = match take_every {
             Some(1) => None,
-            Some(n) => Some(n),
+            Some(n) if n > 1 => Some(n),
             _ => None,
         };
 
@@ -222,6 +235,7 @@ impl Lptf3Loader {
             skip_spacing,
             has_color,
             is_32_bit,
+            return_all,
         })
     }
 
@@ -243,7 +257,7 @@ impl Lptf3Loader {
         }
 
         // If we can read the frame header, parse it
-        let header = FrameHeader::from_buffer(&buffer)?;
+        let mut header = FrameHeader::from_buffer(&buffer)?;
 
         // If the number of points is zero, we return Skip (no need to seek, there are no points)
         if header.num_points == 0 {
@@ -254,9 +268,13 @@ impl Lptf3Loader {
         // If this frame is being skipped, we seek to the next frame and return Skip
         if let Some(take_n) = self.take_every {
             if header.frame_index % take_n != 0 {
-                let skip_bytes = self.bytes_per_point * header.num_points;
-                self.file.seek_relative(skip_bytes as i64)?;
-                return Ok(HdrRd::Skip);
+                if self.return_all {
+                    header.skip = true;
+                } else {
+                    let skip_bytes = self.bytes_per_point * header.num_points;
+                    self.file.seek_relative(skip_bytes as i64)?;
+                    return Ok(HdrRd::Skip);
+                }
             }
         }
 
@@ -289,7 +307,7 @@ impl Lptf3Loader {
     /// The points are sorted by their x coordinate.
     ///
     /// If an error occurs during the operation, it will return an `Err` with the error message.
-    pub fn get_next_frame_points(&mut self) -> Result<Option<(f64, Vec<FramePoint>)>> {
+    pub fn get_next_frame_points(&mut self) -> Result<Option<FullFrame>> {
         let mut points = Vec::new();
 
         let header = match self.seek_next_valid_frame()? {
@@ -299,48 +317,61 @@ impl Lptf3Loader {
 
         let y_pos = header.frame_index as f64 * self.y_translation;
         let skip_int = self.skip_spacing.map(|s| (s / header.x_res) as i32);
-        let mut last_skip_index = i32::MIN;
-        let mut skip_offset = i32::MIN;
 
+        // We're going to start by reading all the points and then sorting them by x coordinate.
+        // ========================================================================================
+        let mut raw_points = Vec::with_capacity(header.num_points as usize);
         for _ in 0..header.num_points {
             let (x_raw, z_raw) = read_raw_point(&mut self.file, self.is_32_bit)?;
-
-            if let Some(skip_i) = skip_int {
-                // We have to calculate the skip offset based on the first point in order to
-                // pick a value large enough to ensure that the skip index will never be less than
-                // zero, otherwise it will produce a missing row when it crosses the zero boundary.
-                if skip_offset == i32::MIN {
-                    skip_offset = skip_i * ((-x_raw / skip_i) + 1);
-                }
-            }
-
             let c = if self.has_color {
-                Some(read_u8(&mut self.file)?)
+                read_u8(&mut self.file)?
             } else {
-                None
+                0
             };
+            raw_points.push(RawPoint {
+                x: x_raw,
+                z: z_raw,
+                c,
+            });
+        }
+        raw_points.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap());
 
+        // Now we'll iterate through the raw points to mark the indices to keep
+        // ========================================================================================
+        // We have to calculate the skip offset based on the first point in order to
+        // pick a value large enough to ensure that the skip index will never be less than
+        // zero, otherwise it will produce a missing row when it crosses the zero boundary.
+        let skip_offset = skip_int
+            .map(|s| s * (-raw_points[0].x / s + 1))
+            .unwrap_or(i32::MIN);
+        let mut last_skip_index = i32::MIN;
+        let mut to_take = Vec::new();
+
+        for (i, raw) in raw_points.into_iter().enumerate() {
             if let Some(skip_i) = skip_int {
-                let skip_index = (x_raw + skip_offset) / skip_i;
-                if skip_index <= last_skip_index {
-                    continue;
+                let skip_index = (raw.x + skip_offset) / skip_i;
+                if skip_index > last_skip_index {
+                    last_skip_index = skip_index;
+                    to_take.push(i);
                 }
-                last_skip_index = skip_index;
+            } else {
+                // If we're not skipping, we take every point
+                to_take.push(i);
             }
 
             let p = FramePoint {
-                x: (x_raw as f64) * header.x_res + header.x_offset,
-                z: (z_raw as f64) * header.z_res + header.z_offset,
-                color: c,
+                x: (raw.x as f64) * header.x_res + header.x_offset,
+                z: (raw.z as f64) * header.z_res + header.z_offset,
+                color: if self.has_color { Some(raw.c) } else { None },
             };
 
             points.push(p);
         }
 
         // Sort points by x coordinate
-        points.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal));
+        let result = FullFrame::new(header, points, y_pos, to_take);
 
-        Ok(Some((y_pos, points)))
+        Ok(Some(result))
     }
 }
 
@@ -348,6 +379,35 @@ enum HdrRd {
     Valid(FrameHeader),
     Skip,
     EndOfFile,
+}
+
+pub struct FullFrame {
+    pub header: FrameHeader,
+    pub points: Vec<FramePoint>,
+    pub y_pos: f64,
+    pub to_take: Vec<usize>,
+}
+
+impl FullFrame {
+    pub fn new(
+        header: FrameHeader,
+        points: Vec<FramePoint>,
+        y_pos: f64,
+        take_indices: Vec<usize>,
+    ) -> Self {
+        Self {
+            header,
+            points,
+            y_pos,
+            to_take: take_indices,
+        }
+    }
+}
+
+struct RawPoint {
+    x: i32,
+    z: i32,
+    c: u8,
 }
 
 pub struct FramePoint {
@@ -370,6 +430,7 @@ impl FramePoint {
     }
 }
 
+#[derive(Clone)]
 struct FrameHeader {
     frame_index: u32,
     num_points: u32,
@@ -377,6 +438,11 @@ struct FrameHeader {
     z_offset: f64,
     x_res: f64,
     z_res: f64,
+
+    /// This flag is set during the loading process to indicate that this frame consists entirely
+    /// of points that would be skipped based on the `take_every` parameter.  If the loader is set
+    /// to return all frames, this flag is what distinguishes a skipped frame from a valid frame
+    pub skip: bool,
 }
 
 impl FrameHeader {
@@ -399,6 +465,7 @@ impl FrameHeader {
             z_offset,
             x_res,
             z_res,
+            skip: false,
         })
     }
 }
