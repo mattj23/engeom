@@ -57,7 +57,6 @@ pub fn load_lptf3_downfilter(file_path: &Path, take_every: u32) -> Result<PointC
     let downsampled = load_downsample_filter_lptf3(file_path, take_every)?;
     let final_points = downsampled.rows.into_iter().flatten().collect::<Vec<_>>();
 
-
     let c = if let Some(colors) = downsampled.colors {
         let final_colors = colors.into_iter().flatten().collect::<Vec<_>>();
         Some(expand_colors(&final_colors))
@@ -107,7 +106,7 @@ pub fn load_lptf3(file_path: &Path, take_every: Option<u32>) -> Result<PointClou
     PointCloud::try_new(points, None, c)
 }
 
-pub fn load_lptf3_mesh(file_path: &Path, take_every: Option<u32>) -> Result<HalfEdgeMesh> {
+pub fn load_lptf3_mesh_original(file_path: &Path, take_every: Option<u32>) -> Result<HalfEdgeMesh> {
     let strip_r = 3.0; // The maximum edge ratio for the strip triangulation.
     let world_r = 8.0; // The maximum edge ratio for world triangulation.
 
@@ -164,9 +163,81 @@ pub fn load_lptf3_mesh(file_path: &Path, take_every: Option<u32>) -> Result<Half
     Ok(mesh)
 }
 
+pub fn load_lptf3_mesh(file_path: &Path, take_every: u32) -> Result<HalfEdgeMesh> {
+    let strip_r = 3.0; // The maximum edge ratio for the strip triangulation.
+    let world_r = 8.0; // The maximum edge ratio for world triangulation.
+
+    let result = load_downsample_filter_lptf3(file_path, take_every)?;
+    let max_spacing = take_every as f64 * result.y_translation * 2.0;
+
+    // let mut last_delaunay_row: Option<(Vec<StripRowPoint>, f64)> = None;
+
+    // First build the mesh vertices and the corresponding rows of strip row points
+    let mut mesh = HalfEdgeMesh::new();
+    let mut strip_rows = Vec::new();
+    for row in result.rows.iter() {
+        let mut strip_row = Vec::new();
+        for p in row.iter() {
+            let ih = mesh
+                .add_vertex(p.coords)
+                .map_err(|e| format!("Failed to add vertex: {:?}", e))?;
+            strip_row.push(StripRowPoint::new(p.x, ih));
+        }
+        strip_rows.push(strip_row);
+    }
+
+    // Now iterate through the strip rows and build the mesh
+    for row_i in 0..strip_rows.len() - 1 {
+        if result.rows[row_i].is_empty() || result.rows[row_i + 1].is_empty() {
+            continue; // Skip empty rows
+        }
+
+        let y0 = result.rows[row_i][0].y;
+        let y1 = result.rows[row_i + 1][0].y;
+
+        // If the rows are too far apart, skip the triangulation
+        if (y1 - y0).abs() > max_spacing {
+            continue;
+        }
+
+        let row0 = &strip_rows[row_i];
+        let row1 = &strip_rows[row_i + 1];
+
+        // Build the strip triangulation between the two rows
+        let r = build_parallel_row_strip(row0, y0, row1, y1, strip_r)?;
+        for (i0, i1, i2) in r {
+            // Check the edge ratio on actual points
+            let pa: Point3 = mesh
+                .point(i0)
+                .map_err(|e| format!("Failed to get point {}: {:?}", i0, e))?
+                .into();
+            let pb: Point3 = mesh
+                .point(i1)
+                .map_err(|e| format!("Failed to get point {}: {:?}", i1, e))?
+                .into();
+            let pc: Point3 = mesh
+                .point(i2)
+                .map_err(|e| format!("Failed to get point {}: {:?}", i2, e))?
+                .into();
+            let ea = (pa - pb).norm();
+            let eb = (pb - pc).norm();
+            let ec = (pc - pa).norm();
+
+            let edge_ratio = ea.max(eb).max(ec) / max_spacing;
+            if edge_ratio < world_r {
+                mesh.add_tri_face(i0, i1, i2)
+                    .map_err(|e| format!("Failed to add face: {:?}", e))?;
+            }
+        }
+    }
+
+    Ok(mesh)
+}
+
 struct Lptf3Downsampled {
     pub rows: Vec<Vec<Point3>>,
     pub colors: Option<Vec<Vec<u8>>>,
+    pub y_translation: f64,
 }
 
 fn load_downsample_filter_lptf3(file_path: &Path, take_every: u32) -> Result<Lptf3Downsampled> {
@@ -221,6 +292,10 @@ fn load_downsample_filter_lptf3(file_path: &Path, take_every: u32) -> Result<Lpt
     let mut final_row_colors = Vec::new();
 
     for (row_i, to_take) in row_data.iter().enumerate() {
+        if to_take.is_empty() {
+            continue;
+        }
+
         let mut row_points = Vec::new();
         let mut row_colors = Vec::new();
         for col_i in to_take.iter() {
@@ -268,6 +343,7 @@ fn load_downsample_filter_lptf3(file_path: &Path, take_every: u32) -> Result<Lpt
     Ok(Lptf3Downsampled {
         rows: final_rows,
         colors: c,
+        y_translation: loader.y_translation,
     })
 }
 
