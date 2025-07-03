@@ -3,17 +3,18 @@
 //! meshing cases, typically when a triangulation problem can be transformed into another space.
 //!
 use crate::common::kd_tree::KdTreeSearch;
-use crate::{KdTree2, Point2, Result};
+use crate::{Point2, Result};
 
-pub fn build_delaunay_strip(
-    a: &[DelaunayRowPoint],
+pub fn build_parallel_row_strip(
+    a: &[StripRowPoint],
     y_a: f64,
-    b: &[DelaunayRowPoint],
+    b: &[StripRowPoint],
     y_b: f64,
+    max_edge_ratio: f64,
 ) -> Result<Vec<[usize; 3]>> {
     // Initialize the indices as the first points in each row. The x positions of the points need
     // to be sorted.
-    let mut state = DelaunayRowState::try_new(a, y_a, b, y_b)?;
+    let mut state = StripRowState::try_new(a, y_a, b, y_b, max_edge_ratio)?;
     let mut faces = Vec::new();
 
     // The algorithm works by maintaining two indices, one for the first row and one for the
@@ -71,7 +72,7 @@ pub fn build_delaunay_strip(
     Ok(faces)
 }
 
-struct DelaunayRowState<'a> {
+struct StripRowState<'a> {
     /// The current index in the first row.
     i0: usize,
 
@@ -79,10 +80,10 @@ struct DelaunayRowState<'a> {
     i1: usize,
 
     /// The first row of points.
-    row0: &'a [DelaunayRowPoint],
+    row0: &'a [StripRowPoint],
 
     /// The second row of points.
-    row1: &'a [DelaunayRowPoint],
+    row1: &'a [StripRowPoint],
 
     /// The Y coordinate of the first row.
     y0: f64,
@@ -94,10 +95,13 @@ struct DelaunayRowState<'a> {
     points1: Vec<Point2>,
 
     /// A KD tree for fast point lookups.
-    tree: KdTree2,
+    // tree: KdTree2,
+
+    /// The maximum valid ratio of long edge to short edge in a face.
+    max_edge_ratio: f64,
 }
 
-impl<'a> DelaunayRowState<'a> {
+impl<'a> StripRowState<'a> {
     pub fn point0(&self) -> Point2 {
         self.points0[self.i0]
     }
@@ -129,10 +133,13 @@ impl<'a> DelaunayRowState<'a> {
         // }
         // // Return the maximum edge length
         // Some((pb - pa).norm().max((pc - pb).norm()).max((pa - pc).norm()))
+        let ea = (pb - pa).norm();
+        let eb = (pc - pb).norm();
+        let ec = (pa - pc).norm();
 
-        let width = (pb.y - pa.y).abs();
-        let max_edge = (pb - pa).norm().max((pc - pb).norm()).max((pa - pc).norm());
-        if max_edge < 3.0 * width {
+        let min_edge = ea.min(eb).min(ec);
+        let max_edge = ea.max(eb).max(ec);
+        if max_edge < self.max_edge_ratio * min_edge {
             Some(max_edge)
         } else {
             None
@@ -213,10 +220,11 @@ impl<'a> DelaunayRowState<'a> {
     }
 
     pub fn try_new(
-        row0: &'a [DelaunayRowPoint],
+        row0: &'a [StripRowPoint],
         y0: f64,
-        row1: &'a [DelaunayRowPoint],
+        row1: &'a [StripRowPoint],
         y1: f64,
+        max_edge_ratio: f64,
     ) -> Result<Self> {
         // Ensure the rows are sorted by X coordinate.
         if row0.is_empty() || row1.is_empty() {
@@ -238,15 +246,15 @@ impl<'a> DelaunayRowState<'a> {
             .map(|p| Point2::new(p.x, y1))
             .collect::<Vec<_>>();
 
-        let mut all_points = Vec::with_capacity(row0.len() + row1.len());
-        for point in points0.iter() {
-            all_points.push(*point);
-        }
-        for point in points1.iter() {
-            all_points.push(*point);
-        }
-
-        let tree = KdTree2::new(&all_points);
+        // let mut all_points = Vec::with_capacity(row0.len() + row1.len());
+        // for point in points0.iter() {
+        //     all_points.push(*point);
+        // }
+        // for point in points1.iter() {
+        //     all_points.push(*point);
+        // }
+        //
+        // let tree = KdTree2::new(&all_points);
 
         Ok(Self {
             i0: 0,
@@ -257,12 +265,12 @@ impl<'a> DelaunayRowState<'a> {
             y1,
             points0,
             points1,
-            tree,
+            max_edge_ratio,
         })
     }
 }
 
-pub struct DelaunayRowPoint {
+pub struct StripRowPoint {
     /// The X coordinate of the point in the row.
     pub x: f64,
 
@@ -270,7 +278,7 @@ pub struct DelaunayRowPoint {
     pub i: usize,
 }
 
-impl DelaunayRowPoint {
+impl StripRowPoint {
     /// Creates a new `DelaunayRowPoint`.
     ///
     /// # Arguments

@@ -410,8 +410,11 @@ impl Mesh {
 
     #[staticmethod]
     fn load_lptf3(file_path: PathBuf, take_every: Option<u32>) -> PyResult<Mesh> {
-        let mesh = engeom::io::load_lptf3_delaunay(&file_path, take_every)
+        let start = std::time::Instant::now();
+        let mesh = engeom::io::load_lptf3_mesh(&file_path, take_every)
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        let elapsed = start.elapsed();
+        println!("Loaded mesh from {} in {:.2?}", file_path.display(), elapsed);
 
         Ok(Self::from_inner(mesh))
     }

@@ -40,7 +40,7 @@
 //! file.
 
 use crate::common::triangulation::VertexBuilder;
-use crate::common::triangulation::delaunay_row2::{DelaunayRowPoint, build_delaunay_strip};
+use crate::common::triangulation::parallel_row2::{StripRowPoint, build_parallel_row_strip};
 use crate::{Mesh, Point3, PointCloud, Result};
 use std::fs::File;
 use std::io::{BufReader, Read, Seek};
@@ -81,14 +81,16 @@ pub fn load_lptf3(file_path: &Path, take_every: Option<u32>) -> Result<PointClou
     PointCloud::try_new(points, None, c)
 }
 
-pub fn load_lptf3_delaunay(file_path: &Path, take_every: Option<u32>) -> Result<Mesh> {
+pub fn load_lptf3_mesh(file_path: &Path, take_every: Option<u32>) -> Result<Mesh> {
+    let strip_edge_ratio = 3.0;
+
     let mut loader = Lptf3Loader::new(file_path, take_every)?;
 
-    let mut last_delaunay_row: Option<(Vec<DelaunayRowPoint>, f64)> = None;
+    let mut last_delaunay_row: Option<(Vec<StripRowPoint>, f64)> = None;
 
     let mut vertices = VertexBuilder::new();
     let mut faces: Vec<[u32; 3]> = Vec::new();
-    // let min_spacing = take_every.unwrap_or(1) as f64 * loader.y_translation * 2.0;
+    let max_spacing = take_every.unwrap_or(1) as f64 * loader.y_translation * 2.0;
     let mut row_count = 0;
 
     while let Some((y_pos, frame_points)) = loader.get_next_frame_points()? {
@@ -96,16 +98,17 @@ pub fn load_lptf3_delaunay(file_path: &Path, take_every: Option<u32>) -> Result<
         let mut row = Vec::new();
         for p in frame_points {
             let i = vertices.push(p.at_y(y_pos));
-            row.push(DelaunayRowPoint::new(p.x, i));
+            row.push(StripRowPoint::new(p.x, i));
         }
 
         if let Some((last_row, last_y_pos)) = &last_delaunay_row {
-            // if y_pos - *last_y_pos > min_spacing {
-                let result_faces = build_delaunay_strip(last_row, *last_y_pos, &row, y_pos)?;
+            if (y_pos - *last_y_pos).abs() < max_spacing {
+                let result_faces =
+                    build_parallel_row_strip(last_row, *last_y_pos, &row, y_pos, strip_edge_ratio)?;
                 for face in result_faces {
                     faces.push([face[0] as u32, face[1] as u32, face[2] as u32]);
                 }
-            // }
+            }
         }
 
         last_delaunay_row = Some((row, y_pos));

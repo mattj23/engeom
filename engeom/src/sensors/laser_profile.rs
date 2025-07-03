@@ -6,6 +6,7 @@
 //! Examples include the LMI Gocator 2D profile series, the Micro-Epsilon scanCONTROL series,
 //! and the Keyence LJ series.
 
+use crate::geom3::point_cloud::estimate_by_neighborhood;
 use crate::io::Lptf3Loader;
 use crate::na::Translation3;
 use crate::sensors::SimulatedPointSensor;
@@ -14,7 +15,6 @@ use crate::{Result, SurfacePoint3};
 use parry3d_f64::query::{Ray, RayCast};
 use std::f64::consts::PI;
 use std::path::Path;
-use crate::geom3::point_cloud::estimate_by_neighborhood;
 
 /// Represents the geometry of a laser profile line sensor, which emits a laser line into a scene
 /// and detects the reflection of that line to triangulate the distance to points on a surface.
@@ -159,10 +159,7 @@ impl LaserProfile {
         };
 
         let (normals, certainties) = if let Some(estimates) = normal_estimates {
-            (
-                Some(estimates.normals),
-                estimates.confidence,
-            )
+            (Some(estimates.normals), estimates.confidence)
         } else {
             (None, Vec::new())
         };

@@ -8,7 +8,7 @@ use bounding_volume::Aabb;
 use parry3d_f64::bounding_volume;
 use uuid::Uuid;
 
-pub use normal_estimation::{estimate_by_neighborhood, NormalEstimates};
+pub use normal_estimation::{NormalEstimates, estimate_by_neighborhood};
 
 pub trait PointCloudOverlap<TOther> {
     fn overlap_by_reciprocity(&self, other: &TOther, max_distance: f64) -> Vec<usize>;

@@ -2,8 +2,7 @@
 
 use crate::na::Point;
 
-pub mod delaunay_row2;
-
+pub mod parallel_row2;
 
 /// This struct is a simple helper to keep track of vertices in a triangulation. Adding a point
 /// returns the index that the point can be found in the list.  Once all points have been added,
@@ -14,11 +13,9 @@ pub struct VertexBuilder<const D: usize> {
 
 impl<const D: usize> VertexBuilder<D> {
     pub fn new() -> Self {
-        Self {
-            points: Vec::new(),
-        }
+        Self { points: Vec::new() }
     }
-    
+
     pub fn points(&self) -> &[Point<f64, D>] {
         &self.points
     }

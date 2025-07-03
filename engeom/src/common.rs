@@ -9,8 +9,8 @@ pub mod points;
 pub mod poisson_disk;
 pub mod surface_point;
 pub mod svd_basis;
-pub mod vec_f64;
 pub mod triangulation;
+pub mod vec_f64;
 
 pub use align::DistMode;
 pub use angles::{

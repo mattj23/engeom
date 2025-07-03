@@ -12,7 +12,7 @@ use stl_io;
 #[cfg(feature = "stl")]
 use crate::geom3::Mesh;
 
-pub use lptf3::{Lptf3Loader, load_lptf3, load_lptf3_delaunay};
+pub use lptf3::{Lptf3Loader, load_lptf3, load_lptf3_mesh};
 
 #[cfg(feature = "stl")]
 pub fn read_mesh_stl(path: &Path, merge_duplicates: bool, delete_degenerate: bool) -> Result<Mesh> {
