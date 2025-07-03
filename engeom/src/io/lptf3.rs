@@ -286,8 +286,9 @@ fn load_downsample_filter_lptf3(file_path: &Path, take_every: u32) -> Result<Lpt
     } else {
         (take_every + 1) / 2
     } as i32;
+    // let look_rows = take_every as i32;
 
-    let look_dist = look_rows as f64 * loader.y_translation * 1.5;
+    let look_dist = look_rows as f64 * loader.y_translation * 2.0;
     let mut final_rows = Vec::new();
     let mut final_row_colors = Vec::new();
 
@@ -740,7 +741,7 @@ fn adjust_point(p: &Point3, samples: &[Point3], look_dist: f64) -> Point3 {
     // Check that the standard deviation of the second basis is at least 1/3rd of the first so that
     // we didn't just best-fit a plane to a line
     let stdev = basis.basis_stdevs();
-    if stdev[0] > stdev[1] * 3.0 {
+    if stdev[1] > stdev[2] * 10.0 {
         return *p;
     }
 
