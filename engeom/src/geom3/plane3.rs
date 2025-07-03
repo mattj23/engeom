@@ -1,5 +1,5 @@
 use crate::geom3::UnitVec3;
-use crate::{Iso3, Point3, SurfacePoint3};
+use crate::{Iso3, Point3, SurfacePoint3, SvdBasis3};
 
 #[derive(Debug, Clone)]
 pub struct Plane3 {
@@ -104,6 +104,40 @@ impl Plane3 {
         } else {
             Some((p0 - sp.point).dot(&self.normal) / denom)
         }
+    }
+}
+
+impl From<&SvdBasis3> for Plane3 {
+    /// Create a Plane3 from a SvdBasis3 using the third basis vector as the normal and the mean
+    /// point to calculate d. If a `SvdBasis3` has been constructed from a set of planar points,
+    /// this will create a plane that best fits those points.
+    ///
+    /// # Arguments
+    ///
+    /// * `svd`: The SvdBasis3 to create the plane from
+    ///
+    /// returns: Plane3
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use approx::assert_relative_eq;
+    /// use engeom::geom3::{Plane3, SvdBasis3, Point3};
+    /// let points = vec![
+    ///    Point3::new(5.0, 10.0, 15.0),
+    ///    Point3::new(5.0, 11.0, 16.0),
+    ///    Point3::new(5.0, 10.0, 16.0),
+    ///    Point3::new(5.0, 11.0, 15.0),
+    /// ];
+    /// let svd = SvdBasis3::from_points(&points, None);
+    /// let plane = Plane3::from(&svd);
+    /// assert_relative_eq!(plane.normal.x, 1.0, epsilon = 1e-6);
+    /// assert_relative_eq!(plane.d, 5.0, epsilon = 1e-6);
+    /// ```
+    fn from(svd: &SvdBasis3) -> Self {
+        let normal = UnitVec3::new_normalize(svd.basis[2]);
+        let d = normal.dot(&svd.center.coords);
+        Self::new(normal, d)
     }
 }
 

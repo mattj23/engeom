@@ -82,7 +82,7 @@ impl PointCloud {
     #[staticmethod]
     #[pyo3(signature=(path, take_every=None))]
     fn load_lptf3(path: PathBuf, take_every: Option<u32>) -> PyResult<Self> {
-        let inner = engeom::io::load_lptf3(&path, take_every)
+        let inner = engeom::io::load_lptf3_downfilter(&path, take_every.unwrap_or(2))
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
         Ok(Self::from_inner(inner))

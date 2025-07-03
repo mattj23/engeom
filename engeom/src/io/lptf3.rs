@@ -40,15 +40,160 @@
 //! file.
 
 use crate::airfoil::AirfoilGeometry;
+use crate::common::points::mean_point;
 use crate::common::triangulation::VertexBuilder;
 use crate::common::triangulation::parallel_row2::{StripRowPoint, build_parallel_row_strip};
 use crate::geom3::mesh::HalfEdgeMesh;
-use crate::{Mesh, Point3, PointCloud, Result};
+use crate::{
+    Iso3, Mesh, Plane3, Point3, PointCloud, Result, SurfacePoint3, SvdBasis3, UnitVec3, Vector3,
+};
 use alum::Handle;
 use rayon::prelude::*;
 use std::fs::File;
 use std::io::{BufReader, Read, Seek};
 use std::path::Path;
+
+pub fn load_lptf3_downfilter(file_path: &Path, take_every: u32) -> Result<PointCloud> {
+    if take_every < 2 {
+        return Err("take_every must be at least 2".into());
+    }
+
+    let mut loader = Lptf3Loader::new(file_path, Some(take_every), true)?;
+
+    // Prepare the full point cloud into a set of rows
+    // =========================================================================================
+    // At the end of this step, `all_points` will contain a vector of vectors, where each inner
+    // vector is the 3d point data for a single row of points, sorted in ascending order by x
+    // coordinate.  The `row_data` will contain the indices of the points that are destined for the
+    // final point cloud. The color vector will have been filled with the color values in the order
+    // of the points matching with a flattening of `all_points`.
+    let mut all_points = Vec::new();
+    let mut all_colors = Vec::new();
+    let mut row_data = Vec::new();
+
+    let mut total_points = 0;
+
+    while let Some(full) = loader.get_next_frame_points()? {
+        let mut row = Vec::new();
+        let mut c_row = Vec::new();
+        for p in full.points.iter() {
+            row.push(p.at_y(full.y_pos));
+            c_row.push(p.color.unwrap_or(0));
+        }
+        all_points.push(row);
+        all_colors.push(c_row);
+        total_points += full.to_take.len();
+        row_data.push(full.to_take)
+    }
+
+    // Sample the final point cloud
+    // =========================================================================================
+    // We will iterate through each row of points and for each index in the `row_data` element
+    // we will find all points within a sampling distance of the point at that index.  We will
+    // perform a gaussian weighted SVD on those points and then correct the working point's z value
+    // to intersect with the plane.
+
+    // The number of rows to look forward and backwards when sampling the point cloud.
+    let look_rows = if take_every % 2 == 0 {
+        take_every / 2
+    } else {
+        (take_every + 1) / 2
+    } as i32;
+
+    let look_dist = look_rows as f64 * loader.y_translation * 1.75;
+    let z_axis = UnitVec3::new_unchecked(Vector3::z());
+
+    let mut final_points = Vec::new();
+    let mut final_colors = Vec::new();
+
+    let mut finished_points = 0;
+    let mut projected = 0;
+    let start = std::time::Instant::now();
+
+    for (row_i, to_take) in row_data.iter().enumerate() {
+        for col_i in to_take.iter() {
+            // The point that we're working on
+            let p = all_points[row_i][*col_i];
+
+            let mut samples = Vec::new();
+            for check_i in (row_i as i32 - look_rows)..=(row_i as i32 + look_rows) {
+                if check_i < 0 || check_i >= all_points.len() as i32 {
+                    continue; // Skip rows that are out of bounds
+                }
+                let check_row = &all_points[check_i as usize];
+
+                // Binary search for the first point that is p.x - look_dist
+                let target = p.x - look_dist;
+                let start = check_row
+                    .binary_search_by(|a| a.x.total_cmp(&target))
+                    .unwrap_or_else(|i| i);
+
+                for col in start..check_row.len() {
+                    let check_p = &check_row[col];
+                    if (check_p.x - p.x).abs() <= look_dist {
+                        samples.push(*check_p);
+                    }
+                    if check_p.x > p.x + look_dist {
+                        // If the point is beyond the look distance, we can stop checking this row
+                        break;
+                    }
+                }
+            }
+
+            if samples.len() < 3 {
+                // If there are not enough samples, we skip smoothing this point
+                final_points.push(p);
+                final_colors.push(all_colors[row_i][*col_i]);
+            } else {
+                let sp = SurfacePoint3::new(p, z_axis);
+                let basis = SvdBasis3::from_points(&samples, None);
+                let stdev = basis.basis_stdevs();
+                if stdev[0] > stdev[1] * 3.0 {
+                    // If the standard deviation is too high, we skip this point
+                    // final_points.push(p);
+                    continue;
+                }
+
+                let plane = Plane3::from(&basis);
+                if let Some(t) = plane.intersection_distance(&sp) {
+                    projected += 1;
+                    final_points.push(sp.at_distance(t));
+                    final_colors.push(all_colors[row_i][*col_i]);
+                } else {
+                    // If the plane does not intersect with the point, we just use the original point
+                    final_points.push(p);
+                    final_colors.push(all_colors[row_i][*col_i]);
+                }
+            }
+            finished_points += 1;
+            if finished_points % 100000 == 0 {
+                eprintln!("Processed {}/{} points ({})", finished_points, total_points, projected);
+            }
+        }
+
+        if start.elapsed().as_secs_f64() > 20.0 {
+            eprintln!(
+                "Processed {}/{} points in {:.2} seconds",
+                finished_points,
+                total_points,
+                start.elapsed().as_secs_f64()
+            );
+            eprintln!("Aborting due to long processing time.");
+            break;
+        }
+    }
+
+    let c = if loader.has_color {
+        Some(expand_colors(&final_colors))
+    } else {
+        None
+    };
+    PointCloud::try_new(final_points, None, c)
+}
+
+fn expand_colors(colors: &[u8]) -> Vec<[u8; 3]> {
+    colors.iter().map(|&c| [c, c, c]).collect()
+}
 
 /// Read a lptf3 (Laser Profile Triangulation Format 3D) file and return a `PointCloud`.
 ///
@@ -128,9 +273,6 @@ pub fn load_lptf3_mesh(file_path: &Path, take_every: Option<u32>) -> Result<Half
                         .point(i2)
                         .map_err(|e| format!("Failed to get point {}: {:?}", i2, e))?
                         .into();
-                    // let pa = &vertices.points()[f[0]];
-                    // let pb = &vertices.points()[f[1]];
-                    // let pc = &vertices.points()[f[2]];
                     let ea = (pa - pb).norm();
                     let eb = (pb - pc).norm();
                     let ec = (pc - pa).norm();
@@ -352,7 +494,9 @@ impl Lptf3Loader {
                 let skip_index = (raw.x + skip_offset) / skip_i;
                 if skip_index > last_skip_index {
                     last_skip_index = skip_index;
-                    to_take.push(i);
+                    if !header.skip {
+                        to_take.push(i);
+                    }
                 }
             } else {
                 // If we're not skipping, we take every point
