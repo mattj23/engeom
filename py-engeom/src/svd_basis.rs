@@ -1,4 +1,4 @@
-use crate::conversions::{array2_to_points2, array2_to_points3};
+use crate::conversions::{array_to_points2, array_to_points3};
 use crate::geom2::{Iso2, Vector2};
 use crate::geom3::{Iso3, Vector3};
 use numpy::ndarray::Array1;
@@ -24,7 +24,7 @@ impl SvdBasis2 {
         points: PyReadonlyArray2<'py, f64>,
         weights: Option<PyReadonlyArray1<'py, f64>>,
     ) -> PyResult<Self> {
-        let points = array2_to_points2(&points.as_array())?;
+        let points = array_to_points2(&points.as_array())?;
 
         let basis = match weights {
             Some(weights) => engeom::SvdBasis2::from_points(
@@ -91,7 +91,7 @@ impl SvdBasis3 {
         points: PyReadonlyArray2<'py, f64>,
         weights: Option<PyReadonlyArray1<'py, f64>>,
     ) -> PyResult<Self> {
-        let points = array2_to_points3(&points.as_array())?;
+        let points = array_to_points3(&points.as_array())?;
 
         // TODO: Is there some way to pass it back as a reference?
         let basis = match weights {

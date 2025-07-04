@@ -1,4 +1,4 @@
-use crate::conversions::{array2_to_points3, points_to_array3_2, vectors_to_array3_2};
+use crate::conversions::{array_to_points3, points_to_array, vectors_to_array};
 use crate::geom3::Iso3;
 use crate::mesh::Mesh;
 use engeom::{PointCloudFeatures, PointCloudKdTree, PointCloudOverlap};
@@ -117,7 +117,7 @@ impl Clone for PointCloud {
 impl PointCloud {
     #[new]
     fn new<'py>(points: PyReadonlyArray2<'py, f64>) -> PyResult<Self> {
-        let cloud_points = array2_to_points3(&points.as_array())?;
+        let cloud_points = array_to_points3(&points.as_array())?;
         let cloud = engeom::PointCloud::try_new(cloud_points, None, None)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
@@ -152,7 +152,7 @@ impl PointCloud {
     #[getter]
     fn points<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArray2<f64>> {
         if self.points.is_none() {
-            let array = points_to_array3_2(self.inner.points());
+            let array = points_to_array(self.inner.points());
             self.points = Some(array.into_pyarray(py).unbind());
         }
         self.points.as_ref().unwrap().bind(py)
@@ -179,7 +179,7 @@ impl PointCloud {
         if let Some(normals) = self.inner.normals() {
             if self.normals.is_none() {
                 let n = normals.iter().map(|v| v.into_inner()).collect::<Vec<_>>();
-                let array = vectors_to_array3_2(&n);
+                let array = vectors_to_array(&n);
                 self.normals = Some(array.into_pyarray(py).unbind());
             }
 

@@ -1,6 +1,6 @@
 use crate::bounding::Aabb2;
 use crate::common::Resample;
-use crate::conversions::{array2_to_points2, array2_to_vectors2, points2_to_array2};
+use crate::conversions::{array_to_points2, array_to_vectors2, points_to_array, vectors_to_array};
 use engeom::geom2::{HasBounds2, Line2};
 use engeom::{BestFit, To3D};
 use numpy::ndarray::{Array1, Array2};
@@ -457,7 +457,7 @@ impl Circle2 {
         guess: Option<Circle2>,
         sigma: Option<f64>,
     ) -> PyResult<Self> {
-        let points = array2_to_points2(&points.as_array())?;
+        let points = array_to_points2(&points.as_array())?;
         let guess = if let Some(c) = guess {
             *c.get_inner()
         } else {
@@ -484,7 +484,7 @@ impl Circle2 {
         min_r: Option<f64>,
         max_r: Option<f64>,
     ) -> PyResult<Self> {
-        let points = array2_to_points2(&points.as_array())?;
+        let points = array_to_points2(&points.as_array())?;
         let result = engeom::Circle2::ransac(&points, tol, iterations, min_r, max_r)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(result))
@@ -767,7 +767,7 @@ impl Curve2 {
     #[getter]
     fn points<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArray2<f64>> {
         if self.points.is_none() {
-            let result = points2_to_array2(self.inner.points());
+            let result = points_to_array(self.inner.points());
             self.points = Some(result.into_pyarray(py).unbind())
         }
 
@@ -783,10 +783,10 @@ impl Curve2 {
         force_closed: bool,
         hull_ccw: bool,
     ) -> PyResult<Self> {
-        let points = array2_to_points2(&points.as_array())?;
+        let points = array_to_points2(&points.as_array())?;
 
         let curve = if let Some(normal_array) = normals {
-            let normals = array2_to_vectors2(&normal_array.as_array())?;
+            let normals = array_to_vectors2(&normal_array.as_array())?;
             if points.len() != normals.len() {
                 return Err(PyValueError::new_err(
                     "Points and normals must have the same length",
@@ -888,11 +888,7 @@ impl Curve2 {
             .make_hull()
             .ok_or(PyValueError::new_err("Could not compute convex hull"))?;
 
-        let mut result = Array2::zeros((hull.points().len(), 2));
-        for (i, point) in hull.points().iter().enumerate() {
-            result[[i, 0]] = point.x;
-            result[[i, 1]] = point.y;
-        }
+        let result = points_to_array(hull.points());
         Ok(result.into_pyarray(py))
     }
 
@@ -1071,13 +1067,9 @@ impl Iso2 {
         py: Python<'py>,
         points: PyReadonlyArray2<'py, f64>,
     ) -> PyResult<Bound<'py, PyArray2<f64>>> {
-        let points = array2_to_points2(&points.as_array())?;
+        let points = array_to_points2(&points.as_array())?;
         let transformed = points.iter().map(|p| self.inner * p).collect::<Vec<_>>();
-        let mut result = Array2::zeros((transformed.len(), 2));
-        for (i, point) in transformed.iter().enumerate() {
-            result[[i, 0]] = point.x;
-            result[[i, 1]] = point.y;
-        }
+        let result = points_to_array(&transformed);
         Ok(result.into_pyarray(py))
     }
 
@@ -1086,13 +1078,9 @@ impl Iso2 {
         py: Python<'py>,
         vectors: PyReadonlyArray2<'py, f64>,
     ) -> PyResult<Bound<'py, PyArray2<f64>>> {
-        let vectors = array2_to_vectors2(&vectors.as_array())?;
+        let vectors = array_to_vectors2(&vectors.as_array())?;
         let transformed = vectors.iter().map(|v| self.inner * v).collect::<Vec<_>>();
-        let mut result = Array2::zeros((transformed.len(), 2));
-        for (i, vector) in transformed.iter().enumerate() {
-            result[[i, 0]] = vector.x;
-            result[[i, 1]] = vector.y;
-        }
+        let result = vectors_to_array(&transformed);
         Ok(result.into_pyarray(py))
     }
 }

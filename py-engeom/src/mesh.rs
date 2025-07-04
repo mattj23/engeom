@@ -1,14 +1,14 @@
 use crate::bounding::Aabb3;
 use crate::common::{DeviationMode, SelectOp};
 use crate::conversions::{
-    array2_to_faces, array2_to_points3, faces_to_array2, points_to_array3_2, vectors_to_array3_2,
+    array_to_faces, array_to_points3, faces_to_array, points_to_array, vectors_to_array,
 };
 use crate::geom3::{Curve3, Iso3, Plane3, Point3, SurfacePoint3, Vector3};
 use crate::metrology::Distance3;
 use crate::point_cloud::Lptf3Load;
 use engeom::common::points::dist;
 use engeom::common::{Selection, SplitResult};
-use numpy::ndarray::{Array1, ArrayD};
+use numpy::ndarray::{Array1, Array2, ArrayD};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray2};
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
@@ -62,8 +62,8 @@ impl Mesh {
         merge_duplicates: bool,
         delete_degenerate: bool,
     ) -> PyResult<Self> {
-        let vertices = array2_to_points3(&vertices.as_array())?;
-        let faces = array2_to_faces(&faces.as_array())?;
+        let vertices = array_to_points3(&vertices.as_array())?;
+        let faces = array_to_faces(&faces.as_array())?;
         let mesh = engeom::Mesh::new_with_options(
             vertices,
             faces,
@@ -121,7 +121,7 @@ impl Mesh {
     #[getter]
     fn vertices<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArray2<f64>> {
         if self.vertices.is_none() {
-            let array = points_to_array3_2(self.inner.vertices());
+            let array = points_to_array(self.inner.vertices());
             self.vertices = Some(array.into_pyarray(py).unbind());
         }
         self.vertices.as_ref().unwrap().bind(py)
@@ -131,7 +131,7 @@ impl Mesh {
     fn vertex_normals<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArray2<f64>> {
         if self.vertex_normals.is_none() {
             let normals = self.inner.get_vertex_normals();
-            let array = vectors_to_array3_2(&normals);
+            let array = vectors_to_array(&normals);
             self.vertex_normals = Some(array.into_pyarray(py).unbind());
         }
 
@@ -190,7 +190,7 @@ impl Mesh {
                 .map(|n| n.into_inner())
                 .collect::<Vec<_>>();
 
-            let array = vectors_to_array3_2(&normals);
+            let array = vectors_to_array(&normals);
             self.face_normals = Some(array.into_pyarray(py).unbind());
         }
 
@@ -200,7 +200,7 @@ impl Mesh {
     #[getter]
     fn faces<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArray2<u32>> {
         if self.faces.is_none() {
-            let faces = faces_to_array2(self.inner.faces());
+            let faces = faces_to_array(self.inner.faces());
             self.faces = Some(faces.into_pyarray(py).unbind());
         }
 
@@ -231,7 +231,7 @@ impl Mesh {
         points: PyReadonlyArray2<'py, f64>,
         mode: DeviationMode,
     ) -> PyResult<Bound<'py, PyArray1<f64>>> {
-        let points = array2_to_points3(&points.as_array())?;
+        let points = array_to_points3(&points.as_array())?;
         let mut result = Array1::zeros(points.len());
 
         for (i, point) in points.iter().enumerate() {
@@ -259,10 +259,7 @@ impl Mesh {
         Distance3::from_inner(self.inner.measure_point_deviation(&point, dist_mode.into()))
     }
 
-    fn boundary_first_flatten<'py>(
-        &self,
-        py: Python<'py>,
-    ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
+    fn boundary_first_flatten<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
         let edges = self
             .inner
             .calc_edges()
@@ -272,18 +269,13 @@ impl Mesh {
             .boundary_first_flatten()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
-        let mut result = ArrayD::zeros(vec![values.len(), 2]);
-        for (i, p) in values.iter().enumerate() {
-            result[[i, 0]] = p.x;
-            result[[i, 1]] = p.y;
-        }
-
+        let result = points_to_array(&values);
         Ok(result.into_pyarray(py))
     }
 
-    fn sample_poisson<'py>(&self, py: Python<'py>, radius: f64) -> Bound<'py, PyArrayDyn<f64>> {
+    fn sample_poisson<'py>(&self, py: Python<'py>, radius: f64) -> Bound<'py, PyArray2<f64>> {
         let sps = self.inner.sample_poisson(radius);
-        let mut result = ArrayD::zeros(vec![sps.len(), 6]);
+        let mut result = Array2::zeros((sps.len(), 6));
         for (i, sp) in sps.iter().enumerate() {
             result[[i, 0]] = sp.point.x;
             result[[i, 1]] = sp.point.y;

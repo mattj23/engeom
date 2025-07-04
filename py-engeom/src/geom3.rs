@@ -1,5 +1,5 @@
 use crate::common::Resample;
-use crate::conversions::{array2_to_points3, array2_to_vectors3, points_to_array3_2};
+use crate::conversions::{array_to_points3, array_to_vectors3, points_to_array, vectors_to_array};
 use engeom::geom3::IsoExtensions3;
 use numpy::ndarray::{Array1, Array2};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray2, PyUntypedArrayMethods};
@@ -564,7 +564,7 @@ impl Curve3 {
     #[new]
     #[pyo3(signature=(points, tol=1.0e-6))]
     fn new(points: PyReadonlyArray2<'_, f64>, tol: f64) -> PyResult<Self> {
-        let points = array2_to_points3(&points.as_array())?;
+        let points = array_to_points3(&points.as_array())?;
         let inner = engeom::Curve3::from_points(&points, tol)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(inner))
@@ -573,7 +573,7 @@ impl Curve3 {
     #[getter]
     fn points<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArray2<f64>> {
         if self.points.is_none() {
-            let result = points_to_array3_2(self.inner.vertices());
+            let result = points_to_array(self.inner.vertices());
             self.points = Some(result.into_pyarray(py).unbind())
         }
 
@@ -950,16 +950,12 @@ impl Iso3 {
         py: Python<'py>,
         points: PyReadonlyArray2<'py, f64>,
     ) -> PyResult<Bound<'py, PyArray2<f64>>> {
-        let points = array2_to_points3(&points.as_array())?;
-        let mut result = Array2::zeros((points.len(), 3));
-
-        for (i, point) in points.iter().enumerate() {
-            let transformed = self.inner * point;
-            result[[i, 0]] = transformed.x;
-            result[[i, 1]] = transformed.y;
-            result[[i, 2]] = transformed.z;
-        }
-
+        let points = array_to_points3(&points.as_array())?;
+        let transformed = points
+            .iter()
+            .map(|point| self.inner * point)
+            .collect::<Vec<_>>();
+        let result = points_to_array(&transformed);
         Ok(result.into_pyarray(py))
     }
 
@@ -968,16 +964,10 @@ impl Iso3 {
         py: Python<'py>,
         vectors: PyReadonlyArray2<'py, f64>,
     ) -> PyResult<Bound<'py, PyArray2<f64>>> {
-        let vectors = array2_to_vectors3(&vectors.as_array())?;
-        let mut result = Array2::zeros((vectors.len(), 3));
-
-        for (i, vector) in vectors.iter().enumerate() {
-            let transformed = self.inner * vector;
-            result[[i, 0]] = transformed.x;
-            result[[i, 1]] = transformed.y;
-            result[[i, 2]] = transformed.z;
-        }
-
+        let vectors = array_to_vectors3(&vectors.as_array())?;
+        let transformed: Vec<engeom::Vector3> =
+            vectors.iter().map(|vector| self.inner * vector).collect();
+        let result = vectors_to_array(&transformed);
         Ok(result.into_pyarray(py))
     }
 }
