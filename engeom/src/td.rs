@@ -5,8 +5,10 @@
 mod conversion;
 mod control;
 mod common;
+mod simple_viewer;
 
 pub use conversion::*;
 pub use control::*;
 pub use common::*;
+pub use simple_viewer::*;
 

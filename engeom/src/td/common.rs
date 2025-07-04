@@ -1,5 +1,5 @@
-use three_d::Vec3;
 use crate::{Point3, Vector3};
+use three_d::{CpuMaterial, Srgba, Vec3};
 
 pub trait ToCgVec3 {
     fn to_cg(&self) -> Vec3;
@@ -24,5 +24,22 @@ pub trait ToEngeom3 {
 impl ToEngeom3 for Vec3 {
     fn to_engeom(&self) -> Vector3 {
         Vector3::new(self.x as f64, self.y as f64, self.z as f64)
+    }
+}
+
+pub fn cpu_mat(
+    red: u8,
+    green: u8,
+    blue: u8,
+    alpha: u8,
+    roughness: f32,
+    metallic: f32,
+) -> CpuMaterial {
+    let albedo = Srgba::new(red, green, blue, alpha);
+    CpuMaterial {
+        albedo,
+        roughness,
+        metallic,
+        ..Default::default()
     }
 }
