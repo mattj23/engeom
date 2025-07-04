@@ -339,33 +339,3 @@ impl Mesh {
         sums
     }
 }
-
-fn box_geom(width: f64, height: f64, depth: f64) -> (Vec<Point3>, Vec<[u32; 3]>) {
-    let vertices = vec![
-        Point3::new(0.0, 0.0, 0.0),
-        Point3::new(width, 0.0, 0.0),
-        Point3::new(0.0, 0.0, depth),
-        Point3::new(width, 0.0, depth),
-        Point3::new(0.0, height, 0.0),
-        Point3::new(width, height, 0.0),
-        Point3::new(0.0, height, depth),
-        Point3::new(width, height, depth),
-    ];
-
-    let triangles = vec![
-        [4, 7, 5],
-        [4, 6, 7],
-        [0, 2, 4],
-        [2, 6, 4],
-        [0, 1, 2],
-        [1, 3, 2],
-        [1, 5, 7],
-        [1, 7, 3],
-        [2, 3, 7],
-        [2, 7, 6],
-        [0, 4, 1],
-        [1, 4, 5],
-    ];
-
-    (vertices, triangles)
-}

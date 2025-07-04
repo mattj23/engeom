@@ -4,6 +4,8 @@ use super::Mesh;
 use crate::{Point3, Result};
 use std::collections::{HashMap, HashSet};
 
+type EdgesFacesLoops = (Vec<[u32; 2]>, Vec<[u32; 3]>, Vec<Vec<u32>>);
+
 pub struct MeshEdges<'a> {
     /// The original mesh associated with the edge structure
     mesh: &'a Mesh,
@@ -26,40 +28,6 @@ pub struct MeshEdges<'a> {
     /// vertices list that form a loop.
     pub boundary_loops: Vec<Vec<u32>>,
 }
-
-// impl MeshEdges {
-//     pub fn mesh(&self) -> &Mesh {
-//         &self.mesh
-//     }
-//
-//     /// Get a reference to the AABB of the underlying mesh in the local coordinate system.
-//     pub fn aabb(&self) -> &Aabb3 {
-//         self.mesh.shape.local_aabb()
-//     }
-//
-//     /// Gets a reference to the underlying `TriMesh` object to provide direct access to
-//     /// the `parry3d` API.
-//     pub fn tri_mesh(&self) -> &TriMesh {
-//         &self.mesh.shape
-//     }
-//
-//     /// Return a flag indicating whether the mesh is considered "solid" or not for the purposes of
-//     /// distance queries. If a mesh is "solid", then distance queries for points on the inside of
-//     /// the mesh will return a zero distance.
-//     pub fn is_solid(&self) -> bool {
-//         self.mesh.is_solid
-//     }
-//
-//     /// Get a reference to the vertices of the mesh.
-//     pub fn vertices(&self) -> &[Point3] {
-//         self.mesh.shape.vertices()
-//     }
-//
-//     /// Get a reference to the face indices of the mesh.
-//     pub fn faces(&self) -> &[[u32; 3]] {
-//         self.mesh.shape.indices()
-//     }
-// }
 
 impl<'a> MeshEdges<'a> {
     pub fn mesh(&self) -> &Mesh {
@@ -161,7 +129,7 @@ fn boundary_loops(boundary_map: HashMap<u32, u32>) -> Vec<Vec<u32>> {
     all_loops
 }
 
-fn identify_edges(faces: &[[u32; 3]]) -> Result<(Vec<[u32; 2]>, Vec<[u32; 3]>, Vec<Vec<u32>>)> {
+fn identify_edges(faces: &[[u32; 3]]) -> Result<EdgesFacesLoops> {
     // The direct edges are the edges that are directly defined by the faces, kept in the same
     // order as they are defined in the faces.
     let direct_edges = naive_edges(faces);

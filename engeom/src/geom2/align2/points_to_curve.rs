@@ -99,7 +99,7 @@ impl LeastSquaresProblem<f64, Dyn, U3> for PointsToCurve<'_> {
 /// * `points`: A slice containing `Point2` entities to be aligned to the curve
 /// * `curve`: A reference to the `Curve2` entity which will be the stationary reference
 /// * `initial`: An initial starting position for the LM algorithm. Use Iso2::identity() to start
-///     from the current point position.
+///   from the current point position.
 ///
 /// returns: Result<Isometry<f64, Unit<Complex<f64>>, 2>, Box<dyn Error, Global>>
 pub fn points_to_curve(points: &[Point2], curve: &Curve2, initial: &Iso2) -> Result<Align2> {

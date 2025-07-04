@@ -2,10 +2,7 @@ use crate::geom3::Iso3;
 use crate::mesh::Mesh;
 use crate::point_cloud::PointCloud;
 use engeom::sensors::SimulatedPointSensor;
-use numpy::ndarray::Array1;
-use numpy::{IntoPyArray, PyArray1};
-use pyo3::{Bound, PyResult, Python, pyclass, pymethods};
-use std::path::PathBuf;
+use pyo3::{pyclass, pymethods, PyResult};
 
 #[pyclass]
 #[derive(Clone)]
@@ -23,6 +20,7 @@ impl LaserProfile {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 #[pymethods]
 impl LaserProfile {
     #[new]
@@ -51,7 +49,7 @@ impl LaserProfile {
         Self { inner }
     }
 
-    fn get_points<'py>(
+    fn get_points(
         &self,
         target: &Mesh,
         obstruction: Option<&Mesh>,
@@ -65,26 +63,26 @@ impl LaserProfile {
         Ok(PointCloud::from_inner(cloud))
     }
 
-    #[pyo3(signature=(path, take_every=None, normal_neighborhood=None))]
-    fn load_lptf3<'py>(
-        &self,
-        py: Python<'py>,
-        path: PathBuf,
-        take_every: Option<u32>,
-        normal_neighborhood: Option<f64>,
-    ) -> PyResult<(PointCloud, Bound<'py, PyArray1<f64>>)> {
-        let (cloud, certainties, _) = self
-            .inner
-            .load_lptf3(&path, take_every, normal_neighborhood)
-            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
-
-        let mut c = Array1::zeros(certainties.len());
-        for (i, &certainty) in certainties.iter().enumerate() {
-            c[i] = certainty;
-        }
-
-        Ok((PointCloud::from_inner(cloud), c.into_pyarray(py)))
-    }
+    // #[pyo3(signature=(path, take_every=None, normal_neighborhood=None))]
+    // fn load_lptf3<'py>(
+    //     &self,
+    //     py: Python<'py>,
+    //     path: PathBuf,
+    //     take_every: Option<u32>,
+    //     normal_neighborhood: Option<f64>,
+    // ) -> PyResult<(PointCloud, Bound<'py, PyArray1<f64>>)> {
+    //     let (cloud, certainties, _) = self
+    //         .inner
+    //         .load_lptf3(&path, take_every, normal_neighborhood)
+    //         .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+    //
+    //     let mut c = Array1::zeros(certainties.len());
+    //     for (i, &certainty) in certainties.iter().enumerate() {
+    //         c[i] = certainty;
+    //     }
+    //
+    //     Ok((PointCloud::from_inner(cloud), c.into_pyarray(py)))
+    // }
 }
 
 #[pyclass]
@@ -116,7 +114,7 @@ impl PanningLaserProfile {
         Ok(Self { inner })
     }
 
-    fn get_points<'py>(
+    fn get_points(
         &self,
         target: &Mesh,
         obstruction: Option<&Mesh>,

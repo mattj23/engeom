@@ -166,7 +166,7 @@ fn calc_best_fit_n1(b_lengths: &[f64]) -> Result<SparseMat> {
 }
 
 fn modified_im_elen(im_elen: &Mat<f64>, n1: &SparseMat, tangents: &Mat<f64>) -> Mat<f64> {
-    let core = invert_2x2(&(&tangents.transpose() * n1 * tangents)).unwrap();
+    let core = invert_2x2(&(tangents.transpose() * n1 * tangents)).unwrap();
     let im_elen_sub = n1 * tangents * core * tangents.transpose() * im_elen;
     im_elen - im_elen_sub
 }
@@ -235,7 +235,7 @@ fn calc_extend_uv_xs(
         uv[(i_b as usize, 0)] = v;
     }
 
-    let core = aib * &uvb.subcols(0, 1);
+    let core = aib * uvb.subcols(0, 1);
     let uv_inner = aii_lu.solve(-core);
 
     for (&i, &v) in i_inner.iter().zip(uv_inner.col_as_slice(0)) {

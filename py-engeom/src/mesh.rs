@@ -437,6 +437,7 @@ impl FaceFilterHandle {
         format!("<FaceFilterHandle {} triangles>", self.indices.len())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn facing<'py>(
         mut slf: PyRefMut<'py, Self>,
         py: Python<'py>,
@@ -458,6 +459,7 @@ impl FaceFilterHandle {
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature=(other, all_points, distance_tol, mode, planar_tol = None, angle_tol = None))]
     fn near_mesh<'py>(
         mut slf: PyRefMut<'py, Self>,

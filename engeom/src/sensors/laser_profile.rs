@@ -9,10 +9,9 @@
 use crate::na::Translation3;
 use crate::sensors::SimulatedPointSensor;
 use crate::{Iso3, Mesh, Point3, PointCloud, PointCloudFeatures, UnitVec3, Vector3};
-use crate::{Result, SurfacePoint3};
+use crate::SurfacePoint3;
 use parry3d_f64::query::{Ray, RayCast};
 use std::f64::consts::PI;
-use std::path::Path;
 
 /// Represents the geometry of a laser profile line sensor, which emits a laser line into a scene
 /// and detects the reflection of that line to triangulate the distance to points on a surface.
@@ -70,6 +69,7 @@ impl LaserProfile {
     ///   less than this limit.
     ///
     /// returns: Result<LaserProfileSensor, Box<dyn Error, Global>>
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         emitter_z: f64,
         detector_y: f64,
@@ -92,27 +92,27 @@ impl LaserProfile {
         }
     }
 
-    /// Load a point cloud from a file in the LPTF3 format using this sensor's geometry. This
-    /// allows for some extra information to be calculated, such as the geometric uncertainty of
-    /// the points, the general direction of normal vectors, and a brightness correction value
-    /// based on reflection from the emitter to the detector.
-    ///
-    /// # Arguments
-    ///
-    /// * `file_path`: the path to the `.lptf3` file to load
-    /// * `take_every`: an optional parameter which specifies which rows to keep from the file,
-    ///   allowing fast, grid-like downsampling of the point cloud. Every `take_every`-th row is
-    ///   kept, and the columns are downsampled to roughly match the spacing of the skipped rows.
-    /// * `normal_neighborhood`: Optional parameter which specifies the neighborhood radius to use
-    ///   when estimating the point cloud normals. If `None`, the normals will not be estimated.
-    ///
-    /// returns: Result<(PointCloud, PointExtras), Box<dyn Error, Global>>
-    pub fn load_lptf3(
-        &self,
-        file_path: &Path,
-        take_every: Option<u32>,
-        normal_neighborhood: Option<f64>,
-    ) -> Result<(PointCloud, Vec<f64>, PointExtras)> {
+    // /// Load a point cloud from a file in the LPTF3 format using this sensor's geometry. This
+    // /// allows for some extra information to be calculated, such as the geometric uncertainty of
+    // /// the points, the general direction of normal vectors, and a brightness correction value
+    // /// based on reflection from the emitter to the detector.
+    // ///
+    // /// # Arguments
+    // ///
+    // /// * `file_path`: the path to the `.lptf3` file to load
+    // /// * `take_every`: an optional parameter which specifies which rows to keep from the file,
+    // ///   allowing fast, grid-like downsampling of the point cloud. Every `take_every`-th row is
+    // ///   kept, and the columns are downsampled to roughly match the spacing of the skipped rows.
+    // /// * `normal_neighborhood`: Optional parameter which specifies the neighborhood radius to use
+    // ///   when estimating the point cloud normals. If `None`, the normals will not be estimated.
+    // ///
+    // /// returns: Result<(PointCloud, PointExtras), Box<dyn Error, Global>>
+    // pub fn load_lptf3(
+    //     &self,
+    //     file_path: &Path,
+    //     take_every: Option<u32>,
+    //     normal_neighborhood: Option<f64>,
+    // ) -> Result<(PointCloud, Vec<f64>, PointExtras)> {
         // let mut loader = Lptf3Loader::new(file_path, take_every, false)?;
         // let mut points = Vec::new();
         // let mut colors = Vec::new();
@@ -167,28 +167,28 @@ impl LaserProfile {
         //     certainties,
         //     PointExtras::empty(),
         // ))
-        todo!()
-    }
+    //     todo!()
+    // }
 }
 
-pub struct PointExtras {
-    pub stdev: Vec<f64>,
-    pub brightness: Vec<f64>,
-}
-
-impl PointExtras {
-    pub fn new(stdev: Vec<f64>, brightness: Vec<f64>) -> Self {
-        Self { stdev, brightness }
-    }
-
-    pub fn empty() -> Self {
-        Self {
-            stdev: Vec::new(),
-            brightness: Vec::new(),
-        }
-    }
-}
-
+// pub struct PointExtras {
+//     pub stdev: Vec<f64>,
+//     pub brightness: Vec<f64>,
+// }
+//
+// impl PointExtras {
+//     pub fn new(stdev: Vec<f64>, brightness: Vec<f64>) -> Self {
+//         Self { stdev, brightness }
+//     }
+//
+//     pub fn empty() -> Self {
+//         Self {
+//             stdev: Vec::new(),
+//             brightness: Vec::new(),
+//         }
+//     }
+// }
+//
 fn obstruction_limit(obstruction: Option<&Mesh>, ray: &Ray, iso: &Iso3) -> f64 {
     obstruction
         .map(|ob| {
@@ -249,7 +249,7 @@ impl SimulatedPointSensor for LaserProfile {
 
                 // Create the witness ray
                 let impact = ray.point_at(ri.time_of_impact);
-                let witness = Ray::new(emitter, &impact - detector);
+                let witness = Ray::new(emitter, impact - detector);
 
                 // Check if the witness ray intersects with the obstruction
                 let ob_limit = obstruction_limit(obstruction, &witness, iso);
@@ -258,7 +258,11 @@ impl SimulatedPointSensor for LaserProfile {
                 }
 
                 // Check if the witness ray intersects with the target before expected
-                if target.tri_mesh().cast_ray(iso, &witness, 1.0 - 1e-4, false).is_some() {
+                if target
+                    .tri_mesh()
+                    .cast_ray(iso, &witness, 1.0 - 1e-4, false)
+                    .is_some()
+                {
                     continue;
                 }
 

@@ -63,8 +63,6 @@ pub fn load_downsample_filter_lptf3(
     let mut all_colors = Vec::new();
     let mut row_data = Vec::new();
 
-    let mut total_points = 0;
-
     while let Some(full) = loader.get_next_frame_points()? {
         let mut row = Vec::new();
         let mut c_row = Vec::new();
@@ -74,7 +72,6 @@ pub fn load_downsample_filter_lptf3(
         }
         all_points.push(row);
         all_colors.push(c_row);
-        total_points += full.to_take.len();
         row_data.push(full.to_take)
     }
 
@@ -118,8 +115,7 @@ pub fn load_downsample_filter_lptf3(
                         .binary_search_by(|a| a.x.total_cmp(&target))
                         .unwrap_or_else(|i| i);
 
-                    for col in start..check_row.len() {
-                        let check_p = &check_row[col];
+                    for check_p in check_row.iter().skip(start) {
                         if (check_p.x - p.x).abs() <= look_dist {
                             samples.push(*check_p);
                         }

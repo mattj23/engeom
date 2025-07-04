@@ -7,136 +7,7 @@ use crate::{Point3, UnitVec3};
 use parry3d_f64::query::{Ray, RayCast};
 use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
-
-// struct KeyChainer {
-//     forward: HashMap<u32, HashSet<u32>>,
-//     reverse: HashMap<u32, HashSet<u32>>,
-// }
-//
-// fn first_single(map: &mut HashMap<u32, HashSet<u32>>) -> Option<(u32, u32)> {
-//     for (k, v) in map.iter_mut() {
-//         if v.len() == 1 {
-//             let k0 = *k;
-//             let k1 = *v.iter().next().unwrap();
-//             return Some((k0, k1));
-//         }
-//     }
-//     None
-// }
-//
-// impl KeyChainer {
-//     pub fn new() -> Self {
-//         KeyChainer {
-//             forward: HashMap::new(),
-//             reverse: HashMap::new(),
-//         }
-//     }
-//
-//     pub fn push(&mut self, key: &[u32; 2]) {
-//         let k_min = key[0].min(key[1]);
-//         let k_max = key[0].max(key[1]);
-//         self.forward.entry(k_min).or_default().insert(k_max);
-//         self.reverse.entry(k_max).or_default().insert(k_min);
-//     }
-//
-//     pub fn remove_pair(&mut self, k0: u32, k1: u32) {
-//         let k_min = k0.min(k1);
-//         let k_max = k0.max(k1);
-//
-//         if let Some(v) = self.forward.get_mut(&k_min) {
-//             v.remove(&k_max);
-//             if v.is_empty() {
-//                 self.forward.remove(&k_min);
-//             }
-//         }
-//
-//         if let Some(v) = self.reverse.get_mut(&k_max) {
-//             v.remove(&k_min);
-//             if v.is_empty() {
-//                 self.reverse.remove(&k_max);
-//             }
-//         }
-//     }
-//
-//     pub fn pop_new(&mut self) -> Option<(u32, u32)> {
-//         if let Some((k0, k1)) = first_single(&mut self.forward) {
-//             self.remove_pair(k0, k1);
-//             Some((k0, k1))
-//         } else if let Some((k0, k1)) = first_single(&mut self.reverse) {
-//             self.remove_pair(k0, k1);
-//             Some((k0, k1))
-//         } else {
-//             // Find the lowest count from forward
-//             if let Some(n) = self
-//                 .forward
-//                 .iter()
-//                 .min_by(|a, b| a.1.len().cmp(&b.1.len()))
-//                 .clone()
-//             {
-//                 let k0 = *n.0;
-//                 let k1 = *n.1.iter().next().unwrap();
-//                 self.remove_pair(k0, k1);
-//                 Some((k0, k1))
-//             } else {
-//                 None
-//             }
-//         }
-//     }
-//
-//     pub fn find_next(&mut self, k0: u32) -> Option<u32> {
-//         if let Some(v) = self.forward.get_mut(&k0) {
-//             if v.len() == 1 {
-//                 let k1 = *v.iter().next().unwrap();
-//                 self.remove_pair(k0, k1);
-//                 return Some(k1);
-//             }
-//         }
-//         if let Some(v) = self.reverse.get_mut(&k0) {
-//             if v.len() == 1 {
-//                 let k1 = *v.iter().next().unwrap();
-//                 self.remove_pair(k0, k1);
-//                 return Some(k1);
-//             }
-//         }
-//         None
-//     }
-//
-//     pub fn sequences(&mut self) -> Vec<Vec<u32>> {
-//         let mut chains = Vec::new();
-//         let mut working = Vec::new();
-//
-//         // Find first
-//         while !self.forward.is_empty() {
-//             if working.is_empty() {
-//                 if let Some((k0, k1)) = self.pop_new() {
-//                     working.push(k0);
-//                     working.push(k1);
-//                 } else {
-//                     for (a, b) in self.forward.iter() {
-//                         println!("{} -> {:?}", a, b);
-//                     }
-//                     for (a, b) in self.reverse.iter() {
-//                         println!("{} <- {:?}", a, b);
-//                     }
-//                     panic!("This should not happen");
-//                 }
-//             }
-//
-//             // Now we have a working chain
-//             let last = *working.last().unwrap();
-//             if let Some(next) = self.find_next(last) {
-//                 self.remove_pair(last, next);
-//                 working.push(next);
-//             } else {
-//                 // We are done with this chain
-//                 chains.push(working.clone());
-//                 working.clear();
-//             }
-//         }
-//
-//         chains
-//     }
-// }
+type CEdgeTypes = (HashSet<[u32; 2]>, HashMap<[u32; 2], [u32; 2]>);
 
 impl Mesh {
     pub fn visual_outline(
@@ -200,10 +71,8 @@ impl Mesh {
             let k0 = k[0];
             let k1 = k[1];
 
-            let p0: Point3 =
-                self.shape.vertices()[k0 as usize] + vert_normals[k0 as usize] * 1e-2;
-            let p1: Point3 =
-                self.shape.vertices()[k1 as usize] + vert_normals[k1 as usize] * 1e-2;
+            let p0: Point3 = self.shape.vertices()[k0 as usize] + vert_normals[k0 as usize] * 1e-2;
+            let p1: Point3 = self.shape.vertices()[k1 as usize] + vert_normals[k1 as usize] * 1e-2;
 
             let points = fill_gaps(&[p0, p1], max_edge_length);
 
@@ -220,48 +89,10 @@ impl Mesh {
             }
         }
 
-        // // We want to chain vertices together
-        // let sequences = working
-        //     .sequences()
-        //     .into_iter()
-        //     .map(|indices| {
-        //         indices
-        //             .iter()
-        //             .map(|i| self.shape.vertices()[*i as usize])
-        //             .collect::<Vec<_>>()
-        //     })
-        //     .collect::<Vec<_>>();
-        //
-        // let mut edges = Vec::new();
-        // let shift = -facing.into_inner();
-        // for c in sequences.iter() {
-        //     if let Ok(chain) = Curve3::from_points(c, 1e-3) {
-        //         if chain.count() < 3 || chain.length() < max_edge_length * 2.0  {
-        //             continue;
-        //         }
-        //
-        //         // println!("before l={} n={}", chain.length(), chain.count());
-        //         let chain = chain.resample(Resample::ByMaxSpacing(max_edge_length));
-        //         // println!("after");
-        //
-        //         for (p0, p1) in chain.points().iter().zip(chain.points().iter().skip(1)) {
-        //             let p = mid_point(p0, p1) + shift * 1e-2;
-        //
-        //             let ray = Ray::new(p, shift);
-        //
-        //             if self.shape.intersects_local_ray(&ray, f64::MAX) {
-        //                 edges.push((*p0, *p1, 1))
-        //             } else {
-        //                 edges.push((*p0, *p1, 0))
-        //             }
-        //         }
-        //     }
-        // }
-
         edges
     }
 
-    fn classified_edge_types(&self) -> (HashSet<[u32; 2]>, HashMap<[u32; 2], [u32; 2]>) {
+    fn classified_edge_types(&self) -> CEdgeTypes {
         let naive = naive_edges(self.shape.indices());
         let unique = unique_edges(&naive);
 

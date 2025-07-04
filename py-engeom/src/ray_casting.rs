@@ -1,13 +1,10 @@
 use crate::geom3::Iso3;
 use crate::mesh::Mesh;
 use numpy::ndarray::ArrayD;
-use numpy::{IntoPyArray, PyArrayDyn, PyReadonlyArrayDyn, PyUntypedArrayMethods};
+use numpy::{IntoPyArray, PyArrayDyn, PyReadonlyArrayDyn};
 use parry3d_f64::query::{Ray as PRay3, RayCast};
 use pyo3::exceptions::PyValueError;
-use pyo3::{
-    Bound, PyResult, Python, pyclass,
-    pymethods,
-};
+use pyo3::{Bound, PyResult, Python, pyclass, pymethods};
 
 #[pyclass]
 #[derive(Clone)]
