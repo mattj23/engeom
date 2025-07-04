@@ -11,14 +11,21 @@ pub mod metrology;
 pub mod raster3;
 pub mod sensors;
 pub mod stats;
+
 pub mod utility;
+#[cfg(feature = "three_d")]
+pub mod td;
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 // Re-export parry, nalgebra, and alum for convenience
+pub use alum;
 pub use parry3d_f64 as parry3d;
 pub use parry3d_f64::na;
-pub use alum;
+
+// Re-export the `three_d` crate if the feature is enabled
+#[cfg(feature = "three_d")]
+pub use three_d;
 
 // Common one dimensional functions
 pub use func1::{Func1, Gaussian1, Line1, Polynomial, Series1};
