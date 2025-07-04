@@ -1,6 +1,7 @@
-use crate::td::{CameraControl, ModState, ToEngeom3, mod_state};
+use crate::td::{CameraControl, ModState, ToEngeom3, mod_state, ToCgVec3};
 use crate::{Iso3, Point3, Result};
 use std::collections::HashMap;
+use itertools::Itertools;
 use three_d::{
     AmbientLight, Camera, ClearState, Context, CoreError, CpuMaterial, CpuMesh, DirectionalLight,
     Event, FrameOutput, Geometry, Gm, Mesh, MouseButton, Object, PhysicalMaterial, Srgba, Window,
@@ -77,13 +78,15 @@ impl SimpleViewer {
             10000.0,
         );
 
+        let mut shadows_on = true;
+
         let mut control = CameraControl::new(1.0, 1.0, Iso3::identity(), 500.0);
         control.set_view(&mut camera);
 
         let ambient = AmbientLight::new(&self.context, 0.7, Srgba::WHITE);
-        let mut directional0 =
+        let mut light0 =
             DirectionalLight::new(&self.context, 2.0, Srgba::WHITE, vec3(-1.0, -1.0, -1.0));
-        let mut directional1 =
+        let mut light1 =
             DirectionalLight::new(&self.context, 2.0, Srgba::WHITE, vec3(1.0, 1.0, 1.0));
 
         self.window.render_loop(move |mut frame_input| {
@@ -95,6 +98,25 @@ impl SimpleViewer {
             // Handle general display viewer events
             for event in frame_input.events.iter() {
                 match event {
+                    Event::KeyPress {
+                        kind, modifiers, handled, ..
+                    } => {
+                        if *handled {
+                            continue;
+                        }
+                        match (kind, mod_state(modifiers)) {
+                            (three_d::Key::S, ModState::None) => {
+                                // Toggle shadows on/off
+                                shadows_on = !shadows_on;
+                                if !shadows_on {
+                                    light0.clear_shadow_map()
+                                }
+
+                                redraw = true;
+                            }
+                            _ => {}
+                        }
+                    }
                     Event::MousePress {
                         button,
                         position,
@@ -106,7 +128,7 @@ impl SimpleViewer {
                             continue;
                         }
                         match (button, mod_state(modifiers)) {
-                            (MouseButton::Left, ModState::CtrlOnly) => {
+                            (MouseButton::Right, ModState::None) => {
                                 for item in self.items.values() {
                                     if let Some(pick) = pick(
                                         &self.context,
@@ -114,7 +136,6 @@ impl SimpleViewer {
                                         *position,
                                         std::iter::once(item.as_ref()),
                                     ) {
-                                        println!("Update center to: {:?}", pick.position);
                                         control.set_center(Point3::from(pick.position.to_engeom()));
                                     }
                                 }
@@ -131,15 +152,20 @@ impl SimpleViewer {
             redraw |= control.handle_events(&mut camera, &mut frame_input.events);
 
             if redraw {
-                // directional0.generate_shadow_map(1024, &view_mesh);
-                // directional1.generate_shadow_map(1024, &view_mesh);
+                light0.direction = control.world_light_vector().to_cg();
+
+                if shadows_on {
+                    for item in self.items.values() {
+                        light0.generate_shadow_map(2048, std::iter::once(item.as_ref()));
+                    }
+                }
 
                 frame_input
                     .screen()
                     .clear(ClearState::color_and_depth(0.1, 0.1, 0.1, 1.0, 1.0))
                     .write(|| {
                         for (_, item) in self.items.iter() {
-                            item.render(&camera, &[&ambient, &directional0, &directional1]);
+                            item.render(&camera, &[&ambient, &light0]);
                         }
 
                         Ok::<(), CoreError>(())

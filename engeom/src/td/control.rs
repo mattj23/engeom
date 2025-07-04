@@ -22,6 +22,7 @@ pub struct CameraControl {
     rot_speed: f64,
     view: Iso3,
     distance: f64,
+    light_vector: Vector3,
     change_flag: bool,
 }
 
@@ -33,13 +34,24 @@ impl CameraControl {
             rot_speed,
             view,
             distance,
+            light_vector: Vector3::new(-1.0, -0.25, -0.5).normalize(),
             change_flag: false,
         }
+    }
+
+    pub fn world_light_vector(&self) -> Vector3 {
+        // Return the light vector in world space.
+        self.view * self.light_vector
     }
 
     /// Return the current position of the camera in world space
     pub fn position(&self) -> Point3 {
         self.view * Point3::new(0.0, 0.0, self.distance)
+    }
+
+    pub fn changed(&self) -> bool {
+        // Return true if the view has changed since the last call to reset_change_flag.
+        self.change_flag
     }
 
     /// Return the view center of the camera in world space
@@ -50,6 +62,10 @@ impl CameraControl {
     /// Return the up direction of the camera in world space
     pub fn up(&self) -> UnitVec3 {
         self.view * Vector3::y_axis()
+    }
+
+    pub fn right(&self) -> UnitVec3 {
+        self.view * Vector3::x_axis()
     }
 
     /// Return the look direction of the camera in world space
@@ -64,11 +80,8 @@ impl CameraControl {
 
     pub fn set_center(&mut self, center: Point3) {
         // Set the view center to the given point, keeping the current position and orientation.
-        println!("Current position: {:?}", self.position());
         let translation = center - self.view_center();
         self.view = Translation::from(translation) * self.view;
-
-        println!("Updated position: {:?}", self.view_center());
         self.change_flag = true;
     }
 
@@ -103,6 +116,28 @@ impl CameraControl {
         self.change_flag = true;
     }
 
+    fn pitch_light(&mut self, input: f32) {
+        // Pitch the light vector
+        let rot = input as f64 * self.rot_speed / 180.0;
+        let pitch = UnitQuaternion::from_axis_angle(&Vector3::x_axis(), rot);
+        let updated = pitch * self.light_vector;
+        if Vector3::z_axis().dot(&updated) < 0.0 {
+            self.light_vector = pitch * self.light_vector;
+            self.change_flag = true;
+        }
+    }
+
+    fn yaw_light(&mut self, input: f32) {
+        // Yaw the light vector
+        let rot = input as f64 * self.rot_speed / 180.0;
+        let yaw = UnitQuaternion::from_axis_angle(&Vector3::y_axis(), rot);
+        let updated = yaw * self.light_vector;
+        if Vector3::z_axis().dot(&updated) < 0.0 {
+            self.light_vector = yaw * self.light_vector;
+            self.change_flag = true;
+        }
+    }
+
     /// Handles the events. Must be called each frame.
     pub fn handle_events(
         &mut self,
@@ -132,6 +167,12 @@ impl CameraControl {
                         // With Shift, dragging the left mouse button rolls
                         (Some(MouseButton::Left), ModState::ShiftOnly) => {
                             self.roll(delta.0);
+                            *handled = true;
+                        }
+                        // With alt, dragging the left mouse button yaws and pitches the light
+                        (Some(MouseButton::Left), ModState::AltOnly) => {
+                            self.yaw_light(delta.0);
+                            self.pitch_light(delta.1);
                             *handled = true;
                         }
                         _ => {}
