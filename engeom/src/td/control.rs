@@ -1,23 +1,31 @@
-use crate::na::{Point, Translation, UnitQuaternion};
-use crate::td::{mod_state, ModState, ToCgVec3, ToEngeom3};
+use crate::na::{Translation, UnitQuaternion};
+use crate::td::{mod_state, ModState, ToCgVec3};
 use crate::{Iso3, Point3, UnitVec3, Vector3};
-use three_d::{MouseButton, radians, Event};
+use three_d::{Event, MouseButton};
 
 #[derive(Clone, Copy, Debug)]
 /// A controller that performs orbiting and zooming around a movable point in 3D space while
 /// avoiding gimbal lock by continuously moving the "up" direction.
 ///
-/// The view center point can be updated externally (usually by the user clicking on a point in the
+/// The view center point can be updated externally (usually by the user selecting a point in the
 /// scene), which will cause the camera to stay in its current position but update the direction
 /// that it's looking.  The camera can be moved around the view center point by dragging the mouse
 /// to perform yaw and pitch, by shift+dragging to roll, and by using the mouse wheel to zoom.
 ///
-/// The camera's position in-out from the view center is controlled by the mouse wheel.
+/// The camera's position in-out from the view center is controlled by the mouse wheel. The wheel
+/// does not change the zoom of the camera, but instead translates the camera towards or away from
+/// the view center point. Movement is exponential, so camera motion will slow as it approaches the
+/// view center and accelerate as it moves away.
+///
+/// Additionally, there is a light vector that can be rotated around the camera using ALT+mouse
+/// dragging. This light vector can be used by a scene to update a directional light source so
+/// that it stays in relation to the camera, which is useful for scientific applications.
 ///
 /// Internally, the view is represented as an isometry _at the view center point_ with the Y axis
 /// pointing up, the Z axis pointing towards the camera, and the X axis pointing to the right. The
 /// camera position is `distance` units away from the view center point in +Z.
 pub struct CameraControl {
+    /// A scaling factor for moving in and out
     move_speed: f64,
     rot_speed: f64,
     view: Iso3,
@@ -142,11 +150,11 @@ impl CameraControl {
     pub fn handle_events(
         &mut self,
         camera: &mut three_d::Camera,
-        events: &mut [three_d::Event],
+        events: &mut [Event],
     ) -> bool {
         for event in events.iter_mut() {
             match event {
-                three_d::Event::MouseMotion {
+                Event::MouseMotion {
                     delta,
                     button,
                     modifiers,

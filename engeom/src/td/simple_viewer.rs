@@ -1,12 +1,8 @@
-use crate::td::{CameraControl, ModState, ToEngeom3, mod_state, ToCgVec3};
+use crate::td::{mod_state, CameraControl, ModState, ToCgVec3, ToEngeom3};
 use crate::{Iso3, Point3, Result};
-use std::collections::HashMap;
 use itertools::Itertools;
-use three_d::{
-    AmbientLight, Camera, ClearState, Context, CoreError, CpuMaterial, CpuMesh, DirectionalLight,
-    Event, FrameOutput, Geometry, Gm, Mesh, MouseButton, Object, PhysicalMaterial, Srgba, Window,
-    WindowSettings, degrees, pick, vec3,
-};
+use std::collections::HashMap;
+use three_d::{degrees, pick, vec3, AmbientLight, Angle, AxisAlignedBoundingBox, Camera, ClearState, Context, CoreError, CpuMaterial, CpuMesh, DirectionalLight, Event, FrameOutput, Gm, Mesh, MouseButton, Object, PhysicalMaterial, Srgba, Window, WindowSettings};
 
 pub struct SimpleViewer {
     items: HashMap<usize, Box<dyn Object>>,
@@ -16,9 +12,40 @@ pub struct SimpleViewer {
 }
 
 impl SimpleViewer {
-    pub fn new(max_size: Option<(u32, u32)>, title: String) -> Result<SimpleViewer> {
+    /// Creates a new simple viewing window for inspecting 3D objects.  View controls are a simple
+    /// free orbiting camera with no gimbal lock.
+    ///
+    /// Has very simple view controls:
+    ///   - Right-click on an object to center the camera on the clicked point
+    ///   - Left mouse drag to orbit around the center point
+    ///   - Mouse wheel to translate the camera forward/backwards
+    ///   - Shift + left mouse drag to roll the camera left/right
+    ///   - Press 'S' to toggle shadows on/off
+    ///   - Alt + left mouse drag to move the light direction
+    ///
+    /// # Arguments
+    ///
+    /// * `title`: A title for the window
+    /// * `max_size`: An optional maximum size for the window. If `None`, the window will be
+    ///   created with the default size.
+    ///
+    /// returns: Result<SimpleViewer, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use engeom::{Point3, Mesh};
+    /// use engeom::td::{SimpleViewer, ToCpuMesh, cpu_mat};
+    ///
+    /// let p0 = Point3::new(5.0, 0.0, 0.0);
+    /// let m0 = Mesh::create_capsule(&(-p0), &p0, 1.0, 100, 100);
+    /// let mut view = SimpleViewer::new("Demo", None)?;
+    /// view.add_mesh(m0.to_cpu_mesh(), cpu_mat(150, 150, 150, 255, 0.7, 0.8));
+    /// view.display()?;
+    /// ```
+    pub fn new(title: &str, max_size: Option<(u32, u32)>) -> Result<SimpleViewer> {
         let window = Window::new(WindowSettings {
-            title,
+            title: title.to_string(),
             max_size,
             ..Default::default()
         })?;
@@ -68,19 +95,32 @@ impl SimpleViewer {
     }
 
     pub fn display(self) -> Result<()> {
+        let camera_angle: f64 = 45.0;
+
+        // Find the combined bounding box of all items to center the camera
+        let mut bounds = AxisAlignedBoundingBox::EMPTY;
+        for item in self.items.values() {
+            bounds.expand_with_aabb(item.aabb());
+        }
+
+        let e = bounds.size().to_engeom().norm();
+        let t = (camera_angle / 2.0).to_radians().tan();
+        let d = e / (2.0 * t);
+        let center = bounds.center().to_engeom();
+
+
         let mut camera = Camera::new_perspective(
             self.window.viewport(),
             vec3(-500.0, 250.0, 200.0), // Position of the camera
             vec3(0.0, 0.0, 0.0),        // Target point the camera is looking at
             vec3(0.0, 0.0, 1.0),        // Up vector of the camera
-            degrees(45.0),
+            degrees(camera_angle as f32),
             0.1,
             10000.0,
         );
 
         let mut shadows_on = true;
-
-        let mut control = CameraControl::new(1.0, 1.0, Iso3::identity(), 500.0);
+        let mut control = CameraControl::new(1.0, 1.0, Iso3::from(center), d);
         control.set_view(&mut camera);
 
         let ambient = AmbientLight::new(&self.context, 0.7, Srgba::WHITE);

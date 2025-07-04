@@ -31,6 +31,7 @@ impl ToCpuMesh for Mesh {
             positions: three_d::Positions::F64(points),
             indices: three_d::Indices::U32(indices),
             normals: Some(vtx_normals),
+
             ..Default::default()
         }
     }
