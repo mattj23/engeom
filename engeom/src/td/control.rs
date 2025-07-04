@@ -1,101 +1,105 @@
-use crate::na::UnitQuaternion;
-use crate::td::{ToCgVec3, ToEngeom3};
+use crate::na::{Point, Translation, UnitQuaternion};
+use crate::td::{mod_state, ModState, ToCgVec3, ToEngeom3};
 use crate::{Iso3, Point3, UnitVec3, Vector3};
-use three_d::{MouseButton, radians};
-
-enum ModifierState {
-    None,
-    ShiftOnly,
-    CtrlOnly,
-    AltOnly,
-    ShiftCtrl,
-    ShiftAlt,
-    CtrlAlt,
-    ShiftCtrlAlt,
-}
-
-fn mod_state(modifiers: &three_d::Modifiers) -> ModifierState {
-    match (modifiers.shift, modifiers.ctrl, modifiers.alt) {
-        (false, false, false) => ModifierState::None,
-        (true, false, false) => ModifierState::ShiftOnly,
-        (false, true, false) => ModifierState::CtrlOnly,
-        (false, false, true) => ModifierState::AltOnly,
-        (true, true, false) => ModifierState::ShiftCtrl,
-        (true, false, true) => ModifierState::ShiftAlt,
-        (false, true, true) => ModifierState::CtrlAlt,
-        (true, true, true) => ModifierState::ShiftCtrlAlt,
-    }
-}
+use three_d::{MouseButton, radians, Event};
 
 #[derive(Clone, Copy, Debug)]
+/// A controller that performs orbiting and zooming around a movable point in 3D space while
+/// avoiding gimbal lock by continuously moving the "up" direction.
+///
+/// The view center point can be updated externally (usually by the user clicking on a point in the
+/// scene), which will cause the camera to stay in its current position but update the direction
+/// that it's looking.  The camera can be moved around the view center point by dragging the mouse
+/// to perform yaw and pitch, by shift+dragging to roll, and by using the mouse wheel to zoom.
+///
+/// The camera's position in-out from the view center is controlled by the mouse wheel.
+///
+/// Internally, the view is represented as an isometry _at the view center point_ with the Y axis
+/// pointing up, the Z axis pointing towards the camera, and the X axis pointing to the right. The
+/// camera position is `distance` units away from the view center point in +Z.
 pub struct CameraControl {
     move_speed: f64,
     rot_speed: f64,
     view: Iso3,
-
+    distance: f64,
     change_flag: bool,
 }
 
 impl CameraControl {
     /// Creates a new camera control.
-    pub fn new(move_speed: f64, rot_speed: f64) -> Self {
+    pub fn new(move_speed: f64, rot_speed: f64, view: Iso3, distance: f64) -> Self {
         Self {
             move_speed,
             rot_speed,
-            view: Iso3::translation(0.0, 0.0, 100.0),
+            view,
+            distance,
             change_flag: false,
         }
     }
 
-    pub fn set_view(&self, camera: &mut three_d::Camera) {
-        let origin = self.view * Point3::origin();
-        let look = self.view * -Vector3::z_axis();
-        let up = self.view * Vector3::y_axis();
+    /// Return the current position of the camera in world space
+    pub fn position(&self) -> Point3 {
+        self.view * Point3::new(0.0, 0.0, self.distance)
+    }
 
+    /// Return the view center of the camera in world space
+    pub fn view_center(&self) -> Point3 {
+        self.view * Point3::origin()
+    }
+
+    /// Return the up direction of the camera in world space
+    pub fn up(&self) -> UnitVec3 {
+        self.view * Vector3::y_axis()
+    }
+
+    /// Return the look direction of the camera in world space
+    pub fn look(&self) -> UnitVec3 {
+        self.view * -Vector3::z_axis()
+    }
+
+    pub fn reset_change_flag(&mut self) {
+        // Reset the change flag to false, indicating that the view has not yet changed.
+        self.change_flag = false;
+    }
+
+    pub fn set_center(&mut self, center: Point3) {
+        // Set the view center to the given point, keeping the current position and orientation.
+        println!("Current position: {:?}", self.position());
+        let translation = center - self.view_center();
+        self.view = Translation::from(translation) * self.view;
+
+        println!("Updated position: {:?}", self.view_center());
+        self.change_flag = true;
+    }
+
+    pub fn set_view(&self, camera: &mut three_d::Camera) {
         // The view is based on the internal isometry, in which -Z is the view direction, +X is the
         // right direction, and +Y is the up direction.
-        camera.set_view(origin.to_cg(), (origin + look.into_inner()).to_cg(), up.to_cg());
+        camera.set_view(
+            self.position().to_cg(),
+            self.view_center().to_cg(),
+            self.up().to_cg(),
+        );
     }
 
     fn roll(&mut self, input: f32) {
-        let rot = input as f64 * self.rot_speed / 1800.0;
+        let rot = input as f64 * self.rot_speed / 180.0;
         let roll = UnitQuaternion::from_axis_angle(&Vector3::z_axis(), rot);
         self.view = self.view * roll;
         self.change_flag = true;
     }
 
     fn pitch(&mut self, input: f32) {
-        let rot = input as f64 * self.rot_speed / 1800.0;
+        let rot = input as f64 * self.rot_speed / 180.0;
         let pitch = UnitQuaternion::from_axis_angle(&Vector3::x_axis(), rot);
         self.view = self.view * pitch;
         self.change_flag = true;
     }
 
     fn yaw(&mut self, input: f32) {
-        let rot = input as f64 * self.rot_speed / 1800.0;
+        let rot = input as f64 * self.rot_speed / 180.0;
         let yaw = UnitQuaternion::from_axis_angle(&Vector3::y_axis(), rot);
         self.view = self.view * yaw;
-        self.change_flag = true;
-    }
-
-    fn move_up(&mut self, input: f32) {
-        let move_dist = input as f64 * self.move_speed / 10.0;
-        let translation = Iso3::translation(0.0, move_dist, 0.0);
-        self.view = self.view * translation;
-        self.change_flag = true;
-    }
-
-    fn move_right(&mut self, input: f32) {
-        let move_dist = input as f64 * self.move_speed / 10.0;
-        let translation = Iso3::translation(-move_dist, 0.0, 0.0);
-        self.view = self.view * translation;
-        self.change_flag = true;
-    }
-
-    fn move_forward(&mut self, input: f32) {
-        let move_dist = input as f64 * self.move_speed / 10.0;
-        let translation = Iso3::translation(0.0, 0.0, -move_dist);
-        self.view = self.view * translation;
         self.change_flag = true;
     }
 
@@ -105,8 +109,6 @@ impl CameraControl {
         camera: &mut three_d::Camera,
         events: &mut [three_d::Event],
     ) -> bool {
-        self.change_flag = false;
-
         for event in events.iter_mut() {
             match event {
                 three_d::Event::MouseMotion {
@@ -122,36 +124,33 @@ impl CameraControl {
 
                     match (button, mod_state(modifiers)) {
                         // With no modifiers, dragging the left mouse button yaws and pitches
-                        (Some(MouseButton::Left), ModifierState::None) => {
-                            self.yaw(delta.0);
-                            self.pitch(delta.1);
+                        (Some(MouseButton::Left), ModState::None) => {
+                            self.yaw(-delta.0);
+                            self.pitch(-delta.1);
                             *handled = true;
-                        },
+                        }
                         // With Shift, dragging the left mouse button rolls
-                        (Some(MouseButton::Left), ModifierState::ShiftOnly) => {
+                        (Some(MouseButton::Left), ModState::ShiftOnly) => {
                             self.roll(delta.0);
                             *handled = true;
-                        },
-
-                        // With no modifiers, dragging the right mouse button moves the camera
-                        // left/right/up/down
-                        (Some(MouseButton::Right), ModifierState::None) => {
-                            self.move_right(delta.0);
-                            self.move_up(delta.1);
-                            *handled = true;
-                        },
-
-                        // With Shift, dragging the right mouse button moves the camera
-                        // forward/backward/left/right
-                        (Some(MouseButton::Right), ModifierState::ShiftOnly) => {
-                            self.move_right(delta.0);
-                            self.move_forward(delta.1);
-                            *handled = true;
-                        },
-
+                        }
                         _ => {}
                     }
+                }
+                Event::MouseWheel { delta, modifiers, handled, .. } => {
+                    if *handled {
+                        continue;
+                    }
 
+                    match mod_state(modifiers) {
+                        // With no modifiers, the mouse wheel zooms in and out
+                        ModState::None => {
+                            self.distance *= 1.01_f64.powf(delta.1 as f64 * self.move_speed);
+                            self.change_flag = true;
+                            *handled = true;
+                        }
+                        _ => {}
+                    }
 
                 }
                 _ => {}

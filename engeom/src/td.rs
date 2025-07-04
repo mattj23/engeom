@@ -2,13 +2,12 @@
 //! three-dimensional rendering and interaction. If the `three_d` feature is enabled, the `three_d`
 //! crate will be re-exported.
 
-mod conversion;
-mod control;
 mod common;
+mod control;
+mod conversion;
 mod simple_viewer;
 
-pub use conversion::*;
-pub use control::*;
 pub use common::*;
+pub use control::*;
+pub use conversion::*;
 pub use simple_viewer::*;
-

@@ -43,3 +43,29 @@ pub fn cpu_mat(
         ..Default::default()
     }
 }
+
+
+pub enum ModState {
+    None,
+    ShiftOnly,
+    CtrlOnly,
+    AltOnly,
+    ShiftCtrl,
+    ShiftAlt,
+    CtrlAlt,
+    ShiftCtrlAlt,
+}
+
+pub fn mod_state(modifiers: &three_d::Modifiers) -> ModState {
+    match (modifiers.shift, modifiers.ctrl, modifiers.alt) {
+        (false, false, false) => ModState::None,
+        (true, false, false) => ModState::ShiftOnly,
+        (false, true, false) => ModState::CtrlOnly,
+        (false, false, true) => ModState::AltOnly,
+        (true, true, false) => ModState::ShiftCtrl,
+        (true, false, true) => ModState::ShiftAlt,
+        (false, true, true) => ModState::CtrlAlt,
+        (true, true, true) => ModState::ShiftCtrlAlt,
+    }
+}
+

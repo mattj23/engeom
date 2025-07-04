@@ -1,7 +1,11 @@
-use crate::Result;
-use crate::td::CameraControl;
+use crate::td::{CameraControl, ModState, ToEngeom3, mod_state};
+use crate::{Iso3, Point3, Result};
 use std::collections::HashMap;
-use three_d::{AmbientLight, Camera, ClearState, Context, CoreError, CpuMaterial, CpuMesh, DirectionalLight, Event, FrameOutput, Geometry, MouseButton, Object, Srgba, Window, WindowSettings, degrees, pick, vec3, PhysicalMaterial, Gm, Mesh};
+use three_d::{
+    AmbientLight, Camera, ClearState, Context, CoreError, CpuMaterial, CpuMesh, DirectionalLight,
+    Event, FrameOutput, Geometry, Gm, Mesh, MouseButton, Object, PhysicalMaterial, Srgba, Window,
+    WindowSettings, degrees, pick, vec3,
+};
 
 pub struct SimpleViewer {
     items: HashMap<usize, Box<dyn Object>>,
@@ -36,11 +40,7 @@ impl SimpleViewer {
         &self.window
     }
 
-    pub fn add_mesh(
-        &mut self,
-        mesh: CpuMesh,
-        cpu_material: CpuMaterial,
-    ) -> usize {
+    pub fn add_mesh(&mut self, mesh: CpuMesh, cpu_material: CpuMaterial) -> usize {
         let mat = if cpu_material.albedo.a < 255 {
             PhysicalMaterial::new_transparent(&self.context, &cpu_material)
         } else {
@@ -77,7 +77,7 @@ impl SimpleViewer {
             10000.0,
         );
 
-        let mut control = CameraControl::new(1.0, 2.0);
+        let mut control = CameraControl::new(1.0, 1.0, Iso3::identity(), 500.0);
         control.set_view(&mut camera);
 
         let ambient = AmbientLight::new(&self.context, 0.7, Srgba::WHITE);
@@ -88,26 +88,47 @@ impl SimpleViewer {
 
         self.window.render_loop(move |mut frame_input| {
             let mut redraw = frame_input.first_frame;
-            redraw |= camera.set_viewport(frame_input.viewport);
-            redraw |= control.handle_events(&mut camera, &mut frame_input.events);
+            control.reset_change_flag();
 
+            redraw |= camera.set_viewport(frame_input.viewport);
+
+            // Handle general display viewer events
             for event in frame_input.events.iter() {
-                if let Event::MousePress {
-                    button, position, ..
-                } = *event
-                {
-                    if button == MouseButton::Left {
-                        // Pick
-                        for item in self.items.values() {
-                            if let Some(pick) =
-                                pick(&self.context, &camera, position, std::iter::once(item.as_ref()))
-                            {
-                                println!("{:?}", pick);
+                match event {
+                    Event::MousePress {
+                        button,
+                        position,
+                        modifiers,
+                        handled,
+                        ..
+                    } => {
+                        if *handled {
+                            continue;
+                        }
+                        match (button, mod_state(modifiers)) {
+                            (MouseButton::Left, ModState::CtrlOnly) => {
+                                for item in self.items.values() {
+                                    if let Some(pick) = pick(
+                                        &self.context,
+                                        &camera,
+                                        *position,
+                                        std::iter::once(item.as_ref()),
+                                    ) {
+                                        println!("Update center to: {:?}", pick.position);
+                                        control.set_center(Point3::from(pick.position.to_engeom()));
+                                    }
+                                }
                             }
+
+                            _ => {}
                         }
                     }
+                    _ => {}
                 }
             }
+
+            // Handle camera control events
+            redraw |= control.handle_events(&mut camera, &mut frame_input.events);
 
             if redraw {
                 // directional0.generate_shadow_map(1024, &view_mesh);

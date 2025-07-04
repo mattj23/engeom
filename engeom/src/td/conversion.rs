@@ -1,8 +1,7 @@
+use crate::Mesh;
 use crate::geom3::mesh::HalfEdgeMesh;
 use alum::{Handle, HasIterators, HasTopology};
 use three_d::CpuMesh;
-use crate::Mesh;
-
 
 pub trait ToCpuMesh {
     fn to_cpu_mesh(&self) -> CpuMesh;
@@ -10,20 +9,22 @@ pub trait ToCpuMesh {
 
 impl ToCpuMesh for Mesh {
     fn to_cpu_mesh(&self) -> CpuMesh {
-        let points = self.vertices()
+        let points = self
+            .vertices()
             .iter()
             .map(|v| three_d::vec3(v.x, v.y, v.z))
             .collect::<Vec<_>>();
 
-        let vtx_normals = self.get_vertex_normals()
+        let vtx_normals = self
+            .get_vertex_normals()
             .iter()
             .map(|v| three_d::vec3(v.x as f32, v.y as f32, v.z as f32))
             .collect::<Vec<_>>();
 
-        let indices = self.faces().iter()
-            .flat_map(|x| {
-                x.iter().map(|v| *v)
-            })
+        let indices = self
+            .faces()
+            .iter()
+            .flat_map(|x| x.iter().map(|v| *v))
             .collect();
 
         CpuMesh {

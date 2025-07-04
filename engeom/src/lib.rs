@@ -12,9 +12,9 @@ pub mod raster3;
 pub mod sensors;
 pub mod stats;
 
-pub mod utility;
 #[cfg(feature = "three_d")]
 pub mod td;
+pub mod utility;
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
