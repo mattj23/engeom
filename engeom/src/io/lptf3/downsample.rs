@@ -1,6 +1,5 @@
-use crate::common::points::dist;
 use crate::io::lptf3::{Lptf3Loader, expand_colors};
-use crate::{Plane3, Point3, PointCloud, Result, SurfacePoint3, SvdBasis3, UnitVec3, Vector3};
+use crate::{Point3, PointCloud, Result, SurfacePoint3, UnitVec3, Vector3};
 use rayon::prelude::*;
 use std::path::Path;
 
@@ -116,8 +115,9 @@ pub fn load_downsample_filter_lptf3(
                         .unwrap_or_else(|i| i);
 
                     for check_p in check_row.iter().skip(start) {
-                        if (check_p.x - p.x).abs() <= look_dist {
-                            samples.push(*check_p);
+                        let d = (check_p - p).norm();
+                        if d <= look_dist {
+                            samples.push((*check_p, gaussian_weight(d, weight_sigma)));
                         }
                         if check_p.x > p.x + look_dist {
                             // If the point is beyond the look distance, we can stop checking this row
@@ -126,7 +126,7 @@ pub fn load_downsample_filter_lptf3(
                     }
                 }
 
-                row_points.push(adjust_point(&p, &samples, weight_sigma, params.max_move));
+                row_points.push(adjust_by_gwm(&p, &samples, params.max_move));
                 row_colors.push(all_colors[row_i][*col_i]);
             }
 
@@ -155,41 +155,33 @@ pub fn load_downsample_filter_lptf3(
     })
 }
 
-fn adjust_point(p: &Point3, samples: &[Point3], sigma: f64, max_move: f64) -> Point3 {
+fn adjust_by_gwm(p: &Point3, samples: &[(Point3, f64)], max_move: f64) -> Point3 {
     if samples.len() < 3 {
         return *p;
     }
+    let (points, weights) = samples
+        .iter()
+        .map(|(pnt, wt)| (*pnt, *wt))
+        .unzip::<Point3, f64, Vec<_>, Vec<_>>();
 
-    let mut weights = Vec::with_capacity(samples.len());
-    for cp in samples.iter() {
-        let d = dist(p, cp);
-        weights.push(gaussian_weight(d, sigma));
-    }
-
-    // Calculate the SVD basis from the samples
     let sp = SurfacePoint3::new(*p, UnitVec3::new_unchecked(Vector3::z()));
-    let basis = SvdBasis3::from_points(samples, Some(&weights));
 
-    // Check that the standard deviation of the second basis is at least 10x of the last so that
-    // we didn't just best-fit a plane to a line
-    let stdev = basis.basis_stdevs();
-    if stdev[1] > stdev[2] * 20.0 {
-        return *p;
-    }
+    let mut ts = points
+        .iter()
+        .map(|pnt| sp.scalar_projection(pnt))
+        .collect::<Vec<_>>();
+    ts.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
-    let plane = Plane3::from(&basis);
-    if let Some(t) = plane.intersection_distance(&sp) {
-        if t.abs() > max_move * 10.0 {
-            // If the intersection is unreasonably far, just return the original point, this plane
-            // was likely malformed
-            *p
-        } else {
-            let t = t.clamp(-max_move, max_move);
-            sp.at_distance(t)
-        }
-    } else {
-        *p
-    }
+    let total_weight = weights.iter().sum::<f64>();
+    let weighted_mean = ts
+        .iter()
+        .zip(weights.iter())
+        .map(|(t, w)| t * w)
+        .sum::<f64>()
+        / total_weight;
+
+    let weighted_mean = weighted_mean.clamp(-max_move, max_move);
+    sp.at_distance(weighted_mean)
 }
 
 fn gaussian_weight(x: f64, sigma: f64) -> f64 {
