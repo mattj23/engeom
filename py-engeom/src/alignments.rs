@@ -1,20 +1,20 @@
 use crate::common::DeviationMode;
-use crate::conversions::{array_to_points3, array2_to_points3};
+use crate::conversions::array2_to_points3;
 use crate::geom3::Iso3;
 use crate::mesh::Mesh;
 use crate::point_cloud::PointCloud;
-use numpy::{PyReadonlyArray2, PyReadonlyArrayDyn};
+use numpy::PyReadonlyArray2;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 #[pyfunction]
 pub fn points_to_mesh(
-    points: PyReadonlyArrayDyn<'_, f64>,
+    points: PyReadonlyArray2<'_, f64>,
     mesh: &Mesh,
     initial: &Iso3,
     mode: DeviationMode,
 ) -> PyResult<Iso3> {
-    let points = array_to_points3(&points.as_array())?;
+    let points = array2_to_points3(&points.as_array())?;
 
     let result = engeom::geom3::align3::points_to_mesh(
         &points,

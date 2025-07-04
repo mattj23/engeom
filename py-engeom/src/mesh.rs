@@ -1,7 +1,7 @@
 use crate::bounding::Aabb3;
 use crate::common::{DeviationMode, SelectOp};
 use crate::conversions::{
-    array_to_faces, array_to_points3, faces_to_array, points_to_array3, vectors_to_array3,
+    array2_to_faces, array2_to_points3, faces_to_array2, points_to_array3_2, vectors_to_array3_2,
 };
 use crate::geom3::{Curve3, Iso3, Plane3, Point3, SurfacePoint3, Vector3};
 use crate::metrology::Distance3;
@@ -9,7 +9,7 @@ use crate::point_cloud::Lptf3Load;
 use engeom::common::points::dist;
 use engeom::common::{Selection, SplitResult};
 use numpy::ndarray::{Array1, ArrayD};
-use numpy::{IntoPyArray, PyArray1, PyArrayDyn, PyReadonlyArrayDyn};
+use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray2};
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use std::path::PathBuf;
@@ -17,10 +17,10 @@ use std::path::PathBuf;
 #[pyclass]
 pub struct Mesh {
     inner: engeom::Mesh,
-    vertices: Option<Py<PyArrayDyn<f64>>>,
-    faces: Option<Py<PyArrayDyn<u32>>>,
-    face_normals: Option<Py<PyArrayDyn<f64>>>,
-    vertex_normals: Option<Py<PyArrayDyn<f64>>>,
+    vertices: Option<Py<PyArray2<f64>>>,
+    faces: Option<Py<PyArray2<u32>>>,
+    face_normals: Option<Py<PyArray2<f64>>>,
+    vertex_normals: Option<Py<PyArray2<f64>>>,
 }
 
 impl Mesh {
@@ -57,13 +57,13 @@ impl Mesh {
     #[new]
     #[pyo3(signature=(vertices, faces, merge_duplicates = false, delete_degenerate = false))]
     fn new<'py>(
-        vertices: PyReadonlyArrayDyn<'py, f64>,
-        faces: PyReadonlyArrayDyn<'py, u32>,
+        vertices: PyReadonlyArray2<'py, f64>,
+        faces: PyReadonlyArray2<'py, u32>,
         merge_duplicates: bool,
         delete_degenerate: bool,
     ) -> PyResult<Self> {
-        let vertices = array_to_points3(&vertices.as_array())?;
-        let faces = array_to_faces(&faces.as_array())?;
+        let vertices = array2_to_points3(&vertices.as_array())?;
+        let faces = array2_to_faces(&faces.as_array())?;
         let mesh = engeom::Mesh::new_with_options(
             vertices,
             faces,
@@ -119,19 +119,19 @@ impl Mesh {
     }
 
     #[getter]
-    fn vertices<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArrayDyn<f64>> {
+    fn vertices<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArray2<f64>> {
         if self.vertices.is_none() {
-            let array = points_to_array3(self.inner.vertices());
+            let array = points_to_array3_2(self.inner.vertices());
             self.vertices = Some(array.into_pyarray(py).unbind());
         }
         self.vertices.as_ref().unwrap().bind(py)
     }
 
     #[getter]
-    fn vertex_normals<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArrayDyn<f64>> {
+    fn vertex_normals<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArray2<f64>> {
         if self.vertex_normals.is_none() {
             let normals = self.inner.get_vertex_normals();
-            let array = vectors_to_array3(&normals);
+            let array = vectors_to_array3_2(&normals);
             self.vertex_normals = Some(array.into_pyarray(py).unbind());
         }
 
@@ -180,7 +180,7 @@ impl Mesh {
     }
 
     #[getter]
-    fn face_normals<'py>(&mut self, py: Python<'py>) -> PyResult<&Bound<'py, PyArrayDyn<f64>>> {
+    fn face_normals<'py>(&mut self, py: Python<'py>) -> PyResult<&Bound<'py, PyArray2<f64>>> {
         if self.face_normals.is_none() {
             let normals = self
                 .inner
@@ -190,7 +190,7 @@ impl Mesh {
                 .map(|n| n.into_inner())
                 .collect::<Vec<_>>();
 
-            let array = vectors_to_array3(&normals);
+            let array = vectors_to_array3_2(&normals);
             self.face_normals = Some(array.into_pyarray(py).unbind());
         }
 
@@ -198,9 +198,9 @@ impl Mesh {
     }
 
     #[getter]
-    fn faces<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArrayDyn<u32>> {
+    fn faces<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArray2<u32>> {
         if self.faces.is_none() {
-            let faces = faces_to_array(self.inner.faces());
+            let faces = faces_to_array2(self.inner.faces());
             self.faces = Some(faces.into_pyarray(py).unbind());
         }
 
@@ -228,10 +228,10 @@ impl Mesh {
     fn deviation<'py>(
         &self,
         py: Python<'py>,
-        points: PyReadonlyArrayDyn<'py, f64>,
+        points: PyReadonlyArray2<'py, f64>,
         mode: DeviationMode,
     ) -> PyResult<Bound<'py, PyArray1<f64>>> {
-        let points = array_to_points3(&points.as_array())?;
+        let points = array2_to_points3(&points.as_array())?;
         let mut result = Array1::zeros(points.len());
 
         for (i, point) in points.iter().enumerate() {

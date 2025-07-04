@@ -2,7 +2,7 @@ use crate::geom3::Iso3;
 use crate::mesh::Mesh;
 use crate::point_cloud::PointCloud;
 use engeom::sensors::SimulatedPointSensor;
-use pyo3::{pyclass, pymethods, PyResult};
+use pyo3::{PyResult, pyclass, pymethods};
 
 #[pyclass]
 #[derive(Clone)]

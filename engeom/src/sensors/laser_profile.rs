@@ -6,10 +6,10 @@
 //! Examples include the LMI Gocator 2D profile series, the Micro-Epsilon scanCONTROL series,
 //! and the Keyence LJ series.
 
+use crate::SurfacePoint3;
 use crate::na::Translation3;
 use crate::sensors::SimulatedPointSensor;
 use crate::{Iso3, Mesh, Point3, PointCloud, PointCloudFeatures, UnitVec3, Vector3};
-use crate::SurfacePoint3;
 use parry3d_f64::query::{Ray, RayCast};
 use std::f64::consts::PI;
 
@@ -113,60 +113,60 @@ impl LaserProfile {
     //     take_every: Option<u32>,
     //     normal_neighborhood: Option<f64>,
     // ) -> Result<(PointCloud, Vec<f64>, PointExtras)> {
-        // let mut loader = Lptf3Loader::new(file_path, take_every, false)?;
-        // let mut points = Vec::new();
-        // let mut colors = Vec::new();
-        //
-        // // The vector from each point to the detector when the point was sampled
-        // let mut to_detector = Vec::new();
-        // // let mut to_emitter = Vec::new();
-        //
-        // // The relative positions of the detector and the emitter for each frame at the moment the
-        // // frame was sampled.
-        // let detector = Point3::new(0.0, self.detector_y, self.detector_z);
-        // let emitter = Point3::new(0.0, 0.0, self.emitter_z);
-        //
-        // while let Some(full) = loader.get_next_frame_points()? {
-        //     for i in full.to_take.iter() {
-        //         points.push(full.points[*i].at_y(full.y_pos));
-        //
-        //         if let Some(color) = full.points[*i].color {
-        //             colors.push([color; 3]);
-        //         }
-        //
-        //         if normal_neighborhood.is_some() {
-        //             let v = detector - full.points[*i].at_zero();
-        //             to_detector.push(v);
-        //         }
-        //     }
-        // }
-        //
-        // // Do the normal estimation if requested
-        // let normal_estimates = if let Some(radius) = normal_neighborhood {
-        //     let tree = KdTree3::new(&points);
-        //     let estimates = estimate_by_neighborhood(&points, &to_detector, &tree, radius);
-        //     Some(estimates)
-        // } else {
-        //     None
-        // };
-        //
-        // let rgb = if colors.is_empty() {
-        //     None
-        // } else {
-        //     Some(colors)
-        // };
-        //
-        // let (normals, certainties) = if let Some(estimates) = normal_estimates {
-        //     (Some(estimates.normals), estimates.confidence)
-        // } else {
-        //     (None, Vec::new())
-        // };
-        //
-        // Ok((
-        //     PointCloud::try_new(points, normals, rgb)?,
-        //     certainties,
-        //     PointExtras::empty(),
-        // ))
+    // let mut loader = Lptf3Loader::new(file_path, take_every, false)?;
+    // let mut points = Vec::new();
+    // let mut colors = Vec::new();
+    //
+    // // The vector from each point to the detector when the point was sampled
+    // let mut to_detector = Vec::new();
+    // // let mut to_emitter = Vec::new();
+    //
+    // // The relative positions of the detector and the emitter for each frame at the moment the
+    // // frame was sampled.
+    // let detector = Point3::new(0.0, self.detector_y, self.detector_z);
+    // let emitter = Point3::new(0.0, 0.0, self.emitter_z);
+    //
+    // while let Some(full) = loader.get_next_frame_points()? {
+    //     for i in full.to_take.iter() {
+    //         points.push(full.points[*i].at_y(full.y_pos));
+    //
+    //         if let Some(color) = full.points[*i].color {
+    //             colors.push([color; 3]);
+    //         }
+    //
+    //         if normal_neighborhood.is_some() {
+    //             let v = detector - full.points[*i].at_zero();
+    //             to_detector.push(v);
+    //         }
+    //     }
+    // }
+    //
+    // // Do the normal estimation if requested
+    // let normal_estimates = if let Some(radius) = normal_neighborhood {
+    //     let tree = KdTree3::new(&points);
+    //     let estimates = estimate_by_neighborhood(&points, &to_detector, &tree, radius);
+    //     Some(estimates)
+    // } else {
+    //     None
+    // };
+    //
+    // let rgb = if colors.is_empty() {
+    //     None
+    // } else {
+    //     Some(colors)
+    // };
+    //
+    // let (normals, certainties) = if let Some(estimates) = normal_estimates {
+    //     (Some(estimates.normals), estimates.confidence)
+    // } else {
+    //     (None, Vec::new())
+    // };
+    //
+    // Ok((
+    //     PointCloud::try_new(points, normals, rgb)?,
+    //     certainties,
+    //     PointExtras::empty(),
+    // ))
     //     todo!()
     // }
 }

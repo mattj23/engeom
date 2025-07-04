@@ -1,8 +1,8 @@
-use crate::conversions::{array_to_points2, array_to_points3};
+use crate::conversions::{array2_to_points2, array2_to_points3};
 use crate::geom2::{Iso2, Vector2};
 use crate::geom3::{Iso3, Vector3};
 use numpy::ndarray::Array1;
-use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1, PyReadonlyArrayDyn};
+use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::prelude::*;
 
 #[pyclass]
@@ -21,10 +21,10 @@ impl SvdBasis2 {
     #[new]
     #[pyo3(signature=(points, weights = None))]
     pub fn new<'py>(
-        points: PyReadonlyArrayDyn<'py, f64>,
+        points: PyReadonlyArray2<'py, f64>,
         weights: Option<PyReadonlyArray1<'py, f64>>,
     ) -> PyResult<Self> {
-        let points = array_to_points2(&points.as_array())?;
+        let points = array2_to_points2(&points.as_array())?;
 
         let basis = match weights {
             Some(weights) => engeom::SvdBasis2::from_points(
@@ -88,10 +88,10 @@ impl SvdBasis3 {
     #[new]
     #[pyo3(signature=(points, weights = None))]
     pub fn new<'py>(
-        points: PyReadonlyArrayDyn<'py, f64>,
+        points: PyReadonlyArray2<'py, f64>,
         weights: Option<PyReadonlyArray1<'py, f64>>,
     ) -> PyResult<Self> {
-        let points = array_to_points3(&points.as_array())?;
+        let points = array2_to_points3(&points.as_array())?;
 
         // TODO: Is there some way to pass it back as a reference?
         let basis = match weights {

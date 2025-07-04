@@ -1,13 +1,13 @@
-use numpy::ndarray::ArrayD;
-use numpy::{IntoPyArray, PyArrayDyn, PyReadonlyArrayDyn, PyUntypedArrayMethods};
+use numpy::ndarray::Array2;
+use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::exceptions::PyValueError;
 use pyo3::{Bound, PyResult, pyfunction};
 use std::collections::HashSet;
 
 #[pyfunction]
 pub fn clusters_from_sparse<'py>(
-    indices: PyReadonlyArrayDyn<'py, i32>,
-) -> PyResult<Vec<Bound<'py, PyArrayDyn<i32>>>> {
+    indices: PyReadonlyArray2<'py, i32>,
+) -> PyResult<Vec<Bound<'py, PyArray2<i32>>>> {
     let shape = indices.shape();
     if shape.len() != 2 || shape[1] != 3 {
         return Err(PyValueError::new_err("Expected Nx3 array of indices"));
@@ -23,7 +23,7 @@ pub fn clusters_from_sparse<'py>(
     let mut combined = Vec::new();
 
     for result in results.drain(..) {
-        let mut array = ArrayD::zeros(vec![result.len(), 3]);
+        let mut array = Array2::zeros((result.len(), 3));
         for (i, idx) in result.iter().enumerate() {
             array[[i, 0]] = idx.0;
             array[[i, 1]] = idx.1;

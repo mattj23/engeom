@@ -1,8 +1,8 @@
 use crate::common::Resample;
-use crate::conversions::{array_to_points3, array_to_vectors3, points_to_array3};
+use crate::conversions::{array2_to_points3, array2_to_vectors3, points_to_array3_2};
 use engeom::geom3::IsoExtensions3;
-use numpy::ndarray::{Array1, ArrayD};
-use numpy::{IntoPyArray, PyArray1, PyArrayDyn, PyReadonlyArrayDyn, PyUntypedArrayMethods};
+use numpy::ndarray::{Array1, Array2};
+use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray2, PyUntypedArrayMethods};
 use parry3d_f64::na::{Translation3, UnitQuaternion};
 use pyo3::exceptions::PyValueError;
 use pyo3::types::PyIterator;
@@ -534,7 +534,7 @@ impl CurveStation3 {
 #[pyclass]
 pub struct Curve3 {
     inner: engeom::Curve3,
-    points: Option<Py<PyArrayDyn<f64>>>,
+    points: Option<Py<PyArray2<f64>>>,
 }
 
 impl Clone for Curve3 {
@@ -563,17 +563,17 @@ impl Curve3 {
 impl Curve3 {
     #[new]
     #[pyo3(signature=(points, tol=1.0e-6))]
-    fn new(points: PyReadonlyArrayDyn<'_, f64>, tol: f64) -> PyResult<Self> {
-        let points = array_to_points3(&points.as_array())?;
+    fn new(points: PyReadonlyArray2<'_, f64>, tol: f64) -> PyResult<Self> {
+        let points = array2_to_points3(&points.as_array())?;
         let inner = engeom::Curve3::from_points(&points, tol)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(inner))
     }
 
     #[getter]
-    fn points<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArrayDyn<f64>> {
+    fn points<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArray2<f64>> {
         if self.points.is_none() {
-            let result = points_to_array3(self.inner.vertices());
+            let result = points_to_array3_2(self.inner.vertices());
             self.points = Some(result.into_pyarray(py).unbind())
         }
 
@@ -728,7 +728,7 @@ impl Iso3 {
     }
 
     #[new]
-    fn new(matrix: PyReadonlyArrayDyn<'_, f64>) -> PyResult<Self> {
+    fn new(matrix: PyReadonlyArray2<'_, f64>) -> PyResult<Self> {
         if matrix.shape().len() != 2 || matrix.shape()[0] != 4 || matrix.shape()[1] != 4 {
             return Err(PyValueError::new_err("Expected 4x4 matrix"));
         }
@@ -792,8 +792,8 @@ impl Iso3 {
         }
     }
 
-    fn as_numpy<'py>(&self, py: Python<'py>) -> Bound<'py, PyArrayDyn<f64>> {
-        let mut result = ArrayD::zeros(vec![4, 4]);
+    fn as_numpy<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
+        let mut result = Array2::zeros((4, 4));
         let m = self.inner.to_matrix();
         // TODO: In a rush, fix this later
         result[[0, 0]] = m.m11;
@@ -948,10 +948,10 @@ impl Iso3 {
     fn transform_points<'py>(
         &self,
         py: Python<'py>,
-        points: PyReadonlyArrayDyn<'py, f64>,
-    ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
-        let points = array_to_points3(&points.as_array())?;
-        let mut result = ArrayD::zeros(vec![points.len(), 3]);
+        points: PyReadonlyArray2<'py, f64>,
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let points = array2_to_points3(&points.as_array())?;
+        let mut result = Array2::zeros((points.len(), 3));
 
         for (i, point) in points.iter().enumerate() {
             let transformed = self.inner * point;
@@ -966,10 +966,10 @@ impl Iso3 {
     fn transform_vectors<'py>(
         &self,
         py: Python<'py>,
-        vectors: PyReadonlyArrayDyn<'py, f64>,
-    ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
-        let vectors = array_to_vectors3(&vectors.as_array())?;
-        let mut result = ArrayD::zeros(vec![vectors.len(), 3]);
+        vectors: PyReadonlyArray2<'py, f64>,
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let vectors = array2_to_vectors3(&vectors.as_array())?;
+        let mut result = Array2::zeros((vectors.len(), 3));
 
         for (i, vector) in vectors.iter().enumerate() {
             let transformed = self.inner * vector;

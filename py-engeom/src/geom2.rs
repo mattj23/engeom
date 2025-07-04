@@ -1,12 +1,10 @@
 use crate::bounding::Aabb2;
 use crate::common::Resample;
-use crate::conversions::{
-    array_to_points2, array_to_vectors2, array2_to_points2, points_to_array2,
-};
+use crate::conversions::{array2_to_points2, array2_to_vectors2, points2_to_array2};
 use engeom::geom2::{HasBounds2, Line2};
 use engeom::{BestFit, To3D};
-use numpy::ndarray::{Array1, ArrayD};
-use numpy::{IntoPyArray, PyArray1, PyArrayDyn, PyReadonlyArray2, PyReadonlyArrayDyn};
+use numpy::ndarray::{Array1, Array2};
+use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::types::PyIterator;
 use pyo3::{
@@ -739,7 +737,7 @@ impl From<engeom::CurveStation2<'_>> for CurveStation2 {
 #[pyclass]
 pub struct Curve2 {
     inner: engeom::Curve2,
-    points: Option<Py<PyArrayDyn<f64>>>,
+    points: Option<Py<PyArray2<f64>>>,
 }
 
 impl Curve2 {
@@ -767,9 +765,9 @@ impl Clone for Curve2 {
 #[pymethods]
 impl Curve2 {
     #[getter]
-    fn points<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArrayDyn<f64>> {
+    fn points<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArray2<f64>> {
         if self.points.is_none() {
-            let result = points_to_array2(self.inner.points());
+            let result = points2_to_array2(self.inner.points());
             self.points = Some(result.into_pyarray(py).unbind())
         }
 
@@ -779,16 +777,16 @@ impl Curve2 {
     #[new]
     #[pyo3(signature=(points, normals=None, tol=1e-6, force_closed=false, hull_ccw=false))]
     fn new(
-        points: PyReadonlyArrayDyn<'_, f64>,
-        normals: Option<PyReadonlyArrayDyn<'_, f64>>,
+        points: PyReadonlyArray2<'_, f64>,
+        normals: Option<PyReadonlyArray2<'_, f64>>,
         tol: f64,
         force_closed: bool,
         hull_ccw: bool,
     ) -> PyResult<Self> {
-        let points = array_to_points2(&points.as_array())?;
+        let points = array2_to_points2(&points.as_array())?;
 
         let curve = if let Some(normal_array) = normals {
-            let normals = array_to_vectors2(&normal_array.as_array())?;
+            let normals = array2_to_vectors2(&normal_array.as_array())?;
             if points.len() != normals.len() {
                 return Err(PyValueError::new_err(
                     "Points and normals must have the same length",
@@ -884,13 +882,13 @@ impl Curve2 {
         Self::from_inner(self.inner.reversed())
     }
 
-    fn make_hull<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
+    fn make_hull<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
         let hull = self
             .inner
             .make_hull()
             .ok_or(PyValueError::new_err("Could not compute convex hull"))?;
 
-        let mut result = ArrayD::zeros(vec![hull.points().len(), 2]);
+        let mut result = Array2::zeros((hull.points().len(), 2));
         for (i, point) in hull.points().iter().enumerate() {
             result[[i, 0]] = point.x;
             result[[i, 1]] = point.y;
@@ -1053,8 +1051,8 @@ impl Iso2 {
         }
     }
 
-    fn as_numpy<'py>(&self, py: Python<'py>) -> Bound<'py, PyArrayDyn<f64>> {
-        let mut result = ArrayD::zeros(vec![3, 3]);
+    fn as_numpy<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
+        let mut result = Array2::zeros((3, 3));
         let m = self.inner.to_matrix();
         result[[0, 0]] = m.m11;
         result[[0, 1]] = m.m12;
@@ -1071,11 +1069,11 @@ impl Iso2 {
     fn transform_points<'py>(
         &self,
         py: Python<'py>,
-        points: PyReadonlyArrayDyn<'py, f64>,
-    ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
-        let points = array_to_points2(&points.as_array())?;
+        points: PyReadonlyArray2<'py, f64>,
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let points = array2_to_points2(&points.as_array())?;
         let transformed = points.iter().map(|p| self.inner * p).collect::<Vec<_>>();
-        let mut result = ArrayD::zeros(vec![transformed.len(), 2]);
+        let mut result = Array2::zeros((transformed.len(), 2));
         for (i, point) in transformed.iter().enumerate() {
             result[[i, 0]] = point.x;
             result[[i, 1]] = point.y;
@@ -1086,11 +1084,11 @@ impl Iso2 {
     fn transform_vectors<'py>(
         &self,
         py: Python<'py>,
-        vectors: PyReadonlyArrayDyn<'py, f64>,
-    ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
-        let vectors = array_to_vectors2(&vectors.as_array())?;
+        vectors: PyReadonlyArray2<'py, f64>,
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let vectors = array2_to_vectors2(&vectors.as_array())?;
         let transformed = vectors.iter().map(|v| self.inner * v).collect::<Vec<_>>();
-        let mut result = ArrayD::zeros(vec![transformed.len(), 2]);
+        let mut result = Array2::zeros((transformed.len(), 2));
         for (i, vector) in transformed.iter().enumerate() {
             result[[i, 0]] = vector.x;
             result[[i, 1]] = vector.y;
