@@ -126,14 +126,8 @@ impl PointCloud {
 
     #[staticmethod]
     fn load_lptf3(path: PathBuf, params: Lptf3Load) -> PyResult<Self> {
-        let start = std::time::Instant::now();
-
         let inner = engeom::io::load_lptf3(&path, params.into())
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
-
-        let elapsed = start.elapsed();
-        println!("Loaded/downsampled LPTF3 file in {:.2?}", elapsed);
-
         Ok(Self::from_inner(inner))
     }
 
