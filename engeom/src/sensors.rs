@@ -31,7 +31,7 @@ pub trait SimulatedPointSensor {
     /// standard deviations for each point in the point cloud.
     ///
     /// To get the position of the points in the world coordinate system, you can apply the
-    /// isometry to the points in the point cloud.
+    /// isometry's inverse to the points in the point cloud.
     ///
     /// The standard deviations are the sigma value for a Gaussian distribution which can be used
     /// to simulate where the point would sample on repeated measurements. This is only provided by

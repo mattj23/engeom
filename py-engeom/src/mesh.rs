@@ -406,7 +406,7 @@ impl Mesh {
         let half_edge_mesh = engeom::io::load_lptf3_mesh(&file_path, params.into())
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
-        let mesh = engeom::Mesh::try_from(half_edge_mesh)
+        let mesh = engeom::Mesh::try_from(&half_edge_mesh)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         Ok(Self::from_inner(mesh))

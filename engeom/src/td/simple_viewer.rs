@@ -43,9 +43,9 @@ impl SimpleViewer {
     ///
     /// let p0 = Point3::new(5.0, 0.0, 0.0);
     /// let m0 = Mesh::create_capsule(&(-p0), &p0, 1.0, 100, 100);
-    /// let mut view = SimpleViewer::new("Demo", None)?;
+    /// let mut view = SimpleViewer::new("Demo", None).unwrap();
     /// view.add_mesh(m0.to_cpu_mesh(), cpu_mat(150, 150, 150, 255, 0.7, 0.8));
-    /// view.display()?;
+    /// view.display().unwrap();
     /// ```
     pub fn new(title: &str, max_size: Option<(u32, u32)>) -> Result<SimpleViewer> {
         let window = Window::new(WindowSettings {
