@@ -1,8 +1,12 @@
-use crate::td::{mod_state, CameraControl, ModState, ToCgVec3, ToEngeom3};
+use crate::td::{CameraControl, ModState, ToCgVec3, ToEngeom3, mod_state};
 use crate::{Iso3, Point3, Result};
 use itertools::Itertools;
 use std::collections::HashMap;
-use three_d::{degrees, pick, vec3, AmbientLight, Angle, AxisAlignedBoundingBox, Camera, ClearState, Context, CoreError, CpuMaterial, CpuMesh, DirectionalLight, Event, FrameOutput, Gm, Mesh, MouseButton, Object, PhysicalMaterial, Srgba, Window, WindowSettings};
+use three_d::{
+    AmbientLight, Angle, AxisAlignedBoundingBox, Camera, ClearState, ColorMaterial, Context,
+    CoreError, CpuMaterial, CpuMesh, DirectionalLight, Event, FrameOutput, Gm, Mesh, MouseButton,
+    Object, PhysicalMaterial, Srgba, Window, WindowSettings, degrees, pick, vec3,
+};
 
 pub struct SimpleViewer {
     items: HashMap<usize, Box<dyn Object>>,
@@ -68,6 +72,13 @@ impl SimpleViewer {
         &self.window
     }
 
+    pub fn add_object(&mut self, object: Box<dyn Object>) -> usize {
+        let id = self.next_id;
+        self.items.insert(id, object);
+        self.next_id += 1;
+        id
+    }
+
     pub fn add_mesh(&mut self, mesh: CpuMesh, cpu_material: CpuMaterial) -> usize {
         let mat = if cpu_material.albedo.a < 255 {
             PhysicalMaterial::new_transparent(&self.context, &cpu_material)
@@ -108,7 +119,6 @@ impl SimpleViewer {
         let d = e / (2.0 * t);
         let center = bounds.center().to_engeom();
 
-
         let mut camera = Camera::new_perspective(
             self.window.viewport(),
             vec3(-500.0, 250.0, 200.0), // Position of the camera
@@ -139,7 +149,10 @@ impl SimpleViewer {
             for event in frame_input.events.iter() {
                 match event {
                     Event::KeyPress {
-                        kind, modifiers, handled, ..
+                        kind,
+                        modifiers,
+                        handled,
+                        ..
                     } => {
                         if *handled {
                             continue;

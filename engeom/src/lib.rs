@@ -20,8 +20,11 @@ pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 // Re-export parry, nalgebra, and alum for convenience
 pub use alum;
+pub use parry2d_f64 as parry2d;
 pub use parry3d_f64 as parry3d;
 pub use parry3d_f64::na;
+pub use serde;
+pub use serde_json;
 
 // Re-export the `three_d` crate if the feature is enabled
 #[cfg(feature = "three_d")]

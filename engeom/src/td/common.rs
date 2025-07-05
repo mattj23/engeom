@@ -44,7 +44,6 @@ pub fn cpu_mat(
     }
 }
 
-
 pub enum ModState {
     None,
     ShiftOnly,
@@ -68,4 +67,3 @@ pub fn mod_state(modifiers: &three_d::Modifiers) -> ModState {
         (true, true, true) => ModState::ShiftCtrlAlt,
     }
 }
-

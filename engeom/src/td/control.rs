@@ -1,5 +1,5 @@
 use crate::na::{Translation, UnitQuaternion};
-use crate::td::{mod_state, ModState, ToCgVec3};
+use crate::td::{ModState, ToCgVec3, mod_state};
 use crate::{Iso3, Point3, UnitVec3, Vector3};
 use three_d::{Event, MouseButton};
 
@@ -147,11 +147,7 @@ impl CameraControl {
     }
 
     /// Handles the events. Must be called each frame.
-    pub fn handle_events(
-        &mut self,
-        camera: &mut three_d::Camera,
-        events: &mut [Event],
-    ) -> bool {
+    pub fn handle_events(&mut self, camera: &mut three_d::Camera, events: &mut [Event]) -> bool {
         for event in events.iter_mut() {
             match event {
                 Event::MouseMotion {
@@ -186,7 +182,12 @@ impl CameraControl {
                         _ => {}
                     }
                 }
-                Event::MouseWheel { delta, modifiers, handled, .. } => {
+                Event::MouseWheel {
+                    delta,
+                    modifiers,
+                    handled,
+                    ..
+                } => {
                     if *handled {
                         continue;
                     }
@@ -200,7 +201,6 @@ impl CameraControl {
                         }
                         _ => {}
                     }
-
                 }
                 _ => {}
             }

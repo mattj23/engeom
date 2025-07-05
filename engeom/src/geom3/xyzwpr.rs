@@ -63,6 +63,12 @@ impl std::fmt::Display for XyzWpr {
     }
 }
 
+impl From<[f64; 6]> for XyzWpr {
+    fn from(value: [f64; 6]) -> Self {
+        XyzWpr::new(value[0], value[1], value[2], value[3], value[4], value[5])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
