@@ -17,10 +17,10 @@ use alum::{
 pub use smoothing::*;
 use std::error::Error;
 
-impl TryFrom<HalfEdgeMesh> for Mesh {
+impl TryFrom<&HalfEdgeMesh> for Mesh {
     type Error = Box<dyn Error>;
 
-    fn try_from(value: HalfEdgeMesh) -> Result<Self, Self::Error> {
+    fn try_from(value: &HalfEdgeMesh) -> Result<Self, Self::Error> {
         let borrow_vert = value.points();
         let borrow_vert = borrow_vert
             .try_borrow()
@@ -40,6 +40,33 @@ impl TryFrom<HalfEdgeMesh> for Mesh {
             .collect::<Vec<_>>();
 
         Ok(Mesh::new(vertices, faces, false))
+    }
+}
+
+impl TryFrom<&Mesh> for HalfEdgeMesh {
+    type Error = Box<dyn Error>;
+
+    fn try_from(value: &Mesh) -> Result<Self, Self::Error> {
+        let mut result = HalfEdgeMesh::new();
+        let mut indices = Vec::new();
+        for v in value.vertices() {
+            let handle = result
+                .add_vertex(v.coords)
+                .map_err(|_| "Failed to add vertex")?;
+            indices.push(handle);
+        }
+
+        for f in value.faces() {
+            result
+                .add_tri_face(
+                    indices[f[0] as usize],
+                    indices[f[1] as usize],
+                    indices[f[2] as usize],
+                )
+                .map_err(|_| "Failed to add face")?;
+        }
+
+        Ok(result)
     }
 }
 

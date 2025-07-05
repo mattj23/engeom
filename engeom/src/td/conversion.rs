@@ -15,47 +15,32 @@ impl ToCpuMesh for Mesh {
             .map(|v| three_d::vec3(v.x, v.y, v.z))
             .collect::<Vec<_>>();
 
-        let vtx_normals = self
-            .get_vertex_normals()
-            .iter()
-            .map(|v| three_d::vec3(v.x as f32, v.y as f32, v.z as f32))
-            .collect::<Vec<_>>();
-
         let indices = self
             .faces()
             .iter()
             .flat_map(|x| x.iter().map(|v| *v))
             .collect();
 
-        CpuMesh {
+        let mut cm = CpuMesh {
             positions: three_d::Positions::F64(points),
             indices: three_d::Indices::U32(indices),
-            normals: Some(vtx_normals),
-
             ..Default::default()
-        }
+        };
+
+        cm.compute_normals();
+        cm
     }
 }
 
 impl ToCpuMesh for HalfEdgeMesh {
-    /// Generates a `CpuMesh` from the `HalfEdgeMesh`.  Be sure to call one of the
-    /// `update_vertex_normals_*` methods before calling this method to ensure the
-    /// vertex normals are computed correctly.
+    /// Generates a `CpuMesh` from the `HalfEdgeMesh`.
     fn to_cpu_mesh(&self) -> CpuMesh {
         let point_prop = self.points();
         let points = point_prop.try_borrow().expect("Cannot borrow points");
-
-        let vtx_normal_prop = self.vertex_normals().unwrap();
-        let vtx_normals = vtx_normal_prop.try_borrow().unwrap();
-        let vtx_normals = vtx_normals
-            .iter()
-            .map(|n| three_d::vec3(n.x as f32, n.y as f32, n.z as f32))
-            .collect::<Vec<_>>();
-
         let f_status_prop = self.face_status_prop();
         let f_status = f_status_prop.try_borrow().unwrap();
 
-        CpuMesh {
+        let mut cm = CpuMesh {
             positions: three_d::Positions::F64(
                 points
                     .iter()
@@ -68,8 +53,13 @@ impl ToCpuMesh for HalfEdgeMesh {
                     .map(|v| v.index())
                     .collect(),
             ),
-            normals: Some(vtx_normals),
             ..Default::default()
-        }
+        };
+
+        // I've found that `alum`'s normal computation sometimes produces strange results that
+        // render with artifacts. The `compute_normals` method of `CpuMesh` seems to produce
+        // better results, so we use that instead.
+        cm.compute_normals();
+        cm
     }
 }
