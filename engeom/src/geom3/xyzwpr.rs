@@ -19,37 +19,15 @@ impl XyzWpr {
         XyzWpr { x, y, z, w, p, r }
     }
 
-    pub fn from_isometry(isometry: &Iso3) -> Self {
-        let translation = isometry.translation.vector;
-        let rotation = isometry.rotation;
-        let (w, p, r) = rotation.euler_angles();
-        XyzWpr::new(
-            translation.x,
-            translation.y,
-            translation.z,
-            w.to_degrees(),
-            p.to_degrees(),
-            r.to_degrees(),
-        )
-    }
-
-    pub fn to_isometry(&self) -> Iso3 {
-        let translation = Vector3::new(self.x, self.y, self.z);
-
-        let rotation = UnitQuaternion::from_euler_angles(
-            self.w.to_radians(),
-            self.p.to_radians(),
-            self.r.to_radians(),
-        );
-
-        Iso3::from_parts(Translation3::from(translation), rotation)
-    }
-
     pub fn approx_eq(&self, other: &XyzWpr, epsilon: f64) -> bool {
-        let m0 = self.to_isometry().to_matrix();
-        let m1 = other.to_isometry().to_matrix();
+        let m0 = Iso3::from(self).to_matrix();
+        let m1 = Iso3::from(other).to_matrix();
         let diff = m0 - m1;
         diff.amax() < epsilon
+    }
+    
+    pub fn to_array(&self) -> [f64; 6] {
+        [self.x, self.y, self.z, self.w, self.p, self.r]
     }
 }
 
@@ -66,6 +44,36 @@ impl std::fmt::Display for XyzWpr {
 impl From<[f64; 6]> for XyzWpr {
     fn from(value: [f64; 6]) -> Self {
         XyzWpr::new(value[0], value[1], value[2], value[3], value[4], value[5])
+    }
+}
+
+impl From<&Iso3> for XyzWpr {
+    fn from(isometry: &Iso3) -> Self {
+        let translation = isometry.translation.vector;
+        let rotation = isometry.rotation;
+        let (w, p, r) = rotation.euler_angles();
+        XyzWpr::new(
+            translation.x,
+            translation.y,
+            translation.z,
+            w.to_degrees(),
+            p.to_degrees(),
+            r.to_degrees(),
+        )
+    }
+}
+
+impl From<&XyzWpr> for Iso3 {
+    fn from(value: &XyzWpr) -> Self {
+        let translation = Vector3::new(value.x, value.y, value.z);
+
+        let rotation = UnitQuaternion::from_euler_angles(
+            value.w.to_radians(),
+            value.p.to_radians(),
+            value.r.to_radians(),
+        );
+
+        Iso3::from_parts(Translation3::from(translation), rotation)
     }
 }
 
@@ -98,8 +106,8 @@ mod tests {
     #[test_case(59.5794643289, 6.7548483372, -88.8341095469, -146.2807856754, 1.0526398756, -16.7799423973)]
     fn xyzwpr_round_trip(x: f64, y: f64, z: f64, w: f64, p: f64, r: f64) {
         let xyzwpr = XyzWpr::new(x, y, z, w, p, r);
-        let iso = xyzwpr.to_isometry();
-        let xyzwpr_converted = XyzWpr::from_isometry(&iso);
+        let iso = Iso3::from(&xyzwpr);
+        let xyzwpr_converted = XyzWpr::from(&iso);
         assert_relative_eq!(xyzwpr.x, xyzwpr_converted.x, epsilon = 1e-8);
         assert_relative_eq!(xyzwpr.y, xyzwpr_converted.y, epsilon = 1e-8);
         assert_relative_eq!(xyzwpr.z, xyzwpr_converted.z, epsilon = 1e-8);
@@ -155,7 +163,7 @@ mod tests {
             mf.14, mf.15,
         );
         let p = XyzWpr::new(pf.0, pf.1, pf.2, pf.3, pf.4, pf.5);
-        let t = p.to_isometry();
+        let t = Iso3::from(&p);
         let m_ = t.to_matrix();
         assert_relative_eq!(m, m_, epsilon = 1e-8);
     }
@@ -190,7 +198,7 @@ mod tests {
             1.0,
         );
 
-        let m = x.to_isometry().to_matrix();
+        let m = Iso3::from(&x).to_matrix();
 
         assert_relative_eq!(m, e, epsilon = 1e-8);
     }
@@ -226,7 +234,7 @@ mod tests {
         );
         let iso: Iso3 = try_convert(m).unwrap();
 
-        let p = XyzWpr::from_isometry(&iso);
+        let p = XyzWpr::from(&iso);
 
         let pf = (
             151.8000000000,

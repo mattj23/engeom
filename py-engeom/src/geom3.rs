@@ -718,12 +718,12 @@ impl Iso3 {
     #[staticmethod]
     fn from_xyzwpr(x: f64, y: f64, z: f64, w: f64, p: f64, r: f64) -> Self {
         Self {
-            inner: engeom::geom3::XyzWpr::new(x, y, z, w, p, r).to_isometry(),
+            inner: (&engeom::geom3::XyzWpr::new(x, y, z, w, p, r)).into(),
         }
     }
 
     fn to_xyzwpr(&self) -> Vec<f64> {
-        let v = engeom::geom3::XyzWpr::from_isometry(&self.inner);
+        let v = engeom::geom3::XyzWpr::from(&self.inner);
         vec![v.x, v.y, v.z, v.w, v.p, v.r]
     }
 
