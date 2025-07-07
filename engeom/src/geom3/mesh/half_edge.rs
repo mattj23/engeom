@@ -17,28 +17,39 @@ use alum::{
 pub use smoothing::*;
 use std::error::Error;
 
+pub trait HalfEdgeCloneOps {
+    fn clone_vertices(&self) -> crate::Result<Vec<Point3>>;
+
+    fn clone_faces(&self) -> crate::Result<Vec<[u32; 3]>>;
+}
+
+impl HalfEdgeCloneOps for HalfEdgeMesh {
+    fn clone_vertices(&self) -> crate::Result<Vec<Point3>> {
+        let borrow_vert = self.points();
+        let borrow_vert = borrow_vert
+            .try_borrow()
+            .map_err(|_| "Failed to borrow points")?;
+        Ok(borrow_vert.iter().map(|v| Point3::from(*v)).collect())
+    }
+
+    fn clone_faces(&self) -> crate::Result<Vec<[u32; 3]>> {
+        let f_status = self.face_status_prop();
+        let f_status = f_status
+            .try_borrow()
+            .map_err(|_| "Failed to borrow face status")?;
+        Ok(self
+            .triangulated_vertices(&f_status)
+            .map(|f| [f[0].index(), f[1].index(), f[2].index()])
+            .collect())
+    }
+}
+
 impl TryFrom<&HalfEdgeMesh> for Mesh {
     type Error = Box<dyn Error>;
 
     fn try_from(value: &HalfEdgeMesh) -> Result<Self, Self::Error> {
-        let borrow_vert = value.points();
-        let borrow_vert = borrow_vert
-            .try_borrow()
-            .map_err(|_| "Failed to borrow points")?;
-        let vertices = borrow_vert
-            .iter()
-            .map(|v| Point3::from(*v))
-            .collect::<Vec<_>>();
-
-        let f_status = value.face_status_prop();
-        let f_status = f_status
-            .try_borrow()
-            .map_err(|_| "Failed to borrow face status")?;
-        let faces = value
-            .triangulated_vertices(&f_status)
-            .map(|f| [f[0].index(), f[1].index(), f[2].index()])
-            .collect::<Vec<_>>();
-
+        let vertices = value.clone_vertices()?;
+        let faces = value.clone_faces()?;
         Ok(Mesh::new(vertices, faces, false))
     }
 }
@@ -52,7 +63,7 @@ impl TryFrom<&Mesh> for HalfEdgeMesh {
         for v in value.vertices() {
             let handle = result
                 .add_vertex(v.coords)
-                .map_err(|_| "Failed to add vertex")?;
+                .map_err(|e| format!("Failed to add vertex: {:?}", e))?;
             indices.push(handle);
         }
 
@@ -63,7 +74,7 @@ impl TryFrom<&Mesh> for HalfEdgeMesh {
                     indices[f[1] as usize],
                     indices[f[2] as usize],
                 )
-                .map_err(|_| "Failed to add face")?;
+                .map_err(|e| format!("Failed to add face: {:?}", e))?;
         }
 
         Ok(result)

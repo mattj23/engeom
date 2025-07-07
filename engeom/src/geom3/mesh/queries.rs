@@ -8,6 +8,14 @@ use parry3d_f64::shape::TrianglePointLocation;
 use std::f64::consts::PI;
 
 impl Mesh {
+    pub fn face_closest_to(&self, point: &Point3) -> u32 {
+        let result = self
+            .shape
+            .project_local_point_and_get_location(point, self.is_solid);
+        let (_, (tri_id, _)) = result;
+        tri_id
+    }
+
     pub fn surf_closest_to(&self, point: &Point3) -> SurfacePoint3 {
         let result = self
             .shape

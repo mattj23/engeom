@@ -146,6 +146,36 @@ impl TriangleFilter<'_> {
 
         self.mutate_pass_list(mode, passes)
     }
+
+    pub fn expand(self, mode: SelectOp) -> Self {
+        let to_check = self.to_check(mode);
+
+        let mut vertices = vec![false; self.mesh.vertices().len()];
+        for i in self.indices.iter() {
+            let t = self.mesh.faces()[*i];
+            vertices[t[0] as usize] = true;
+            vertices[t[1] as usize] = true;
+            vertices[t[2] as usize] = true;
+        }
+
+        let mut passes = Vec::new();
+        for i in to_check {
+            let t = self.mesh.faces()[i];
+            if vertices[t[0] as usize] || vertices[t[1] as usize] || vertices[t[2] as usize] {
+                passes.push(i);
+            }
+        }
+
+        self.mutate_pass_list(mode, passes)
+    }
+
+    pub fn expand_n(self, n: usize, mode: SelectOp) -> Self {
+        let mut filter = self;
+        for _ in 0..n {
+            filter = filter.expand(mode);
+        }
+        filter
+    }
 }
 
 impl Mesh {
