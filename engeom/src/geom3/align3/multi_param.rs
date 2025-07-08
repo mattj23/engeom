@@ -16,23 +16,48 @@ fn enforce_initial(count: usize, initial: Option<&[Iso3]>) -> Vec<Iso3> {
     }
 }
 
+/// A structure to handle parameters for multiple entities in a relative transformation context.
 pub struct ParamHandler {
+    /// The index of the static entity (the one that serves as the anchor and does not move) in
+    /// the list of entities.
     pub static_i: usize,
+
+    /// The parameters for each entity, where each parameter is a relative transformation.
     pub params: Vec<RcParams3>,
+
+    /// The raw parameters as a vector of f64 values, where each set of 6 values corresponds to
+    /// a transformation (translation and rotation) for an entity.
     raw_params: DVector<f64>,
+
+    /// The total number of entities being handled.
     count: usize,
 }
 
 impl ParamHandler {
-    pub fn new(static_i: usize, mean_points: Vec<Point3>, initial: Option<&[Iso3]>) -> Self {
-        let count = mean_points.len();
+    /// Create a new multi-parameter handler by specifying the index of the static entity, the
+    /// rotation centers (RCS) for each entity, and an optional initial set of transformations.
+    ///
+    /// If the initial transformations are not provided, the handler will default to using identity
+    /// transformations. If they are provided, they must match the number of rotation centers. The
+    /// static entity index must be less than the number of rotation centers.
+    ///
+    /// # Arguments
+    ///
+    /// * `static_i`: The index of the entity in the optimization that does not move in space.
+    /// * `rcs`: a collection of rotation center points, one for each entity in the optimization
+    /// * `initial`: an optional slice of initial transformations for each entity. If `None`,
+    ///   identity transformations are used for all entities.
+    ///
+    /// returns: ParamHandler
+    pub fn new(static_i: usize, rcs: Vec<Point3>, initial: Option<&[Iso3]>) -> Self {
+        let count = rcs.len();
         let initial = enforce_initial(count, initial);
         let raw_params = DVector::zeros((count - 1) * 6);
         assert_eq!(count, initial.len());
 
         let params = initial
             .iter()
-            .zip(mean_points.iter())
+            .zip(rcs.iter())
             .map(|(t, p)| RcParams3::from_initial(t, p))
             .collect();
 

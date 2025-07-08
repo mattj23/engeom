@@ -287,7 +287,7 @@ impl Mesh {
         result.into_pyarray(py)
     }
 
-    fn sample_alignment_candidates<'py>(
+    fn sample_alignment_points<'py>(
         &self,
         py: Python<'py>,
         max_spacing: f64,
@@ -296,7 +296,7 @@ impl Mesh {
     ) -> Bound<'py, PyArray2<f64>> {
         let sps =
             self.inner
-                .sample_alignment_candidates(max_spacing, &reference.inner, iso.get_inner());
+                .sample_alignment_points(max_spacing, &reference.inner, iso.get_inner());
         let result = points_to_array(&sps);
         result.into_pyarray(py)
     }

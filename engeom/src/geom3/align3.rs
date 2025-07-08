@@ -4,6 +4,8 @@ pub mod multi_param;
 mod points_to_cloud;
 mod points_to_mesh;
 mod rotations;
+mod multi_mesh;
+mod mesh_overlap;
 
 use crate::geom3::{Iso3, Point3, Vector3};
 use parry3d_f64::na::{Translation3, UnitQuaternion, Vector6};
@@ -14,6 +16,7 @@ pub use self::mesh_to_mesh::mesh_to_mesh_iterative;
 pub use self::points_to_cloud::points_to_cloud;
 pub use self::points_to_mesh::points_to_mesh;
 pub use self::rotations::RotationMatrices;
+pub use self::multi_mesh::{MMOpts, multi_mesh_adjustment};
 
 #[derive(Clone, Copy, Debug)]
 pub enum SampleMode {
@@ -39,7 +42,7 @@ pub fn distance_weight(d: f64, threshold: f64) -> f64 {
     (threshold - d).ceil().clamp(0.0, 1.0)
 }
 
-pub fn normal_weight(n: Vector3, n_ref: Vector3) -> f64 {
+pub fn normal_weight(n: &Vector3, n_ref: &Vector3) -> f64 {
     // If the normals are pointing in opposite directions, the dot product will be negative,
     // so we clamp it to 0.0, otherwise we want to return 1
     n.dot(&n_ref).ceil().max(0.0)

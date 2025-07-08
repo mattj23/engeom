@@ -12,7 +12,7 @@ mod measurement;
 mod outline;
 mod patches;
 mod queries;
-mod sampling;
+pub mod sampling;
 mod uv_mapping;
 
 use crate::geom3::{Aabb3, IsoExtensions3};

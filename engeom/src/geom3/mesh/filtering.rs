@@ -103,7 +103,8 @@ impl TriangleFilter<'_> {
     /// # Arguments
     ///
     /// * `other`:
-    /// * `all_points`:
+    /// * `all_points`: all points of the triangle must be within the tolerances if this is set to
+    ///   `true`, otherwise only one point must be within the tolerances.
     /// * `distance_tol`:
     /// * `planar_tol`:
     /// * `angle_tol`:

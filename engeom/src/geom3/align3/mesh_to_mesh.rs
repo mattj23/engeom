@@ -53,7 +53,7 @@ pub fn mesh_to_mesh_iterative(
     let mut iter = 0;
 
     loop {
-        let test_points = moving.sample_alignment_candidates(sample_spacing, reference, initial);
+        let test_points = moving.sample_alignment_points(sample_spacing, reference, initial);
         if test_points.len() < 5 {
             return Err(format!(
                 "Failed on iteration {iter}, not enough alignment candidate \

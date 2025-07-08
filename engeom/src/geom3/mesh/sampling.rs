@@ -1,9 +1,9 @@
 use super::Mesh;
+use crate::common::SurfacePointCollection;
 use crate::common::indices::index_vec;
 use crate::common::kd_tree::KdTreeSearch;
 use crate::common::points::{dist, mean_point};
 use crate::common::poisson_disk::sample_poisson_disk;
-use crate::common::SurfacePointCollection;
 use crate::{Iso3, KdTree3, Point3, SurfacePoint3, SvdBasis3, To2D, TransformBy};
 use parry2d_f64::transformation::convex_hull;
 use rand::prelude::SliceRandom;
@@ -106,7 +106,33 @@ impl Mesh {
         sampled
     }
 
-    pub fn sample_alignment_candidates(
+    pub fn sample_alignment_candidates(&self, max_spacing: f64) -> Vec<ACPoint> {
+        let surf_points = self.sample_poisson(max_spacing);
+        let points = surf_points.iter().map(|sp| sp.point).collect::<Vec<_>>();
+        let tree = KdTree3::new(&points);
+        let mut results = Vec::new();
+        for (i, sp) in surf_points.iter().enumerate() {
+            let n = tree.nearest(&sp.point, NonZero::new(7).unwrap());
+            let indices = n
+                .iter()
+                .filter_map(|(j, _)| if *j != i { Some(*j) } else { None });
+            let sps = indices
+                .into_iter()
+                .map(|j| surf_points[j])
+                .collect::<Vec<_>>();
+
+            if sac_check(sp, &sps, max_spacing) {
+                results.push(ACPoint {
+                    sp: *sp,
+                    neighbors: sps,
+                });
+            }
+        }
+
+        results
+    }
+
+    pub fn sample_alignment_points(
         &self,
         max_spacing: f64,
         reference: &Mesh,
@@ -159,6 +185,16 @@ impl Mesh {
     }
 }
 
+/// A candidate for an alignment point on the surface of a Poisson disk sampled mesh, along with
+/// its nearest neighbors.
+pub struct ACPoint {
+    /// The surface point at the location of the candidate.
+    pub sp: SurfacePoint3,
+
+    /// The nearest neighbors of the candidate surface point.
+    pub neighbors: Vec<SurfacePoint3>,
+}
+
 fn smpl_check(
     check: &SurfacePoint3,
     neighbors: &[SurfacePoint3],
@@ -189,12 +225,45 @@ fn smpl_check(
     sac_check(&check_ref, &neighbors_ref, max_spacing)
 }
 
-fn sac_check(
+pub fn sac_ref_check(ac: &ACPoint, max_spacing: f64, reference: &Mesh, iso: &Iso3) -> bool {
+    // If the points on the test mesh pass, we project the points to the reference mesh and
+    // run the same check.
+    let check_ref = reference.surf_closest_to(&(iso * ac.sp.point));
+    let neighbors_ref = ac.neighbors
+        .iter()
+        .map(|sp| reference.surf_closest_to(&(iso * sp.point)))
+        .collect::<Vec<_>>();
+
+    // The minimum spacing to the check_ref point should be max_spacing
+    for sp in &neighbors_ref {
+        if dist(&sp.point, &check_ref.point) < max_spacing {
+            return false;
+        }
+    }
+
+    sac_check(&check_ref, &neighbors_ref, max_spacing)
+}
+
+/// Perform a sample alignment candidate check on a single surface point and its neighbors. This
+/// check looks for a minimum number of neighbors, ensures that the neighbors are within a
+/// certain distance from the check point, that the normals of the neighbors are within PI/3 of the
+/// test point, that the curvature is low, and that the check point is near the centroid of the
+/// convex hull of the neighbors.
+///
+/// # Arguments
+///
+/// * `check_point`: the point being checked
+/// * `surface_points`: a collection of surface points that are neighbors to the check point
+/// * `max_spacing`: the Poisson disk sampling spacing used to create the full set of surface
+///   points from which the neighbors were selected.
+///
+/// returns: bool
+pub fn sac_check(
     check_point: &SurfacePoint3,
     surface_points: &[SurfacePoint3],
     max_spacing: f64,
 ) -> bool {
-    if surface_points.len() < 6 {
+    if surface_points.len() < 5 {
         return false;
     }
 
