@@ -30,3 +30,24 @@ def points_to_cloud(
         initial: Iso3,
 ) -> Iso3:
     ...
+
+def mesh_to_mesh_iterative(
+        mesh: Mesh,
+        reference: Mesh,
+         sample_spacing: float,
+        initial: Iso3,
+        mode: DeviationMode,
+        max_iter: int
+) -> Iso3:
+    """
+    Perform an iterative alignment of a mesh to a reference mesh using the specified parameters.
+
+    :param mesh: the mesh to align.
+    :param reference: the reference mesh to align to.
+    :param sample_spacing: the spacing between samples for the alignment.
+    :param initial: the initial guess for the isometry.
+    :param mode: the mode to use for the deviation calculation.
+    :param max_iter: the maximum number of iterations to perform.
+    :return: the isometry that best aligns the mesh to the reference mesh.
+    """
+    ...

@@ -52,3 +52,27 @@ pub fn points_to_cloud(
         Err(e) => Err(PyValueError::new_err(e.to_string())),
     }
 }
+
+#[pyfunction]
+pub fn mesh_to_mesh_iterative(
+    moving: &Mesh,
+    reference: &Mesh,
+    sample_spacing: f64,
+    initial: &Iso3,
+    mode: DeviationMode,
+    max_iter: usize,
+) -> PyResult<Iso3> {
+    let result = engeom::geom3::align3::mesh_to_mesh_iterative(
+        moving.get_inner(),
+        reference.get_inner(),
+        sample_spacing,
+        initial.get_inner(),
+        mode.into(),
+        max_iter,
+    );
+
+    match result {
+        Ok(align) => Ok(Iso3::from_inner(*align.transform())),
+        Err(e) => Err(PyValueError::new_err(e.to_string())),
+    }
+}

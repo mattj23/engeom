@@ -1,15 +1,14 @@
 use super::Mesh;
-use crate::common::SurfacePointCollection;
 use crate::common::indices::index_vec;
 use crate::common::kd_tree::KdTreeSearch;
 use crate::common::points::{dist, mean_point};
 use crate::common::poisson_disk::sample_poisson_disk;
+use crate::common::SurfacePointCollection;
 use crate::{Iso3, KdTree3, Point3, SurfacePoint3, SvdBasis3, To2D, TransformBy};
+use parry2d_f64::transformation::convex_hull;
 use rand::prelude::SliceRandom;
 use std::f64::consts::PI;
 use std::num::NonZero;
-use parry2d_f64::transformation::convex_hull;
-use crate::geom2::hull::convex_hull_2d;
 
 impl Mesh {
     pub fn sample_uniform(&self, n: usize) -> Vec<SurfacePoint3> {
@@ -42,7 +41,7 @@ impl Mesh {
     pub fn sample_poisson(&self, radius: f64) -> Vec<SurfacePoint3> {
         let starting = self.sample_dense(radius * 0.5);
         // TODO: this can be more efficient without all the copying
-        let points = starting.clone_points();
+        let points = (&starting).clone_points();
         let mut rng = rand::rng();
         let mut indices = index_vec(None, starting.len());
         indices.shuffle(&mut rng);
@@ -119,66 +118,116 @@ impl Mesh {
         let mut candidates: Vec<Point3> = Vec::new();
         for (i, sp) in surf_points.iter().enumerate() {
             let n = tree.nearest(&sp.point, NonZero::new(7).unwrap());
-            if smpl_check(i, &surf_points, max_spacing, reference, iso, &n) {
+            let indices = n
+                .iter()
+                .filter_map(|(j, _)| if *j != i { Some(*j) } else { None });
+            let sps = indices
+                .into_iter()
+                .map(|j| surf_points[j])
+                .collect::<Vec<_>>();
+            if smpl_check(sp, &sps, max_spacing, reference, iso) {
                 candidates.push(sp.point);
             }
         }
 
+        // Get the distances so that we can filter all points more than 3 standard deviations
+        // away from the mean.
+        let distances = candidates
+            .iter()
+            .map(|p| dist(p, &reference.point_closest_to(&(iso * p))))
+            .collect::<Vec<_>>();
+
+        let mean_distance = distances.iter().sum::<f64>() / distances.len() as f64;
+        let std_dev = (distances
+            .iter()
+            .map(|d| (d - mean_distance).powi(2))
+            .sum::<f64>()
+            / distances.len() as f64)
+            .sqrt();
+
         candidates
+            .iter()
+            .zip(distances.iter())
+            .filter_map(|(c, &d)| {
+                if d < mean_distance + 3.0 * std_dev {
+                    Some(*c)
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 }
 
 fn smpl_check(
-    i: usize,
-    all_sps: &[SurfacePoint3],
+    check: &SurfacePoint3,
+    neighbors: &[SurfacePoint3],
     max_spacing: f64,
     reference: &Mesh,
     iso: &Iso3,
-    n: &[(usize, f64)],
 ) -> bool {
-    // Less than 6 points means we can't have a good alignment
-    if n.len() < 6 {
+    // Actual points check
+    if !sac_check(check, neighbors, max_spacing) {
         return false;
     }
 
-    // Points must be within a certain distance and angle of the test point
-    let this_sp = &all_sps[i];
-    for (i, d) in n.iter() {
-        if *d > max_spacing * 2.0
-            || all_sps[*i].normal.angle(&this_sp.normal) > PI / 3.0
-            || this_sp.scalar_projection(&all_sps[*i].point).abs() > max_spacing / 2.0
+    // If the points on the test mesh pass, we project the points to the reference mesh and
+    // run the same check.
+    let check_ref = reference.surf_closest_to(&(iso * check.point));
+    let neighbors_ref = neighbors
+        .iter()
+        .map(|sp| reference.surf_closest_to(&(iso * sp.point)))
+        .collect::<Vec<_>>();
+
+    // The minimum spacing to the check_ref point should be max_spacing
+    for sp in &neighbors_ref {
+        if dist(&sp.point, &check_ref.point) < max_spacing {
+            return false;
+        }
+    }
+
+    sac_check(&check_ref, &neighbors_ref, max_spacing)
+}
+
+fn sac_check(
+    check_point: &SurfacePoint3,
+    surface_points: &[SurfacePoint3],
+    max_spacing: f64,
+) -> bool {
+    if surface_points.len() < 6 {
+        return false;
+    }
+
+    for sp in surface_points {
+        if dist(&sp.point, &check_point.point) > max_spacing * 2.0
+            || sp.normal.angle(&check_point.normal) > PI / 3.0
+            || check_point.scalar_projection(&sp.point).abs() > max_spacing / 2.0
         {
             return false;
         }
     }
 
-    let (mapped_i, points) = map_indices(i, n, all_sps);
+    let mut points = surface_points.clone_points();
+    points.push(check_point.point);
+
     let basis = SvdBasis3::from_points(&points, None);
     let iso = Iso3::from(&basis);
     let points = (&points).transform_by(&iso);
 
-    if points.iter().map(|p| p.z.abs()).any(|z| z > max_spacing / 10.0) {
+    if points
+        .iter()
+        .map(|p| p.z.abs())
+        .any(|z| z > max_spacing / 20.0)
+    {
         return false;
     }
 
-    let points2 = (&points).to_2d();
-    let hull = convex_hull_2d(&points2);
-    if hull.contains(&mapped_i) {
+    let check2 = (iso * check_point.point).to_2d();
+    let points2 = points.to_2d();
+    let centroid = mean_point(&convex_hull(&points2));
+    if dist(&centroid, &check2) > max_spacing {
         return false;
     }
 
     true
-}
-
-fn map_indices(i: usize, n: &[(usize, f64)], all_sps: &[SurfacePoint3]) -> (usize, Vec<Point3>) {
-    let mut result = Vec::new();
-    let mut mapped_index = None;
-    for (j, (k, _)) in n.iter().enumerate() {
-        if *k == i {
-            mapped_index = Some(j);
-        }
-        result.push(all_sps[*k].point);
-    }
-
-    (mapped_index.unwrap(), result)
 }

@@ -1156,6 +1156,26 @@ class Mesh:
         """
         ...
 
+    def sample_alignment_candidates(self, max_spacing: float, reference: Mesh, iso: Iso3) -> NDArray[float]:
+        """
+        This is a very specialized, highly selective sampling method used to identify high quality candidates for
+        the alignment between two meshes. It begins with a Poisson disk sampling of the mesh, and then inspects the
+        individual points to evaluate the quality and consistency of their local neighborhood, before projecting their
+        local neighborhood onto the reference mesh and looking for the same qualities in the projections.
+
+        This method will return a numpy array of points which are spaced at least `max_spacing` apart, and which lie
+        on areas of the mesh of low curvature, away from corners and edges, and which plausibly overlap with a
+        correspondingly low-curvature area of the reference mesh away from its corners and edges.
+
+        :param max_spacing: a Poisson disk sampling radius used to start sampling the mesh. This value is also used to
+        derive a set of physical limits which will selectively filter different aspects of the sample points.
+        :param reference: the reference mesh that the alignment candidates will be sampled against. Assuming these
+        points will be used to perform an alignment, this mesh should be the one that is being aligned to.
+        :param iso: an isometry to apply to the sampled points before checking against the reference mesh.
+        :return: a numpy array of shape (n, 3) containing the sampled points.
+        """
+        ...
+
     def section(self, plane: Plane3, tol: float | None = None) -> List[Curve3]:
         """
         Calculate and return the intersection curves between the mesh and a plane.

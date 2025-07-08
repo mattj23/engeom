@@ -1,15 +1,12 @@
 //! This module contains tools for working with indices as a mask of boolean values (may
 //! eventually be implemented with bitvectors depending on real world performance).
 
-use crate::Result;
-
 #[derive(Clone)]
 pub struct IndexMask {
     mask: Vec<bool>,
 }
 
 impl IndexMask {
-
     /// Create a new IndexMask with the specified length and initial value.
     ///
     /// # Arguments
@@ -52,8 +49,10 @@ impl IndexMask {
         self.mask[index]
     }
 
+    #[allow(clippy::len_without_is_empty)]
     /// Get the length of the mask.
     pub fn len(&self) -> usize {
         self.mask.len()
     }
+
 }

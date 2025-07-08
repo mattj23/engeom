@@ -25,7 +25,7 @@ impl XyzWpr {
         let diff = m0 - m1;
         diff.amax() < epsilon
     }
-    
+
     pub fn to_array(&self) -> [f64; 6] {
         [self.x, self.y, self.z, self.w, self.p, self.r]
     }

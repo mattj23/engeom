@@ -48,7 +48,17 @@ impl ops::Mul<&SurfacePoint3> for &Iso3 {
     }
 }
 
-impl SurfacePointCollection<3> for Vec<SurfacePoint3> {
+impl SurfacePointCollection<3> for &Vec<SurfacePoint3> {
+    fn clone_points(&self) -> Vec<Point3> {
+        self.iter().map(|sp| sp.point).collect()
+    }
+
+    fn clone_normals(&self) -> Vec<UnitVec3> {
+        self.iter().map(|sp| sp.normal).collect()
+    }
+}
+
+impl SurfacePointCollection<3> for &[SurfacePoint3] {
     fn clone_points(&self) -> Vec<Point3> {
         self.iter().map(|sp| sp.point).collect()
     }

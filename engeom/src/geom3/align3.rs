@@ -1,4 +1,5 @@
 pub mod jacobian;
+mod mesh_to_mesh;
 pub mod multi_param;
 mod points_to_cloud;
 mod points_to_mesh;
@@ -9,6 +10,7 @@ use parry3d_f64::na::{Translation3, UnitQuaternion, Vector6};
 
 type T3Storage = Vector6<f64>;
 
+pub use self::mesh_to_mesh::mesh_to_mesh_iterative;
 pub use self::points_to_cloud::points_to_cloud;
 pub use self::points_to_mesh::points_to_mesh;
 pub use self::rotations::RotationMatrices;

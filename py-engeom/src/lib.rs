@@ -70,6 +70,10 @@ fn register_align_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     let child = PyModule::new(parent_module.py(), "_align")?;
     child.add_function(wrap_pyfunction!(alignments::points_to_mesh, &child)?)?;
     child.add_function(wrap_pyfunction!(alignments::points_to_cloud, &child)?)?;
+    child.add_function(wrap_pyfunction!(
+        alignments::mesh_to_mesh_iterative,
+        &child
+    )?)?;
     parent_module.add_submodule(&child)
 }
 

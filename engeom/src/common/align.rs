@@ -27,6 +27,7 @@ impl<R, const D: usize> Alignment<R, D> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DistMode {
     ToPoint,
     ToPlane,
