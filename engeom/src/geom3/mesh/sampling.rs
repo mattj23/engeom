@@ -210,6 +210,12 @@ fn smpl_check(
     // If the points on the test mesh pass, we project the points to the reference mesh and
     // run the same check.
     let check_ref = reference.surf_closest_to(&(iso * check.point));
+
+    // Normals must be facing the same direction
+    if check_ref.normal.dot(&check.normal) < 0.0 {
+        return false;
+    }
+
     let neighbors_ref = neighbors
         .iter()
         .map(|sp| reference.surf_closest_to(&(iso * sp.point)))
