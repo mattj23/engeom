@@ -7,16 +7,17 @@
 //! with a relatively large amount of overlap between meshes.  This code was implemented to perform
 //! bundle adjustment between metrology quality scans of objects with unambiguous morphology.
 
-use crate::common::points::dist;
+use std::time::Instant;
 use crate::Result;
+use crate::common::points::dist;
 use crate::geom3::Align3;
 use crate::geom3::align3::jacobian::{point_plane_jacobian, point_plane_jacobian_rev};
 use crate::geom3::align3::multi_param::ParamHandler;
 use crate::geom3::align3::{distance_weight, normal_weight};
-use crate::na::{Dyn, Matrix, Owned, U1, Vector, DMatrix};
+use crate::geom3::mesh::sampling::sac_ref_check;
+use crate::na::{DMatrix, Dyn, Matrix, Owned, U1, Vector};
 use crate::{Iso3, Mesh, Point3, SurfacePoint3};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
-use crate::geom3::mesh::sampling::sac_ref_check;
 
 /// Options for the multi-mesh simultaneous alignment algorithm.
 #[derive(Debug, Clone, Copy)]
@@ -66,10 +67,8 @@ pub fn multi_mesh_adjustment(
     // have a moderate number of points from a large number of other meshes.
     let mut matrix = DMatrix::<f64>::zeros(meshes.len(), meshes.len());
 
-    let mut handles = Vec::new();
-
     for i in 0..meshes.len() {
-        for j in 0..meshes.len() {
+        for j in i..meshes.len() {
             if i == j {
                 continue;
             }
@@ -79,24 +78,18 @@ pub fn multi_mesh_adjustment(
             // if both clouds were transformed by their respective transforms.
             let t = transforms[i].inv_mul(&transforms[j]);
 
-            for (si, c) in sample_candidates[j].iter().enumerate() {
+            for c in sample_candidates[j].iter() {
                 if sac_ref_check(c, opts.sample_radius, &meshes[i], &t) {
                     // If the candidate point is a good match for the reference mesh, then we
                     // increment the count in the matrix
                     matrix[(i, j)] += 1.0;
 
-                    // We'll also create a handle for this point, which will be used later assuming
-                    // that mesh j does not end up being the static reference mesh.
-                    handles.push(TestPoint {
-                        mesh_i: j,
-                        point_i: si,
-                        ref_i: i,
-                    })
+                    // This is close enough
+                    matrix[(j, i)] += 1.0;
                 }
             }
         }
     }
-
 
     let mut corr = &matrix / matrix.max();
     corr.apply(|x| *x = x.sqrt());
@@ -116,33 +109,38 @@ pub fn multi_mesh_adjustment(
     println!("static_i: {}", static_i);
     println!("corr: {:?}", corr_pairs);
 
-    todo!("i'll take it from here!")
-    /*
     // Now we want to generate the test points. Each test point is a point in a point cloud which
     // is being matched to another point cloud.  We want to generate these such that for each
     // unique pair of clouds there are only test points which go from one cloud to the other, and
     // none which go in reverse.
-    // let start = Instant::now();
-    // let mut test_points = Vec::new();
-    // let mut clouds_to_test = (0..clouds.len()).collect::<Vec<_>>();
-    // for i in reference_order {
-    //     // Remove the current reference cloud from the list of clouds to test
-    //     clouds_to_test.retain(|j| *j != i);
-    //
-    //     // Get all the clouds which reference the current working reference cloud and create
-    //     // test points for them
-    //     for test_i in &clouds_to_test {
-    //         for j in overlap.indices[&(i, *test_i)].iter() {
-    //             test_points.push(TestPoint::new(*test_i, *j, i));
-    //         }
-    //     }
-    // }
+    let mut handles = Vec::new();
+    let mut meshes_to_test = (0..meshes.len()).collect::<Vec<_>>();
+    let start = Instant::now();
+    for ref_i in reference_order {
+        // Remove the current reference cloud from the list of clouds to test
+        meshes_to_test.retain(|j| *j != ref_i);
 
-    // println!("test_points: {:?}", start.elapsed());
-    // println!("test_points: {:?}", test_points.len());
+        // Get all the clouds which reference the current working reference cloud and create
+        // test points for them
+        for &mesh_i in meshes_to_test.iter() {
+            let t = transforms[ref_i].inv_mul(&transforms[mesh_i]);
+            for (point_i, c) in sample_candidates[mesh_i].iter().enumerate() {
+                if sac_ref_check(c, opts.sample_radius, &meshes[ref_i], &t) {
+                    handles.push(TestPoint {
+                        mesh_i,
+                        point_i,
+                        ref_i,
+                    })
+                }
+            }
+        }
+    }
+
+    println!("test_points: {:?}", start.elapsed());
+    println!("handles: {:?}", handles.len());
 
     // Now we want to create the problem and solve it
-    // let start = Instant::now();
+    let start = Instant::now();
     let smpl = sample_candidates
         .into_iter()
         .map(|row| row.iter().map(|c| c.sp).collect::<Vec<_>>())
@@ -150,7 +148,7 @@ pub fn multi_mesh_adjustment(
 
     let problem = MultiMeshProblem::new(meshes, smpl, handles, static_i, opts, initial);
     let (result, report) = LevenbergMarquardt::new().minimize(problem);
-    // println!("minimize: {:?}", start.elapsed());
+    println!("minimize: {:?}", start.elapsed());
     if report.termination.was_successful() {
         let alignments = (0..meshes.len())
             .map(|i| result.params.get_transform(i))
@@ -172,7 +170,6 @@ pub fn multi_mesh_adjustment(
         println!("{:?}", report.termination);
         Err("Failed to converge".into())
     }
-     */
 }
 
 struct TestPoint {
