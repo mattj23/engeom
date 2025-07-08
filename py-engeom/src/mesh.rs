@@ -287,6 +287,20 @@ impl Mesh {
         result.into_pyarray(py)
     }
 
+    fn sample_alignment_candidates<'py>(
+        &self,
+        py: Python<'py>,
+        max_spacing: f64,
+        reference: &Mesh,
+        iso: Iso3,
+    ) -> Bound<'py, PyArray2<f64>> {
+        let sps =
+            self.inner
+                .sample_alignment_candidates(max_spacing, &reference.inner, &iso.get_inner());
+        let mut result = points_to_array(&sps);
+        result.into_pyarray(py)
+    }
+
     #[pyo3(signature=(plane, tol = None))]
     fn section(&self, plane: Plane3, tol: Option<f64>) -> PyResult<Vec<Curve3>> {
         let results = self

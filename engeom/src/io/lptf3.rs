@@ -187,7 +187,7 @@ pub fn load_lptf3_mesh(file_path: &Path, load: Lptf3Load) -> Result<HalfEdgeMesh
 
             let edge_ratio = ea.max(eb).max(ec) / max_spacing;
             if edge_ratio < world_r {
-                mesh.add_tri_face(i0, i1, i2)
+                mesh.add_tri_face(i1, i0, i2)
                     .map_err(|e| format!("Failed to add face: {:?}", e))?;
             }
         }

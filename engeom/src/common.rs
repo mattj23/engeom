@@ -11,6 +11,7 @@ pub mod surface_point;
 pub mod svd_basis;
 pub mod triangulation;
 pub mod vec_f64;
+mod index_mask;
 
 pub use align::DistMode;
 pub use angles::{
@@ -22,6 +23,7 @@ pub use discrete_domain::{DiscreteDomain, linear_space};
 pub use interval::Interval;
 pub use parry3d_f64::query::SplitResult;
 pub use surface_point::{SurfacePoint, SurfacePointCollection};
+pub use index_mask::IndexMask;
 
 /// General purpose option for starting the selection of a set of items, either from everything,
 /// nothing, or a specific set of indices
