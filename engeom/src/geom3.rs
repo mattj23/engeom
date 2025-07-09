@@ -85,3 +85,9 @@ impl From<&SurfacePoint3> for Ray {
         Ray::new(value.point, value.normal.into_inner())
     }
 }
+
+impl Default for SurfacePoint3 {
+    fn default() -> Self {
+        SurfacePoint3::new(Point3::origin(), Vector3::x_axis())
+    }
+}

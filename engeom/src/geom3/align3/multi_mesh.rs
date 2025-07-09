@@ -16,6 +16,7 @@ use crate::geom3::align3::{distance_weight, normal_weight};
 use crate::geom3::mesh::sampling::sac_ref_check;
 use crate::na::{DMatrix, Dyn, Matrix, Owned, U1, Vector};
 use crate::{Iso3, Mesh, Point3, SurfacePoint3};
+use faer::prelude::default;
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use rayon::prelude::*;
 use std::time::Instant;
@@ -251,14 +252,15 @@ impl<'a> MultiMeshProblem<'a> {
     ) -> Self {
         let mean_points = meshes.iter().map(|m| m.aabb().center()).collect::<Vec<_>>();
         let params = ParamHandler::new(static_i, mean_points, initial);
+        let count: usize = point_handles.len();
 
         let mut item = Self {
             meshes,
             sample_points,
             point_handles,
-            moved: Vec::new(),
-            closest: Vec::new(),
-            weight: Vec::new(),
+            moved: vec![default(); count],
+            closest: vec![default(); count],
+            weight: vec![0.0; count],
             params,
             options,
         };
@@ -268,10 +270,6 @@ impl<'a> MultiMeshProblem<'a> {
     }
 
     fn move_points(&mut self) {
-        self.moved.clear();
-        self.closest.clear();
-        self.weight.clear();
-
         let indices = (0..self.point_handles.len()).collect::<Vec<_>>();
         let mut collected = indices
             .par_iter()
@@ -297,11 +295,10 @@ impl<'a> MultiMeshProblem<'a> {
             })
             .collect::<Vec<_>>();
 
-        collected.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        for (_i, moved, closest, w) in collected {
-            self.moved.push(moved);
-            self.closest.push(closest);
-            self.weight.push(w);
+        for (i, moved, closest, w) in collected {
+            self.moved[i] = moved;
+            self.closest[i] = closest;
+            self.weight[i] = w;
         }
     }
 }

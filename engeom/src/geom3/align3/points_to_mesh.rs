@@ -1,3 +1,4 @@
+use faer::prelude::default;
 use super::*;
 use crate::common::DistMode;
 use crate::geom3::align3::jacobian::{copy_jacobian, point_plane_jacobian, point_point_jacobian};
@@ -8,6 +9,7 @@ use crate::Result;
 use crate::common::points::{dist, mean_point};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use parry3d_f64::na::{Dyn, Matrix, Owned, U1, U6, Vector};
+use rayon::prelude::*;
 
 /// Attempts to compute the alignment of a set of points to the surface of a mesh using a
 /// Levenberg-Marquardt solver.  The points are projected onto their closest matching surface point
@@ -89,13 +91,14 @@ impl<'a> PointsToMesh<'a> {
     fn new(points: &'a [Point3], mesh: &'a Mesh, initial: &Iso3, mode: DistMode) -> Self {
         let mean_point = mean_point(points);
         let params = RcParams3::from_initial(initial, &mean_point);
+        let count = points.len();
 
         let mut item = Self {
             points,
             mesh,
             params,
-            moved: Vec::with_capacity(points.len()),
-            closest: Vec::with_capacity(points.len()),
+            moved: vec![Point3::origin(); count],
+            closest: vec![default(); count],
             mode,
         };
 
@@ -105,12 +108,18 @@ impl<'a> PointsToMesh<'a> {
 
     fn move_points(&mut self) {
         let t = self.current_transform();
-        self.moved.clear();
-        self.closest.clear();
-        for p in self.points {
-            let m = t * *p;
-            self.closest.push(self.mesh.surf_closest_to(&m));
-            self.moved.push(m);
+        let indices = (0..self.points.len()).collect::<Vec<_>>();
+        let collected = indices
+            .par_iter()
+            .map(|&i| {
+                let m = t * self.points[i];
+                let c = self.mesh.surf_closest_to(&m);
+                (i, m, c)
+            })
+            .collect::<Vec<_>>();
+        for (i, m, c) in collected {
+            self.moved[i] = m;
+            self.closest[i] = c;
         }
     }
 

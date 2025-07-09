@@ -51,11 +51,20 @@ use crate::io::lptf3::downsample::load_downsample_filter_lptf3;
 use crate::{Point3, PointCloud, Result};
 use std::path::Path;
 
+/// The Lptf3Load enum defines the different ways to load data from a LPTF3 file, and is used to
+/// pass these options to loading functions.
 #[derive(Debug, Clone, Copy)]
 pub enum Lptf3Load {
     All,
     TakeEveryN(u32),
     SmoothSample(Lptf3DsParams),
+}
+
+/// This trait defines the interface for uncertainty models that can be used when loading LPTF3
+/// data from a file.
+pub trait Lptf3UncertaintyModel {
+    fn value(&self, x: f64, z: f64) -> f64;
+
 }
 
 /// Read a lptf3 (Laser Profile Triangulation Format 3D) file and return a `PointCloud`.
@@ -89,6 +98,14 @@ pub fn load_lptf3(file_path: &Path, load: Lptf3Load) -> Result<PointCloud> {
         Lptf3Load::TakeEveryN(n) => load_take_every(file_path, Some(n)),
         Lptf3Load::SmoothSample(params) => load_lptf3_downfilter(file_path, params),
     }
+}
+
+pub fn load_lptf3_mesh_uncertainty(
+    file_path: &Path,
+    load: Lptf3Load,
+    uncertainty_model: &dyn Lptf3UncertaintyModel,
+) -> Result<HalfEdgeMesh> {
+    todo!()
 }
 
 /// Read a lptf3 (Laser Profile Triangulation Format 3D) file and return a `HalfEdgeMesh`.
@@ -129,8 +146,8 @@ pub fn load_lptf3_mesh(file_path: &Path, load: Lptf3Load) -> Result<HalfEdgeMesh
     }?;
 
     // Set the edge ratios for the strip and world triangulation
-    let strip_r = 3.0; // The maximum edge ratio for the strip triangulation.
-    let world_r = 8.0; // The maximum edge ratio for world triangulation.
+    let strip_r = 2.0; // The maximum edge ratio for the strip triangulation.
+    let world_r = 5.0; // The maximum edge ratio for world triangulation.
 
     let max_spacing = take_every as f64 * y_shift * 2.0;
 
