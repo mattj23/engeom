@@ -7,7 +7,6 @@
 //! with a relatively large amount of overlap between meshes.  This code was implemented to perform
 //! bundle adjustment between metrology quality scans of objects with unambiguous morphology.
 
-use std::time::Instant;
 use crate::Result;
 use crate::common::points::dist;
 use crate::geom3::Align3;
@@ -18,6 +17,8 @@ use crate::geom3::mesh::sampling::sac_ref_check;
 use crate::na::{DMatrix, Dyn, Matrix, Owned, U1, Vector};
 use crate::{Iso3, Mesh, Point3, SurfacePoint3};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
+use rayon::prelude::*;
+use std::time::Instant;
 
 /// Options for the multi-mesh simultaneous alignment algorithm.
 #[derive(Debug, Clone, Copy)]
@@ -69,28 +70,29 @@ pub fn multi_mesh_adjustment(
     // have a moderate number of points from a large number of other meshes.
     let mut matrix = DMatrix::<f64>::zeros(meshes.len(), meshes.len());
 
+    let mut work_list = Vec::new();
     for i in 0..meshes.len() {
         for j in i..meshes.len() {
-            if i == j {
-                continue;
-            }
-
-            // Get the relative transform between the meshes, allowing a point in the test mesh
-            // to be transformed to the reference mesh with the same distances between points as
-            // if both clouds were transformed by their respective transforms.
-            let t = transforms[i].inv_mul(&transforms[j]);
-
-            for c in sample_candidates[j].iter() {
-                if sac_ref_check(c, opts.sample_radius, &meshes[i], &t) {
-                    // If the candidate point is a good match for the reference mesh, then we
-                    // increment the count in the matrix
-                    matrix[(i, j)] += 1.0;
-
-                    // This is close enough
-                    matrix[(j, i)] += 1.0;
-                }
+            if i != j {
+                work_list.push((i, j));
             }
         }
+    }
+
+    let collected = work_list
+        .par_iter()
+        .map(|&(i, j)| {
+            let t = transforms[i].inv_mul(&transforms[j]);
+            let count = sample_candidates[j]
+                .iter()
+                .filter(|c| sac_ref_check(c, opts.sample_radius, &meshes[i], &t))
+                .count() as f64;
+            (i, j, count)
+        })
+        .collect::<Vec<_>>();
+    for (i, j, count) in collected {
+        matrix[(i, j)] = count;
+        matrix[(j, i)] = count; // Symmetric matrix
     }
 
     let mut corr = &matrix / matrix.max();
@@ -115,28 +117,38 @@ pub fn multi_mesh_adjustment(
     // is being matched to another point cloud.  We want to generate these such that for each
     // unique pair of clouds there are only test points which go from one cloud to the other, and
     // none which go in reverse.
-    let mut handles = Vec::new();
+    let mut work_list = Vec::new();
     let mut meshes_to_test = (0..meshes.len()).collect::<Vec<_>>();
-    let start = Instant::now();
     for ref_i in reference_order {
         // Remove the current reference cloud from the list of clouds to test
         meshes_to_test.retain(|j| *j != ref_i);
-
         // Get all the clouds which reference the current working reference cloud and create
         // test points for them
         for &mesh_i in meshes_to_test.iter() {
-            let t = transforms[ref_i].inv_mul(&transforms[mesh_i]);
-            for (point_i, c) in sample_candidates[mesh_i].iter().enumerate() {
-                if sac_ref_check(c, opts.sample_radius, &meshes[ref_i], &t) {
-                    handles.push(TestPoint {
-                        mesh_i,
+            work_list.push((mesh_i, ref_i));
+        }
+    }
+
+    let start = Instant::now();
+    let handles = work_list
+        .par_iter()
+        .map(|(mesh_i, ref_i)| {
+            let t = transforms[*ref_i].inv_mul(&transforms[*mesh_i]);
+            let mut to_test = Vec::new();
+            for (point_i, c) in sample_candidates[*mesh_i].iter().enumerate() {
+                if sac_ref_check(c, opts.sample_radius, &meshes[*ref_i], &t) {
+                    to_test.push(TestPoint {
+                        mesh_i: *mesh_i,
                         point_i,
-                        ref_i,
+                        ref_i: *ref_i,
                     })
                 }
             }
-        }
-    }
+
+            to_test
+        })
+        .flatten()
+        .collect::<Vec<_>>();
 
     println!("test_points: {:?}", start.elapsed());
     println!("handles: {:?}", handles.len());
@@ -260,25 +272,35 @@ impl<'a> MultiMeshProblem<'a> {
         self.closest.clear();
         self.weight.clear();
 
-        for h in self.point_handles.iter() {
-            let point = &self.sample_points[h.mesh_i][h.point_i];
-            let ref_cloud = &self.meshes[h.ref_i];
-            let t = self.params.relative_transform(h.mesh_i, h.ref_i);
+        let indices = (0..self.point_handles.len()).collect::<Vec<_>>();
+        let mut collected = indices
+            .par_iter()
+            .map(|i| {
+                let h = &self.point_handles[*i];
+                let point = &self.sample_points[h.mesh_i][h.point_i];
+                let ref_cloud = &self.meshes[h.ref_i];
+                let t = self.params.relative_transform(h.mesh_i, h.ref_i);
 
-            let moved = &t * point;
-            let closest = ref_cloud.surf_closest_to(&moved.point);
+                let moved = &t * point;
+                let closest = ref_cloud.surf_closest_to(&moved.point);
 
-            let mut w = distance_weight(
-                dist(&moved.point, &closest.point),
-                self.options.search_radius,
-            );
+                let mut w = distance_weight(
+                    dist(&moved.point, &closest.point),
+                    self.options.search_radius,
+                );
 
-            if self.options.respect_normals {
-                w *= normal_weight(&moved.normal.into_inner(), &closest.normal.into_inner());
-            }
+                if self.options.respect_normals {
+                    w *= normal_weight(&moved.normal.into_inner(), &closest.normal.into_inner());
+                }
 
-            self.closest.push(closest);
+                (*i, moved, closest, w)
+            })
+            .collect::<Vec<_>>();
+
+        collected.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        for (_i, moved, closest, w) in collected {
             self.moved.push(moved);
+            self.closest.push(closest);
             self.weight.push(w);
         }
     }
@@ -346,27 +368,3 @@ impl<'a> LeastSquaresProblem<f64, Dyn, Dyn> for MultiMeshProblem<'a> {
         Some(jac)
     }
 }
-
-// /// Calculates a matrix containing "correspondences" between point clouds, where the number of
-// /// points in cloud j which have a distance less than `search_radius` from a point in cloud i is
-// /// stored in the (i, j) entry of the matrix
-// pub fn correspondences(clouds: &[PointCloudWithTree], search_radius: f64) -> Result<DMatrix<f64>> {
-//     // First, we need to find the point cloud that has the most points referencing it. That one
-//     // will be the static reference
-//     let mut references = DMatrix::zeros(clouds.len(), clouds.len());
-//     for (i, c_ref) in clouds.iter().enumerate() {
-//         if c_ref.points().is_empty() {
-//             return Err("Point cloud has no points".into());
-//         }
-//
-//         for (j, c_test) in clouds.iter().enumerate() {
-//             if i == j {
-//                 continue;
-//             }
-//             references[(i, j)] = c_ref.matching_point_count(c_test.points(), search_radius) as f64;
-//         }
-//     }
-//
-//     Ok(references)
-// }
-//
