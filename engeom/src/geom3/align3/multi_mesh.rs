@@ -43,10 +43,12 @@ pub fn multi_mesh_adjustment(
     initial: Option<&[Iso3]>,
 ) -> Result<Vec<Align3>> {
     // Produce the sample candidate points
+    let start = Instant::now();
     let sample_candidates = meshes
         .iter()
         .map(|m| m.sample_alignment_candidates(opts.sample_radius))
         .collect::<Vec<_>>();
+    println!("sample_candidates: {:?}", start.elapsed());
 
     let transforms = match initial {
         Some(transforms) => transforms.to_vec(),
@@ -259,25 +261,25 @@ impl<'a> MultiMeshProblem<'a> {
         self.weight.clear();
 
         for h in self.point_handles.iter() {
-            // let mesh = &self.meshes[h.mesh_i];
             let point = &self.sample_points[h.mesh_i][h.point_i];
-            // let normal = cloud.normals().unwrap()[p.point_i];
             let ref_cloud = &self.meshes[h.ref_i];
             let t = self.params.relative_transform(h.mesh_i, h.ref_i);
 
             let moved = &t * point;
             let closest = ref_cloud.surf_closest_to(&moved.point);
 
-            let w0 = distance_weight(
+            let mut w = distance_weight(
                 dist(&moved.point, &closest.point),
                 self.options.search_radius,
             );
 
-            let w1 = normal_weight(&moved.normal.into_inner(), &closest.normal.into_inner());
+            if self.options.respect_normals {
+                w *= normal_weight(&moved.normal.into_inner(), &closest.normal.into_inner());
+            }
 
             self.closest.push(closest);
             self.moved.push(moved);
-            self.weight.push(w0 * w1);
+            self.weight.push(w);
         }
     }
 }
