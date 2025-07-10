@@ -38,10 +38,17 @@ pub fn param_from_iso3(t: &Iso3) -> T3Storage {
     T3Storage::new(v.x, v.y, v.z, e.0, e.1, e.2)
 }
 
+/// This function returns 0.0 if the distance `d` is greater than the `threshold`, otherwise it
+/// returns 1.0. It is used for turning off the residuals of sample points that are beyond a
+/// distance threshold.
 pub fn distance_weight(d: f64, threshold: f64) -> f64 {
+    // Branchless version of returning 0.0 if d > threshold, otherwise returning (threshold - d)
     (threshold - d).ceil().clamp(0.0, 1.0)
 }
 
+/// This function returns 0.0 if the normals `n` and `n_ref` are pointing in opposite directions,
+/// otherwise it returns 1.0. It is used for turning off the residuals of sample points that have
+/// normals pointing into different half-spaces.
 pub fn normal_weight(n: &Vector3, n_ref: &Vector3) -> f64 {
     // If the normals are pointing in opposite directions, the dot product will be negative,
     // so we clamp it to 0.0, otherwise we want to return 1
@@ -157,6 +164,7 @@ mod tests {
     use rand::distr::Uniform;
     use rand::prelude::*;
     use std::f64::consts::PI;
+    use crate::common::linear_space;
 
     fn random_iso3() -> Iso3 {
         let mut rn = rand::rng();
@@ -184,6 +192,24 @@ mod tests {
             Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rng),
         )
     }
+
+    #[test]
+    fn check_distance_weight() {
+        let threshold = 30.0;
+        for x in linear_space(0.0, 50.0, 1000).iter() {
+            let ex = if *x > threshold { 0.0 } else { 1.0 };
+            let w = distance_weight(*x, threshold);
+            assert_relative_eq!(w, ex, epsilon=1e-10);
+        }
+
+        let threshold = 0.5;
+        for x in linear_space(0.0, 1.0, 1000).iter() {
+            let ex = if *x > threshold { 0.0 } else { 1.0 };
+            let w = distance_weight(*x, threshold);
+            assert_relative_eq!(w, ex, epsilon=1e-10);
+        }
+    }
+
 
     #[test]
     fn test_iso3_param_round_trips_stress_test() {

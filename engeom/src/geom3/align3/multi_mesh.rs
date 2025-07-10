@@ -18,8 +18,11 @@ use crate::na::{DMatrix, Dyn, Matrix, Owned, U1, Vector};
 use crate::{Iso3, Mesh, Point3, SurfacePoint3};
 use faer::prelude::default;
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
+use parry3d_f64::query::PointQueryWithLocation;
 use rayon::prelude::*;
 use std::time::Instant;
+
+use std::f64::consts::PI;
 
 /// Options for the multi-mesh simultaneous alignment algorithm.
 #[derive(Debug, Clone, Copy)]
@@ -39,10 +42,11 @@ impl MMOpts {
     }
 }
 
-pub fn multi_mesh_adjustment(
+pub fn multi_mesh_adjustment<'a>(
     meshes: &[Mesh],
     opts: MMOpts,
     initial: Option<&[Iso3]>,
+    uncertainties: Option<&'a [Vec<f64>]>,
 ) -> Result<Vec<Align3>> {
     // Produce the sample candidate points
     let start = Instant::now();
@@ -161,7 +165,15 @@ pub fn multi_mesh_adjustment(
         .map(|row| row.iter().map(|c| c.sp).collect::<Vec<_>>())
         .collect::<Vec<_>>();
 
-    let problem = MultiMeshProblem::new(meshes, smpl, handles, static_i, opts, initial);
+    let problem = MultiMeshProblem::new(
+        meshes,
+        smpl,
+        handles,
+        static_i,
+        opts,
+        initial,
+        uncertainties,
+    );
     let (result, report) = LevenbergMarquardt::new().minimize(problem);
     println!("minimize: {:?}", start.elapsed());
     if report.termination.was_successful() {
@@ -239,6 +251,36 @@ struct MultiMeshProblem<'a> {
 
     /// The options for the multi-mesh optimization, such as the search radius and sample radius.
     options: MMOpts,
+
+    /// Optional standard deviation uncertainties for each vertex in the meshes. The number of
+    /// collections must match the number of meshes, and each collection must have the same length
+    /// as the number of vertices in the corresponding mesh.
+    uncertainties: Option<&'a [Vec<f64>]>,
+
+    /// If we're working with point uncertainties, we can pre-calculate the uncertainties for each
+    /// test point, as the test points don't move on their mesh.
+    handle_uncertainties: Vec<f64>,
+}
+
+fn un_cert(point: &Point3, target: &Mesh, by_vertex: &[f64]) -> (f64, SurfacePoint3) {
+    let (prj, (fi, tpl)) = target
+        .tri_mesh()
+        .project_local_point_and_get_location(&point, false);
+
+    let face = target.faces()[fi as usize];
+    let normal = target.tri_mesh().triangle(fi).normal().unwrap();
+
+    let u0 = by_vertex[face[0] as usize];
+    let u1 = by_vertex[face[1] as usize];
+    let u2 = by_vertex[face[2] as usize];
+
+    let st_dev = if let Some(bc) = tpl.barycentric_coordinates() {
+        u0 * bc[0] + u1 * bc[1] + u2 * bc[2]
+    } else {
+        u0.max(u1).max(u2)
+    };
+
+    (st_dev.powi(2), SurfacePoint3::new(prj.point, normal))
 }
 
 impl<'a> MultiMeshProblem<'a> {
@@ -249,10 +291,24 @@ impl<'a> MultiMeshProblem<'a> {
         static_i: usize,
         options: MMOpts,
         initial: Option<&[Iso3]>,
+        uncertainties: Option<&'a [Vec<f64>]>,
     ) -> Self {
         let mean_points = meshes.iter().map(|m| m.aabb().center()).collect::<Vec<_>>();
         let params = ParamHandler::new(static_i, mean_points, initial);
         let count: usize = point_handles.len();
+
+        // If uncertainties are provided, we need to measure the uncertainties of each test point
+        let handle_uncertainties = if let Some(u) = uncertainties {
+            let mut working = vec![0.0; count];
+            for (i, h) in point_handles.iter().enumerate() {
+                let m = &meshes[h.mesh_i];
+                let sp = &sample_points[h.mesh_i][h.point_i];
+                working[i] = un_cert(&sp.point, m, &u[h.mesh_i]).0;
+            }
+            working
+        } else {
+            Vec::new()
+        };
 
         let mut item = Self {
             meshes,
@@ -263,6 +319,8 @@ impl<'a> MultiMeshProblem<'a> {
             weight: vec![0.0; count],
             params,
             options,
+            uncertainties,
+            handle_uncertainties,
         };
 
         item.move_points();
@@ -278,14 +336,28 @@ impl<'a> MultiMeshProblem<'a> {
                 let point = &self.sample_points[h.mesh_i][h.point_i];
                 let ref_cloud = &self.meshes[h.ref_i];
                 let t = self.params.relative_transform(h.mesh_i, h.ref_i);
-
                 let moved = &t * point;
-                let closest = ref_cloud.surf_closest_to(&moved.point);
 
-                let mut w = distance_weight(
-                    dist(&moved.point, &closest.point),
-                    self.options.search_radius,
-                );
+                let (wu, closest) = match self.uncertainties {
+                    Some(u) => {
+                        // Get the standard deviation (uncertainty) for the point along with the
+                        // actual closest surface point/normal on the reference mesh.
+                        let (sd, sp) = un_cert(&moved.point, ref_cloud, &u[h.ref_i]);
+                        let hsd = self.handle_uncertainties[*i];
+
+                        // Now we combine the uncertainties and get the peak height of a gaussian
+                        let peak = 1.0 / (2.0 * PI * (sd + hsd)).sqrt();
+                        // let peak = 1.0 / (2.0 * PI * (sd + hsd));
+                        // let peak = (sd + hsd).sqrt();
+                        (peak, sp)
+                    },
+                    None => (1.0, ref_cloud.surf_closest_to(&moved.point)),
+                };
+
+                let mut w = wu * distance_weight(
+                        dist(&moved.point, &closest.point),
+                        self.options.search_radius,
+                    );
 
                 if self.options.respect_normals {
                     w *= normal_weight(&moved.normal.into_inner(), &closest.normal.into_inner());
