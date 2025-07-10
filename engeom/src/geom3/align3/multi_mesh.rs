@@ -47,6 +47,7 @@ pub fn multi_mesh_adjustment<'a>(
     opts: MMOpts,
     initial: Option<&[Iso3]>,
     uncertainties: Option<&'a [Vec<f64>]>,
+    weight_meshes: Option<&[(f64, Mesh)]>
 ) -> Result<Vec<Align3>> {
     // Produce the sample candidate points
     let start = Instant::now();
@@ -113,6 +114,7 @@ pub fn multi_mesh_adjustment<'a>(
         .collect::<Vec<_>>();
     corr_pairs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
     let reference_order = corr_pairs.iter().map(|(i, _)| *i).collect::<Vec<_>>();
+
     let static_i = reference_order[0];
     println!("correspondence matrix: {}", matrix);
     println!("static_i: {}", static_i);
@@ -142,10 +144,25 @@ pub fn multi_mesh_adjustment<'a>(
             let mut to_test = Vec::new();
             for (point_i, c) in sample_candidates[*mesh_i].iter().enumerate() {
                 if sac_ref_check(c, opts.sample_radius, &meshes[*ref_i], &t) {
+                    // TODO: remove this later
+                    let weight = if let Some(weight_meshes) = weight_meshes {
+                        let mut w = 1.0;
+                        for (bw, m) in weight_meshes.iter() {
+                            let cp = m.point_closest_to(&c.sp.point);
+                            if dist(&cp, &c.sp.point) < 1.0 {
+                                w = *bw;
+                            }
+                        }
+                        w
+                    } else {
+                        1.0
+                    };
+
                     to_test.push(TestPoint {
                         mesh_i: *mesh_i,
                         point_i,
                         ref_i: *ref_i,
+                        weight,
                     })
                 }
             }
@@ -157,6 +174,8 @@ pub fn multi_mesh_adjustment<'a>(
 
     println!("test_points: {:?}", start.elapsed());
     println!("handles: {:?}", handles.len());
+    let weighted_count = handles.iter().filter(|h| h.weight > 1.01).count();
+    println!("weighted n={weighted_count}");
 
     // Now we want to create the problem and solve it
     let start = Instant::now();
@@ -208,14 +227,18 @@ struct TestPoint {
 
     /// The index of the mesh this point is being matched to
     ref_i: usize,
+
+    /// The base weight for this point, which is used to scale the residuals
+    weight: f64,
 }
 
 impl TestPoint {
-    fn new(mesh_i: usize, point_i: usize, ref_i: usize) -> Self {
+    fn new(mesh_i: usize, point_i: usize, ref_i: usize, weight: f64) -> Self {
         Self {
             mesh_i,
             point_i,
             ref_i,
+            weight,
         }
     }
 }
@@ -354,7 +377,7 @@ impl<'a> MultiMeshProblem<'a> {
                     None => (1.0, ref_cloud.surf_closest_to(&moved.point)),
                 };
 
-                let mut w = wu * distance_weight(
+                let mut w = h.weight * wu * distance_weight(
                         dist(&moved.point, &closest.point),
                         self.options.search_radius,
                     );
