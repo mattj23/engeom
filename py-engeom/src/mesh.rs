@@ -315,7 +315,7 @@ impl Mesh {
         slf: PyRef<Self>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, FaceFilterHandle>> {
-        let indices = slf.inner.face_select(Selection::All).collect();
+        let indices = slf.inner.face_select(Selection::All).collect_indices();
         FaceFilterHandle {
             mesh: slf.into(),
             indices,
@@ -327,7 +327,7 @@ impl Mesh {
         slf: PyRef<Self>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, FaceFilterHandle>> {
-        let indices = slf.inner.face_select(Selection::None).collect();
+        let indices = slf.inner.face_select(Selection::None).collect_indices();
         FaceFilterHandle {
             mesh: slf.into(),
             indices,
@@ -456,7 +456,7 @@ impl FaceFilterHandle {
             .inner
             .face_select(Selection::Indices(i))
             .facing(&normal, angle, mode.into())
-            .collect();
+            .collect_indices();
         slf.into_pyobject(py)
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
@@ -486,7 +486,7 @@ impl FaceFilterHandle {
                 angle_tol,
                 mode.into(),
             )
-            .collect();
+            .collect_indices();
         slf.into_pyobject(py)
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }

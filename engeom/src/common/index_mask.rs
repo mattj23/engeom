@@ -1,8 +1,10 @@
 //! This module contains tools for working with indices as a mask of boolean values (may
 //! eventually be implemented with bitvectors depending on real world performance).
+use crate::Result;
 use bitvec::prelude::*;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IndexMask {
     mask: BitVec,
 }
@@ -21,6 +23,17 @@ impl IndexMask {
         IndexMask { mask }
     }
 
+    pub fn try_from_indices(indices: &[usize], len: usize) -> Result<Self> {
+        let mut mask = BitVec::repeat(false, len);
+        for &index in indices {
+            if index >= len {
+                return Err(format!("Index {} is out of bounds for length {}", index, len).into());
+            }
+            mask.set(index, true);
+        }
+        Ok(IndexMask { mask })
+    }
+
     /// Get the index values stored in the mask as a vector of usize.
     pub fn to_indices(&self) -> Vec<usize> {
         let mut indices = Vec::with_capacity(self.mask.len() / 16);
@@ -37,9 +50,38 @@ impl IndexMask {
     /// Modify the mask so that all values are the opposite of their current value.
     pub fn flip(&mut self) {
         for mut u in self.mask.as_raw_mut_slice() {
-            let flipped = !*u;
-            *u = flipped;
+            *u = !*u;
         }
+    }
+
+    pub fn or_mut(&mut self, other: &IndexMask) -> Result<()> {
+        if self.mask.len() != other.mask.len() {
+            return Err("Masks must be of the same length".into());
+        }
+
+        let mut self_mask = self.mask.as_raw_mut_slice();
+        let other_mask = other.mask.as_raw_slice();
+
+        for (a, b) in self_mask.iter_mut().zip(other_mask.iter()) {
+            *a |= *b;
+        }
+
+        Ok(())
+    }
+
+    pub fn and_mut(&mut self, other: &IndexMask) -> Result<()> {
+        if self.mask.len() != other.mask.len() {
+            return Err("Masks must be of the same length".into());
+        }
+
+        let mut self_mask = self.mask.as_raw_mut_slice();
+        let other_mask = other.mask.as_raw_slice();
+
+        for (a, b) in self_mask.iter_mut().zip(other_mask.iter()) {
+            *a &= *b;
+        }
+
+        Ok(())
     }
 
     /// Set the value at the specified index
@@ -56,6 +98,34 @@ impl IndexMask {
     /// Get the length of the mask.
     pub fn len(&self) -> usize {
         self.mask.len()
+    }
+
+    pub fn iter_true(&self) -> MaskTrueIterator {
+        MaskTrueIterator {
+            mask: self,
+            current: 0,
+        }
+    }
+}
+
+pub struct MaskTrueIterator<'a> {
+    mask: &'a IndexMask,
+    current: usize,
+}
+
+impl<'a> Iterator for MaskTrueIterator<'a> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.current < self.mask.len() {
+            if self.mask.get(self.current) {
+                let index = self.current;
+                self.current += 1;
+                return Some(index);
+            }
+            self.current += 1;
+        }
+        None
     }
 }
 
@@ -132,6 +202,115 @@ mod tests {
                 .collect();
 
             assert_eq!(mask_indices, vec_indices, "Indices mismatch");
+        }
+
+        #[test]
+        fn stress_to_true_iter() {
+            let len = 10_000;
+            let mut rng = StdRng::seed_from_u64(345);
+            let mut mask = IndexMask::new(len, false);
+            let mut vec = vec![false; len];
+
+            for i in 0..len {
+                let val = rng.random_bool(0.3);
+                mask.set(i, val);
+                vec[i] = val;
+            }
+
+            let mut mask_indices = Vec::new();
+            for index in mask.iter_true() {
+                mask_indices.push(index);
+            }
+
+            let vec_indices: Vec<usize> = vec
+                .iter()
+                .enumerate()
+                .filter_map(|(i, &v)| if v { Some(i) } else { None })
+                .collect();
+
+            assert_eq!(mask_indices, vec_indices, "Indices mismatch");
+        }
+
+        #[test]
+        fn stress_and() {
+            let len = 100_000;
+            let mut rng = StdRng::seed_from_u64(345);
+
+            for _ in 0..100 {
+                let mut mask0 = IndexMask::new(len, false);
+                let mut mask1 = IndexMask::new(len, false);
+
+                let mut vec0 = vec![false; len];
+                let mut vec1 = vec![false; len];
+
+                for i in 0..len {
+                    let val0 = rng.random_bool(0.3);
+                    vec0[i] = val0;
+                    mask0.set(i, val0);
+
+                    let val1 = rng.random_bool(0.3);
+                    vec1[i] = val1;
+                    mask1.set(i, val1);
+                }
+
+                let expected = vec0
+                    .iter()
+                    .zip(vec1.iter())
+                    .map(|(&v0, &v1)| v0 && v1)
+                    .collect::<Vec<bool>>();
+
+                mask0.and_mut(&mask1).unwrap();
+
+                for i in 0..len {
+                    assert_eq!(
+                        mask0.get(i),
+                        expected[i],
+                        "Mismatch after OR at index {}",
+                        i
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn stress_or() {
+            let len = 100_000;
+            let mut rng = StdRng::seed_from_u64(345);
+
+            for _ in 0..100 {
+                let mut mask0 = IndexMask::new(len, false);
+                let mut mask1 = IndexMask::new(len, false);
+
+                let mut vec0 = vec![false; len];
+                let mut vec1 = vec![false; len];
+
+                for i in 0..len {
+                    let val0 = rng.random_bool(0.3);
+                    vec0[i] = val0;
+                    mask0.set(i, val0);
+
+                    let val1 = rng.random_bool(0.3);
+                    vec1[i] = val1;
+                    mask1.set(i, val1);
+                }
+
+                let expected = vec0
+                    .iter()
+                    .zip(vec1.iter())
+                    .map(|(&v0, &v1)| v0 || v1)
+                    .collect::<Vec<bool>>();
+
+                mask0.or_mut(&mask1).unwrap();
+
+                for i in 0..len {
+                    assert_eq!(
+                        mask0.get(i),
+                        expected[i],
+                        "Mismatch after OR at index {}",
+                        i
+                    );
+                }
+            }
         }
     }
 }

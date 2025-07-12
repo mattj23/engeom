@@ -32,6 +32,7 @@ pub enum Selection {
     None,
     All,
     Indices(Vec<usize>),
+    Mask(IndexMask),
 }
 
 /// General purpose option for selecting or deselecting items from a set

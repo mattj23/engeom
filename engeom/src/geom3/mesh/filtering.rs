@@ -1,75 +1,62 @@
 //! This module has implementations of different ways of filtering/reducing a mesh
 
+use crate::Result;
 use crate::common::indices::index_vec;
-use crate::common::{SelectOp, Selection};
+use crate::common::{IndexMask, SelectOp, Selection};
 use crate::{Mesh, Point3, SurfacePoint3, UnitVec3, Vector3};
+use faer::Index;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 
 pub struct TriangleFilter<'a> {
     mesh: &'a Mesh,
-    indices: HashSet<usize>,
+    mask: IndexMask,
 }
 
 impl TriangleFilter<'_> {
     /// Collect the indices of the triangles that have been filtered
-    pub fn collect(self) -> Vec<usize> {
-        self.indices.into_iter().collect()
+    pub fn collect_indices(self) -> Vec<usize> {
+        self.mask.to_indices()
+    }
+
+    /// Take the mask of indices that have been filtered
+    pub fn take_mask(self) -> IndexMask {
+        self.mask
     }
 
     /// Create a new mesh from the filtered indices
     pub fn create_mesh(self) -> Mesh {
-        let i = self.indices.into_iter().collect_vec();
-        self.mesh.create_from_indices(&i)
+        self.mesh.create_from_mask(&self.mask).unwrap()
     }
 
     /// Get the indices of the triangles which would need to be checked for an operation of the
     /// specified type. If the operation is `SelectOp::Add`, then the triangles that are not in the
     /// current selection will be returned. If the operation is `SelectOp::Remove`, or
     /// `SelectOp::Keep` then the triangles that are in the current selection will be returned.
-    fn to_check(&self, mode: SelectOp) -> Vec<usize> {
+    fn to_check(&self, mode: SelectOp) -> IndexMask {
         match mode {
-            SelectOp::Add => (0..self.mesh.faces().len())
-                .filter(|i| !self.indices.contains(i))
-                .collect(),
-            SelectOp::Remove | SelectOp::Keep => self.indices.iter().copied().collect(),
+            // When adding, we want to check all faces that are not currently selected
+            SelectOp::Add => {
+                let mut check_mask = self.mask.clone();
+                check_mask.flip();
+                check_mask
+            }
+
+            // When removing or keeping, we want to check all faces that are currently selected
+            SelectOp::Remove | SelectOp::Keep => self.mask.clone(),
         }
     }
-    fn mutate_pass_list(mut self, mode: SelectOp, pass_list: Vec<usize>) -> Self {
+
+    fn mutate_pass_list(mut self, mode: SelectOp, pass_mask: &IndexMask) -> Self {
         match mode {
-            SelectOp::Add => {
-                for i in pass_list {
-                    self.indices.insert(i);
-                }
-            }
+            SelectOp::Add => self.mask.or_mut(pass_mask).unwrap(),
             SelectOp::Remove => {
-                for i in pass_list {
-                    self.indices.remove(&i);
-                }
+                let mut flipped = pass_mask.clone();
+                flipped.flip();
+                self.mask.and_mut(&flipped).unwrap();
             }
             SelectOp::Keep => {
-                let check_set: HashSet<usize> = pass_list.into_iter().collect();
-                self.indices.retain(|i| check_set.contains(i));
-            }
-        };
-
-        self
-    }
-
-    fn mutate(mut self, mode: SelectOp, predicate: &dyn Fn(usize, &Mesh) -> bool) -> Self {
-        match mode {
-            SelectOp::Add => {
-                for i in 0..self.mesh.faces().len() {
-                    if !self.indices.contains(&i) && predicate(i, self.mesh) {
-                        self.indices.insert(i);
-                    }
-                }
-            }
-            SelectOp::Remove => {
-                self.indices.retain(|&i| !predicate(i, self.mesh));
-            }
-            SelectOp::Keep => {
-                self.indices.retain(|&i| predicate(i, self.mesh));
+                self.mask.and_mut(&pass_mask).unwrap();
             }
         };
 
@@ -77,14 +64,23 @@ impl TriangleFilter<'_> {
     }
 
     pub fn facing(self, normal: &Vector3, angle: f64, mode: SelectOp) -> Self {
-        self.mutate(mode, &|i, m| {
-            let n = m.shape.triangle(i as u32).normal();
+        let check_mask = self.to_check(mode);
+        let mut op_mask = IndexMask::new(self.mesh.faces().len(), false);
+
+        for i in check_mask.iter_true() {
+            let n = self.mesh.shape.triangle(i as u32).normal();
             if let Some(nv) = n {
-                nv.angle(normal) < angle
+                if nv.angle(normal) < angle {
+                    op_mask.set(i, true);
+                } else {
+                    op_mask.set(i, false);
+                }
             } else {
-                false
+                op_mask.set(i, false);
             }
-        })
+        }
+
+        self.mutate_pass_list(mode, &op_mask)
     }
 
     /// Modify the list of indices to only include triangles that are within a certain distance of
@@ -127,47 +123,61 @@ impl TriangleFilter<'_> {
     ) -> Self {
         let mut check = MeshNearCheck::new(self.mesh, other, distance_tol, planar_tol, angle_tol);
         let to_check = self.to_check(mode);
-        let passes = to_check
-            .into_iter()
-            .filter(|&i| {
-                let tri = self.mesh.faces()[i];
-                let face = self.mesh.shape.triangle(i as u32);
+        let mut passes = IndexMask::new(self.mesh.faces().len(), false);
+        for i in to_check.iter_true() {
+            let tri = self.mesh.faces()[i];
+            let face = self.mesh.shape.triangle(i as u32);
 
-                if all_points {
-                    check.near_check(tri[0], face.normal())
-                        && check.near_check(tri[1], face.normal())
-                        && check.near_check(tri[2], face.normal())
-                } else {
-                    check.near_check(tri[0], face.normal())
-                        || check.near_check(tri[1], face.normal())
-                        || check.near_check(tri[2], face.normal())
-                }
-            })
-            .collect::<Vec<_>>();
+            let keep = if all_points {
+                check.near_check(tri[0], face.normal())
+                    && check.near_check(tri[1], face.normal())
+                    && check.near_check(tri[2], face.normal())
+            } else {
+                check.near_check(tri[0], face.normal())
+                    || check.near_check(tri[1], face.normal())
+                    || check.near_check(tri[2], face.normal())
+            };
 
-        self.mutate_pass_list(mode, passes)
+            passes.set(i, keep);
+        }
+
+        self.mutate_pass_list(mode, &passes)
     }
 
     pub fn expand(self, mode: SelectOp) -> Self {
-        let to_check = self.to_check(mode);
+        // Get the mask of indices that we want to check
+        let check_mask = self.to_check(mode);
 
-        let mut vertices = vec![false; self.mesh.vertices().len()];
-        for i in self.indices.iter() {
-            let t = self.mesh.faces()[*i];
-            vertices[t[0] as usize] = true;
-            vertices[t[1] as usize] = true;
-            vertices[t[2] as usize] = true;
+        // Get a mask of the vertices that are currently considered selected
+        let vert_mask = match mode {
+            // If we're adding new faces, we'll start with the vertices that are part of triangles
+            // that are currently selected by the filter
+            SelectOp::Add => self.mesh.unique_vertex_mask(&self.mask),
+
+            // If we're removing or keeping faces, we start with the vertices that are part of
+            // triangles that are NOT currently selected by the filter
+            SelectOp::Remove | SelectOp::Keep => {
+                let mut flipped = self.mask.clone();
+                flipped.flip();
+                self.mesh.unique_vertex_mask(&flipped)
+            }
         }
+        .expect("Failed to create vertex mask from face mask, was the face mask valid?");
 
-        let mut passes = Vec::new();
-        for i in to_check {
+        // Now we'll check the triangles in the check mask, and if they contain any of the vertices
+        // in the vertex mask, we'll add them to the pass list
+        let mut passes = IndexMask::new(self.mesh.faces().len(), false);
+        for i in check_mask.iter_true() {
             let t = self.mesh.faces()[i];
-            if vertices[t[0] as usize] || vertices[t[1] as usize] || vertices[t[2] as usize] {
-                passes.push(i);
+            if vert_mask.get(t[0] as usize)
+                || vert_mask.get(t[1] as usize)
+                || vert_mask.get(t[2] as usize)
+            {
+                passes.set(i, true);
             }
         }
 
-        self.mutate_pass_list(mode, passes)
+        self.mutate_pass_list(mode, &passes)
     }
 
     pub fn expand_n(self, n: usize, mode: SelectOp) -> Self {
@@ -201,17 +211,40 @@ impl Mesh {
     ///
     /// ```
     pub fn face_select(&self, start: Selection) -> TriangleFilter {
-        let indices = match start {
-            Selection::None => vec![],
-            Selection::All => index_vec(None, self.faces().len()),
-            Selection::Indices(i) => i,
+        let mask = match start {
+            Selection::None => IndexMask::new(self.faces().len(), false),
+            Selection::All => IndexMask::new(self.faces().len(), true),
+            Selection::Indices(i) => IndexMask::try_from_indices(&i, self.faces().len())
+                .expect("Invalid indices for face selection"),
+            Selection::Mask(m) => m,
+        };
+
+        TriangleFilter { mesh: self, mask }
+    }
+
+    pub fn create_from_mask(&self, mask: &IndexMask) -> Result<Self> {
+        let vertex_mask = self.unique_vertex_mask(mask)?;
+
+        // The map_back array will map the old vertex indices to the new ones
+        let mut map_back = vec![u32::MAX; self.vertices().len()];
+        let mut new_verts = Vec::new();
+
+        for (new_i, old_i) in vertex_mask.iter_true().enumerate() {
+            map_back[old_i] = new_i as u32;
+            new_verts.push(self.vertices()[old_i]);
         }
-        .into_iter()
-        .collect();
-        TriangleFilter {
-            mesh: self,
-            indices,
+
+        let mut new_faces = Vec::new();
+        for i in mask.iter_true() {
+            let t = self.faces()[i];
+            new_faces.push([
+                map_back[t[0] as usize],
+                map_back[t[1] as usize],
+                map_back[t[2] as usize],
+            ]);
         }
+
+        Ok(Self::new(new_verts, new_faces, false))
     }
 
     /// Create a new mesh from a list of triangle indices. The indices correspond with elements in
@@ -235,7 +268,7 @@ impl Mesh {
     /// let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
     /// let indices = mesh.face_select(Selection::None)
     ///     .facing(&Vector3::z(), PI / 2.0, SelectOp::Add)
-    ///     .collect();
+    ///     .collect_indices();
     /// let new_mesh = mesh.create_from_indices(&indices);
     ///
     /// assert_eq!(new_mesh.faces().len(), 2);
@@ -264,6 +297,41 @@ impl Mesh {
             .collect_vec();
 
         Self::new(vertices, triangles, false)
+    }
+
+    fn face_mask_matches(&self, face_mask: &IndexMask) -> bool {
+        face_mask.len() == self.faces().len()
+    }
+
+    fn check_face_mask(&self, face_mask: &IndexMask) -> Result<()> {
+        if !self.face_mask_matches(face_mask) {
+            Err("Face mask length does not match the number of faces in the mesh".into())
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Using a mask of face indices, this function will create a vertex mask that contains only
+    /// the vertices that are used in the triangles specified by the face mask.
+    ///
+    /// # Arguments
+    ///
+    /// * `face_mask`: a mask of face indices that will be used to filter the vertices. Must have
+    ///   the same length as the number of faces in the mesh, or the function will return an error.
+    ///
+    /// returns: Result<IndexMask, Box<dyn Error, Global>>
+    fn unique_vertex_mask(&self, face_mask: &IndexMask) -> Result<IndexMask> {
+        self.check_face_mask(face_mask)?;
+
+        let mut vertex_mask = IndexMask::new(self.vertices().len(), false);
+        for i in face_mask.iter_true() {
+            let t = self.faces()[i];
+            vertex_mask.set(t[0] as usize, true);
+            vertex_mask.set(t[1] as usize, true);
+            vertex_mask.set(t[2] as usize, true);
+        }
+
+        Ok(vertex_mask)
     }
 
     fn unique_vertices(&self, triangle_indices: &[usize]) -> Vec<u32> {
@@ -369,14 +437,11 @@ mod tests {
     #[test]
     fn test_triangles_facing() {
         let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
-        let indices = mesh
+        let selection = mesh
             .face_select(Selection::None)
-            .facing(&Vector3::z(), PI / 2.0, Add)
-            .collect();
+            .facing(&Vector3::z(), PI / 2.0, Add);
 
-        assert_eq!(indices.len(), 2);
-
-        let new_mesh = mesh.create_from_indices(&indices);
+        let new_mesh = selection.create_mesh();
         assert_eq!(new_mesh.faces().len(), 2);
 
         for t in new_mesh.tri_mesh().triangles() {
