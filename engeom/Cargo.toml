@@ -24,6 +24,7 @@ kiddo = "5.2.1"
 stl_io = { version = "0.8.5", optional = true }
 num-traits = "0.2.19"
 faer = "0.22.6"
+bitvec = "1.0.1"
 
 [dev-dependencies]
 test-case = "3.3.1"

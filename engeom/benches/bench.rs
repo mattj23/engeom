@@ -5,7 +5,6 @@ use divan::{Bencher, black_box};
 const N: usize = 10_000_000;
 
 fn main() {
-    // Run registered benchmarks.
     divan::main();
 }
 

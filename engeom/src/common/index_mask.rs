@@ -1,9 +1,10 @@
 //! This module contains tools for working with indices as a mask of boolean values (may
 //! eventually be implemented with bitvectors depending on real world performance).
+use bitvec::prelude::*;
 
 #[derive(Clone)]
 pub struct IndexMask {
-    mask: Vec<bool>,
+    mask: BitVec,
 }
 
 impl IndexMask {
@@ -16,32 +17,34 @@ impl IndexMask {
     ///
     /// returns: IndexMask
     pub fn new(len: usize, value: bool) -> Self {
+        let mask = BitVec::repeat(value, len);
         IndexMask {
-            mask: vec![value; len],
+            mask
         }
     }
 
     /// Get the index values stored in the mask as a vector of usize.
     pub fn to_indices(&self) -> Vec<usize> {
-        self.mask
-            .iter()
-            .enumerate()
-            .filter_map(|(i, &v)| if v { Some(i) } else { None })
-            .collect()
+        let mut indices = Vec::new();
+        for i in 0..self.len() {
+            if self.get(i) {
+                indices.push(i);
+            }
+        }
+
+        indices
     }
 
     /// Modify the mask so that all values are the opposite of their current value.
     pub fn flip(&mut self) {
-        for value in &mut self.mask {
-            *value = !*value;
+        for mut b in self.mask.iter_mut() {
+            *b = !*b;
         }
     }
 
     /// Set the value at the specified index
     pub fn set(&mut self, index: usize, value: bool) {
-        if index < self.mask.len() {
-            self.mask[index] = value;
-        }
+        self.mask.set(index, value);
     }
 
     /// Get the value at the specified index.
