@@ -1,9 +1,9 @@
-use faer::prelude::default;
 use super::*;
 use crate::common::DistMode;
 use crate::geom3::align3::jacobian::{copy_jacobian, point_plane_jacobian, point_point_jacobian};
 use crate::geom3::mesh::Mesh;
 use crate::geom3::{Align3, Point3, SurfacePoint3};
+use faer::prelude::default;
 
 use crate::Result;
 use crate::common::points::{dist, mean_point};

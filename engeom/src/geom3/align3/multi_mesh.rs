@@ -47,7 +47,7 @@ pub fn multi_mesh_adjustment<'a>(
     opts: MMOpts,
     initial: Option<&[Iso3]>,
     uncertainties: Option<&'a [Vec<f64>]>,
-    weight_meshes: Option<&[(f64, Mesh)]>
+    weight_meshes: Option<&[(f64, Mesh)]>,
 ) -> Result<Vec<Align3>> {
     // Produce the sample candidate points
     let start = Instant::now();
@@ -373,11 +373,13 @@ impl<'a> MultiMeshProblem<'a> {
                         // let peak = 1.0 / (2.0 * PI * (sd + hsd));
                         // let peak = (sd + hsd).sqrt();
                         (peak, sp)
-                    },
+                    }
                     None => (1.0, ref_cloud.surf_closest_to(&moved.point)),
                 };
 
-                let mut w = h.weight * wu * distance_weight(
+                let mut w = h.weight
+                    * wu
+                    * distance_weight(
                         dist(&moved.point, &closest.point),
                         self.options.search_radius,
                     );

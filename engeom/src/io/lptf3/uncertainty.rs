@@ -9,7 +9,6 @@ pub struct DiffTanModel {
     scale: f64,
 }
 
-
 impl DiffTanModel {
     /// Create a model of triangulation uncertainty based on scaling the derivative of `tan(theta)`
     /// where `theta` is the angle between the direction of the laser beam and the direction of

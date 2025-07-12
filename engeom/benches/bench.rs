@@ -1,6 +1,6 @@
-use std::collections::HashSet;
-use engeom::common::IndexMask;
 use divan::{Bencher, black_box};
+use engeom::common::IndexMask;
+use std::collections::HashSet;
 
 const N: usize = 10_000_000;
 

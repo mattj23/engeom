@@ -1,11 +1,11 @@
 pub mod jacobian;
+mod mesh_overlap;
 mod mesh_to_mesh;
+mod multi_mesh;
 pub mod multi_param;
 mod points_to_cloud;
 mod points_to_mesh;
 mod rotations;
-mod multi_mesh;
-mod mesh_overlap;
 
 use crate::geom3::{Iso3, Point3, Vector3};
 use parry3d_f64::na::{Translation3, UnitQuaternion, Vector6};
@@ -13,10 +13,10 @@ use parry3d_f64::na::{Translation3, UnitQuaternion, Vector6};
 type T3Storage = Vector6<f64>;
 
 pub use self::mesh_to_mesh::mesh_to_mesh_iterative;
+pub use self::multi_mesh::{MMOpts, multi_mesh_adjustment};
 pub use self::points_to_cloud::points_to_cloud;
 pub use self::points_to_mesh::points_to_mesh;
 pub use self::rotations::RotationMatrices;
-pub use self::multi_mesh::{MMOpts, multi_mesh_adjustment};
 
 #[derive(Clone, Copy, Debug)]
 pub enum SampleMode {
@@ -159,12 +159,12 @@ impl RcParams3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::linear_space;
     use crate::geom3::Vector3;
     use approx::assert_relative_eq;
     use rand::distr::Uniform;
     use rand::prelude::*;
     use std::f64::consts::PI;
-    use crate::common::linear_space;
 
     fn random_iso3() -> Iso3 {
         let mut rn = rand::rng();
@@ -199,17 +199,16 @@ mod tests {
         for x in linear_space(0.0, 50.0, 1000).iter() {
             let ex = if *x > threshold { 0.0 } else { 1.0 };
             let w = distance_weight(*x, threshold);
-            assert_relative_eq!(w, ex, epsilon=1e-10);
+            assert_relative_eq!(w, ex, epsilon = 1e-10);
         }
 
         let threshold = 0.5;
         for x in linear_space(0.0, 1.0, 1000).iter() {
             let ex = if *x > threshold { 0.0 } else { 1.0 };
             let w = distance_weight(*x, threshold);
-            assert_relative_eq!(w, ex, epsilon=1e-10);
+            assert_relative_eq!(w, ex, epsilon = 1e-10);
         }
     }
-
 
     #[test]
     fn test_iso3_param_round_trips_stress_test() {

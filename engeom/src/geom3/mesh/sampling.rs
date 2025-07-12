@@ -235,7 +235,8 @@ pub fn sac_ref_check(ac: &ACPoint, max_spacing: f64, reference: &Mesh, iso: &Iso
     // If the points on the test mesh pass, we project the points to the reference mesh and
     // run the same check.
     let check_ref = reference.surf_closest_to(&(iso * ac.sp.point));
-    let neighbors_ref = ac.neighbors
+    let neighbors_ref = ac
+        .neighbors
         .iter()
         .map(|sp| reference.surf_closest_to(&(iso * sp.point)))
         .collect::<Vec<_>>();
