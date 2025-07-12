@@ -43,6 +43,14 @@ fn index_mask_get(bencher: Bencher) {
 }
 
 #[divan::bench]
+fn index_mask_flip(bencher: Bencher) {
+    let mut mask = prep_mask(2);
+    bencher.bench_local(move || {
+        black_box(&mut mask).flip();
+    });
+}
+
+#[divan::bench]
 fn index_mask_to_vec(bencher: Bencher) {
     let mask = prep_mask(2);
 
