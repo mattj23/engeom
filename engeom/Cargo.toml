@@ -28,5 +28,9 @@ faer = "0.22.6"
 [dev-dependencies]
 test-case = "3.3.1"
 approx = "0.5.1"
-criterion = "0.6.0"
+divan = "0.1.21"
 rand = "0.9.1"
+
+[[bench]]
+name = "bench"
+harness = false
