@@ -190,6 +190,16 @@ impl TriangleFilter<'_> {
 }
 
 impl Mesh {
+    /// Create a new mask with the same length as the number of faces in the mesh, initialized to
+    /// the specified value.
+    pub fn new_face_mask(&self, value: bool) -> IndexMask {
+        IndexMask::new(self.faces().len(), value)
+    }
+
+    pub fn new_vertex_mask(&self, value: bool) -> IndexMask {
+        IndexMask::new(self.vertices().len(), value)
+    }
+
     /// Start an operation to filter the faces of the mesh. This function will return a filter
     /// handle that can be used to add or remove faces from the selection while maintaining
     /// an immutable reference to the mesh.
