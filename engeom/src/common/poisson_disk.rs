@@ -1,63 +1,26 @@
 //! This module contains tools for performing Poisson disk sampling on points in 2D and 3D.
 
 use crate::common::kd_tree::{KdTree, KdTreeSearch, PartialKdTree};
-use crate::common::{IndexMask, PCoords, voxel_downsample};
-use crate::na::SVector;
+use crate::common::{voxel_downsample, IndexMask, PCoords};
 use parry3d_f64::na::Point;
 
-// pub fn sample_poisson_disk<const D: usize>(
-//     all_points: &[impl PCoords<D>],
-//     working_indices: &[usize],
-//     radius: f64,
-// ) -> Vec<usize> {
-//     /*
-//        We're going to do this work with a mask array and a kd-tree.
-//
-//        First we'll reduce the `all_points` array to just the points at the `working_indices`,
-//        producing the `working_points` array. The point at `working_points[m]` will be the same as
-//        the point at `all_points[working_indices[m]]`, where `m` goes from 0 ->
-//        `working_indices.len()`. The outside index `i` is `working_indices[m]`.
-//
-//        The mask will be the same length as the `working_indices` array. Each mask element at index
-//        `m` corresponds with the point at `working_indices[m]`. If the mask element is true, then
-//        point index `working_indices[m]` (the point at `working_points[m]`) is a valid candidate for
-//        inclusion in the final set.
-//
-//        The kd-tree will be built with the `working_points` array. When we query the kd-tree, the
-//        results will be indices into the `working_points` array.
-//
-//        We will iterate over the mask array. We skip any mask elements that are false. For each
-//        mask element that is true, we query the kd-tree for all points within `radius` of the point
-//        and set the mask elements corresponding to those points to false. After visiting a true
-//        mask element, we can add the index `working_indices[m]` to the result set.
-//     */
-//
-//     let mut results = Vec::new();
-//
-//     let working_points: Vec<[f64; D]> = working_indices
-//         .iter()
-//         .map(|i| all_points[*i].coords().into())
-//         .collect();
-//
-//     let mut mask = vec![true; working_indices.len()];
-//     let tree = KdTree::from_slice(&working_points);
-//
-//     for (m, &i) in working_indices.iter().enumerate() {
-//         if !mask[m] {
-//             continue;
-//         }
-//         results.push(i);
-//
-//         let p = SVector::from(working_points[m]);
-//         let within = tree.within(&p, radius);
-//         for w in within {
-//             mask[w.0] = false;
-//         }
-//     }
-//
-//     results
-// }
 
+/// Performs Poisson disk sampling on a set of points in D-dimensional space, returning a mask
+/// indicating which points are retained.
+///
+/// Internally, this function first performs a voxel downsampling of the points at 1/2 the size
+/// of the Poisson disk radius. This is a quick operation that guarantees that at most there will
+/// be about 16 points within the radius of any point in the pre-sampled set. This pre-sampling
+/// reduces the size of the KD tree that needs to be built, and prevents the issue with Kiddo not
+/// returning all points within the radius when the number of points is too large from breaking
+/// the sampling process.
+///
+/// # Arguments
+///
+/// * `points`: A slice of points implementing the `PCoords` trait for the specified dimension `D`.
+/// * `radius`: The radius of the Poisson disk sampling. This value should be positive and non-zero.
+///
+/// returns: IndexMask
 pub fn sample_poisson_disk_all<const D: usize>(
     points: &[impl PCoords<D>],
     radius: f64,
@@ -88,10 +51,8 @@ pub fn sample_poisson_disk_all<const D: usize>(
 mod tests {
     use super::*;
     use crate::Point2;
-    use crate::common::indices::index_vec;
     use rand;
     use rand::Rng;
-    use rand::prelude::SliceRandom;
 
     #[test]
     fn stress_test_poisson_disk() {

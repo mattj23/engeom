@@ -5,6 +5,24 @@ use crate::common::PCoords;
 use crate::na::SVector;
 use parry3d_f64::utils::hashmap::HashMap;
 
+/// Perform a voxel downsample of the given set of points, returning a mask that indicates which
+/// points are retained after the operation.
+///
+/// A voxel downsampling is a relatively fast operation that converts the point coordinates to
+/// integers representing a grid the size of the voxel spacing, and then retains only the first
+/// point encountered in each voxel.
+///
+/// While this doesn't guarantee anything resembling a uniform distribution, it does serve as a
+/// fast and effective pre-filtering step for more complicated downsampling methods, such as the
+/// Poisson disk sampling method which has to construct a spatial tree.
+///
+/// # Arguments
+///
+/// * `points`: A slice of points implementing the `PCoords` trait for the specified dimension `D`.
+/// * `voxel_size`: The size of the voxel grid to use for downsampling. This value should be
+///   positive and non-zero.
+///
+/// returns: IndexMask
 pub fn voxel_downsample<const D: usize>(points: &[impl PCoords<D>], voxel_size: f64) -> IndexMask {
     let mut voxel_map = HashMap::new();
     let mut mask = IndexMask::new(points.len(), false);
