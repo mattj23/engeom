@@ -1,5 +1,6 @@
 //! Common operations on f64 points in D-dimensional space.
 
+use crate::common::PCoords;
 use crate::common::surface_point::SurfacePoint;
 use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector};
 
@@ -27,12 +28,12 @@ use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector};
 /// assert_relative_eq!(angle, std::f64::consts::FRAC_PI_2, epsilon = 1e-6);
 /// ```
 pub fn three_point_angle<const D: usize>(
-    pc: &Point<f64, D>,
-    p1: &Point<f64, D>,
-    p2: &Point<f64, D>,
+    pc: &impl PCoords<D>,
+    p1: &impl PCoords<D>,
+    p2: &impl PCoords<D>,
 ) -> f64 {
-    let v1 = p1 - pc;
-    let v2 = p2 - pc;
+    let v1 = p1.coords() - pc.coords();
+    let v2 = p2.coords() - pc.coords();
     v1.angle(&v2)
 }
 
@@ -55,8 +56,8 @@ pub fn three_point_angle<const D: usize>(
 /// let d = dist(&a, &b);
 /// assert_eq!(d, 2.0);
 /// ```
-pub fn dist<const D: usize>(a: &Point<f64, D>, b: &Point<f64, D>) -> f64 {
-    (a - b).norm()
+pub fn dist<const D: usize>(a: &impl PCoords<D>, b: &impl PCoords<D>) -> f64 {
+    (a.coords() - b.coords()).norm()
 }
 
 /// Returns the midpoint between two points in D-dimensional space.
@@ -78,8 +79,8 @@ pub fn dist<const D: usize>(a: &Point<f64, D>, b: &Point<f64, D>) -> f64 {
 /// let mid = mid_point(&a, &b);
 /// assert_eq!(mid, Point2::new(2.0, 3.0));
 /// ```
-pub fn mid_point<const D: usize>(a: &Point<f64, D>, b: &Point<f64, D>) -> Point<f64, D> {
-    b + (a - b) * 0.5
+pub fn mid_point<const D: usize>(a: &impl PCoords<D>, b: &impl PCoords<D>) -> Point<f64, D> {
+    Point::from(b.coords() + (a.coords() - b.coords()) * 0.5)
 }
 
 /// Returns the mean point of a set of points in D-dimensional space.  The mean is found by summing
@@ -101,12 +102,12 @@ pub fn mid_point<const D: usize>(a: &Point<f64, D>, b: &Point<f64, D>) -> Point<
 /// let mean = mean_point(&points);
 /// assert_eq!(mean, Point2::new(3.0, 4.0));
 /// ```
-pub fn mean_point<const D: usize>(points: &[Point<f64, D>]) -> Point<f64, D> {
+pub fn mean_point<const D: usize>(points: &[impl PCoords<D>]) -> Point<f64, D> {
     let mut sum = SVector::<f64, D>::zeros();
     for p in points {
-        sum += p.coords;
+        sum += p.coords();
     }
-    Point::<f64, D>::from(sum / points.len() as f64)
+    Point::from(sum / points.len() as f64)
 }
 
 /// Computes the weighted mean point of a set of points in D-dimensional space
@@ -119,16 +120,16 @@ pub fn mean_point<const D: usize>(points: &[Point<f64, D>]) -> Point<f64, D> {
 ///
 /// returns: OPoint<f64, Const<{ D }>>
 pub fn mean_point_weighted<const D: usize>(
-    points: &[Point<f64, D>],
+    points: &[impl PCoords<D>],
     weights: &[f64],
 ) -> Point<f64, D> {
     let mut sum = SVector::<f64, D>::zeros();
     let mut total_weight = 0.0;
     for (p, w) in points.iter().zip(weights) {
-        sum += p.coords * *w;
+        sum += p.coords() * *w;
         total_weight += *w;
     }
-    Point::<f64, D>::from(sum / total_weight)
+    Point::from(sum / total_weight)
 }
 
 /// Produces a new set of points by evenly spacing points between `start` and `end` in
@@ -159,14 +160,14 @@ pub fn mean_point_weighted<const D: usize>(
 /// assert_relative_eq!(points[2], Point2::new(2.0, 0.0));
 /// ```
 pub fn evenly_spaced_points<const D: usize>(
-    start: &Point<f64, D>,
-    end: &Point<f64, D>,
+    start: &impl PCoords<D>,
+    end: &impl PCoords<D>,
     num_points: usize,
 ) -> Vec<Point<f64, D>> {
     let mut result = Vec::new();
-    let step = (end - start) / (num_points - 1) as f64;
+    let step = (end.coords() - start.coords()) / (num_points - 1) as f64;
     for i in 0..num_points {
-        result.push(start + step * i as f64);
+        result.push((start.coords() + step * i as f64).into());
     }
     result
 }
@@ -199,14 +200,14 @@ pub fn evenly_spaced_points<const D: usize>(
 /// assert_relative_eq!(points[2], Point2::new(1.5, 0.0));
 /// ```
 pub fn evenly_spaced_points_between<const D: usize>(
-    start: &Point<f64, D>,
-    end: &Point<f64, D>,
+    start: &impl PCoords<D>,
+    end: &impl PCoords<D>,
     num_points: usize,
 ) -> Vec<Point<f64, D>> {
     let mut result = Vec::new();
-    let step = (end - start) / (num_points + 1) as f64;
+    let step = (end.coords() - start.coords()) / (num_points + 1) as f64;
     for i in 1..num_points + 1 {
-        result.push(start + step * i as f64);
+        result.push((start.coords() + step * i as f64).into());
     }
 
     result
@@ -302,21 +303,21 @@ pub fn fill_gaps<const D: usize>(original: &[Point<f64, D>], max_dist: f64) -> V
 /// assert_relative_eq!(max, Point2::new(10.0, 0.0));
 /// ```
 pub fn max_point_in_direction<const D: usize>(
-    points: &[Point<f64, D>],
+    points: &[impl PCoords<D>],
     vector: &SVector<f64, D>,
 ) -> Option<(usize, Point<f64, D>)> {
     let mut max_dist = f64::MIN;
     let mut max_i = None;
 
     for (i, p) in points.iter().enumerate() {
-        let dist = p.coords.dot(vector);
+        let dist = p.coords().dot(vector);
         if dist > max_dist {
             max_dist = dist;
             max_i = Some(i);
         }
     }
 
-    max_i.map(|max_i| (max_i, points[max_i]))
+    max_i.map(|max_i| (max_i, points[max_i].coords().into()))
 }
 
 /// Compute the error of a linear interpolation between two points `p0` and `p1` with respect to a
@@ -347,11 +348,11 @@ pub fn max_point_in_direction<const D: usize>(
 /// assert_relative_eq!(error, 1.0);
 /// ```
 pub fn linear_interpolation_error<const D: usize>(
-    p0: &Point<f64, D>,
-    p1: &Point<f64, D>,
+    p0: &impl PCoords<D>,
+    p1: &impl PCoords<D>,
     p_test: &Point<f64, D>,
 ) -> f64 {
-    let sp = SurfacePoint::new_normalize(*p0, *p1 - *p0);
+    let sp = SurfacePoint::new_normalize(p0.coords().into(), p1.coords() - p0.coords());
     let proj = sp.projection(p_test);
 
     dist(p_test, &proj)
@@ -472,6 +473,14 @@ mod tests {
     use crate::Vector2;
     use crate::geom2::{Curve2, Point2};
     use approx::assert_relative_eq;
+
+    #[test]
+    fn distance_calc() {
+        let p0 = Point2::new(0.0, 0.0);
+        let p1 = Point2::new(3.0, 4.0);
+        let d = dist(&p0, &p1);
+        assert_eq!(d, 5.0); // 3-4-5 triangle
+    }
 
     #[test]
     fn test_simple_reduce() {
