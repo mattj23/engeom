@@ -411,12 +411,13 @@ fn correspondence_matrix(meshes: &[Mesh], transforms: &[Iso3], opts: MMOpts) -> 
         .map(|&(i, j)| {
             let t = transforms[i].inv_mul(&transforms[j]);
             let count = meshes[j]
-                .sample_alignment_candidates(opts.sample_radius)
+                .sample_alignment_points(opts.sample_radius, &meshes[i], &t)
                 .iter()
                 .count() as f64;
             (i, j, count)
         })
         .collect::<Vec<_>>();
+
     for (i, j, count) in collected {
         matrix[(i, j)] = count;
         matrix[(j, i)] = count; // Symmetric matrix

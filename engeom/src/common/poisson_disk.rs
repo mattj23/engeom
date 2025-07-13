@@ -1,9 +1,8 @@
 //! This module contains tools for performing Poisson disk sampling on points in 2D and 3D.
 
 use crate::common::kd_tree::{KdTree, KdTreeSearch, PartialKdTree};
-use crate::common::{voxel_downsample, IndexMask, PCoords};
+use crate::common::{IndexMask, PCoords, voxel_downsample};
 use parry3d_f64::na::Point;
-
 
 /// Performs Poisson disk sampling on a set of points in D-dimensional space, returning a mask
 /// indicating which points are retained.
