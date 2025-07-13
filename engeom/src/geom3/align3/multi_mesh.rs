@@ -21,7 +21,8 @@ use parry3d_f64::query::PointQueryWithLocation;
 use rayon::prelude::*;
 use std::time::Instant;
 
-use crate::geom3::align3::mesh::generate_alignment_points;
+use crate::geom3::align3::mesh::{AlignmentMesh, generate_alignment_points};
+use crate::geom3::mesh::MeshSurfPoint;
 use std::f64::consts::PI;
 
 /// Options for the multi-mesh simultaneous alignment algorithm.
@@ -42,19 +43,8 @@ impl MMOpts {
     }
 }
 
-pub fn multi_mesh_adjustment<'a>(
-    meshes: &[Mesh],
-    opts: MMOpts,
-    initial: Option<&[Iso3]>,
-    uncertainties: Option<&'a [Vec<f64>]>,
-    weight_meshes: Option<&[(f64, Mesh)]>,
-) -> Result<Vec<Align3>> {
-    let transforms = match initial {
-        Some(transforms) => transforms.to_vec(),
-        None => vec![Iso3::identity(); meshes.len()],
-    };
-
-    let matrix = correspondence_matrix(meshes, &transforms, &opts.sample);
+pub fn multi_mesh_adjustment<'a>(meshes: &[AlignmentMesh], opts: MMOpts) -> Result<Vec<Align3>> {
+    let matrix = correspondence_matrix(meshes, &opts.sample);
     let mut corr = &matrix / matrix.max();
     corr.apply(|x| *x = x.sqrt());
 
@@ -94,16 +84,23 @@ pub fn multi_mesh_adjustment<'a>(
     let handles = work_list
         .par_iter()
         .map(|(mesh_i, ref_i)| {
-            let t = transforms[*ref_i].inv_mul(&transforms[*mesh_i]);
+            let t = meshes[*ref_i]
+                .transform()
+                .inv_mul(&meshes[*mesh_i].transform());
             let mut to_test = Vec::new();
-            let samples =
-                generate_alignment_points(&meshes[*mesh_i], &meshes[*ref_i], &t, &opts.sample);
-            for sp in samples {
+            let samples = generate_alignment_points(
+                &meshes[*mesh_i].mesh,
+                &meshes[*ref_i].mesh,
+                &t,
+                &opts.sample,
+            );
+            for mp in samples {
                 to_test.push(TestPoint {
                     mesh_i: *mesh_i,
-                    sp: sp.sp,
+                    mp,
                     ref_i: *ref_i,
                     weight: 1.0, // Default weight, will be adjusted later
+                    uncert: 0.0,
                 })
             }
             to_test
@@ -119,7 +116,7 @@ pub fn multi_mesh_adjustment<'a>(
     // Now we want to create the problem and solve it
     let start = Instant::now();
 
-    let problem = MultiMeshProblem::new(meshes, handles, static_i, opts, initial, uncertainties);
+    let problem = MultiMeshProblem::new(meshes, handles, static_i, opts);
     let (result, report) = LevenbergMarquardt::new().minimize(problem);
     println!("minimize: {:?}", start.elapsed());
     if report.termination.was_successful() {
@@ -147,32 +144,34 @@ pub fn multi_mesh_adjustment<'a>(
 
 struct TestPoint {
     /// The index of the mesh this point belongs to
-    mesh_i: usize,
+    pub mesh_i: usize,
 
-    /// The index of the point in the alignment points denoted by `mesh_i`
-    sp: SurfacePoint3,
+    pub mp: MeshSurfPoint,
 
     /// The index of the mesh this point is being matched to
-    ref_i: usize,
+    pub ref_i: usize,
 
     /// The base weight for this point, which is used to scale the residuals
-    weight: f64,
+    pub weight: f64,
+
+    pub uncert: f64,
 }
 
 impl TestPoint {
-    fn new(mesh_i: usize, sp: SurfacePoint3, ref_i: usize, weight: f64) -> Self {
+    fn new(mesh_i: usize, mp: MeshSurfPoint, ref_i: usize, weight: f64, uncert: f64) -> Self {
         Self {
             mesh_i,
-            sp,
+            mp,
             ref_i,
             weight,
+            uncert,
         }
     }
 }
 
 struct MultiMeshProblem<'a> {
     /// The meshes that are being aligned
-    meshes: &'a [Mesh],
+    meshes: &'a [AlignmentMesh<'a>],
 
     /// The collection of alignment point handles, each specifying which mesh/index it belongs to,
     /// and which mesh it is being matched to.  This allows the same point to be used against
@@ -181,11 +180,11 @@ struct MultiMeshProblem<'a> {
 
     /// The collection of sample points after they've been moved by the optimizer. These correspond
     /// to the point handles, and are used to compute the residuals.
-    moved: Vec<SurfacePoint3>,
+    moved: Vec<MeshSurfPoint>,
 
     /// A collection of the closest points on the mesh surfaces which correspond with the point
     /// handles. The i-th entry corresponds to the i-th point handle.
-    closest: Vec<SurfacePoint3>,
+    closest: Vec<MeshSurfPoint>,
 
     /// A collection of weights for each point handle, which is used to scale the residuals. The
     /// i-th entry corresponds to the i-th point handle.
@@ -197,62 +196,36 @@ struct MultiMeshProblem<'a> {
 
     /// The options for the multi-mesh optimization, such as the search radius and sample radius.
     options: MMOpts,
-
-    /// Optional standard deviation uncertainties for each vertex in the meshes. The number of
-    /// collections must match the number of meshes, and each collection must have the same length
-    /// as the number of vertices in the corresponding mesh.
-    uncertainties: Option<&'a [Vec<f64>]>,
-
-    /// If we're working with point uncertainties, we can pre-calculate the uncertainties for each
-    /// test point, as the test points don't move on their mesh.
-    handle_uncertainties: Vec<f64>,
-}
-
-fn un_cert(point: &Point3, target: &Mesh, by_vertex: &[f64]) -> (f64, SurfacePoint3) {
-    let (prj, (fi, tpl)) = target
-        .tri_mesh()
-        .project_local_point_and_get_location(&point, false);
-
-    let face = target.faces()[fi as usize];
-    let normal = target.tri_mesh().triangle(fi).normal().unwrap();
-
-    let u0 = by_vertex[face[0] as usize];
-    let u1 = by_vertex[face[1] as usize];
-    let u2 = by_vertex[face[2] as usize];
-
-    let st_dev = if let Some(bc) = tpl.barycentric_coordinates() {
-        u0 * bc[0] + u1 * bc[1] + u2 * bc[2]
-    } else {
-        u0.max(u1).max(u2)
-    };
-
-    (st_dev.powi(2), SurfacePoint3::new(prj.point, normal))
 }
 
 impl<'a> MultiMeshProblem<'a> {
     fn new(
-        meshes: &'a [Mesh],
+        meshes: &'a [AlignmentMesh],
         point_handles: Vec<TestPoint>,
         static_i: usize,
         options: MMOpts,
-        initial: Option<&[Iso3]>,
-        uncertainties: Option<&'a [Vec<f64>]>,
     ) -> Self {
-        let mean_points = meshes.iter().map(|m| m.aabb().center()).collect::<Vec<_>>();
-        let params = ParamHandler::new(static_i, mean_points, initial);
+        let mean_points = meshes
+            .iter()
+            .map(|m| m.mesh.aabb().center())
+            .collect::<Vec<_>>();
+        let initial = meshes.iter().map(|m| m.transform()).collect::<Vec<_>>();
+
+        let params = ParamHandler::new(static_i, mean_points, Some(&initial));
         let count: usize = point_handles.len();
 
+        // TODO: we can pre-compute the uncertainties for point handles
         // If uncertainties are provided, we need to measure the uncertainties of each test point
-        let handle_uncertainties = if let Some(u) = uncertainties {
-            let mut working = vec![0.0; count];
-            for (i, h) in point_handles.iter().enumerate() {
-                let m = &meshes[h.mesh_i];
-                working[i] = un_cert(&h.sp.point, m, &u[h.mesh_i]).0;
-            }
-            working
-        } else {
-            Vec::new()
-        };
+        // let handle_uncertainties = if let Some(u) = uncertainties {
+        //     let mut working = vec![0.0; count];
+        //     for (i, h) in point_handles.iter().enumerate() {
+        //         let m = &meshes[h.mesh_i];
+        //         working[i] = un_cert(&h.sp.point, m, &u[h.mesh_i]).0;
+        //     }
+        //     working
+        // } else {
+        //     Vec::new()
+        // };
 
         let mut item = Self {
             meshes,
@@ -262,8 +235,6 @@ impl<'a> MultiMeshProblem<'a> {
             weight: vec![0.0; count],
             params,
             options,
-            uncertainties,
-            handle_uncertainties,
         };
 
         item.move_points();
@@ -276,38 +247,39 @@ impl<'a> MultiMeshProblem<'a> {
             .par_iter()
             .map(|i| {
                 let h = &self.point_handles[*i];
-                let ref_cloud = &self.meshes[h.ref_i];
+                let ref_mesh = &self.meshes[h.ref_i];
                 let t = self.params.relative_transform(h.mesh_i, h.ref_i);
-                let moved = &t * h.sp;
 
-                let (wu, closest) = match self.uncertainties {
-                    Some(u) => {
-                        // Get the standard deviation (uncertainty) for the point along with the
-                        // actual closest surface point/normal on the reference mesh.
-                        let (sd, sp) = un_cert(&moved.point, ref_cloud, &u[h.ref_i]);
-                        let hsd = self.handle_uncertainties[*i];
+                let moved = h.mp.transformed_by(&t);
+                let closest = ref_mesh.mesh.surf_closest_to(&moved.point());
 
-                        // Now we combine the uncertainties and get the peak height of a gaussian
-                        let peak = 1.0 / (2.0 * PI * (sd + hsd)).sqrt();
-                        // let peak = 1.0 / (2.0 * PI * (sd + hsd));
-                        // let peak = (sd + hsd).sqrt();
-                        (peak, sp)
-                    }
-                    None => (1.0, ref_cloud.surf_closest_to(&moved.point).sp),
+                // TODO: Uncertainties here for closest
+
+                // let (wu, closest) = match self.uncertainties {
+                //     Some(u) => {
+                //         // Get the standard deviation (uncertainty) for the point along with the
+                //         // actual closest surface point/normal on the reference mesh.
+                //         let (sd, sp) = un_cert(&moved.point, ref_mesh, &u[h.ref_i]);
+                //         let hsd = self.handle_uncertainties[*i];
+                //
+                //         // Now we combine the uncertainties and get the peak height of a gaussian
+                //         let peak = 1.0 / (2.0 * PI * (sd + hsd)).sqrt();
+                //         (peak, sp)
+                //     }
+                //     None => (1.0, ref_mesh.surf_closest_to(&moved.point).sp),
+                // };
+
+                // Calculate the different weights
+                let weight_d = distance_weight(dist(&moved, &closest), self.options.search_radius);
+                let weight_n = if self.options.respect_normals {
+                    normal_weight(&moved.normal(), &closest.normal())
+                } else {
+                    1.0
                 };
 
-                let mut w = h.weight
-                    * wu
-                    * distance_weight(
-                        dist(&moved.point, &closest.point),
-                        self.options.search_radius,
-                    );
+                let weight = h.weight * weight_d * weight_n;
 
-                if self.options.respect_normals {
-                    w *= normal_weight(&moved.normal.into_inner(), &closest.normal.into_inner());
-                }
-
-                (*i, moved, closest, w)
+                (*i, moved, closest, weight)
             })
             .collect::<Vec<_>>();
 
@@ -317,6 +289,10 @@ impl<'a> MultiMeshProblem<'a> {
             self.weight[i] = w;
         }
     }
+}
+
+fn is_zero(x: f64) -> bool {
+    x.abs() < 1e-12
 }
 
 impl<'a> LeastSquaresProblem<f64, Dyn, Dyn> for MultiMeshProblem<'a> {
@@ -342,8 +318,8 @@ impl<'a> LeastSquaresProblem<f64, Dyn, Dyn> for MultiMeshProblem<'a> {
             //  - i is the index of the handle and the residual we're working on
             //  - p is the moved sample surface point
             //  - c is the closest point
-            let v = p.point - c.point;
-            let d = v.dot(&c.normal);
+            let v = p.point() - c.point();
+            let d = v.dot(&c.normal());
             res[i] = self.weight[i] * d.abs();
         }
 
@@ -367,13 +343,13 @@ impl<'a> LeastSquaresProblem<f64, Dyn, Dyn> for MultiMeshProblem<'a> {
 
             // values0 contains the derivatives of the residual with respect to the transform
             // of the test cloud
-            let values0 = point_plane_jacobian(&p.point, &c, &self.params.params[test_i]);
+            let values0 = point_plane_jacobian(&p.point(), &c.sp, &self.params.params[test_i]);
             self.params
                 .set_jacobian(&mut jac, i, test_i, &(values0 * self.weight[i]));
 
             // values1 contains the derivatives of the residual with respect to the transform
             // of the reference cloud
-            let values1 = point_plane_jacobian_rev(&p.point, &c, &self.params.params[ref_i]);
+            let values1 = point_plane_jacobian_rev(&p.point(), &c.sp, &self.params.params[ref_i]);
             self.params
                 .set_jacobian(&mut jac, i, ref_i, &(values1 * self.weight[i]));
         }
@@ -382,7 +358,28 @@ impl<'a> LeastSquaresProblem<f64, Dyn, Dyn> for MultiMeshProblem<'a> {
     }
 }
 
-fn correspondence_matrix(meshes: &[Mesh], transforms: &[Iso3], params: &GAPParams) -> DMatrix<f64> {
+fn un_cert(point: &Point3, target: &Mesh, by_vertex: &[f64]) -> (f64, SurfacePoint3) {
+    let (prj, (fi, tpl)) = target
+        .tri_mesh()
+        .project_local_point_and_get_location(&point, false);
+
+    let face = target.faces()[fi as usize];
+    let normal = target.tri_mesh().triangle(fi).normal().unwrap();
+
+    let u0 = by_vertex[face[0] as usize];
+    let u1 = by_vertex[face[1] as usize];
+    let u2 = by_vertex[face[2] as usize];
+
+    let st_dev = if let Some(bc) = tpl.barycentric_coordinates() {
+        u0 * bc[0] + u1 * bc[1] + u2 * bc[2]
+    } else {
+        u0.max(u1).max(u2)
+    };
+
+    (st_dev.powi(2), SurfacePoint3::new(prj.point, normal))
+}
+
+fn correspondence_matrix(meshes: &[AlignmentMesh], params: &GAPParams) -> DMatrix<f64> {
     // We want to build a correspondence matrix which will help us determine which mesh will be the
     // static reference mesh.  In the matrix, each i, j entry will be the number of sample points
     // in mesh j which are a good match for mesh i.  The row with the highest sum of its columns
@@ -409,8 +406,8 @@ fn correspondence_matrix(meshes: &[Mesh], transforms: &[Iso3], params: &GAPParam
     let collected = work_list
         .par_iter()
         .map(|&(i, j)| {
-            let t = transforms[i].inv_mul(&transforms[j]);
-            let samples = generate_alignment_points(&meshes[j], &meshes[i], &t, params);
+            let t = meshes[i].transform().inv_mul(&meshes[j].transform());
+            let samples = generate_alignment_points(&meshes[j].mesh, &meshes[i].mesh, &t, params);
 
             (i, j, samples.len() as f64)
         })

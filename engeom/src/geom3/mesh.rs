@@ -15,7 +15,9 @@ mod queries;
 pub mod sampling;
 mod uv_mapping;
 
+use crate::common::PCoords;
 use crate::geom3::{Aabb3, IsoExtensions3};
+use crate::na::SVector;
 use crate::{Iso3, Point2, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
 pub use collisions::MeshCollisionSet;
 pub use edges::MeshEdges;
@@ -23,8 +25,6 @@ pub use half_edge::HalfEdgeMesh;
 use parry3d_f64::shape::{TriMesh, TriMeshFlags};
 use parry3d_f64::{shape, transformation};
 pub use uv_mapping::UvMapping;
-use crate::common::PCoords;
-use crate::na::SVector;
 
 /// A struct which represents a point on the surface of a mesh, including the index of the face
 /// on which it lies, its barycentric coordinates, and the point/normal representation in space.
@@ -43,12 +43,47 @@ pub struct MeshSurfPoint {
     pub sp: SurfacePoint3,
 }
 
+impl MeshSurfPoint {
+    /// Create a new `MeshSurfPoint` from the given face index, barycentric coordinates, and
+    /// surface point.
+    pub fn new(face_index: u32, bc: [f64; 3], sp: SurfacePoint3) -> Self {
+        Self { face_index, bc, sp }
+    }
+
+    /// Get the point in space corresponding to this surface point.
+    pub fn point(&self) -> Point3 {
+        self.sp.point
+    }
+
+    /// Get the normal at this surface point.
+    pub fn normal(&self) -> UnitVec3 {
+        self.sp.normal
+    }
+
+    pub fn transformed_by(&self, iso: &Iso3) -> Self {
+        Self {
+            face_index: self.face_index,
+            bc: self.bc,
+            sp: iso * self.sp,
+        }
+    }
+}
+
+impl Default for MeshSurfPoint {
+    fn default() -> Self {
+        Self {
+            face_index: 0,
+            bc: [0.0, 0.0, 0.0],
+            sp: SurfacePoint3::default(),
+        }
+    }
+}
+
 impl PCoords<3> for MeshSurfPoint {
     fn coords(&self) -> SVector<f64, 3> {
         self.sp.point.coords
     }
 }
-
 
 #[derive(Clone)]
 pub struct Mesh {

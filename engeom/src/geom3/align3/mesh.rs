@@ -8,6 +8,100 @@ use crate::{Iso3, KdTree3, Mesh, SvdBasis3, To2D, TransformBy};
 use parry2d_f64::transformation::convex_hull;
 use std::num::NonZero;
 
+pub struct NearMeshWeight<'a> {
+    mesh: &'a Mesh,
+    weight: f64,
+    max_dist: f64,
+    max_angle: f64,
+}
+
+impl <'a> NearMeshWeight<'a> {
+    /// Creates a new NearMeshWeight instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `mesh`: The mesh to compute the weight against.
+    /// * `weight`: The weight to apply to the mesh points.
+    /// * `max_dist`: The maximum distance to consider for the weight.
+    /// * `max_angle`: The maximum angle between normals to consider for the weight.
+    pub fn new(mesh: &'a Mesh, weight: f64, max_dist: f64, max_angle: f64) -> Self {
+        Self {
+            mesh,
+            weight,
+            max_dist,
+            max_angle,
+        }
+    }
+}
+
+impl MeshWeight for NearMeshWeight<'_> {
+    fn weight(&self, point: &MeshSurfPoint) -> f64 {
+        // Find the nearest point in the mesh to the given point
+        let nearest = self.mesh.surf_closest_to(&point.sp.point);
+        let dist = dist(&nearest.sp, &point.sp);
+
+        // If the distance is greater than the maximum distance, return 0.0
+        if dist > self.max_dist {
+            return 0.0;
+        }
+
+        // Check the angle between the normals
+        if nearest.sp.normal.angle(&point.sp.normal) > self.max_angle {
+            return 0.0;
+        }
+
+        // Return the weight if all conditions are met
+        self.weight
+    }
+}
+
+pub trait MeshWeight {
+    /// Returns the weight of the mesh point.
+    ///
+    /// # Arguments
+    ///
+    /// * `point`: The mesh point for which to compute the weight.
+    ///
+    /// returns: f64
+    fn weight(&self, point: &MeshSurfPoint) -> f64;
+}
+
+pub struct AlignmentMesh<'a> {
+    pub mesh: &'a Mesh,
+    pub uncertainty: Option<&'a [f64]>,
+    pub initial: Option<&'a Iso3>,
+    pub weights: Option<&'a [Box<dyn MeshWeight + Sync>]>,
+}
+
+impl <'a> AlignmentMesh<'a> {
+    /// Creates a new `AlignmentMesh` instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `mesh`: The mesh to align.
+    /// * `uncertainty`: Optional uncertainty values for the mesh points.
+    /// * `initial`: Optional initial transformation for the mesh.
+    /// * `weights`: Optional weights for the mesh points.
+    pub fn new(
+        mesh: &'a Mesh,
+        uncertainty: Option<&'a [f64]>,
+        initial: Option<&'a Iso3>,
+        weights: Option<&'a [Box<dyn MeshWeight + Sync>]>,
+    ) -> Self {
+        Self {
+            mesh,
+            uncertainty,
+            initial,
+            weights,
+        }
+    }
+
+    pub fn transform(&self) -> Iso3 {
+        self.initial.unwrap_or(&Iso3::identity()).clone()
+    }
+}
+
+
 #[derive(Debug, Clone, Copy)]
 pub struct GAPParams {
     pub sample_spacing: f64,
