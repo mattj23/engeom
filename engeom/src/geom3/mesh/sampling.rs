@@ -1,13 +1,23 @@
 use super::Mesh;
-use crate::common::SurfacePointCollection;
 use crate::common::kd_tree::KdTreeSearch;
 use crate::common::points::{dist, mean_point};
 use crate::common::poisson_disk::sample_poisson_disk_all;
+use crate::common::{SurfacePointCollection, linear_space};
 use crate::{Iso3, KdTree3, Point3, SurfacePoint3, SvdBasis3, To2D, TransformBy};
 use parry2d_f64::transformation::convex_hull;
 use rand::prelude::SliceRandom;
 use std::f64::consts::PI;
 use std::num::NonZero;
+
+#[derive(Debug, Clone, Copy)]
+pub struct FacePoint {
+    pub face_index: u32,
+    pub bc: [f64; 3],
+}
+
+fn bc_to_point(bc: [f64; 3], a: &Point3, b: &Point3, c: &Point3) -> Point3 {
+    (a.coords * bc[0] + b.coords * bc[1] + c.coords * bc[2]).into()
+}
 
 impl Mesh {
     pub fn sample_uniform(&self, n: usize) -> Vec<SurfacePoint3> {
@@ -47,6 +57,38 @@ impl Mesh {
         }
 
         result
+    }
+
+    pub fn sample_surface_dense(&self, max_spacing: f64) -> Vec<FacePoint> {
+        let mut sampled = Vec::with_capacity(self.faces().len());
+        for (face_i, vert) in self.faces().iter().enumerate() {
+            let a = self.vertices()[vert[0] as usize];
+            let b = self.vertices()[vert[1] as usize];
+            let c = self.vertices()[vert[2] as usize];
+
+            if dist(&a, &b) < max_spacing
+                && dist(&a, &c) < max_spacing
+                && dist(&b, &c) < max_spacing
+            {
+                // If all distances between vertices are less than the max spacing, we'll just
+                // sample the centroid of the face, as an equally sized neighbor should have its
+                // centroid within the max spacing distance of this triangle's centroid.
+                sampled.push(FacePoint {
+                    face_index: face_i as u32,
+                    bc: [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0],
+                });
+            } else {
+                let grid = barycentric_grid(&a, &b, &c, max_spacing);
+                for bc in grid {
+                    sampled.push(FacePoint {
+                        face_index: face_i as u32,
+                        bc,
+                    });
+                }
+            }
+        }
+
+        sampled
     }
 
     pub fn sample_dense(&self, max_spacing: f64) -> Vec<SurfacePoint3> {
@@ -307,9 +349,59 @@ pub fn sac_check(
     true
 }
 
+fn barycentric_grid(a: &Point3, b: &Point3, c: &Point3, max_spacing: f64) -> Vec<[f64; 3]> {
+    let mut result = Vec::new();
+    let va = a - bc_to_point([0.0, 0.5, 0.5], &a, &b, &c);
+    let vb = b - bc_to_point([0.5, 0.0, 0.5], &a, &b, &c);
+    let vc = c - bc_to_point([0.5, 0.5, 0.0], &a, &b, &c);
+
+    let na = (va.norm() / max_spacing).ceil() as usize + 3;
+    let nb = (vb.norm() / max_spacing).ceil() as usize + 3;
+    let nc = (vc.norm() / max_spacing).ceil() as usize + 3;
+
+    if na >= nb && na >= nc {
+        let op_edge = (b - c).norm();
+        for (bca, bcb, bcc) in bc_order(na, op_edge, max_spacing) {
+            result.push([bca, bcb, bcc]);
+        }
+    } else if nb >= na && nb >= nc {
+        let op_edge = (a - c).norm();
+        for (bcb, bcc, bca) in bc_order(nb, op_edge, max_spacing) {
+            result.push([bca, bcb, bcc]);
+        }
+    } else {
+        let op_edge = (a - b).norm();
+        for (bcc, bcb, bca) in bc_order(nc, op_edge, max_spacing) {
+            result.push([bca, bcb, bcc]);
+        }
+    }
+
+    result
+}
+
+fn bc_order(n0: usize, op_edge: f64, max_spacing: f64) -> Vec<(f64, f64, f64)> {
+    let mut result = Vec::new();
+    let spacing = 1.0 / n0 as f64;
+    for bc0 in linear_space(spacing * 0.5, 1.0 - spacing * 0.5, n0).iter() {
+        let leftover = 1.0 - bc0;
+        let width = (1.0 - bc0) * op_edge;
+        let nw = (width / max_spacing).ceil() as usize + 3;
+        let sw = 1.0 / nw as f64;
+        for bc1 in linear_space(sw * 0.5, 1.0 - sw * 0.5, nw).iter() {
+            let bc2 = (1.0 - bc1) * leftover;
+            let bc1 = bc1 * leftover;
+            result.push((*bc0, bc1, bc2));
+        }
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::kd_tree::KdTree;
+    use crate::common::points::evenly_spaced_points_between;
 
     #[test]
     fn check_kiddo_bug() {
@@ -323,6 +415,67 @@ mod tests {
         for sp in &sampled {
             let neighbors = tree.within(&sp.point, r);
             assert_eq!(neighbors.len(), 1, "Missed duplicate");
+        }
+    }
+
+    #[test]
+    fn barycentric_grid_spacing() {
+        // The following conditions should be true:
+        // 1. No point on the edge of the triangle is more than max_spacing/2 from the nearest grid
+        //    point.
+        // 2. No point in the grid is more than max_spacing from another point in the grid.
+        let a = Point3::new(0.0, 0.0, 0.0);
+        let b = Point3::new(1.0, 0.0, 0.0);
+        let c = Point3::new(0.0, 1.0, 0.0);
+
+        let max_spacing = 0.1;
+        let grid = barycentric_grid(&a, &b, &c, max_spacing);
+
+        // Check for NAN
+        for bc in &grid {
+            assert!(
+                !bc.iter().any(|&x| x.is_nan()),
+                "Barycentric coordinate contains NaN: {:?}",
+                bc
+            );
+        }
+
+        let grid_points = grid
+            .iter()
+            .map(|bc| bc_to_point(*bc, &a, &b, &c))
+            .collect::<Vec<_>>();
+
+        // Check for NAN
+        for point in &grid_points {
+            assert!(
+                !point.coords.iter().any(|&x| x.is_nan()),
+                "Point contains NaN: {:?}",
+                point
+            );
+        }
+
+        let tree = KdTree::new(&grid_points);
+
+        // Check that no point in the grid is more than max_spacing from another point in the grid
+        for point in &grid_points {
+            let neighbors = tree.within(point, max_spacing);
+            assert!(neighbors.len() > 1, "Point {:?} has no neighbors", point);
+        }
+
+        // Check that no point on the edge of the triangle is more than max_spacing/2 from the
+        // nearest grid point
+        let mut edge_points = evenly_spaced_points_between(&a, &b, 100);
+        edge_points.extend(evenly_spaced_points_between(&b, &c, 100));
+        edge_points.extend(evenly_spaced_points_between(&c, &a, 100));
+
+        for edge_point in edge_points {
+            let (_, d) = tree.nearest_one(&edge_point);
+            assert!(
+                d <= max_spacing * 0.7,
+                "Edge point {:?} is too far from nearest grid point: {}",
+                edge_point,
+                d
+            );
         }
     }
 }
