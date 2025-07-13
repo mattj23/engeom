@@ -8,6 +8,7 @@ use crate::metrology::Distance3;
 use crate::point_cloud::Lptf3Load;
 use engeom::common::points::dist;
 use engeom::common::{Selection, SplitResult};
+use engeom::geom3::align3::generate_alignment_points;
 use numpy::ndarray::{Array1, Array2, ArrayD};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray2};
 use pyo3::exceptions::{PyIOError, PyValueError};
@@ -99,7 +100,7 @@ impl Mesh {
 
     fn surface_closest_to(&self, x: f64, y: f64, z: f64) -> SurfacePoint3 {
         let p = engeom::Point3::new(x, y, z);
-        SurfacePoint3::from_inner(self.inner.surf_closest_to(&p))
+        SurfacePoint3::from_inner(self.inner.surf_closest_to(&p).sp)
     }
 
     fn append(&mut self, other: &Mesh) -> PyResult<()> {
@@ -236,11 +237,11 @@ impl Mesh {
 
         for (i, point) in points.iter().enumerate() {
             let closest = self.inner.surf_closest_to(point);
-            let normal_dev = closest.scalar_projection(point);
+            let normal_dev = closest.sp.scalar_projection(point);
 
             result[i] = match mode {
                 // Copy the sign of the normal deviation
-                DeviationMode::Point => dist(&closest.point, point) * normal_dev.signum(),
+                DeviationMode::Point => dist(&closest.sp.point, point) * normal_dev.signum(),
                 DeviationMode::Plane => normal_dev,
             }
         }
@@ -274,15 +275,15 @@ impl Mesh {
     }
 
     fn sample_poisson<'py>(&self, py: Python<'py>, radius: f64) -> Bound<'py, PyArray2<f64>> {
-        let sps = self.inner.sample_poisson(radius);
-        let mut result = Array2::zeros((sps.len(), 6));
-        for (i, sp) in sps.iter().enumerate() {
-            result[[i, 0]] = sp.point.x;
-            result[[i, 1]] = sp.point.y;
-            result[[i, 2]] = sp.point.z;
-            result[[i, 3]] = sp.normal.x;
-            result[[i, 4]] = sp.normal.y;
-            result[[i, 5]] = sp.normal.z;
+        let mps = self.inner.sample_poisson(radius);
+        let mut result = Array2::zeros((mps.len(), 6));
+        for (i, mp) in mps.iter().enumerate() {
+            result[[i, 0]] = mp.sp.point.x;
+            result[[i, 1]] = mp.sp.point.y;
+            result[[i, 2]] = mp.sp.point.z;
+            result[[i, 3]] = mp.sp.normal.x;
+            result[[i, 4]] = mp.sp.normal.y;
+            result[[i, 5]] = mp.sp.normal.z;
         }
         result.into_pyarray(py)
     }
@@ -290,14 +291,27 @@ impl Mesh {
     fn sample_alignment_points<'py>(
         &self,
         py: Python<'py>,
-        max_spacing: f64,
         reference: &Mesh,
         iso: Iso3,
+        max_spacing: f64,
+        max_neighbor_angle: f64, // PI / 3.0
+        out_of_plane_ratio: f64, // 1 /20.0
+        centroid_ratio: f64,     // 1.0
+        filter_distances: Option<f64>, // Some(3.0)
     ) -> Bound<'py, PyArray2<f64>> {
-        let sps =
-            self.inner
-                .sample_alignment_points(max_spacing, &reference.inner, iso.get_inner());
-        let result = points_to_array(&sps);
+        let mps = generate_alignment_points(
+            &self.inner,
+            &reference.inner,
+            iso.get_inner(),
+            max_spacing,
+            max_neighbor_angle,
+            out_of_plane_ratio,
+            centroid_ratio,
+            filter_distances,
+        );
+        let points = mps.into_iter().map(|mp| mp.sp.point).collect::<Vec<_>>();
+
+        let result = points_to_array(&points);
         result.into_pyarray(py)
     }
 

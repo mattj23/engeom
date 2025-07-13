@@ -6,9 +6,11 @@ pub mod multi_param;
 mod points_to_cloud;
 mod points_to_mesh;
 mod rotations;
+mod mesh;
 
 use crate::geom3::{Iso3, Point3, Vector3};
 use parry3d_f64::na::{Translation3, UnitQuaternion, Vector6};
+use crate::Mesh;
 
 type T3Storage = Vector6<f64>;
 
@@ -17,6 +19,7 @@ pub use self::multi_mesh::{MMOpts, multi_mesh_adjustment};
 pub use self::points_to_cloud::points_to_cloud;
 pub use self::points_to_mesh::points_to_mesh;
 pub use self::rotations::RotationMatrices;
+pub use self::mesh::generate_alignment_points;
 
 #[derive(Clone, Copy, Debug)]
 pub enum SampleMode {
@@ -53,6 +56,18 @@ pub fn normal_weight(n: &Vector3, n_ref: &Vector3) -> f64 {
     // If the normals are pointing in opposite directions, the dot product will be negative,
     // so we clamp it to 0.0, otherwise we want to return 1
     n.dot(&n_ref).ceil().max(0.0)
+}
+
+
+pub trait MeshWeight {
+
+}
+
+pub struct AlignmentMesh<'a> {
+    pub mesh: &'a Mesh,
+    pub uncertainty: Option<&'a [f64]>,
+    pub initial: Option<&'a Iso3>,
+    pub weights: Option<&'a [Box<dyn MeshWeight>]>,
 }
 
 /// This struct manages the parameters for a transformation which is expressed as rotations around

@@ -1,13 +1,36 @@
 //! Distance queries and measurements on meshes
 
-use super::Mesh;
+use super::{Mesh, MeshSurfPoint};
 use crate::common::indices::chained_indices;
-use crate::{Curve3, Iso3, Plane3, Point3, SurfacePoint3};
+use crate::{Curve3, Iso3, Plane3, Point3, Result, SurfacePoint3};
 use parry3d_f64::query::{IntersectResult, PointProjection, PointQueryWithLocation, SplitResult};
 use parry3d_f64::shape::TrianglePointLocation;
 use std::f64::consts::PI;
 
 impl Mesh {
+    /// Get the point and normal of a position on the mesh given a face ID and the barycentric
+    /// coordinates of interest within the face.
+    ///
+    /// If the face ID is invalid or the normal is invalid, an error is returned.
+    ///
+    /// # Arguments
+    ///
+    /// * `face_id`: The ID of the face to query.
+    /// * `bc`: An array of barycentric coordinates [u, v, w] where u + v + w = 1.0.
+    ///
+    /// returns: Result<SurfacePoint<3>, Box<dyn Error, Global>>
+    pub fn at_barycentric(&self, face_id: u32, bc: [f64; 3]) -> Result<SurfacePoint3> {
+        if face_id >= self.faces().len() as u32 {
+            return Err("Invalid face ID".into());
+        }
+
+        let face = self.shape.triangle(face_id);
+        let coords = face.a.coords * bc[0] + face.b.coords * bc[1] + face.c.coords * bc[2];
+        let normal = face.normal().ok_or("No face normal found")?;
+
+        Ok(SurfacePoint3::new(coords.into(), normal))
+    }
+
     pub fn face_closest_to(&self, point: &Point3) -> u32 {
         let result = self
             .shape
@@ -16,14 +39,23 @@ impl Mesh {
         tri_id
     }
 
-    pub fn surf_closest_to(&self, point: &Point3) -> SurfacePoint3 {
+    pub fn surf_closest_to(&self, point: &Point3) -> MeshSurfPoint {
         let result = self
             .shape
             .project_local_point_and_get_location(point, self.is_solid);
-        let (projection, (tri_id, _location)) = result;
+        let (projection, (tri_id, location)) = result;
         let triangle = self.shape.triangle(tri_id);
-        let normal = triangle.normal().unwrap(); // When could this fail? On a degenerate tri?
-        SurfacePoint3::new(projection.point, normal)
+        let normal = triangle.normal().expect("Triangle doesn't have a normal");
+        let sp = SurfacePoint3::new(projection.point, normal);
+        let bc = location
+            .barycentric_coordinates()
+            .expect("Barycentric coordinates should be valid");
+
+        MeshSurfPoint {
+            face_index: tri_id,
+            bc,
+            sp,
+        }
     }
 
     pub fn point_closest_to(&self, point: &Point3) -> Point3 {
@@ -80,7 +112,7 @@ impl Mesh {
             .shape
             .project_local_point_and_get_location_with_max_dist(&point, self.is_solid, max_dist);
         if let Some((prj, (id, loc))) = result {
-            let local = point - prj.point;
+            let local = point - &prj.point;
             let triangle = self.shape.triangle(id);
             if let Some(normal) = triangle.normal() {
                 let angle = normal.angle(&local).abs();

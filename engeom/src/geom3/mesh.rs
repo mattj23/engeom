@@ -23,6 +23,32 @@ pub use half_edge::HalfEdgeMesh;
 use parry3d_f64::shape::{TriMesh, TriMeshFlags};
 use parry3d_f64::{shape, transformation};
 pub use uv_mapping::UvMapping;
+use crate::common::PCoords;
+use crate::na::SVector;
+
+/// A struct which represents a point on the surface of a mesh, including the index of the face
+/// on which it lies, its barycentric coordinates, and the point/normal representation in space.
+/// This representation has no link back to the original mesh, so the face index and barycentric
+/// coordinates will be invalid if (1) the mesh is modified, or (2) if you attempt to use them on
+/// a different mesh.
+#[derive(Debug, Clone, Copy)]
+pub struct MeshSurfPoint {
+    /// The index of the face on which this point lies.
+    pub face_index: u32,
+
+    /// The barycentric coordinates of the point on the face.
+    pub bc: [f64; 3],
+
+    /// The surface point (point + normal) corresponding to this barycentric coordinate.
+    pub sp: SurfacePoint3,
+}
+
+impl PCoords<3> for MeshSurfPoint {
+    fn coords(&self) -> SVector<f64, 3> {
+        self.sp.point.coords
+    }
+}
+
 
 #[derive(Clone)]
 pub struct Mesh {

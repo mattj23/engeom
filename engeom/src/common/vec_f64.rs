@@ -1,5 +1,21 @@
 //! This module contains a set of common functions for working with vectors and slices of f64 values
 
+pub fn mean_value(values: &[f64]) -> f64 {
+    if values.is_empty() {
+        return f64::NAN; // Return NaN if the slice is empty
+    }
+    values.iter().sum::<f64>() / values.len() as f64
+}
+
+pub fn mean_and_stdev(values: &[f64]) -> Option<(f64, f64)> {
+    if values.is_empty() {
+        return None;
+    }
+    let mean = mean_value(values);
+    let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / values.len() as f64;
+    Some((mean, variance.sqrt()))
+}
+
 /// Checks if a slice contains any NaN values
 ///
 /// # Arguments

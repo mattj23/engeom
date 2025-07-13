@@ -148,8 +148,12 @@ mod tests {
     #[test]
     fn test_points_cloud_box() {
         let box_mesh = rotated_box_mesh();
+        let surface_points = box_mesh.sample_poisson(0.1)
+            .into_iter()
+            .map(|p| p.sp)
+            .collect::<Vec<_>>();
 
-        let base_cloud = PointCloud::from_surface_points(&box_mesh.sample_poisson(0.1));
+        let base_cloud = PointCloud::from_surface_points(&surface_points);
         let tree = base_cloud.create_matched_tree().unwrap();
         let ref_cloud = PointCloudKdTree::try_new(&base_cloud, &tree).unwrap();
 

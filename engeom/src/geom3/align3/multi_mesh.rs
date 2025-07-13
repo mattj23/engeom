@@ -13,7 +13,6 @@ use crate::geom3::Align3;
 use crate::geom3::align3::jacobian::{point_plane_jacobian, point_plane_jacobian_rev};
 use crate::geom3::align3::multi_param::ParamHandler;
 use crate::geom3::align3::{distance_weight, normal_weight};
-use crate::geom3::mesh::sampling::sac_ref_check;
 use crate::na::{DMatrix, Dyn, Matrix, Owned, U1, Vector};
 use crate::{Iso3, Mesh, Point3, SurfacePoint3};
 use faer::prelude::default;
@@ -22,6 +21,7 @@ use parry3d_f64::query::PointQueryWithLocation;
 use rayon::prelude::*;
 use std::time::Instant;
 
+use crate::geom3::align3::mesh::generate_alignment_points;
 use std::f64::consts::PI;
 
 /// Options for the multi-mesh simultaneous alignment algorithm.
@@ -96,12 +96,20 @@ pub fn multi_mesh_adjustment<'a>(
         .map(|(mesh_i, ref_i)| {
             let t = transforms[*ref_i].inv_mul(&transforms[*mesh_i]);
             let mut to_test = Vec::new();
-            for sp in
-                meshes[*mesh_i].sample_alignment_points(opts.sample_radius, &meshes[*ref_i], &t)
-            {
+            let samples = generate_alignment_points(
+                &meshes[*mesh_i],
+                &meshes[*ref_i],
+                &t,
+                opts.sample_radius,
+                PI / 3.0,
+                1.0 / 20.0,
+                1.0,
+                Some(3.0),
+            );
+            for sp in samples {
                 to_test.push(TestPoint {
                     mesh_i: *mesh_i,
-                    sp,
+                    sp: sp.sp,
                     ref_i: *ref_i,
                     weight: 1.0, // Default weight, will be adjusted later
                 })
@@ -293,7 +301,7 @@ impl<'a> MultiMeshProblem<'a> {
                         // let peak = (sd + hsd).sqrt();
                         (peak, sp)
                     }
-                    None => (1.0, ref_cloud.surf_closest_to(&moved.point)),
+                    None => (1.0, ref_cloud.surf_closest_to(&moved.point).sp),
                 };
 
                 let mut w = h.weight
@@ -410,11 +418,18 @@ fn correspondence_matrix(meshes: &[Mesh], transforms: &[Iso3], opts: MMOpts) -> 
         .par_iter()
         .map(|&(i, j)| {
             let t = transforms[i].inv_mul(&transforms[j]);
-            let count = meshes[j]
-                .sample_alignment_points(opts.sample_radius, &meshes[i], &t)
-                .iter()
-                .count() as f64;
-            (i, j, count)
+            let samples = generate_alignment_points(
+                &meshes[j],
+                &meshes[i],
+                &t,
+                opts.sample_radius,
+                PI / 3.0,
+                1.0 / 20.0,
+                1.0,
+                Some(3.0),
+            );
+
+            (i, j, samples.len() as f64)
         })
         .collect::<Vec<_>>();
 

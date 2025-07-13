@@ -1,4 +1,4 @@
-use super::Mesh;
+use super::{Mesh, MeshSurfPoint};
 use crate::common::kd_tree::KdTreeSearch;
 use crate::common::points::{dist, mean_point};
 use crate::common::poisson_disk::sample_poisson_disk_all;
@@ -8,12 +8,6 @@ use parry2d_f64::transformation::convex_hull;
 use rand::prelude::SliceRandom;
 use std::f64::consts::PI;
 use std::num::NonZero;
-
-#[derive(Debug, Clone, Copy)]
-pub struct FacePoint {
-    pub face_index: u32,
-    pub bc: [f64; 3],
-}
 
 fn bc_to_point(bc: [f64; 3], a: &Point3, b: &Point3, c: &Point3) -> Point3 {
     (a.coords * bc[0] + b.coords * bc[1] + c.coords * bc[2]).into()
@@ -47,8 +41,8 @@ impl Mesh {
         result
     }
 
-    pub fn sample_poisson(&self, radius: f64) -> Vec<SurfacePoint3> {
-        let starting = self.sample_dense(radius * 0.5);
+    pub fn sample_poisson(&self, radius: f64) -> Vec<MeshSurfPoint> {
+        let starting = self.sample_surface_dense(radius * 0.5);
         let mask = sample_poisson_disk_all(&starting, radius);
 
         let mut result = Vec::new();
@@ -59,12 +53,13 @@ impl Mesh {
         result
     }
 
-    pub fn sample_surface_dense(&self, max_spacing: f64) -> Vec<FacePoint> {
+    pub fn sample_surface_dense(&self, max_spacing: f64) -> Vec<MeshSurfPoint> {
         let mut sampled = Vec::with_capacity(self.faces().len());
         for (face_i, vert) in self.faces().iter().enumerate() {
             let a = self.vertices()[vert[0] as usize];
             let b = self.vertices()[vert[1] as usize];
             let c = self.vertices()[vert[2] as usize];
+            let face_index = face_i as u32;
 
             if dist(&a, &b) < max_spacing
                 && dist(&a, &c) < max_spacing
@@ -73,17 +68,14 @@ impl Mesh {
                 // If all distances between vertices are less than the max spacing, we'll just
                 // sample the centroid of the face, as an equally sized neighbor should have its
                 // centroid within the max spacing distance of this triangle's centroid.
-                sampled.push(FacePoint {
-                    face_index: face_i as u32,
-                    bc: [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0],
-                });
+                let bc = [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0];
+                let sp = self.at_barycentric(face_index, bc).unwrap();
+                sampled.push(MeshSurfPoint { face_index, bc, sp });
             } else {
                 let grid = barycentric_grid(&a, &b, &c, max_spacing);
                 for bc in grid {
-                    sampled.push(FacePoint {
-                        face_index: face_i as u32,
-                        bc,
-                    });
+                    let sp = self.at_barycentric(face_index, bc).unwrap();
+                    sampled.push(MeshSurfPoint { face_index, bc, sp });
                 }
             }
         }
@@ -92,220 +84,103 @@ impl Mesh {
     }
 
     pub fn sample_dense(&self, max_spacing: f64) -> Vec<SurfacePoint3> {
-        let mut sampled = Vec::new();
-        for fp in self.sample_surface_dense(max_spacing) {
-            let face = self.shape.triangle(fp.face_index);
-            let point = bc_to_point(fp.bc, &face.a, &face.b, &face.c);
-            let normal = face.normal().unwrap();
-            sampled.push(SurfacePoint3::new(point, normal));
-        }
-
-        sampled
-    }
-
-    pub fn sample_alignment_candidates(&self, max_spacing: f64) -> Vec<ACPoint> {
-        let surf_points = self.sample_poisson(max_spacing);
-        let points = surf_points.iter().map(|sp| sp.point).collect::<Vec<_>>();
-        let tree = KdTree3::new(&points);
-        let mut results = Vec::new();
-        for (i, sp) in surf_points.iter().enumerate() {
-            let n = tree.nearest(&sp.point, NonZero::new(7).unwrap());
-            let indices = n
-                .iter()
-                .filter_map(|(j, _)| if *j != i { Some(*j) } else { None });
-            let sps = indices
-                .into_iter()
-                .map(|j| surf_points[j])
-                .collect::<Vec<_>>();
-
-            if sac_check(sp, &sps, max_spacing) {
-                results.push(ACPoint {
-                    sp: *sp,
-                    neighbors: sps,
-                });
-            }
-        }
-
-        results
-    }
-
-    pub fn sample_alignment_points(
-        &self,
-        max_spacing: f64,
-        reference: &Mesh,
-        iso: &Iso3,
-    ) -> Vec<SurfacePoint3> {
-        let surf_points = self.sample_poisson(max_spacing);
-
-        let points = surf_points.iter().map(|sp| sp.point).collect::<Vec<_>>();
-        let tree = KdTree3::new(&points);
-
-        let mut candidates: Vec<SurfacePoint3> = Vec::new();
-        for (i, sp) in surf_points.iter().enumerate() {
-            let n = tree.nearest(&sp.point, NonZero::new(7).unwrap());
-            let indices = n
-                .iter()
-                .filter_map(|(j, _)| if *j != i { Some(*j) } else { None });
-            let sps = indices
-                .into_iter()
-                .map(|j| surf_points[j])
-                .collect::<Vec<_>>();
-            if smpl_check(sp, &sps, max_spacing, reference, iso) {
-                candidates.push(*sp);
-            }
-        }
-
-        // Get the distances so that we can filter all points more than 3 standard deviations
-        // away from the mean.
-        let distances = candidates
-            .iter()
-            .map(|p| dist(&p.point, &reference.point_closest_to(&(iso * p.point))))
-            .collect::<Vec<_>>();
-
-        let mean_distance = distances.iter().sum::<f64>() / distances.len() as f64;
-        let std_dev = (distances
-            .iter()
-            .map(|d| (d - mean_distance).powi(2))
-            .sum::<f64>()
-            / distances.len() as f64)
-            .sqrt();
-
-        candidates
-            .iter()
-            .zip(distances.iter())
-            .filter_map(|(c, &d)| {
-                if d < mean_distance + 3.0 * std_dev {
-                    Some(*c)
-                } else {
-                    None
-                }
-            })
+        self.sample_surface_dense(max_spacing)
+            .into_iter()
+            .map(|msp| msp.sp)
             .collect()
     }
+
+    // pub fn sample_alignment_candidates(&self, max_spacing: f64) -> Vec<ACPoint> {
+    //     let surf_points = self.sample_poisson(max_spacing);
+    //     let points = surf_points.iter().map(|sp| sp.point).collect::<Vec<_>>();
+    //     let tree = KdTree3::new(&points);
+    //     let mut results = Vec::new();
+    //     for (i, sp) in surf_points.iter().enumerate() {
+    //         let n = tree.nearest(&sp.point, NonZero::new(7).unwrap());
+    //         let indices = n
+    //             .iter()
+    //             .filter_map(|(j, _)| if *j != i { Some(*j) } else { None });
+    //         let sps = indices
+    //             .into_iter()
+    //             .map(|j| surf_points[j])
+    //             .collect::<Vec<_>>();
+    //
+    //         if sac_check(sp, &sps, max_spacing) {
+    //             results.push(ACPoint {
+    //                 sp: *sp,
+    //                 neighbors: sps,
+    //             });
+    //         }
+    //     }
+    //
+    //     results
+    // }
+    //
+    // pub fn sample_alignment_points(
+    //     &self,
+    //     max_spacing: f64,
+    //     reference: &Mesh,
+    //     iso: &Iso3,
+    // ) -> Vec<SurfacePoint3> {
+    //     let surf_points = self.sample_poisson(max_spacing);
+    //
+    //     let points = surf_points.iter().map(|sp| sp.point).collect::<Vec<_>>();
+    //     let tree = KdTree3::new(&points);
+    //
+    //     let mut candidates: Vec<SurfacePoint3> = Vec::new();
+    //     for (i, sp) in surf_points.iter().enumerate() {
+    //         let n = tree.nearest(&sp.point, NonZero::new(7).unwrap());
+    //         let indices = n
+    //             .iter()
+    //             .filter_map(|(j, _)| if *j != i { Some(*j) } else { None });
+    //         let sps = indices
+    //             .into_iter()
+    //             .map(|j| surf_points[j])
+    //             .collect::<Vec<_>>();
+    //         if smpl_check(sp, &sps, max_spacing, reference, iso) {
+    //             candidates.push(*sp);
+    //         }
+    //     }
+    //
+    //     // Get the distances so that we can filter all points more than 3 standard deviations
+    //     // away from the mean.
+    //     let distances = candidates
+    //         .iter()
+    //         .map(|p| dist(&p.point, &reference.point_closest_to(&(iso * p.point))))
+    //         .collect::<Vec<_>>();
+    //
+    //     let mean_distance = distances.iter().sum::<f64>() / distances.len() as f64;
+    //     let std_dev = (distances
+    //         .iter()
+    //         .map(|d| (d - mean_distance).powi(2))
+    //         .sum::<f64>()
+    //         / distances.len() as f64)
+    //         .sqrt();
+    //
+    //     candidates
+    //         .iter()
+    //         .zip(distances.iter())
+    //         .filter_map(|(c, &d)| {
+    //             if d < mean_distance + 3.0 * std_dev {
+    //                 Some(*c)
+    //             } else {
+    //                 None
+    //             }
+    //         })
+    //         .collect()
+    // }
 }
 
-/// A candidate for an alignment point on the surface of a Poisson disk sampled mesh, along with
-/// its nearest neighbors.
-pub struct ACPoint {
-    /// The surface point at the location of the candidate.
-    pub sp: SurfacePoint3,
+// /// A candidate for an alignment point on the surface of a Poisson disk sampled mesh, along with
+// /// its nearest neighbors.
+// pub struct ACPoint {
+//     /// The surface point at the location of the candidate.
+//     pub sp: SurfacePoint3,
+//
+//     /// The nearest neighbors of the candidate surface point.
+//     pub neighbors: Vec<SurfacePoint3>,
+// }
 
-    /// The nearest neighbors of the candidate surface point.
-    pub neighbors: Vec<SurfacePoint3>,
-}
-
-fn smpl_check(
-    check: &SurfacePoint3,
-    neighbors: &[SurfacePoint3],
-    max_spacing: f64,
-    reference: &Mesh,
-    iso: &Iso3,
-) -> bool {
-    // Actual points check
-    if !sac_check(check, neighbors, max_spacing) {
-        return false;
-    }
-
-    // If the points on the test mesh pass, we project the points to the reference mesh and
-    // run the same check.
-    let check_ref = reference.surf_closest_to(&(iso * check.point));
-
-    // Normals must be facing the same direction
-    if check_ref.normal.dot(&check.normal) < 0.0 {
-        return false;
-    }
-
-    let neighbors_ref = neighbors
-        .iter()
-        .map(|sp| reference.surf_closest_to(&(iso * sp.point)))
-        .collect::<Vec<_>>();
-
-    // The minimum spacing to the check_ref point should be max_spacing
-    for sp in &neighbors_ref {
-        if dist(&sp.point, &check_ref.point) < max_spacing {
-            return false;
-        }
-    }
-
-    sac_check(&check_ref, &neighbors_ref, max_spacing)
-}
-
-pub fn sac_ref_check(ac: &ACPoint, max_spacing: f64, reference: &Mesh, iso: &Iso3) -> bool {
-    // If the points on the test mesh pass, we project the points to the reference mesh and
-    // run the same check.
-    let check_ref = reference.surf_closest_to(&(iso * ac.sp.point));
-    let neighbors_ref = ac
-        .neighbors
-        .iter()
-        .map(|sp| reference.surf_closest_to(&(iso * sp.point)))
-        .collect::<Vec<_>>();
-
-    // The minimum spacing to the check_ref point should be max_spacing
-    for sp in &neighbors_ref {
-        if dist(&sp.point, &check_ref.point) < max_spacing {
-            return false;
-        }
-    }
-
-    sac_check(&check_ref, &neighbors_ref, max_spacing)
-}
-
-/// Perform a sample alignment candidate check on a single surface point and its neighbors. This
-/// check looks for a minimum number of neighbors, ensures that the neighbors are within a
-/// certain distance from the check point, that the normals of the neighbors are within PI/3 of the
-/// test point, that the curvature is low, and that the check point is near the centroid of the
-/// convex hull of the neighbors.
-///
-/// # Arguments
-///
-/// * `check_point`: the point being checked
-/// * `surface_points`: a collection of surface points that are neighbors to the check point
-/// * `max_spacing`: the Poisson disk sampling spacing used to create the full set of surface
-///   points from which the neighbors were selected.
-///
-/// returns: bool
-pub fn sac_check(
-    check_point: &SurfacePoint3,
-    surface_points: &[SurfacePoint3],
-    max_spacing: f64,
-) -> bool {
-    if surface_points.len() < 5 {
-        return false;
-    }
-
-    for sp in surface_points {
-        if dist(&sp.point, &check_point.point) > max_spacing * 2.0
-            || sp.normal.angle(&check_point.normal) > PI / 3.0
-            || check_point.scalar_projection(&sp.point).abs() > max_spacing / 2.0
-        {
-            return false;
-        }
-    }
-
-    let mut points = surface_points.clone_points();
-    points.push(check_point.point);
-
-    let basis = SvdBasis3::from_points(&points, None);
-    let iso = Iso3::from(&basis);
-    let points = (&points).transform_by(&iso);
-
-    if points
-        .iter()
-        .map(|p| p.z.abs())
-        .any(|z| z > max_spacing / 20.0)
-    {
-        return false;
-    }
-
-    let check2 = (iso * check_point.point).to_2d();
-    let points2 = points.to_2d();
-    let centroid = mean_point(&convex_hull(&points2));
-    if dist(&centroid, &check2) > max_spacing {
-        return false;
-    }
-
-    true
-}
 
 fn barycentric_grid(a: &Point3, b: &Point3, c: &Point3, max_spacing: f64) -> Vec<[f64; 3]> {
     let mut result = Vec::new();
@@ -367,11 +242,11 @@ mod tests {
         let r = 5.0;
         let sampled = mesh.sample_poisson(r);
 
-        let points = sampled.iter().map(|sp| sp.point).collect::<Vec<_>>();
+        let points = sampled.iter().map(|mp| mp.sp.point).collect::<Vec<_>>();
 
         let tree = KdTree3::new(&points);
-        for sp in &sampled {
-            let neighbors = tree.within(&sp.point, r);
+        for mp in &sampled {
+            let neighbors = tree.within(&mp.sp.point, r);
             assert_eq!(neighbors.len(), 1, "Missed duplicate");
         }
     }

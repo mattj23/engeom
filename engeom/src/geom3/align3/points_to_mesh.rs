@@ -119,7 +119,7 @@ impl<'a> PointsToMesh<'a> {
             .collect::<Vec<_>>();
         for (i, m, c) in collected {
             self.moved[i] = m;
-            self.closest[i] = c;
+            self.closest[i] = c.sp;
         }
     }
 

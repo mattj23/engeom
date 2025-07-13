@@ -34,7 +34,7 @@ impl Mesh {
     ///
     /// ```
     pub fn measure_point_deviation(&self, point: &Point3, dist_mode: DistMode) -> Distance3 {
-        let closest = self.surf_closest_to(point);
+        let closest = self.surf_closest_to(point).sp;
 
         // In both cases, the measurement point `b` will remain the test point and `a` will be the
         // where the reference point, what will change is the direction of the measurement

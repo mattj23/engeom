@@ -202,7 +202,9 @@ impl PointCloud {
             .with_tree()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
-        Ok(with_tree.sample_poisson_disk(radius))
+        let mask = with_tree.sample_poisson_disk(radius);
+
+        Ok(mask.to_indices())
     }
 
     fn create_from_poisson_sample(&mut self, radius: f64) -> PyResult<Self> {

@@ -1156,7 +1156,16 @@ class Mesh:
         """
         ...
 
-    def sample_alignment_points(self, max_spacing: float, reference: Mesh, iso: Iso3) -> NDArray[float]:
+    def sample_alignment_points(
+            self,
+            reference: Mesh,
+            iso: Iso3,
+            max_spacing: float,
+            max_neighbor_angle: float,
+            out_of_plane_ratio: float,
+            centroid_ratio: float,
+            filter_distances: float | None
+    ) -> NDArray[float]:
         """
         This is a very specialized, highly selective sampling method used to identify high quality points for
         the alignment between two meshes. It begins with a Poisson disk sampling of the mesh, and then inspects the
