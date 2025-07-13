@@ -148,7 +148,8 @@ mod tests {
     #[test]
     fn test_points_cloud_box() {
         let box_mesh = rotated_box_mesh();
-        let surface_points = box_mesh.sample_poisson(0.1)
+        let surface_points = box_mesh
+            .sample_poisson(0.1)
             .into_iter()
             .map(|p| p.sp)
             .collect::<Vec<_>>();

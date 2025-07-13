@@ -95,11 +95,22 @@ pub fn multi_mesh_adjustment<'a>(meshes: &[AlignmentMesh], opts: MMOpts) -> Resu
                 &opts.sample,
             );
             for mp in samples {
+                // Check if there is weight associated with this point
+                let weight = if let Some(providers) = &meshes[*mesh_i].weights {
+                    let mut w = 1.0;
+                    for item in providers.iter() {
+                        w *= item.as_ref().weight(&mp);
+                    }
+                    w
+                } else {
+                    1.0
+                };
+
                 to_test.push(TestPoint {
                     mesh_i: *mesh_i,
                     mp,
                     ref_i: *ref_i,
-                    weight: 1.0, // Default weight, will be adjusted later
+                    weight,
                     uncert: 0.0,
                 })
             }

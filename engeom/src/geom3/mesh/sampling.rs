@@ -181,7 +181,6 @@ impl Mesh {
 //     pub neighbors: Vec<SurfacePoint3>,
 // }
 
-
 fn barycentric_grid(a: &Point3, b: &Point3, c: &Point3, max_spacing: f64) -> Vec<[f64; 3]> {
     let mut result = Vec::new();
     let va = a - bc_to_point([0.0, 0.5, 0.5], &a, &b, &c);

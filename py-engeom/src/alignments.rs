@@ -3,10 +3,10 @@ use crate::conversions::array_to_points3;
 use crate::geom3::Iso3;
 use crate::mesh::Mesh;
 use crate::point_cloud::PointCloud;
+use engeom::geom3::align3::GAPParams;
 use numpy::PyReadonlyArray2;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use engeom::geom3::align3::GAPParams;
 
 #[pyfunction]
 pub fn points_to_mesh(
@@ -80,7 +80,7 @@ pub fn mesh_to_mesh_iterative(
         initial.get_inner(),
         mode.into(),
         max_iter,
-        &params
+        &params,
     );
 
     match result {
