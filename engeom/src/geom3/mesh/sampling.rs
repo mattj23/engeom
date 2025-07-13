@@ -137,11 +137,13 @@ impl Mesh {
         max_spacing: f64,
         reference: &Mesh,
         iso: &Iso3,
-    ) -> Vec<Point3> {
+    ) -> Vec<SurfacePoint3> {
         let surf_points = self.sample_poisson(max_spacing);
+
         let points = surf_points.iter().map(|sp| sp.point).collect::<Vec<_>>();
         let tree = KdTree3::new(&points);
-        let mut candidates: Vec<Point3> = Vec::new();
+
+        let mut candidates: Vec<SurfacePoint3> = Vec::new();
         for (i, sp) in surf_points.iter().enumerate() {
             let n = tree.nearest(&sp.point, NonZero::new(7).unwrap());
             let indices = n
@@ -152,7 +154,7 @@ impl Mesh {
                 .map(|j| surf_points[j])
                 .collect::<Vec<_>>();
             if smpl_check(sp, &sps, max_spacing, reference, iso) {
-                candidates.push(sp.point);
+                candidates.push(*sp);
             }
         }
 
@@ -160,7 +162,7 @@ impl Mesh {
         // away from the mean.
         let distances = candidates
             .iter()
-            .map(|p| dist(p, &reference.point_closest_to(&(iso * p))))
+            .map(|p| dist(&p.point, &reference.point_closest_to(&(iso * p.point))))
             .collect::<Vec<_>>();
 
         let mean_distance = distances.iter().sum::<f64>() / distances.len() as f64;

@@ -49,58 +49,12 @@ pub fn multi_mesh_adjustment<'a>(
     uncertainties: Option<&'a [Vec<f64>]>,
     weight_meshes: Option<&[(f64, Mesh)]>,
 ) -> Result<Vec<Align3>> {
-    // Produce the sample candidate points
-    let start = Instant::now();
-    let sample_candidates = meshes
-        .iter()
-        .map(|m| m.sample_alignment_candidates(opts.sample_radius))
-        .collect::<Vec<_>>();
-    println!("sample_candidates: {:?}", start.elapsed());
-
     let transforms = match initial {
         Some(transforms) => transforms.to_vec(),
         None => vec![Iso3::identity(); meshes.len()],
     };
 
-    // We want to build a correspondence matrix which will help us determine which mesh will be the
-    // static reference mesh.  In the matrix, each i, j entry will be the number of sample points
-    // in mesh j which are a good match for mesh i.  The row with the highest sum of its columns
-    // has the most points which reference it, however we don't simply want to find the highest
-    // count because two very overlapping meshes will inflate the numbers without being a good
-    // candidate for the static reference.
-    //
-    // Instead, we want to preference meshes which have a higher number of other meshes that
-    // reference them, so we will divide each cell by the maximum value in the matrix, scaling
-    // everything from 0 to 1, and then take the square root of each cell, essentially granting
-    // diminishing returns to the number of points from a single mesh and boosting meshes that
-    // have a moderate number of points from a large number of other meshes.
-    let mut matrix = DMatrix::<f64>::zeros(meshes.len(), meshes.len());
-
-    let mut work_list = Vec::new();
-    for i in 0..meshes.len() {
-        for j in i..meshes.len() {
-            if i != j {
-                work_list.push((i, j));
-            }
-        }
-    }
-
-    let collected = work_list
-        .par_iter()
-        .map(|&(i, j)| {
-            let t = transforms[i].inv_mul(&transforms[j]);
-            let count = sample_candidates[j]
-                .iter()
-                .filter(|c| sac_ref_check(c, opts.sample_radius, &meshes[i], &t))
-                .count() as f64;
-            (i, j, count)
-        })
-        .collect::<Vec<_>>();
-    for (i, j, count) in collected {
-        matrix[(i, j)] = count;
-        matrix[(j, i)] = count; // Symmetric matrix
-    }
-
+    let matrix = correspondence_matrix(meshes, &transforms, opts);
     let mut corr = &matrix / matrix.max();
     corr.apply(|x| *x = x.sqrt());
 
@@ -142,31 +96,16 @@ pub fn multi_mesh_adjustment<'a>(
         .map(|(mesh_i, ref_i)| {
             let t = transforms[*ref_i].inv_mul(&transforms[*mesh_i]);
             let mut to_test = Vec::new();
-            for (point_i, c) in sample_candidates[*mesh_i].iter().enumerate() {
-                if sac_ref_check(c, opts.sample_radius, &meshes[*ref_i], &t) {
-                    // TODO: remove this later
-                    let weight = if let Some(weight_meshes) = weight_meshes {
-                        let mut w = 1.0;
-                        for (bw, m) in weight_meshes.iter() {
-                            let cp = m.point_closest_to(&c.sp.point);
-                            if dist(&cp, &c.sp.point) < 1.0 {
-                                w = *bw;
-                            }
-                        }
-                        w
-                    } else {
-                        1.0
-                    };
-
-                    to_test.push(TestPoint {
-                        mesh_i: *mesh_i,
-                        point_i,
-                        ref_i: *ref_i,
-                        weight,
-                    })
-                }
+            for sp in
+                meshes[*mesh_i].sample_alignment_points(opts.sample_radius, &meshes[*ref_i], &t)
+            {
+                to_test.push(TestPoint {
+                    mesh_i: *mesh_i,
+                    sp,
+                    ref_i: *ref_i,
+                    weight: 1.0, // Default weight, will be adjusted later
+                })
             }
-
             to_test
         })
         .flatten()
@@ -179,20 +118,8 @@ pub fn multi_mesh_adjustment<'a>(
 
     // Now we want to create the problem and solve it
     let start = Instant::now();
-    let smpl = sample_candidates
-        .into_iter()
-        .map(|row| row.iter().map(|c| c.sp).collect::<Vec<_>>())
-        .collect::<Vec<_>>();
 
-    let problem = MultiMeshProblem::new(
-        meshes,
-        smpl,
-        handles,
-        static_i,
-        opts,
-        initial,
-        uncertainties,
-    );
+    let problem = MultiMeshProblem::new(meshes, handles, static_i, opts, initial, uncertainties);
     let (result, report) = LevenbergMarquardt::new().minimize(problem);
     println!("minimize: {:?}", start.elapsed());
     if report.termination.was_successful() {
@@ -223,7 +150,7 @@ struct TestPoint {
     mesh_i: usize,
 
     /// The index of the point in the alignment points denoted by `mesh_i`
-    point_i: usize,
+    sp: SurfacePoint3,
 
     /// The index of the mesh this point is being matched to
     ref_i: usize,
@@ -233,10 +160,10 @@ struct TestPoint {
 }
 
 impl TestPoint {
-    fn new(mesh_i: usize, point_i: usize, ref_i: usize, weight: f64) -> Self {
+    fn new(mesh_i: usize, sp: SurfacePoint3, ref_i: usize, weight: f64) -> Self {
         Self {
             mesh_i,
-            point_i,
+            sp,
             ref_i,
             weight,
         }
@@ -246,10 +173,6 @@ impl TestPoint {
 struct MultiMeshProblem<'a> {
     /// The meshes that are being aligned
     meshes: &'a [Mesh],
-
-    /// The collections of sample points (one for each mesh) that are used to align the meshes to
-    /// each other. The i-th collection contains the points from the i-th mesh.
-    sample_points: Vec<Vec<SurfacePoint3>>,
 
     /// The collection of alignment point handles, each specifying which mesh/index it belongs to,
     /// and which mesh it is being matched to.  This allows the same point to be used against
@@ -309,7 +232,6 @@ fn un_cert(point: &Point3, target: &Mesh, by_vertex: &[f64]) -> (f64, SurfacePoi
 impl<'a> MultiMeshProblem<'a> {
     fn new(
         meshes: &'a [Mesh],
-        sample_points: Vec<Vec<SurfacePoint3>>,
         point_handles: Vec<TestPoint>,
         static_i: usize,
         options: MMOpts,
@@ -325,8 +247,7 @@ impl<'a> MultiMeshProblem<'a> {
             let mut working = vec![0.0; count];
             for (i, h) in point_handles.iter().enumerate() {
                 let m = &meshes[h.mesh_i];
-                let sp = &sample_points[h.mesh_i][h.point_i];
-                working[i] = un_cert(&sp.point, m, &u[h.mesh_i]).0;
+                working[i] = un_cert(&h.sp.point, m, &u[h.mesh_i]).0;
             }
             working
         } else {
@@ -335,7 +256,6 @@ impl<'a> MultiMeshProblem<'a> {
 
         let mut item = Self {
             meshes,
-            sample_points,
             point_handles,
             moved: vec![default(); count],
             closest: vec![default(); count],
@@ -356,10 +276,9 @@ impl<'a> MultiMeshProblem<'a> {
             .par_iter()
             .map(|i| {
                 let h = &self.point_handles[*i];
-                let point = &self.sample_points[h.mesh_i][h.point_i];
                 let ref_cloud = &self.meshes[h.ref_i];
                 let t = self.params.relative_transform(h.mesh_i, h.ref_i);
-                let moved = &t * point;
+                let moved = &t * h.sp;
 
                 let (wu, closest) = match self.uncertainties {
                     Some(u) => {
@@ -461,4 +380,47 @@ impl<'a> LeastSquaresProblem<f64, Dyn, Dyn> for MultiMeshProblem<'a> {
 
         Some(jac)
     }
+}
+
+fn correspondence_matrix(meshes: &[Mesh], transforms: &[Iso3], opts: MMOpts) -> DMatrix<f64> {
+    // We want to build a correspondence matrix which will help us determine which mesh will be the
+    // static reference mesh.  In the matrix, each i, j entry will be the number of sample points
+    // in mesh j which are a good match for mesh i.  The row with the highest sum of its columns
+    // has the most points which reference it, however we don't simply want to find the highest
+    // count because two very overlapping meshes will inflate the numbers without being a good
+    // candidate for the static reference.
+    //
+    // Instead, we want to preference meshes which have a higher number of other meshes that
+    // reference them, so we will divide each cell by the maximum value in the matrix, scaling
+    // everything from 0 to 1, and then take the square root of each cell, essentially granting
+    // diminishing returns to the number of points from a single mesh and boosting meshes that
+    // have a moderate number of points from a large number of other meshes.
+    let mut matrix = DMatrix::<f64>::zeros(meshes.len(), meshes.len());
+
+    let mut work_list = Vec::new();
+    for i in 0..meshes.len() {
+        for j in i..meshes.len() {
+            if i != j {
+                work_list.push((i, j));
+            }
+        }
+    }
+
+    let collected = work_list
+        .par_iter()
+        .map(|&(i, j)| {
+            let t = transforms[i].inv_mul(&transforms[j]);
+            let count = meshes[j]
+                .sample_alignment_candidates(opts.sample_radius)
+                .iter()
+                .count() as f64;
+            (i, j, count)
+        })
+        .collect::<Vec<_>>();
+    for (i, j, count) in collected {
+        matrix[(i, j)] = count;
+        matrix[(j, i)] = count; // Symmetric matrix
+    }
+
+    matrix
 }

@@ -19,6 +19,8 @@ pub use plane3::Plane3;
 pub use point_cloud::{PointCloud, PointCloudFeatures, PointCloudKdTree, PointCloudOverlap};
 use std::ops;
 pub use xyzwpr::XyzWpr;
+use crate::common::PCoords;
+use crate::na::SVector;
 
 pub type Point3 = parry3d_f64::na::Point3<f64>;
 pub type Vector3 = parry3d_f64::na::Vector3<f64>;
@@ -89,5 +91,23 @@ impl From<&SurfacePoint3> for Ray {
 impl Default for SurfacePoint3 {
     fn default() -> Self {
         SurfacePoint3::new(Point3::origin(), Vector3::x_axis())
+    }
+}
+
+impl PCoords<3> for SurfacePoint3 {
+    fn coords(&self) -> SVector<f64, 3> {
+        self.point.coords
+    }
+}
+
+impl PCoords<3> for Point3 {
+    fn coords(&self) -> SVector<f64, 3> {
+        self.coords
+    }
+}
+
+impl PCoords<3> for Vector3 {
+    fn coords(&self) -> SVector<f64, 3> {
+        *self
     }
 }

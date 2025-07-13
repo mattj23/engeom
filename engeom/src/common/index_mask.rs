@@ -106,6 +106,23 @@ impl IndexMask {
             current: 0,
         }
     }
+
+    pub fn clone_indices_of<T: Clone>(&self, items: &[T]) -> Result<Vec<T>> {
+        if items.len() != self.len() {
+            return Err(format!(
+                "Items length {} does not match mask length {}",
+                items.len(),
+                self.len()
+            )
+            .into());
+        }
+
+        let mut result = Vec::with_capacity(self.to_indices().len());
+        for index in self.iter_true() {
+            result.push(items[index].clone());
+        }
+        Ok(result)
+    }
 }
 
 pub struct MaskTrueIterator<'a> {

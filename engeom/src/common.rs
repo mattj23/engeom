@@ -12,18 +12,21 @@ pub mod surface_point;
 pub mod svd_basis;
 pub mod triangulation;
 pub mod vec_f64;
+mod voxel_downsample;
 
 pub use align::DistMode;
 pub use angles::{
-    AngleDir, AngleInterval, angle_in_direction, angle_signed_pi, angle_to_2pi,
-    signed_compliment_2pi,
+    angle_in_direction, angle_signed_pi, angle_to_2pi, signed_compliment_2pi, AngleDir,
+    AngleInterval,
 };
 pub use convert_2d_3d::{To2D, To3D};
-pub use discrete_domain::{DiscreteDomain, linear_space};
+pub use discrete_domain::{linear_space, DiscreteDomain};
 pub use index_mask::IndexMask;
 pub use interval::Interval;
 pub use parry3d_f64::query::SplitResult;
 pub use surface_point::{SurfacePoint, SurfacePointCollection};
+use crate::na::SVector;
+pub use voxel_downsample::voxel_downsample;
 
 /// General purpose option for starting the selection of a set of items, either from everything,
 /// nothing, or a specific set of indices
@@ -97,4 +100,11 @@ pub trait Intersection<TOther, TResult> {
 /// A trait for transforming an entity by another entity
 pub trait TransformBy<T, TOut> {
     fn transform_by(&self, transform: &T) -> TOut;
+}
+
+/// A generic trait for points or point-like structures in D-dimensional space which provides a
+/// generic way to access the coordinates of the point as a vector.
+pub trait PCoords<const D: usize> {
+    /// Returns the coordinates of the point as a vector.
+    fn coords(&self) -> SVector<f64, D>;
 }
