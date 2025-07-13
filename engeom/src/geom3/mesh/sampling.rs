@@ -93,53 +93,11 @@ impl Mesh {
 
     pub fn sample_dense(&self, max_spacing: f64) -> Vec<SurfacePoint3> {
         let mut sampled = Vec::new();
-        for face in self.shape.triangles() {
-            // If the triangle is too small, just add the center point.
-            let center = mean_point(&[face.a, face.b, face.c]);
-            if dist(&face.a, &center) < max_spacing
-                && dist(&face.b, &center) < max_spacing
-                && dist(&face.c, &center) < max_spacing
-            {
-                sampled.push(SurfacePoint3::new(center, face.normal().unwrap()));
-                continue;
-            }
-
-            // Find the angle closest to 90 degrees
-            let ua = face.b - face.a;
-            let va = face.c - face.a;
-
-            let ub = face.a - face.b;
-            let vb = face.c - face.b;
-
-            let uc = face.a - face.c;
-            let vc = face.b - face.c;
-
-            let aa = ua.angle(&va).abs() - PI / 2.0;
-            let ab = ub.angle(&vb).abs() - PI / 2.0;
-            let ac = uc.angle(&vc).abs() - PI / 2.0;
-
-            let (u, v, p) = if aa < ab && aa < ac {
-                (ua, va, face.a)
-            } else if ab < aa && ab < ac {
-                (ub, vb, face.b)
-            } else {
-                (uc, vc, face.c)
-            };
-
-            let nu = u.norm() / max_spacing;
-            let nv = v.norm() / max_spacing;
-
-            for ui in 0..nu as usize {
-                for vi in 0..nv as usize {
-                    let uf = ui as f64 / nu;
-                    let vf = vi as f64 / nv;
-                    if uf + vf <= 1.0 {
-                        let p = p + u * uf + v * vf;
-                        let sp = SurfacePoint3::new(p, face.normal().unwrap());
-                        sampled.push(sp);
-                    }
-                }
-            }
+        for fp in self.sample_surface_dense(max_spacing) {
+            let face = self.shape.triangle(fp.face_index);
+            let point = bc_to_point(fp.bc, &face.a, &face.b, &face.c);
+            let normal = face.normal().unwrap();
+            sampled.push(SurfacePoint3::new(point, normal));
         }
 
         sampled
