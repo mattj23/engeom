@@ -36,7 +36,7 @@ impl TriangleFilter<'_> {
             // When adding, we want to check all faces that are not currently selected
             SelectOp::Add => {
                 let mut check_mask = self.mask.clone();
-                check_mask.flip();
+                check_mask.not_mut();
                 check_mask
             }
 
@@ -50,7 +50,7 @@ impl TriangleFilter<'_> {
             SelectOp::Add => self.mask.or_mut(pass_mask).unwrap(),
             SelectOp::Remove => {
                 let mut flipped = pass_mask.clone();
-                flipped.flip();
+                flipped.not_mut();
                 self.mask.and_mut(&flipped).unwrap();
             }
             SelectOp::Keep => {
@@ -156,7 +156,7 @@ impl TriangleFilter<'_> {
             // triangles that are NOT currently selected by the filter
             SelectOp::Remove | SelectOp::Keep => {
                 let mut flipped = self.mask.clone();
-                flipped.flip();
+                flipped.not_mut();
                 self.mesh.unique_vertex_mask(&flipped)
             }
         }

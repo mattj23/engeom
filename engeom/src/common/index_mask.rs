@@ -1,5 +1,7 @@
 //! This module contains tools for working with indices as a mask of boolean values (may
 //! eventually be implemented with bitvectors depending on real world performance).
+
+use std::ops::Not;
 use crate::Result;
 use bitvec::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -48,11 +50,18 @@ impl IndexMask {
     }
 
     /// Modify the mask so that all values are the opposite of their current value.
-    pub fn flip(&mut self) {
+    pub fn not_mut(&mut self) {
         for u in self.mask.as_raw_mut_slice() {
             *u = !*u;
         }
     }
+    
+    pub fn not(&self) -> Self {
+        let mut new_mask = self.clone();
+        new_mask.not_mut();
+        new_mask
+    }
+    
 
     pub fn or_mut(&mut self, other: &IndexMask) -> Result<()> {
         if self.mask.len() != other.mask.len() {
@@ -68,6 +77,12 @@ impl IndexMask {
 
         Ok(())
     }
+    
+    pub fn or(&self, other: &IndexMask) -> Result<Self> {
+        let mut new_mask = self.clone();
+        new_mask.or_mut(other)?;
+        Ok(new_mask)
+    }
 
     pub fn and_mut(&mut self, other: &IndexMask) -> Result<()> {
         if self.mask.len() != other.mask.len() {
@@ -82,6 +97,12 @@ impl IndexMask {
         }
 
         Ok(())
+    }
+    
+    pub fn and(&self, other: &IndexMask) -> Result<Self> {
+        let mut new_mask = self.clone();
+        new_mask.and_mut(other)?;
+        Ok(new_mask)
     }
 
     /// Set the value at the specified index
@@ -188,7 +209,7 @@ mod tests {
                     mask.set(i, val);
                     vec[i] = val;
                 }
-                mask.flip();
+                mask.not_mut();
                 for i in 0..len {
                     vec[i] = !vec[i];
                 }

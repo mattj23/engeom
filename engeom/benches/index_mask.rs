@@ -34,7 +34,7 @@ fn index_mask_flip(c: &mut Criterion) {
     let mut mask = prep_mask(2);
     c.bench_function("index_mask flip", |b| {
         b.iter(|| {
-            black_box(&mut mask).flip();
+            black_box(&mut mask).not_mut();
         })
     });
 }
