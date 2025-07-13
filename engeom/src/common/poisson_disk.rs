@@ -1,56 +1,87 @@
 //! This module contains tools for performing Poisson disk sampling on points in 2D and 3D.
 
-use crate::common::kd_tree::{KdTree, KdTreeSearch};
+use crate::common::kd_tree::{KdTree, KdTreeSearch, PartialKdTree};
+use crate::common::{IndexMask, PCoords, voxel_downsample};
+use crate::na::SVector;
 use parry3d_f64::na::Point;
 
-pub fn sample_poisson_disk<const D: usize>(
-    all_points: &[Point<f64, D>],
-    working_indices: &[usize],
+// pub fn sample_poisson_disk<const D: usize>(
+//     all_points: &[impl PCoords<D>],
+//     working_indices: &[usize],
+//     radius: f64,
+// ) -> Vec<usize> {
+//     /*
+//        We're going to do this work with a mask array and a kd-tree.
+//
+//        First we'll reduce the `all_points` array to just the points at the `working_indices`,
+//        producing the `working_points` array. The point at `working_points[m]` will be the same as
+//        the point at `all_points[working_indices[m]]`, where `m` goes from 0 ->
+//        `working_indices.len()`. The outside index `i` is `working_indices[m]`.
+//
+//        The mask will be the same length as the `working_indices` array. Each mask element at index
+//        `m` corresponds with the point at `working_indices[m]`. If the mask element is true, then
+//        point index `working_indices[m]` (the point at `working_points[m]`) is a valid candidate for
+//        inclusion in the final set.
+//
+//        The kd-tree will be built with the `working_points` array. When we query the kd-tree, the
+//        results will be indices into the `working_points` array.
+//
+//        We will iterate over the mask array. We skip any mask elements that are false. For each
+//        mask element that is true, we query the kd-tree for all points within `radius` of the point
+//        and set the mask elements corresponding to those points to false. After visiting a true
+//        mask element, we can add the index `working_indices[m]` to the result set.
+//     */
+//
+//     let mut results = Vec::new();
+//
+//     let working_points: Vec<[f64; D]> = working_indices
+//         .iter()
+//         .map(|i| all_points[*i].coords().into())
+//         .collect();
+//
+//     let mut mask = vec![true; working_indices.len()];
+//     let tree = KdTree::from_slice(&working_points);
+//
+//     for (m, &i) in working_indices.iter().enumerate() {
+//         if !mask[m] {
+//             continue;
+//         }
+//         results.push(i);
+//
+//         let p = SVector::from(working_points[m]);
+//         let within = tree.within(&p, radius);
+//         for w in within {
+//             mask[w.0] = false;
+//         }
+//     }
+//
+//     results
+// }
+
+pub fn sample_poisson_disk_all<const D: usize>(
+    points: &[impl PCoords<D>],
     radius: f64,
-) -> Vec<usize> {
-    /*
-       We're going to do this work with a mask array and a kd-tree.
+) -> IndexMask {
+    let pre_mask = voxel_downsample(points, radius * 0.25);
+    let partial_tree = PartialKdTree::new(points, &pre_mask);
 
-       First we'll reduce the `all_points` array to just the points at the `working_indices`,
-       producing the `working_points` array. The point at `working_points[m]` will be the same as
-       the point at `all_points[working_indices[m]]`, where `m` goes from 0 ->
-       `working_indices.len()`. The outside index `i` is `working_indices[m]`.
+    let mut skip_mask = pre_mask.clone();
+    let mut final_mask = IndexMask::new(points.len(), false);
 
-       The mask will be the same length as the `working_indices` array. Each mask element at index
-       `m` corresponds with the point at `working_indices[m]`. If the mask element is true, then
-       point index `working_indices[m]` (the point at `working_points[m]`) is a valid candidate for
-       inclusion in the final set.
-
-       The kd-tree will be built with the `working_points` array. When we query the kd-tree, the
-       results will be indices into the `working_points` array.
-
-       We will iterate over the mask array. We skip any mask elements that are false. For each
-       mask element that is true, we query the kd-tree for all points within `radius` of the point
-       and set the mask elements corresponding to those points to false. After visiting a true
-       mask element, we can add the index `working_indices[m]` to the result set.
-    */
-
-    let mut results = Vec::new();
-
-    let working_points = working_indices
-        .iter()
-        .map(|i| all_points[*i])
-        .collect::<Vec<_>>();
-    let mut mask = vec![true; working_indices.len()];
-    let tree = KdTree::new(&working_points);
-
-    for (m, &i) in working_indices.iter().enumerate() {
-        if !mask[m] {
+    for i in pre_mask.iter_true() {
+        if !skip_mask.get(i) {
             continue;
         }
-        results.push(i);
-        let within = tree.within(&working_points[m], radius);
+
+        final_mask.set(i, true);
+
+        let within = partial_tree.within(&points[i], radius);
         for w in within {
-            mask[w.0] = false;
+            skip_mask.set(w.0, false);
         }
     }
 
-    results
+    final_mask
 }
 
 #[cfg(test)]
@@ -70,15 +101,15 @@ mod tests {
 
         for _ in 0..100 {
             let points = random_points(n, mx);
-            let mut indices = index_vec(None, n);
-            indices.shuffle(&mut rand::rng());
+            // let mut indices = index_vec(None, n);
+            // indices.shuffle(&mut rand::rng());
 
-            let keep = sample_poisson_disk(&points, &indices, r);
+            let keep = sample_poisson_disk_all(&points, r);
             let at_least = (mx * mx) / (r * r) * 0.25;
             assert!(keep.len() > at_least as usize);
 
             // Brute force check that each point only has one point (itself) within the radius
-            let kept = keep.iter().map(|i| points[*i]).collect::<Vec<_>>();
+            let kept = keep.clone_indices_of(&points).unwrap();
             let tree = KdTree::new(&kept);
             for (i, &p) in kept.iter().enumerate() {
                 let within = tree.within(&p, r);

@@ -9,12 +9,12 @@ pub mod polyline2;
 
 use crate::AngleDir;
 use crate::AngleDir::Cw;
-use crate::common::{PCoords, SurfacePointCollection};
 use crate::common::surface_point::SurfacePoint;
 use crate::common::svd_basis::SvdBasis;
+use crate::common::{PCoords, SurfacePointCollection};
+use crate::na::SVector;
 use parry2d_f64::na::UnitComplex;
 use std::ops;
-use crate::na::SVector;
 
 pub type Point2 = parry2d_f64::na::Point2<f64>;
 pub type Vector2 = parry2d_f64::na::Vector2<f64>;
@@ -150,26 +150,6 @@ impl SurfacePoint2 {
         Self::new_normalize(self.point, rot90(dir) * self.normal.into_inner())
     }
 }
-
-impl PCoords<2> for SurfacePoint2{
-    fn coords(&self) -> SVector<f64, 2> {
-        self.point.coords
-    }
-}
-
-impl PCoords<2> for Point2 {
-    fn coords(&self) -> SVector<f64, 2> {
-        self.coords
-    }
-}
-
-impl PCoords<2> for Vector2 {
-    fn coords(&self) -> SVector<f64, 2> {
-        *self
-    }
-}
-
-
 
 #[cfg(test)]
 mod tests {

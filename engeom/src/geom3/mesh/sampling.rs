@@ -1,9 +1,8 @@
 use super::Mesh;
 use crate::common::SurfacePointCollection;
-use crate::common::indices::index_vec;
 use crate::common::kd_tree::KdTreeSearch;
 use crate::common::points::{dist, mean_point};
-use crate::common::poisson_disk::sample_poisson_disk;
+use crate::common::poisson_disk::sample_poisson_disk_all;
 use crate::{Iso3, KdTree3, Point3, SurfacePoint3, SvdBasis3, To2D, TransformBy};
 use parry2d_f64::transformation::convex_hull;
 use rand::prelude::SliceRandom;
@@ -40,16 +39,14 @@ impl Mesh {
 
     pub fn sample_poisson(&self, radius: f64) -> Vec<SurfacePoint3> {
         let starting = self.sample_dense(radius * 0.5);
-        // TODO: this can be more efficient without all the copying
-        let points = (&starting).clone_points();
-        let mut rng = rand::rng();
-        let mut indices = index_vec(None, starting.len());
-        indices.shuffle(&mut rng);
+        let mask = sample_poisson_disk_all(&starting, radius);
 
-        // Deal with kiddo bug
-        let to_take = sample_poisson_disk(&points, &indices, radius);
-        let to_take = sample_poisson_disk(&points, &to_take, radius);
-        to_take.into_iter().map(|i| starting[i]).collect()
+        let mut result = Vec::new();
+        for i in mask.iter_true() {
+            result.push(starting[i]);
+        }
+
+        result
     }
 
     pub fn sample_dense(&self, max_spacing: f64) -> Vec<SurfacePoint3> {
@@ -308,4 +305,24 @@ pub fn sac_check(
     }
 
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn check_kiddo_bug() {
+        let mesh = Mesh::create_sphere(100.0, 300, 300);
+        let r = 5.0;
+        let sampled = mesh.sample_poisson(r);
+
+        let points = sampled.iter().map(|sp| sp.point).collect::<Vec<_>>();
+
+        let tree = KdTree3::new(&points);
+        for sp in &sampled {
+            let neighbors = tree.within(&sp.point, r);
+            assert_eq!(neighbors.len(), 1, "Missed duplicate");
+        }
+    }
 }

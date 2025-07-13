@@ -38,7 +38,10 @@ mod tests {
 
         for i in 0..1000 {
             for j in 0..1000 {
-                points.push(Point2::new(i as f64 * s0 + s0 / 2.0, j as f64 * s0 + s0 / 2.0));
+                points.push(Point2::new(
+                    i as f64 * s0 + s0 / 2.0,
+                    j as f64 * s0 + s0 / 2.0,
+                ));
             }
         }
 
@@ -51,7 +54,8 @@ mod tests {
                 let y = j as f64 * s1;
                 let aabb = Aabb2::new(Point2::new(x, y), Point2::new(x + s1, y + s1));
 
-                let count = thinned.iter()
+                let count = thinned
+                    .iter()
                     .filter(|p| aabb.contains_local_point(*p))
                     .count();
 

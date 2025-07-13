@@ -61,10 +61,7 @@ pub fn mesh_to_mesh_iterative(
             )
             .into());
         }
-        let points = test_points
-            .into_iter()
-            .map(|p| p.point)
-            .collect::<Vec<_>>();
+        let points = test_points.into_iter().map(|p| p.point).collect::<Vec<_>>();
 
         let result = points_to_mesh(&points, reference, initial, mode)?;
         let avg = result.avg_residual();

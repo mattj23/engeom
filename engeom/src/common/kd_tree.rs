@@ -1,3 +1,4 @@
+use crate::common::{IndexMask, PCoords};
 use kiddo::SquaredEuclidean;
 use kiddo::immutable::float::kdtree;
 use parry3d_f64::na::Point;
@@ -27,9 +28,9 @@ impl<const D: usize> MatchedTree<D> {
 }
 
 pub trait KdTreeSearch<const D: usize> {
-    fn nearest_one(&self, point: &Point<f64, D>) -> (usize, f64);
-    fn nearest(&self, point: &Point<f64, D>, count: NonZero<usize>) -> Vec<(usize, f64)>;
-    fn within(&self, point: &Point<f64, D>, radius: f64) -> Vec<(usize, f64)>;
+    fn nearest_one(&self, point: &impl PCoords<D>) -> (usize, f64);
+    fn nearest(&self, point: &impl PCoords<D>, count: NonZero<usize>) -> Vec<(usize, f64)>;
+    fn within(&self, point: &impl PCoords<D>, radius: f64) -> Vec<(usize, f64)>;
 
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool {
@@ -50,13 +51,19 @@ impl<const D: usize> KdTree<D> {
     /// * `points`: A slice of points.
     ///
     /// returns: KdTree<{ D }>
-    pub fn new(points: &[Point<f64, D>]) -> Self {
+    pub fn new(points: &[impl PCoords<D>]) -> Self {
         let mut entries: Vec<[f64; D]> = Vec::with_capacity(points.len());
         for p in points {
-            entries.push(p.coords.into());
+            entries.push(p.coords().into());
         }
         Self {
             tree: kdtree::ImmutableKdTree::new_from_slice(&entries),
+        }
+    }
+
+    pub fn from_slice(s: &[[f64; D]]) -> Self {
+        Self {
+            tree: kdtree::ImmutableKdTree::new_from_slice(s),
         }
     }
 }
@@ -77,10 +84,10 @@ impl<const D: usize> KdTreeSearch<D> for KdTree<D> {
     ///
     ///
     /// ```
-    fn nearest_one(&self, point: &Point<f64, D>) -> (usize, f64) {
+    fn nearest_one(&self, point: &impl PCoords<D>) -> (usize, f64) {
         let result = self
             .tree
-            .nearest_one::<SquaredEuclidean>(&point.coords.into());
+            .nearest_one::<SquaredEuclidean>(&point.coords().into());
         (result.item, result.distance.sqrt())
     }
 
@@ -98,10 +105,10 @@ impl<const D: usize> KdTreeSearch<D> for KdTree<D> {
     /// ```
     ///
     /// ```
-    fn nearest(&self, point: &Point<f64, D>, count: NonZero<usize>) -> Vec<(usize, f64)> {
+    fn nearest(&self, point: &impl PCoords<D>, count: NonZero<usize>) -> Vec<(usize, f64)> {
         let result = self
             .tree
-            .nearest_n::<SquaredEuclidean>(&point.coords.into(), count);
+            .nearest_n::<SquaredEuclidean>(&point.coords().into(), count);
         result
             .iter()
             .map(|r| (r.item, r.distance.sqrt()))
@@ -122,10 +129,10 @@ impl<const D: usize> KdTreeSearch<D> for KdTree<D> {
     /// ```
     ///
     /// ```
-    fn within(&self, point: &Point<f64, D>, radius: f64) -> Vec<(usize, f64)> {
+    fn within(&self, point: &impl PCoords<D>, radius: f64) -> Vec<(usize, f64)> {
         let result = self
             .tree
-            .within::<SquaredEuclidean>(&point.coords.into(), radius * radius);
+            .within::<SquaredEuclidean>(&point.coords().into(), radius * radius);
         result
             .iter()
             .map(|r| (r.item, r.distance.sqrt()))
@@ -165,21 +172,29 @@ impl<const D: usize> PartialKdTree<D> {
     /// ```
     ///
     /// ```
-    pub fn new(all_points: &[Point<f64, D>], indices: &[usize]) -> Self {
-        let points = indices.iter().map(|i| all_points[*i]).collect::<Vec<_>>();
+    pub fn new(all_points: &[impl PCoords<D>], mask: &IndexMask) -> Self {
+        if mask.len() != all_points.len() {
+            panic!("Mask length must match the length of all_points");
+        }
+
+        let mut points = Vec::new();
+        let mut index_map = Vec::new();
+        for i in mask.iter_true() {
+            points.push(all_points[i].coords());
+            index_map.push(i);
+        }
         let tree = KdTree::new(&points);
-        let index_map = indices.to_vec();
         Self { tree, index_map }
     }
 }
 
 impl<const D: usize> KdTreeSearch<D> for PartialKdTree<D> {
-    fn nearest_one(&self, point: &Point<f64, D>) -> (usize, f64) {
+    fn nearest_one(&self, point: &impl PCoords<D>) -> (usize, f64) {
         let (i, d) = self.tree.nearest_one(point);
         (self.index_map[i], d)
     }
 
-    fn nearest(&self, point: &Point<f64, D>, count: NonZero<usize>) -> Vec<(usize, f64)> {
+    fn nearest(&self, point: &impl PCoords<D>, count: NonZero<usize>) -> Vec<(usize, f64)> {
         let result = self.tree.nearest(point, count);
         result
             .iter()
@@ -187,7 +202,7 @@ impl<const D: usize> KdTreeSearch<D> for PartialKdTree<D> {
             .collect::<Vec<_>>()
     }
 
-    fn within(&self, point: &Point<f64, D>, radius: f64) -> Vec<(usize, f64)> {
+    fn within(&self, point: &impl PCoords<D>, radius: f64) -> Vec<(usize, f64)> {
         let result = self.tree.within(point, radius);
         result
             .iter()
@@ -256,11 +271,17 @@ mod tests {
         let fixed_tree = KdTree::new(&points);
 
         for _ in 0..1000 {
-            let mut indices = index_vec(None, points.len());
-            indices.shuffle(&mut rand::rng());
-            let indices = &indices[0..(points.len() / 2)];
+            let mut test_select = index_vec(None, points.len());
+            test_select.shuffle(&mut rand::rng());
 
-            let partial_tree = PartialKdTree::new(&points, &indices);
+            // Use only half of the points for the partial tree
+            let mut mask = IndexMask::new(points.len(), false);
+            for &i in test_select.iter().take(points.len() / 2) {
+                mask.set(i, true);
+            }
+            let indices = mask.to_indices();
+
+            let partial_tree = PartialKdTree::new(&points, &mask);
 
             for &i in indices.iter() {
                 let p = &points[i];

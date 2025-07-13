@@ -14,18 +14,18 @@ pub mod triangulation;
 pub mod vec_f64;
 mod voxel_downsample;
 
+use crate::na::{Point, SVector};
 pub use align::DistMode;
 pub use angles::{
-    angle_in_direction, angle_signed_pi, angle_to_2pi, signed_compliment_2pi, AngleDir,
-    AngleInterval,
+    AngleDir, AngleInterval, angle_in_direction, angle_signed_pi, angle_to_2pi,
+    signed_compliment_2pi,
 };
 pub use convert_2d_3d::{To2D, To3D};
-pub use discrete_domain::{linear_space, DiscreteDomain};
+pub use discrete_domain::{DiscreteDomain, linear_space};
 pub use index_mask::IndexMask;
 pub use interval::Interval;
 pub use parry3d_f64::query::SplitResult;
 pub use surface_point::{SurfacePoint, SurfacePointCollection};
-use crate::na::SVector;
 pub use voxel_downsample::voxel_downsample;
 
 /// General purpose option for starting the selection of a set of items, either from everything,
@@ -107,4 +107,28 @@ pub trait TransformBy<T, TOut> {
 pub trait PCoords<const D: usize> {
     /// Returns the coordinates of the point as a vector.
     fn coords(&self) -> SVector<f64, D>;
+}
+
+impl<const D: usize> PCoords<D> for [f64; D] {
+    fn coords(&self) -> SVector<f64, D> {
+        SVector::from_column_slice(self)
+    }
+}
+
+impl<const D: usize> PCoords<D> for SurfacePoint<D> {
+    fn coords(&self) -> SVector<f64, D> {
+        self.point.coords
+    }
+}
+
+impl<const D: usize> PCoords<D> for Point<f64, D> {
+    fn coords(&self) -> SVector<f64, D> {
+        self.coords
+    }
+}
+
+impl<const D: usize> PCoords<D> for SVector<f64, D> {
+    fn coords(&self) -> SVector<f64, D> {
+        *self
+    }
 }

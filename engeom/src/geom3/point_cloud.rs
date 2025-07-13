@@ -2,12 +2,13 @@ mod normal_estimation;
 
 use crate::common::kd_tree::{KdTreeSearch, MatchedTree};
 use crate::common::points::dist;
-use crate::common::poisson_disk::sample_poisson_disk;
 use crate::{Iso3, KdTree3, Mesh, Point3, Result, SurfacePoint3, UnitVec3};
 use bounding_volume::Aabb;
 use parry3d_f64::bounding_volume;
 use uuid::Uuid;
 
+use crate::common::IndexMask;
+use crate::common::poisson_disk::sample_poisson_disk_all;
 pub use normal_estimation::{NormalEstimates, estimate_by_neighborhood};
 
 pub trait PointCloudOverlap<TOther> {
@@ -29,6 +30,26 @@ pub trait PointCloudFeatures {
 
     fn aabb(&self) -> Aabb {
         Aabb::from_points(self.points())
+    }
+
+    fn create_from_mask(&self, mask: &IndexMask) -> Result<PointCloud> {
+        if mask.len() != self.len() {
+            return Err("Mask length must match point cloud length".into());
+        }
+        let points = mask.clone_indices_of(self.points())?;
+        let normals = if let Some(n) = self.normals() {
+            Some(mask.clone_indices_of(n)?)
+        } else {
+            None
+        };
+
+        let colors = if let Some(c) = self.colors() {
+            Some(mask.clone_indices_of(c)?)
+        } else {
+            None
+        };
+
+        PointCloud::try_new(points, normals, colors)
     }
 
     fn create_from_indices(&self, indices: &[usize]) -> Result<PointCloud> {
@@ -331,29 +352,8 @@ impl<'a> PointCloudKdTree<'a> {
     /// * `radius`: The minimum distance between sampled points.
     ///
     /// returns: Vec<usize, Global>
-    pub fn sample_poisson_disk(&self, radius: f64) -> Vec<usize> {
-        // This extra work is because it seems that kiddo does not necessarily return all points
-        // within the radius.
-        let mut mask = vec![true; self.cloud.points.len()];
-        let mut previous_pass = Vec::new();
-        for i in 0..self.cloud.points.len() {
-            if !mask[i] {
-                continue;
-            }
-            previous_pass.push(i);
-            let neighbors = self.tree().within(&self.cloud.points[i], radius);
-            for (n, _) in neighbors {
-                mask[n] = false;
-            }
-        }
-
-        let mut next_pass = sample_poisson_disk(self.cloud.points(), &previous_pass, radius);
-        while next_pass.len() != previous_pass.len() {
-            previous_pass = next_pass;
-            next_pass = sample_poisson_disk(self.cloud.points(), &previous_pass, radius);
-        }
-
-        next_pass
+    pub fn sample_poisson_disk(&self, radius: f64) -> IndexMask {
+        sample_poisson_disk_all(&self.points(), radius)
     }
 
     /// Create a new point cloud from a Poisson disk sampling of the original point cloud. The new
@@ -369,8 +369,8 @@ impl<'a> PointCloudKdTree<'a> {
     ///
     /// returns: Result<PointCloud, Box<dyn Error, Global>>
     pub fn create_from_poisson_sample(&self, radius: f64) -> Result<PointCloud> {
-        let indices = self.sample_poisson_disk(radius);
-        self.cloud.create_from_indices(&indices)
+        let mask = self.sample_poisson_disk(radius);
+        self.cloud.create_from_mask(&mask)
     }
 }
 

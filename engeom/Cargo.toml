@@ -30,9 +30,13 @@ faer = "0.22.6"
 [dev-dependencies]
 test-case = "3.3.1"
 approx = "0.5.1"
-divan = "0.1.21"
+criterion = "0.6.0"
 rand = "0.9.1"
 
 [[bench]]
-name = "bench"
+name = "index_mask"
+harness = false
+
+[[bench]]
+name = "down_sample"
 harness = false
