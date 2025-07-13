@@ -114,7 +114,7 @@ impl<'a> AlignmentMesh<'a> {
     }
 
     pub fn transform(&self) -> Iso3 {
-        self.initial.unwrap_or(&Iso3::identity()).clone()
+        *self.initial.unwrap_or(&Iso3::identity())
     }
 }
 
@@ -257,7 +257,7 @@ pub fn generate_alignment_points(
 
         // We'll execute the sample validity check, and if it passes, we'll add the point to
         // the mask
-        let (ok, d) = smpl_check(pnt, &neighbors, ref_mesh, iso, &params);
+        let (ok, d) = smpl_check(pnt, &neighbors, ref_mesh, iso, params);
         if ok {
             candidates.push((d, pnt))
         }

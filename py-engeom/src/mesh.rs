@@ -288,6 +288,7 @@ impl Mesh {
         result.into_pyarray(py)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn sample_alignment_points<'py>(
         &self,
         py: Python<'py>,

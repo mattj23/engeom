@@ -54,6 +54,7 @@ pub fn points_to_cloud(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 #[pyfunction]
 pub fn mesh_to_mesh_iterative(
     moving: &Mesh,

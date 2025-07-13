@@ -49,7 +49,7 @@ impl IndexMask {
 
     /// Modify the mask so that all values are the opposite of their current value.
     pub fn flip(&mut self) {
-        for mut u in self.mask.as_raw_mut_slice() {
+        for u in self.mask.as_raw_mut_slice() {
             *u = !*u;
         }
     }
@@ -59,7 +59,7 @@ impl IndexMask {
             return Err("Masks must be of the same length".into());
         }
 
-        let mut self_mask = self.mask.as_raw_mut_slice();
+        let self_mask = self.mask.as_raw_mut_slice();
         let other_mask = other.mask.as_raw_slice();
 
         for (a, b) in self_mask.iter_mut().zip(other_mask.iter()) {
@@ -74,7 +74,7 @@ impl IndexMask {
             return Err("Masks must be of the same length".into());
         }
 
-        let mut self_mask = self.mask.as_raw_mut_slice();
+        let self_mask = self.mask.as_raw_mut_slice();
         let other_mask = other.mask.as_raw_slice();
 
         for (a, b) in self_mask.iter_mut().zip(other_mask.iter()) {

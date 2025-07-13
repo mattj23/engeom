@@ -8,7 +8,6 @@ mod points_to_cloud;
 mod points_to_mesh;
 mod rotations;
 
-use crate::Mesh;
 use crate::geom3::{Iso3, Point3, Vector3};
 use parry3d_f64::na::{Translation3, UnitQuaternion, Vector6};
 
@@ -55,7 +54,7 @@ pub fn distance_weight(d: f64, threshold: f64) -> f64 {
 pub fn normal_weight(n: &Vector3, n_ref: &Vector3) -> f64 {
     // If the normals are pointing in opposite directions, the dot product will be negative,
     // so we clamp it to 0.0, otherwise we want to return 1
-    n.dot(&n_ref).ceil().max(0.0)
+    n.dot(n_ref).ceil().max(0.0)
 }
 
 /// This struct manages the parameters for a transformation which is expressed as rotations around

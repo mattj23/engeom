@@ -353,7 +353,7 @@ impl<'a> PointCloudKdTree<'a> {
     ///
     /// returns: Vec<usize, Global>
     pub fn sample_poisson_disk(&self, radius: f64) -> IndexMask {
-        sample_poisson_disk_all(&self.points(), radius)
+        sample_poisson_disk_all(self.points(), radius)
     }
 
     /// Create a new point cloud from a Poisson disk sampling of the original point cloud. The new

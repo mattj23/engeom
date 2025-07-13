@@ -9,10 +9,8 @@ mod xyzwpr;
 use parry3d_f64::na::UnitQuaternion;
 
 use crate::TransformBy;
-use crate::common::PCoords;
 use crate::common::surface_point::{SurfacePoint, SurfacePointCollection};
 use crate::common::svd_basis::SvdBasis;
-use crate::na::SVector;
 pub use curve3::{Curve3, CurveStation3};
 pub use iso3::IsoExtensions3;
 pub use mesh::{Mesh, MeshCollisionSet, UvMapping};

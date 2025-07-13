@@ -1,7 +1,6 @@
 use crate::common::{IndexMask, PCoords};
 use kiddo::SquaredEuclidean;
 use kiddo::immutable::float::kdtree;
-use parry3d_f64::na::Point;
 use std::num::NonZero;
 use uuid::Uuid;
 

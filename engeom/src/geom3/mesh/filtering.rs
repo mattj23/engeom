@@ -1,10 +1,8 @@
 //! This module has implementations of different ways of filtering/reducing a mesh
 
 use crate::Result;
-use crate::common::indices::index_vec;
 use crate::common::{IndexMask, SelectOp, Selection};
 use crate::{Mesh, Point3, SurfacePoint3, UnitVec3, Vector3};
-use faer::Index;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 
@@ -56,7 +54,7 @@ impl TriangleFilter<'_> {
                 self.mask.and_mut(&flipped).unwrap();
             }
             SelectOp::Keep => {
-                self.mask.and_mut(&pass_mask).unwrap();
+                self.mask.and_mut(pass_mask).unwrap();
             }
         };
 

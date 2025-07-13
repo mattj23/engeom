@@ -112,7 +112,7 @@ impl Mesh {
             .shape
             .project_local_point_and_get_location_with_max_dist(&point, self.is_solid, max_dist);
         if let Some((prj, (id, loc))) = result {
-            let local = point - &prj.point;
+            let local = point - prj.point;
             let triangle = self.shape.triangle(id);
             if let Some(normal) = triangle.normal() {
                 let angle = normal.angle(&local).abs();

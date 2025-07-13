@@ -1,13 +1,8 @@
 use super::{Mesh, MeshSurfPoint};
-use crate::common::kd_tree::KdTreeSearch;
-use crate::common::points::{dist, mean_point};
+use crate::common::linear_space;
+use crate::common::points::dist;
 use crate::common::poisson_disk::sample_poisson_disk_all;
-use crate::common::{SurfacePointCollection, linear_space};
-use crate::{Iso3, KdTree3, Point3, SurfacePoint3, SvdBasis3, To2D, TransformBy};
-use parry2d_f64::transformation::convex_hull;
-use rand::prelude::SliceRandom;
-use std::f64::consts::PI;
-use std::num::NonZero;
+use crate::{Point3, SurfacePoint3};
 
 fn bc_to_point(bc: [f64; 3], a: &Point3, b: &Point3, c: &Point3) -> Point3 {
     (a.coords * bc[0] + b.coords * bc[1] + c.coords * bc[2]).into()
@@ -183,9 +178,9 @@ impl Mesh {
 
 fn barycentric_grid(a: &Point3, b: &Point3, c: &Point3, max_spacing: f64) -> Vec<[f64; 3]> {
     let mut result = Vec::new();
-    let va = a - bc_to_point([0.0, 0.5, 0.5], &a, &b, &c);
-    let vb = b - bc_to_point([0.5, 0.0, 0.5], &a, &b, &c);
-    let vc = c - bc_to_point([0.5, 0.5, 0.0], &a, &b, &c);
+    let va = a - bc_to_point([0.0, 0.5, 0.5], a, b, c);
+    let vb = b - bc_to_point([0.5, 0.0, 0.5], a, b, c);
+    let vc = c - bc_to_point([0.5, 0.5, 0.0], a, b, c);
 
     let na = (va.norm() / max_spacing).ceil() as usize + 3;
     let nb = (vb.norm() / max_spacing).ceil() as usize + 3;
@@ -232,8 +227,9 @@ fn bc_order(n0: usize, op_edge: f64, max_spacing: f64) -> Vec<(f64, f64, f64)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::kd_tree::KdTree;
+    use crate::common::kd_tree::*;
     use crate::common::points::evenly_spaced_points_between;
+    use crate::KdTree3;
 
     #[test]
     fn check_kiddo_bug() {

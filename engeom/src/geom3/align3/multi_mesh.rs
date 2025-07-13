@@ -7,23 +7,20 @@
 //! with a relatively large amount of overlap between meshes.  This code was implemented to perform
 //! bundle adjustment between metrology quality scans of objects with unambiguous morphology.
 
-use crate::Result;
 use crate::common::points::dist;
-use crate::geom3::Align3;
 use crate::geom3::align3::jacobian::{point_plane_jacobian, point_plane_jacobian_rev};
 use crate::geom3::align3::multi_param::ParamHandler;
-use crate::geom3::align3::{GAPParams, distance_weight, normal_weight};
-use crate::na::{DMatrix, Dyn, Matrix, Owned, U1, Vector};
-use crate::{Iso3, Mesh, Point3, SurfacePoint3};
+use crate::geom3::align3::{distance_weight, normal_weight, GAPParams};
+use crate::geom3::Align3;
+use crate::na::{DMatrix, Dyn, Matrix, Owned, Vector, U1};
+use crate::Result;
 use faer::prelude::default;
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
-use parry3d_f64::query::PointQueryWithLocation;
 use rayon::prelude::*;
 use std::time::Instant;
 
-use crate::geom3::align3::mesh::{AlignmentMesh, generate_alignment_points};
+use crate::geom3::align3::mesh::{generate_alignment_points, AlignmentMesh};
 use crate::geom3::mesh::MeshSurfPoint;
-use std::f64::consts::PI;
 
 /// Options for the multi-mesh simultaneous alignment algorithm.
 #[derive(Debug, Clone, Copy)]
@@ -43,7 +40,7 @@ impl MMOpts {
     }
 }
 
-pub fn multi_mesh_adjustment<'a>(meshes: &[AlignmentMesh], opts: MMOpts) -> Result<Vec<Align3>> {
+pub fn multi_mesh_adjustment(meshes: &[AlignmentMesh], opts: MMOpts) -> Result<Vec<Align3>> {
     let matrix = correspondence_matrix(meshes, &opts.sample);
     let mut corr = &matrix / matrix.max();
     corr.apply(|x| *x = x.sqrt());
@@ -89,8 +86,8 @@ pub fn multi_mesh_adjustment<'a>(meshes: &[AlignmentMesh], opts: MMOpts) -> Resu
                 .inv_mul(&meshes[*mesh_i].transform());
             let mut to_test = Vec::new();
             let samples = generate_alignment_points(
-                &meshes[*mesh_i].mesh,
-                &meshes[*ref_i].mesh,
+                meshes[*mesh_i].mesh,
+                meshes[*ref_i].mesh,
                 &t,
                 &opts.sample,
             );
@@ -106,13 +103,7 @@ pub fn multi_mesh_adjustment<'a>(meshes: &[AlignmentMesh], opts: MMOpts) -> Resu
                     1.0
                 };
 
-                to_test.push(TestPoint {
-                    mesh_i: *mesh_i,
-                    mp,
-                    ref_i: *ref_i,
-                    weight,
-                    uncert: 0.0,
-                })
+                to_test.push(TestPoint::new(*mesh_i, mp, *ref_i, weight, 0.0));
             }
             to_test
         })
@@ -144,7 +135,7 @@ pub fn multi_mesh_adjustment<'a>(meshes: &[AlignmentMesh], opts: MMOpts) -> Resu
 
         Ok(alignments
             .iter()
-            .zip(grouped.into_iter())
+            .zip(grouped)
             .map(|(a, g)| Align3::new(*a, g))
             .collect())
     } else {
@@ -254,7 +245,7 @@ impl<'a> MultiMeshProblem<'a> {
 
     fn move_points(&mut self) {
         let indices = (0..self.point_handles.len()).collect::<Vec<_>>();
-        let mut collected = indices
+        let collected = indices
             .par_iter()
             .map(|i| {
                 let h = &self.point_handles[*i];
@@ -300,10 +291,6 @@ impl<'a> MultiMeshProblem<'a> {
             self.weight[i] = w;
         }
     }
-}
-
-fn is_zero(x: f64) -> bool {
-    x.abs() < 1e-12
 }
 
 impl<'a> LeastSquaresProblem<f64, Dyn, Dyn> for MultiMeshProblem<'a> {
@@ -369,26 +356,26 @@ impl<'a> LeastSquaresProblem<f64, Dyn, Dyn> for MultiMeshProblem<'a> {
     }
 }
 
-fn un_cert(point: &Point3, target: &Mesh, by_vertex: &[f64]) -> (f64, SurfacePoint3) {
-    let (prj, (fi, tpl)) = target
-        .tri_mesh()
-        .project_local_point_and_get_location(&point, false);
-
-    let face = target.faces()[fi as usize];
-    let normal = target.tri_mesh().triangle(fi).normal().unwrap();
-
-    let u0 = by_vertex[face[0] as usize];
-    let u1 = by_vertex[face[1] as usize];
-    let u2 = by_vertex[face[2] as usize];
-
-    let st_dev = if let Some(bc) = tpl.barycentric_coordinates() {
-        u0 * bc[0] + u1 * bc[1] + u2 * bc[2]
-    } else {
-        u0.max(u1).max(u2)
-    };
-
-    (st_dev.powi(2), SurfacePoint3::new(prj.point, normal))
-}
+// fn un_cert(point: &Point3, target: &Mesh, by_vertex: &[f64]) -> (f64, SurfacePoint3) {
+//     let (prj, (fi, tpl)) = target
+//         .tri_mesh()
+//         .project_local_point_and_get_location(point, false);
+//
+//     let face = target.faces()[fi as usize];
+//     let normal = target.tri_mesh().triangle(fi).normal().unwrap();
+//
+//     let u0 = by_vertex[face[0] as usize];
+//     let u1 = by_vertex[face[1] as usize];
+//     let u2 = by_vertex[face[2] as usize];
+//
+//     let st_dev = if let Some(bc) = tpl.barycentric_coordinates() {
+//         u0 * bc[0] + u1 * bc[1] + u2 * bc[2]
+//     } else {
+//         u0.max(u1).max(u2)
+//     };
+//
+//     (st_dev.powi(2), SurfacePoint3::new(prj.point, normal))
+// }
 
 fn correspondence_matrix(meshes: &[AlignmentMesh], params: &GAPParams) -> DMatrix<f64> {
     // We want to build a correspondence matrix which will help us determine which mesh will be the
@@ -418,7 +405,7 @@ fn correspondence_matrix(meshes: &[AlignmentMesh], params: &GAPParams) -> DMatri
         .par_iter()
         .map(|&(i, j)| {
             let t = meshes[i].transform().inv_mul(&meshes[j].transform());
-            let samples = generate_alignment_points(&meshes[j].mesh, &meshes[i].mesh, &t, params);
+            let samples = generate_alignment_points(meshes[j].mesh, meshes[i].mesh, &t, params);
 
             (i, j, samples.len() as f64)
         })

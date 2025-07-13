@@ -3,7 +3,6 @@ use crate::geom3::Align3;
 use crate::geom3::align3::mesh::generate_alignment_points;
 use crate::geom3::align3::{GAPParams, points_to_mesh};
 use crate::{Iso3, Mesh, Result};
-use std::f64::consts::PI;
 
 /// Perform an iterative alignment of one mesh to another. Each iteration is a full
 /// Levenberg-Marquardt optimization of the alignment of a set of specific points sampled from the
@@ -55,7 +54,7 @@ pub fn mesh_to_mesh_iterative(
     let mut iter = 0;
 
     loop {
-        let test_points = generate_alignment_points(moving, reference, initial, &params);
+        let test_points = generate_alignment_points(moving, reference, initial, params);
         if test_points.len() < 5 {
             return Err(format!(
                 "Failed on iteration {iter}, not enough alignment candidate \
