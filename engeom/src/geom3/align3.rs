@@ -19,7 +19,7 @@ pub use self::multi_mesh::{MMOpts, multi_mesh_adjustment};
 pub use self::points_to_cloud::points_to_cloud;
 pub use self::points_to_mesh::points_to_mesh;
 pub use self::rotations::RotationMatrices;
-pub use self::mesh::generate_alignment_points;
+pub use self::mesh::{generate_alignment_points, GAPParams};
 
 #[derive(Clone, Copy, Debug)]
 pub enum SampleMode {

@@ -1,9 +1,9 @@
-use std::f64::consts::PI;
 use crate::common::DistMode;
 use crate::geom3::Align3;
-use crate::geom3::align3::points_to_mesh;
-use crate::{Iso3, Mesh, Result};
 use crate::geom3::align3::mesh::generate_alignment_points;
+use crate::geom3::align3::{GAPParams, points_to_mesh};
+use crate::{Iso3, Mesh, Result};
+use std::f64::consts::PI;
 
 /// Perform an iterative alignment of one mesh to another. Each iteration is a full
 /// Levenberg-Marquardt optimization of the alignment of a set of specific points sampled from the
@@ -46,25 +46,16 @@ use crate::geom3::align3::mesh::generate_alignment_points;
 pub fn mesh_to_mesh_iterative(
     moving: &Mesh,
     reference: &Mesh,
-    sample_spacing: f64,
     initial: &Iso3,
     mode: DistMode,
     max_iter: usize,
+    params: &GAPParams,
 ) -> Result<Align3> {
     let mut last_residual = f64::MAX;
     let mut iter = 0;
 
     loop {
-        let test_points = generate_alignment_points(
-            moving,
-            reference,
-            initial,
-            sample_spacing,
-            PI / 3.0,
-            1.0 / 20.0,
-            1.0,
-            Some(3.0),
-        );
+        let test_points = generate_alignment_points(moving, reference, initial, &params);
         if test_points.len() < 5 {
             return Err(format!(
                 "Failed on iteration {iter}, not enough alignment candidate \
@@ -72,7 +63,10 @@ pub fn mesh_to_mesh_iterative(
             )
             .into());
         }
-        let points = test_points.into_iter().map(|p| p.sp.point).collect::<Vec<_>>();
+        let points = test_points
+            .into_iter()
+            .map(|p| p.sp.point)
+            .collect::<Vec<_>>();
 
         let result = points_to_mesh(&points, reference, initial, mode)?;
         let avg = result.avg_residual();

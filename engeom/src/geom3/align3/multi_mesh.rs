@@ -12,7 +12,7 @@ use crate::common::points::dist;
 use crate::geom3::Align3;
 use crate::geom3::align3::jacobian::{point_plane_jacobian, point_plane_jacobian_rev};
 use crate::geom3::align3::multi_param::ParamHandler;
-use crate::geom3::align3::{distance_weight, normal_weight};
+use crate::geom3::align3::{GAPParams, distance_weight, normal_weight};
 use crate::na::{DMatrix, Dyn, Matrix, Owned, U1, Vector};
 use crate::{Iso3, Mesh, Point3, SurfacePoint3};
 use faer::prelude::default;
@@ -28,16 +28,16 @@ use std::f64::consts::PI;
 #[derive(Debug, Clone, Copy)]
 pub struct MMOpts {
     pub search_radius: f64,
-    pub sample_radius: f64,
     pub respect_normals: bool,
+    pub sample: GAPParams,
 }
 
 impl MMOpts {
-    pub fn new(search_radius: f64, sample_radius: f64, respect_normals: bool) -> Self {
+    pub fn new(search_radius: f64, respect_normals: bool, sample: GAPParams) -> Self {
         Self {
             search_radius,
-            sample_radius,
             respect_normals,
+            sample,
         }
     }
 }
@@ -54,7 +54,7 @@ pub fn multi_mesh_adjustment<'a>(
         None => vec![Iso3::identity(); meshes.len()],
     };
 
-    let matrix = correspondence_matrix(meshes, &transforms, opts);
+    let matrix = correspondence_matrix(meshes, &transforms, &opts.sample);
     let mut corr = &matrix / matrix.max();
     corr.apply(|x| *x = x.sqrt());
 
@@ -96,16 +96,8 @@ pub fn multi_mesh_adjustment<'a>(
         .map(|(mesh_i, ref_i)| {
             let t = transforms[*ref_i].inv_mul(&transforms[*mesh_i]);
             let mut to_test = Vec::new();
-            let samples = generate_alignment_points(
-                &meshes[*mesh_i],
-                &meshes[*ref_i],
-                &t,
-                opts.sample_radius,
-                PI / 3.0,
-                1.0 / 20.0,
-                1.0,
-                Some(3.0),
-            );
+            let samples =
+                generate_alignment_points(&meshes[*mesh_i], &meshes[*ref_i], &t, &opts.sample);
             for sp in samples {
                 to_test.push(TestPoint {
                     mesh_i: *mesh_i,
@@ -390,7 +382,7 @@ impl<'a> LeastSquaresProblem<f64, Dyn, Dyn> for MultiMeshProblem<'a> {
     }
 }
 
-fn correspondence_matrix(meshes: &[Mesh], transforms: &[Iso3], opts: MMOpts) -> DMatrix<f64> {
+fn correspondence_matrix(meshes: &[Mesh], transforms: &[Iso3], params: &GAPParams) -> DMatrix<f64> {
     // We want to build a correspondence matrix which will help us determine which mesh will be the
     // static reference mesh.  In the matrix, each i, j entry will be the number of sample points
     // in mesh j which are a good match for mesh i.  The row with the highest sum of its columns
@@ -418,16 +410,7 @@ fn correspondence_matrix(meshes: &[Mesh], transforms: &[Iso3], opts: MMOpts) -> 
         .par_iter()
         .map(|&(i, j)| {
             let t = transforms[i].inv_mul(&transforms[j]);
-            let samples = generate_alignment_points(
-                &meshes[j],
-                &meshes[i],
-                &t,
-                opts.sample_radius,
-                PI / 3.0,
-                1.0 / 20.0,
-                1.0,
-                Some(3.0),
-            );
+            let samples = generate_alignment_points(&meshes[j], &meshes[i], &t, params);
 
             (i, j, samples.len() as f64)
         })

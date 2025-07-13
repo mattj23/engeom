@@ -6,6 +6,7 @@ use crate::point_cloud::PointCloud;
 use numpy::PyReadonlyArray2;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use engeom::geom3::align3::GAPParams;
 
 #[pyfunction]
 pub fn points_to_mesh(
@@ -57,18 +58,29 @@ pub fn points_to_cloud(
 pub fn mesh_to_mesh_iterative(
     moving: &Mesh,
     reference: &Mesh,
-    sample_spacing: f64,
     initial: &Iso3,
     mode: DeviationMode,
     max_iter: usize,
+    sample_spacing: f64,
+    max_neighbor_angle: f64,       // PI / 3.0
+    out_of_plane_ratio: f64,       // 1 /20.0
+    centroid_ratio: f64,           // 1.0
+    filter_distances: Option<f64>, // Some(3.0)
 ) -> PyResult<Iso3> {
+    let params = GAPParams::new(
+        sample_spacing,
+        max_neighbor_angle,
+        out_of_plane_ratio,
+        centroid_ratio,
+        filter_distances,
+    );
     let result = engeom::geom3::align3::mesh_to_mesh_iterative(
         moving.get_inner(),
         reference.get_inner(),
-        sample_spacing,
         initial.get_inner(),
         mode.into(),
         max_iter,
+        &params
     );
 
     match result {

@@ -8,7 +8,7 @@ use crate::metrology::Distance3;
 use crate::point_cloud::Lptf3Load;
 use engeom::common::points::dist;
 use engeom::common::{Selection, SplitResult};
-use engeom::geom3::align3::generate_alignment_points;
+use engeom::geom3::align3::{GAPParams, generate_alignment_points};
 use numpy::ndarray::{Array1, Array2, ArrayD};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray2};
 use pyo3::exceptions::{PyIOError, PyValueError};
@@ -294,21 +294,20 @@ impl Mesh {
         reference: &Mesh,
         iso: Iso3,
         max_spacing: f64,
-        max_neighbor_angle: f64, // PI / 3.0
-        out_of_plane_ratio: f64, // 1 /20.0
-        centroid_ratio: f64,     // 1.0
+        max_neighbor_angle: f64,       // PI / 3.0
+        out_of_plane_ratio: f64,       // 1 /20.0
+        centroid_ratio: f64,           // 1.0
         filter_distances: Option<f64>, // Some(3.0)
     ) -> Bound<'py, PyArray2<f64>> {
-        let mps = generate_alignment_points(
-            &self.inner,
-            &reference.inner,
-            iso.get_inner(),
+        let params = GAPParams::new(
             max_spacing,
             max_neighbor_angle,
             out_of_plane_ratio,
             centroid_ratio,
             filter_distances,
         );
+        let mps =
+            generate_alignment_points(&self.inner, &reference.inner, iso.get_inner(), &params);
         let points = mps.into_iter().map(|mp| mp.sp.point).collect::<Vec<_>>();
 
         let result = points_to_array(&points);
