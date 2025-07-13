@@ -96,7 +96,7 @@ pub fn multi_mesh_adjustment(meshes: &[AlignmentMesh], opts: MMOpts) -> Result<V
                 let weight = if let Some(providers) = &meshes[*mesh_i].weights {
                     let mut w = 1.0;
                     for item in providers.iter() {
-                        w *= item.as_ref().weight(&mp);
+                        w *= item.weight(&mp);
                     }
                     w
                 } else {

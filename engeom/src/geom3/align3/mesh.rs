@@ -1,5 +1,6 @@
 //! This module has some common abstractions and tools for aligning meshes
 
+use crate::common::IndexMask;
 use crate::common::kd_tree::KdTreeSearch;
 use crate::common::points::{dist, mean_point};
 use crate::common::vec_f64::mean_and_stdev;
@@ -8,6 +9,40 @@ use crate::{Iso3, KdTree3, Mesh, SvdBasis3, To2D, TransformBy};
 use parry2d_f64::transformation::convex_hull;
 use std::num::NonZero;
 
+#[derive(Clone)]
+pub struct FaceIndexWeight {
+    mask: IndexMask,
+    weight: f64,
+}
+
+impl FaceIndexWeight {
+    /// Creates a new FaceIndexWeight instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `mask`: The mask containing the face indices to apply the weight to.
+    /// * `weight`: The weight to apply to the points in the specified faces.
+    pub fn new(mask: IndexMask, weight: f64) -> Self {
+        Self { mask, weight }
+    }
+
+    pub fn to_boxed_trait(self) -> Box<dyn MeshWeight + Sync> {
+        Box::new(self)
+    }
+}
+
+impl MeshWeight for FaceIndexWeight {
+    fn weight(&self, point: &MeshSurfPoint) -> f64 {
+        // If the point's face index is in the mask, return the weight, otherwise return 0.0
+        if self.mask.get(point.face_index as usize) {
+            self.weight
+        } else {
+            1.0
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct NearMeshWeight {
     mesh: Mesh,
     weight: f64,
@@ -32,6 +67,10 @@ impl NearMeshWeight {
             max_angle,
         }
     }
+
+    pub fn to_boxed_trait(self) -> Box<dyn MeshWeight + Sync> {
+        Box::new(self)
+    }
 }
 
 impl MeshWeight for NearMeshWeight {
@@ -40,14 +79,14 @@ impl MeshWeight for NearMeshWeight {
         let nearest = self.mesh.surf_closest_to(&point.sp.point);
         let dist = dist(&nearest.sp, &point.sp);
 
-        // If the distance is greater than the maximum distance, return 0.0
+        // If the distance is greater than the maximum distance, return 1.0
         if dist > self.max_dist {
-            return 0.0;
+            return 1.0;
         }
 
         // Check the angle between the normals
         if nearest.sp.normal.angle(&point.sp.normal) > self.max_angle {
-            return 0.0;
+            return 1.0;
         }
 
         // Return the weight if all conditions are met
@@ -80,7 +119,7 @@ pub struct AlignmentMesh<'a> {
     pub mesh: &'a Mesh,
     pub uncertainty: Option<&'a [f64]>,
     pub initial: Option<&'a Iso3>,
-    pub weights: Option<&'a [&'a Box<dyn MeshWeight + Sync>]>,
+    pub weights: Option<&'a [Box<dyn MeshWeight + Sync>]>,
 }
 
 impl<'a> AlignmentMesh<'a> {
@@ -103,7 +142,7 @@ impl<'a> AlignmentMesh<'a> {
         mesh: &'a Mesh,
         uncertainty: Option<&'a [f64]>,
         initial: Option<&'a Iso3>,
-        weights: Option<&'a [&'a Box<dyn MeshWeight + Sync>]>,
+        weights: Option<&'a [Box<dyn MeshWeight + Sync>]>,
     ) -> Self {
         Self {
             mesh,
