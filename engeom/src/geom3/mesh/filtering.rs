@@ -230,7 +230,18 @@ impl Mesh {
         TriangleFilter { mesh: self, mask }
     }
 
-    pub fn create_from_mask(&self, mask: &IndexMask) -> Result<Self> {
+    /// Extract vertices and faces from the mesh based on a mask of face indices. This is a step
+    /// towards creating a new mesh, but can be used independently.  To directly construct a new
+    /// mesh, use `create_from_mask` instead.
+    ///
+    /// # Arguments
+    ///
+    /// * `mask`: a mask of face indices that will be used to filter the vertices and faces. Must
+    ///   have the same length as the number of faces in the mesh, or the function will return an
+    ///   error.
+    ///
+    /// returns: Result<(Vec<OPoint<f64, Const<3>>, Global>, Vec<[u32; 3], Global>), Box<dyn Error, Global>>
+    pub fn faces_verts_from_mask(&self, mask: &IndexMask) -> Result<(Vec<Point3>, Vec<[u32; 3]>)> {
         let vertex_mask = self.unique_vertex_mask(mask)?;
 
         // The map_back array will map the old vertex indices to the new ones
@@ -252,6 +263,22 @@ impl Mesh {
             ]);
         }
 
+        Ok((new_verts, new_faces))
+    }
+
+    /// Create a new mesh from a mask of face indices. This function will extract the vertices and
+    /// faces from the mesh based on the mask, and then create a new mesh with those vertices and
+    /// faces. The mask must have the same length as the number of faces in the mesh, or the
+    /// function will return an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `mask`: a mask of face indices to be part of the new mesh. Must have the same length as
+    ///   the number of faces in the mesh, or the function will return an error.
+    ///
+    /// returns: Result<Mesh, Box<dyn Error, Global>>
+    pub fn create_from_mask(&self, mask: &IndexMask) -> Result<Self> {
+        let (new_verts, new_faces) = self.faces_verts_from_mask(mask)?;
         Ok(Self::new(new_verts, new_faces, false))
     }
 

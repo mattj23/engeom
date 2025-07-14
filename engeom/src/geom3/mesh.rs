@@ -153,7 +153,7 @@ impl Mesh {
         is_solid: bool,
         merge_duplicates: bool,
         delete_degenerate: bool,
-        uv: Option<UvMapping>,
+        uv: Option<Vec<Point2>>,
     ) -> Result<Self> {
         let mut flags = TriMeshFlags::empty();
         if merge_duplicates {
@@ -165,11 +165,17 @@ impl Mesh {
             flags |= TriMeshFlags::DELETE_DEGENERATE_TRIANGLES;
         }
 
+        let uv_mapping = if let Some(uv) = uv {
+            Some(UvMapping::new(uv, triangles.clone())?)
+        } else {
+            None
+        };
+
         let shape = TriMesh::with_flags(vertices, triangles, flags)?;
         Ok(Self {
             shape,
             is_solid,
-            uv,
+            uv: uv_mapping,
         })
     }
 
@@ -205,20 +211,20 @@ impl Mesh {
         Ok(())
     }
 
-    pub fn new_with_uv(
-        vertices: Vec<Point3>,
-        triangles: Vec<[u32; 3]>,
-        is_solid: bool,
-        uv: Option<UvMapping>,
-    ) -> Self {
-        let shape =
-            TriMesh::new(vertices, triangles).expect("Failed to create TriMesh with UV mapping");
-        Self {
-            shape,
-            is_solid,
-            uv,
-        }
-    }
+    // pub fn new_with_uv(
+    //     vertices: Vec<Point3>,
+    //     triangles: Vec<[u32; 3]>,
+    //     is_solid: bool,
+    //     uv: Option<UvMapping>,
+    // ) -> Self {
+    //     let shape =
+    //         TriMesh::new(vertices, triangles).expect("Failed to create TriMesh with UV mapping");
+    //     Self {
+    //         shape,
+    //         is_solid,
+    //         uv,
+    //     }
+    // }
 
     pub fn uv(&self) -> Option<&UvMapping> {
         self.uv.as_ref()
@@ -254,7 +260,7 @@ impl Mesh {
             if let Some((prj, id, loc)) = self.project_with_tol(&point, max_dist, max_angle, None) {
                 let triangle = self.shape.triangle(id);
                 if let Some(normal) = triangle.normal() {
-                    let uv = uv_map.point(id as usize, loc.barycentric_coordinates().unwrap());
+                    let uv = uv_map.point(id, loc.barycentric_coordinates().unwrap());
                     // Now find the depth
                     let sp = SurfacePoint3::new(prj.point, normal);
                     Some((uv, sp.scalar_projection(&point)))

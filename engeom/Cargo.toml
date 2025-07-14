@@ -27,6 +27,8 @@ stl_io = { version = "0.8.5", optional = true }
 num-traits = "0.2.19"
 faer = "0.22.6"
 
+imageproc = "0.25.0"
+
 [dev-dependencies]
 test-case = "3.3.1"
 approx = "0.5.1"

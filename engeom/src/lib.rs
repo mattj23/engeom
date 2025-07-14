@@ -1,3 +1,5 @@
+extern crate core;
+
 use std::error::Error;
 
 pub mod airfoil;
@@ -8,6 +10,7 @@ pub mod geom2;
 pub mod geom3;
 pub mod io;
 pub mod metrology;
+pub mod raster2;
 pub mod raster3;
 pub mod sensors;
 pub mod stats;
@@ -18,11 +21,14 @@ pub mod utility;
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-// Re-export parry, nalgebra, and alum for convenience
+// Re-export some commonly used crates for convenience
 pub use alum;
+pub use imageproc;
+pub use imageproc::image;
 pub use parry2d_f64 as parry2d;
 pub use parry3d_f64 as parry3d;
 pub use parry3d_f64::na;
+pub use rayon;
 pub use serde;
 pub use serde_json;
 
