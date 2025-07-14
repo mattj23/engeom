@@ -6,11 +6,11 @@
 use crate::image::imageops::{FilterType, resize};
 use crate::image::{GrayImage, ImageBuffer, Luma, Primitive};
 use crate::na::{DMatrix, Scalar};
+use crate::raster2::area_average::AreaAverage;
 use crate::raster2::{MaskOperations, inpaint};
 use imageproc::distance_transform::Norm::L1;
 use imageproc::morphology::{dilate_mut, erode_mut};
 use num_traits::{Bounded, Zero};
-use crate::raster2::area_average::AreaAverage;
 use rayon::prelude::*;
 
 pub type ScalarImage<T> = ImageBuffer<Luma<T>, Vec<T>>;
@@ -97,31 +97,18 @@ impl ScalarRaster {
     }
 
     pub fn to_matrix(&self) -> DMatrix<f64> {
-        // TODO: make generic later
-        let type_min = u16::MIN;
-        let type_max = u16::MAX;
-        let type_range = (type_max - type_min) as f64;
-
         let mut matrix =
-            DMatrix::zeros(self.values.height() as usize, self.values.width() as usize);
-        for i in 0..self.values.height() {
-            for j in 0..self.values.width() {
+            DMatrix::zeros(self.height() as usize, self.width() as usize);
+        for i in 0..self.height() {
+            for j in 0..self.width() {
                 let mpx = self.mask.get_pixel(j, i);
 
                 // If the mask is 0, this pixel is not valid
                 if mpx.0[0] == 0 {
                     matrix[(i as usize, j as usize)] = f64::NAN;
                 } else {
-                    let vpx = self.values.get_pixel(j, i).0[0];
-
-                    // Find the fraction of the full scale range that this value represents
-                    let f = (vpx - type_min) as f64 / type_range;
-
-                    // Scale it to the full value
-                    let v = f * (self.max_z - self.min_z) + self.min_z;
-
-                    // Set the value in the matrix
-                    matrix[(i as usize, j as usize)] = v;
+                    matrix[(i as usize, j as usize)] =
+                        self.u_to_f(self.values.get_pixel(j, i).0[0]);
                 }
             }
         }
@@ -268,7 +255,7 @@ impl ScalarRaster {
         let values = resize(&self.values, width, height, FilterType::Nearest);
         let mask = resize(&self.mask, width, height, FilterType::Nearest);
 
-        Self{
+        Self {
             values,
             mask,
             px_size: self.px_size / scale,
@@ -284,7 +271,7 @@ impl ScalarRaster {
         let values = resize(&self.values, width, height, FilterType::Nearest);
         let mask = resize(&self.mask, width, height, FilterType::Nearest);
 
-        Self{
+        Self {
             values,
             mask,
             px_size: self.px_size * shrink_factor as f64,
@@ -301,8 +288,9 @@ impl ScalarRaster {
             if self.mask.get_pixel(x, y)[0] < 255 {
                 *v = Luma([0]);
             } else {
-                let r = reference.values.get_pixel(x, y)[0];
-                *v = Luma([v[0] - r]);
+                let ref_val = reference.u_to_f(reference.values.get_pixel(x, y)[0]);
+                let self_val = self.u_to_f(v[0]);
+                *v = Luma([self.f_to_u(self_val - ref_val)]);
             }
         }
 
