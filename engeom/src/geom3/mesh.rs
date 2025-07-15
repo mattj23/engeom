@@ -85,6 +85,11 @@ impl PCoords<3> for MeshSurfPoint {
     }
 }
 
+/// This is a triangle mesh optimized for collision detection and geometric queries. It is built on
+/// top of the `parry3d` library's `TriMesh` type, which provides efficient storage and querying of
+/// triangle meshes. This mesh has some basic functionality for interrogating its structure, and
+/// some very basic functionality for editing.  However, it is not a structure optimized for
+/// editing or modification.
 #[derive(Clone)]
 pub struct Mesh {
     shape: TriMesh,
@@ -210,21 +215,6 @@ impl Mesh {
         self.shape.append(&other.shape);
         Ok(())
     }
-
-    // pub fn new_with_uv(
-    //     vertices: Vec<Point3>,
-    //     triangles: Vec<[u32; 3]>,
-    //     is_solid: bool,
-    //     uv: Option<UvMapping>,
-    // ) -> Self {
-    //     let shape =
-    //         TriMesh::new(vertices, triangles).expect("Failed to create TriMesh with UV mapping");
-    //     Self {
-    //         shape,
-    //         is_solid,
-    //         uv,
-    //     }
-    // }
 
     pub fn uv(&self) -> Option<&UvMapping> {
         self.uv.as_ref()

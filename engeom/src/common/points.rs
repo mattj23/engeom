@@ -4,6 +4,48 @@ use crate::common::PCoords;
 use crate::common::surface_point::SurfacePoint;
 use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector};
 
+/// Calculate the barycentric coordinates of a point `p` with respect to the triangle defined by
+/// points `a`, `b`, and `c` in D-dimensional space.  The barycentric coordinates are a way of
+/// expressing the position of a point within a triangle as a combination of the triangle's
+/// vertices.
+///
+/// This function was taken from the book "Real-Time Collision Detection" by Christer Ericson.
+///
+/// # Arguments
+///
+/// * `a`: the first vertex of the triangle
+/// * `b`: the second vertex of the triangle
+/// * `c`: the third vertex of the triangle
+/// * `p`: the point for which to calculate the barycentric coordinates
+///
+/// returns: [f64; 3]
+pub fn barycentric<const D: usize>(
+    a: &impl PCoords<D>,
+    b: &impl PCoords<D>,
+    c: &impl PCoords<D>,
+    p: &impl PCoords<D>,
+) -> [f64; 3] {
+    let v0 = b.coords() - a.coords();
+    let v1 = c.coords() - a.coords();
+    let v2 = p.coords() - a.coords();
+
+    let d00 = v0.dot(&v0);
+    let d01 = v0.dot(&v1);
+    let d11 = v1.dot(&v1);
+    let d20 = v2.dot(&v0);
+
+    let d21 = v2.dot(&v1);
+    let denom = d00 * d11 - d01 * d01;
+    if denom.abs() < f64::EPSILON {
+        [0.0, 0.0, 0.0]
+    } else {
+        let v = (d11 * d20 - d01 * d21) / denom;
+        let w = (d00 * d21 - d01 * d20) / denom;
+        let u = 1.0 - v - w;
+        [u, v, w]
+    }
+}
+
 /// Measure the angle between `pc`->`p1` and `pc`->`p2` in D-dimensional space.
 ///
 /// # Arguments
@@ -473,6 +515,7 @@ mod tests {
     use crate::Vector2;
     use crate::geom2::{Curve2, Point2};
     use approx::assert_relative_eq;
+    use rand::Rng;
 
     #[test]
     fn distance_calc() {
@@ -494,6 +537,27 @@ mod tests {
         assert_relative_eq!(reduced[0], Point2::new(0.0, 0.0));
         assert_relative_eq!(reduced[1], Point2::new(1.0, 0.0));
         assert_relative_eq!(reduced[2], Point2::new(1.0, 1.0));
+    }
+
+    #[test]
+    fn stress_barycentric_round_trip() {
+        let a = Point2::new(-1.2, -3.0);
+        let b = Point2::new(4.7, 2.3);
+        let c = Point2::new(-4.2, 5.0);
+        let mut rng = rand::rng();
+
+        for _ in 0..10000 {
+            let u = rng.random_range(0.0..1.0);
+            let v = rng.random_range(0.0..u);
+            let w = 1.0 - u - v;
+
+            let p = Point2::from(a.coords * u + b.coords * v + c.coords * w);
+
+            let bary = barycentric(&a, &b, &c, &p);
+            assert_relative_eq!(bary[0], u, epsilon = 1e-6);
+            assert_relative_eq!(bary[1], v, epsilon = 1e-6);
+            assert_relative_eq!(bary[2], w, epsilon = 1e-6);
+        }
     }
 
     fn curve_from(points: &[(f64, f64)]) -> Curve2 {
