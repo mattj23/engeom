@@ -31,6 +31,7 @@ pub use parry3d_f64::na;
 pub use rayon;
 pub use serde;
 pub use serde_json;
+pub use colorgrad;
 
 // Re-export the `three_d` crate if the feature is enabled
 #[cfg(feature = "three_d")]

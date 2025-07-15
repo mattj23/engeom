@@ -3,8 +3,11 @@
 //! fields in a way that allows for image processing algorithms and operations to be applied
 //! without losing a connection to a spatial coordinate system.
 
+use std::path::Path;
+use colorgrad::Gradient;
+use crate::Result;
 use crate::image::imageops::{FilterType, resize};
-use crate::image::{GrayImage, ImageBuffer, Luma, Primitive};
+use crate::image::{GrayImage, ImageBuffer, Luma, Primitive, Rgba, RgbaImage};
 use crate::na::{DMatrix, Scalar};
 use crate::raster2::area_average::AreaAverage;
 use crate::raster2::{MaskOperations, inpaint};
@@ -56,6 +59,26 @@ impl ScalarRaster {
         }
     }
 
+    pub fn save_with_cmap(&self, path: &Path, gradient: &dyn Gradient, min_max: Option<(f64, f64)>) -> Result<()> {
+        let (min_z, max_z) = min_max.unwrap_or((self.min_z, self.max_z));
+        let mut img = RgbaImage::new(self.width(), self.height());
+
+        for (x, y, p) in img.enumerate_pixels_mut() {
+            if self.mask.get_pixel(x, y)[0] == 0 {
+                *p = Rgba([0, 0, 0, 0]); // Transparent pixel
+            } else {
+                let value = self.u_to_f(self.values.get_pixel(x, y)[0]);
+                let f = (value - min_z) / (max_z - min_z);
+
+                let color = gradient.at(f as f32).to_rgba8();
+                *p = Rgba(color);
+            }
+        }
+
+        img.save(path)
+            .map_err(|e| e.into())
+    }
+
     pub fn from_matrix(matrix: &DMatrix<f64>, px_size: f64, min_z: f64, max_z: f64) -> Self {
         let mut value = ScalarImage::new(matrix.ncols() as u32, matrix.nrows() as u32);
         let mut mask = GrayImage::new(matrix.ncols() as u32, matrix.nrows() as u32);
@@ -94,6 +117,37 @@ impl ScalarRaster {
             min_z,
             max_z,
         }
+    }
+
+    /// Calculates the mean and standard deviation of the valid pixels in the depth map, using
+    /// their floating point values. The results are returned as a tuple of `(mean, stdev)`.
+    pub fn mean_stdev(&self) -> (f64, f64) {
+        let mut sum = 0.0;
+        let mut count = 0.0;
+
+        for (x, y, pixel) in self.values.enumerate_pixels() {
+            if self.mask.get_pixel(x, y)[0] == 255 {
+                sum += self.u_to_f(pixel.0[0]);
+                count += 1.0;
+            }
+        }
+
+        if count == 0.0 {
+            return (f64::NAN, f64::NAN);
+        }
+
+        let mean = sum / count;
+
+        let mut variance_sum = 0.0;
+        for (x, y, pixel) in self.values.enumerate_pixels() {
+            if self.mask.get_pixel(x, y)[0] == 255 {
+                let value = self.u_to_f(pixel.0[0]);
+                variance_sum += (value - mean).powi(2);
+            }
+        }
+
+        let stdev = (variance_sum / count).sqrt();
+        (mean, stdev)
     }
 
     pub fn to_matrix(&self) -> DMatrix<f64> {

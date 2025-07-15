@@ -28,6 +28,7 @@ num-traits = "0.2.19"
 faer = "0.22.6"
 
 imageproc = "0.25.0"
+colorgrad = "0.7.2"
 
 [dev-dependencies]
 test-case = "3.3.1"
