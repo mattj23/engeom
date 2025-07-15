@@ -59,10 +59,10 @@ pub trait MaskOperations {
     /// does not exist.
     fn is_pixel_unmasked(&self, x: i32, y: i32) -> bool;
 
-    /// Set a pixel to be masked
+    /// Set a pixel to be masked (i.e. set to 255)
     fn set_masked(&mut self, x: u32, y: u32);
 
-    /// Set a pixel to be unmasked
+    /// Set a pixel to be unmasked (i.e. set to 0)
     fn set_unmasked(&mut self, x: u32, y: u32);
 
     /// Erode the mask with alternating L1 and LInf norms
@@ -73,6 +73,8 @@ pub trait MaskOperations {
 
     fn eroded_alternating(&self, count: usize) -> Self;
     fn dilated_alternating(&self, count: usize) -> Self;
+
+    fn invert(&mut self);
 }
 
 impl MaskOperations for GrayImage {
@@ -167,6 +169,9 @@ impl MaskOperations for GrayImage {
         output
     }
 
+    /// Returns true if the pixel at the given coordinates exists AND is masked, otherwise false.
+    /// Masked means that the pixel value is 255, and conceptually it represents a real pixel with
+    /// a known value.
     fn is_pixel_masked(&self, x: i32, y: i32) -> bool {
         if x < 0 || x >= self.width() as i32 || y < 0 || y >= self.height() as i32 {
             false
@@ -175,6 +180,9 @@ impl MaskOperations for GrayImage {
         }
     }
 
+    /// Returns true if the pixel at the given coordinates exists AND is unmasked, otherwise false.
+    /// Unmasked means that the pixel value is 0, and conceptually it represents a pixel that is
+    /// not part of the dataset (similar to null or NaN).
     fn is_pixel_unmasked(&self, x: i32, y: i32) -> bool {
         if x < 0 || x >= self.width() as i32 || y < 0 || y >= self.height() as i32 {
             false
@@ -221,5 +229,15 @@ impl MaskOperations for GrayImage {
         let mut working = self.clone();
         working.dilate_alternating(count);
         working
+    }
+
+    fn invert(&mut self) {
+        for (_, _, v) in self.enumerate_pixels_mut() {
+            if v.is_masked() {
+                v.set_unmasked();
+            } else {
+                v.set_masked();
+            }
+        }
     }
 }

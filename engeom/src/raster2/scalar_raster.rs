@@ -3,18 +3,22 @@
 //! fields in a way that allows for image processing algorithms and operations to be applied
 //! without losing a connection to a spatial coordinate system.
 
-use std::path::Path;
-use colorgrad::Gradient;
 use crate::Result;
 use crate::image::imageops::{FilterType, resize};
-use crate::image::{GrayImage, ImageBuffer, Luma, Primitive, Rgba, RgbaImage};
+use crate::image::{
+    GrayImage, ImageBuffer, ImageFormat, ImageReader, Luma, Primitive, Rgba, RgbaImage,
+};
 use crate::na::{DMatrix, Scalar};
 use crate::raster2::area_average::AreaAverage;
-use crate::raster2::{MaskOperations, inpaint};
+use crate::raster2::{MaskOperations, inpaint, RasterKernel, FastApproxKernel};
+use colorgrad::Gradient;
 use imageproc::distance_transform::Norm::L1;
 use imageproc::morphology::{dilate_mut, erode_mut};
 use num_traits::{Bounded, Zero};
 use rayon::prelude::*;
+use std::fs::File;
+use std::io::{BufReader, BufWriter, Cursor, Read, Write};
+use std::path::Path;
 
 pub type ScalarImage<T> = ImageBuffer<Luma<T>, Vec<T>>;
 
@@ -28,6 +32,82 @@ pub struct ScalarRaster {
 }
 
 impl ScalarRaster {
+    pub fn save_combined(&self, path: &Path, fmt: ImageFormat) -> Result<()> {
+        let mut value_bytes = Vec::new();
+        let mut mask_bytes = Vec::new();
+        self.values
+            .write_to(&mut Cursor::new(&mut value_bytes), fmt)?;
+        self.mask.write_to(&mut Cursor::new(&mut mask_bytes), fmt)?;
+
+        let file = File::create(path)?;
+        let mut writer = BufWriter::new(file);
+        writer.write_all(&self.px_size.to_le_bytes())?;
+        writer.write_all(&self.min_z.to_le_bytes())?;
+        writer.write_all(&self.max_z.to_le_bytes())?;
+        writer.write_all(&(value_bytes.len() as u64).to_le_bytes())?;
+        writer.write_all(&value_bytes)?;
+        writer.write_all(&(mask_bytes.len() as u64).to_le_bytes())?;
+        writer.write_all(&mask_bytes)?;
+
+        Ok(())
+    }
+
+    pub fn load_combined(path: &Path) -> Result<Self> {
+        let file = File::open(path)?;
+        let mut reader = BufReader::new(file);
+        let mut bytes_8 = [0u8; 8];
+        reader.read_exact(&mut bytes_8)?;
+        let px_size = f64::from_le_bytes(bytes_8);
+
+        reader.read_exact(&mut bytes_8)?;
+        let min_z = f64::from_le_bytes(bytes_8);
+
+        reader.read_exact(&mut bytes_8)?;
+        let max_z = f64::from_le_bytes(bytes_8);
+
+        reader.read_exact(&mut bytes_8)?;
+        let value_len = u64::from_le_bytes(bytes_8) as usize;
+        let mut value_bytes = vec![0u8; value_len];
+        reader.read_exact(&mut value_bytes)?;
+
+        reader.read_exact(&mut bytes_8)?;
+        let mask_len = u64::from_le_bytes(bytes_8) as usize;
+        let mut mask_bytes = vec![0u8; mask_len];
+        reader.read_exact(&mut mask_bytes)?;
+
+        let values = ImageReader::new(Cursor::new(value_bytes))
+            .with_guessed_format()?
+            .decode()?;
+
+        let mask = ImageReader::new(Cursor::new(mask_bytes))
+            .with_guessed_format()?
+            .decode()?;
+
+        if values.width() != mask.width() || values.height() != mask.height() {
+            return Err("Values and mask images must have the same dimensions".into());
+        }
+
+        Ok(Self {
+            values: values.into_luma16(),
+            mask: mask.into_luma8(),
+            px_size,
+            min_z,
+            max_z,
+        })
+    }
+
+    pub fn f_at(&self, x: i32, y: i32) -> f64 {
+        self.u_at(x, y).map(|u| self.u_to_f(u)).unwrap_or(f64::NAN)
+    }
+
+    pub fn u_at(&self, x: i32, y: i32) -> Option<u16> {
+        if self.mask.is_pixel_unmasked(x, y) {
+            None
+        } else {
+            Some(self.values.get_pixel(x as u32, y as u32)[0])
+        }
+    }
+
     pub fn width(&self) -> u32 {
         self.values.width()
     }
@@ -46,6 +126,36 @@ impl ScalarRaster {
         f * (self.max_z - self.min_z) + self.min_z
     }
 
+    pub fn set_f_at(&mut self, x: i32, y: i32, val: f64) {
+        if val.is_nan() {
+            self.mask.set_unmasked(x as u32, y as u32);
+        } else {
+            self.mask.set_masked(x as u32, y as u32);
+            let u = self.f_to_u(val);
+            self.values.put_pixel(x as u32, y as u32, Luma([u]));
+        }
+    }
+
+    pub fn set_u_at(&mut self, x: i32, y: i32, val: Option<u16>) {
+        if let Some(v) = val {
+            self.mask.set_masked(x as u32, y as u32);
+            self.values.put_pixel(x as u32, y as u32, Luma([v]));
+        } else {
+            self.mask.set_unmasked(x as u32, y as u32);
+            self.values.put_pixel(x as u32, y as u32, Luma([0]));
+        }
+    }
+
+    pub fn empty_like(other: &Self) -> Self {
+        Self::empty(
+            other.width(),
+            other.height(),
+            other.px_size,
+            other.min_z,
+            other.max_z,
+        )
+    }
+
     pub fn empty(width: u32, height: u32, px_size: f64, min_z: f64, max_z: f64) -> Self {
         let values = ScalarImage::new(width, height);
         let mask = GrayImage::new(width, height);
@@ -59,7 +169,12 @@ impl ScalarRaster {
         }
     }
 
-    pub fn save_with_cmap(&self, path: &Path, gradient: &dyn Gradient, min_max: Option<(f64, f64)>) -> Result<()> {
+    pub fn save_with_cmap(
+        &self,
+        path: &Path,
+        gradient: &dyn Gradient,
+        min_max: Option<(f64, f64)>,
+    ) -> Result<()> {
         let (min_z, max_z) = min_max.unwrap_or((self.min_z, self.max_z));
         let mut img = RgbaImage::new(self.width(), self.height());
 
@@ -75,8 +190,7 @@ impl ScalarRaster {
             }
         }
 
-        img.save(path)
-            .map_err(|e| e.into())
+        img.save(path).map_err(|e| e.into())
     }
 
     pub fn from_matrix(matrix: &DMatrix<f64>, px_size: f64, min_z: f64, max_z: f64) -> Self {
@@ -151,8 +265,7 @@ impl ScalarRaster {
     }
 
     pub fn to_matrix(&self) -> DMatrix<f64> {
-        let mut matrix =
-            DMatrix::zeros(self.height() as usize, self.width() as usize);
+        let mut matrix = DMatrix::zeros(self.height() as usize, self.width() as usize);
         for i in 0..self.height() {
             for j in 0..self.width() {
                 let mpx = self.mask.get_pixel(j, i);
@@ -318,7 +431,7 @@ impl ScalarRaster {
         }
     }
 
-    pub fn create_resized(&self, shrink_factor: u32) -> Self {
+    pub fn create_shrunk(&self, shrink_factor: u32) -> Self {
         let width = self.values.width() / shrink_factor;
         let height = self.values.height() / shrink_factor;
 
@@ -461,6 +574,85 @@ impl ScalarRaster {
         blurred
     }
 
+    /// Performs a generic convolution operation on the depth image using the given kernel, but
+    /// with a fast approximate method that will shrink the image and kernel down to a smaller
+    /// target size, perform the convolution on the smaller raster, and then re-expand the
+    /// result back to the full size of the original image. This is useful for operations that
+    /// (1) need to occur in the scale of the world space represented by the raster, (2) tend to
+    /// generate very large kernels which would be too expensive to compute at the full size, and
+    /// (3) can tolerate some approximation in the result.
+    ///
+    /// # Arguments
+    ///
+    /// * `kernel`:
+    ///
+    /// returns: ScalarRaster
+    pub fn convolve_fast(&self, kernel: &dyn FastApproxKernel, skip_unmasked: bool) -> Result<Self> {
+        let full_kernel = kernel.make(self.px_size)?;
+        let shrink_factor = ((full_kernel.size as f64) / 17.0).floor();
+        let shrunk_values = self.create_shrunk(shrink_factor as u32);
+        let shrunk_kernel = kernel.make(shrunk_values.px_size)?;
+
+        let shrunk_result = shrunk_kernel.convolve(&shrunk_values, skip_unmasked);
+
+        // The individual scale_x and scale_y factors are important because the scale may
+        // not be equal after conversion to discrete pixel dimensions.
+        let scaled_result = shrunk_result.create_scaled(shrink_factor);
+        let scale_x = scaled_result.width() as f32 / self.width() as f32;
+        let scale_y = scaled_result.height() as f32 / self.height() as f32;
+
+        let mut full_result = ScalarRaster::empty_like(self);
+
+        // All the pixels in the resized image which are at a full mask value can be copied
+        // directly and put into the corresponding pixels in the convolved image
+        let mut need_calc = Vec::new();
+        for (x, y, v) in full_result.values.enumerate_pixels_mut() {
+            // If we're skipping masked pixels, then we can skip this pixel if the self mask
+            // value is not full.
+            if skip_unmasked && self.mask.get_pixel(x, y)[0] < 255 {
+                continue;
+            }
+
+            let scaled_mask = scaled_result.mask.get_pixel(
+                (x as f32 * scale_x).floor() as u32,
+                (y as f32 * scale_y).floor() as u32,
+            )[0];
+
+            // If the scaled mask value is zero, then there was no valid convolution result
+            // for this pixel, so we can skip it.
+            if scaled_mask == 0 {
+                continue;
+            }
+
+            // If the scaled result mask is not full, then we need to calculate this pixel
+            // at full size later.
+            if scaled_mask < 255 {
+                need_calc.push((x, y));
+                continue
+            }
+
+            // Otherwise, we can just copy the value from the scaled result to the full result
+            *v = Luma([scaled_result.values.get_pixel(
+                (x as f32 * scale_x).floor() as u32,
+                (y as f32 * scale_y).floor() as u32,
+            )[0]]);
+
+            // And set the mask
+            full_result.mask.set_masked(x, y);
+        }
+
+        let final_calcs = need_calc
+            .par_iter()
+            .map(|(x, y)| (x, y, full_kernel.convolved_pixel(&self, *x as i32, *y as i32)))
+            .collect::<Vec<_>>();
+
+        for (x, y, v) in final_calcs {
+            full_result.set_f_at(*x as i32, *y as i32, v);
+        }
+
+        Ok(full_result)
+    }
+
     /// Performs a smoothing operation on the depth image by averaging the pixels in a roughly
     /// circular neighborhood reachable along the object surface within approximately a given
     /// radius.
@@ -471,7 +663,7 @@ impl ScalarRaster {
         // use the hybrid resized area average method. Otherwise, we will just do a normal
         // area average.
         let blurred = if optimal_scale > 1 {
-            let small = self.create_resized(optimal_scale);
+            let small = self.create_shrunk(optimal_scale);
             println!("Small image size: {}x{}", small.width(), small.height());
 
             let small_blurred = small.area_blurred(radius_mm);

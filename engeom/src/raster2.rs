@@ -7,8 +7,10 @@ mod scalar_raster;
 mod mask_ops;
 mod inpaint;
 mod area_average;
+mod kernel;
 
 pub use mapping::RasterMapping;
 pub use scalar_raster::*;
 pub use inpaint::inpaint;
 pub use mask_ops::*;
+pub use kernel::*;
