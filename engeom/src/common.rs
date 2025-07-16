@@ -29,21 +29,39 @@ pub use surface_point::{SurfacePoint, SurfacePointCollection};
 pub use voxel_downsample::voxel_downsample;
 
 /// General purpose option for starting the selection of a set of items, either from everything,
-/// nothing, or a specific set of indices
+/// nothing, a specific set of indices, or a bitmask.
 #[derive(Debug, Clone)]
 pub enum Selection {
+    /// Start with no items selected. This is used to indicate that the selection should start with
+    /// nothing selected, and then items can be selected or modified.
     None,
+
+    /// Select all items in the set. This is used to indicate that the selection should start with
+    /// everything selected, and then items can be deselected or modified.
     All,
+
+    /// A specific set of indices to select. This is passed as a vector of indices and not as
+    /// a reference to a slice because the selection will need to be able to own and modify
+    /// the indices.
     Indices(Vec<usize>),
+
+    /// A bitmask which indicates which items are selected. This is passed not as a reference
+    /// because the selection will need to be able to own and modify the mask.
     Mask(IndexMask),
 }
 
 /// General purpose option for selecting or deselecting items from a set
 #[derive(Debug, Clone, Copy)]
 pub enum SelectOp {
+    /// The items identified by the operation should be added to the existing selection
     Add,
+
+    /// The items identified by the operation should be removed from the existing selection
     Remove,
-    Keep,
+
+    /// The items identified by the operation should be retained in the selection, while
+    /// the rest of the selection is cleared
+    KeepOnly,
 }
 
 /// General purpose options for resampling data over a discrete domain.

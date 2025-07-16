@@ -14,7 +14,7 @@ impl From<SelectOp> for engeom::common::SelectOp {
         match val {
             SelectOp::Add => engeom::common::SelectOp::Add,
             SelectOp::Remove => engeom::common::SelectOp::Remove,
-            SelectOp::Keep => engeom::common::SelectOp::Keep,
+            SelectOp::Keep => engeom::common::SelectOp::KeepOnly,
         }
     }
 }

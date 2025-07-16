@@ -198,6 +198,28 @@ impl Mesh {
         Ok(self.face_normals.as_ref().unwrap().bind(py))
     }
 
+    fn boundary_curves(&self) -> PyResult<Vec<Curve3>> {
+        let edges = self
+            .inner
+            .calc_edges()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        let mut curves = Vec::new();
+        for item in edges.boundary_loops.iter() {
+            let mut points = Vec::new();
+            for &index in item.iter() {
+                let point = self.inner.vertices()[index as usize];
+                points.push(point);
+            }
+
+            let c = engeom::Curve3::from_points(&points, 1.0e-6)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+            curves.push(Curve3::from_inner(c));
+        }
+        Ok(curves)
+    }
+
     #[getter]
     fn faces<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArray2<u32>> {
         if self.faces.is_none() {

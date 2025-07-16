@@ -1,6 +1,6 @@
 use super::{ScalarImage, ScalarRaster};
 use crate::image::{GenericImageView, GrayImage, Luma, SubImage};
-use imageproc::distance_transform::Norm::{LInf, L1};
+use imageproc::distance_transform::Norm::{L1, LInf};
 use imageproc::morphology::dilate_mut;
 
 pub struct AreaAverage<'a> {

@@ -1,8 +1,9 @@
 //! This module has implementations of different ways of filtering/reducing a mesh
 
-use crate::Result;
-use crate::common::{IndexMask, SelectOp, Selection};
+use crate::common::points::dist;
+use crate::common::{IndexMask, PCoords, SelectOp, Selection};
 use crate::{Mesh, Point3, SurfacePoint3, UnitVec3, Vector3};
+use crate::{Plane3, Result};
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 
@@ -11,6 +12,44 @@ pub struct TriangleFilter<'a> {
     mask: IndexMask,
 }
 
+// Internal implementations
+impl TriangleFilter<'_> {
+    /// Get the indices of the triangles which would need to be checked for an operation of the
+    /// specified type. If the operation is `SelectOp::Add`, then the triangles that are not in the
+    /// current selection will be returned. If the operation is `SelectOp::Remove`, or
+    /// `SelectOp::Keep` then the triangles that are in the current selection will be returned.
+    fn to_check(&self, mode: SelectOp) -> IndexMask {
+        match mode {
+            // When adding, we want to check all faces that are not currently selected
+            SelectOp::Add => {
+                let mut check_mask = self.mask.clone();
+                check_mask.not_mut();
+                check_mask
+            }
+
+            // When removing or keeping, we want to check all faces that are currently selected
+            SelectOp::Remove | SelectOp::KeepOnly => self.mask.clone(),
+        }
+    }
+
+    fn mutate_pass_list(mut self, mode: SelectOp, pass_mask: &IndexMask) -> Self {
+        match mode {
+            SelectOp::Add => self.mask.or_mut(pass_mask).unwrap(),
+            SelectOp::Remove => {
+                let mut flipped = pass_mask.clone();
+                flipped.not_mut();
+                self.mask.and_mut(&flipped).unwrap();
+            }
+            SelectOp::KeepOnly => {
+                self.mask.and_mut(pass_mask).unwrap();
+            }
+        };
+
+        self
+    }
+}
+
+// Public API
 impl TriangleFilter<'_> {
     /// Collect the indices of the triangles that have been filtered
     pub fn collect_indices(self) -> Vec<usize> {
@@ -27,40 +66,148 @@ impl TriangleFilter<'_> {
         self.mesh.create_from_mask(&self.mask).unwrap()
     }
 
-    /// Get the indices of the triangles which would need to be checked for an operation of the
-    /// specified type. If the operation is `SelectOp::Add`, then the triangles that are not in the
-    /// current selection will be returned. If the operation is `SelectOp::Remove`, or
-    /// `SelectOp::Keep` then the triangles that are in the current selection will be returned.
-    fn to_check(&self, mode: SelectOp) -> IndexMask {
-        match mode {
-            // When adding, we want to check all faces that are not currently selected
-            SelectOp::Add => {
-                let mut check_mask = self.mask.clone();
-                check_mask.not_mut();
-                check_mask
-            }
-
-            // When removing or keeping, we want to check all faces that are currently selected
-            SelectOp::Remove | SelectOp::Keep => self.mask.clone(),
-        }
-    }
-
-    fn mutate_pass_list(mut self, mode: SelectOp, pass_mask: &IndexMask) -> Self {
-        match mode {
-            SelectOp::Add => self.mask.or_mut(pass_mask).unwrap(),
+    /// Perform a direct mask operation on the current selection. This will modify the currently
+    /// selected faces based on the operation:
+    ///
+    /// - `SelectOp::Add`: Add the triangles in the mask to the current selection.
+    /// - `SelectOp::Remove`: Remove the triangles in the mask from the current selection.
+    /// - `SelectOp::KeepOnly`: Keep only the triangles which are in both the current selection
+    ///   _and_ the mask, removing all others.
+    ///
+    /// # Arguments
+    ///
+    /// * `mask`: The mask of indices to apply the operation to. This mask should have the same
+    ///   length as the number of faces in the mesh.
+    /// * `op`: The operation to perform on the current selection
+    ///
+    /// returns: TriangleFilter
+    pub fn by_mask(self, mask: &IndexMask, op: SelectOp) -> Result<Self> {
+        let new_mask = match op {
+            SelectOp::Add => self.mask.or(mask)?,
             SelectOp::Remove => {
-                let mut flipped = pass_mask.clone();
-                flipped.not_mut();
-                self.mask.and_mut(&flipped).unwrap();
+                let mut new_mask = self.mask.not();
+                new_mask.or_mut(mask)?;
+                new_mask.not_mut();
+                new_mask
             }
-            SelectOp::Keep => {
-                self.mask.and_mut(pass_mask).unwrap();
-            }
+            SelectOp::KeepOnly => self.mask.and(mask)?,
         };
 
-        self
+        Ok(TriangleFilter {
+            mesh: self.mesh,
+            mask: new_mask,
+        })
     }
 
+    /// Perform a selection operation with triangles whose vertices are within a certain distance
+    /// of a test point. The selection can allow a triangle with _any_ vertex to be included, or
+    /// it can require that _all_ vertices of the triangle are within the distance, depending on
+    /// the value of `all_vertices`.
+    ///
+    /// # Arguments
+    ///
+    /// * `point`: the test point to check triangle vertices against
+    /// * `max_dist`: the maximum allowable distance between the point and vertices
+    /// * `all_vertices`: if `true`, all vertices of the triangle must be within the distance for
+    ///   the triangle to be included; if `false`, only one vertex needs to be within the distance.
+    /// * `mode`: the type of operation to perform with the triangles that meet the distance
+    ///   criterial
+    ///
+    /// returns: TriangleFilter
+    pub fn vertices_near_point(
+        self,
+        point: &impl PCoords<3>,
+        max_dist: f64,
+        all_vertices: bool,
+        mode: SelectOp,
+    ) -> Self {
+        let check_mask = self.to_check(mode);
+        let mut op_mask = IndexMask::new(self.mesh.faces().len(), false);
+
+        for i in check_mask.iter_true() {
+            let face = self.mesh.shape.triangle(i as u32);
+
+            // Check if the triangle is above the plane
+            if all_vertices {
+                if dist(&face.a, point) <= max_dist
+                    && dist(&face.b, point) <= max_dist
+                    && dist(&face.c, point) <= max_dist
+                {
+                    op_mask.set(i, true);
+                }
+            } else {
+                if dist(&face.a, point) <= max_dist
+                    || dist(&face.b, point) <= max_dist
+                    || dist(&face.c, point) <= max_dist
+                {
+                    op_mask.set(i, true);
+                }
+            }
+        }
+
+        self.mutate_pass_list(mode, &op_mask)
+    }
+
+    /// Perform a selection operation based on the position of triangles relative to a plane. This
+    /// function will check the position of each triangle's vertices against the plane and include
+    /// it in the operation based on whether any vertex (`all_vertices=false`) or all vertices
+    /// (`all_vertices=true`) lie in the positive half-space defined by the plane.
+    ///
+    /// # Arguments
+    ///
+    /// * `plane`: the plane to check against
+    /// * `all_vertices`: if `true`, all vertices of the triangle must be above the plane for the
+    ///   triangle to be included in the operation; if `false`, only one vertex needs to be above
+    ///   the plane.
+    /// * `mode`: the type of operation to perform with valid triangles
+    ///
+    /// returns: TriangleFilter
+    pub fn above_plane(self, plane: &Plane3, all_vertices: bool, mode: SelectOp) -> Self {
+        let check_mask = self.to_check(mode);
+        let mut op_mask = IndexMask::new(self.mesh.faces().len(), false);
+
+        for i in check_mask.iter_true() {
+            let face = self.mesh.shape.triangle(i as u32);
+
+            // Check if the triangle is above the plane
+            if all_vertices {
+                if plane.point_is_positive(&face.a)
+                    && plane.point_is_positive(&face.b)
+                    && plane.point_is_positive(&face.c)
+                {
+                    op_mask.set(i, true);
+                }
+            } else {
+                if plane.point_is_positive(&face.a)
+                    || plane.point_is_positive(&face.b)
+                    || plane.point_is_positive(&face.c)
+                {
+                    op_mask.set(i, true);
+                }
+            }
+        }
+
+        self.mutate_pass_list(mode, &op_mask)
+    }
+
+    /// Select triangles that are facing a certain direction within a specified angle. This
+    /// function will check the angle between the normal of each triangle and the specified normal
+    /// vector. If the angle is less than the specified angle, the triangle will be included in the
+    /// operation.
+    ///
+    /// The `mode` parameter will determine if the triangles are added to the current selection,
+    /// removed from it, or if the selection is modified to retain only the triangles that meet
+    /// the direction criteria.
+    ///
+    /// # Arguments
+    ///
+    /// * `normal`: the normal vector to check against. This does not need to be normalized.
+    /// * `angle`: the angle in radians to check against. If the angle between the triangle's normal
+    ///   and the specified normal is less than this angle, the triangle will be included in the
+    ///   operation.
+    /// * `mode`: what kind of operation is done with triangles that meet the directional criteria.
+    ///
+    /// returns: TriangleFilter
     pub fn facing(self, normal: &Vector3, angle: f64, mode: SelectOp) -> Self {
         let check_mask = self.to_check(mode);
         let mut op_mask = IndexMask::new(self.mesh.faces().len(), false);
@@ -142,9 +289,46 @@ impl TriangleFilter<'_> {
         self.mutate_pass_list(mode, &passes)
     }
 
-    pub fn expand(self, mode: SelectOp) -> Self {
+    /// Expand/dilate the selection of triangles based on shared vertices with the currently
+    /// selected set of triangles. Though it's named `expand`, it can also be used to shrink the
+    /// selection by using `SelectOp::Remove` or `SelectOp::KeepOnly`.
+    ///
+    /// The function will check the triangles that are currently selected and will mutate the
+    /// selection based on triangles that share vertices with any of the currently selected
+    /// triangles. If a triangle shares a vertex with any of the currently selected triangles,
+    /// what happens next depends on the `mode`:
+    ///
+    /// - `SelectOp::Add`: The triangle will be added to the selection. This will expand the
+    ///   selection at the border by a single row of triangles, similar to a dilation operation in
+    ///   image processing.
+    /// - `SelectOp::Remove`: The triangle will be removed from the selection. This will shrink the
+    ///   selection at the border by a single row of triangles, similar to an erosion operation in
+    ///   image processing.
+    /// - `SelectOp::KeepOnly`: This is a no-op.
+    ///
+    /// An optional `exclude` mask can be provided to exclude certain triangles from being even
+    /// considered for the operation.
+    ///
+    /// # Arguments
+    ///
+    /// * `exclude`: An optional mask of indices that should be excluded from the operation. If
+    ///   `None`, all triangles will be considered for the operation, if it contains a mask, the
+    ///   mask can be thought of as a region which the expansion is not allowed to enter or which
+    ///   is not allowed to erode.
+    /// * `mode`: The operation to perform on the current selection. This can be `SelectOp::Add`,
+    ///   or `SelectOp::Remove`. The `SelectOp::KeepOnly` is a no-op and will not change the
+    ///   selection.
+    ///
+    /// returns: Result<TriangleFilter, Box<dyn Error, Global>>
+    pub fn expand(self, exclude: Option<&IndexMask>, mode: SelectOp) -> Result<Self> {
         // Get the mask of indices that we want to check
-        let check_mask = self.to_check(mode);
+        let check_mask = if let Some(exclude) = exclude {
+            let mut check_base = self.to_check(mode);
+            check_base.and_not_mut(exclude)?;
+            check_base
+        } else {
+            self.to_check(mode)
+        };
 
         // Get a mask of the vertices that are currently considered selected
         let vert_mask = match mode {
@@ -154,7 +338,7 @@ impl TriangleFilter<'_> {
 
             // If we're removing or keeping faces, we start with the vertices that are part of
             // triangles that are NOT currently selected by the filter
-            SelectOp::Remove | SelectOp::Keep => {
+            SelectOp::Remove | SelectOp::KeepOnly => {
                 let mut flipped = self.mask.clone();
                 flipped.not_mut();
                 self.mesh.unique_vertex_mask(&flipped)
@@ -175,15 +359,30 @@ impl TriangleFilter<'_> {
             }
         }
 
-        self.mutate_pass_list(mode, &passes)
+        Ok(self.mutate_pass_list(mode, &passes))
     }
 
-    pub fn expand_n(self, n: usize, mode: SelectOp) -> Self {
+    /// This is a shorthand for calling `expand` multiple times in a row. It will apply the `expand`
+    /// operation `n` times using the specified `mode`.
+    ///
+    /// # Arguments
+    ///
+    /// * `n`: the number of times to call `expand`.
+    /// * `exclude`: An optional mask of indices that should be excluded from the operation. If
+    ///   `None`, all triangles will be considered for the operation, if it contains a mask, the
+    ///   mask can be thought of as a region which the expansion is not allowed to enter or which
+    ///   is not allowed to erode.
+    /// * `mode`: the operation to perform on the current selection. This can be `SelectOp::Add`,
+    ///   or `SelectOp::Remove`. `SelectOp::KeepOnly` is a no-op and will not change the
+    ///   selection.
+    ///
+    /// returns: Result<TriangleFilter, Box<dyn Error, Global>>
+    pub fn expand_n(self, n: usize, exclude: Option<&IndexMask>, mode: SelectOp) -> Result<Self> {
         let mut filter = self;
         for _ in 0..n {
-            filter = filter.expand(mode);
+            filter = filter.expand(exclude, mode)?;
         }
-        filter
+        Ok(filter)
     }
 }
 

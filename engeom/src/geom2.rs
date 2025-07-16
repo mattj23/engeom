@@ -9,9 +9,9 @@ pub mod polyline2;
 
 use crate::AngleDir;
 use crate::AngleDir::Cw;
+use crate::common::SurfacePointCollection;
 use crate::common::surface_point::SurfacePoint;
 use crate::common::svd_basis::SvdBasis;
-use crate::common::SurfacePointCollection;
 use parry2d_f64::na::UnitComplex;
 use std::ops;
 

@@ -1,7 +1,6 @@
 //! This module contains tools for working with indices as a mask of boolean values (may
 //! eventually be implemented with bitvectors depending on real world performance).
 
-use std::ops::Not;
 use crate::Result;
 use bitvec::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -49,62 +48,6 @@ impl IndexMask {
         indices
     }
 
-    /// Modify the mask so that all values are the opposite of their current value.
-    pub fn not_mut(&mut self) {
-        for u in self.mask.as_raw_mut_slice() {
-            *u = !*u;
-        }
-    }
-    
-    pub fn not(&self) -> Self {
-        let mut new_mask = self.clone();
-        new_mask.not_mut();
-        new_mask
-    }
-    
-
-    pub fn or_mut(&mut self, other: &IndexMask) -> Result<()> {
-        if self.mask.len() != other.mask.len() {
-            return Err("Masks must be of the same length".into());
-        }
-
-        let self_mask = self.mask.as_raw_mut_slice();
-        let other_mask = other.mask.as_raw_slice();
-
-        for (a, b) in self_mask.iter_mut().zip(other_mask.iter()) {
-            *a |= *b;
-        }
-
-        Ok(())
-    }
-    
-    pub fn or(&self, other: &IndexMask) -> Result<Self> {
-        let mut new_mask = self.clone();
-        new_mask.or_mut(other)?;
-        Ok(new_mask)
-    }
-
-    pub fn and_mut(&mut self, other: &IndexMask) -> Result<()> {
-        if self.mask.len() != other.mask.len() {
-            return Err("Masks must be of the same length".into());
-        }
-
-        let self_mask = self.mask.as_raw_mut_slice();
-        let other_mask = other.mask.as_raw_slice();
-
-        for (a, b) in self_mask.iter_mut().zip(other_mask.iter()) {
-            *a &= *b;
-        }
-
-        Ok(())
-    }
-    
-    pub fn and(&self, other: &IndexMask) -> Result<Self> {
-        let mut new_mask = self.clone();
-        new_mask.and_mut(other)?;
-        Ok(new_mask)
-    }
-
     /// Set the value at the specified index
     pub fn set(&mut self, index: usize, value: bool) {
         self.mask.set(index, value);
@@ -143,6 +86,194 @@ impl IndexMask {
             result.push(items[index].clone());
         }
         Ok(result)
+    }
+
+    // ==========================================================================================
+    // NOT Operations
+    // ==========================================================================================
+
+    /// Modify the mask so that all values are the opposite of their current value.
+    pub fn not_mut(&mut self) {
+        for u in self.mask.as_raw_mut_slice() {
+            *u = !*u;
+        }
+    }
+
+    /// Return a new mask that is the opposite/inversion of the current mask.
+    pub fn not(&self) -> Self {
+        let mut new_mask = self.clone();
+        new_mask.not_mut();
+        new_mask
+    }
+
+    // ==========================================================================================
+    // OR (Union) Operations
+    // ==========================================================================================
+
+    /// Creates and returns a new mask that is the result of a bitwise OR operation between this
+    /// mask and another mask. This is the equivalent of a set union operation, as it will
+    /// combine the indices that are true in either mask.
+    ///
+    /// This will return an error if the two masks are not of the same length.
+    ///
+    /// # Arguments
+    ///
+    /// * `other`: The other `IndexMask` to OR with this one.
+    ///
+    /// returns: Result<IndexMask, Box<dyn Error, Global>>
+    pub fn or(&self, other: &IndexMask) -> Result<Self> {
+        let mut new_mask = self.clone();
+        new_mask.or_mut(other)?;
+        Ok(new_mask)
+    }
+
+    /// Performs a bitwise OR operation on the mask with another mask, modifying the current mask.
+    /// This is the equivalent of a set union operation, as it will combine the indices that are
+    /// true in either mask.
+    ///
+    /// This will return an error if the two masks are not of the same length.
+    ///
+    /// # Arguments
+    ///
+    /// * `other`: The other `IndexMask` to OR with this one.
+    ///
+    /// returns: Result<(), Box<dyn Error, Global>>
+    pub fn or_mut(&mut self, other: &IndexMask) -> Result<()> {
+        if self.mask.len() != other.mask.len() {
+            return Err("Masks must be of the same length".into());
+        }
+
+        self.or_mut_unchecked(other);
+        Ok(())
+    }
+
+    /// Performs a bitwise OR operation on the mask with another mask, modifying the current mask.
+    /// This does not check for length, so it zips the two masks directly. It will not panic if the
+    /// lengths are different, but the result will not be what's expected. ONLY USE THIS IF YOU ARE
+    /// SURE THAT THE MASKS ARE OF THE SAME LENGTH.
+    ///
+    /// Because the index mask internally uses a bit vector backed by `usize`, don't expect this
+    /// method to combine only up to the length of the shorter mask. If this mask is longer than
+    /// `other`, the extra bits at the end of the last 64 bit chunk will contaminate their
+    /// counterparts in this mask.
+    ///
+    /// # Arguments
+    ///
+    /// * `other`:
+    ///
+    /// returns: ()
+    pub fn or_mut_unchecked(&mut self, other: &IndexMask) {
+        let self_mask = self.mask.as_raw_mut_slice();
+        let other_mask = other.mask.as_raw_slice();
+
+        for (a, b) in self_mask.iter_mut().zip(other_mask.iter()) {
+            *a |= *b;
+        }
+    }
+
+    // ==========================================================================================
+    // AND (Intersection) Operations
+    // ==========================================================================================
+
+    /// Creates and returns a new mask that is the result of a bitwise AND operation between this
+    /// mask and another mask. This is the equivalent of a set intersection operation, as it will
+    /// only keep the indices that are true in both masks.
+    ///
+    /// Will return an error if the two masks are not of the same length.
+    ///
+    /// # Arguments
+    ///
+    /// * `other`: the other `IndexMask` to AND with this one.
+    ///
+    /// returns: Result<IndexMask, Box<dyn Error, Global>>
+    pub fn and(&self, other: &IndexMask) -> Result<Self> {
+        let mut new_mask = self.clone();
+        new_mask.and_mut(other)?;
+        Ok(new_mask)
+    }
+    pub fn and_mut(&mut self, other: &IndexMask) -> Result<()> {
+        if self.mask.len() != other.mask.len() {
+            return Err("Masks must be of the same length".into());
+        }
+
+        self.and_mut_unchecked(other);
+        Ok(())
+    }
+
+    /// Performs a bitwise AND operation on the mask with another mask, modifying the current mask.
+    /// This does not check for length, so it zips the two masks directly. It will not panic if the
+    /// lengths are different, but the result will not be what's expected. ONLY USE THIS IF YOU ARE
+    /// SURE THAT THE MASKS ARE OF THE SAME LENGTH.
+    ///
+    /// Because the index mask internally uses a bit vector backed by `usize`, don't expect this
+    /// method to combine only up to the length of the shorter mask. If this mask is longer than
+    /// `other`, the extra bits at the end of the last 64 bit chunk will contaminate their
+    /// counterparts in this mask.
+    ///
+    /// # Arguments
+    ///
+    /// * `other`: a reference to another `IndexMask` to AND with this one.
+    ///
+    /// returns: ()
+    pub fn and_mut_unchecked(&mut self, other: &IndexMask) {
+        let self_mask = self.mask.as_raw_mut_slice();
+        let other_mask = other.mask.as_raw_slice();
+
+        for (a, b) in self_mask.iter_mut().zip(other_mask.iter()) {
+            *a &= *b;
+        }
+    }
+
+    // ==========================================================================================
+    // AND NOT (Difference) Operations
+    // ==========================================================================================
+
+    /// Creates and returns a new mask that is the result of a bitwise AND NOT operation between
+    /// this mask and another mask. This is the equivalent of a set difference operation, as it will
+    /// remove the elements of this mask that are also true in the other mask.
+    ///
+    /// This is more efficient than using `this.and(other.not())` because it avoids creating a new
+    /// mask for the NOT operation, instead doing the AND NOT operation directly.
+    ///
+    /// This will return an error if the two masks are not of the same length.
+    ///
+    /// # Arguments
+    ///
+    /// * `other`: the other `IndexMask` to AND NOT with this one.
+    ///
+    /// returns: Result<IndexMask, Box<dyn Error, Global>>
+    pub fn and_not(&self, other: &IndexMask) -> Result<Self> {
+        let mut new_mask = self.clone();
+        new_mask.and_not_mut(other)?;
+        Ok(new_mask)
+    }
+
+    /// Performs a bitwise AND NOT operation on this mask using another mask, modifying the current
+    /// mask in place. This is the equivalent of a set difference operation, as it will
+    /// remove the elements of this mask that are also true in the other mask.
+    ///
+    /// This is more efficient than using `this.and(other.not())` because it avoids creating a new
+    /// mask for the NOT operation, instead doing the AND NOT operation directly.
+    ///
+    /// This will return an error if the two masks are not of the same length.
+    ///
+    /// # Arguments
+    ///
+    /// * `other`:
+    ///
+    /// returns: Result<(), Box<dyn Error, Global>>
+    pub fn and_not_mut(&mut self, other: &IndexMask) -> Result<()> {
+        if self.mask.len() != other.mask.len() {
+            return Err("Masks must be of the same length".into());
+        }
+
+        let self_mask = self.mask.as_raw_mut_slice();
+        let other_mask = other.mask.as_raw_slice();
+
+        for (a, b) in self_mask.iter_mut().zip(other_mask.iter()) {
+            *a &= !*b;
+        }
+        Ok(())
     }
 }
 

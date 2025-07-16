@@ -10,7 +10,7 @@ use crate::image::{
 };
 use crate::na::{DMatrix, Scalar};
 use crate::raster2::area_average::AreaAverage;
-use crate::raster2::{MaskOperations, inpaint, RasterKernel, FastApproxKernel};
+use crate::raster2::{FastApproxKernel, MaskOperations, RasterKernel, inpaint};
 use colorgrad::Gradient;
 use imageproc::distance_transform::Norm::L1;
 use imageproc::morphology::{dilate_mut, erode_mut};
@@ -587,7 +587,11 @@ impl ScalarRaster {
     /// * `kernel`:
     ///
     /// returns: ScalarRaster
-    pub fn convolve_fast(&self, kernel: &dyn FastApproxKernel, skip_unmasked: bool) -> Result<Self> {
+    pub fn convolve_fast(
+        &self,
+        kernel: &dyn FastApproxKernel,
+        skip_unmasked: bool,
+    ) -> Result<Self> {
         let full_kernel = kernel.make(self.px_size)?;
         let shrink_factor = ((full_kernel.size as f64) / 17.0).floor();
         let shrunk_values = self.create_shrunk(shrink_factor as u32);
@@ -628,7 +632,7 @@ impl ScalarRaster {
             // at full size later.
             if scaled_mask < 255 {
                 need_calc.push((x, y));
-                continue
+                continue;
             }
 
             // Otherwise, we can just copy the value from the scaled result to the full result
@@ -643,7 +647,13 @@ impl ScalarRaster {
 
         let final_calcs = need_calc
             .par_iter()
-            .map(|(x, y)| (x, y, full_kernel.convolved_pixel(&self, *x as i32, *y as i32)))
+            .map(|(x, y)| {
+                (
+                    x,
+                    y,
+                    full_kernel.convolved_pixel(&self, *x as i32, *y as i32),
+                )
+            })
             .collect::<Vec<_>>();
 
         for (x, y, v) in final_calcs {

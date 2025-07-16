@@ -7,19 +7,19 @@
 //! with a relatively large amount of overlap between meshes.  This code was implemented to perform
 //! bundle adjustment between metrology quality scans of objects with unambiguous morphology.
 
+use crate::Result;
 use crate::common::points::dist;
+use crate::geom3::Align3;
 use crate::geom3::align3::jacobian::{point_plane_jacobian, point_plane_jacobian_rev};
 use crate::geom3::align3::multi_param::ParamHandler;
-use crate::geom3::align3::{distance_weight, normal_weight, GAPParams};
-use crate::geom3::Align3;
-use crate::na::{DMatrix, Dyn, Matrix, Owned, Vector, U1};
-use crate::Result;
+use crate::geom3::align3::{GAPParams, distance_weight, normal_weight};
+use crate::na::{DMatrix, Dyn, Matrix, Owned, U1, Vector};
 use faer::prelude::default;
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use rayon::prelude::*;
 use std::time::Instant;
 
-use crate::geom3::align3::mesh::{generate_alignment_points, AlignmentMesh};
+use crate::geom3::align3::mesh::{AlignmentMesh, generate_alignment_points};
 use crate::geom3::mesh::MeshSurfPoint;
 
 /// Options for the multi-mesh simultaneous alignment algorithm.

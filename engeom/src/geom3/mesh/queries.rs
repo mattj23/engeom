@@ -1,13 +1,35 @@
 //! Distance queries and measurements on meshes
 
 use super::{Mesh, MeshSurfPoint};
+use crate::common::PCoords;
 use crate::common::indices::chained_indices;
+use crate::common::points::dist;
 use crate::{Curve3, Iso3, Plane3, Point3, Result, SurfacePoint3};
 use parry3d_f64::query::{IntersectResult, PointProjection, PointQueryWithLocation, SplitResult};
 use parry3d_f64::shape::TrianglePointLocation;
 use std::f64::consts::PI;
 
 impl Mesh {
+    /// This is an extremely simple closest distance query which returns only the scalar distance
+    /// from the mesh to the point. It does not return any information about the face or which
+    /// side of the corresponding face normal the point is on.  It will always return a single
+    /// zero or positive value, which is the distance from the point to its closest projection on
+    /// the mesh.
+    ///
+    /// # Arguments
+    ///
+    /// * `point`: the test point to seek the closest distance to
+    ///
+    /// returns: f64
+    pub fn distance_closest_to(&self, point: &impl PCoords<3>) -> f64 {
+        let point = Point3::from(point.coords());
+        let result = self
+            .shape
+            .project_local_point_and_get_location(&point, self.is_solid);
+        let (projection, _) = result;
+        dist(&point, &projection.point)
+    }
+
     /// Get the point and normal of a position on the mesh given a face ID and the barycentric
     /// coordinates of interest within the face.
     ///
@@ -31,18 +53,36 @@ impl Mesh {
         Ok(SurfacePoint3::new(coords.into(), normal))
     }
 
-    pub fn face_closest_to(&self, point: &Point3) -> u32 {
+    /// Find the index of the face that is closest to the given point in local coordinates.
+    ///
+    /// # Arguments
+    ///
+    /// * `point`: the test point to seek the closest face to
+    ///
+    /// returns: u32
+    pub fn face_closest_to(&self, point: &impl PCoords<3>) -> u32 {
+        let point = Point3::from(point.coords());
         let result = self
             .shape
-            .project_local_point_and_get_location(point, self.is_solid);
+            .project_local_point_and_get_location(&point, self.is_solid);
         let (_, (tri_id, _)) = result;
         tri_id
     }
 
-    pub fn surf_closest_to(&self, point: &Point3) -> MeshSurfPoint {
+    /// Find the closest point on the mesh surface to the specified test point. This method will
+    /// return a descriptor which includes the face index, barycentric coordinates, and a
+    /// point/normal combination.
+    ///
+    /// # Arguments
+    ///
+    /// * `point`: the test point to seek the closest surface point to
+    ///
+    /// returns: MeshSurfPoint
+    pub fn surf_closest_to(&self, point: &impl PCoords<3>) -> MeshSurfPoint {
+        let point = Point3::from(point.coords());
         let result = self
             .shape
-            .project_local_point_and_get_location(point, self.is_solid);
+            .project_local_point_and_get_location(&point, self.is_solid);
         let (projection, (tri_id, location)) = result;
         let triangle = self.shape.triangle(tri_id);
         let normal = triangle.normal().expect("Triangle doesn't have a normal");

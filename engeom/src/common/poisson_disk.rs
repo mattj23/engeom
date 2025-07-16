@@ -49,10 +49,10 @@ pub fn sample_poisson_disk_all<const D: usize>(
 mod tests {
     use super::*;
     use crate::Point2;
-    use rand;
-    use rand::Rng;
     use crate::common::kd_tree::KdTree;
     use crate::na::Point;
+    use rand;
+    use rand::Rng;
 
     #[test]
     fn stress_test_poisson_disk() {

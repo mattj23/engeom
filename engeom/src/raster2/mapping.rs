@@ -1,9 +1,10 @@
 //! This module contains an abstraction for mapping between a 2D cartesian space of real numbers
 //! and a raster space of pixels.
 
-use num_traits::Zero;
-use crate::{Iso2, Point2};
+use crate::image::GrayImage;
 use crate::na::{DMatrix, Scalar};
+use crate::{Iso2, Point2};
+use num_traits::Zero;
 
 #[derive(Clone, Copy)]
 pub struct RasterMapping {
@@ -25,8 +26,14 @@ pub struct RasterMapping {
 
 impl RasterMapping {
     /// Create a new `nalgebra` dmatrix of the same shape as the raster mapping, filled with zeros.
-    pub fn make_raster<T: Scalar + Zero>(&self) -> DMatrix<T> {
+    pub fn make_zero_matrix<T: Scalar + Zero>(&self) -> DMatrix<T> {
         DMatrix::zeros(self.shape.0, self.shape.1)
+    }
+
+    /// Create a new `image::GrayImage` of the same shape as the raster mapping, filled with zeros.
+    /// This is an 8-bit grayscale image that can be used for fast raster masking operations.
+    pub fn make_mask(&self) -> GrayImage {
+        GrayImage::new(self.shape.1 as u32, self.shape.0 as u32)
     }
 
     /// Create a new `ImageMapping` given the origin, shape, pixel size, and an optional transform

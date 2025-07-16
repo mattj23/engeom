@@ -1,3 +1,4 @@
+use crate::common::PCoords;
 use crate::geom3::UnitVec3;
 use crate::{Iso3, Point3, SurfacePoint3, SvdBasis3};
 
@@ -33,8 +34,20 @@ impl Plane3 {
     /// ```
     ///
     /// ```
-    pub fn signed_distance_to_point(&self, point: &Point3) -> f64 {
-        self.normal.dot(&point.coords) - self.d
+    pub fn signed_distance_to_point(&self, point: &impl PCoords<3>) -> f64 {
+        self.normal.dot(&point.coords()) - self.d
+    }
+
+    /// Returns true if the point lies in the positive half-space defined by the plane's normal and
+    /// offset from the origin. This will return true if the signed distance to the point is >= 0.0
+    ///
+    /// # Arguments
+    ///
+    /// * `point`: the point to check against the plane
+    ///
+    /// returns: bool
+    pub fn point_is_positive(&self, point: &impl PCoords<3>) -> bool {
+        self.signed_distance_to_point(point) >= 0.0
     }
 
     /// Measure and return the distance from the plane to a point in 3D space. The distance is
@@ -104,6 +117,30 @@ impl Plane3 {
         } else {
             Some((p0 - sp.point).dot(&self.normal) / denom)
         }
+    }
+
+    /// Create a new plane which is shifted along the plane's normal direction by a given distance.
+    ///
+    /// # Arguments
+    ///
+    /// * `shift`: The distance to shift the plane along its normal vector. A positive value shifts
+    ///   the plane in its normal direction, while a negative value shifts it in the opposite
+    ///   direction.
+    ///
+    /// returns: Plane3
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::geom3::{Plane3, Point3, Vector3};
+    /// use approx::assert_relative_eq;
+    /// let plane = Plane3::new(Vector3::x_axis(), -5.0);
+    /// let moved = plane.shifted(2.0);
+    ///
+    /// assert_relative_eq!(moved.signed_distance_to_point(&Point3::origin()), 3.0, epsilon = 1e-6);
+    /// ```
+    pub fn shifted(&self, shift: f64) -> Self {
+        Self::new(self.normal, self.d + shift)
     }
 }
 

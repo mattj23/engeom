@@ -1,7 +1,7 @@
 use crate::image::{GrayImage, Luma};
-use parry3d_f64::na::DMatrix;
-use crate::raster2::mask_ops::MaskOperations;
 use crate::raster2::ScalarImage;
+use crate::raster2::mask_ops::MaskOperations;
+use parry3d_f64::na::DMatrix;
 
 const KNOWN: u8 = 0;
 const BAND: u8 = 1;
@@ -20,7 +20,7 @@ const UNKNOWN: u8 = 2;
 /// * `image_mask`: A mask image where pixels with a value of 255 are part of the image and will
 ///   contribute to determining the inpainted value of neighboring fill regions, and pixels with a
 ///   value of 0 are not part of the image and are ignored in the inpainting process.
-/// * `radius`: The radius of the neighborhood to consider when inpainting pixels. This determines 
+/// * `radius`: The radius of the neighborhood to consider when inpainting pixels. This determines
 ///   how far from the fill mask pixels the algorithm will look to find neighboring pixels to
 ///   compute the inpainted value.
 ///
@@ -114,7 +114,6 @@ pub fn inpaint(
     fill.values
 }
 
-
 #[derive(Copy, Clone, Debug)]
 struct Pixel {
     x: usize,
@@ -171,7 +170,10 @@ impl Fill {
                 (x as i32, y as i32 + 1),
             ];
             for (nx, ny) in neighbors.iter() {
-                if *nx < 0 || *ny < 0 || *nx >= values.width() as i32 || *ny >= values.height() as i32
+                if *nx < 0
+                    || *ny < 0
+                    || *nx >= values.width() as i32
+                    || *ny >= values.height() as i32
                 {
                     continue;
                 }

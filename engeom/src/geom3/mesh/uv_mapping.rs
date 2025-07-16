@@ -1,16 +1,14 @@
 //! This module contains an abstraction for mapping triangles in a mesh to a 2D UV space.
 
+use crate::common::points::barycentric;
 use crate::raster2::RasterMapping;
 use crate::{Point2, Result, Vector2};
 use parry2d_f64::bounding_volume::SimdAabb;
-use parry2d_f64::math::{Point, SimdReal, SIMD_WIDTH};
+use parry2d_f64::math::{Point, SIMD_WIDTH, SimdReal};
 use parry2d_f64::na::{SimdBool, SimdValue};
-use parry2d_f64::partitioning::{
-    SimdBestFirstVisitor, SimdVisitStatus, SimdVisitor,
-};
+use parry2d_f64::partitioning::{SimdBestFirstVisitor, SimdVisitStatus, SimdVisitor};
 use parry2d_f64::query::{PointQuery, PointQueryWithLocation, RayCast};
 use parry2d_f64::shape::TriMesh;
-use crate::common::points::barycentric;
 
 /// A `UvMapping` is a structure that represents a two-way mapping between a two-dimensional
 /// space (typically referred to as UV to substitute for x and y) and the surface of a 3D mesh.

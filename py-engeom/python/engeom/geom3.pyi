@@ -1344,6 +1344,16 @@ class Mesh:
         """
         ...
 
+    def boundary_curves(self) -> List[Curve3]:
+        """
+        Extract the boundary curves of the mesh. This will return a list of `Curve3` objects representing the
+        boundaries of the mesh. The curves will be ordered in a way that they can be used to reconstruct the boundary
+        of the mesh.
+
+        :return: a list of `Curve3` objects representing the boundary curves of the mesh.
+        """
+        ...
+
     @staticmethod
     def create_box(length: float, width: float, height: float) -> Mesh:
         """

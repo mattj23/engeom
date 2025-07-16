@@ -227,9 +227,9 @@ fn bc_order(n0: usize, op_edge: f64, max_spacing: f64) -> Vec<(f64, f64, f64)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::KdTree3;
     use crate::common::kd_tree::*;
     use crate::common::points::evenly_spaced_points_between;
-    use crate::KdTree3;
 
     #[test]
     fn check_kiddo_bug() {
