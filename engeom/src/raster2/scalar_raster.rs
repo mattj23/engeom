@@ -592,6 +592,28 @@ impl ScalarRaster {
         blurred
     }
 
+    /// Convolve this scalar raster with the given kernel, returning a new scalar raster. This is
+    /// identical to using the `RasterKernel`'s `convolve` method, but is provided for convenience.
+    ///
+    /// # Arguments
+    ///
+    /// * `kernel`: the kernel to convolve with
+    /// * `skip_unmasked`: if true, skip pixels in the raster which are unmasked (i.e. have a mask
+    ///   value of 0). Unmasked pixels don't contribute to the convolution of other pixels (the
+    ///   kernel is deweighted by the mask), but they can still have a valid convolution result if
+    ///   the kernel overlaps with a masked pixel. If this is true, then the convolution will skip
+    ///   those pixels entirely. Use this when the convolution doesn't have a meaningful result on
+    ///   pixels that aren't considered part of the data set.
+    ///
+    /// returns: ScalarRaster
+    pub fn convolve(
+        &self,
+        kernel: &RasterKernel,
+        skip_unmasked: bool,
+    ) -> Self {
+        kernel.convolve(self, skip_unmasked)
+    }
+
     /// Performs a generic convolution operation on the depth image using the given kernel, but
     /// with a fast approximate method that will shrink the image and kernel down to a smaller
     /// target size, perform the convolution on the smaller raster, and then re-expand the
@@ -692,14 +714,9 @@ impl ScalarRaster {
         // area average.
         let blurred = if optimal_scale > 1 {
             let small = self.create_shrunk(optimal_scale);
-            println!("Small image size: {}x{}", small.width(), small.height());
-
             let small_blurred = small.area_blurred(radius_mm);
-            println!("Using resized area average with radius {}mm", radius_mm);
-
             self.area_average_with_resized(radius_mm, &small_blurred)
         } else {
-            println!("Using full image size: {}x{}", self.width(), self.height());
             self.area_average(radius_mm)
         };
 

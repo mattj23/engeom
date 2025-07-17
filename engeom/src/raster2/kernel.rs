@@ -3,6 +3,7 @@
 use crate::Result;
 use crate::na::DMatrix;
 use crate::raster2::{MaskOperations, ScalarRaster};
+use rayon::iter::IntoParallelRefIterator;
 use std::ops::Range;
 
 pub trait FastApproxKernel {
@@ -70,28 +71,8 @@ impl RasterKernel {
     ///
     /// returns: Result<RasterKernel, Box<dyn Error, Global>>
     pub fn gaussian(sigma: f64) -> Self {
-        let size = (sigma * 6.0).ceil() as usize | 1; // Ensure size is odd
-
-        let radius = size as f64 / 2.0;
-        let mut values = DMatrix::zeros(size, size);
-
-        for y in 0..size {
-            for x in 0..size {
-                let dx = x as f64 - radius;
-                let dy = y as f64 - radius;
-                let value = (-((dx * dx + dy * dy) / (2.0 * sigma * sigma))).exp();
-                values[(y, x)] = value;
-            }
-        }
-
-        // Normalize the kernel
-        let total: f64 = values.sum();
-        if total == 0.0 {
-            // This shouldn't happen?
-            panic!("RasterKernel::gaussian failed underflow: total sum is zero");
-        }
-        values /= total;
-
+        let values = gaussian_kernel_matrix(sigma);
+        let size = values.nrows();
         Self { values, size }
     }
 
@@ -111,7 +92,24 @@ impl RasterKernel {
         Ok(Self { values, size })
     }
 
+    // pub fn convolve(&self, raster: &ScalarRaster, skip_unmasked: bool) -> ScalarRaster {
+    //     let mut result = ScalarRaster::empty_like(&raster);
+    //
+    //     for y in 0..raster.height() as i32 {
+    //         for x in 0..raster.width() as i32 {
+    //             if skip_unmasked && raster.mask.is_pixel_unmasked(x, y) {
+    //                 result.mask.set_unmasked(x as u32, y as u32);
+    //             } else {
+    //                 let v = self.convolved_pixel(raster, x, y);
+    //                 result.set_f_at(x, y, v);
+    //             }
+    //         }
+    //     }
+    //
+    //     result
+    // }
     pub fn convolve(&self, raster: &ScalarRaster, skip_unmasked: bool) -> ScalarRaster {
+        let matrix = raster.to_matrix();
         let mut result = ScalarRaster::empty_like(&raster);
 
         for y in 0..raster.height() as i32 {
@@ -119,13 +117,50 @@ impl RasterKernel {
                 if skip_unmasked && raster.mask.is_pixel_unmasked(x, y) {
                     result.mask.set_unmasked(x as u32, y as u32);
                 } else {
-                    let v = self.convolved_pixel(raster, x, y);
+                    let v = self.convolved_pixel_mat(raster, x, y, &matrix);
                     result.set_f_at(x, y, v);
                 }
             }
         }
 
         result
+    }
+    pub fn convolved_pixel_mat(
+        &self,
+        raster: &ScalarRaster,
+        x: i32,
+        y: i32,
+        matrix: &DMatrix<f64>,
+    ) -> f64 {
+        let pose = KernelPose::new(&self.values, raster, x, y);
+
+        // Copy the kernel ignoring NAN values
+        let mut kernel_copy = DMatrix::zeros(self.size, self.size);
+        for c in pose.all() {
+            if !c.mvf().is_nan() {
+                kernel_copy[(c.ky, c.kx)] = c.kv();
+            }
+        }
+        let total = kernel_copy.sum();
+        if total == 0.0 {
+            return f64::NAN; // Avoid division by zero
+        }
+
+        kernel_copy = kernel_copy / total;
+
+        let mut sum = 0.0;
+        for c in pose.all() {
+            let mvf = matrix[(c.my as usize, c.mx as usize)];
+            if !mvf.is_nan() {
+                sum += mvf * kernel_copy[(c.ky, c.kx)];
+            }
+        }
+
+        if sum.is_nan() {
+            panic!("sum is nan");
+        }
+
+        sum
     }
 
     pub fn convolved_pixel(&self, raster: &ScalarRaster, x: i32, y: i32) -> f64 {
@@ -307,5 +342,113 @@ impl KernelBounds {
     /// Returns a range of kernel coordinates for this dimension
     pub fn kvals(&self) -> Range<usize> {
         self.k0..self.k0 + self.count
+    }
+}
+
+fn gaussian_kernel_matrix(sigma: f64) -> DMatrix<f64> {
+    let size = (sigma * 6.0).ceil() as usize | 1; // Ensure size is odd
+
+    let radius = size as f64 / 2.0;
+    let mut values = DMatrix::zeros(size, size);
+
+    for y in 0..size {
+        for x in 0..size {
+            let dx = x as f64 - radius;
+            let dy = y as f64 - radius;
+            let value = (-((dx * dx + dy * dy) / (2.0 * sigma * sigma))).exp();
+            values[(y, x)] = value;
+        }
+    }
+
+    // Normalize the kernel
+    let total: f64 = values.sum();
+    if total == 0.0 {
+        // This shouldn't happen?
+        panic!("RasterKernel::gaussian failed underflow: total sum is zero");
+    }
+    values / total
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::raster2::ScalarRaster;
+    use approx::assert_relative_eq;
+
+    fn obviously_correct_gaussian(target: &DMatrix<f64>) -> DMatrix<f64> {
+        // Do an obviously correct convolution with a Gaussian kernel on a target where NANs are
+        // the same as an unmasked value.
+        let kernel = gaussian_kernel_matrix(1.0);
+        let tail_n = (kernel.nrows() - 1) as i32 / 2i32;
+        let n_rows = target.nrows() as i32;
+        let n_cols = target.ncols() as i32;
+        let mut result = DMatrix::zeros(target.nrows(), target.ncols());
+
+        // i is rows and j is columns
+        for i in 0..target.nrows() {
+            for j in 0..target.ncols() {
+                let mut kernel_sum = 0.0;
+                let mut pixel_sum = 0.0;
+
+                for ki in 0..kernel.nrows() {
+                    for kj in 0..kernel.ncols() {
+                        let mi = i as i32 + (ki as i32 - tail_n);
+                        let mj = j as i32 + (kj as i32 - tail_n);
+
+                        if mi >= 0 && mi < n_rows && mj >= 0 && mj < n_cols {
+                            if target[(mi as usize, mj as usize)].is_nan() {
+                                continue; // Skip masked pixels
+                            } else {
+                                pixel_sum += target[(mi as usize, mj as usize)] * kernel[(ki, kj)];
+                                kernel_sum += kernel[(ki, kj)];
+                            }
+                        }
+                    }
+                }
+                result[(i, j)] = pixel_sum / kernel_sum;
+            }
+        }
+
+        result
+    }
+
+    fn striped_target() -> DMatrix<f64> {
+        // Create a striped target matrix with some values
+        let mut target = DMatrix::zeros(400, 600);
+        for i in 0..target.nrows() {
+            for j in 0..target.ncols() {
+                target[(i, j)] = ((i + j) % 50) as f64 / 100.0;
+            }
+        }
+        for i in 0..target.nrows() {
+            for j in 0..target.ncols() {
+                if (i + j) % 10 == 0 {
+                    target[(i, j)] = f64::NAN; // Mask some pixels
+                }
+            }
+        }
+        target
+    }
+
+    #[test]
+    fn gaussian_kernel() {
+        let target = striped_target();
+        let expected = obviously_correct_gaussian(&target);
+
+        let max = target.max() * 2.0;
+        let raster = ScalarRaster::from_matrix(&target, 1.0, -max, max);
+
+        let kernel = RasterKernel::gaussian(1.0);
+        let result = kernel.convolve(&raster, false);
+        let result_matrix = result.to_matrix();
+
+        assert_eq!(expected.nrows(), result_matrix.nrows());
+        assert_eq!(expected.ncols(), result_matrix.ncols());
+
+        for i in 0..expected.nrows() {
+            for j in 0..expected.ncols() {
+                assert_relative_eq!(expected[(i, j)], result_matrix[(i, j)], epsilon = 2e-4);
+            }
+        }
     }
 }
