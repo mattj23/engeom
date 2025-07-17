@@ -1,10 +1,9 @@
 //! This module has tools for working with kernels and convolutions on 2D raster data.
 
-use crate::Result;
 use crate::na::DMatrix;
 use crate::raster2::{MaskOperations, MaskValue, ScalarRaster};
+use crate::Result;
 use rayon::iter::IntoParallelRefIterator;
-use std::ops::Range;
 
 pub trait FastApproxKernel {
     fn make(&self, pixel_size: f64) -> Result<RasterKernel>;
@@ -125,11 +124,25 @@ impl RasterKernel {
     ///   include these pixels.
     ///
     /// returns: ScalarRaster
-    pub fn convolve(&self, raster: &ScalarRaster, skip_unmasked: bool) -> ScalarRaster {
+    pub fn convolve(&self, raster: &ScalarRaster, skip_unmasked: bool, keep_zlim: bool) -> ScalarRaster {
         let (matrix, mask) = raster.to_value_and_mask_matrices();
         let convolved = self.convolve_matrix_and_mask(&matrix, &mask, skip_unmasked);
-        let z_min = convolved.min();
-        let z_max = convolved.max();
+
+        let (z_min, z_max) = if !keep_zlim {
+            // Get non-NAN min and max values from the convolved matrix
+            let mut z_min = f64::INFINITY;
+            let mut z_max = f64::NEG_INFINITY;
+            for v in convolved.iter() {
+                if v.is_finite() {
+                    z_min = z_min.min(*v);
+                    z_max = z_max.max(*v);
+                }
+            }
+            (z_min, z_max)
+        } else {
+            // Use the original raster's z limits
+            (raster.min_z, raster.max_z)
+        };
 
         ScalarRaster::from_matrix(&convolved, raster.px_size, z_min, z_max)
     }
@@ -191,8 +204,8 @@ impl RasterKernel {
     ) -> DMatrix<f64> {
         let mut result = DMatrix::zeros(matrix.nrows(), matrix.ncols());
 
-        for y in 0..matrix.nrows() {
-            for x in 0..matrix.ncols() {
+        for x in 0..matrix.ncols() {
+            for y in 0..matrix.nrows() {
                 if skip_unmasked && mask[(y, x)].abs() < f64::EPSILON {
                     result[(y, x)] = f64::NAN;
                 } else {
@@ -258,34 +271,13 @@ impl RasterKernel {
         // corresponding window indices in the kernel itself. Ultimately, all values will be
         // positive integers.
         // ----------------------------------------------------------------------------------------
-
-        // For the row dimension (`i`/`y`), the first valid index in the matrix is either zero or
-        // the `y` coordinate minus the tail length of the kernel, whichever is larger. The first
-        // valid index in the kernel has the same offset from the center of the kernel as the first
-        // valid index in the matrix has from the `y` coordinate.
-        //
-        // The last valid index in the matrix is either the `y` coordinate plus the tail length of
-        // the kernel or the last index in the matrix, whichever is smaller. The total number of
-        // valid indices in the kernel is the difference between the last and first valid indices
-        // in the matrix, plus one to include the last index itself.
-        let min_mi = (y as i32 - self.tail_n).max(0) as usize;
-        let min_ki = min_mi - (y as i32 - self.tail_n) as usize;
-        let max_mi = (y + self.tail_n as usize).min(matrix.nrows() - 1);
-        let count_ki = max_mi - min_mi + 1;
-
-        // The same logic applies to the column dimension (`j`/`x`), where the first and last valid
-        // indices in the matrix are determined by the `x` coordinate, the tail length of the
-        // kernel, and the limits of the matrix. The start of the kernel and the total count of
-        // the kernel are calculated from the matrix limits.
-        let min_mj = (x as i32 - self.tail_n).max(0) as usize;
-        let min_kj = min_mj - (x as i32 - self.tail_n) as usize;
-        let max_mj = (x + self.tail_n as usize).min(matrix.ncols() - 1);
-        let count_kj = max_mj - min_mj + 1;
+        let (min_mi, min_ki, count_ki) = window_vals(y, matrix.nrows(), self.tail_n);
+        let (min_mj, min_kj, count_kj) = window_vals(x, matrix.ncols(), self.tail_n);
 
         // Now we will iterate over the valid indices in each direction, calculating both the
         // matrix and the kernel indices. From there we can accumulate the pixel and kernel sums.
-        for i in 0..count_ki {
-            for j in 0..count_kj {
+        for j in 0..count_kj {
+            for i in 0..count_ki {
                 let ki = min_ki + i;
                 let kj = min_kj + j;
                 let mi = min_mi + i;
@@ -327,16 +319,88 @@ fn gaussian_kernel_matrix(sigma: f64) -> DMatrix<f64> {
     values / total
 }
 
+fn window_vals(a: usize, count: usize, tail_n: i32) -> (usize, usize, usize) {
+    let min_mi = (a as i32 - tail_n).max(0) as usize;
+    let min_ki = min_mi + (tail_n as usize) - a;
+    let max_mi = (a + tail_n as usize).min(count - 1);
+    let count_ki = max_mi - min_mi + 1;
+
+    (min_mi, min_ki, count_ki)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::raster2::ScalarRaster;
     use approx::assert_relative_eq;
 
+    fn obviously_correct_window(a: usize, count: usize, tail_n: i32) -> (usize, usize, usize) {
+        let k_size = (tail_n * 2 + 1) as usize;
+
+        let start = a as i32 - tail_n;
+        let end = a as i32 + tail_n;
+
+        let mut min_mi = None;
+        let mut min_ki = None;
+        let mut count_ki = 0;
+
+        for ki in 0..k_size {
+            let mi = (a as i32 - tail_n + ki as i32);
+            if mi < 0 || mi >= count as i32 {
+                continue; // Out of bounds
+            }
+
+            if min_mi.is_none() {
+                min_mi = Some(mi as usize);
+                min_ki = Some(ki);
+            }
+            count_ki += 1;
+        }
+
+        (
+            min_mi.expect("min_mi should be set"),
+            min_ki.expect("min_ki should be set"),
+            count_ki,
+        )
+    }
+
+    #[test]
+    fn obv_correct_window_vals() {
+        let (mi, ki, count) = obviously_correct_window(0, 20, 2);
+        assert_eq!(0, mi);
+        assert_eq!(2, ki);
+        assert_eq!(3, count);
+
+        let (mi, ki, count) = obviously_correct_window(19, 20, 2);
+        assert_eq!(17, mi);
+        assert_eq!(0, ki);
+        assert_eq!(3, count);
+
+        let (mi, ki, count) = obviously_correct_window(5, 20, 2);
+        assert_eq!(3, mi);
+        assert_eq!(0, ki);
+        assert_eq!(5, count);
+    }
+
+    #[test]
+    fn window_vals_work() {
+        let count = 20;
+        let tail_n = 2;
+        for i in 0..count {
+            let (exp_mi, exp_ki, exp_c) = obviously_correct_window(i, count, tail_n);
+            let (mi, ki, c) = window_vals(i, count, tail_n);
+
+            assert_eq!(exp_mi, mi, "Mismatch in min_mi for i={}", i);
+            assert_eq!(exp_ki, ki, "Mismatch in min_ki for i={}", i);
+            assert_eq!(exp_c, c, "Mismatch in count_ki for i={}", i);
+        }
+
+    }
+
     fn obviously_correct_gaussian(target: &DMatrix<f64>) -> DMatrix<f64> {
         // Do an obviously correct convolution with a Gaussian kernel on a target where NANs are
         // the same as an unmasked value.
-        let kernel = gaussian_kernel_matrix(1.0);
+        let kernel = gaussian_kernel_matrix(3.0);
         let tail_n = (kernel.nrows() - 1) as i32 / 2i32;
         let n_rows = target.nrows() as i32;
         let n_cols = target.ncols() as i32;
@@ -388,16 +452,39 @@ mod tests {
         target
     }
 
+    fn chevron_target() -> DMatrix<f64> {
+        // Create a chevron target matrix with some values
+        let mut target = DMatrix::zeros(400, 600);
+        for i in 0..target.nrows() {
+            for j in 0..target.ncols() {
+                if (i + j) < 500 {
+                    target[(i, j)] += 1.0;
+                }
+
+                if i + (600 - j) < 500 {
+                    target[(i, j)] += 1.0;
+               }
+
+                if target[(i, j)] < 1.0 {
+                    target[(i, j)] = f64::NAN;
+                }
+            }
+        }
+
+        // target /= target.max();
+        target
+    }
+
     #[test]
     fn gaussian_kernel() {
-        let target = striped_target();
+        let target = chevron_target();
         let expected = obviously_correct_gaussian(&target);
 
         let max = target.max() * 2.0;
         let raster = ScalarRaster::from_matrix(&target, 1.0, -max, max);
 
-        let kernel = RasterKernel::gaussian(1.0);
-        let result = kernel.convolve(&raster, false);
+        let kernel = RasterKernel::gaussian(3.0);
+        let result = kernel.convolve(&raster, false, true);
         let result_matrix = result.to_matrix();
 
         assert_eq!(expected.nrows(), result_matrix.nrows());
@@ -405,8 +492,52 @@ mod tests {
 
         for i in 0..expected.nrows() {
             for j in 0..expected.ncols() {
+                if expected[(i, j)].is_nan() {
+                    assert!(result_matrix[(i, j)].is_nan());
+                    continue; // Skip NAN comparisons
+                }
                 assert_relative_eq!(expected[(i, j)], result_matrix[(i, j)], epsilon = 2e-4);
             }
         }
+    }
+
+    #[test]
+    fn fast_approx_convolution()  {
+        let target = chevron_target();
+        let expected = obviously_correct_gaussian(&target);
+        let raster = ScalarRaster::from_matrix(&target, 1.0, -2.0, 2.0);
+
+        let kernel = FastApproxGaussian::new(3.0);
+        let result = raster.convolve_fast(&kernel, false, true, 9).unwrap();
+
+        let result_matrix = result.to_matrix();
+
+        assert_eq!(expected.nrows(), result_matrix.nrows());
+        assert_eq!(expected.ncols(), result_matrix.ncols());
+
+        // Compare the average values of the expected and result matrices
+        let mut exp_avg = 0.0;
+        let mut res_avg = 0.0;
+        let mut exp_count = 0;
+        let mut res_count = 0;
+
+        for i in 0..expected.nrows() {
+            for j in 0..expected.ncols() {
+                if !expected[(i, j)].is_nan() {
+                    exp_avg += expected[(i, j)];
+                    exp_count += 1;
+                }
+
+                if !result_matrix[(i, j)].is_nan() {
+                    res_avg += result_matrix[(i, j)];
+                    res_count += 1;
+                }
+            }
+        }
+
+        exp_avg /= exp_count as f64;
+        res_avg /= res_count as f64;
+
+        assert_relative_eq!(exp_avg, res_avg, epsilon = 2e-3);
     }
 }

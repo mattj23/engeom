@@ -13,7 +13,7 @@ fn kernel_convolution(c: &mut Criterion) {
 
     c.bench_function("kernel convolution", |b| {
         b.iter(|| {
-            let _result = black_box(&kernel).convolve(&raster, false);
+            let _result = black_box(&kernel).convolve(&raster, false, true);
         })
     });
 }

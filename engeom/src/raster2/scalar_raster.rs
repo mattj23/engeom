@@ -610,7 +610,7 @@ impl ScalarRaster {
 
     /// Given a reference value image, this function will return a new ScalarRaster which is has the
     /// values of the reference subtracted from the values of this image.
-    pub fn subtract(&self, reference: &Self) -> Self {
+    pub fn subtract(&self, reference: &Self) -> Result<Self> {
         let mut corrected = self.clone();
         for (x, y, v) in corrected.values.enumerate_pixels_mut() {
             if self.mask.get_pixel(x, y)[0] < 255 {
@@ -618,11 +618,22 @@ impl ScalarRaster {
             } else {
                 let ref_val = reference.u_to_f(reference.values.get_pixel(x, y)[0]);
                 let self_val = self.u_to_f(v[0]);
+                let f = self_val - ref_val;
+                if f.is_nan() {
+                    *v = Luma([0]);
+                    continue;
+                }
+                if f < self.min_z || f > self.max_z {
+                    return Err(format!(
+                        "Value {} out of bounds for raster with min_z {} and max_z {}",
+                        f, self.min_z, self.max_z
+                    ).into());
+                }
                 *v = Luma([self.f_to_u(self_val - ref_val)]);
             }
         }
 
-        corrected
+        Ok(corrected)
     }
 
     /// Find the average value of the pixels in the area neighborhood around the given pixel. The
@@ -749,8 +760,8 @@ impl ScalarRaster {
     ///   pixels that aren't considered part of the data set.
     ///
     /// returns: ScalarRaster
-    pub fn convolve(&self, kernel: &RasterKernel, skip_unmasked: bool) -> Self {
-        kernel.convolve(self, skip_unmasked)
+    pub fn convolve(&self, kernel: &RasterKernel, skip_unmasked: bool, keep_zlim: bool) -> Self {
+        kernel.convolve(self, skip_unmasked, keep_zlim)
     }
 
     /// Performs a generic convolution operation on the depth image using the given kernel, but
@@ -770,13 +781,22 @@ impl ScalarRaster {
         &self,
         kernel: &dyn FastApproxKernel,
         skip_unmasked: bool,
+        keep_zlim: bool,
+        target_size: usize,
     ) -> Result<Self> {
         let full_kernel = kernel.make(self.px_size)?;
-        let shrink_factor = ((full_kernel.size as f64) / 17.0).floor();
+        let shrink_factor = ((full_kernel.size as f64) / target_size as f64).floor();
+
+        if shrink_factor + f64::EPSILON <= 1.0 {
+            // If the shrink factor is less than or equal to 1, then we can just use the full
+            // kernel and convolve the full image.
+            return Ok(full_kernel.convolve(self, skip_unmasked, keep_zlim));
+        }
+
         let shrunk_values = self.create_shrunk(shrink_factor as u32);
         let shrunk_kernel = kernel.make(shrunk_values.px_size)?;
 
-        let shrunk_result = shrunk_kernel.convolve(&shrunk_values, skip_unmasked);
+        let shrunk_result = shrunk_kernel.convolve(&shrunk_values, skip_unmasked, keep_zlim);
 
         // The individual scale_x and scale_y factors are important because the scale may
         // not be equal after conversion to discrete pixel dimensions.
@@ -824,15 +844,7 @@ impl ScalarRaster {
             full_result.mask.set_masked(x, y);
         }
 
-        let mut target_matrix = self.to_matrix();
-        let mut target_mask = DMatrix::zeros(target_matrix.nrows(), target_matrix.ncols());
-        for (x, y, v) in self.mask.enumerate_pixels() {
-            if v.is_masked() {
-                target_mask[(y as usize, x as usize)] = 1.0;
-            } else {
-                target_matrix[(y as usize, x as usize)] = 0.0;
-            }
-        }
+        let (target_matrix, target_mask) = self.to_value_and_mask_matrices();
 
         let final_calcs = need_calc
             .par_iter()
@@ -885,7 +897,7 @@ impl ScalarRaster {
 
     /// Performs a high-pass filtering by taking an area blur at the given radius and then
     /// subtracting the result from the original image.
-    pub fn area_filtered(&self, radius_mm: f32) -> Self {
+    pub fn area_filtered(&self, radius_mm: f32) -> Result<Self> {
         let blurred = self.area_blurred(radius_mm);
         self.subtract(&blurred)
     }

@@ -1,6 +1,5 @@
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, Criterion};
 use engeom::common::IndexMask;
-use std::collections::HashSet;
 use std::hint::black_box;
 
 const N: usize = 10_000_000;
