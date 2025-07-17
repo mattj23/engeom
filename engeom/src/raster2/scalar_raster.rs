@@ -698,9 +698,8 @@ impl ScalarRaster {
                     x,
                     y,
                     full_kernel.convolved_pixel_mat(
-                        &self,
-                        *x as i32,
-                        *y as i32,
+                        *x as usize,
+                        *y as usize,
                         &target_matrix,
                         &target_mask,
                     ),

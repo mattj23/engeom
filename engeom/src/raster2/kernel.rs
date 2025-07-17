@@ -55,6 +55,7 @@ impl FastApproxKernel for FastApproxGaussian {
 pub struct RasterKernel {
     pub values: DMatrix<f64>,
     pub size: usize,
+    pub tail_n: i32,
 }
 
 impl RasterKernel {
@@ -73,8 +74,10 @@ impl RasterKernel {
     /// returns: Result<RasterKernel, Box<dyn Error, Global>>
     pub fn gaussian(sigma: f64) -> Self {
         let values = gaussian_kernel_matrix(sigma);
-        let size = values.nrows();
-        Self { values, size }
+        Self::new(values).expect(
+            "Failed to create Gaussian kernel, something is wrong with the \
+        kernel matrix generation",
+        )
     }
 
     /// Creates a new `RasterKernel` from a 2D matrix of f64 values.
@@ -89,8 +92,13 @@ impl RasterKernel {
             return Err("Kernel size must be odd (nrows and ncols must be odd)".into());
         }
         let size = values.nrows();
+        let tail_n = (size as i32 - 1) / 2; // The tail length is half the size minus one
 
-        Ok(Self { values, size })
+        Ok(Self {
+            values,
+            size,
+            tail_n,
+        })
     }
 
     pub fn convolve(&self, raster: &ScalarRaster, skip_unmasked: bool) -> ScalarRaster {
@@ -112,7 +120,7 @@ impl RasterKernel {
                 if skip_unmasked && raster.mask.is_pixel_unmasked(x, y) {
                     result.mask.set_unmasked(x as u32, y as u32);
                 } else {
-                    let v = self.convolved_pixel_mat(raster, x, y, &matrix, &mask);
+                    let v = self.convolved_pixel_mat(x as usize, y as usize, &matrix, &mask);
                     result.set_f_at(x, y, v);
                 }
             }
@@ -120,58 +128,47 @@ impl RasterKernel {
 
         result
     }
+
     pub fn convolved_pixel_mat(
         &self,
-        raster: &ScalarRaster,
-        x: i32,
-        y: i32,
+        x: usize,
+        y: usize,
         matrix: &DMatrix<f64>,
         mask: &DMatrix<f64>,
     ) -> f64 {
-        let pose = KernelPose::new(&self.values, raster, x, y);
         let mut kernel_sum = 0.0;
         let mut pixel_sum = 0.0;
-        for c in pose.all() {
-            pixel_sum += matrix[(c.my as usize, c.mx as usize)] * c.kv();
-            kernel_sum += mask[(c.my as usize, c.mx as usize)] * c.kv();
+
+        // First valid i of the kernel in the matrix indices
+        let min_mi = (y as i32 - self.tail_n).max(0) as usize;
+        // First valid i of the kernel in the kernel indices
+        let min_ki = min_mi - (y as i32 - self.tail_n) as usize;
+
+        let max_mi = (y + self.tail_n as usize).min(matrix.nrows() - 1);
+        let count_ki = max_mi - min_mi + 1;
+
+        let min_mj = (x as i32 - self.tail_n).max(0) as usize;
+        let min_kj = min_mj - (x as i32 - self.tail_n) as usize;
+        let max_mj = (x + self.tail_n as usize).min(matrix.ncols() - 1);
+        let count_kj = max_mj - min_mj + 1;
+
+        for i in 0..count_ki {
+            for j in 0..count_kj {
+                let ki = min_ki + i;
+                let kj = min_kj + j;
+                let mi = min_mi + i;
+                let mj = min_mj + j;
+                pixel_sum += matrix[(mi, mj)] * self.values[(ki, kj)];
+                kernel_sum += mask[(mi, mj)] * self.values[(ki, kj)];
+            }
         }
+
         if kernel_sum == 0.0 {
             f64::NAN
         } else {
             pixel_sum / kernel_sum
         }
     }
-    //
-    // pub fn convolved_pixel(&self, raster: &ScalarRaster, x: i32, y: i32) -> f64 {
-    //     let pose = KernelPose::new(&self.values, raster, x, y);
-    //
-    //     // Copy the kernel ignoring NAN values
-    //     let mut kernel_copy = DMatrix::zeros(self.size, self.size);
-    //     for c in pose.all() {
-    //         if !c.mvf().is_nan() {
-    //             kernel_copy[(c.ky, c.kx)] = c.kv();
-    //         }
-    //     }
-    //     let total = kernel_copy.sum();
-    //     if total == 0.0 {
-    //         return f64::NAN; // Avoid division by zero
-    //     }
-    //
-    //     kernel_copy = kernel_copy / total;
-    //
-    //     let mut sum = 0.0;
-    //     for c in pose.all() {
-    //         if !c.mvf().is_nan() {
-    //             sum += c.mvf() * kernel_copy[(c.ky, c.kx)];
-    //         }
-    //     }
-    //
-    //     if sum.is_nan() {
-    //         panic!("sum is nan");
-    //     }
-    //
-    //     sum
-    // }
 }
 
 /// A `KernelPose` represents the position of a convolution kernel on a `ScalarRaster`.  The pose
