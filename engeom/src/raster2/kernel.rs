@@ -1,7 +1,7 @@
 //! This module has tools for working with kernels and convolutions on 2D raster data.
 
 use crate::na::DMatrix;
-use crate::raster2::{MaskOperations, MaskValue, ScalarRaster};
+use crate::raster2::{d_matrix_min_max, MaskOperations, MaskValue, ScalarRaster};
 use crate::Result;
 use rayon::iter::IntoParallelRefIterator;
 
@@ -129,16 +129,7 @@ impl RasterKernel {
         let convolved = self.convolve_matrix_and_mask(&matrix, &mask, skip_unmasked);
 
         let (z_min, z_max) = if !keep_zlim {
-            // Get non-NAN min and max values from the convolved matrix
-            let mut z_min = f64::INFINITY;
-            let mut z_max = f64::NEG_INFINITY;
-            for v in convolved.iter() {
-                if v.is_finite() {
-                    z_min = z_min.min(*v);
-                    z_max = z_max.max(*v);
-                }
-            }
-            (z_min, z_max)
+            d_matrix_min_max(&convolved)
         } else {
             // Use the original raster's z limits
             (raster.min_z, raster.max_z)
