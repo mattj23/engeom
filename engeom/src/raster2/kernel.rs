@@ -101,27 +101,102 @@ impl RasterKernel {
         })
     }
 
+    /// This function performs a normalized convolution (a convolution in which certain values are
+    /// suppressed or skipped) of a kernel against a `ScalarRaster` entity. The values of the
+    /// `ScalarRaster` are converted to a matrix of floating point pixel values alongside a mask
+    /// matrix that replicates the meaning of the `ScalarRaster`'s mask. The matrices are then
+    /// convolved with the kernel, and the result is re-encoded into a new `ScalarRaster`.
+    ///
+    /// The pixel size value of the resulting `ScalarRaster` is the same as the input raster,
+    /// but the minimum and maximum z encoding values are recalculated based on the limits of the
+    /// convolved product.
+    ///
+    /// The `skip_unmasked` argument determines whether to skip pixels that aren't in the input
+    /// raster's mask. If it is set to true, all pixels that aren't in the input raster's mask will
+    /// also not be in the output raster.  If set to false, the function will attempt to calculate
+    /// all pixels in the raster, but those that are beyond the kernel's radius from the nearest
+    /// will not have a valid convolution result and so will be excluded in the output raster mask.
+    ///
+    /// # Arguments
+    ///
+    /// * `raster`: The `ScalarRaster` containing the pixel values to be convolved.
+    /// * `skip_unmasked`: If true, pixels that are not in the input raster's mask will be skipped
+    ///   and no convolved value will be calculated for them. The output raster's mask will not
+    ///   include these pixels.
+    ///
+    /// returns: ScalarRaster
     pub fn convolve(&self, raster: &ScalarRaster, skip_unmasked: bool) -> ScalarRaster {
-        let mut matrix = raster.to_matrix();
+        let (matrix, mask) = raster.to_value_and_mask_matrices();
+        let convolved = self.convolve_matrix_and_mask(&matrix, &mask, skip_unmasked);
+        let z_min = convolved.min();
+        let z_max = convolved.max();
 
-        let mut mask = DMatrix::zeros(matrix.nrows(), matrix.ncols());
-        for (x, y, v) in raster.mask.enumerate_pixels() {
-            if v.is_masked() {
-                mask[(y as usize, x as usize)] = 1.0;
-            } else {
-                matrix[(y as usize, x as usize)] = 0.0;
-            }
-        }
+        ScalarRaster::from_matrix(&convolved, raster.px_size, z_min, z_max)
+    }
 
-        let mut result = ScalarRaster::empty_like(&raster);
+    /// This function performs a normalized convolution (a convolution in which certain values are
+    /// suppressed or skipped) of a kernel against a matrix of floating point pixel values.
+    ///
+    /// The function takes two `DMatrix<f64>` arguments: `matrix` and `mask`. The `matrix` contains
+    /// the scalar pixel values to be convolved, while the `mask` contains the mask values that
+    /// determines which pixels are valid for the convolution. The mask should be a matrix of the
+    /// same size as the `matrix`, otherwise the function will panic.
+    ///
+    /// The values in `matrix` and in `mask` must be prepared according to the following rules:
+    ///
+    /// - Replace any NAN elements in the value matrix with 0.0
+    /// - Create a mask matrix where all valid elements of the value matrix have a value of 1.0
+    ///   in the corresponding position, and all invalid elements have a value of 0.0.
+    ///
+    /// During the convolution, the kernel's product with the mask will be summed alongside the
+    /// typical kernel product with the pixel values.  The kernel/pixel product will then be
+    /// divided by the kernel/mask product to normalize the result.
+    ///
+    /// In theory the `mask` matrix can be thought of as a matrix of weights, and the values in the
+    /// mask can be any floating point value rather than just 0.0 and 1.0, allowing convolutions to
+    /// include measures of certainty instead of just binary masking.  However, the `skip_unmasked`
+    /// argument will then have a different meaning, and shouldn't be used.
+    ///
+    /// The `skip_unmasked` argument determines whether to skip pixels that have a value of 0.0
+    /// (within the floating point epsilon) in the mask matrix. If `skip_unmasked` is true, pixels
+    /// without a valid mask value won't be calculated, and the corresponding pixel in the
+    /// result matrix will be a NAN. This is used for skipping pixels in cases where there isn't a
+    /// conceptual meaning to a missing pixel...such as in a depth map where a missing pixel might
+    /// mean there is no physical entity at that location, and so we don't care about the
+    /// convolved value at that position.
+    ///
+    /// If `skip_unmasked` is false, all pixels will be calculated, though not all may have valid
+    /// results and so some pixels may still be NAN in the result matrix. Any pixels that is beyond
+    /// the kernel's radius from the nearest pixel with a nonzero mask will end up as a NAN in the
+    /// final result.
+    ///
+    /// # Arguments
+    ///
+    /// * `matrix`: A `DMatrix<f64>` containing the pixel values of the matrix to be convolved.
+    ///   Follow the guidelines above to prepare this matrix.
+    /// * `mask`: A `DMatrix<f64>` containing the mask values, where valid pixels have a value of
+    ///   1.0 and invalid pixels have a value of 0.0. This matrix must be the same size as `matrix`
+    ///   and should also follow the guidelines above.
+    /// * `skip_unmasked`: If true, pixels with a value of 0.0 in the mask matrix will be skipped
+    ///   and no convolved value will be calculated for them. The value in the result matrix will
+    ///   be a NAN where the mask value is 0.0.  If false, all pixels will be calculated, but not
+    ///   all will have valid results.
+    ///
+    /// returns: Matrix<f64, Dyn, Dyn, VecStorage<f64, Dyn, Dyn>>
+    pub fn convolve_matrix_and_mask(
+        &self,
+        matrix: &DMatrix<f64>,
+        mask: &DMatrix<f64>,
+        skip_unmasked: bool,
+    ) -> DMatrix<f64> {
+        let mut result = DMatrix::zeros(matrix.nrows(), matrix.ncols());
 
-        for y in 0..raster.height() as i32 {
-            for x in 0..raster.width() as i32 {
-                if skip_unmasked && raster.mask.is_pixel_unmasked(x, y) {
-                    result.mask.set_unmasked(x as u32, y as u32);
+        for y in 0..matrix.nrows() {
+            for x in 0..matrix.ncols() {
+                if skip_unmasked && mask[(y, x)].abs() < f64::EPSILON {
+                    result[(y, x)] = f64::NAN;
                 } else {
-                    let v = self.convolved_pixel_mat(x as usize, y as usize, &matrix, &mask);
-                    result.set_f_at(x, y, v);
+                    result[(y, x)] = self.convolved_pixel_mat(x, y, matrix, mask);
                 }
             }
         }
@@ -129,6 +204,42 @@ impl RasterKernel {
         result
     }
 
+    /// This function computes the value of a pixel at position `(x, y)` in a matrix by convolving
+    /// it against the kernel values and a mask. This is the fundamental building block of the
+    /// normalized convolutions performed by the `RasterKernel` struct.
+    ///
+    /// The function takes both a `DMatrix<f64>` representing the pixel values of the matrix and a
+    /// `DMatrix<f64>` representing the mask values. These matrices must be prepared according to
+    /// the following rules:
+    ///
+    /// - Replace any NAN elements in the value matrix with 0.0
+    /// - Create a mask matrix where all valid elements of the value matrix have a value of 1.0
+    ///   in the corresponding position, and all invalid elements have a value of 0.0.
+    ///
+    /// There is no similar function to operate directly on a `ScalarRaster` for performance
+    /// reasons.  The following optimizations are what make this function fast enough to not be
+    /// unusable:
+    ///
+    /// - The mask matrix is prepared in advance, and the valid elements of the value matrix have
+    ///   a value of 1.0 in the corresponding position in the mask matrix. This allows the
+    ///   normalization information to be collected in a single branchless multiplication operation
+    /// - The invalid elements of the value matrix are set to zero, so there are no NANs to catch
+    ///   with branches; the mask matrix replaces any if/then logic that would otherwise be
+    ///   required.
+    /// - The mask and value matrices are both pre-computed and stored externally, since
+    ///   convolving the entire matrix will entail a LOT of repeated retrievals of the same values.
+    ///   By computing these matrices in advance we only have to calculate the floating point
+    ///   values a single time per convolution.
+    ///
+    /// # Arguments
+    ///
+    /// * `x`: The x-coordinate (column index, j) of the pixel in the matrix to be convolved.
+    /// * `y`: The y-coordinate (row index, i) of the pixel in the matrix to be convolved.
+    /// * `matrix`: The `DMatrix<f64>` containing the pixel values of the matrix to be convolved.
+    /// * `mask`: A `DMatrix<f64>` containing the mask values, where valid pixels have a value of
+    ///   1.0 and invalid pixels have a value of 0.0.
+    ///
+    /// returns: f64
     pub fn convolved_pixel_mat(
         &self,
         x: usize,
@@ -139,19 +250,40 @@ impl RasterKernel {
         let mut kernel_sum = 0.0;
         let mut pixel_sum = 0.0;
 
-        // First valid i of the kernel in the matrix indices
-        let min_mi = (y as i32 - self.tail_n).max(0) as usize;
-        // First valid i of the kernel in the kernel indices
-        let min_ki = min_mi - (y as i32 - self.tail_n) as usize;
+        // This initial arithmatic is to determine the mutually valid range of the kernel as it
+        // lies over the pixel at (x, y) in the matrix.
+        //
+        // The `*_mi` and `*_mj` variables represent the valid range of indices in the matrix which
+        // overlap with the kernel, while the `*_ki` and `*_kj` variables represent the
+        // corresponding window indices in the kernel itself. Ultimately, all values will be
+        // positive integers.
+        // ----------------------------------------------------------------------------------------
 
+        // For the row dimension (`i`/`y`), the first valid index in the matrix is either zero or
+        // the `y` coordinate minus the tail length of the kernel, whichever is larger. The first
+        // valid index in the kernel has the same offset from the center of the kernel as the first
+        // valid index in the matrix has from the `y` coordinate.
+        //
+        // The last valid index in the matrix is either the `y` coordinate plus the tail length of
+        // the kernel or the last index in the matrix, whichever is smaller. The total number of
+        // valid indices in the kernel is the difference between the last and first valid indices
+        // in the matrix, plus one to include the last index itself.
+        let min_mi = (y as i32 - self.tail_n).max(0) as usize;
+        let min_ki = min_mi - (y as i32 - self.tail_n) as usize;
         let max_mi = (y + self.tail_n as usize).min(matrix.nrows() - 1);
         let count_ki = max_mi - min_mi + 1;
 
+        // The same logic applies to the column dimension (`j`/`x`), where the first and last valid
+        // indices in the matrix are determined by the `x` coordinate, the tail length of the
+        // kernel, and the limits of the matrix. The start of the kernel and the total count of
+        // the kernel are calculated from the matrix limits.
         let min_mj = (x as i32 - self.tail_n).max(0) as usize;
         let min_kj = min_mj - (x as i32 - self.tail_n) as usize;
         let max_mj = (x + self.tail_n as usize).min(matrix.ncols() - 1);
         let count_kj = max_mj - min_mj + 1;
 
+        // Now we will iterate over the valid indices in each direction, calculating both the
+        // matrix and the kernel indices. From there we can accumulate the pixel and kernel sums.
         for i in 0..count_ki {
             for j in 0..count_kj {
                 let ki = min_ki + i;
@@ -168,156 +300,6 @@ impl RasterKernel {
         } else {
             pixel_sum / kernel_sum
         }
-    }
-}
-
-/// A `KernelPose` represents the position of a convolution kernel on a `ScalarRaster`.  The pose
-/// provides a method to iterate over all the kernel coordinates that overlap with valid indices
-/// in the reference raster, taking into account the kernel's size and the raster's bounds.
-struct KernelPose<'a> {
-    /// A reference to the kernel matrix
-    kernel: &'a DMatrix<f64>,
-
-    /// A reference to the matrix being convolved
-    reference: &'a ScalarRaster,
-
-    /// The x (column) coordinate of the kernel's center in the reference matrix
-    x: i32,
-
-    /// The y (row) coordinate of the kernel's center in the reference matrix
-    y: i32,
-
-    x_bounds: KernelBounds,
-
-    y_bounds: KernelBounds,
-
-    radius: i32,
-}
-
-impl<'a> KernelPose<'a> {
-    pub fn new(kernel: &'a DMatrix<f64>, reference: &'a ScalarRaster, x: i32, y: i32) -> Self {
-        let radius = kernel.ncols() as i32 / 2;
-
-        Self {
-            kernel,
-            reference,
-            x,
-            y,
-            x_bounds: KernelBounds::from(x, radius, reference.width() as i32),
-            y_bounds: KernelBounds::from(y, radius, reference.height() as i32),
-            radius,
-        }
-    }
-
-    pub fn all(&self) -> Vec<KCoords> {
-        let mut result = Vec::new();
-        for kx in self.x_bounds.kvals() {
-            for ky in self.y_bounds.kvals() {
-                let mx = self.x + kx as i32 - self.radius;
-                let my = self.y + ky as i32 - self.radius;
-                result.push(KCoords::new(kx, ky, mx, my, self.kernel, self.reference));
-            }
-        }
-        result
-    }
-}
-
-/// Represents a dual set of coordinates where kx, ky are the coordinates in the kernel and mx, my
-/// are the corresponding coordinates in the ScalarRaster.  It is used to perform the mapping
-/// between the kernel and the raster data for a single pixel during convolution operations.
-struct KCoords<'a> {
-    kx: usize,
-    ky: usize,
-    mx: i32,
-    my: i32,
-
-    kernel: &'a DMatrix<f64>,
-    reference: &'a ScalarRaster,
-}
-
-impl<'a> KCoords<'a> {
-    fn new(
-        kx: usize,
-        ky: usize,
-        mx: i32,
-        my: i32,
-        kernel: &'a DMatrix<f64>,
-        reference: &'a ScalarRaster,
-    ) -> Self {
-        Self {
-            kx,
-            ky,
-            mx,
-            my,
-            kernel,
-            reference,
-        }
-    }
-
-    /// Returns the value of the kernel at the coordinates (kx, ky)
-    pub fn kv(&self) -> f64 {
-        self.kernel[(self.ky, self.kx)]
-    }
-
-    /// Returns the f64 value of the reference raster at the coordinates (mx, my). If the mask is
-    /// not set, this will return NaN.
-    pub fn mvf(&self) -> f64 {
-        self.reference.f_at(self.mx, self.my)
-    }
-
-    /// Returns the u16 value of the reference raster at the coordinates (mx, my). If the mask is
-    /// not set, this will return None.
-    pub fn mv(&self) -> Option<u16> {
-        self.reference.u_at(self.mx, self.my)
-    }
-}
-
-/// This struct handles the boundaries of a single direction of the kernel in relation to the
-/// reference raster being convolved. It makes iteration over the kernel coordinates transparent
-/// to calling code when the kernel bounds might be outside the bounds of the raster.
-struct KernelBounds {
-    /// The number of valid kernel coordinates in this dimension starting from `k0`.
-    count: usize,
-
-    /// The starting index of the kernel in the kernel coordinates, such that both `k0` and `m0` are
-    /// the first valid indices in the kernel and matrix respectively for the given dimension at a
-    /// specific center coordinate of the kernel.
-    ///
-    /// For instance, if the kernel is 5x5 and kernel pose was placed at 0,0 in the raster, then
-    /// the first valid matrix coordinates would be 0 and the first valid kernel coordinates
-    /// would be 2.
-    k0: usize,
-
-    /// The starting index of the kernel in the matrix coordinates, such that both `k0` and `m0` are
-    /// the first valid indices in the kernel and matrix respectively for the given dimension at a
-    /// specific center coordinate of the kernel.
-    ///
-    /// For instance, if the kernel is 5x5 and kernel pose was placed at 0,0 in the raster, then
-    /// the first valid matrix coordinates would be 0 and the first valid kernel coordinates
-    /// would be 2.
-    m0: usize,
-}
-
-impl KernelBounds {
-    fn new(count: usize, k0: usize, m0: usize) -> Self {
-        Self { count, k0, m0 }
-    }
-
-    fn from(x: i32, radius: i32, m_size: i32) -> Self {
-        let m0 = x - radius; // The start of the kernel in the matrix coordinates ignoring bounds
-        let m_lower = m0.max(0); // The start of the kernel in the matrix clipped to 0
-        let k0 = m_lower - m0; // The start of the kernel in the kernel coordinates
-
-        let m1 = x + radius; // The end of the kernel in the matrix coordinates ignoring bounds
-        let m_upper = m1.min(m_size - 1); // The end of the kernel in the matrix clipped to the matrix size
-
-        let count = (m_upper - m_lower + 1) as usize;
-        Self::new(count, k0 as usize, m_lower as usize)
-    }
-
-    /// Returns a range of kernel coordinates for this dimension
-    pub fn kvals(&self) -> Range<usize> {
-        self.k0..self.k0 + self.count
     }
 }
 
@@ -340,7 +322,7 @@ fn gaussian_kernel_matrix(sigma: f64) -> DMatrix<f64> {
     let total: f64 = values.sum();
     if total == 0.0 {
         // This shouldn't happen?
-        panic!("RasterKernel::gaussian failed underflow: total sum is zero");
+        panic!("kernel total is zero, cannot normalize");
     }
     values / total
 }

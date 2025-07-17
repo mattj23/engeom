@@ -22,6 +22,84 @@ use std::path::Path;
 
 pub type ScalarImage<T> = ImageBuffer<Luma<T>, Vec<T>>;
 
+/// A `ScalarRaster` is a special 2D raster type that encodes scalar floating point values into a
+/// `u16` image buffer, with a companion `u8` mask image that indicates which pixels are considered
+/// "valid" or "real".  This is a lossy representation of the scalar field, but it has two
+/// distinct advantages:
+///
+/// 1. It allows for the entire spectrum of image processing algorithms to be applied directly to
+///    the raster and its values, such as filtering, dilation, erosion, inpainting, convolutions,
+///    thresholding, blob detection, etc.
+/// 2. It allows for the raster to be serialized and deserialized to a compact binary format using
+///    any sort of image serialization format, including ones with efficient compression like PNG.
+///
+/// Conceptually, a `ScalarRaster` differs from the concept of a plain image buffer or a plain
+/// floating point matrix in that it serves as a dual representation of a discretized scalar field
+/// that still has a connection to a spatial coordinate system.  It does this in several ways:
+///
+/// - Positions in the 2D field represented by the `ScalarRaster` have dual meaning. They are
+///   addressable by pixel coordinates, but pixel coordinates are anchored to physical world space
+///   through the `px_size` field, which is the physical world length of each pixel in the raster.
+///   For any coordinate in the raster a relative position can be calculated by multiplying the
+///   pixel coordinates by `px_size`. Through the use of a `RasterMapping`, this can be converted
+///   to absolute coordinates.
+///
+/// - The `px_size` field also allows for operations performed on the raster to be aware of the
+///   physical scale of their operations. For example, when convolving with a Gaussian kernel, the
+///   kernel size can be specified in physical units (for example, mm) based entirely on
+///   information encoded directly in the `ScalarRaster`.
+///
+/// - When the `ScalarRaster` is scaled, the `px_size` field is updated to reflect the scaling
+///   operation so that the distance between features in the raster stays the same. If the raster
+///   is shrunk to half of its original size, the `px_size` is doubled, as each pixel now represents
+///   twice as much of the physical world as it did before.
+///
+/// - The `min_z` and `max_z` fields allow for a direct mapping between floating point and `u16`
+///   values, so that operations can use either the integer representation or the floating point
+///   value.
+///
+/// The `ScalarRaster` exists to be a convenient way to work with rasterized scalar fields by
+/// tracking spatial information for the client code while providing a consistent interface to
+/// both image processing and floating point operations.
+///
+/// Some notes on its use:
+///
+/// - Take note that the `z_min` and `z_max` values are encoding limits for the `u16` values in the
+///   `values` field; they are not necessarily the minimum and maximum values being stored in the
+///   raster. They _are_ the minimum and maximum _possible_ values that can be encoded in the
+///   raster, so they should be set high enough to accommodate the range of values you expect to
+///   produce in any mutating operation on the raster.  The encoding is a direct linear mapping, so
+///   a floating point value of `z_min` will be encoded as `0`, and a floating point value of
+///   `z_max` will be encoded as `65535`.  Any floating point value outside of this range will be
+///   clamped to the nearest limit.
+///
+/// - Take care to calculate the lost resolution of the `u16` datatype. If you know the resolution
+///   you need, you can see what the representable range is by multiplying it by 2^16. For instance,
+///   if the pixel values represent depth and your application requires a resolution of 1µm, then
+///   the full range of what you can represent as a depth map is 65.536mm. Or, if you know what the
+///   maximum and minimum values you need to represent are, you can calculate the resolution by
+///   dividing the range by 65536. For example, if you need to represent depths between 0 and 10m,
+///   then the resolution is 10m / 65536 = 0.1525mm. Values that are closer to each other than this
+///   number will be compressed to the same `u16` value, and thus will not be distinguishable.
+///   For most engineering applications this has more resolution than the certainty of any
+///   measurement equipment, but for applications that require high precision over a very large
+///   range, you may be better served by using a floating point matrix directly.
+///
+/// - The `ScalarRaster` has built in serialization and deserialization methods that allow it to
+///   be turned into bytes and/or saved directly to a file with all of its internal information
+///   preserved. This involves serializing the `u16` and `u8` values as grayscale images with an
+///   encoding of your choice, and then stuffing them into a single binary file along with the
+///   pixel size and encoding z limits.
+///
+/// - The fact that the `ScalarRaster` tracks pixel size through rescaling operations allows for
+///   fast approximate convolutions to be performed on the raster. This works by having an entity
+///   that provides kernels based on a physical size, and then allowing the `ScalarRaster` to
+///   shrink itself until a kernel of an optimal pixel count is reached. The convolution is
+///   performed on both the lower resolution raster and the mask, and when the image is upscaled
+///   the mask is used to determine which pixels are valid in the output. Invalid pixels are
+///   reconvolved at a larger resolution to fill in the gaps. This compensates for the tendency
+///   to create impractically large kernels when needing to base them on physical dimensions, in
+///   exchange for an approximate result.
 #[derive(Clone, Debug)]
 pub struct ScalarRaster {
     pub values: ScalarImage<u16>,
@@ -32,14 +110,14 @@ pub struct ScalarRaster {
 }
 
 impl ScalarRaster {
-    pub fn serialized_bytes(&self) -> Vec<u8> {
+    pub fn serialized_bytes(&self, fmt: ImageFormat) -> Vec<u8> {
         let mut value_bytes = Vec::new();
         let mut mask_bytes = Vec::new();
         self.values
-            .write_to(&mut Cursor::new(&mut value_bytes), ImageFormat::Png)
+            .write_to(&mut Cursor::new(&mut value_bytes), fmt)
             .unwrap();
         self.mask
-            .write_to(&mut Cursor::new(&mut mask_bytes), ImageFormat::Png)
+            .write_to(&mut Cursor::new(&mut mask_bytes), fmt)
             .unwrap();
 
         let mut bytes = Vec::new();
@@ -104,7 +182,7 @@ impl ScalarRaster {
     pub fn save_combined(&self, path: &Path, fmt: ImageFormat) -> Result<()> {
         let file = File::create(path)?;
         let mut writer = BufWriter::new(file);
-        writer.write_all(&self.serialized_bytes())?;
+        writer.write_all(&self.serialized_bytes(fmt))?;
         Ok(())
     }
 
@@ -187,7 +265,26 @@ impl ScalarRaster {
         }
     }
 
-    pub fn save_with_cmap(
+    /// This function will render the depth map to an image file using a color gradient map from
+    /// the `colorgrad` crate.  Optionally, you can provide a tuple of `(min_z, max_z)` to clip
+    /// the values to a specific range, otherwise the z_min and z_max of the raster will be used.
+    ///
+    /// This function will output RGBA pixels, where the alpha channel is set to 0 for invalid
+    /// pixels. When specifying the output path, be sure to use the extension of an image format
+    /// that supports transparency, such as PNG.
+    ///
+    /// This function is useful for visualization and debugging of raw value maps, but it is not a
+    /// direct replacement for tools like `matplotlib`'s `imshow` function, which can do things
+    /// like output a scale bar and perform intelligent scaling.
+    ///
+    /// # Arguments
+    ///
+    /// * `path`: the path to the output image file
+    /// * `gradient`: a `Gradient` trait object that provides the color mapping
+    /// * `min_max`: an optional tuple of `(min_z, max_z)` to clip the values to a specific range
+    ///
+    /// returns: Result<(), Box<dyn Error, Global>>
+    pub fn render_with_cmap(
         &self,
         path: &Path,
         gradient: &dyn Gradient,
@@ -211,6 +308,22 @@ impl ScalarRaster {
         img.save(path).map_err(|e| e.into())
     }
 
+    /// Create a new `ScalarRaster` from a matrix of floating point values. The physical world
+    /// length of each pixel should be specified in `px_size`, and the minimum and maximum z values
+    /// for the `u16` encoding should be specified in `min_z` and `max_z`. The values in the matrix
+    /// will be clamped to the range `[min_z, max_z]` before being converted to `u16` values.
+    ///
+    /// # Arguments
+    ///
+    /// * `matrix`: a 2D matrix of floating point values to be converted into the raster
+    /// * `px_size`: a physical world length of each pixel in the raster, in whatever units you're
+    ///   working with.
+    /// * `min_z`: The lower bound of the z range which will be mapped to the `u16` range. This
+    ///   value will be a 0 in the resulting raster.
+    /// * `max_z`: The upper bound of the z range which will be mapped to the `u16` range. This
+    ///   value will be a `u16::MAX` in the resulting raster.
+    ///
+    /// returns: ScalarRaster
     pub fn from_matrix(matrix: &DMatrix<f64>, px_size: f64, min_z: f64, max_z: f64) -> Self {
         let mut value = ScalarImage::new(matrix.ncols() as u32, matrix.nrows() as u32);
         let mut mask = GrayImage::new(matrix.ncols() as u32, matrix.nrows() as u32);
@@ -282,6 +395,9 @@ impl ScalarRaster {
         (mean, stdev)
     }
 
+    /// Converts the `ScalarRaster` to a `DMatrix<f64>` where each pixel is represented by its
+    /// floating point value. Pixels that are masked (i.e., not valid) will be represented as `NaN`
+    /// in the matrix.
     pub fn to_matrix(&self) -> DMatrix<f64> {
         let mut matrix = DMatrix::zeros(self.height() as usize, self.width() as usize);
         for i in 0..self.height() {
@@ -298,6 +414,33 @@ impl ScalarRaster {
             }
         }
         matrix
+    }
+
+    /// This function converts the `ScalarRaster` to a tuple of two `DMatrix<f64>` objects, the
+    /// first being the value matrix and the second being the mask matrix. These matrices are
+    /// prepared for the normalized convolution operation, according to the following rules:
+    ///
+    /// - The value matrix will have all NaN values replaced with 0.0.
+    /// - For every position in the raster's mask that has a 0 value, the corresponding position
+    ///   in the mask matrix will be set to 0.0.  Every position in the mask matrix that has a
+    ///   255 value will be set to 1.0.
+    ///
+    /// This output is specifically made to be compatible with the requirements of the
+    /// `RasterKernel::convolve` method, but is a general purpose conversion that re-conceptualizes
+    /// the raster as a set of values and certainties.
+    pub fn to_value_and_mask_matrices(&self) -> (DMatrix<f64>, DMatrix<f64>) {
+        let mut matrix = self.to_matrix();
+
+        let mut mask = DMatrix::zeros(matrix.nrows(), matrix.ncols());
+        for (x, y, v) in self.mask.enumerate_pixels() {
+            if v.is_masked() {
+                mask[(y as usize, x as usize)] = 1.0;
+            } else {
+                matrix[(y as usize, x as usize)] = 0.0;
+            }
+        }
+
+        (matrix, mask)
     }
 
     /// Performs an inpainting operation on the depth map using Alexander Telea's method. Provide
