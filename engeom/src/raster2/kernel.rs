@@ -134,28 +134,27 @@ impl RasterKernel {
         matrix: &DMatrix<f64>,
     ) -> f64 {
         let pose = KernelPose::new(&self.values, raster, x, y);
+        let mut kernel_sum = 0.0;
 
-        // Copy the kernel ignoring NAN values
-        let mut kernel_copy = DMatrix::zeros(self.size, self.size);
+        // Sum the kernel values that overlap with valid indices in the reference raster
         for c in pose.all() {
             if !c.mvf().is_nan() {
-                kernel_copy[(c.ky, c.kx)] = c.kv();
+                kernel_sum += c.kv();
             }
         }
-        let total = kernel_copy.sum();
-        if total == 0.0 {
+        if kernel_sum == 0.0 {
             return f64::NAN; // Avoid division by zero
         }
-
-        kernel_copy = kernel_copy / total;
 
         let mut sum = 0.0;
         for c in pose.all() {
             let mvf = matrix[(c.my as usize, c.mx as usize)];
             if !mvf.is_nan() {
-                sum += mvf * kernel_copy[(c.ky, c.kx)];
+                sum += mvf * self.values[(c.ky, c.kx)];
             }
         }
+
+        sum /= kernel_sum;
 
         if sum.is_nan() {
             panic!("sum is nan");
