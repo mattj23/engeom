@@ -32,29 +32,34 @@ pub struct ScalarRaster {
 }
 
 impl ScalarRaster {
-    pub fn save_combined(&self, path: &Path, fmt: ImageFormat) -> Result<()> {
+    pub fn serialized_bytes(&self) -> Vec<u8> {
         let mut value_bytes = Vec::new();
         let mut mask_bytes = Vec::new();
         self.values
-            .write_to(&mut Cursor::new(&mut value_bytes), fmt)?;
-        self.mask.write_to(&mut Cursor::new(&mut mask_bytes), fmt)?;
+            .write_to(&mut Cursor::new(&mut value_bytes), ImageFormat::Png)
+            .unwrap();
+        self.mask
+            .write_to(&mut Cursor::new(&mut mask_bytes), ImageFormat::Png)
+            .unwrap();
 
-        let file = File::create(path)?;
-        let mut writer = BufWriter::new(file);
-        writer.write_all(&self.px_size.to_le_bytes())?;
-        writer.write_all(&self.min_z.to_le_bytes())?;
-        writer.write_all(&self.max_z.to_le_bytes())?;
-        writer.write_all(&(value_bytes.len() as u64).to_le_bytes())?;
-        writer.write_all(&value_bytes)?;
-        writer.write_all(&(mask_bytes.len() as u64).to_le_bytes())?;
-        writer.write_all(&mask_bytes)?;
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&self.px_size.to_le_bytes());
+        bytes.extend_from_slice(&self.min_z.to_le_bytes());
+        bytes.extend_from_slice(&self.max_z.to_le_bytes());
+        bytes.extend_from_slice(&(value_bytes.len() as u64).to_le_bytes());
+        bytes.extend(value_bytes);
+        bytes.extend_from_slice(&(mask_bytes.len() as u64).to_le_bytes());
+        bytes.extend(mask_bytes);
 
-        Ok(())
+        bytes
     }
 
-    pub fn load_combined(path: &Path) -> Result<Self> {
-        let file = File::open(path)?;
-        let mut reader = BufReader::new(file);
+    pub fn from_serialized_bytes(bytes: &[u8]) -> Result<Self> {
+        let mut reader = Cursor::new(bytes);
+        Self::from_reader(&mut reader)
+    }
+
+    fn from_reader(reader: &mut impl Read) -> Result<Self> {
         let mut bytes_8 = [0u8; 8];
         reader.read_exact(&mut bytes_8)?;
         let px_size = f64::from_le_bytes(bytes_8);
@@ -94,6 +99,19 @@ impl ScalarRaster {
             min_z,
             max_z,
         })
+    }
+
+    pub fn save_combined(&self, path: &Path, fmt: ImageFormat) -> Result<()> {
+        let file = File::create(path)?;
+        let mut writer = BufWriter::new(file);
+        writer.write_all(&self.serialized_bytes())?;
+        Ok(())
+    }
+
+    pub fn load_combined(path: &Path) -> Result<Self> {
+        let file = File::open(path)?;
+        let mut reader = BufReader::new(file);
+        Self::from_reader(&mut reader)
     }
 
     pub fn f_at(&self, x: i32, y: i32) -> f64 {
