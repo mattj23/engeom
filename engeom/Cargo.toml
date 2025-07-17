@@ -43,3 +43,7 @@ harness = false
 [[bench]]
 name = "down_sample"
 harness = false
+
+[[bench]]
+name = "convolution"
+harness = false

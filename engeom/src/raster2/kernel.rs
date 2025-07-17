@@ -51,6 +51,7 @@ impl FastApproxKernel for FastApproxGaussian {
 /// perform convolution operations on a `ScalarRaster` using the kernel values. It can be created
 /// from any square, odd-sized matrix of f64 values, but some convenience methods are provided
 /// to create typical kernels.
+#[derive(Debug, Clone)]
 pub struct RasterKernel {
     pub values: DMatrix<f64>,
     pub size: usize,
