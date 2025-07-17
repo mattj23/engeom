@@ -10,7 +10,7 @@ use crate::image::{
 };
 use crate::na::{DMatrix, Scalar};
 use crate::raster2::area_average::AreaAverage;
-use crate::raster2::{FastApproxKernel, MaskOperations, RasterKernel, inpaint};
+use crate::raster2::{FastApproxKernel, MaskOperations, MaskValue, RasterKernel, inpaint};
 use colorgrad::Gradient;
 use imageproc::distance_transform::Norm::L1;
 use imageproc::morphology::{dilate_mut, erode_mut};
@@ -606,11 +606,7 @@ impl ScalarRaster {
     ///   pixels that aren't considered part of the data set.
     ///
     /// returns: ScalarRaster
-    pub fn convolve(
-        &self,
-        kernel: &RasterKernel,
-        skip_unmasked: bool,
-    ) -> Self {
+    pub fn convolve(&self, kernel: &RasterKernel, skip_unmasked: bool) -> Self {
         kernel.convolve(self, skip_unmasked)
     }
 
@@ -685,13 +681,29 @@ impl ScalarRaster {
             full_result.mask.set_masked(x, y);
         }
 
+        let mut target_matrix = self.to_matrix();
+        let mut target_mask = DMatrix::zeros(target_matrix.nrows(), target_matrix.ncols());
+        for (x, y, v) in self.mask.enumerate_pixels() {
+            if v.is_masked() {
+                target_mask[(y as usize, x as usize)] = 1.0;
+            } else {
+                target_matrix[(y as usize, x as usize)] = 0.0;
+            }
+        }
+
         let final_calcs = need_calc
             .par_iter()
             .map(|(x, y)| {
                 (
                     x,
                     y,
-                    full_kernel.convolved_pixel(&self, *x as i32, *y as i32),
+                    full_kernel.convolved_pixel_mat(
+                        &self,
+                        *x as i32,
+                        *y as i32,
+                        &target_matrix,
+                        &target_mask,
+                    ),
                 )
             })
             .collect::<Vec<_>>();

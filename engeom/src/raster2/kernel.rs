@@ -2,7 +2,7 @@
 
 use crate::Result;
 use crate::na::DMatrix;
-use crate::raster2::{MaskOperations, ScalarRaster};
+use crate::raster2::{MaskOperations, MaskValue, ScalarRaster};
 use rayon::iter::IntoParallelRefIterator;
 use std::ops::Range;
 
@@ -93,24 +93,18 @@ impl RasterKernel {
         Ok(Self { values, size })
     }
 
-    // pub fn convolve(&self, raster: &ScalarRaster, skip_unmasked: bool) -> ScalarRaster {
-    //     let mut result = ScalarRaster::empty_like(&raster);
-    //
-    //     for y in 0..raster.height() as i32 {
-    //         for x in 0..raster.width() as i32 {
-    //             if skip_unmasked && raster.mask.is_pixel_unmasked(x, y) {
-    //                 result.mask.set_unmasked(x as u32, y as u32);
-    //             } else {
-    //                 let v = self.convolved_pixel(raster, x, y);
-    //                 result.set_f_at(x, y, v);
-    //             }
-    //         }
-    //     }
-    //
-    //     result
-    // }
     pub fn convolve(&self, raster: &ScalarRaster, skip_unmasked: bool) -> ScalarRaster {
-        let matrix = raster.to_matrix();
+        let mut matrix = raster.to_matrix();
+
+        let mut mask = DMatrix::zeros(matrix.nrows(), matrix.ncols());
+        for (x, y, v) in raster.mask.enumerate_pixels() {
+            if v.is_masked() {
+                mask[(y as usize, x as usize)] = 1.0;
+            } else {
+                matrix[(y as usize, x as usize)] = 0.0;
+            }
+        }
+
         let mut result = ScalarRaster::empty_like(&raster);
 
         for y in 0..raster.height() as i32 {
@@ -118,7 +112,7 @@ impl RasterKernel {
                 if skip_unmasked && raster.mask.is_pixel_unmasked(x, y) {
                     result.mask.set_unmasked(x as u32, y as u32);
                 } else {
-                    let v = self.convolved_pixel_mat(raster, x, y, &matrix);
+                    let v = self.convolved_pixel_mat(raster, x, y, &matrix, &mask);
                     result.set_f_at(x, y, v);
                 }
             }
@@ -132,67 +126,52 @@ impl RasterKernel {
         x: i32,
         y: i32,
         matrix: &DMatrix<f64>,
+        mask: &DMatrix<f64>,
     ) -> f64 {
         let pose = KernelPose::new(&self.values, raster, x, y);
         let mut kernel_sum = 0.0;
-
-        // Sum the kernel values that overlap with valid indices in the reference raster
+        let mut pixel_sum = 0.0;
         for c in pose.all() {
-            if !c.mvf().is_nan() {
-                kernel_sum += c.kv();
-            }
+            pixel_sum += matrix[(c.my as usize, c.mx as usize)] * c.kv();
+            kernel_sum += mask[(c.my as usize, c.mx as usize)] * c.kv();
         }
         if kernel_sum == 0.0 {
-            return f64::NAN; // Avoid division by zero
+            f64::NAN
+        } else {
+            pixel_sum / kernel_sum
         }
-
-        let mut sum = 0.0;
-        for c in pose.all() {
-            let mvf = matrix[(c.my as usize, c.mx as usize)];
-            if !mvf.is_nan() {
-                sum += mvf * self.values[(c.ky, c.kx)];
-            }
-        }
-
-        sum /= kernel_sum;
-
-        if sum.is_nan() {
-            panic!("sum is nan");
-        }
-
-        sum
     }
-
-    pub fn convolved_pixel(&self, raster: &ScalarRaster, x: i32, y: i32) -> f64 {
-        let pose = KernelPose::new(&self.values, raster, x, y);
-
-        // Copy the kernel ignoring NAN values
-        let mut kernel_copy = DMatrix::zeros(self.size, self.size);
-        for c in pose.all() {
-            if !c.mvf().is_nan() {
-                kernel_copy[(c.ky, c.kx)] = c.kv();
-            }
-        }
-        let total = kernel_copy.sum();
-        if total == 0.0 {
-            return f64::NAN; // Avoid division by zero
-        }
-
-        kernel_copy = kernel_copy / total;
-
-        let mut sum = 0.0;
-        for c in pose.all() {
-            if !c.mvf().is_nan() {
-                sum += c.mvf() * kernel_copy[(c.ky, c.kx)];
-            }
-        }
-
-        if sum.is_nan() {
-            panic!("sum is nan");
-        }
-
-        sum
-    }
+    //
+    // pub fn convolved_pixel(&self, raster: &ScalarRaster, x: i32, y: i32) -> f64 {
+    //     let pose = KernelPose::new(&self.values, raster, x, y);
+    //
+    //     // Copy the kernel ignoring NAN values
+    //     let mut kernel_copy = DMatrix::zeros(self.size, self.size);
+    //     for c in pose.all() {
+    //         if !c.mvf().is_nan() {
+    //             kernel_copy[(c.ky, c.kx)] = c.kv();
+    //         }
+    //     }
+    //     let total = kernel_copy.sum();
+    //     if total == 0.0 {
+    //         return f64::NAN; // Avoid division by zero
+    //     }
+    //
+    //     kernel_copy = kernel_copy / total;
+    //
+    //     let mut sum = 0.0;
+    //     for c in pose.all() {
+    //         if !c.mvf().is_nan() {
+    //             sum += c.mvf() * kernel_copy[(c.ky, c.kx)];
+    //         }
+    //     }
+    //
+    //     if sum.is_nan() {
+    //         panic!("sum is nan");
+    //     }
+    //
+    //     sum
+    // }
 }
 
 /// A `KernelPose` represents the position of a convolution kernel on a `ScalarRaster`.  The pose
