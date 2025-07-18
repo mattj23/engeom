@@ -1,4 +1,74 @@
-use crate::raster2::{Point2I, Vector2I};
+use crate::raster2::{Point2I, RasterMask, Vector2I};
+
+/// This is a small lightweight struct (128 bits in size) that represents the correspondence between
+/// a point in a region of interest (ROI) and its parent point in the original image. The two
+/// different coordinates refer to the same pixel, but one is in the indices of the ROI and the
+/// other in indices of the full sized image.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RoiPoint {
+    pub roi: Point2I,
+    pub parent: Point2I,
+}
+
+/// A struct that combines an owned working `RasterMask` with two regions of interest on another
+/// raster image.  One is the full size of the mask, and the other represents an original overlap of
+/// the mask with the other image.
+///
+/// This is a convenience tool to keep track of operations where you want to create and work with a
+/// mask that represents part of a larger image, but you may need to change its size or shape to
+/// perform morphological operations, such as those that require an empty border.  In such a case
+/// you can no longer guarantee that all pixels of the mask overlap with the original image.
+pub struct RoiMask {
+    pub mask: RasterMask,
+    roi_f: RasterRoi,
+    roi_o: RasterRoi,
+    offset: Vector2I,
+}
+
+impl RoiMask {
+    /// Create a new `RoiMask` from a `RasterMask`, an original region of interest, and an offset
+    /// from the 0,0 corner of the original ROI to the 0,0 corner of the mask. If the mask is the
+    /// same size as the original ROI, the offset will be (0, 0) or default().
+    ///
+    /// For example, if the mask was expanded by 1 pixel on all sides around the original ROI,
+    /// the offset would be (-1, -1).
+    ///
+    /// # Arguments
+    ///
+    /// * `mask`:
+    /// * `original_roi`:
+    /// * `offset_to_full`:
+    ///
+    /// returns: RoiMask
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    pub fn new(mask: RasterMask, original_roi: RasterRoi, offset_to_full: Vector2I) -> Self {
+        let full_min = original_roi.min + offset_to_full;
+        let full_max = full_min + Vector2I::new(mask.width() as i32, mask.height() as i32);
+        let roi_f = RasterRoi::new(full_min, full_max);
+
+        Self {
+            mask,
+            roi_f,
+            roi_o: original_roi,
+            offset: offset_to_full,
+        }
+    }
+
+    pub fn iter_shared_points(&self) -> RoiIterator {
+        RoiIterator {
+            roi: &self.roi_o,
+            x: self.roi_o.min.x,
+            y: self.roi_o.min.y,
+        }
+    }
+}
+
+
 
 /// A struct representing a rectangular region of interest (ROI) in a raster image. The semantics
 /// of this structure are similar to a bounding box, except that the maximum corner is exclusive
@@ -37,10 +107,7 @@ impl RasterRoi {
     }
 
     pub fn contains_indices(&self, x: i32, y: i32) -> bool {
-        x >= self.min.x
-            && x < self.max.x
-            && y >= self.min.y
-            && y < self.max.y
+        x >= self.min.x && x < self.max.x && y >= self.min.y && y < self.max.y
     }
 
     /// Takes an x, y coordinate from the world and returns the x, y coordinate referenced from the
@@ -66,10 +133,155 @@ impl RasterRoi {
             self.max.y = self.max.y.max(outside.y + 1);
         }
     }
+
+    pub fn iter_points(&self) -> RoiIterator {
+        RoiIterator {
+            roi: self,
+            x: 0,
+            y: 0,
+        }
+    }
 }
 
 impl Default for RasterRoi {
     fn default() -> Self {
         Self::empty()
+    }
+}
+
+pub struct RoiIterator<'a> {
+    pub roi: &'a RasterRoi,
+    pub x: i32,
+    pub y: i32,
+}
+
+impl<'a> Iterator for RoiIterator<'a> {
+    type Item = RoiPoint;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let extent = self.roi.extent();
+
+        if self.y >= extent.y {
+            return None;
+        }
+
+        let roi = Point2I::new(self.x, self.y);
+        let parent = self.roi.in_to_out(roi);
+
+        let point = RoiPoint { roi, parent };
+
+        self.x += 1;
+
+        if self.x >= extent.x {
+            self.x = 0;
+            self.y += 1;
+        }
+
+        Some(point)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use imageproc::definitions::Image;
+    use itertools::assert_equal;
+    use crate::image::{ImageBuffer, Luma};
+    use super::*;
+
+    fn make_test_setup() -> (HashMap<Point2I, usize>, Image<Luma<usize>>, RasterRoi) {
+        let mut map = HashMap::new();
+        let mut image = ImageBuffer::new(60, 20);
+        let mut c = 1;
+        let mut roi = RasterRoi::empty();
+        let corner = Vector2I::new(12, 8);
+
+        for x in 0..24 {
+            for y in 0..7 {
+                let inside = Point2I::new(x, y);
+                map.insert(inside, c);
+
+                let outside = inside + corner;
+                roi.expand_to_contain(outside);
+
+                image.put_pixel(outside.x as u32, outside.y as u32, Luma([c]));
+
+                c += 1;
+            }
+        }
+        (map, image, roi)
+    }
+
+    #[test]
+    fn roi_iterator_forward() {
+        let (map, image, roi) = make_test_setup();
+
+        for p in roi.iter_points() {
+            // ONLY the points in the ROI should be iterated through, and they are the only
+            // ones that should be in the map
+            let expected = map.get(&p.roi);
+            assert!(expected.is_some(), "Point {:?} not found in map", p.roi);
+            let expected = expected.unwrap();
+
+            // The pixel in the image should match the value in the map
+            let actual = image.get_pixel(p.parent.x as u32, p.parent.y as u32)[0];
+            assert_eq!(*expected, actual, "Mismatch at point {:?}", p);
+        }
+    }
+
+    #[test]
+    fn roi_mask_offset_matching() {
+        let (map, image, roi) = make_test_setup();
+
+        // We'll create a new expanded roi mask that is 2 pixels larger in each direction than
+        let mask = RasterMask::empty(roi.extent().x as u32 + 4, roi.extent().y as u32 + 4);
+        let offset = Vector2I::new(-2, -2);
+        let roi_mask = RoiMask::new(mask, roi, offset);
+
+        // We'll create a manual mapping of where the values should be in the expanded mask
+        let mut expected_map = HashMap::new();
+        for (kp, v) in map.iter() {
+            // The coordinates in the expanded mask are shifted by the inverse of the offset vector
+            // so for instance, (2, 2) in the original roi would be (4, 4) in the expanded mask
+            expected_map.insert(kp - offset, *v);
+        }
+
+        // Check that I did that right
+        assert_eq!(*expected_map.get(&Point2I::new(14, 10)).unwrap(), 1);
+
+        for p in roi_mask.iter_shared_points() {
+            let expected = expected_map.get(&p.roi);
+            assert!(expected.is_some(), "Point {:?} not found in map", p.roi);
+            let expected = expected.unwrap();
+
+            // The pixel in the image should match the value in the map
+            let actual = image.get_pixel(p.roi.x as u32, p.roi.y as u32)[0];
+            assert_eq!(*expected, actual, "Mismatch at point {:?}", p.roi);
+        }
+
+    }
+
+    #[test]
+    fn roi_expand() {
+        let mut roi = RasterRoi::empty();
+        assert!(roi.is_empty());
+        roi.expand_to_contain(Point2I::new(1, 1));
+        assert!(!roi.is_empty());
+        assert_eq!(roi.min, Point2I::new(1, 1));
+        assert_eq!(roi.max, Point2I::new(2, 2));
+
+        roi.expand_to_contain(Point2I::new(0, 0));
+        assert_eq!(roi.min, Point2I::new(0, 0));
+        assert_eq!(roi.max, Point2I::new(2, 2));
+
+        roi.expand_to_contain(Point2I::new(3, 3));
+        assert_eq!(roi.min, Point2I::new(0, 0));
+        assert_eq!(roi.max, Point2I::new(4, 4));
+    }
+
+    #[test]
+    fn test_raster_roi_empty() {
+        let roi = RasterRoi::empty();
+        assert!(roi.is_empty());
     }
 }

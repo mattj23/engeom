@@ -1,8 +1,9 @@
 use crate::Result;
 use crate::image::{GenericImage, GrayImage, Luma};
-use crate::raster2::zhang_suen_thinning;
+use crate::raster2::{zhang_suen_thinning, LabeledRegions};
 use imageproc::distance_transform::Norm;
 use imageproc::morphology::{dilate_mut, erode_mut};
+use imageproc::region_labelling::Connectivity;
 
 #[derive(Clone, Debug)]
 pub struct RasterMask {
@@ -266,6 +267,13 @@ impl RasterMask {
         }
 
         output
+    }
+
+    // ==========================================================================================
+    // Misc Convenience Operations
+    // =========================================================================================
+    pub fn connected_regions(&self, connectivity: Connectivity) -> LabeledRegions {
+        LabeledRegions::from_connected(&self.buffer, connectivity, Luma([0]))
     }
 }
 
