@@ -254,6 +254,10 @@ impl RasterMask {
                 (x as i32, y as i32 - 1),
                 (x as i32, y as i32 + 1),
             ] {
+                if *xn < 0 || *yn < 0 || *xn >= self.width() as i32 || *yn >= self.height() as i32 {
+                    continue; // Skip out-of-bounds coordinates
+                }
+
                 if !output.get(*xn as u32, *yn as u32) && !self.get(*xn as u32, *yn as u32) {
                     stack.push((*xn as u32, *yn as u32));
                     output.set(*xn as u32, *yn as u32, true);

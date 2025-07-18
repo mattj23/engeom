@@ -197,8 +197,9 @@ impl ScalarRaster {
         self.u_at(x, y).map(|u| self.u_to_f(u)).unwrap_or(f64::NAN)
     }
 
+    // TODO: TESTS FOR ALL OF THIS
     pub fn u_at(&self, x: i32, y: i32) -> Option<u16> {
-        if self.mask.get(x as u32, y as u32) {
+        if !self.mask.get(x as u32, y as u32) {
             None
         } else {
             Some(self.values.get_pixel(x as u32, y as u32)[0])
