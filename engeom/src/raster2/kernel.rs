@@ -3,7 +3,6 @@
 use crate::Result;
 use crate::na::DMatrix;
 use crate::raster2::{ScalarRaster, d_matrix_min_max};
-use rayon::iter::IntoParallelRefIterator;
 
 pub trait FastApproxKernel {
     fn make(&self, pixel_size: f64) -> Result<RasterKernel>;
@@ -20,6 +19,7 @@ impl FastApproxGaussian {
     /// # Arguments
     ///
     /// * `sigma`: The standard deviation of the Gaussian distribution in pixels.
+    ///
     /// returns: FastApproxGaussian
     pub fn new(sigma: f64) -> Self {
         Self { sigma }

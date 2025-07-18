@@ -2,7 +2,7 @@ use crate::Result;
 use crate::image::{GenericImage, GrayImage, Luma};
 use crate::raster2::zhang_suen_thinning;
 use imageproc::distance_transform::Norm;
-use imageproc::morphology::{dilate_mut, erode, erode_mut};
+use imageproc::morphology::{dilate_mut, erode_mut};
 
 #[derive(Clone, Debug)]
 pub struct RasterMask {
@@ -84,7 +84,7 @@ impl RasterMask {
             return Err("Masks must have the same dimensions".into());
         }
         for (va, vb) in self.buffer.iter_mut().zip(other.buffer.iter()) {
-            *va = *va | *vb;
+            *va |= *vb;
         }
 
         Ok(())
@@ -110,7 +110,7 @@ impl RasterMask {
             return Err("Masks must have the same dimensions".into());
         }
         for (va, vb) in self.buffer.iter_mut().zip(other.buffer.iter()) {
-            *va = *va & *vb;
+            *va &= *vb;
         }
 
         Ok(())
@@ -139,7 +139,7 @@ impl RasterMask {
             return Err("Masks must have the same dimensions".into());
         }
         for (va, vb) in self.buffer.iter_mut().zip(other.buffer.iter()) {
-            *va = *va & !*vb;
+            *va &= !*vb;
         }
 
         Ok(())
@@ -185,7 +185,7 @@ impl RasterMask {
         zhang_suen_thinning(self);
     }
 
-    fn erode_alternating_norms_mut(&mut self, count: usize) {
+    pub fn erode_alternating_norms_mut(&mut self, count: usize) {
         for i in 0..count {
             if i % 2 == 0 {
                 erode_mut(&mut self.buffer, Norm::L1, 1);
@@ -195,7 +195,7 @@ impl RasterMask {
         }
     }
 
-    fn dilate_alternating_norms_mut(&mut self, count: usize) {
+    pub fn dilate_alternating_norms_mut(&mut self, count: usize) {
         for i in 0..count {
             if i % 2 == 0 {
                 dilate_mut(&mut self.buffer, Norm::L1, 1);

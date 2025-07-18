@@ -227,7 +227,7 @@ impl Mesh {
 
     pub fn uv_to_3d(&self, uv: &Point2) -> Option<SurfacePoint3> {
         let (i, bc) = self.uv()?.triangle(uv)?;
-        let t = self.shape.triangle(i as u32);
+        let t = self.shape.triangle(i);
         let coords = t.a.coords * bc[0] + t.b.coords * bc[1] + t.c.coords * bc[2];
 
         t.normal().map(|n| SurfacePoint3::new(coords.into(), n))

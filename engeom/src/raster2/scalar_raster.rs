@@ -6,16 +6,15 @@
 use crate::Result;
 use crate::image::imageops::{FilterType, resize};
 use crate::image::{
-    GrayImage, ImageBuffer, ImageFormat, ImageReader, Luma, Primitive, Rgba, RgbaImage,
+    GrayImage, ImageBuffer, ImageFormat, ImageReader, Luma, Rgba, RgbaImage,
 };
-use crate::na::{DMatrix, Scalar};
+use crate::na::DMatrix;
 use crate::raster2::area_average::AreaAverage;
 use crate::raster2::raster_mask::RasterMask;
 use crate::raster2::{FastApproxKernel, RasterKernel, inpaint};
 use colorgrad::Gradient;
 use imageproc::distance_transform::Norm::L1;
 use imageproc::morphology::{dilate_mut, erode_mut};
-use num_traits::{Bounded, Zero};
 use rayon::prelude::*;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Cursor, Read, Write};

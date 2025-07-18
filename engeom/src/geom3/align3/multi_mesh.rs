@@ -156,6 +156,7 @@ struct TestPoint {
     /// The base weight for this point, which is used to scale the residuals
     pub weight: f64,
 
+    #[allow(dead_code)]
     pub uncert: f64,
 }
 

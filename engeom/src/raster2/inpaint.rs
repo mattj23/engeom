@@ -33,8 +33,8 @@ pub fn inpaint(
 ) -> ScalarImage<u16> {
     let mut fill = Fill::new(depth, fill_mask, image_mask, radius);
 
-    while !fill.band.is_empty() {
-        let px = fill.band.pop().unwrap();
+    while let Some(px) = fill.band.pop() {
+        
         fill.flags[(px.y, px.x)] = KNOWN;
 
         let neighbors = [
@@ -277,6 +277,7 @@ fn compute_outside_distances(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn solve_eikonal(
     y1: i32,
     x1: i32,

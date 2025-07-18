@@ -6,8 +6,8 @@ use crate::{Point2, Result, Vector2};
 use parry2d_f64::bounding_volume::SimdAabb;
 use parry2d_f64::math::{Point, SIMD_WIDTH, SimdReal};
 use parry2d_f64::na::{SimdBool, SimdValue};
-use parry2d_f64::partitioning::{SimdBestFirstVisitor, SimdVisitStatus, SimdVisitor};
-use parry2d_f64::query::{PointQuery, PointQueryWithLocation, RayCast};
+use parry2d_f64::partitioning::{SimdVisitStatus, SimdVisitor};
+use parry2d_f64::query::PointQuery;
 use parry2d_f64::shape::TriMesh;
 
 /// A `UvMapping` is a structure that represents a two-way mapping between a two-dimensional
@@ -105,8 +105,8 @@ impl UvMapping {
     ///
     /// returns: RasterMapping
     pub fn make_raster_mapping(&self, px_size: f64, padding: usize) -> RasterMapping {
-        let origin: Point2 = self.tri_map.local_aabb().mins.clone();
-        let max = self.tri_map.local_aabb().maxs.clone();
+        let origin: Point2 = self.tri_map.local_aabb().mins;
+        let max = self.tri_map.local_aabb().maxs;
         let size = max - origin;
 
         let width_px = (size.x / px_size).ceil() as usize + padding * 2;

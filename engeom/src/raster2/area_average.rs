@@ -1,4 +1,4 @@
-use super::{ScalarImage, ScalarRaster};
+use super::ScalarImage;
 use crate::image::{GenericImageView, GrayImage, Luma, SubImage};
 use imageproc::distance_transform::Norm::{L1, LInf};
 use imageproc::morphology::dilate_mut;

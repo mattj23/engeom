@@ -135,13 +135,11 @@ impl TriangleFilter<'_> {
                 {
                     op_mask.set(i, true);
                 }
-            } else {
-                if dist(&face.a, point) <= max_dist
-                    || dist(&face.b, point) <= max_dist
-                    || dist(&face.c, point) <= max_dist
-                {
-                    op_mask.set(i, true);
-                }
+            } else if dist(&face.a, point) <= max_dist
+                || dist(&face.b, point) <= max_dist
+                || dist(&face.c, point) <= max_dist
+            {
+                op_mask.set(i, true);
             }
         }
 
@@ -177,13 +175,11 @@ impl TriangleFilter<'_> {
                 {
                     op_mask.set(i, true);
                 }
-            } else {
-                if plane.point_is_positive(&face.a)
-                    || plane.point_is_positive(&face.b)
-                    || plane.point_is_positive(&face.c)
-                {
-                    op_mask.set(i, true);
-                }
+            } else if plane.point_is_positive(&face.a)
+                || plane.point_is_positive(&face.b)
+                || plane.point_is_positive(&face.c)
+            {
+                op_mask.set(i, true);
             }
         }
 
