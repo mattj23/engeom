@@ -973,10 +973,6 @@ pub fn erode_cycle(mask: &GrayImage, count: usize) -> GrayImage {
     dilated
 }
 
-// pub fn depth_range() -> (f64, f64) {
-//     (-DEPTH_MAX, DEPTH_MAX)
-// }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1000,5 +996,37 @@ mod tests {
                 assert_relative_eq!(expected[(i, j)], matrix[(i, j)], epsilon = 5e-4)
             }
         }
+    }
+
+    #[test]
+    fn round_trip_serialization() {
+        let m = 300;
+        let n = 200;
+        let mut values = DMatrix::from_fn(m, n, |i, j| {
+            if (i + j) % 2 == 0 {
+                (i * j) as f64
+            } else {
+                0.0
+            }
+        });
+        values /= values.sum();
+
+        let expected = ScalarRaster::from_matrix(&values, 1.0, -2.0, 2.0);
+
+        let bytes = expected.serialized_bytes(ImageFormat::Png);
+        let deserialized = ScalarRaster::from_serialized_bytes(&bytes).unwrap();
+
+        for i in 0..m {
+            for j in 0..n {
+                let expected_value = expected.f_at(j as i32, i as i32);
+                let actual_value = deserialized.f_at(j as i32, i as i32);
+                if expected_value.is_nan() {
+                    assert!(actual_value.is_nan());
+                    continue;
+                }
+                assert_relative_eq!(expected_value, actual_value, epsilon = 1e-4);
+            }
+        }
+
     }
 }
