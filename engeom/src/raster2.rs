@@ -7,16 +7,17 @@ mod inpaint;
 mod kernel;
 mod mapping;
 mod mask_ops;
+mod raster_mask;
 mod scalar_raster;
 mod zhang_suen;
 
+use crate::na::DMatrix;
 pub use inpaint::inpaint;
 pub use kernel::*;
 pub use mapping::RasterMapping;
 pub use mask_ops::*;
 pub use scalar_raster::*;
 pub use zhang_suen::*;
-use crate::na::DMatrix;
 
 /// Find the minimum and maximum _finite_ values in a DMatrix.
 ///

@@ -1,6 +1,6 @@
 use crate::image::{GrayImage, Luma};
 use crate::raster2::ScalarImage;
-use crate::raster2::mask_ops::MaskOperations;
+use crate::raster2::raster_mask::RasterMask;
 use parry3d_f64::na::DMatrix;
 
 const KNOWN: u8 = 0;
@@ -28,7 +28,7 @@ const UNKNOWN: u8 = 2;
 pub fn inpaint(
     depth: &ScalarImage<u16>,
     fill_mask: &GrayImage,
-    image_mask: &GrayImage,
+    image_mask: &RasterMask,
     radius: usize,
 ) -> ScalarImage<u16> {
     let mut fill = Fill::new(depth, fill_mask, image_mask, radius);
@@ -100,7 +100,7 @@ pub fn inpaint(
             // Fill the pixel
             let val = inpaint_pixel(*ny, *nx, &fill);
             fill.values.put_pixel(*nx as u32, *ny as u32, Luma([val]));
-            fill.image_mask.set_masked(*nx as u32, *ny as u32);
+            fill.image_mask.set(*nx as u32, *ny as u32, true);
 
             fill.flags[(*ny as usize, *nx as usize)] = BAND;
 
@@ -133,14 +133,14 @@ struct Fill {
     flags: DMatrix<u8>,
     band: Vec<Pixel>,
     radius: usize,
-    image_mask: GrayImage,
+    image_mask: RasterMask,
 }
 
 impl Fill {
     fn new(
         values: &ScalarImage<u16>,
         fill_mask: &GrayImage,
-        image_mask: &GrayImage,
+        image_mask: &RasterMask,
         radius: usize,
     ) -> Self {
         let mut distances = DMatrix::zeros(values.height() as usize, values.width() as usize);
@@ -344,7 +344,7 @@ fn inpaint_pixel(ny: i32, nx: i32, fill: &Fill) -> u16 {
         for nbx in (nx - fill.radius as i32)..(nx + fill.radius as i32 + 1) {
             if nbx < 0
                 || nbx >= fill.values.width() as i32
-                || fill.image_mask.is_pixel_unmasked(nbx, nby)
+                || !fill.image_mask.get(nbx as u32, nby as u32)
             {
                 continue;
             }

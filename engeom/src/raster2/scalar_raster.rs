@@ -10,7 +10,8 @@ use crate::image::{
 };
 use crate::na::{DMatrix, Scalar};
 use crate::raster2::area_average::AreaAverage;
-use crate::raster2::{FastApproxKernel, MaskOperations, MaskValue, RasterKernel, inpaint};
+use crate::raster2::raster_mask::RasterMask;
+use crate::raster2::{FastApproxKernel, RasterKernel, inpaint};
 use colorgrad::Gradient;
 use imageproc::distance_transform::Norm::L1;
 use imageproc::morphology::{dilate_mut, erode_mut};
@@ -103,7 +104,7 @@ pub type ScalarImage<T> = ImageBuffer<Luma<T>, Vec<T>>;
 #[derive(Clone, Debug)]
 pub struct ScalarRaster {
     pub values: ScalarImage<u16>,
-    pub mask: GrayImage,
+    pub mask: RasterMask,
     pub px_size: f64,
     pub min_z: f64,
     pub max_z: f64,
@@ -117,6 +118,7 @@ impl ScalarRaster {
             .write_to(&mut Cursor::new(&mut value_bytes), fmt)
             .unwrap();
         self.mask
+            .buffer
             .write_to(&mut Cursor::new(&mut mask_bytes), fmt)
             .unwrap();
 
@@ -162,17 +164,19 @@ impl ScalarRaster {
             .with_guessed_format()?
             .decode()?;
 
-        let mask = ImageReader::new(Cursor::new(mask_bytes))
+        let mask_buffer = ImageReader::new(Cursor::new(mask_bytes))
             .with_guessed_format()?
             .decode()?;
 
-        if values.width() != mask.width() || values.height() != mask.height() {
+        if values.width() != mask_buffer.width() || values.height() != mask_buffer.height() {
             return Err("Values and mask images must have the same dimensions".into());
         }
 
+        let mask = RasterMask::new(mask_buffer.into_luma8());
+
         Ok(Self {
             values: values.into_luma16(),
-            mask: mask.into_luma8(),
+            mask,
             px_size,
             min_z,
             max_z,
@@ -197,7 +201,7 @@ impl ScalarRaster {
     }
 
     pub fn u_at(&self, x: i32, y: i32) -> Option<u16> {
-        if self.mask.is_pixel_unmasked(x, y) {
+        if self.mask.get(x as u32, y as u32) {
             None
         } else {
             Some(self.values.get_pixel(x as u32, y as u32)[0])
@@ -224,9 +228,9 @@ impl ScalarRaster {
 
     pub fn set_f_at(&mut self, x: i32, y: i32, val: f64) {
         if val.is_nan() {
-            self.mask.set_unmasked(x as u32, y as u32);
+            self.mask.set(x as u32, y as u32, false);
         } else {
-            self.mask.set_masked(x as u32, y as u32);
+            self.mask.set(x as u32, y as u32, true);
             let u = self.f_to_u(val);
             self.values.put_pixel(x as u32, y as u32, Luma([u]));
         }
@@ -234,10 +238,10 @@ impl ScalarRaster {
 
     pub fn set_u_at(&mut self, x: i32, y: i32, val: Option<u16>) {
         if let Some(v) = val {
-            self.mask.set_masked(x as u32, y as u32);
+            self.mask.set(x as u32, y as u32, true);
             self.values.put_pixel(x as u32, y as u32, Luma([v]));
         } else {
-            self.mask.set_unmasked(x as u32, y as u32);
+            self.mask.set(x as u32, y as u32, false);
             self.values.put_pixel(x as u32, y as u32, Luma([0]));
         }
     }
@@ -254,7 +258,7 @@ impl ScalarRaster {
 
     pub fn empty(width: u32, height: u32, px_size: f64, min_z: f64, max_z: f64) -> Self {
         let values = ScalarImage::new(width, height);
-        let mask = GrayImage::new(width, height);
+        let mask = RasterMask::new(GrayImage::new(width, height));
 
         ScalarRaster {
             values,
@@ -294,7 +298,7 @@ impl ScalarRaster {
         let mut img = RgbaImage::new(self.width(), self.height());
 
         for (x, y, p) in img.enumerate_pixels_mut() {
-            if self.mask.get_pixel(x, y)[0] == 0 {
+            if !self.mask.get(x, y) {
                 *p = Rgba([0, 0, 0, 0]); // Transparent pixel
             } else {
                 let value = self.u_to_f(self.values.get_pixel(x, y)[0]);
@@ -326,7 +330,7 @@ impl ScalarRaster {
     /// returns: ScalarRaster
     pub fn from_matrix(matrix: &DMatrix<f64>, px_size: f64, min_z: f64, max_z: f64) -> Self {
         let mut value = ScalarImage::new(matrix.ncols() as u32, matrix.nrows() as u32);
-        let mut mask = GrayImage::new(matrix.ncols() as u32, matrix.nrows() as u32);
+        let mut mask = RasterMask::empty_like(&value);
 
         // TODO: make generic later
         let type_min = u16::MIN;
@@ -351,7 +355,7 @@ impl ScalarRaster {
 
                 // Set the pixel value and mask
                 value.put_pixel(j as u32, i as u32, Luma([r]));
-                mask.put_pixel(j as u32, i as u32, Luma([255u8]));
+                mask.set(j as u32, i as u32, true);
             }
         }
 
@@ -371,7 +375,7 @@ impl ScalarRaster {
         let mut count = 0.0;
 
         for (x, y, pixel) in self.values.enumerate_pixels() {
-            if self.mask.get_pixel(x, y)[0] == 255 {
+            if self.mask.get(x, y) {
                 sum += self.u_to_f(pixel.0[0]);
                 count += 1.0;
             }
@@ -385,7 +389,7 @@ impl ScalarRaster {
 
         let mut variance_sum = 0.0;
         for (x, y, pixel) in self.values.enumerate_pixels() {
-            if self.mask.get_pixel(x, y)[0] == 255 {
+            if self.mask.get(x, y) {
                 let value = self.u_to_f(pixel.0[0]);
                 variance_sum += (value - mean).powi(2);
             }
@@ -399,19 +403,11 @@ impl ScalarRaster {
     /// floating point value. Pixels that are masked (i.e., not valid) will be represented as `NaN`
     /// in the matrix.
     pub fn to_matrix(&self) -> DMatrix<f64> {
-        let mut matrix = DMatrix::zeros(self.height() as usize, self.width() as usize);
-        for i in 0..self.height() {
-            for j in 0..self.width() {
-                let mpx = self.mask.get_pixel(j, i);
+        let mut matrix =
+            DMatrix::from_element(self.height() as usize, self.width() as usize, f64::NAN);
 
-                // If the mask is 0, this pixel is not valid
-                if mpx.0[0] == 0 {
-                    matrix[(i as usize, j as usize)] = f64::NAN;
-                } else {
-                    matrix[(i as usize, j as usize)] =
-                        self.u_to_f(self.values.get_pixel(j, i).0[0]);
-                }
-            }
+        for (x, y) in self.mask.iter_true() {
+            matrix[(y as usize, x as usize)] = self.u_to_f(self.values.get_pixel(x, y).0[0]);
         }
         matrix
     }
@@ -429,15 +425,12 @@ impl ScalarRaster {
     /// `RasterKernel::convolve` method, but is a general purpose conversion that re-conceptualizes
     /// the raster as a set of values and certainties.
     pub fn to_value_and_mask_matrices(&self) -> (DMatrix<f64>, DMatrix<f64>) {
-        let mut matrix = self.to_matrix();
-
+        let mut matrix = DMatrix::zeros(self.height() as usize, self.width() as usize);
         let mut mask = DMatrix::zeros(matrix.nrows(), matrix.ncols());
-        for (x, y, v) in self.mask.enumerate_pixels() {
-            if v.is_masked() {
-                mask[(y as usize, x as usize)] = 1.0;
-            } else {
-                matrix[(y as usize, x as usize)] = 0.0;
-            }
+
+        for (x, y) in self.mask.iter_true() {
+            matrix[(y as usize, x as usize)] = self.u_to_f(self.values.get_pixel(x, y).0[0]);
+            mask[(y as usize, x as usize)] = 1.0;
         }
 
         (matrix, mask)
@@ -452,31 +445,36 @@ impl ScalarRaster {
     ///
     /// # Arguments
     ///
-    /// * `mask`: a mask image where pixels with a value of 255 indicate the pixels to be inpainted
+    /// * `mask`: a `RasterMask` indicating which pixels to inpaint. The mask should have the same
+    ///   dimensions as the `ScalarRaster`
     /// * `inpaint_radius`: the radius in pixels to search for valid pixels to use in the
     ///   inpainting operation
     ///
     /// returns: ()
-    pub fn inpaint(&mut self, mask: &GrayImage, inpaint_radius: usize) {
-        let filled = inpaint(&self.values, mask, &self.mask, inpaint_radius);
+    pub fn inpaint(&mut self, mask: &RasterMask, inpaint_radius: usize) {
+        let filled = inpaint(&self.values, &mask.buffer, &self.mask, inpaint_radius);
         self.values = filled;
-        self.mask = self.mask.clone().union(mask);
+        self.mask = self
+            .mask
+            .clone()
+            .or(mask)
+            .expect("Mask and raster must have same dimensions");
     }
 
     pub fn erode(&mut self, pixels: u8) {
-        erode_mut(&mut self.mask, L1, pixels);
+        erode_mut(&mut self.mask.buffer, L1, pixels);
         for (x, y, v) in self.values.enumerate_pixels_mut() {
-            if self.mask.get_pixel(x, y)[0] == 0 {
+            if self.mask.get(x, y) {
                 *v = Luma([0]);
             }
         }
     }
 
-    pub fn delete_by_mask(&mut self, mask: &GrayImage) {
+    pub fn delete_by_mask(&mut self, mask: &RasterMask) {
         for (x, y, v) in self.values.enumerate_pixels_mut() {
-            if mask.is_pixel_masked(x as i32, y as i32) {
+            if mask.get(x, y) {
                 *v = Luma([0]);
-                self.mask.set_unmasked(x, y);
+                self.mask.set(x, y, false);
             }
         }
     }
@@ -485,7 +483,7 @@ impl ScalarRaster {
     fn clear_row(&mut self, y: u32) {
         for x in 0..self.values.width() {
             self.values.put_pixel(x, y, Luma([0]));
-            self.mask.put_pixel(x, y, Luma([0]));
+            self.mask.set(x, y, false);
         }
     }
 
@@ -493,7 +491,7 @@ impl ScalarRaster {
     fn clear_col(&mut self, x: u32) {
         for y in 0..self.values.height() {
             self.values.put_pixel(x, y, Luma([0]));
-            self.mask.put_pixel(x, y, Luma([0]));
+            self.mask.set(x, y, false);
         }
     }
 
@@ -510,8 +508,8 @@ impl ScalarRaster {
     /// and comparing the difference.
     pub fn get_border_mask(&self, pixels: u8) -> GrayImage {
         let mut border_mask = self.mask.clone();
-        erode_mut(&mut border_mask, L1, pixels);
-        diff_img(&self.mask, &border_mask)
+        erode_mut(&mut border_mask.buffer, L1, pixels);
+        diff_img(&self.mask.buffer, &border_mask.buffer)
     }
 
     pub fn remove_border_outliers(&mut self) -> usize {
@@ -527,7 +525,7 @@ impl ScalarRaster {
         let mut count = 0;
         for (x, y, yes) in outliers.iter() {
             if *yes {
-                self.mask.put_pixel(*x, *y, Luma([0]));
+                self.mask.set(*x, *y, false);
                 self.values.put_pixel(*x, *y, Luma([0]));
                 count += 1;
             }
@@ -537,7 +535,7 @@ impl ScalarRaster {
     }
 
     fn is_px_outlier(&self, x: u32, y: u32, radius: i32) -> bool {
-        if self.mask.get_pixel(x, y)[0] == 0 {
+        if self.mask.get(x, y) {
             false
         } else {
             let mut values = Vec::new();
@@ -554,7 +552,7 @@ impl ScalarRaster {
                         continue;
                     }
 
-                    if self.mask.get_pixel(x_loc as u32, y_loc as u32)[0] == 0 {
+                    if self.mask.get(x_loc as u32, y_loc as u32) {
                         continue;
                     }
 
@@ -581,7 +579,8 @@ impl ScalarRaster {
         let height = (self.values.height() as f64 * scale) as u32;
 
         let values = resize(&self.values, width, height, FilterType::Nearest);
-        let mask = resize(&self.mask, width, height, FilterType::Nearest);
+        let buffer = resize(&self.mask.buffer, width, height, FilterType::Nearest);
+        let mask = RasterMask::new(buffer);
 
         Self {
             values,
@@ -597,7 +596,8 @@ impl ScalarRaster {
         let height = self.values.height() / shrink_factor;
 
         let values = resize(&self.values, width, height, FilterType::Nearest);
-        let mask = resize(&self.mask, width, height, FilterType::Nearest);
+        let buffer = resize(&self.mask.buffer, width, height, FilterType::Nearest);
+        let mask = RasterMask::new(buffer);
 
         Self {
             values,
@@ -613,7 +613,7 @@ impl ScalarRaster {
     pub fn subtract(&self, reference: &Self) -> Result<Self> {
         let mut corrected = self.clone();
         for (x, y, v) in corrected.values.enumerate_pixels_mut() {
-            if self.mask.get_pixel(x, y)[0] < 255 {
+            if !self.mask.get(x, y) {
                 *v = Luma([0]);
             } else {
                 let ref_val = reference.u_to_f(reference.values.get_pixel(x, y)[0]);
@@ -627,7 +627,8 @@ impl ScalarRaster {
                     return Err(format!(
                         "Value {} out of bounds for raster with min_z {} and max_z {}",
                         f, self.min_z, self.max_z
-                    ).into());
+                    )
+                    .into());
                 }
                 *v = Luma([self.f_to_u(self_val - ref_val)]);
             }
@@ -658,7 +659,7 @@ impl ScalarRaster {
     ///
     /// ```
     fn area_average_px(&self, x: u32, y: u32, radius_px: u32) -> u16 {
-        let area = AreaAverage::from(&self.values, &self.mask, x, y, radius_px);
+        let area = AreaAverage::from(&self.values, &self.mask.buffer, x, y, radius_px);
         area.get_average()
     }
 
@@ -674,6 +675,7 @@ impl ScalarRaster {
         // extra allocation.
         let xys = self
             .mask
+            .buffer
             .enumerate_pixels()
             .filter(|(_, _, p)| (*p)[0] == 255)
             .map(|(x, y, _)| (x, y))
@@ -708,27 +710,23 @@ impl ScalarRaster {
         // All the pixels in the resized image which have at a full mask value can be copied
         // directly and put into the corresponding pixels in the blurred image
         for (x, y, v) in blurred.enumerate_pixels_mut() {
-            if self.mask.get_pixel(x, y)[0] < 255 {
+            if !self.mask.get(x, y) {
                 continue;
             }
-            if resized.mask.get_pixel(
-                (x as f32 * scale_x).floor() as u32,
-                (y as f32 * scale_y).floor() as u32,
-            )[0] < 255
-            {
+            let sx = (x as f32 * scale_x).floor() as u32;
+            let sy = (y as f32 * scale_y).floor() as u32;
+            if !resized.mask.get(sx, sy) {
                 continue;
             }
 
-            *v = Luma([resized.values.get_pixel(
-                (x as f32 * scale_x).floor() as u32,
-                (y as f32 * scale_y).floor() as u32,
-            )[0]]);
+            *v = Luma([resized.values.get_pixel(sx, sy)[0]]);
             transferred.put_pixel(x, y, Luma([255]));
         }
 
         // Now we'll manually transfer the pixels which are not in the resized image
         let xys = self
             .mask
+            .buffer
             .enumerate_pixels()
             .filter(|(x, y, p)| (*p)[0] != 0 && transferred.get_pixel(*x, *y)[0] == 0)
             .map(|(x, y, _)| (x, y))
@@ -812,14 +810,13 @@ impl ScalarRaster {
         for (x, y, v) in full_result.values.enumerate_pixels_mut() {
             // If we're skipping masked pixels, then we can skip this pixel if the self mask
             // value is not full.
-            if skip_unmasked && self.mask.get_pixel(x, y)[0] < 255 {
+            if skip_unmasked && !self.mask.get(x, y) {
                 continue;
             }
 
-            let scaled_mask = scaled_result.mask.get_pixel(
-                (x as f32 * scale_x).floor() as u32,
-                (y as f32 * scale_y).floor() as u32,
-            )[0];
+            let sx = (x as f32 * scale_x).floor() as u32;
+            let sy = (y as f32 * scale_y).floor() as u32;
+            let scaled_mask = scaled_result.mask.buffer.get_pixel(sx, sy)[0];
 
             // If the scaled mask value is zero, then there was no valid convolution result
             // for this pixel, so we can skip it.
@@ -841,7 +838,7 @@ impl ScalarRaster {
             )[0]]);
 
             // And set the mask
-            full_result.mask.set_masked(x, y);
+            full_result.mask.set(x, y, true);
         }
 
         let (target_matrix, target_mask) = self.to_value_and_mask_matrices();
@@ -903,10 +900,7 @@ impl ScalarRaster {
     }
 
     pub fn count_valid_pixels(&self) -> usize {
-        self.mask
-            .enumerate_pixels()
-            .filter(|(_, _, p)| (*p)[0] == 255)
-            .count()
+        self.mask.count_true()
     }
 }
 

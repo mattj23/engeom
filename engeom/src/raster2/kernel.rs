@@ -1,8 +1,8 @@
 //! This module has tools for working with kernels and convolutions on 2D raster data.
 
-use crate::na::DMatrix;
-use crate::raster2::{d_matrix_min_max, MaskOperations, MaskValue, ScalarRaster};
 use crate::Result;
+use crate::na::DMatrix;
+use crate::raster2::{ScalarRaster, d_matrix_min_max};
 use rayon::iter::IntoParallelRefIterator;
 
 pub trait FastApproxKernel {
@@ -124,7 +124,12 @@ impl RasterKernel {
     ///   include these pixels.
     ///
     /// returns: ScalarRaster
-    pub fn convolve(&self, raster: &ScalarRaster, skip_unmasked: bool, keep_zlim: bool) -> ScalarRaster {
+    pub fn convolve(
+        &self,
+        raster: &ScalarRaster,
+        skip_unmasked: bool,
+        keep_zlim: bool,
+    ) -> ScalarRaster {
         let (matrix, mask) = raster.to_value_and_mask_matrices();
         let convolved = self.convolve_matrix_and_mask(&matrix, &mask, skip_unmasked);
 
@@ -385,7 +390,6 @@ mod tests {
             assert_eq!(exp_ki, ki, "Mismatch in min_ki for i={}", i);
             assert_eq!(exp_c, c, "Mismatch in count_ki for i={}", i);
         }
-
     }
 
     fn obviously_correct_gaussian(target: &DMatrix<f64>) -> DMatrix<f64> {
@@ -454,7 +458,7 @@ mod tests {
 
                 if i + (600 - j) < 500 {
                     target[(i, j)] += 1.0;
-               }
+                }
 
                 if target[(i, j)] < 1.0 {
                     target[(i, j)] = f64::NAN;
@@ -493,7 +497,7 @@ mod tests {
     }
 
     #[test]
-    fn fast_approx_convolution()  {
+    fn fast_approx_convolution() {
         let target = chevron_target();
         let expected = obviously_correct_gaussian(&target);
         let raster = ScalarRaster::from_matrix(&target, 1.0, -2.0, 2.0);

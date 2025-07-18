@@ -2,8 +2,7 @@
 //! is very similar to a medial axis transform. It will progressively erode a positive region of
 //! pixels until it reaches roughly a single pixel wide representation of the region.
 
-use crate::image::GrayImage;
-use crate::raster2::{MaskOperations, MaskValue};
+use crate::raster2::raster_mask::RasterMask;
 
 /// Perform Zhang-Suen thinning on a binary image mask. This algorithm is used to reduce binary
 /// regions in the image to a single point wide skeleton, similar to a medial axis transform.
@@ -14,17 +13,17 @@ use crate::raster2::{MaskOperations, MaskValue};
 ///   pixels will be the ones getting eroded.
 ///
 /// returns: ()
-pub fn zhang_suen_thinning(mask: &mut GrayImage) {
+pub fn zhang_suen_thinning(mask: &mut RasterMask) {
     let mut zhang_suen = ZhangSuen::new(mask);
     while zhang_suen.zhang_suen_iter() {}
 }
 
 struct ZhangSuen<'a> {
-    mask: &'a mut GrayImage,
+    mask: &'a mut RasterMask,
 }
 
 impl<'a> ZhangSuen<'a> {
-    fn new(mask: &'a mut GrayImage) -> Self {
+    fn new(mask: &'a mut RasterMask) -> Self {
         Self { mask }
     }
 
@@ -68,14 +67,14 @@ impl<'a> ZhangSuen<'a> {
     }
 
     fn delete_pixel(&mut self, x: i32, y: i32) {
-        self.mask.set_unmasked(x as u32, y as u32);
+        self.mask.set(x as u32, y as u32, false);
     }
 
     fn has_pixel(&self, x: i32, y: i32) -> bool {
         if x < 0 || y < 0 || x >= self.mask.width() as i32 || y >= self.mask.height() as i32 {
             return false;
         }
-        self.mask.get_pixel(x as u32, y as u32).is_masked()
+        self.mask.get(x as u32, y as u32)
     }
 
     pub fn zhang_suen_iter(&mut self) -> bool {
@@ -83,11 +82,7 @@ impl<'a> ZhangSuen<'a> {
 
         // Step 1
         let mut to_delete_1 = Vec::new();
-        for (x, y, v) in self.mask.enumerate_pixels() {
-            if !v.is_masked() {
-                continue;
-            }
-
+        for (x, y) in self.mask.iter_true() {
             let x = x as i32;
             let y = y as i32;
 
@@ -115,10 +110,7 @@ impl<'a> ZhangSuen<'a> {
 
         // Step 2
         let mut to_delete_2 = Vec::new();
-        for (x, y, v) in self.mask.enumerate_pixels() {
-            if !v.is_masked() {
-                continue;
-            }
+        for (x, y) in self.mask.iter_true() {
             let x = x as i32;
             let y = y as i32;
 
