@@ -195,6 +195,12 @@ impl RasterMask {
         }
     }
 
+    pub fn eroded_alternating_norms(&self, count: usize) -> RasterMask {
+        let mut new_mask = self.clone();
+        new_mask.erode_alternating_norms_mut(count);
+        new_mask
+    }
+
     pub fn dilate_alternating_norms_mut(&mut self, count: usize) {
         for i in 0..count {
             if i % 2 == 0 {
@@ -203,6 +209,59 @@ impl RasterMask {
                 dilate_mut(&mut self.buffer, Norm::LInf, 1);
             }
         }
+    }
+
+    pub fn dilated_alternating_norms(&self, count: usize) -> RasterMask {
+        let mut new_mask = self.clone();
+        new_mask.dilate_alternating_norms_mut(count);
+        new_mask
+    }
+
+    pub fn get_unmasked_exterior(&self) -> RasterMask {
+        let mut output = RasterMask::empty_like(&self.buffer);
+        let mut stack = Vec::new();
+
+        // Push any top and bottom row pixels which are unmasked onto the stack
+        for i in 0..self.width() {
+            if !self.get(i, 0) {
+                stack.push((i, 0));
+                output.set(i, 0, true);
+            }
+            if !self.get(i, self.height() - 1) {
+                stack.push((i, self.height() - 1));
+                output.set(i, self.height() - 1, true);
+            }
+        }
+
+        // Push any left or right column pixels which are unmasked onto the stack
+        for i in 0..self.height() {
+            if !self.get(0, i) {
+                stack.push((0, i));
+                output.set(0, i, true);
+            }
+            if !self.get(self.width() - 1, i) {
+                stack.push((self.width() - 1, i));
+                output.set(self.width() - 1, i, true);
+            }
+        }
+
+        // Now, for each pixel in the stack, set the output pixel to unmasked and push any
+        // unmasked neighbors onto the stack
+        while let Some((x, y)) = stack.pop() {
+            for (xn, yn) in &[
+                (x as i32 - 1, y as i32),
+                (x as i32 + 1, y as i32),
+                (x as i32, y as i32 - 1),
+                (x as i32, y as i32 + 1),
+            ] {
+                if !output.get(*xn as u32, *yn as u32) && !self.get(*xn as u32, *yn as u32) {
+                    stack.push((*xn as u32, *yn as u32));
+                    output.set(*xn as u32, *yn as u32, true);
+                }
+            }
+        }
+
+        output
     }
 }
 

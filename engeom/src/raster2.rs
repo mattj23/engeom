@@ -15,6 +15,7 @@ use crate::na::DMatrix;
 pub use inpaint::inpaint;
 pub use kernel::*;
 pub use mapping::RasterMapping;
+pub use raster_mask::{RasterMask, RasterMaskTrueIterator};
 pub use scalar_raster::*;
 pub use zhang_suen::*;
 

@@ -5,9 +5,7 @@
 
 use crate::Result;
 use crate::image::imageops::{FilterType, resize};
-use crate::image::{
-    GrayImage, ImageBuffer, ImageFormat, ImageReader, Luma, Rgba, RgbaImage,
-};
+use crate::image::{GrayImage, ImageBuffer, ImageFormat, ImageReader, Luma, Rgba, RgbaImage};
 use crate::na::DMatrix;
 use crate::raster2::area_average::AreaAverage;
 use crate::raster2::raster_mask::RasterMask;
@@ -1026,6 +1024,5 @@ mod tests {
                 assert_relative_eq!(expected_value, actual_value, epsilon = 1e-4);
             }
         }
-
     }
 }

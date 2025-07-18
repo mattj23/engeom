@@ -34,7 +34,6 @@ pub fn inpaint(
     let mut fill = Fill::new(depth, fill_mask, image_mask, radius);
 
     while let Some(px) = fill.band.pop() {
-        
         fill.flags[(px.y, px.x)] = KNOWN;
 
         let neighbors = [
