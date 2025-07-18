@@ -28,6 +28,13 @@ pub use parry3d_f64::query::SplitResult;
 pub use surface_point::{SurfacePoint, SurfacePointCollection};
 pub use voxel_downsample::voxel_downsample;
 
+/// A type alias for signed integer indices for rasters
+pub type PointNI<const D: usize> = Point<i32, D>;
+
+/// A type alias for a vector of signed integers, typically used for manipulating indices in
+/// D-dimensional raster spaces.
+pub type VectorNI<const D: usize> = SVector<i32, D>;
+
 /// General purpose option for starting the selection of a set of items, either from everything,
 /// nothing, a specific set of indices, or a bitmask.
 #[derive(Debug, Clone)]

@@ -10,6 +10,9 @@ mod mask_ops;
 mod raster_mask;
 mod scalar_raster;
 mod zhang_suen;
+mod roi;
+mod region_labeling;
+mod index_iter;
 
 use crate::na::DMatrix;
 pub use inpaint::inpaint;
@@ -18,6 +21,12 @@ pub use mapping::RasterMapping;
 pub use raster_mask::{RasterMask, RasterMaskTrueIterator};
 pub use scalar_raster::*;
 pub use zhang_suen::*;
+pub use roi::RasterRoi;
+pub use region_labeling::*;
+use crate::common::{PointNI, VectorNI};
+
+pub type Point2I = PointNI<2>;
+pub type Vector2I = VectorNI<2>;
 
 /// Find the minimum and maximum _finite_ values in a DMatrix.
 ///
