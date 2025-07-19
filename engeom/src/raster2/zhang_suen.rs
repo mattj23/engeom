@@ -167,7 +167,7 @@ mod tests {
 
         for (y, line) in input.iter().enumerate() {
             for (x, c) in line.chars().enumerate() {
-                if c == '1' {
+                if c == '#' {
                     mask.set_point(Point2I::new(x as i32, y as i32), true)?;
                 }
             }
@@ -177,46 +177,40 @@ mod tests {
     }
 
     #[test]
-    fn sample_io() -> Result<()> {
-        // sample from https://rosettacode.org/wiki/Zhang-Suen_thinning_algorithm
+    fn rosetta_code_sample() -> Result<()> {
+        // sample from https://rosettacode.org/wiki/Zhang-Suen_thinning_algorithm#Python
 
         let input = vec![
-            "00000000000000000000000000000000",
-            "01111111110000000111111110000000",
-            "01110001111000001111001111000000",
-            "01110000111000001110000111000000",
-            "01110001111000001110000000000000",
-            "01111111110000001110000000000000",
-            "01110111100000001110000111000000",
-            "01110011110011101111001111011100",
-            "01110001111011100111111110011100",
-            "00000000000000000000000000000000",
+            "................................",
+            ".#########.......########.......",
+            ".###...####.....####..####......",
+            ".###....###.....###....###......",
+            ".###...####.....###.............",
+            ".#########......###.............",
+            ".###.####.......###....###......",
+            ".###..####..###.####..####.###..",
+            ".###...####.###..########..###..",
+            "................................",
         ];
 
         let expected = vec![
-            "00000000000000000000000000000000",
-            "00111111100000000011111100000000",
-            "00100000100000000110000000000000",
-            "01000000100000000100000000000000",
-            "01000000100000001000000000000000",
-            "01111110100000001000000000000000",
-            "00000001000000000100000000000000",
-            "00000000100001000110000110001000",
-            "00000000010000000001111000000000",
-            "00000000000000000000000000000000",
+            "................................",
+            "..#######.........######........",
+            "..#.....#........##.............",
+            "..#......#.......#..............",
+            "..#.....#........#..............",
+            "..#####.#........#..............",
+            ".......##........#..............",
+            "........#....#...##....##...#...",
+            ".........#.........####.........",
+            "................................",
         ];
 
         let mut input = sample_to_mask(input)?;
         let expected = sample_to_mask(expected)?;
-
-        input.buffer.save("D:/temp/k/zs-input.png")?;
-        expected.buffer.save("D:/temp/k/zs-expected.png")?;
-
         zhang_suen_thinning(&mut input);
-        input.buffer.save("D:/temp/k/zs-output.png")?;
 
         assert_eq!(expected.count_true(), input.count_true());
-
         for p in expected.iter_all() {
             assert_eq!(
                 input.get_point(p),
@@ -227,18 +221,5 @@ mod tests {
         }
 
         Ok(())
-    }
-
-    #[test]
-    fn test_zhang_suen() {
-        let mut mask = RasterMask::empty(50, 50);
-        // Create a simple cross shape
-        mask.draw_rect_mut(Point2I::new(20, 5), Point2I::new(30, 45), true, true);
-        mask.draw_rect_mut(Point2I::new(5, 20), Point2I::new(45, 30), true, true);
-
-        mask.buffer.save("D:/temp/k/zs-input.png").unwrap();
-
-        zhang_suen_thinning(&mut mask);
-        mask.buffer.save("D:/temp/k/zs-output.png").unwrap();
     }
 }
