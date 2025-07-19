@@ -1,13 +1,14 @@
 //! Uses the `imageproc` crate to perform region labeling on a raster mask.
 
+use crate::image::{GenericImage, Luma};
+use crate::raster2::{Point2I, RasterMask, Vector2I};
+use crate::raster2::index_iter::SizeForIndex;
+use crate::raster2::roi::{RasterRoi, RoiOverlay};
 use faer::prelude::default;
 use imageproc::definitions::Image;
-use imageproc::region_labelling::connected_components;
 pub use imageproc::region_labelling::Connectivity;
-use crate::image::{GenericImage, Luma};
-use crate::raster2::index_iter::SizeForIndex;
-use crate::raster2::roi::{RasterRoi, RoiMask};
-use crate::raster2::Vector2I;
+use imageproc::region_labelling::connected_components;
+use crate::raster2::roi_mask::RoiMask;
 
 /// This is a very lightweight temporary structure which contains information about a single
 /// labeled region in a `LabeledRegions` object. It contains the label, the region of interest (ROI)
@@ -45,16 +46,24 @@ impl<'a> Region<'a> {
     /// ```
     ///
     /// ```
-    pub fn create_mask(&self, padding: usize) -> RoiMask {
-        let height = self.roi.extent().y as usize + 2 * padding;
-        let width = self.roi.extent().x as usize + 2 * padding;
-        let offset = Vector2I::new(2 * padding as i32, 2 * padding as i32);
+    pub fn create_roi_mask(&self, padding: u32) -> RoiMask {
+        let height = self.roi.extent().y as u32 + 2 * padding;
+        let width = self.roi.extent().x as u32 + 2 * padding;
+        let mut mask = RasterMask::empty(width, height);
+        let mask_roi = self.roi.expanded(padding);
+        let overlay = RoiOverlay::new(mask_roi, self.roi);
 
-        todo!()
+        for p in overlay.iter_intersection_a() {
+            if self.label == self.labeled_regions.label_at(p.parent) {
+                mask.set_point(p.local, true);
+            }
+        }
+
+        RoiMask::new_resized(mask, self.roi, mask_roi)
     }
 }
 
-impl <'a> Region<'a> {
+impl<'a> Region<'a> {
     /// Get the `u32` label associated with this region in the `LabeledRegions` buffer.
     pub fn label(&self) -> u32 {
         self.label
@@ -83,6 +92,13 @@ impl LabeledRegions {
     /// Get a reference to the backing image buffer holding all labeled pixels.
     pub fn buffer(&self) -> &Image<Luma<u32>> {
         &self.buffer
+    }
+
+    pub fn label_at(&self, p: Point2I) -> u32 {
+        if p.x < 0 || p.y < 0 || p.x >= self.buffer.width() as i32 || p.y >= self.buffer.height() as i32 {
+            return 0; // Out of bounds, return background label
+        }
+        self.buffer.get_pixel(p.x as u32, p.y as u32)[0]
     }
 
     /// Try to get a `Region` object for a specific label. If the label is 0 or out of bounds,
@@ -182,7 +198,7 @@ pub struct RegionIterator<'a> {
     current: usize,
 }
 
-impl <'a> Iterator for RegionIterator<'a> {
+impl<'a> Iterator for RegionIterator<'a> {
     type Item = Region<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {

@@ -1,9 +1,11 @@
 use crate::Result;
 use crate::image::{GenericImage, GrayImage, Luma};
-use crate::raster2::{zhang_suen_thinning, LabeledRegions};
+use crate::raster2::{LabeledRegions, zhang_suen_thinning, Point2I};
 use imageproc::distance_transform::Norm;
 use imageproc::morphology::{dilate_mut, erode_mut};
 use imageproc::region_labelling::Connectivity;
+
+type IpPoint = imageproc::point::Point<i32>;
 
 #[derive(Clone, Debug)]
 pub struct RasterMask {
@@ -30,8 +32,16 @@ impl RasterMask {
         self.buffer.put_pixel(x, y, Luma([value as u8 * 255]));
     }
 
+    pub fn set_point(&mut self, p: Point2I, value: bool) {
+        self.set(p.x as u32, p.y as u32, value);
+    }
+
     pub fn get(&self, x: u32, y: u32) -> bool {
         self.buffer.get_pixel(x, y)[0] > 0
+    }
+
+    pub fn get_point(&self, p: Point2I) -> bool {
+        self.get(p.x as u32, p.y as u32)
     }
 
     pub fn width(&self) -> u32 {
@@ -275,6 +285,11 @@ impl RasterMask {
     pub fn connected_regions(&self, connectivity: Connectivity) -> LabeledRegions {
         LabeledRegions::from_connected(&self.buffer, connectivity, Luma([0]))
     }
+
+    pub fn convex_hull(&self) -> Vec<Point2I> {
+        todo!()
+
+    }
 }
 
 pub struct RasterMaskTrueIterator<'a> {
@@ -303,6 +318,13 @@ impl<'a> Iterator for RasterMaskTrueIterator<'a> {
             self.x += 1;
         }
         None
+    }
+}
+
+impl Into<Vec<IpPoint>> for RasterMask {
+    fn into(self) -> Vec<IpPoint> {
+        // let mut points = Vec::new();
+        todo!()
     }
 }
 
