@@ -1,9 +1,16 @@
 use crate::Result;
 use crate::image::{GenericImage, GrayImage, Luma};
-use crate::raster2::{LabeledRegions, zhang_suen_thinning, Point2I};
+use crate::raster2::index_iter::IndexIter;
+use crate::raster2::{LabeledRegions, Point2I, zhang_suen_thinning};
 use imageproc::distance_transform::Norm;
+use imageproc::drawing::{
+    draw_filled_circle_mut, draw_filled_rect_mut, draw_hollow_circle, draw_hollow_circle_mut,
+    draw_hollow_rect_mut,
+};
 use imageproc::morphology::{dilate_mut, erode_mut};
+use imageproc::rect::Rect;
 use imageproc::region_labelling::Connectivity;
+use itertools::Itertools;
 
 type IpPoint = imageproc::point::Point<i32>;
 
@@ -28,20 +35,111 @@ impl RasterMask {
         RasterMask { buffer }
     }
 
-    pub fn set(&mut self, x: u32, y: u32, value: bool) {
-        self.buffer.put_pixel(x, y, Luma([value as u8 * 255]));
+    // pub fn set(&mut self, x: u32, y: u32, value: bool) {
+    //     self.buffer.put_pixel(x, y, Luma([value as u8 * 255]));
+    // }
+
+    /// Sets a point/pixel in the mask to a specified value. If the point is out of bounds, it will
+    /// return an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `p`: the point to set, represented as a `Point2I`.
+    /// * `value`: the value to set the point to, represented as a `bool`. If true, the pixel will
+    ///   be set to white (255), and if false, it will be set to black (0).
+    ///
+    /// returns: Result<(), Box<dyn Error, Global>>
+    pub fn set_point(&mut self, p: Point2I, value: bool) -> Result<()> {
+        if self.point_in_bounds(p) {
+            Ok(self.set_point_unchecked(p, value))
+        } else {
+            Err(format!(
+                "Point ({}, {}) is out of bounds for mask of size {}x{}",
+                p.x,
+                p.y,
+                self.width(),
+                self.height()
+            )
+            .into())
+        }
     }
 
-    pub fn set_point(&mut self, p: Point2I, value: bool) {
-        self.set(p.x as u32, p.y as u32, value);
+    /// Sets a point in the mask to a specified value without checking if the point is within
+    /// bounds. If the point has an index below 0 it will silently write to the pixel at the 0
+    /// index, and if the point has an index above the width or height of the mask, it will
+    /// panic with an out-of-bounds error.  Only use this method if you are sure the point is
+    /// within bounds of the mask.
+    ///
+    /// # Arguments
+    ///
+    /// * `p`: the point to set, represented as a `Point2I`.
+    /// * `value`: the value to set the point to, represented as a `bool`. If true, the pixel will
+    ///   be set to white (255), and if false, it will be set to black (0).
+    ///
+    /// returns: ()
+    pub fn set_point_unchecked(&mut self, p: Point2I, value: bool) {
+        self.buffer
+            .put_pixel(p.x as u32, p.y as u32, Luma([value as u8 * 255]))
     }
 
-    pub fn get(&self, x: u32, y: u32) -> bool {
-        self.buffer.get_pixel(x, y)[0] > 0
+    /// Sets a point/pixel in the mask to a specified value if the point is within the bounds of the
+    /// mask, otherwise does nothing. This is a convenience method to simplify the logic of
+    /// common algorithms in which setting a pixel off the mask should just be ignored.
+    ///
+    /// If the point is outside the mask bounds, the function will also return false, in case that
+    /// information is needed by the calling code.
+    ///
+    /// # Arguments
+    ///
+    /// * `p`: the point to set, represented as a `Point2I`.
+    /// * `value`: the value to set the point to, represented as a `bool`. If true, the pixel will
+    ///   be set to white (255), and if false, it will be set to black (0).
+    ///
+    /// returns: bool
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::raster2::{RasterMask, Point2I};
+    /// let mut mask = RasterMask::empty(10, 10);
+    /// let p0 = Point2I::new(5, 5);
+    ///
+    /// assert!(mask.set_point_if_in_bounds(p0, true));
+    /// assert!(mask.get_point(p0));
+    ///
+    /// let p1 = Point2I::new(-5, -5);
+    /// assert!(!mask.set_point_if_in_bounds(p1, true));
+    /// assert!(!mask.get_point(p1));
+    /// ```
+    pub fn set_point_if_in_bounds(&mut self, p: Point2I, value: bool) -> bool {
+        if self.point_in_bounds(p) {
+            self.set_point_unchecked(p, value);
+            true
+        } else {
+            false
+        }
     }
 
+    // pub fn get(&self, x: u32, y: u32) -> bool {
+    //     self.buffer.get_pixel(x, y)[0] > 0
+    // }
+
+    /// Get the value of the mask at the specified pixel/point. If the point is out of the bounds
+    /// of the mask, it is by default considered to be false.
+    ///
+    /// # Arguments
+    ///
+    /// * `p`: the point to check, represented as a `Point2I`.
+    ///
+    /// returns: bool
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
     pub fn get_point(&self, p: Point2I) -> bool {
-        self.get(p.x as u32, p.y as u32)
+        self.point_in_bounds(p) && self.buffer.get_pixel(p.x as u32, p.y as u32)[0] == 255
     }
 
     pub fn width(&self) -> u32 {
@@ -50,6 +148,62 @@ impl RasterMask {
 
     pub fn height(&self) -> u32 {
         self.buffer.height()
+    }
+
+    // ==========================================================================================
+    // Index Operations
+    // ==========================================================================================
+
+    /// Returns true if a point is within the bounds of the mask. This requires the x and y
+    /// coordinates to be non-negative and less than the width and height of the mask, respectively.
+    ///
+    /// # Arguments
+    ///
+    /// * `p`: the point to check, represented as a `Point2I`.
+    ///
+    /// returns: bool
+    pub fn point_in_bounds(&self, p: Point2I) -> bool {
+        p.x >= 0 && p.x < self.width() as i32 && p.y >= 0 && p.y < self.height() as i32
+    }
+
+    /// Computes the neighbors of a point in the mask based on the specified connectivity. The
+    /// neighbors are returned as a vector of `Point2I` objects. The connectivity can be either
+    /// four-connected (4) or eight-connected (8). The function filters out any neighbors that
+    /// are out of bounds of the mask, so the returned vector will have a length between 0 and 8.
+    ///
+    /// # Arguments
+    ///
+    /// * `p`: the point for which to find neighbors
+    /// * `connectivity`: the type of connectivity to use, either `Connectivity::Four` or
+    ///   `Connectivity::Eight`
+    ///
+    /// returns: Vec<OPoint<i32, Const<2>>, Global>
+    pub fn get_neighbors(&self, p: Point2I, connectivity: Connectivity) -> Vec<Point2I> {
+        let mut candidates = vec![
+            Point2I::new(p.x - 1, p.y),
+            Point2I::new(p.x + 1, p.y),
+            Point2I::new(p.x, p.y - 1),
+            Point2I::new(p.x, p.y + 1),
+        ];
+
+        if connectivity == Connectivity::Eight {
+            candidates.extend(vec![
+                Point2I::new(p.x - 1, p.y - 1),
+                Point2I::new(p.x + 1, p.y - 1),
+                Point2I::new(p.x - 1, p.y + 1),
+                Point2I::new(p.x + 1, p.y + 1),
+            ]);
+        }
+
+        // Filter out candidates that are out of bounds
+        candidates
+            .into_iter()
+            .filter(|&np| self.point_in_bounds(np))
+            .collect()
+    }
+
+    pub fn iter_all(&self) -> impl Iterator<Item = Point2I> {
+        RasterMaskIterator::new(self)
     }
 
     // ==========================================================================================
@@ -228,55 +382,118 @@ impl RasterMask {
         new_mask
     }
 
-    pub fn get_unmasked_exterior(&self) -> RasterMask {
+    /// Performs a flood fill operation starting from a set of points. The flood fill will expand
+    /// to all false pixels that are connected to the starting points, based on the specified
+    /// connectivity (4 or 8).
+    ///
+    /// The function will return a new `RasterMask` where only the pixels that were filled in the
+    /// operation are set to true, and all other pixels are false. The starting points will be
+    /// included in the filled area.
+    ///
+    /// If a starting point is out of bounds but has valid neighbors, the flood fill will begin
+    /// from those neighbors. If a starting point is `true` in the original mask, it will be
+    /// discarded, and it will be used as a starting point, even if it has valid neighbors which
+    /// are `false`.
+    ///
+    /// # Arguments
+    ///
+    /// * `points`: a slice of `Point2I` representing the starting points for the flood fill.
+    /// * `connectivity`: the type of connectivity to use for the flood fill, either
+    ///   `Connectivity::Four` or `Connectivity::Eight`.
+    ///
+    /// returns: RasterMask
+    pub fn get_flood_fill_from_points(
+        &self,
+        points: &[Point2I],
+        connectivity: Connectivity,
+    ) -> RasterMask {
+        // We'll check the original set of points given to us to verify that they are all set to
+        // false in the original mask, and if they are not we'll remove them now. We will not check
+        // if the points are in bounds, because we will allow them to be out of bounds in case they
+        // have valid neighbors which are in bounds.
+        let mut stack = points
+            .iter()
+            .filter_map(|p| if !self.get_point(*p) { Some(*p) } else { None })
+            .collect::<Vec<_>>();
         let mut output = RasterMask::empty_like(&self.buffer);
-        let mut stack = Vec::new();
 
-        // Push any top and bottom row pixels which are unmasked onto the stack
-        for i in 0..self.width() {
-            if !self.get(i, 0) {
-                stack.push((i, 0));
-                output.set(i, 0, true);
-            }
-            if !self.get(i, self.height() - 1) {
-                stack.push((i, self.height() - 1));
-                output.set(i, self.height() - 1, true);
-            }
-        }
+        // Because we have prefiltered the stack to only contain points which are false in the
+        // original mask, and because we don't care if the points are in bounds or not, we can
+        // safely pop each point from the stack and set it to true in the output mask. When
+        // filtering the neighbors, we must check that they are false in the original mask before
+        // putting them into the stack in order to prevent this assumption from being violated
+        // as the process continues.
+        while let Some(p) = stack.pop() {
+            // Set the working point in the output mask to true
+            output.set_point_unchecked(p, true);
 
-        // Push any left or right column pixels which are unmasked onto the stack
-        for i in 0..self.height() {
-            if !self.get(0, i) {
-                stack.push((0, i));
-                output.set(0, i, true);
-            }
-            if !self.get(self.width() - 1, i) {
-                stack.push((self.width() - 1, i));
-                output.set(self.width() - 1, i, true);
-            }
-        }
-
-        // Now, for each pixel in the stack, set the output pixel to unmasked and push any
-        // unmasked neighbors onto the stack
-        while let Some((x, y)) = stack.pop() {
-            for (xn, yn) in &[
-                (x as i32 - 1, y as i32),
-                (x as i32 + 1, y as i32),
-                (x as i32, y as i32 - 1),
-                (x as i32, y as i32 + 1),
-            ] {
-                if *xn < 0 || *yn < 0 || *xn >= self.width() as i32 || *yn >= self.height() as i32 {
-                    continue; // Skip out-of-bounds coordinates
-                }
-
-                if !output.get(*xn as u32, *yn as u32) && !self.get(*xn as u32, *yn as u32) {
-                    stack.push((*xn as u32, *yn as u32));
-                    output.set(*xn as u32, *yn as u32, true);
+            // Now iterate through all neighbors of the working point and push any which are both
+            // false in the original mask and the output mask onto the stack. We are guaranteed
+            // from the `get_neighbors` function that all neighbors will be in bounds, and that
+            // any point already set to true in the output mask has already been checked for
+            // neighbors (including the point adjacent to this working point).
+            for n in self.get_neighbors(p, connectivity) {
+                if !self.get_point(n) && !output.get_point(n) {
+                    stack.push(n);
                 }
             }
         }
 
         output
+    }
+
+    /// Gets the result of a flood fill operation starting from the borders of the mask. The flood
+    /// fill will expand to all false pixels that are connected to the borders, based on the
+    /// specified connectivity (4 or 8).
+    ///
+    /// This is a convenient way to extract the exterior of a mask, where the exterior is defined
+    /// as false pixels that touch the mask border. This is useful for processes that need to
+    /// distinguish between interior empty spaces and exterior ones, for things like hole counting
+    /// or filling.
+    ///
+    /// # Arguments
+    ///
+    /// * `connectivity`: the type of connectivity to use for the flood fill, either
+    ///   `Connectivity::Four` or `Connectivity::Eight`.
+    ///
+    /// returns: RasterMask
+    pub fn get_flood_fill_from_borders(&self, connectivity: Connectivity) -> RasterMask {
+        let mut border_points = Vec::new();
+
+        for i in 0..self.width() {
+            border_points.push(Point2I::new(i as i32, 0));
+            border_points.push(Point2I::new(i as i32, (self.height() - 1) as i32));
+        }
+
+        for i in 0..self.height() {
+            border_points.push(Point2I::new(0, i as i32));
+            border_points.push(Point2I::new((self.width() - 1) as i32, i as i32));
+        }
+
+        self.get_flood_fill_from_points(&border_points, connectivity)
+    }
+
+    // ==========================================================================================
+    // Drawing Operations
+    // =========================================================================================
+    pub fn draw_rect_mut(&mut self, min: Point2I, max: Point2I, value: bool, filled: bool) {
+        let size = max - min;
+        let r = Rect::at(min.x, min.y).of_size(size.x as u32, size.y as u32);
+        let color = if value { Luma([255]) } else { Luma([0]) };
+        if filled {
+            draw_filled_rect_mut(&mut self.buffer, r, color);
+        } else {
+            draw_hollow_rect_mut(&mut self.buffer, r, color);
+        }
+    }
+
+    pub fn draw_circle_mut(&mut self, center: Point2I, radius: i32, value: bool, filled: bool) {
+        let color = if value { Luma([255]) } else { Luma([0]) };
+        if filled {
+            draw_filled_circle_mut(&mut self.buffer, (center.x, center.y), radius, color);
+        } else {
+            draw_hollow_circle_mut(&mut self.buffer, (center.x, center.y), radius, color);
+        }
     }
 
     // ==========================================================================================
@@ -288,18 +505,23 @@ impl RasterMask {
 
     pub fn convex_hull(&self) -> Vec<Point2I> {
         todo!()
-
     }
 }
 
-pub struct RasterMaskTrueIterator<'a> {
+pub struct RasterMaskIterator<'a> {
     mask: &'a RasterMask,
     x: u32,
     y: u32,
 }
 
-impl<'a> Iterator for RasterMaskTrueIterator<'a> {
-    type Item = (u32, u32);
+impl<'a> RasterMaskIterator<'a> {
+    pub fn new(mask: &'a RasterMask) -> Self {
+        RasterMaskIterator { mask, x: 0, y: 0 }
+    }
+}
+
+impl<'a> Iterator for RasterMaskIterator<'a> {
+    type Item = Point2I;
 
     fn next(&mut self) -> Option<Self::Item> {
         while self.y < self.mask.buffer.height() {
@@ -310,8 +532,43 @@ impl<'a> Iterator for RasterMaskTrueIterator<'a> {
             if self.y >= self.mask.buffer.height() {
                 return None;
             }
-            if self.mask.get(self.x, self.y) {
-                let current = (self.x, self.y);
+
+            let current = Point2I::new(self.x as i32, self.y as i32);
+            self.x += 1;
+            return Some(current);
+        }
+        None
+    }
+}
+
+pub struct RasterMaskTrueIterator<'a> {
+    mask: &'a RasterMask,
+    x: u32,
+    y: u32,
+}
+
+impl<'a> RasterMaskTrueIterator<'a> {
+    pub fn new(mask: &'a RasterMask) -> Self {
+        RasterMaskTrueIterator { mask, x: 0, y: 0 }
+    }
+}
+
+impl<'a> Iterator for RasterMaskTrueIterator<'a> {
+    type Item = Point2I;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.y < self.mask.buffer.height() {
+            if self.x >= self.mask.buffer.width() {
+                self.x = 0;
+                self.y += 1;
+            }
+            if self.y >= self.mask.buffer.height() {
+                return None;
+            }
+
+            let current = Point2I::new(self.x as i32, self.y as i32);
+
+            if self.mask.get_point(current) {
                 self.x += 1;
                 return Some(current);
             }
@@ -333,26 +590,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn count_true() {
+    fn count_true() -> Result<()> {
         let mut mask = RasterMask::empty(4, 2);
-        mask.set(0, 0, true);
-        mask.set(1, 1, true);
-        mask.set(2, 0, true);
+        mask.set_point(Point2I::new(0, 0), true)?;
+        mask.set_point(Point2I::new(1, 1), true)?;
+        mask.set_point(Point2I::new(2, 0), true)?;
 
         assert_eq!(mask.count_true(), 3);
+        Ok(())
     }
 
     #[test]
-    fn not_mut() {
+    fn not_mut() -> Result<()> {
         let mut mask = RasterMask::empty(4, 2);
-        mask.set(0, 0, true);
-        mask.set(1, 1, true);
-
+        mask.set_point(Point2I::new(0, 0), true)?;
+        mask.set_point(Point2I::new(1, 1), true)?;
         mask.not_mut();
 
-        assert!(!mask.get(0, 0));
-        assert!(!mask.get(1, 1));
+        assert!(!mask.get_point(Point2I::new(0, 0)));
+        assert!(!mask.get_point(Point2I::new(1, 1)));
         assert_eq!(mask.count_true(), 6);
+
+        Ok(())
     }
 
     #[test]
@@ -363,19 +622,20 @@ mod tests {
     }
 
     #[test]
-    fn value_set_get() {
+    fn value_set_get() -> Result<()> {
         let mut mask = RasterMask::empty(5, 5);
-        mask.set(2, 2, true);
-        assert!(mask.get(2, 2));
-        assert!(!mask.get(1, 1));
+        mask.set_point(Point2I::new(2, 2), true)?;
+        assert!(mask.get_point(Point2I::new(2, 2)));
+        assert!(!mask.get_point(Point2I::new(1, 1)));
+        Ok(())
     }
 
     #[test]
-    fn buffer_is_row_major_order() {
+    fn buffer_is_row_major_order() -> Result<()> {
         // Verify that the buffer is in row-major order by checking the first few pixels
         let mut mask = RasterMask::empty(5, 3);
-        mask.set(0, 0, true);
-        mask.set(2, 0, true);
+        mask.set_point(Point2I::new(0, 0), true)?;
+        mask.set_point(Point2I::new(2, 0), true)?;
 
         let true_indices = mask
             .buffer
@@ -386,19 +646,43 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(true_indices, vec![0, 2]);
+        Ok(())
     }
 
     #[test]
-    fn iter_true() {
+    fn iter_true() -> Result<()> {
         let mut mask = RasterMask::empty(4, 3);
-        mask.set(1, 0, true);
-        mask.set(3, 1, true);
-        mask.set(2, 2, true);
+
+        mask.set_point(Point2I::new(1, 0), true)?;
+        mask.set_point(Point2I::new(3, 1), true)?;
+        mask.set_point(Point2I::new(2, 2), true)?;
 
         let mut iter = mask.iter_true();
-        assert_eq!(iter.next(), Some((1, 0)));
-        assert_eq!(iter.next(), Some((3, 1)));
-        assert_eq!(iter.next(), Some((2, 2)));
+        assert_eq!(iter.next(), Some(Point2I::new(1, 0)));
+        assert_eq!(iter.next(), Some(Point2I::new(3, 1)));
+        assert_eq!(iter.next(), Some(Point2I::new(2, 2)));
         assert_eq!(iter.next(), None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn exterior_flood_fill() {
+        let mut mask = RasterMask::empty(20, 10);
+        mask.draw_rect_mut(Point2I::new(5, 0), Point2I::new(15, 10), true, true);
+
+        let expected = mask.not();
+
+        mask.draw_rect_mut(Point2I::new(9, 3), Point2I::new(13, 7), false, true);
+        let exterior = mask.get_flood_fill_from_borders(Connectivity::Eight);
+
+        for p in exterior.iter_all() {
+            assert_eq!(
+                exterior.get_point(p),
+                expected.get_point(p),
+                "Point {:?} does not match expected value",
+                p
+            );
+        }
     }
 }

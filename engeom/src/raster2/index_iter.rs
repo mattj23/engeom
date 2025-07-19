@@ -24,6 +24,16 @@ pub struct IndexIter<'a, T: SizeForIndex + Sized> {
     pub y: usize,
 }
 
+impl <'a, T: SizeForIndex> IndexIter<'a, T> {
+    pub fn new(size: &'a T) -> Self {
+        IndexIter {
+            size,
+            x: 0,
+            y: 0,
+        }
+    }
+}
+
 impl<'a, T: SizeForIndex> Iterator for IndexIter<'a, T> {
     type Item = Point2I;
 

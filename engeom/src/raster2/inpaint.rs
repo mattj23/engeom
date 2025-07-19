@@ -1,5 +1,5 @@
 use crate::image::{GrayImage, Luma};
-use crate::raster2::ScalarImage;
+use crate::raster2::{Point2I, ScalarImage};
 use crate::raster2::raster_mask::RasterMask;
 use parry3d_f64::na::DMatrix;
 
@@ -99,7 +99,8 @@ pub fn inpaint(
             // Fill the pixel
             let val = inpaint_pixel(*ny, *nx, &fill);
             fill.values.put_pixel(*nx as u32, *ny as u32, Luma([val]));
-            fill.image_mask.set(*nx as u32, *ny as u32, true);
+            // fill.image_mask.set(*nx as u32, *ny as u32, true);
+            fill.image_mask.set_point_unchecked(Point2I::new(*nx, *ny), true);
 
             fill.flags[(*ny as usize, *nx as usize)] = BAND;
 
@@ -344,7 +345,8 @@ fn inpaint_pixel(ny: i32, nx: i32, fill: &Fill) -> u16 {
         for nbx in (nx - fill.radius as i32)..(nx + fill.radius as i32 + 1) {
             if nbx < 0
                 || nbx >= fill.values.width() as i32
-                || !fill.image_mask.get(nbx as u32, nby as u32)
+                // || !fill.image_mask.get(nbx as u32, nby as u32)
+                || !fill.image_mask.get_point(Point2I::new(nbx, nby))
             {
                 continue;
             }

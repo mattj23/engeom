@@ -11,11 +11,13 @@ mod mask_ops;
 mod raster_mask;
 mod region_labeling;
 mod roi;
+mod roi_mask;
 mod scalar_raster;
 mod zhang_suen;
-mod roi_mask;
 
+use crate::Result;
 use crate::common::{PointNI, VectorNI};
+use crate::image::{GenericImage, ImageBuffer, Luma};
 use crate::na::DMatrix;
 pub use inpaint::inpaint;
 pub use kernel::*;
@@ -28,6 +30,59 @@ pub use zhang_suen::*;
 
 pub type Point2I = PointNI<2>;
 pub type Vector2I = VectorNI<2>;
+
+pub trait Point2IIndexAccess<T> {
+    /// Get the value at the given point in the raster.
+    ///
+    /// # Arguments
+    ///
+    /// * `point`: The point to access.
+    ///
+    /// returns: T
+    fn get_at(&self, point: Point2I) -> Option<T>;
+
+    fn set_at(&mut self, point: Point2I, value: T) -> Result<()> ;
+}
+
+impl Point2IIndexAccess<u16> for ImageBuffer<Luma<u16>, Vec<u16>> {
+    fn get_at(&self, point: Point2I) -> Option<u16> {
+        if point.x < 0
+            || point.y < 0
+            || point.x >= self.width() as i32
+            || point.y >= self.height() as i32
+        {
+            None
+        } else {
+            let x = point.x as u32;
+            let y = point.y as u32;
+            Some(self.get_pixel(x, y)[0])
+        }
+    }
+
+    fn set_at(&mut self, point: Point2I, value: u16) -> Result<()> {
+        if point.x < 0
+            || point.y < 0
+            || point.x >= self.width() as i32
+            || point.y >= self.height() as i32
+        {
+            return Err("Point out of bounds".into());
+        }
+        let x = point.x as u32;
+        let y = point.y as u32;
+        self.put_pixel(x, y, Luma([value]));
+        Ok(())
+    }
+}
+
+pub trait ToMatrixIndices {
+    fn mat_idx(&self) -> (usize, usize);
+}
+
+impl ToMatrixIndices for Point2I {
+    fn mat_idx(&self) -> (usize, usize) {
+        (self.y as usize, self.x as usize)
+    }
+}
 
 /// Find the minimum and maximum _finite_ values in a DMatrix.
 ///

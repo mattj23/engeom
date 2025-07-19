@@ -9,7 +9,8 @@ use crate::image::{GrayImage, ImageBuffer, ImageFormat, ImageReader, Luma, Rgba,
 use crate::na::DMatrix;
 use crate::raster2::area_average::AreaAverage;
 use crate::raster2::raster_mask::RasterMask;
-use crate::raster2::{FastApproxKernel, RasterKernel, inpaint};
+use crate::raster2::{FastApproxKernel, RasterKernel, inpaint, Point2I, Point2IIndexAccess};
+use super::ToMatrixIndices;
 use colorgrad::Gradient;
 use imageproc::distance_transform::Norm::L1;
 use imageproc::morphology::{dilate_mut, erode_mut};
@@ -17,6 +18,7 @@ use rayon::prelude::*;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Cursor, Read, Write};
 use std::path::Path;
+use itertools::Itertools;
 
 pub type ScalarImage<T> = ImageBuffer<Luma<T>, Vec<T>>;
 
@@ -193,16 +195,26 @@ impl ScalarRaster {
         Self::from_reader(&mut reader)
     }
 
-    pub fn f_at(&self, x: i32, y: i32) -> f64 {
-        self.u_at(x, y).map(|u| self.u_to_f(u)).unwrap_or(f64::NAN)
+    // pub fn f_at(&self, x: i32, y: i32) -> f64 {
+    //     self.u_at(x, y).map(|u| self.u_to_f(u)).unwrap_or(f64::NAN)
+    // }
+    pub fn f_at(&self, p: Point2I) -> f64 {
+        self.u_at(p).map(|u| self.u_to_f(u)).unwrap_or(f64::NAN)
     }
 
     // TODO: TESTS FOR ALL OF THIS
-    pub fn u_at(&self, x: i32, y: i32) -> Option<u16> {
-        if !self.mask.get(x as u32, y as u32) {
+    // pub fn u_at(&self, x: i32, y: i32) -> Option<u16> {
+    //     if !self.mask.get(x as u32, y as u32) {
+    //         None
+    //     } else {
+    //         Some(self.values.get_pixel(x as u32, y as u32)[0])
+    //     }
+    // }
+    pub fn u_at(&self, p: Point2I) -> Option<u16> {
+        if !self.mask.get_point(p) {
             None
         } else {
-            Some(self.values.get_pixel(x as u32, y as u32)[0])
+            self.values.get_at(p)
         }
     }
 
@@ -224,24 +236,26 @@ impl ScalarRaster {
         f * (self.max_z - self.min_z) + self.min_z
     }
 
-    pub fn set_f_at(&mut self, x: i32, y: i32, val: f64) {
-        if val.is_nan() {
-            self.mask.set(x as u32, y as u32, false);
+    pub fn set_f_at(&mut self, p: Point2I, val: f64) -> Result<()> {
+        let converted = if val.is_nan() {
+            None
         } else {
-            self.mask.set(x as u32, y as u32, true);
-            let u = self.f_to_u(val);
-            self.values.put_pixel(x as u32, y as u32, Luma([u]));
-        }
+            Some(self.f_to_u(val))
+        };
+        self.set_u_at(p, converted)
     }
 
-    pub fn set_u_at(&mut self, x: i32, y: i32, val: Option<u16>) {
-        if let Some(v) = val {
-            self.mask.set(x as u32, y as u32, true);
-            self.values.put_pixel(x as u32, y as u32, Luma([v]));
+    pub fn set_u_at(&mut self, p: Point2I, val: Option<u16>) -> Result<()> {
+        let (v, valid) = if let Some(v) = val {
+            (v, true)
         } else {
-            self.mask.set(x as u32, y as u32, false);
-            self.values.put_pixel(x as u32, y as u32, Luma([0]));
-        }
+            (0, false)
+        };
+
+        self.values.set_at(p, v)?;
+        self.mask.set_point_unchecked(p, valid); // Unchecked because we've already thrown
+
+        Ok(())
     }
 
     pub fn empty_like(other: &Self) -> Self {
@@ -294,17 +308,13 @@ impl ScalarRaster {
     ) -> Result<()> {
         let (min_z, max_z) = min_max.unwrap_or((self.min_z, self.max_z));
         let mut img = RgbaImage::new(self.width(), self.height());
+        // img.fill(0);
 
-        for (x, y, p) in img.enumerate_pixels_mut() {
-            if !self.mask.get(x, y) {
-                *p = Rgba([0, 0, 0, 0]); // Transparent pixel
-            } else {
-                let value = self.u_to_f(self.values.get_pixel(x, y)[0]);
-                let f = (value - min_z) / (max_z - min_z);
-
-                let color = gradient.at(f as f32).to_rgba8();
-                *p = Rgba(color);
-            }
+        for p in self.mask.iter_true() {
+            let value = self.f_at(p);
+            let f = (value - min_z) / (max_z - min_z);
+            let color = gradient.at(f as f32).to_rgba8();
+            img.put_pixel(p.x as u32, p.y as u32, Rgba(color));
         }
 
         img.save(path).map_err(|e| e.into())
@@ -353,7 +363,8 @@ impl ScalarRaster {
 
                 // Set the pixel value and mask
                 value.put_pixel(j as u32, i as u32, Luma([r]));
-                mask.set(j as u32, i as u32, true);
+                // mask.set(j as u32, i as u32, true);
+                mask.set_point_unchecked(Point2I::new(j as i32, i as i32), true);
             }
         }
 
@@ -372,11 +383,9 @@ impl ScalarRaster {
         let mut sum = 0.0;
         let mut count = 0.0;
 
-        for (x, y, pixel) in self.values.enumerate_pixels() {
-            if self.mask.get(x, y) {
-                sum += self.u_to_f(pixel.0[0]);
-                count += 1.0;
-            }
+        for p in self.mask.iter_true() {
+            sum += self.f_at(p);
+            count += 1.0;
         }
 
         if count == 0.0 {
@@ -386,11 +395,9 @@ impl ScalarRaster {
         let mean = sum / count;
 
         let mut variance_sum = 0.0;
-        for (x, y, pixel) in self.values.enumerate_pixels() {
-            if self.mask.get(x, y) {
-                let value = self.u_to_f(pixel.0[0]);
-                variance_sum += (value - mean).powi(2);
-            }
+        for p in self.mask.iter_true()
+        {
+            variance_sum += (self.f_at(p) - mean).powi(2);
         }
 
         let stdev = (variance_sum / count).sqrt();
@@ -404,8 +411,9 @@ impl ScalarRaster {
         let mut matrix =
             DMatrix::from_element(self.height() as usize, self.width() as usize, f64::NAN);
 
-        for (x, y) in self.mask.iter_true() {
-            matrix[(y as usize, x as usize)] = self.u_to_f(self.values.get_pixel(x, y).0[0]);
+        // We're going to do this unchecked because we know the mask shape matches the values
+        for p in self.mask.iter_true() {
+            matrix[p.mat_idx()] = self.u_to_f(self.values.get_pixel(p.x as u32, p.y as u32).0[0]);
         }
         matrix
     }
@@ -426,9 +434,9 @@ impl ScalarRaster {
         let mut matrix = DMatrix::zeros(self.height() as usize, self.width() as usize);
         let mut mask = DMatrix::zeros(matrix.nrows(), matrix.ncols());
 
-        for (x, y) in self.mask.iter_true() {
-            matrix[(y as usize, x as usize)] = self.u_to_f(self.values.get_pixel(x, y).0[0]);
-            mask[(y as usize, x as usize)] = 1.0;
+        for p in self.mask.iter_true() {
+            matrix[p.mat_idx()] = self.u_to_f(self.values.get_pixel(p.x as u32, p.y as u32).0[0]);
+            mask[p.mat_idx()] = 1.0;
         }
 
         (matrix, mask)
@@ -459,37 +467,42 @@ impl ScalarRaster {
             .expect("Mask and raster must have same dimensions");
     }
 
-    pub fn erode(&mut self, pixels: u8) {
-        erode_mut(&mut self.mask.buffer, L1, pixels);
-        for (x, y, v) in self.values.enumerate_pixels_mut() {
-            if self.mask.get(x, y) {
-                *v = Luma([0]);
-            }
-        }
-    }
+    // pub fn erode(&mut self, pixels: u8) {
+    //     erode_mut(&mut self.mask.buffer, L1, pixels);
+    //     for (x, y, v) in self.values.enumerate_pixels_mut() {
+    //         if self.mask.get_point(x, y) {
+    //             *v = Luma([0]);
+    //         }
+    //     }
+    // }
 
-    pub fn delete_by_mask(&mut self, mask: &RasterMask) {
-        for (x, y, v) in self.values.enumerate_pixels_mut() {
-            if mask.get(x, y) {
-                *v = Luma([0]);
-                self.mask.set(x, y, false);
-            }
+    pub fn delete_by_mask(&mut self, mask: &RasterMask) -> Result<()> {
+        // for (x, y, v) in self.values.enumerate_pixels_mut() {
+        //     if mask.get(x, y) {
+        //         *v = Luma([0]);
+        //         self.mask.set_point_unchecked(x, y, false);
+        //     }
+        // }
+        for p in mask.iter_true() {
+            self.values.set_at(p, u16::MIN)?;
+            self.mask.set_point_unchecked(p, false);
         }
+        Ok(())
     }
 
     /// Clear a row of pixels by both setting the values to zero and the mask to zero
-    fn clear_row(&mut self, y: u32) {
+    fn clear_row(&mut self, y: usize) {
         for x in 0..self.values.width() {
-            self.values.put_pixel(x, y, Luma([0]));
-            self.mask.set(x, y, false);
+            self.values.put_pixel(x, y as u32, Luma([0]));
+            self.mask.set_point_unchecked(Point2I::new(x as i32, y as i32), false);
         }
     }
 
     /// Clear a column of pixels by both setting the valeus to zero and the mask to zero
-    fn clear_col(&mut self, x: u32) {
+    fn clear_col(&mut self, x: usize) {
         for y in 0..self.values.height() {
-            self.values.put_pixel(x, y, Luma([0]));
-            self.mask.set(x, y, false);
+            self.values.put_pixel(x as u32, y, Luma([0]));
+            self.mask.set_point_unchecked(Point2I::new(x as i32, y as i32), false);
         }
     }
 
@@ -497,9 +510,9 @@ impl ScalarRaster {
     /// in both the depth and mask images.
     pub fn clear_boundary(&mut self) {
         self.clear_row(0);
-        self.clear_row(self.values.height() - 1);
+        self.clear_row(self.values.height() as usize - 1);
         self.clear_col(0);
-        self.clear_col(self.values.width() - 1);
+        self.clear_col(self.values.width() as usize - 1);
     }
 
     /// Get a mask of just the border pixels by using the L1 erode operation on the current mask
@@ -510,67 +523,67 @@ impl ScalarRaster {
         diff_img(&self.mask.buffer, &border_mask.buffer)
     }
 
-    pub fn remove_border_outliers(&mut self) -> usize {
-        let radius = (1.0 / self.px_size).ceil() as i32;
-        let border_mask = self.get_border_mask(5);
-        let outliers = border_mask
-            .enumerate_pixels()
-            .filter(|(_, _, v)| v[0] != 0)
-            .map(|(x, y, _)| (x, y, self.is_px_outlier(x, y, radius)))
-            .filter(|(_, _, outlier)| *outlier)
-            .collect::<Vec<_>>();
-
-        let mut count = 0;
-        for (x, y, yes) in outliers.iter() {
-            if *yes {
-                self.mask.set(*x, *y, false);
-                self.values.put_pixel(*x, *y, Luma([0]));
-                count += 1;
-            }
-        }
-
-        count
-    }
-
-    fn is_px_outlier(&self, x: u32, y: u32, radius: i32) -> bool {
-        if self.mask.get(x, y) {
-            false
-        } else {
-            let mut values = Vec::new();
-            for i in -radius..=radius {
-                for j in -radius..=radius {
-                    let x_loc = x as i32 + i;
-                    let y_loc = y as i32 + j;
-
-                    if x_loc < 0
-                        || y_loc < 0
-                        || x_loc >= self.values.width() as i32
-                        || y_loc >= self.values.height() as i32
-                    {
-                        continue;
-                    }
-
-                    if self.mask.get(x_loc as u32, y_loc as u32) {
-                        continue;
-                    }
-
-                    values.push(self.values.get_pixel(x_loc as u32, y_loc as u32)[0] as f32);
-                }
-            }
-
-            // Find the mean
-            let mean = values.iter().sum::<f32>() / values.len() as f32;
-
-            // Find the standard deviation
-            let variance =
-                values.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / values.len() as f32;
-            let std_dev = variance.sqrt();
-
-            // Find if we're more than 2 standard deviations away from the mean
-            let this_px = self.values.get_pixel(x, y)[0] as f32;
-            (this_px - mean).abs() > 3.0 * std_dev
-        }
-    }
+    // pub fn remove_border_outliers(&mut self) -> usize {
+    //     let radius = (1.0 / self.px_size).ceil() as i32;
+    //     let border_mask = self.get_border_mask(5);
+    //     let outliers = border_mask
+    //         .enumerate_pixels()
+    //         .filter(|(_, _, v)| v[0] != 0)
+    //         .map(|(x, y, _)| (x, y, self.is_px_outlier(x, y, radius)))
+    //         .filter(|(_, _, outlier)| *outlier)
+    //         .collect::<Vec<_>>();
+    //
+    //     let mut count = 0;
+    //     for (x, y, yes) in outliers.iter() {
+    //         if *yes {
+    //             self.mask.set(*x, *y, false);
+    //             self.values.put_pixel(*x, *y, Luma([0]));
+    //             count += 1;
+    //         }
+    //     }
+    //
+    //     count
+    // }
+    //
+    // fn is_px_outlier(&self, x: u32, y: u32, radius: i32) -> bool {
+    //     if self.mask.get(x, y) {
+    //         false
+    //     } else {
+    //         let mut values = Vec::new();
+    //         for i in -radius..=radius {
+    //             for j in -radius..=radius {
+    //                 let x_loc = x as i32 + i;
+    //                 let y_loc = y as i32 + j;
+    //
+    //                 if x_loc < 0
+    //                     || y_loc < 0
+    //                     || x_loc >= self.values.width() as i32
+    //                     || y_loc >= self.values.height() as i32
+    //                 {
+    //                     continue;
+    //                 }
+    //
+    //                 if self.mask.get(x_loc as u32, y_loc as u32) {
+    //                     continue;
+    //                 }
+    //
+    //                 values.push(self.values.get_pixel(x_loc as u32, y_loc as u32)[0] as f32);
+    //             }
+    //         }
+    //
+    //         // Find the mean
+    //         let mean = values.iter().sum::<f32>() / values.len() as f32;
+    //
+    //         // Find the standard deviation
+    //         let variance =
+    //             values.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / values.len() as f32;
+    //         let std_dev = variance.sqrt();
+    //
+    //         // Find if we're more than 2 standard deviations away from the mean
+    //         let this_px = self.values.get_pixel(x, y)[0] as f32;
+    //         (this_px - mean).abs() > 3.0 * std_dev
+    //     }
+    // }
 
     pub fn create_scaled(&self, scale: f64) -> Self {
         let width = (self.values.width() as f64 * scale) as u32;
@@ -611,7 +624,7 @@ impl ScalarRaster {
     pub fn subtract(&self, reference: &Self) -> Result<Self> {
         let mut corrected = self.clone();
         for (x, y, v) in corrected.values.enumerate_pixels_mut() {
-            if !self.mask.get(x, y) {
+            if !self.mask.get_point(Point2I::new(x as i32, y as i32)) {
                 *v = Luma([0]);
             } else {
                 let ref_val = reference.u_to_f(reference.values.get_pixel(x, y)[0]);
@@ -708,12 +721,13 @@ impl ScalarRaster {
         // All the pixels in the resized image which have at a full mask value can be copied
         // directly and put into the corresponding pixels in the blurred image
         for (x, y, v) in blurred.enumerate_pixels_mut() {
-            if !self.mask.get(x, y) {
+            let p = Point2I::new(x as i32, y as i32);
+            if !self.mask.get_point(p) {
                 continue;
             }
             let sx = (x as f32 * scale_x).floor() as u32;
             let sy = (y as f32 * scale_y).floor() as u32;
-            if !resized.mask.get(sx, sy) {
+            if !resized.mask.get_point(Point2I::new(sx as i32, sy as i32)) {
                 continue;
             }
 
@@ -808,7 +822,7 @@ impl ScalarRaster {
         for (x, y, v) in full_result.values.enumerate_pixels_mut() {
             // If we're skipping masked pixels, then we can skip this pixel if the self mask
             // value is not full.
-            if skip_unmasked && !self.mask.get(x, y) {
+            if skip_unmasked && !self.mask.get_point(Point2I::new(x as i32, y as i32)) {
                 continue;
             }
 
@@ -836,7 +850,8 @@ impl ScalarRaster {
             )[0]]);
 
             // And set the mask
-            full_result.mask.set(x, y, true);
+            // full_result.mask.set(x, y, true);
+            full_result.mask.set_point_unchecked(Point2I::new(x as i32, y as i32), true);
         }
 
         let (target_matrix, target_mask) = self.to_value_and_mask_matrices();
@@ -845,8 +860,8 @@ impl ScalarRaster {
             .par_iter()
             .map(|(x, y)| {
                 (
-                    x,
-                    y,
+                    *x,
+                    *y,
                     full_kernel.convolved_pixel_mat(
                         *x as usize,
                         *y as usize,
@@ -858,7 +873,9 @@ impl ScalarRaster {
             .collect::<Vec<_>>();
 
         for (x, y, v) in final_calcs {
-            full_result.set_f_at(*x as i32, *y as i32, v);
+            // full_result.set_f_at(*x as i32, *y as i32, v);
+            full_result.set_f_at(Point2I::new(x as i32, y as i32), v)?;
+            // full_result.mask.set_point_unchecked(Point2I::new(*x as i32, *y as i32), v);
         }
 
         Ok(full_result)
@@ -1016,8 +1033,9 @@ mod tests {
 
         for i in 0..m {
             for j in 0..n {
-                let expected_value = expected.f_at(j as i32, i as i32);
-                let actual_value = deserialized.f_at(j as i32, i as i32);
+                let p = Point2I::new(j as i32, i as i32);
+                let expected_value = expected.f_at(p);
+                let actual_value = deserialized.f_at(p);
                 if expected_value.is_nan() {
                     assert!(actual_value.is_nan());
                     continue;
