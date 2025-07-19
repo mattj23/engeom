@@ -1,51 +1,42 @@
 use crate::image::Pixel;
-use crate::raster2::Point2I;
+use crate::raster2::{Point2I, ScalarRaster};
 use imageproc::definitions::Image;
+use crate::na::DMatrix;
 
 pub trait SizeForIndex {
-    fn height(&self) -> usize;
-    fn width(&self) -> usize;
-
-    fn iter_indices(&self) -> IndexIter<'_, Self>
-    where
-        Self: Sized,
-    {
-        IndexIter {
-            size: self,
-            x: 0,
-            y: 0,
-        }
-    }
+    fn iter_indices(&self) -> IndexIter;
 }
 
-pub struct IndexIter<'a, T: SizeForIndex + Sized> {
-    pub size: &'a T,
+pub struct IndexIter {
     pub x: usize,
     pub y: usize,
+    pub width: usize,
+    pub height: usize,
 }
 
-impl <'a, T: SizeForIndex> IndexIter<'a, T> {
-    pub fn new(size: &'a T) -> Self {
+impl IndexIter {
+    pub fn new(width: usize, height: usize) -> Self {
         IndexIter {
-            size,
             x: 0,
             y: 0,
+            width,
+            height,
         }
     }
 }
 
-impl<'a, T: SizeForIndex> Iterator for IndexIter<'a, T> {
+impl Iterator for IndexIter {
     type Item = Point2I;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.y >= self.size.height() {
+        if self.y >= self.height {
             return None;
         }
 
         let point = Point2I::new(self.x as i32, self.y as i32);
         self.x += 1;
 
-        if self.x >= self.size.width() {
+        if self.x >= self.width {
             self.x = 0;
             self.y += 1;
         }
@@ -55,11 +46,19 @@ impl<'a, T: SizeForIndex> Iterator for IndexIter<'a, T> {
 }
 
 impl<T: Pixel> SizeForIndex for Image<T> {
-    fn height(&self) -> usize {
-        self.height() as usize
+    fn iter_indices(&self) -> IndexIter {
+        IndexIter::new(self.width() as usize, self.height() as usize)
     }
+}
 
-    fn width(&self) -> usize {
-        self.width() as usize
+impl<T> SizeForIndex for DMatrix<T> {
+    fn iter_indices(&self) -> IndexIter {
+        IndexIter::new(self.ncols(), self.nrows())
+    }
+}
+
+impl SizeForIndex for ScalarRaster {
+    fn iter_indices(&self) -> IndexIter {
+        IndexIter::new(self.width() as usize, self.height() as usize)
     }
 }

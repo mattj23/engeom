@@ -3,22 +3,22 @@
 //! fields in a way that allows for image processing algorithms and operations to be applied
 //! without losing a connection to a spatial coordinate system.
 
+use super::{IndexIter, ToMatrixIndices};
 use crate::Result;
 use crate::image::imageops::{FilterType, resize};
 use crate::image::{GrayImage, ImageBuffer, ImageFormat, ImageReader, Luma, Rgba, RgbaImage};
 use crate::na::DMatrix;
 use crate::raster2::area_average::AreaAverage;
 use crate::raster2::raster_mask::RasterMask;
-use crate::raster2::{FastApproxKernel, RasterKernel, inpaint, Point2I, Point2IIndexAccess};
-use super::ToMatrixIndices;
+use crate::raster2::{FastApproxKernel, Point2I, Point2IIndexAccess, RasterKernel, inpaint};
 use colorgrad::Gradient;
 use imageproc::distance_transform::Norm::L1;
 use imageproc::morphology::{dilate_mut, erode_mut};
+use itertools::Itertools;
 use rayon::prelude::*;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Cursor, Read, Write};
 use std::path::Path;
-use itertools::Itertools;
 
 pub type ScalarImage<T> = ImageBuffer<Luma<T>, Vec<T>>;
 
@@ -395,8 +395,7 @@ impl ScalarRaster {
         let mean = sum / count;
 
         let mut variance_sum = 0.0;
-        for p in self.mask.iter_true()
-        {
+        for p in self.mask.iter_true() {
             variance_sum += (self.f_at(p) - mean).powi(2);
         }
 
@@ -413,7 +412,13 @@ impl ScalarRaster {
 
         // We're going to do this unchecked because we know the mask shape matches the values
         for p in self.mask.iter_true() {
-            matrix[p.mat_idx()] = self.u_to_f(self.values.get_pixel(p.x as u32, p.y as u32).0[0]);
+            matrix
+                .set_at(
+                    p,
+                    self.u_to_f(self.values.get_pixel(p.x as u32, p.y as u32).0[0]),
+                )
+                .unwrap();
+            // matrix[p.mat_idx()] = self.u_to_f(self.values.get_pixel(p.x as u32, p.y as u32).0[0]);
         }
         matrix
     }
@@ -435,8 +440,15 @@ impl ScalarRaster {
         let mut mask = DMatrix::zeros(matrix.nrows(), matrix.ncols());
 
         for p in self.mask.iter_true() {
-            matrix[p.mat_idx()] = self.u_to_f(self.values.get_pixel(p.x as u32, p.y as u32).0[0]);
-            mask[p.mat_idx()] = 1.0;
+            matrix
+                .set_at(
+                    p,
+                    self.u_to_f(self.values.get_pixel(p.x as u32, p.y as u32).0[0]),
+                )
+                .unwrap();
+            mask.set_at(p, 1.0).unwrap();
+            // matrix[p.mat_idx()] = self.u_to_f(self.values.get_pixel(p.x as u32, p.y as u32).0[0]);
+            // mask[p.mat_idx()] = 1.0;
         }
 
         (matrix, mask)
@@ -494,7 +506,8 @@ impl ScalarRaster {
     fn clear_row(&mut self, y: usize) {
         for x in 0..self.values.width() {
             self.values.put_pixel(x, y as u32, Luma([0]));
-            self.mask.set_point_unchecked(Point2I::new(x as i32, y as i32), false);
+            self.mask
+                .set_point_unchecked(Point2I::new(x as i32, y as i32), false);
         }
     }
 
@@ -502,7 +515,8 @@ impl ScalarRaster {
     fn clear_col(&mut self, x: usize) {
         for y in 0..self.values.height() {
             self.values.put_pixel(x as u32, y, Luma([0]));
-            self.mask.set_point_unchecked(Point2I::new(x as i32, y as i32), false);
+            self.mask
+                .set_point_unchecked(Point2I::new(x as i32, y as i32), false);
         }
     }
 
@@ -851,7 +865,9 @@ impl ScalarRaster {
 
             // And set the mask
             // full_result.mask.set(x, y, true);
-            full_result.mask.set_point_unchecked(Point2I::new(x as i32, y as i32), true);
+            full_result
+                .mask
+                .set_point_unchecked(Point2I::new(x as i32, y as i32), true);
         }
 
         let (target_matrix, target_mask) = self.to_value_and_mask_matrices();

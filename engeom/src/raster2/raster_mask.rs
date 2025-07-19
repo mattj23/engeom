@@ -504,7 +504,11 @@ impl RasterMask {
     }
 
     pub fn convex_hull(&self) -> Vec<Point2I> {
-        todo!()
+        let result = imageproc::geometry::convex_hull(self);
+        result
+            .into_iter()
+            .map(|p| Point2I::new(p.x, p.y))
+            .collect()
     }
 }
 
@@ -578,10 +582,13 @@ impl<'a> Iterator for RasterMaskTrueIterator<'a> {
     }
 }
 
-impl Into<Vec<IpPoint>> for RasterMask {
-    fn into(self) -> Vec<IpPoint> {
-        // let mut points = Vec::new();
-        todo!()
+impl From<&RasterMask> for Vec<IpPoint> {
+    fn from(mask: &RasterMask) -> Vec<IpPoint> {
+        let mut points = Vec::new();
+        for p in mask.iter_true() {
+            points.push(IpPoint::new(p.x, p.y));
+        }
+        points
     }
 }
 
