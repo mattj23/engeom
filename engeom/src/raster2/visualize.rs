@@ -16,7 +16,7 @@ pub fn render_d_matrix(
     let (min_z, max_z) = if let Some((min, max)) = limits {
         (min, max)
     } else {
-        d_matrix_min_max(&matrix)
+        d_matrix_min_max(matrix)
     };
 
     let mut image = RgbaImage::new(matrix.ncols() as u32, matrix.nrows() as u32);

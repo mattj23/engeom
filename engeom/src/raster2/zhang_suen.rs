@@ -4,7 +4,6 @@
 
 use crate::raster2::Point2I;
 use crate::raster2::raster_mask::RasterMask;
-use itertools::Itertools;
 
 /// Perform Zhang-Suen thinning on a binary image mask. This algorithm is used to reduce binary
 /// regions in the image to a single point wide skeleton, similar to a medial axis transform.

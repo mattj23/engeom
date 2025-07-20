@@ -1,4 +1,4 @@
-use crate::raster2::{Point2I, RasterMask, Vector2I};
+use crate::raster2::{Point2I, Vector2I};
 
 /// This is a small lightweight struct (128 bits in size) that represents the correspondence between
 /// a point in a region of interest (ROI) and its parent point in the original image. The two
@@ -17,13 +17,13 @@ pub struct RoiPoint {
 }
 
 #[derive(Debug, Clone)]
-pub struct RoiOverlay {
+pub struct RoiOverlap {
     a: RasterRoi,
     b: RasterRoi,
     i: RasterRoi,
 }
 
-impl RoiOverlay {
+impl RoiOverlap {
     pub fn a(&self) -> &RasterRoi {
         &self.a
     }
@@ -114,10 +114,10 @@ impl RasterRoi {
 
     pub fn union(&self, other: &RasterRoi) -> Self {
         if self.is_empty() {
-            return other.clone();
+            return *other;
         }
         if other.is_empty() {
-            return self.clone();
+            return *self;
         }
         Self {
             min: Point2I::new(self.min.x.min(other.min.x), self.min.y.min(other.min.y)),
@@ -218,6 +218,7 @@ mod tests {
     use crate::raster2::roi_mask::RoiMask;
     use imageproc::definitions::Image;
     use std::collections::HashMap;
+    use crate::raster2::RasterMask;
 
     fn make_test_setup() -> (HashMap<Point2I, usize>, Image<Luma<usize>>, RasterRoi) {
         let mut map = HashMap::new();

@@ -1,5 +1,5 @@
-use crate::raster2::roi::{RoiIterator, RoiOverlay, RoiPoint};
-use crate::raster2::{RasterMask, RasterMaskTrueIterator, RasterRoi};
+use crate::raster2::roi::{RoiIterator, RoiOverlap, RoiPoint};
+use crate::raster2::{RasterMask, RasterRoi};
 
 /// A struct that combines an owned working `RasterMask` with two regions of interest on another
 /// raster image.  One is the full size of the mask, and the other represents an original overlap of
@@ -11,7 +11,7 @@ use crate::raster2::{RasterMask, RasterMaskTrueIterator, RasterRoi};
 /// you can no longer guarantee that all pixels of the mask overlap with the original image.
 pub struct RoiMask {
     pub mask: RasterMask,
-    overlay: RoiOverlay,
+    overlay: RoiOverlap,
 }
 
 impl RoiMask {
@@ -20,7 +20,7 @@ impl RoiMask {
     }
 
     pub fn new_resized(mask: RasterMask, original: RasterRoi, mask_roi: RasterRoi) -> Self {
-        let overlay = RoiOverlay::new(mask_roi, original);
+        let overlay = RoiOverlap::new(mask_roi, original);
         Self { mask, overlay }
     }
 

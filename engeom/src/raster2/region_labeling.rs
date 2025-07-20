@@ -2,9 +2,9 @@
 
 use crate::image::{GenericImage, Luma};
 use crate::raster2::index_iter::SizeForIndex;
-use crate::raster2::roi::{RasterRoi, RoiOverlay};
+use crate::raster2::roi::{RasterRoi, RoiOverlap};
 use crate::raster2::roi_mask::RoiMask;
-use crate::raster2::{Point2I, RasterMask, Vector2I};
+use crate::raster2::{Point2I, RasterMask};
 use faer::prelude::default;
 use imageproc::definitions::Image;
 pub use imageproc::region_labelling::Connectivity;
@@ -51,11 +51,13 @@ impl<'a> Region<'a> {
         let width = self.roi.extent().x as u32 + 2 * padding;
         let mut mask = RasterMask::empty(width, height);
         let mask_roi = self.roi.expanded(padding);
-        let overlay = RoiOverlay::new(mask_roi, self.roi);
+        let overlay = RoiOverlap::new(mask_roi, self.roi);
 
         for p in overlay.iter_intersection_a() {
             if self.label == self.labeled_regions.label_at(p.parent) {
-                mask.set_point(p.local, true);
+                // This should be safe because we are iterating over a known set of
+                // indices calculated from the bounds of this mask.
+                mask.set_point(p.local, true).unwrap();
             }
         }
 
@@ -129,7 +131,7 @@ impl LabeledRegions {
         Some(Region {
             labeled_regions: self,
             label,
-            roi: roi.clone(),
+            roi: *roi,
             count,
         })
     }

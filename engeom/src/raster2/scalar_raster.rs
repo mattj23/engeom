@@ -3,7 +3,7 @@
 //! fields in a way that allows for image processing algorithms and operations to be applied
 //! without losing a connection to a spatial coordinate system.
 
-use super::{IndexIter, SizeForIndex, ToMatrixIndices};
+use super::SizeForIndex;
 use crate::Result;
 use crate::image::imageops::{FilterType, resize};
 use crate::image::{GrayImage, ImageBuffer, ImageFormat, ImageReader, Luma, Rgba, RgbaImage};
@@ -14,7 +14,6 @@ use crate::raster2::{FastApproxKernel, Point2I, Point2IIndexAccess, RasterKernel
 use colorgrad::Gradient;
 use imageproc::distance_transform::Norm::L1;
 use imageproc::morphology::{dilate_mut, erode_mut};
-use itertools::Itertools;
 use rayon::prelude::*;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Cursor, Read, Write};
@@ -595,7 +594,7 @@ impl ScalarRaster {
     }
 
     pub fn copy_with_predicate(&self, predicate: impl Fn(f64) -> bool) -> Self {
-        let mut output = ScalarRaster::empty_like(&self);
+        let mut output = ScalarRaster::empty_like(self);
 
         for p in self.mask.iter_true() {
             let value = self.f_at(p);

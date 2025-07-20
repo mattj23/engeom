@@ -1,16 +1,15 @@
 use crate::Result;
-use crate::image::{GenericImage, GrayImage, ImageFormat, ImageReader, Luma};
+use crate::image::{GenericImage, GrayImage, ImageReader, Luma};
 use crate::raster2::index_iter::IndexIter;
 use crate::raster2::{LabeledRegions, Point2I, zhang_suen_thinning};
 use imageproc::distance_transform::Norm;
 use imageproc::drawing::{
-    draw_filled_circle_mut, draw_filled_rect_mut, draw_hollow_circle, draw_hollow_circle_mut,
+    draw_filled_circle_mut, draw_filled_rect_mut, draw_hollow_circle_mut,
     draw_hollow_rect_mut,
 };
 use imageproc::morphology::{dilate_mut, erode_mut};
 use imageproc::rect::Rect;
 use imageproc::region_labelling::Connectivity;
-use itertools::Itertools;
 use std::path::Path;
 
 type IpPoint = imageproc::point::Point<i32>;
@@ -60,7 +59,8 @@ impl RasterMask {
     /// returns: Result<(), Box<dyn Error, Global>>
     pub fn set_point(&mut self, p: Point2I, value: bool) -> Result<()> {
         if self.point_in_bounds(p) {
-            Ok(self.set_point_unchecked(p, value))
+            self.set_point_unchecked(p, value);
+            Ok(())
         } else {
             Err(format!(
                 "Point ({}, {}) is out of bounds for mask of size {}x{}",
