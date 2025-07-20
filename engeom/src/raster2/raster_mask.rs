@@ -212,7 +212,7 @@ impl RasterMask {
     }
 
     pub fn iter_all(&self) -> impl Iterator<Item = Point2I> {
-        RasterMaskIterator::new(self)
+        IndexIter::new(self.width() as usize, self.height() as usize)
     }
 
     // ==========================================================================================
@@ -515,39 +515,6 @@ impl RasterMask {
     pub fn convex_hull(&self) -> Vec<Point2I> {
         let result = imageproc::geometry::convex_hull(self);
         result.into_iter().map(|p| Point2I::new(p.x, p.y)).collect()
-    }
-}
-
-pub struct RasterMaskIterator<'a> {
-    mask: &'a RasterMask,
-    x: u32,
-    y: u32,
-}
-
-impl<'a> RasterMaskIterator<'a> {
-    pub fn new(mask: &'a RasterMask) -> Self {
-        RasterMaskIterator { mask, x: 0, y: 0 }
-    }
-}
-
-impl<'a> Iterator for RasterMaskIterator<'a> {
-    type Item = Point2I;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        while self.y < self.mask.buffer.height() {
-            if self.x >= self.mask.buffer.width() {
-                self.x = 0;
-                self.y += 1;
-            }
-            if self.y >= self.mask.buffer.height() {
-                return None;
-            }
-
-            let current = Point2I::new(self.x as i32, self.y as i32);
-            self.x += 1;
-            return Some(current);
-        }
-        None
     }
 }
 
