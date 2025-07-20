@@ -33,7 +33,7 @@ use crate::{Point2, Result};
 /// ```
 pub fn ball_rolling_background(raster: &ScalarRaster, radius: f64) -> Result<ScalarRaster> {
     let matrix = raster.to_matrix();
-    let ball = ball_matrix(2.0, raster.px_size);
+    let ball = ball_matrix(radius, raster.px_size);
 
     let mut rolled = DMatrix::zeros(matrix.nrows(), matrix.ncols());
     rolled.fill(f64::INFINITY);
