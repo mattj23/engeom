@@ -1,5 +1,5 @@
-use crate::raster2::{RasterMask, RasterMaskTrueIterator, RasterRoi};
 use crate::raster2::roi::{RoiIterator, RoiOverlay, RoiPoint};
+use crate::raster2::{RasterMask, RasterMaskTrueIterator, RasterRoi};
 
 /// A struct that combines an owned working `RasterMask` with two regions of interest on another
 /// raster image.  One is the full size of the mask, and the other represents an original overlap of
@@ -35,7 +35,7 @@ impl RoiMask {
     }
 
     pub fn iter_true(&self) -> impl Iterator<Item = RoiPoint> {
-        self.iter_shared_points().filter(|p| self.mask.get_point(p.local))
+        self.iter_shared_points()
+            .filter(|p| self.mask.get_point(p.local))
     }
 }
-

@@ -27,11 +27,11 @@ impl RoiOverlay {
     pub fn a(&self) -> &RasterRoi {
         &self.a
     }
-    
+
     pub fn b(&self) -> &RasterRoi {
         &self.b
     }
-    
+
     pub fn new(a: RasterRoi, b: RasterRoi) -> Self {
         let i = a.intersection(&b);
         Self { a, b, i }
@@ -215,9 +215,9 @@ impl<'a> Iterator for RoiIterator<'a> {
 mod tests {
     use super::*;
     use crate::image::{ImageBuffer, Luma};
+    use crate::raster2::roi_mask::RoiMask;
     use imageproc::definitions::Image;
     use std::collections::HashMap;
-    use crate::raster2::roi_mask::RoiMask;
 
     fn make_test_setup() -> (HashMap<Point2I, usize>, Image<Luma<usize>>, RasterRoi) {
         let mut map = HashMap::new();

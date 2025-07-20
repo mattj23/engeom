@@ -505,10 +505,7 @@ impl RasterMask {
 
     pub fn convex_hull(&self) -> Vec<Point2I> {
         let result = imageproc::geometry::convex_hull(self);
-        result
-            .into_iter()
-            .map(|p| Point2I::new(p.x, p.y))
-            .collect()
+        result.into_iter().map(|p| Point2I::new(p.x, p.y)).collect()
     }
 }
 

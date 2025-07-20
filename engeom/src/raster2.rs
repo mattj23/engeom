@@ -3,6 +3,7 @@
 //! tools, but it is not specifically an image processing library.
 
 mod area_average;
+mod ball_rolling;
 mod index_iter;
 mod inpaint;
 mod kernel;
@@ -13,14 +14,14 @@ mod region_labeling;
 mod roi;
 mod roi_mask;
 mod scalar_raster;
-mod zhang_suen;
-mod ball_rolling;
 mod visualize;
+mod zhang_suen;
 
 use crate::Result;
 use crate::common::{PointNI, VectorNI};
 use crate::image::{GenericImage, ImageBuffer, Luma};
 use crate::na::{DMatrix, Scalar};
+pub use ball_rolling::*;
 pub use index_iter::{IndexIter, SizeForIndex};
 pub use inpaint::inpaint;
 pub use kernel::*;
@@ -29,9 +30,8 @@ pub use raster_mask::{RasterMask, RasterMaskTrueIterator};
 pub use region_labeling::*;
 pub use roi::RasterRoi;
 pub use scalar_raster::*;
-pub use zhang_suen::*;
-pub use ball_rolling::*;
 pub use visualize::*;
+pub use zhang_suen::*;
 
 pub type Point2I = PointNI<2>;
 pub type Vector2I = VectorNI<2>;
@@ -142,6 +142,35 @@ pub fn d_matrix_min_max(matrix: &DMatrix<f64>) -> (f64, f64) {
     }
 
     (min, max)
+}
+
+pub fn d_matrix_mean_stdev(matrix: &DMatrix<f64>) -> (f64, f64) {
+    let mut sum = 0.0;
+    let mut count = 0.0;
+
+    for value in matrix.iter() {
+        if value.is_finite() {
+            sum += *value;
+            count += 1.0;
+        }
+    }
+
+    if count == 0.0 {
+        return (f64::NAN, f64::NAN);
+    }
+
+    let mean = sum / count;
+
+    let mut variance_sum = 0.0;
+    for value in matrix.iter() {
+        if value.is_finite() {
+            variance_sum += (*value - mean).powi(2);
+        }
+    }
+
+    let stdev = (variance_sum / count).sqrt();
+
+    (mean, stdev)
 }
 
 #[cfg(test)]

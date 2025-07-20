@@ -1,6 +1,6 @@
 use crate::image::{GrayImage, Luma};
-use crate::raster2::{Point2I, ScalarImage};
 use crate::raster2::raster_mask::RasterMask;
+use crate::raster2::{Point2I, ScalarImage};
 use parry3d_f64::na::DMatrix;
 
 const KNOWN: u8 = 0;
@@ -100,7 +100,8 @@ pub fn inpaint(
             let val = inpaint_pixel(*ny, *nx, &fill);
             fill.values.put_pixel(*nx as u32, *ny as u32, Luma([val]));
             // fill.image_mask.set(*nx as u32, *ny as u32, true);
-            fill.image_mask.set_point_unchecked(Point2I::new(*nx, *ny), true);
+            fill.image_mask
+                .set_point_unchecked(Point2I::new(*nx, *ny), true);
 
             fill.flags[(*ny as usize, *nx as usize)] = BAND;
 

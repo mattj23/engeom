@@ -259,11 +259,7 @@ impl ScalarRaster {
     }
 
     pub fn filled_like(other: &Self, value: u16) -> Self {
-        let values = ScalarImage::from_pixel(
-            other.width(),
-            other.height(),
-            Luma([value]),
-        );
+        let values = ScalarImage::from_pixel(other.width(), other.height(), Luma([value]));
         let mut mask = RasterMask::empty_like(&values);
         mask.not_mut();
 
@@ -596,6 +592,21 @@ impl ScalarRaster {
         let mut border_mask = self.mask.clone();
         erode_mut(&mut border_mask.buffer, L1, pixels);
         diff_img(&self.mask.buffer, &border_mask.buffer)
+    }
+
+    pub fn copy_with_predicate(&self, predicate: impl Fn(f64) -> bool) -> Self {
+        let mut output = ScalarRaster::empty_like(&self);
+
+        for p in self.mask.iter_true() {
+            let value = self.f_at(p);
+            if predicate(value) {
+                output.set_f_at(p, value).unwrap();
+            } else {
+                output.set_f_at(p, f64::NAN).unwrap();
+            }
+        }
+
+        output
     }
 
     // pub fn remove_border_outliers(&mut self) -> usize {

@@ -1,11 +1,11 @@
 //! Quick plotting of raster and matrix data
 
+use crate::Result;
 use crate::image::{Rgba, RgbaImage};
 use crate::na::DMatrix;
-use crate::raster2::{SizeForIndex, d_matrix_min_max, Point2IIndexAccess};
+use crate::raster2::{Point2IIndexAccess, SizeForIndex, d_matrix_min_max};
 use colorgrad::Gradient;
 use std::path::Path;
-use crate::Result;
 
 pub fn render_d_matrix(
     path: &Path,

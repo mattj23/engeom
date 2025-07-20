@@ -1,14 +1,14 @@
 //! Uses the `imageproc` crate to perform region labeling on a raster mask.
 
 use crate::image::{GenericImage, Luma};
-use crate::raster2::{Point2I, RasterMask, Vector2I};
 use crate::raster2::index_iter::SizeForIndex;
 use crate::raster2::roi::{RasterRoi, RoiOverlay};
+use crate::raster2::roi_mask::RoiMask;
+use crate::raster2::{Point2I, RasterMask, Vector2I};
 use faer::prelude::default;
 use imageproc::definitions::Image;
 pub use imageproc::region_labelling::Connectivity;
 use imageproc::region_labelling::connected_components;
-use crate::raster2::roi_mask::RoiMask;
 
 /// This is a very lightweight temporary structure which contains information about a single
 /// labeled region in a `LabeledRegions` object. It contains the label, the region of interest (ROI)
@@ -95,7 +95,11 @@ impl LabeledRegions {
     }
 
     pub fn label_at(&self, p: Point2I) -> u32 {
-        if p.x < 0 || p.y < 0 || p.x >= self.buffer.width() as i32 || p.y >= self.buffer.height() as i32 {
+        if p.x < 0
+            || p.y < 0
+            || p.x >= self.buffer.width() as i32
+            || p.y >= self.buffer.height() as i32
+        {
             return 0; // Out of bounds, return background label
         }
         self.buffer.get_pixel(p.x as u32, p.y as u32)[0]

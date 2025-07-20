@@ -1,7 +1,7 @@
 use crate::image::Pixel;
+use crate::na::DMatrix;
 use crate::raster2::{Point2I, ScalarRaster};
 use imageproc::definitions::Image;
-use crate::na::DMatrix;
 
 pub trait SizeForIndex {
     fn iter_indices(&self) -> IndexIter;
