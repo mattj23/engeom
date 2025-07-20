@@ -609,6 +609,11 @@ impl ScalarRaster {
         output
     }
 
+    pub fn with_new_z_limits(&self, min_z: f64, max_z: f64) -> Self {
+        let matrix = self.to_matrix();
+        ScalarRaster::from_matrix(&matrix, self.px_size, min_z, max_z)
+    }
+
     // pub fn remove_border_outliers(&mut self) -> usize {
     //     let radius = (1.0 / self.px_size).ceil() as i32;
     //     let border_mask = self.get_border_mask(5);

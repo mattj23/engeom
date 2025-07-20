@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::image::{GenericImage, GrayImage, Luma};
+use crate::image::{GenericImage, GrayImage, ImageFormat, ImageReader, Luma};
 use crate::raster2::index_iter::IndexIter;
 use crate::raster2::{LabeledRegions, Point2I, zhang_suen_thinning};
 use imageproc::distance_transform::Norm;
@@ -11,6 +11,7 @@ use imageproc::morphology::{dilate_mut, erode_mut};
 use imageproc::rect::Rect;
 use imageproc::region_labelling::Connectivity;
 use itertools::Itertools;
+use std::path::Path;
 
 type IpPoint = imageproc::point::Point<i32>;
 
@@ -35,9 +36,17 @@ impl RasterMask {
         RasterMask { buffer }
     }
 
-    // pub fn set(&mut self, x: u32, y: u32, value: bool) {
-    //     self.buffer.put_pixel(x, y, Luma([value as u8 * 255]));
-    // }
+    pub fn save(&self, path: &Path) -> Result<()> {
+        self.buffer
+            .save(path)
+            .map_err(|e| format!("Failed to save mask to {}: {}", path.display(), e).into())
+    }
+
+    pub fn load(path: &Path) -> Result<RasterMask> {
+        let loaded = ImageReader::open(path)?.decode()?;
+        let buffer = loaded.into_luma8();
+        Ok(RasterMask { buffer })
+    }
 
     /// Sets a point/pixel in the mask to a specified value. If the point is out of bounds, it will
     /// return an error.
