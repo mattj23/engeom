@@ -14,6 +14,8 @@ mod roi;
 mod roi_mask;
 mod scalar_raster;
 mod zhang_suen;
+mod ball_rolling;
+mod visualize;
 
 use crate::Result;
 use crate::common::{PointNI, VectorNI};
@@ -28,6 +30,8 @@ pub use region_labeling::*;
 pub use roi::RasterRoi;
 pub use scalar_raster::*;
 pub use zhang_suen::*;
+pub use ball_rolling::*;
+pub use visualize::*;
 
 pub type Point2I = PointNI<2>;
 pub type Vector2I = VectorNI<2>;

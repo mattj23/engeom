@@ -47,3 +47,7 @@ harness = false
 [[bench]]
 name = "convolution"
 harness = false
+
+[[bench]]
+name = "raster_ball_rolling"
+harness = false
