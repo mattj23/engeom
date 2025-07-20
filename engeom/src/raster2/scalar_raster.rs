@@ -3,7 +3,7 @@
 //! fields in a way that allows for image processing algorithms and operations to be applied
 //! without losing a connection to a spatial coordinate system.
 
-use super::{IndexIter, ToMatrixIndices};
+use super::{IndexIter, SizeForIndex, ToMatrixIndices};
 use crate::Result;
 use crate::image::imageops::{FilterType, resize};
 use crate::image::{GrayImage, ImageBuffer, ImageFormat, ImageReader, Luma, Rgba, RgbaImage};
@@ -413,6 +413,29 @@ impl ScalarRaster {
             min_z,
             max_z,
         }
+    }
+
+    /// This function will negate the values in the raster in place, multiplying each valid pixel
+    /// by -1. Invalid pixels (those that are set to `false` in the mask) will be left untouched.
+    pub fn negative_mut(&mut self) {
+        // We can't use `iter_true` here because it will take a reference to the mask, and then
+        // we won't be able to mutate the values.
+        for p in self.iter_indices() {
+            if !self.mask.get_point(p) {
+                continue;
+            }
+            let v = self.f_at(p);
+            self.set_f_at(p, -v).unwrap();
+        }
+    }
+
+    /// This function will return a new `ScalarRaster` that is the negation of the original raster,
+    /// i.e., it will multiply each valid pixel by -1. Invalid pixels (those that are set to
+    /// `false` in the mask) will be left untouched in the new raster.
+    pub fn negative(&self) -> Self {
+        let mut negated = self.clone();
+        negated.negative_mut();
+        negated
     }
 
     /// Calculates the mean and standard deviation of the valid pixels in the depth map, using
