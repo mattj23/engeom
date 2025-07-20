@@ -258,6 +258,24 @@ impl ScalarRaster {
         Ok(())
     }
 
+    pub fn filled_like(other: &Self, value: u16) -> Self {
+        let values = ScalarImage::from_pixel(
+            other.width(),
+            other.height(),
+            Luma([value]),
+        );
+        let mut mask = RasterMask::empty_like(&values);
+        mask.not_mut();
+
+        ScalarRaster {
+            values,
+            mask,
+            px_size: other.px_size,
+            min_z: other.min_z,
+            max_z: other.max_z,
+        }
+    }
+
     pub fn empty_like(other: &Self) -> Self {
         Self::empty(
             other.width(),
@@ -318,6 +336,26 @@ impl ScalarRaster {
         }
 
         img.save(path).map_err(|e| e.into())
+    }
+
+    pub fn try_new(
+        values: ScalarImage<u16>,
+        mask: RasterMask,
+        px_size: f64,
+        min_z: f64,
+        max_z: f64,
+    ) -> Result<ScalarRaster> {
+        if values.width() != mask.width() || values.height() != mask.height() {
+            return Err("Values and mask images must have the same dimensions".into());
+        }
+
+        Ok(ScalarRaster {
+            values,
+            mask,
+            px_size,
+            min_z,
+            max_z,
+        })
     }
 
     /// Create a new `ScalarRaster` from a matrix of floating point values. The physical world
