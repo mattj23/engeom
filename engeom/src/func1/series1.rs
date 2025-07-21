@@ -651,6 +651,40 @@ impl Series1 {
 
         results
     }
+
+    /// Concatenates two series together, returning a new series that contains all the x and y
+    /// values from both series. This will only work if the minimum x value of the second series is
+    /// greater than the maximum x value of the first series, otherwise it will return an Err.
+    ///
+    /// # Arguments
+    ///
+    /// * `other`: A reference to the other series to concatenate, which will be appended to the
+    ///  end of the first series. The minimum x value of the second series must be greater than
+    /// the maximum x value of the first series.
+    ///
+    /// returns: Result<Series1, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::func1::Series1;
+    /// let series1 = Series1::try_new(vec![0.0, 1.0, 2.0], vec![0.0, 1.0, 2.0]).unwrap();
+    /// let series2 = Series1::try_new(vec![3.0, 4.0, 5.0], vec![3.0, 4.0, 5.0]).unwrap();
+    /// let series3 = series1.concat(&series2).unwrap();
+    /// assert_eq!(series3.x.into_vec(), vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0]);
+    /// assert_eq!(series3.y, vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0]);
+    /// ```
+    pub fn concat(&self, other: &Self) -> Result<Self> {
+        if other.x_min() <= self.x_max() {
+            Err("other.x_min() must be greater than self.x_max()".into())
+        } else {
+            let mut xs = self.x.to_vec();
+            xs.extend(other.x.iter());
+            let mut ys = self.y.clone();
+            ys.extend(other.y.iter());
+            Self::try_new(xs, ys)
+        }
+    }
 }
 
 impl Func1 for Series1 {

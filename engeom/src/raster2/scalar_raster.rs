@@ -4,13 +4,13 @@
 //! without losing a connection to a spatial coordinate system.
 
 use super::SizeForIndex;
-use crate::Result;
 use crate::image::imageops::{FilterType, resize};
 use crate::image::{GrayImage, ImageBuffer, ImageFormat, ImageReader, Luma, Rgba, RgbaImage};
 use crate::na::DMatrix;
 use crate::raster2::area_average::AreaAverage;
 use crate::raster2::raster_mask::RasterMask;
 use crate::raster2::{FastApproxKernel, Point2I, Point2IIndexAccess, RasterKernel, inpaint};
+use crate::{Point2, Result, Series1, Vector2};
 use colorgrad::Gradient;
 use imageproc::distance_transform::Norm::L1;
 use imageproc::morphology::{dilate_mut, erode_mut};
@@ -18,6 +18,7 @@ use rayon::prelude::*;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Cursor, Read, Write};
 use std::path::Path;
+use crate::common::DiscreteDomain;
 
 pub type ScalarImage<T> = ImageBuffer<Luma<T>, Vec<T>>;
 
@@ -109,6 +110,164 @@ pub struct ScalarRaster {
 }
 
 impl ScalarRaster {
+    // ============================================================================================
+    // Indexing and element access operations
+    // ============================================================================================
+    pub fn width(&self) -> u32 {
+        self.values.width()
+    }
+
+    pub fn height(&self) -> u32 {
+        self.values.height()
+    }
+
+    /// Get the floating point value at a given pixel coordinate. If the pixel is masked, it will
+    /// return `NaN`. If the pixel is valid, it will return the value mapped from the `u16` value
+    /// to a floating point value using the `min_z` and `max_z` limits of the raster.
+    pub fn f_at(&self, p: Point2I) -> f64 {
+        self.u_at(p).map(|u| self.u_to_f(u)).unwrap_or(f64::NAN)
+    }
+
+    /// Get the `u16` value at a given pixel coordinate. If the pixel is masked, it will return
+    /// `None`. If the pixel is valid, it will return the `u16` value stored in the raster.
+    pub fn u_at(&self, p: Point2I) -> Option<u16> {
+        if !self.mask.get_point(p) {
+            None
+        } else {
+            self.values.get_at(p)
+        }
+    }
+
+    pub fn set_f_at(&mut self, p: Point2I, val: f64) -> Result<()> {
+        let converted = if val.is_nan() {
+            None
+        } else {
+            Some(self.f_to_u(val))
+        };
+        self.set_u_at(p, converted)
+    }
+
+    pub fn set_u_at(&mut self, p: Point2I, val: Option<u16>) -> Result<()> {
+        let (v, valid) = if let Some(v) = val {
+            (v, true)
+        } else {
+            (0, false)
+        };
+
+        self.values.set_at(p, v)?;
+        self.mask.set_point_unchecked(p, valid); // Unchecked because we've already thrown
+
+        Ok(())
+    }
+
+    /// Internal function to convert a floating point value to a `u16` value based on the
+    /// `min_z` and `max_z` limits of the raster. The value is clamped to the range
+    /// `[min_z, max_z]` before conversion. The resulting `u16` value will be in the range
+    /// `[u16::MIN, u16::MAX]`, where `min_z` maps to `u16::MIN` and `max_z` maps to `u16::MAX`.
+    fn f_to_u(&self, val: f64) -> u16 {
+        let f = (val.clamp(self.min_z, self.max_z) - self.min_z) / (self.max_z - self.min_z);
+        (f * (u16::MAX - u16::MIN) as f64) as u16 + u16::MIN
+    }
+
+    /// Internal function to convert a `u16` value to a floating point value based on the
+    /// `min_z` and `max_z` limits of the raster. The resulting floating point value will be in the
+    /// range `[min_z, max_z]`, where `u16::MIN` maps to `min_z` and `u16::MAX` maps to `max_z`.
+    /// This function is used to convert the `u16` values stored in the raster back to their
+    /// floating point representation.
+    fn u_to_f(&self, val: u16) -> f64 {
+        let f = (val - u16::MIN) as f64 / (u16::MAX - u16::MIN) as f64;
+        f * (self.max_z - self.min_z) + self.min_z
+    }
+
+    // ============================================================================================
+    // Interpolation operations
+    // ============================================================================================
+    /// This function interpolates the floating point value at a point `p` using bilinear
+    /// interpolation. It takes into account the four neighboring pixels and the point's location
+    /// between them.  Points that are outside the bounds of the raster will return `NaN`.
+    ///
+    /// # Arguments
+    ///
+    /// * `p`: a floating point position in the raster, where `x` is the horizontal coordinate
+    ///   and `y` is the vertical coordinate. The coordinates are in pixel space, so a point
+    ///   at (0.5, 0.5) would be halfway between the pixel at (0, 0) and (1, 1).
+    ///
+    /// returns: f64
+    pub fn f_at_interp(&self, p: &Point2) -> f64 {
+        if p.x < 0.0
+            || p.y < 0.0
+            || p.x > self.width() as f64 - 1.0
+            || p.y > self.height() as f64 - 1.0
+        {
+            return f64::NAN;
+        }
+
+        let x0 = p.x.floor() as i32;
+        let x1 = x0 + 1;
+        let y0 = p.y.floor() as i32;
+        let y1 = y0 + 1;
+
+        let a1 = p.x - p.x.floor();
+        let a0 = 1.0 - a1;
+        let b1 = p.y - p.y.floor();
+        let b0 = 1.0 - b1;
+
+        // let q11 = self[(y0, x0)] * a0 * b0;
+        let q11 = self.f_at(Point2I::new(y0, x0)) * a0 * b0;
+
+        // In the case that x1 or y1 is past the last viable row, we know that this is OK because
+        // of the guard clause at the beginning of the function, so a1 or b1 will be 0.0. In this
+        // case we can effectively skip the lookup to avoid a panic.
+        let q22 = if x1 < self.width() as i32 && y1 < self.height() as i32 {
+            self.f_at(Point2I::new(y1, x1)) * a1 * b1
+        } else {
+            0.0
+        };
+
+        let q12 = if y1 < self.height() as i32 {
+            self.f_at(Point2I::new(y1, x0)) * a0 * b1
+            // self[(y1, x0)] * a0 * b1
+        } else {
+            0.0
+        };
+
+        let q21 = if x1 < self.width() as i32 {
+            self.f_at(Point2I::new(y0, x1)) * a1 * b0
+            // self[(y0, x1)] * a1 * b0
+        } else {
+            0.0
+        };
+
+        q11 + q12 + q21 + q22
+    }
+
+    pub fn symmetric_trace(
+        &self,
+        point: &Point2,
+        dir: &Vector2,
+        radius: f64,
+    ) -> (Series1, Vec<Point2>) {
+        let mut xs = Vec::new();
+        let mut ys = Vec::new();
+        let mut locations = Vec::new();
+        for i in 0..(radius * 2.0) as usize {
+            let length = i as f64 - radius;
+            let p = point + dir * length;
+            // let v = self.value_at_xy(p);
+            let v = self.f_at_interp(&p);
+            xs.push(length);
+            ys.push(v);
+            locations.push(p);
+            // TODO: Check for NAN?
+        }
+        let dd = DiscreteDomain::try_from(xs).expect("invalid xs");
+        (Series1::new(dd, ys), locations)
+    }
+
+    // ============================================================================================
+    // Serialization and Deserialization
+    // ============================================================================================
+
     pub fn serialized_bytes(&self, fmt: ImageFormat) -> Vec<u8> {
         let mut value_bytes = Vec::new();
         let mut mask_bytes = Vec::new();
@@ -194,105 +353,9 @@ impl ScalarRaster {
         Self::from_reader(&mut reader)
     }
 
-    // pub fn f_at(&self, x: i32, y: i32) -> f64 {
-    //     self.u_at(x, y).map(|u| self.u_to_f(u)).unwrap_or(f64::NAN)
-    // }
-    pub fn f_at(&self, p: Point2I) -> f64 {
-        self.u_at(p).map(|u| self.u_to_f(u)).unwrap_or(f64::NAN)
-    }
-
-    // TODO: TESTS FOR ALL OF THIS
-    // pub fn u_at(&self, x: i32, y: i32) -> Option<u16> {
-    //     if !self.mask.get(x as u32, y as u32) {
-    //         None
-    //     } else {
-    //         Some(self.values.get_pixel(x as u32, y as u32)[0])
-    //     }
-    // }
-    pub fn u_at(&self, p: Point2I) -> Option<u16> {
-        if !self.mask.get_point(p) {
-            None
-        } else {
-            self.values.get_at(p)
-        }
-    }
-
-    pub fn width(&self) -> u32 {
-        self.values.width()
-    }
-
-    pub fn height(&self) -> u32 {
-        self.values.height()
-    }
-
-    fn f_to_u(&self, val: f64) -> u16 {
-        let f = (val.clamp(self.min_z, self.max_z) - self.min_z) / (self.max_z - self.min_z);
-        (f * (u16::MAX - u16::MIN) as f64) as u16 + u16::MIN
-    }
-
-    fn u_to_f(&self, val: u16) -> f64 {
-        let f = (val - u16::MIN) as f64 / (u16::MAX - u16::MIN) as f64;
-        f * (self.max_z - self.min_z) + self.min_z
-    }
-
-    pub fn set_f_at(&mut self, p: Point2I, val: f64) -> Result<()> {
-        let converted = if val.is_nan() {
-            None
-        } else {
-            Some(self.f_to_u(val))
-        };
-        self.set_u_at(p, converted)
-    }
-
-    pub fn set_u_at(&mut self, p: Point2I, val: Option<u16>) -> Result<()> {
-        let (v, valid) = if let Some(v) = val {
-            (v, true)
-        } else {
-            (0, false)
-        };
-
-        self.values.set_at(p, v)?;
-        self.mask.set_point_unchecked(p, valid); // Unchecked because we've already thrown
-
-        Ok(())
-    }
-
-    pub fn filled_like(other: &Self, value: u16) -> Self {
-        let values = ScalarImage::from_pixel(other.width(), other.height(), Luma([value]));
-        let mut mask = RasterMask::empty_like(&values);
-        mask.not_mut();
-
-        ScalarRaster {
-            values,
-            mask,
-            px_size: other.px_size,
-            min_z: other.min_z,
-            max_z: other.max_z,
-        }
-    }
-
-    pub fn empty_like(other: &Self) -> Self {
-        Self::empty(
-            other.width(),
-            other.height(),
-            other.px_size,
-            other.min_z,
-            other.max_z,
-        )
-    }
-
-    pub fn empty(width: u32, height: u32, px_size: f64, min_z: f64, max_z: f64) -> Self {
-        let values = ScalarImage::new(width, height);
-        let mask = RasterMask::new(GrayImage::new(width, height));
-
-        ScalarRaster {
-            values,
-            mask,
-            px_size,
-            min_z,
-            max_z,
-        }
-    }
+    // ============================================================================================
+    // Visualization/helper functions
+    // ============================================================================================
 
     /// This function will render the depth map to an image file using a color gradient map from
     /// the `colorgrad` crate.  Optionally, you can provide a tuple of `(min_z, max_z)` to clip
@@ -331,6 +394,47 @@ impl ScalarRaster {
         }
 
         img.save(path).map_err(|e| e.into())
+    }
+
+    // ============================================================================================
+    // Creation operations
+    // ============================================================================================
+
+    pub fn filled_like(other: &Self, value: u16) -> Self {
+        let values = ScalarImage::from_pixel(other.width(), other.height(), Luma([value]));
+        let mut mask = RasterMask::empty_like(&values);
+        mask.not_mut();
+
+        ScalarRaster {
+            values,
+            mask,
+            px_size: other.px_size,
+            min_z: other.min_z,
+            max_z: other.max_z,
+        }
+    }
+
+    pub fn empty_like(other: &Self) -> Self {
+        Self::empty(
+            other.width(),
+            other.height(),
+            other.px_size,
+            other.min_z,
+            other.max_z,
+        )
+    }
+
+    pub fn empty(width: u32, height: u32, px_size: f64, min_z: f64, max_z: f64) -> Self {
+        let values = ScalarImage::new(width, height);
+        let mask = RasterMask::new(GrayImage::new(width, height));
+
+        ScalarRaster {
+            values,
+            mask,
+            px_size,
+            min_z,
+            max_z,
+        }
     }
 
     pub fn try_new(
@@ -410,53 +514,23 @@ impl ScalarRaster {
         }
     }
 
-    /// This function will negate the values in the raster in place, multiplying each valid pixel
-    /// by -1. Invalid pixels (those that are set to `false` in the mask) will be left untouched.
-    pub fn negative_mut(&mut self) {
-        // We can't use `iter_true` here because it will take a reference to the mask, and then
-        // we won't be able to mutate the values.
-        for p in self.iter_indices() {
-            if !self.mask.get_point(p) {
-                continue;
+    // ============================================================================================
+    // Conversions to other types
+    // ============================================================================================
+
+    pub fn copy_with_predicate(&self, predicate: impl Fn(f64) -> bool) -> Self {
+        let mut output = ScalarRaster::empty_like(self);
+
+        for p in self.mask.iter_true() {
+            let value = self.f_at(p);
+            if predicate(value) {
+                output.set_f_at(p, value).unwrap();
+            } else {
+                output.set_f_at(p, f64::NAN).unwrap();
             }
-            let v = self.f_at(p);
-            self.set_f_at(p, -v).unwrap();
-        }
-    }
-
-    /// This function will return a new `ScalarRaster` that is the negation of the original raster,
-    /// i.e., it will multiply each valid pixel by -1. Invalid pixels (those that are set to
-    /// `false` in the mask) will be left untouched in the new raster.
-    pub fn negative(&self) -> Self {
-        let mut negated = self.clone();
-        negated.negative_mut();
-        negated
-    }
-
-    /// Calculates the mean and standard deviation of the valid pixels in the depth map, using
-    /// their floating point values. The results are returned as a tuple of `(mean, stdev)`.
-    pub fn mean_stdev(&self) -> (f64, f64) {
-        let mut sum = 0.0;
-        let mut count = 0.0;
-
-        for p in self.mask.iter_true() {
-            sum += self.f_at(p);
-            count += 1.0;
         }
 
-        if count == 0.0 {
-            return (f64::NAN, f64::NAN);
-        }
-
-        let mean = sum / count;
-
-        let mut variance_sum = 0.0;
-        for p in self.mask.iter_true() {
-            variance_sum += (self.f_at(p) - mean).powi(2);
-        }
-
-        let stdev = (variance_sum / count).sqrt();
-        (mean, stdev)
+        output
     }
 
     /// Converts the `ScalarRaster` to a `DMatrix<f64>` where each pixel is represented by its
@@ -510,6 +584,10 @@ impl ScalarRaster {
         (matrix, mask)
     }
 
+    // ============================================================================================
+    // Morphological Operations
+    // ============================================================================================
+
     /// Performs an inpainting operation on the depth map using Alexander Telea's method. Provide
     /// a mask image which indicates the pixels to be inpainted, and a radius in pixels which is
     /// the maximum distance to search for valid pixels to use in the inpainting operation.
@@ -535,22 +613,7 @@ impl ScalarRaster {
             .expect("Mask and raster must have same dimensions");
     }
 
-    // pub fn erode(&mut self, pixels: u8) {
-    //     erode_mut(&mut self.mask.buffer, L1, pixels);
-    //     for (x, y, v) in self.values.enumerate_pixels_mut() {
-    //         if self.mask.get_point(x, y) {
-    //             *v = Luma([0]);
-    //         }
-    //     }
-    // }
-
     pub fn delete_by_mask(&mut self, mask: &RasterMask) -> Result<()> {
-        // for (x, y, v) in self.values.enumerate_pixels_mut() {
-        //     if mask.get(x, y) {
-        //         *v = Luma([0]);
-        //         self.mask.set_point_unchecked(x, y, false);
-        //     }
-        // }
         for p in mask.iter_true() {
             self.values.set_at(p, u16::MIN)?;
             self.mask.set_point_unchecked(p, false);
@@ -585,95 +648,100 @@ impl ScalarRaster {
         self.clear_col(self.values.width() as usize - 1);
     }
 
-    /// Get a mask of just the border pixels by using the L1 erode operation on the current mask
-    /// and comparing the difference.
-    pub fn get_border_mask(&self, pixels: u8) -> GrayImage {
-        let mut border_mask = self.mask.clone();
-        erode_mut(&mut border_mask.buffer, L1, pixels);
-        diff_img(&self.mask.buffer, &border_mask.buffer)
-    }
-
-    pub fn copy_with_predicate(&self, predicate: impl Fn(f64) -> bool) -> Self {
-        let mut output = ScalarRaster::empty_like(self);
-
-        for p in self.mask.iter_true() {
-            let value = self.f_at(p);
-            if predicate(value) {
-                output.set_f_at(p, value).unwrap();
-            } else {
-                output.set_f_at(p, f64::NAN).unwrap();
-            }
-        }
-
-        output
-    }
+    // ============================================================================================
+    // Scalar value operations
+    // ============================================================================================
 
     pub fn with_new_z_limits(&self, min_z: f64, max_z: f64) -> Self {
         let matrix = self.to_matrix();
         ScalarRaster::from_matrix(&matrix, self.px_size, min_z, max_z)
     }
 
-    // pub fn remove_border_outliers(&mut self) -> usize {
-    //     let radius = (1.0 / self.px_size).ceil() as i32;
-    //     let border_mask = self.get_border_mask(5);
-    //     let outliers = border_mask
-    //         .enumerate_pixels()
-    //         .filter(|(_, _, v)| v[0] != 0)
-    //         .map(|(x, y, _)| (x, y, self.is_px_outlier(x, y, radius)))
-    //         .filter(|(_, _, outlier)| *outlier)
-    //         .collect::<Vec<_>>();
-    //
-    //     let mut count = 0;
-    //     for (x, y, yes) in outliers.iter() {
-    //         if *yes {
-    //             self.mask.set(*x, *y, false);
-    //             self.values.put_pixel(*x, *y, Luma([0]));
-    //             count += 1;
-    //         }
-    //     }
-    //
-    //     count
-    // }
-    //
-    // fn is_px_outlier(&self, x: u32, y: u32, radius: i32) -> bool {
-    //     if self.mask.get(x, y) {
-    //         false
-    //     } else {
-    //         let mut values = Vec::new();
-    //         for i in -radius..=radius {
-    //             for j in -radius..=radius {
-    //                 let x_loc = x as i32 + i;
-    //                 let y_loc = y as i32 + j;
-    //
-    //                 if x_loc < 0
-    //                     || y_loc < 0
-    //                     || x_loc >= self.values.width() as i32
-    //                     || y_loc >= self.values.height() as i32
-    //                 {
-    //                     continue;
-    //                 }
-    //
-    //                 if self.mask.get(x_loc as u32, y_loc as u32) {
-    //                     continue;
-    //                 }
-    //
-    //                 values.push(self.values.get_pixel(x_loc as u32, y_loc as u32)[0] as f32);
-    //             }
-    //         }
-    //
-    //         // Find the mean
-    //         let mean = values.iter().sum::<f32>() / values.len() as f32;
-    //
-    //         // Find the standard deviation
-    //         let variance =
-    //             values.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / values.len() as f32;
-    //         let std_dev = variance.sqrt();
-    //
-    //         // Find if we're more than 2 standard deviations away from the mean
-    //         let this_px = self.values.get_pixel(x, y)[0] as f32;
-    //         (this_px - mean).abs() > 3.0 * std_dev
-    //     }
-    // }
+    /// This function will negate the values in the raster in place, multiplying each valid pixel
+    /// by -1. Invalid pixels (those that are set to `false` in the mask) will be left untouched.
+    pub fn negative_mut(&mut self) {
+        // We can't use `iter_true` here because it will take a reference to the mask, and then
+        // we won't be able to mutate the values.
+        for p in self.iter_indices() {
+            if !self.mask.get_point(p) {
+                continue;
+            }
+            let v = self.f_at(p);
+            self.set_f_at(p, -v).unwrap();
+        }
+    }
+
+    /// This function will return a new `ScalarRaster` that is the negation of the original raster,
+    /// i.e., it will multiply each valid pixel by -1. Invalid pixels (those that are set to
+    /// `false` in the mask) will be left untouched in the new raster.
+    pub fn negative(&self) -> Self {
+        let mut negated = self.clone();
+        negated.negative_mut();
+        negated
+    }
+
+    /// Calculates the mean and standard deviation of the valid pixels in the depth map, using
+    /// their floating point values. The results are returned as a tuple of `(mean, stdev)`.
+    pub fn mean_stdev(&self) -> (f64, f64) {
+        let mut sum = 0.0;
+        let mut count = 0.0;
+
+        for p in self.mask.iter_true() {
+            sum += self.f_at(p);
+            count += 1.0;
+        }
+
+        if count == 0.0 {
+            return (f64::NAN, f64::NAN);
+        }
+
+        let mean = sum / count;
+
+        let mut variance_sum = 0.0;
+        for p in self.mask.iter_true() {
+            variance_sum += (self.f_at(p) - mean).powi(2);
+        }
+
+        let stdev = (variance_sum / count).sqrt();
+        (mean, stdev)
+    }
+
+    // ============================================================================================
+    // Arithmetic element-wise operations
+    // ============================================================================================
+
+    /// Given a reference value image, this function will return a new ScalarRaster which is has the
+    /// values of the reference subtracted from the values of this image.
+    pub fn subtract(&self, reference: &Self) -> Result<Self> {
+        let mut corrected = self.clone();
+        for (x, y, v) in corrected.values.enumerate_pixels_mut() {
+            if !self.mask.get_point(Point2I::new(x as i32, y as i32)) {
+                *v = Luma([0]);
+            } else {
+                let ref_val = reference.u_to_f(reference.values.get_pixel(x, y)[0]);
+                let self_val = self.u_to_f(v[0]);
+                let f = self_val - ref_val;
+                if f.is_nan() {
+                    *v = Luma([0]);
+                    continue;
+                }
+                if f < self.min_z || f > self.max_z {
+                    return Err(format!(
+                        "Value {} out of bounds for raster with min_z {} and max_z {}",
+                        f, self.min_z, self.max_z
+                    )
+                    .into());
+                }
+                *v = Luma([self.f_to_u(self_val - ref_val)]);
+            }
+        }
+
+        Ok(corrected)
+    }
+
+    // ============================================================================================
+    // Scaling and Resizing
+    // ============================================================================================
 
     pub fn create_scaled(&self, scale: f64) -> Self {
         let width = (self.values.width() as f64 * scale) as u32;
@@ -709,142 +777,9 @@ impl ScalarRaster {
         }
     }
 
-    /// Given a reference value image, this function will return a new ScalarRaster which is has the
-    /// values of the reference subtracted from the values of this image.
-    pub fn subtract(&self, reference: &Self) -> Result<Self> {
-        let mut corrected = self.clone();
-        for (x, y, v) in corrected.values.enumerate_pixels_mut() {
-            if !self.mask.get_point(Point2I::new(x as i32, y as i32)) {
-                *v = Luma([0]);
-            } else {
-                let ref_val = reference.u_to_f(reference.values.get_pixel(x, y)[0]);
-                let self_val = self.u_to_f(v[0]);
-                let f = self_val - ref_val;
-                if f.is_nan() {
-                    *v = Luma([0]);
-                    continue;
-                }
-                if f < self.min_z || f > self.max_z {
-                    return Err(format!(
-                        "Value {} out of bounds for raster with min_z {} and max_z {}",
-                        f, self.min_z, self.max_z
-                    )
-                    .into());
-                }
-                *v = Luma([self.f_to_u(self_val - ref_val)]);
-            }
-        }
-
-        Ok(corrected)
-    }
-
-    /// Find the average value of the pixels in the area neighborhood around the given pixel. The
-    /// neighborhood is defined by a radius in pixels, but the neighborhood is found by alternating
-    /// dilation of the L1 and LInf norms from the seed pixel constrained by the image mask. This
-    /// produces an octagonal neighborhood which cannot jump across mask regions, and should
-    /// better approximate a local neighborhood reachable along the object surface.
-    ///
-    /// It is, however, very expensive to do in bulk.
-    ///
-    /// # Arguments
-    ///
-    /// * `x`: the x coordinate of the pixel to find the area average around
-    /// * `y`: the y coordinate of the pixel to find the area average around
-    /// * `radius_px`: the radius in pixels to search for valid pixels to use in the area average
-    ///
-    /// returns: u16
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
-    fn area_average_px(&self, x: u32, y: u32, radius_px: u32) -> u16 {
-        let area = AreaAverage::from(&self.values, &self.mask.buffer, x, y, radius_px);
-        area.get_average()
-    }
-
-    /// Performs a straightforward area average of every valid pixel in entire image, using the
-    /// rayon library for parallelization.
-    fn area_average(&self, radius_mm: f32) -> ScalarImage<u16> {
-        let radius = (radius_mm / self.px_size as f32).ceil() as u32;
-        let mut blurred = ScalarImage::new(self.width(), self.height());
-
-        // Find all of unmasked pixels in the image and collect them into a list for the parallel
-        // iterator to use. I don't know if this is more efficient than having the individual
-        // threads look at the mask to reduce the vector collection, or worse because of the
-        // extra allocation.
-        let xys = self
-            .mask
-            .buffer
-            .enumerate_pixels()
-            .filter(|(_, _, p)| (*p)[0] == 255)
-            .map(|(x, y, _)| (x, y))
-            .collect::<Vec<_>>();
-
-        // Now we use rayon to iterate through the unmasked pixels in parallel, collecting the
-        // result into a vector.
-        let result = xys
-            .par_iter()
-            .map(|(x, y)| (x, y, self.area_average_px(*x, *y, radius)))
-            .collect::<Vec<_>>();
-
-        // Finally we write the results into the buffer
-        for (x, y, v) in result {
-            blurred.put_pixel(*x, *y, Luma([v]));
-        }
-
-        blurred
-    }
-
-    /// Performs an area average of every valid pixel in the image, but preferentially uses a
-    /// resized image which has (presumably) had the same operation performed as the initial source
-    /// of values. This will then fill in any missing values by directly computing them on the
-    /// full sized image, which can be quite costly.
-    fn area_average_with_resized(&self, radius_mm: f32, resized: &Self) -> ScalarImage<u16> {
-        let mut blurred = ScalarImage::new(self.width(), self.height());
-        let mut transferred = GrayImage::new(self.mask.width(), self.mask.height());
-        let radius = (radius_mm / self.px_size as f32).ceil() as u32;
-        let scale_x = resized.mask.width() as f32 / self.mask.width() as f32;
-        let scale_y = resized.mask.height() as f32 / self.mask.height() as f32;
-
-        // All the pixels in the resized image which have at a full mask value can be copied
-        // directly and put into the corresponding pixels in the blurred image
-        for (x, y, v) in blurred.enumerate_pixels_mut() {
-            let p = Point2I::new(x as i32, y as i32);
-            if !self.mask.get_point(p) {
-                continue;
-            }
-            let sx = (x as f32 * scale_x).floor() as u32;
-            let sy = (y as f32 * scale_y).floor() as u32;
-            if !resized.mask.get_point(Point2I::new(sx as i32, sy as i32)) {
-                continue;
-            }
-
-            *v = Luma([resized.values.get_pixel(sx, sy)[0]]);
-            transferred.put_pixel(x, y, Luma([255]));
-        }
-
-        // Now we'll manually transfer the pixels which are not in the resized image
-        let xys = self
-            .mask
-            .buffer
-            .enumerate_pixels()
-            .filter(|(x, y, p)| (*p)[0] != 0 && transferred.get_pixel(*x, *y)[0] == 0)
-            .map(|(x, y, _)| (x, y))
-            .collect::<Vec<_>>();
-
-        let result = xys
-            .par_iter()
-            .map(|(x, y)| (x, y, self.area_average_px(*x, *y, radius)))
-            .collect::<Vec<_>>();
-
-        for (x, y, v) in result {
-            blurred.put_pixel(*x, *y, Luma([v]));
-        }
-
-        blurred
-    }
+    // ============================================================================================
+    // Convolutions
+    // ============================================================================================
 
     /// Convolve this scalar raster with the given kernel, returning a new scalar raster. This is
     /// identical to using the `RasterKernel`'s `convolve` method, but is provided for convenience.
@@ -973,6 +908,10 @@ impl ScalarRaster {
         Ok(full_result)
     }
 
+    // ============================================================================================
+    // Area blur and filtering operations
+    // ============================================================================================
+
     /// Performs a smoothing operation on the depth image by averaging the pixels in a roughly
     /// circular neighborhood reachable along the object surface within approximately a given
     /// radius.
@@ -1006,8 +945,112 @@ impl ScalarRaster {
         self.subtract(&blurred)
     }
 
-    pub fn count_valid_pixels(&self) -> usize {
-        self.mask.count_true()
+    /// Find the average value of the pixels in the area neighborhood around the given pixel. The
+    /// neighborhood is defined by a radius in pixels, but the neighborhood is found by alternating
+    /// dilation of the L1 and LInf norms from the seed pixel constrained by the image mask. This
+    /// produces an octagonal neighborhood which cannot jump across mask regions, and should
+    /// better approximate a local neighborhood reachable along the object surface.
+    ///
+    /// It is, however, very expensive to do in bulk.
+    ///
+    /// # Arguments
+    ///
+    /// * `x`: the x coordinate of the pixel to find the area average around
+    /// * `y`: the y coordinate of the pixel to find the area average around
+    /// * `radius_px`: the radius in pixels to search for valid pixels to use in the area average
+    ///
+    /// returns: u16
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    fn area_average_px(&self, x: u32, y: u32, radius_px: u32) -> u16 {
+        let area = AreaAverage::from(&self.values, &self.mask.buffer, x, y, radius_px);
+        area.get_average()
+    }
+
+    /// Performs a straightforward area average of every valid pixel in entire image, using the
+    /// rayon library for parallelization.
+    fn area_average(&self, radius_mm: f32) -> ScalarImage<u16> {
+        let radius = (radius_mm / self.px_size as f32).ceil() as u32;
+        let mut blurred = ScalarImage::new(self.width(), self.height());
+
+        // Find all of unmasked pixels in the image and collect them into a list for the parallel
+        // iterator to use. I don't know if this is more efficient than having the individual
+        // threads look at the mask to reduce the vector collection, or worse because of the
+        // extra allocation.
+        let xys = self
+            .mask
+            .buffer
+            .enumerate_pixels()
+            .filter(|(_, _, p)| (*p)[0] == 255)
+            .map(|(x, y, _)| (x, y))
+            .collect::<Vec<_>>();
+
+        // Now we use rayon to iterate through the unmasked pixels in parallel, collecting the
+        // result into a vector.
+        let result = xys
+            .par_iter()
+            .map(|(x, y)| (x, y, self.area_average_px(*x, *y, radius)))
+            .collect::<Vec<_>>();
+
+        // Finally we write the results into the buffer
+        for (x, y, v) in result {
+            blurred.put_pixel(*x, *y, Luma([v]));
+        }
+
+        blurred
+    }
+
+    /// Performs an area average of every valid pixel in the image, but preferentially uses a
+    /// resized image which has (presumably) had the same operation performed as the initial source
+    /// of values. This will then fill in any missing values by directly computing them on the
+    /// full sized image, which can be quite costly.
+    fn area_average_with_resized(&self, radius_mm: f32, resized: &Self) -> ScalarImage<u16> {
+        let mut blurred = ScalarImage::new(self.width(), self.height());
+        let mut transferred = GrayImage::new(self.mask.width(), self.mask.height());
+        let radius = (radius_mm / self.px_size as f32).ceil() as u32;
+        let scale_x = resized.mask.width() as f32 / self.mask.width() as f32;
+        let scale_y = resized.mask.height() as f32 / self.mask.height() as f32;
+
+        // All the pixels in the resized image which have at a full mask value can be copied
+        // directly and put into the corresponding pixels in the blurred image
+        for (x, y, v) in blurred.enumerate_pixels_mut() {
+            let p = Point2I::new(x as i32, y as i32);
+            if !self.mask.get_point(p) {
+                continue;
+            }
+            let sx = (x as f32 * scale_x).floor() as u32;
+            let sy = (y as f32 * scale_y).floor() as u32;
+            if !resized.mask.get_point(Point2I::new(sx as i32, sy as i32)) {
+                continue;
+            }
+
+            *v = Luma([resized.values.get_pixel(sx, sy)[0]]);
+            transferred.put_pixel(x, y, Luma([255]));
+        }
+
+        // Now we'll manually transfer the pixels which are not in the resized image
+        let xys = self
+            .mask
+            .buffer
+            .enumerate_pixels()
+            .filter(|(x, y, p)| (*p)[0] != 0 && transferred.get_pixel(*x, *y)[0] == 0)
+            .map(|(x, y, _)| (x, y))
+            .collect::<Vec<_>>();
+
+        let result = xys
+            .par_iter()
+            .map(|(x, y)| (x, y, self.area_average_px(*x, *y, radius)))
+            .collect::<Vec<_>>();
+
+        for (x, y, v) in result {
+            blurred.put_pixel(*x, *y, Luma([v]));
+        }
+
+        blurred
     }
 }
 
@@ -1022,18 +1065,6 @@ fn get_shrink_factor(radius_mm: f32, mm_per_px: f32, target: u32) -> u32 {
 
     shrink_factor
 }
-
-// pub fn mm_to_px_depth(value: f64) -> u16 {
-//     // The zero value (0mm) is 32768
-//     // The max value is +2mm, the min value is -2mm
-//     let f = (value - (-DEPTH_MAX)) / (DEPTH_MAX - (-DEPTH_MAX));
-//     (f * 65535.0) as u16
-// }
-//
-// pub fn px_depth_to_mm(value: u16) -> f64 {
-//     let f = value as f64 / 65535.0;
-//     f * (DEPTH_MAX - (-DEPTH_MAX)) + (-DEPTH_MAX)
-// }
 
 pub fn diff_img(img1: &GrayImage, img2: &GrayImage) -> GrayImage {
     let mut diff = GrayImage::new(img1.width(), img1.height());

@@ -13,6 +13,7 @@ pub mod svd_basis;
 pub mod triangulation;
 pub mod vec_f64;
 mod voxel_downsample;
+mod domain_map;
 
 use crate::na::{Point, SVector};
 pub use align::DistMode;
@@ -22,6 +23,7 @@ pub use angles::{
 };
 pub use convert_2d_3d::{To2D, To3D};
 pub use discrete_domain::{DiscreteDomain, linear_space};
+pub use domain_map::DomainMap;
 pub use index_mask::IndexMask;
 pub use interval::Interval;
 pub use parry3d_f64::query::SplitResult;

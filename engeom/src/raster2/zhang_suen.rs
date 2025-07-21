@@ -142,14 +142,6 @@ fn zhang_suen_neighbors(p: Point2I) -> [Point2I; 8] {
         Point2I::new(p.x - 1, p.y + 1),
         Point2I::new(p.x - 1, p.y),
         Point2I::new(p.x - 1, p.y - 1),
-        // (x, y - 1),
-        // (x + 1, y - 1),
-        // (x + 1, y),
-        // (x + 1, y + 1),
-        // (x, y + 1),
-        // (x - 1, y + 1),
-        // (x - 1, y),
-        // (x - 1, y - 1),
     ]
 }
 

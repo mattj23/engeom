@@ -177,6 +177,7 @@ impl DiscreteDomain {
     pub fn bounds_unchecked(&self) -> Interval {
         Interval::new(self.values[0], self.values[self.values.len() - 1])
     }
+
 }
 
 impl Deref for DiscreteDomain {
