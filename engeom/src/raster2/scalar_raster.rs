@@ -4,6 +4,7 @@
 //! without losing a connection to a spatial coordinate system.
 
 use super::SizeForIndex;
+use crate::common::DiscreteDomain;
 use crate::image::imageops::{FilterType, resize};
 use crate::image::{GrayImage, ImageBuffer, ImageFormat, ImageReader, Luma, Rgba, RgbaImage};
 use crate::na::DMatrix;
@@ -18,7 +19,6 @@ use rayon::prelude::*;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Cursor, Read, Write};
 use std::path::Path;
-use crate::common::DiscreteDomain;
 
 pub type ScalarImage<T> = ImageBuffer<Luma<T>, Vec<T>>;
 
@@ -213,26 +213,26 @@ impl ScalarRaster {
         let b0 = 1.0 - b1;
 
         // let q11 = self[(y0, x0)] * a0 * b0;
-        let q11 = self.f_at(Point2I::new(y0, x0)) * a0 * b0;
+        let q11 = self.f_at(Point2I::new(x0, y0)) * a0 * b0;
 
         // In the case that x1 or y1 is past the last viable row, we know that this is OK because
         // of the guard clause at the beginning of the function, so a1 or b1 will be 0.0. In this
         // case we can effectively skip the lookup to avoid a panic.
         let q22 = if x1 < self.width() as i32 && y1 < self.height() as i32 {
-            self.f_at(Point2I::new(y1, x1)) * a1 * b1
+            self.f_at(Point2I::new(x1, y1)) * a1 * b1
         } else {
             0.0
         };
 
         let q12 = if y1 < self.height() as i32 {
-            self.f_at(Point2I::new(y1, x0)) * a0 * b1
+            self.f_at(Point2I::new(x0, y1)) * a0 * b1
             // self[(y1, x0)] * a0 * b1
         } else {
             0.0
         };
 
         let q21 = if x1 < self.width() as i32 {
-            self.f_at(Point2I::new(y0, x1)) * a1 * b0
+            self.f_at(Point2I::new(x1, y0)) * a1 * b0
             // self[(y0, x1)] * a1 * b0
         } else {
             0.0

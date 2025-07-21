@@ -248,6 +248,11 @@ impl Interval {
     pub fn clamp(&self, x: f64) -> f64 {
         x.min(self.max).max(self.min)
     }
+
+    /// Returns the center of the interval, which is the average of the minimum and maximum values.
+    pub fn center(&self) -> f64 {
+        (self.min + self.max) / 2.0
+    }
 }
 
 #[cfg(test)]

@@ -2,6 +2,7 @@ pub mod align;
 mod angles;
 mod convert_2d_3d;
 mod discrete_domain;
+mod domain_map;
 mod index_mask;
 pub mod indices;
 mod interval;
@@ -13,7 +14,6 @@ pub mod svd_basis;
 pub mod triangulation;
 pub mod vec_f64;
 mod voxel_downsample;
-mod domain_map;
 
 use crate::na::{Point, SVector};
 pub use align::DistMode;

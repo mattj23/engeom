@@ -17,6 +17,10 @@ pub struct Series1 {
 }
 
 impl Series1 {
+    // ===========================================================================================
+    // Creation and Initialization
+    // ===========================================================================================
+
     /// Creates a new series from a pair of vectors, one for x values and one for y values. The two
     /// vectors must be the same length, and the x values must be sorted from smallest to largest.
     pub fn new(x: DiscreteDomain, y: Vec<f64>) -> Self {
@@ -70,6 +74,10 @@ impl Series1 {
         Self::new(xs, ys)
     }
 
+    // ===========================================================================================
+    // X and Y Limits
+    // ===========================================================================================
+
     /// Returns the smallest x value in the series, which also happens to be the first x value
     pub fn x_min(&self) -> f64 {
         self.x[0]
@@ -97,6 +105,63 @@ impl Series1 {
             .max_by(|a, b| a.partial_cmp(b).unwrap())
             .unwrap()
     }
+
+    // ===========================================================================================
+    // Value lookups and interpolation
+    // ===========================================================================================
+    /// Return the interpolated y value at x. If the x value is outside the range of the series,
+    /// NAN will be returned.
+    pub fn interpolate(&self, x: f64) -> f64 {
+        if x < self.x[0] || x > self.x[self.x.len() - 1] {
+            f64::NAN
+        } else {
+            let search_result = self.x.binary_search_by(|v| v.partial_cmp(&x).unwrap());
+            match search_result {
+                Ok(actual_index) => self.y[actual_index],
+                Err(index_after) => {
+                    if index_after == 0 {
+                        panic!("This should never happen")
+                    } else {
+                        let x0 = self.x[index_after - 1];
+                        let x1 = self.x[index_after];
+                        let y0 = self.y[index_after - 1];
+                        let y1 = self.y[index_after];
+                        let m = (y1 - y0) / (x1 - x0);
+                        y0 + m * (x - x0)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Return the y value at index i. If i is outside the range of the series, None will be
+    /// returned instead.
+    fn y_at_index(&self, i: i32) -> Option<f64> {
+        if i < 0 || i >= self.y.len() as i32 {
+            None
+        } else {
+            Some(self.y[i as usize])
+        }
+    }
+
+    /// Returns a zipped iterator over the x and y values of the series
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::Series1;
+    /// let series = Series1::try_new(vec![0.0, 1.0, 2.0], vec![0.0, 1.0, 2.0])
+    ///     .expect("Failed to create series");
+    /// for (x, y) in series.xys() {
+    ///    println!("x: {}, y: {}", x, y);
+    /// }
+    /// ```
+    pub fn xys(&self) -> Zip<Iter<'_, f64>, Iter<'_, f64>> {
+        self.x.values().iter().zip(self.y.iter())
+    }
+    // ===========================================================================================
+    // Transformation operations
+    // ===========================================================================================
 
     /// Returns a new series where the x values are the same as the original series, but the y
     /// values are the absolute value of the original y values
@@ -148,6 +213,53 @@ impl Series1 {
         Self::new(new_xs, ys)
     }
 
+    /// Concatenates two series together, returning a new series that contains all the x and y
+    /// values from both series. This will only work if the minimum x value of the second series is
+    /// greater than the maximum x value of the first series, otherwise it will return an Err.
+    ///
+    /// # Arguments
+    ///
+    /// * `other`: A reference to the other series to concatenate, which will be appended to the
+    ///  end of the first series. The minimum x value of the second series must be greater than
+    /// the maximum x value of the first series.
+    ///
+    /// returns: Result<Series1, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::func1::Series1;
+    /// let series1 = Series1::try_new(vec![0.0, 1.0, 2.0], vec![0.0, 1.0, 2.0]).unwrap();
+    /// let series2 = Series1::try_new(vec![3.0, 4.0, 5.0], vec![3.0, 4.0, 5.0]).unwrap();
+    /// let series3 = series1.concat(&series2).unwrap();
+    /// assert_eq!(series3.x.to_vec(), vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0]);
+    /// assert_eq!(series3.y, vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0]);
+    /// ```
+    pub fn concat(&self, other: &Self) -> Result<Self> {
+        if other.x_min() <= self.x_max() {
+            Err("other.x_min() must be greater than self.x_max()".into())
+        } else {
+            let mut xs = self.x.to_vec();
+            xs.extend(other.x.iter());
+            let mut ys = self.y.clone();
+            ys.extend(other.y.iter());
+            Self::try_new(xs, ys)
+        }
+    }
+
+    /// Returns the series as a vector of `Point2` structs by zipping the x and y values together
+    /// and converting them.  The order of the points will be from the smallest x value to the
+    /// largest x value.
+    pub fn as_points(&self) -> Vec<Point2> {
+        self.xys()
+            .map(|(x, y)| Point2::new(*x, *y))
+            .collect::<Vec<_>>()
+    }
+
+    // ===========================================================================================
+    // Non-finite value operations
+    // ===========================================================================================
+
     pub fn remove_nan(&self) -> Self {
         let mut xs = Vec::new();
         let mut ys = Vec::new();
@@ -180,6 +292,10 @@ impl Series1 {
         false
     }
 
+    // ===========================================================================================
+    // Derivatives and integrals
+    // ===========================================================================================
+
     /// Calculate and return the first derivative of the series
     pub fn dydx(&self) -> Self {
         let mut ys = Vec::new();
@@ -196,10 +312,56 @@ impl Series1 {
         Self::new(self.x.clone(), ys)
     }
 
+    pub fn middle_reiemann_areas(&self) -> Vec<(f64, f64)> {
+        let mut result = Vec::new();
+        for i in 0..self.x.len() - 1 {
+            let x0 = self.x[i];
+            let x1 = self.x[i + 1];
+            let y0 = self.y[i];
+            let y1 = self.y[i + 1];
+            result.push(((x1 + x0) * 0.5, (x1 - x0) * (y0 + y1) * 0.5));
+        }
+        result
+    }
+
+    /// Computes the area under the curve
+    pub fn area_under(&self) -> f64 {
+        self.middle_reiemann_areas()
+            .into_iter()
+            .map(|(_, a)| a)
+            .sum()
+    }
+
+    // ===========================================================================================
+    // Filtering and smoothing
+    // ===========================================================================================
+
     /// Perform a Savitzky-Golay smoothing on the series with a 5-point window
     pub fn savitzky_golay(&self) -> Self {
         savitzky_golay_5(self)
     }
+
+    pub fn mean_filtered(&self, window: f64) -> Self {
+        let half_size = window / 2.0;
+        let xs = self.x.to_vec();
+        let mut ys = Vec::new();
+        for x in &xs {
+            let mut sum = 0.0;
+            let mut count = 0.0;
+            for i in 0..self.x.len() {
+                if (self.x[i] - x).abs() <= half_size {
+                    sum += self.y[i];
+                    count += 1.0;
+                }
+            }
+            ys.push(sum / count);
+        }
+        Self::try_new(xs, ys).expect("Xs should have been valid, what went wrong?")
+    }
+
+    // ===========================================================================================
+    // Crossings and extrema
+    // ===========================================================================================
 
     /// Return the x values of the places where the series crosses the y value `y_equals`. The
     /// values will be sorted from smallest to largest and will be unique.
@@ -236,6 +398,92 @@ impl Series1 {
         crossings
     }
 
+    /// Calculates and returns a vector of the x (domain) location of all the local maxima in
+    /// the series. A local maximum is defined as a point whose neighbors are both less than it.
+    pub fn local_maxima_xs(&self) -> Vec<f64> {
+        let mut maxima = Vec::new();
+        for i in 0..self.x.len() {
+            if i == 0 {
+                if self.y[0] > self.y[1] {
+                    maxima.push(self.x[0]);
+                }
+            } else if i == self.y.len() - 1 {
+                if self.y[i] > self.y[i - 1] {
+                    maxima.push(self.x[i]);
+                }
+            } else {
+                let y0 = self.y[i - 1];
+                let y1 = self.y[i];
+                let y2 = self.y[i + 1];
+                if y1 > y0 && y1 > y2 {
+                    maxima.push(self.x[i]);
+                }
+            }
+        }
+        maxima
+    }
+
+    /// Calculates and returns the x and y location of the global maxima in the series. This is
+    /// the x position of the y with the highest value. If there are multiple y values with the
+    /// same maximum value, the one with the lowest x value is returned.
+    pub fn global_maxima_xy(&self) -> (f64, f64) {
+        let mut max_x = self.x[0];
+        let mut max_y = self.y[0];
+        for i in 1..self.x.len() {
+            if self.y[i] > max_y {
+                max_x = self.x[i];
+                max_y = self.y[i];
+            }
+        }
+        (max_x, max_y)
+    }
+
+    /// Calculates and returns the x and y location of the global minima in the series. This is
+    /// the x position of the y with the lowest value. If there are multiple y values with the
+    /// same minimum value, the one with the lowest x value is returned.
+    pub fn global_minima_xy(&self) -> (f64, f64) {
+        let mut min_x = self.x[0];
+        let mut min_y = self.y[0];
+        for i in 1..self.x.len() {
+            if self.y[i] < min_y {
+                min_x = self.x[i];
+                min_y = self.y[i];
+            }
+        }
+        (min_x, min_y)
+    }
+
+    /// Calculates the lower and upper x bounds of a plateau based on an x value assumed to be
+    /// of a local maxima.  This works by finding the value of the maxima, subtracting the
+    /// tolerance, and then finding the first x value to the left and right of the maxima that has
+    /// the y value of the maxima - tolerance.
+    pub fn plateau_at_maxima(&self, x: f64, tol: f64) -> Option<Interval> {
+        let v = self.interpolate(x);
+        if v.is_nan() {
+            return None;
+        }
+        let y = v - tol;
+        let mut crossings = self.y_crossings(y);
+
+        // If the first y value is above the threshold or the last y value is below the threshold,
+        // then those points are crossings
+        if self.y[0] > y {
+            crossings.insert(0, self.x[0]);
+        }
+
+        if self.y[self.y.len() - 1] > y {
+            crossings.push(self.x[self.x.len() - 1]);
+        }
+
+        // TODO: This is a linear search, but it could be a binary search
+        for xs in crossings.windows(2) {
+            if xs[0] <= x && x <= xs[1] {
+                return Some(Interval::new(xs[0], xs[1]));
+            }
+        }
+        None
+    }
+
     /// Return the index of the x value in the series which is either equal to or immediately
     /// after the given x value.  If the given x value is before the first x value in the series,
     /// 0 will be returned.  If the given x value is after the last x value in the series, the
@@ -248,49 +496,18 @@ impl Series1 {
         }
     }
 
-    /// Return the interpolated y value at x. If the x value is outside the range of the series,
-    /// NAN will be returned.
-    pub fn interpolate(&self, x: f64) -> f64 {
-        if x < self.x[0] || x > self.x[self.x.len() - 1] {
-            f64::NAN
-        } else {
-            let search_result = self.x.binary_search_by(|v| v.partial_cmp(&x).unwrap());
-            match search_result {
-                Ok(actual_index) => self.y[actual_index],
-                Err(index_after) => {
-                    if index_after == 0 {
-                        panic!("This should never happen")
-                    } else {
-                        let x0 = self.x[index_after - 1];
-                        let x1 = self.x[index_after];
-                        let y0 = self.y[index_after - 1];
-                        let y1 = self.y[index_after];
-                        let m = (y1 - y0) / (x1 - x0);
-                        y0 + m * (x - x0)
-                    }
-                }
-            }
-        }
-    }
-
-    /// Return the y value at index i. If i is outside the range of the series, None will be
-    /// returned instead.
-    fn y_at_index(&self, i: i32) -> Option<f64> {
-        if i < 0 || i >= self.y.len() as i32 {
-            None
-        } else {
-            Some(self.y[i as usize])
-        }
-    }
-
-    pub fn is_ordered(&self) -> bool {
-        for i in 1..self.x.len() {
-            if self.x[i] <= self.x[i - 1] {
-                return false;
-            }
-        }
-        true
-    }
+    // pub fn is_ordered(&self) -> bool {
+    //     for i in 1..self.x.len() {
+    //         if self.x[i] <= self.x[i - 1] {
+    //             return false;
+    //         }
+    //     }
+    //     true
+    // }
+    //
+    // ===========================================================================================
+    // Splitting and clipping
+    // ===========================================================================================
 
     /// Returns a new series that contains the region of the series between x0 and x1, including
     /// the end points. This breaks the regularity of the spacing
@@ -354,26 +571,6 @@ impl Series1 {
         bounds
     }
 
-    pub fn middle_reiemann_areas(&self) -> Vec<(f64, f64)> {
-        let mut result = Vec::new();
-        for i in 0..self.x.len() - 1 {
-            let x0 = self.x[i];
-            let x1 = self.x[i + 1];
-            let y0 = self.y[i];
-            let y1 = self.y[i + 1];
-            result.push(((x1 + x0) * 0.5, (x1 - x0) * (y0 + y1) * 0.5));
-        }
-        result
-    }
-
-    /// Computes the area under the curve
-    pub fn area_under(&self) -> f64 {
-        self.middle_reiemann_areas()
-            .into_iter()
-            .map(|(_, a)| a)
-            .sum()
-    }
-
     /// Computes the least-squares line of best fit returning the slope and y-intercept (m and b)
     /// in that order as a tuple.
     pub fn best_fit_line(&self) -> Line1 {
@@ -392,77 +589,6 @@ impl Series1 {
         let b = (sum_y - m * sum_x) / n;
         Line1::new_mxb(m, b)
     }
-
-    /// Calculates and returns a vector of the x (domain) location of all the local maxima in
-    /// the series. A local maximum is defined as a point whose neighbors are both less than it.
-    pub fn local_maxima_xs(&self) -> Vec<f64> {
-        let mut maxima = Vec::new();
-        for i in 0..self.x.len() {
-            if i == 0 {
-                if self.y[0] > self.y[1] {
-                    maxima.push(self.x[0]);
-                }
-            } else if i == self.y.len() - 1 {
-                if self.y[i] > self.y[i - 1] {
-                    maxima.push(self.x[i]);
-                }
-            } else {
-                let y0 = self.y[i - 1];
-                let y1 = self.y[i];
-                let y2 = self.y[i + 1];
-                if y1 > y0 && y1 > y2 {
-                    maxima.push(self.x[i]);
-                }
-            }
-        }
-        maxima
-    }
-
-    /// Calculates and returns the x and y location of the global maxima in the series. This is
-    /// the x position of the y with the highest value. If there are multiple y values with the
-    /// same maximum value, the one with the lowest x value is returned.
-    pub fn global_maxima_xy(&self) -> (f64, f64) {
-        let mut max_x = self.x[0];
-        let mut max_y = self.y[0];
-        for i in 1..self.x.len() {
-            if self.y[i] > max_y {
-                max_x = self.x[i];
-                max_y = self.y[i];
-            }
-        }
-        (max_x, max_y)
-    }
-
-    /// Calculates and returns the x and y location of the global minima in the series. This is
-    /// the x position of the y with the lowest value. If there are multiple y values with the
-    /// same minimum value, the one with the lowest x value is returned.
-    pub fn global_minima_xy(&self) -> (f64, f64) {
-        let mut min_x = self.x[0];
-        let mut min_y = self.y[0];
-        for i in 1..self.x.len() {
-            if self.y[i] < min_y {
-                min_x = self.x[i];
-                min_y = self.y[i];
-            }
-        }
-        (min_x, min_y)
-    }
-
-    /// Calculates and returns the x and y location of the global minima in the series. This is the
-    /// x position of the y with the lowest value. If there are multiple y values with the same
-    /// minimum value, the one with the lowest x value is returned.
-    pub fn global_minima_x(&self) -> (f64, f64) {
-        let mut min_x = self.x[0];
-        let mut min_y = self.y[0];
-        for i in 1..self.x.len() {
-            if self.y[i] < min_y {
-                min_x = self.x[i];
-                min_y = self.y[i];
-            }
-        }
-        (min_x, min_y)
-    }
-
     /// Attempts to split the series into two series at the given x value, with the first value
     /// in the return tuple consisting of the series below the x value and the second value in the
     /// tuple consisting of the series above the x value. If the x value is not in the domain of
@@ -479,62 +605,9 @@ impl Series1 {
             )
         }
     }
-
-    /// Calculates the lower and upper x bounds of a plateau based on an x value assumed to be
-    /// of a local maxima.  This works by finding the value of the maxima, subtracting the
-    /// tolerance, and then finding the first x value to the left and right of the maxima that has
-    /// the y value of the maxima - tolerance.
-    pub fn plateau_at_maxima(&self, x: f64, tol: f64) -> Option<Interval> {
-        let v = self.interpolate(x);
-        if v.is_nan() {
-            return None;
-        }
-        let y = v - tol;
-        let mut crossings = self.y_crossings(y);
-
-        // If the first y value is above the threshold or the last y value is below the threshold,
-        // then those points are crossings
-        if self.y[0] > y {
-            crossings.insert(0, self.x[0]);
-        }
-
-        if self.y[self.y.len() - 1] > y {
-            crossings.push(self.x[self.x.len() - 1]);
-        }
-
-        // TODO: This is a linear search, but it could be a binary search
-        for xs in crossings.windows(2) {
-            if xs[0] <= x && x <= xs[1] {
-                return Some(Interval::new(xs[0], xs[1]));
-            }
-        }
-        None
-    }
-
-    /// Returns a zipped iterator over the x and y values of the series
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use engeom::Series1;
-    /// let series = Series1::try_new(vec![0.0, 1.0, 2.0], vec![0.0, 1.0, 2.0])
-    ///     .expect("Failed to create series");
-    /// for (x, y) in series.xys() {
-    ///    println!("x: {}, y: {}", x, y);
-    /// }
-    /// ```
-    pub fn xys(&self) -> Zip<Iter<'_, f64>, Iter<'_, f64>> {
-        self.x.values().iter().zip(self.y.iter())
-    }
-
-    /// Returns the series as a vector of `Point2` structs by zipping the x and y values together
-    /// and converting them.  The order of the points will be from the smallest x value to the
-    /// largest x value.
-    pub fn as_points(&self) -> Vec<Point2> {
-        self.xys()
-            .map(|(x, y)| Point2::new(*x, *y))
-            .collect::<Vec<_>>()
-    }
+    // ===========================================================================================
+    // Resampling
+    // ===========================================================================================
 
     /// Resamples the series to have `n` evenly spaced points in the domain. The first and last
     /// points will be the same as the first and last points of the original series.
@@ -594,6 +667,10 @@ impl Series1 {
         self.resampled_n(n.ceil() as usize)
     }
 
+    // ===========================================================================================
+    // Misc
+    // ===========================================================================================
+
     /// Calculates and returns clusters of contiguous indices where the y value is within `d_tol`
     /// of the reference function and the x span of the cluster is at least `x_span`.  This is a
     /// specialized method used for identifying regions of a series that match to another series,
@@ -650,40 +727,6 @@ impl Series1 {
         }
 
         results
-    }
-
-    /// Concatenates two series together, returning a new series that contains all the x and y
-    /// values from both series. This will only work if the minimum x value of the second series is
-    /// greater than the maximum x value of the first series, otherwise it will return an Err.
-    ///
-    /// # Arguments
-    ///
-    /// * `other`: A reference to the other series to concatenate, which will be appended to the
-    ///  end of the first series. The minimum x value of the second series must be greater than
-    /// the maximum x value of the first series.
-    ///
-    /// returns: Result<Series1, Box<dyn Error, Global>>
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use engeom::func1::Series1;
-    /// let series1 = Series1::try_new(vec![0.0, 1.0, 2.0], vec![0.0, 1.0, 2.0]).unwrap();
-    /// let series2 = Series1::try_new(vec![3.0, 4.0, 5.0], vec![3.0, 4.0, 5.0]).unwrap();
-    /// let series3 = series1.concat(&series2).unwrap();
-    /// assert_eq!(series3.x.into_vec(), vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0]);
-    /// assert_eq!(series3.y, vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0]);
-    /// ```
-    pub fn concat(&self, other: &Self) -> Result<Self> {
-        if other.x_min() <= self.x_max() {
-            Err("other.x_min() must be greater than self.x_max()".into())
-        } else {
-            let mut xs = self.x.to_vec();
-            xs.extend(other.x.iter());
-            let mut ys = self.y.clone();
-            ys.extend(other.y.iter());
-            Self::try_new(xs, ys)
-        }
     }
 }
 

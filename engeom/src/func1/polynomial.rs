@@ -74,13 +74,13 @@ impl<const K: usize> Polynomial<K> {
     /// use engeom::func1::{Func1, Polynomial};
     /// let xs = vec![-1.0, -0.5, 0.0, 0.5, 1.0];
     /// let ys = vec![1.0, 0.25, 0.0, 0.25, 1.0];
-    /// let p = Polynomial::<3>::least_squares(&xs, &ys, None);
+    /// let p = Polynomial::<3>::least_squares(&xs, &ys, None).unwrap();
     ///
     /// assert_eq!(p.c[0], 0.0);
     /// assert_eq!(p.c[1], 0.0);
     /// assert_eq!(p.c[2], 1.0);
     /// ```
-    pub fn least_squares(xs: &[f64], ys: &[f64], weights: Option<&[f64]>) -> Self {
+    pub fn least_squares(xs: &[f64], ys: &[f64], weights: Option<&[f64]>) -> Option<Self> {
         assert_eq!(xs.len(), ys.len());
         let w = Weights::new(weights);
 
@@ -106,12 +106,12 @@ impl<const K: usize> Polynomial<K> {
             }
         }
 
-        let p = matrix.try_inverse().unwrap() * rhs;
+        let p = matrix.try_inverse()? * rhs;
         let mut c = [0.0; K];
         for i in 0..K {
             c[i] = p[(i, 0)];
         }
-        Self::new(c)
+        Some(Self::new(c))
     }
 }
 
@@ -156,7 +156,7 @@ mod tests {
         let x = DiscreteDomain::linear(-1.0, 1.0, 5);
         let y = origin.fs(&x);
 
-        let fit = Quadratic::least_squares(&x, &y, None);
+        let fit = Quadratic::least_squares(&x, &y, None).unwrap();
 
         assert_relative_eq!(origin.c[0], fit.c[0], epsilon = 1e-10);
         assert_relative_eq!(origin.c[1], fit.c[1], epsilon = 1e-10);
@@ -169,7 +169,7 @@ mod tests {
         let x = DiscreteDomain::linear(-1.0, 1.0, 1000);
         let y = origin.fs(&x);
 
-        let fit = Quartic::least_squares(&x, &y, None);
+        let fit = Quartic::least_squares(&x, &y, None).unwrap();
 
         assert_relative_eq!(origin.c[0], fit.c[0], epsilon = 1e-10);
         assert_relative_eq!(origin.c[1], fit.c[1], epsilon = 1e-10);

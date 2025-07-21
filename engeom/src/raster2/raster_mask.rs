@@ -4,8 +4,7 @@ use crate::raster2::index_iter::IndexIter;
 use crate::raster2::{LabeledRegions, Point2I, zhang_suen_thinning};
 use imageproc::distance_transform::Norm;
 use imageproc::drawing::{
-    draw_filled_circle_mut, draw_filled_rect_mut, draw_hollow_circle_mut,
-    draw_hollow_rect_mut,
+    draw_filled_circle_mut, draw_filled_rect_mut, draw_hollow_circle_mut, draw_hollow_rect_mut,
 };
 use imageproc::morphology::{dilate_mut, erode_mut};
 use imageproc::rect::Rect;

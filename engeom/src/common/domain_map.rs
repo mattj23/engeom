@@ -1,12 +1,10 @@
 use serde::{Deserialize, Serialize};
 
 /// This is an extremely simple linear mapping from one domain to another. It's constructed so that
-/// 0.0 in the outer domain maps to x0 in the inner domain, and 1.0 in the outer domain maps to
-/// x0 + m in the inner domain.
+/// 0.0 in domain A maps to `x0` in domain B, and 1.0 in domain A maps to `x0 + m` in domain B.
 ///
 /// The purpose of this struct is to unambiguously handle a mapping between two domains so that
 /// the calling code doesn't need to think about it.
-/// TODO: Clarify the naming and provide some examples
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct DomainMap {
     pub x0: f64,
@@ -18,12 +16,14 @@ impl DomainMap {
         Self { x0, m }
     }
 
-    pub fn to(&self, x: f64) -> f64 {
-        self.x0 + self.m * x
+    /// Convert a value from A to B
+    pub fn to(&self, a: f64) -> f64 {
+        self.x0 + self.m * a
     }
 
-    pub fn from(&self, x: f64) -> f64 {
-        (x - self.x0) / self.m
+    /// Convert a value from B to A
+    pub fn from(&self, b: f64) -> f64 {
+        (b - self.x0) / self.m
     }
 }
 

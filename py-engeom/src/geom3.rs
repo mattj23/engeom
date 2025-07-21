@@ -3,7 +3,7 @@ use crate::conversions::{array_to_points3, array_to_vectors3, points_to_array, v
 use engeom::geom3::IsoExtensions3;
 use numpy::ndarray::{Array1, Array2};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray2, PyUntypedArrayMethods};
-use parry3d_f64::na::{Translation3, UnitQuaternion};
+use parry3d_f64::na::{Quaternion, Translation3, UnitQuaternion};
 use pyo3::exceptions::PyValueError;
 use pyo3::types::PyIterator;
 use pyo3::{
@@ -713,6 +713,17 @@ impl Iso3 {
             self.inner.translation.y,
             self.inner.translation.z,
         ))
+    }
+
+    #[staticmethod]
+    fn from_quaternion(tx: f64, ty: f64, tz: f64, i: f64, j: f64, k: f64, w: f64) -> Self {
+        let translation = Translation3::new(tx, ty, tz);
+        let quat = Quaternion::new(w, i, j, k);
+        let rotation = UnitQuaternion::from_quaternion(quat);
+
+        Self {
+            inner: engeom::Iso3::from_parts(translation, rotation),
+        }
     }
 
     #[staticmethod]

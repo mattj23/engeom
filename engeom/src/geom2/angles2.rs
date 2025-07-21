@@ -123,3 +123,22 @@ pub fn directed_angle(v1: &Vector2, v2: &Vector2, direction: AngleDir) -> f64 {
         };
     if a < 0.0 { a + 2.0 * PI } else { a }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use approx::assert_relative_eq;
+
+    #[test]
+    fn directed_angle_small() {
+        let da = 0.00001;
+        let v1 = Vector2::new(-0.8523, -0.5574);
+
+        let r = Iso2::rotation(da);
+        let v2 = r * v1;
+
+        let d = directed_angle(&v1, &v2, AngleDir::Cw);
+
+        assert_relative_eq!(d, 2.0 * PI - da, epsilon = 1e-8);
+    }
+}

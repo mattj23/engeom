@@ -532,6 +532,13 @@ class Iso3:
         ...
 
     @staticmethod
+    def from_quaternion(tx: float, ty: float, tz: float, i: float, j: float, k: float, w: float) -> Iso3:
+        """
+        Create an isometry from a translation and a quaternion representing the rotation.
+        :return: an isometry containing both translation and rotation components.
+        """
+
+    @staticmethod
     def from_translation(x: float, y: float, z: float) -> Iso3:
         """
         Create an isometry representing a translation by the specified x, y, and z components.

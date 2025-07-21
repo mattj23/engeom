@@ -17,10 +17,10 @@ mod scalar_raster;
 mod visualize;
 mod zhang_suen;
 
+use crate::Result;
 use crate::common::{PointNI, VectorNI};
 use crate::image::{ImageBuffer, Luma};
 use crate::na::{DMatrix, Scalar};
-use crate::Result;
 pub use ball_rolling::*;
 pub use index_iter::{IndexIter, SizeForIndex};
 pub use inpaint::inpaint;
