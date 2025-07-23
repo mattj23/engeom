@@ -57,9 +57,9 @@ pub fn multi_mesh_adjustment(meshes: &[AlignmentMesh], opts: MMOpts) -> Result<V
     let reference_order = corr_pairs.iter().map(|(i, _)| *i).collect::<Vec<_>>();
 
     let static_i = reference_order[0];
-    println!("correspondence matrix: {}", matrix);
-    println!("static_i: {}", static_i);
-    println!("corr: {:?}", corr_pairs);
+    // println!("correspondence matrix: {}", matrix);
+    // println!("static_i: {}", static_i);
+    // println!("corr: {:?}", corr_pairs);
 
     // Now we want to generate the test points. Each test point is a point in a point cloud which
     // is being matched to another point cloud.  We want to generate these such that for each
@@ -110,17 +110,17 @@ pub fn multi_mesh_adjustment(meshes: &[AlignmentMesh], opts: MMOpts) -> Result<V
         .flatten()
         .collect::<Vec<_>>();
 
-    println!("test_points: {:?}", start.elapsed());
-    println!("handles: {:?}", handles.len());
+    // println!("test_points: {:?}", start.elapsed());
+    // println!("handles: {:?}", handles.len());
     let weighted_count = handles.iter().filter(|h| h.weight > 1.01).count();
-    println!("weighted n={weighted_count}");
+    // println!("weighted n={weighted_count}");
 
     // Now we want to create the problem and solve it
     let start = Instant::now();
 
     let problem = MultiMeshProblem::new(meshes, handles, static_i, opts);
     let (result, report) = LevenbergMarquardt::new().minimize(problem);
-    println!("minimize: {:?}", start.elapsed());
+    // println!("minimize: {:?}", start.elapsed());
     if report.termination.was_successful() {
         let alignments = (0..meshes.len())
             .map(|i| result.params.get_transform(i))
@@ -139,7 +139,7 @@ pub fn multi_mesh_adjustment(meshes: &[AlignmentMesh], opts: MMOpts) -> Result<V
             .map(|(a, g)| Align3::new(*a, g))
             .collect())
     } else {
-        println!("{:?}", report.termination);
+        // println!("{:?}", report.termination);
         Err("Failed to converge".into())
     }
 }
