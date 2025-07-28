@@ -20,6 +20,7 @@ pub mod td;
 pub mod utility;
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
+pub type ResultCode<T> = std::result::Result<T, usize>;
 
 // Re-export some commonly used crates for convenience
 pub use alum;
