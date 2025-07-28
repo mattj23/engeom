@@ -45,7 +45,7 @@ impl RasterMask {
     }
 
     pub fn load(path: &Path) -> Result<RasterMask> {
-        let loaded = ImageReader::open(path)?.decode()?;
+        let loaded = ImageReader::open(path)?.with_guessed_format()?.decode()?;
         let buffer = loaded.into_luma8();
         Ok(RasterMask { buffer })
     }
