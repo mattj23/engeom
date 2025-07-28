@@ -1,5 +1,6 @@
+use std::io::BufWriter;
 use crate::Result;
-use crate::image::{GenericImage, GrayImage, ImageReader, Luma};
+use crate::image::{GenericImage, GrayImage, ImageFormat, ImageReader, Luma};
 use crate::raster2::index_iter::IndexIter;
 use crate::raster2::{LabeledRegions, Point2I, zhang_suen_thinning};
 use imageproc::distance_transform::Norm;
@@ -34,9 +35,12 @@ impl RasterMask {
         RasterMask { buffer }
     }
 
-    pub fn save(&self, path: &Path) -> Result<()> {
+    pub fn save(&self, path: &Path, fmt: ImageFormat) -> Result<()> {
+        let file = std::fs::File::create(path)?;
+        let mut writer = BufWriter::new(file);
+
         self.buffer
-            .save(path)
+            .write_to(&mut writer, fmt)
             .map_err(|e| format!("Failed to save mask to {}: {}", path.display(), e).into())
     }
 
