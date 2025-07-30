@@ -1,11 +1,12 @@
 //! This module contains common constructs for working with angles
 
 use std::f64::consts::PI;
+use serde::{Deserialize, Serialize};
 
 pub const ANGLE_TOL: f64 = 1.0e-12;
 
 /// Enumerates the two possible directions of rotation, clockwise and counter-clockwise
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum AngleDir {
     Cw,
     Ccw,

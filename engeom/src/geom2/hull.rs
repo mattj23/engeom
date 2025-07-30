@@ -9,7 +9,7 @@ use crate::common::kd_tree::KdTreeSearch;
 use crate::{KdTree2, Result};
 use parry2d_f64::shape::ConvexPolygon;
 use parry2d_f64::transformation::convex_hull_idx;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::f64::consts::{FRAC_PI_2, PI};
 
@@ -398,6 +398,16 @@ fn find_start_on_index(points: &[Point2], index: usize, radius: f64) -> Result<(
     } else {
         Ok((index, Iso2::rotation(best_angle) * Vector2::new(1.0, 0.0)))
     }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct DebugBallData {
+    pub points: Vec<Point2>,
+    pub start_index: usize,
+    pub end_index: usize,
+    pub direction: AngleDir,
+    pub radius: f64,
+    pub max_spacing: f64,
 }
 
 // #[derive(Serialize)]
