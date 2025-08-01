@@ -15,6 +15,7 @@ pub mod svd_basis;
 pub mod triangulation;
 pub mod vec_f64;
 mod voxel_downsample;
+pub mod domain_window;
 
 use crate::na::{Point, SVector};
 pub use align::DistMode;

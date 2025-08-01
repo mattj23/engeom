@@ -3,7 +3,8 @@
 
 use crate::image::GrayImage;
 use crate::na::{DMatrix, Scalar};
-use crate::{Iso2, Point2};
+use crate::raster2::Point2I;
+use crate::{Iso2, Point2, Vector2};
 use num_traits::Zero;
 
 #[derive(Clone, Copy)]
@@ -180,6 +181,12 @@ impl RasterMapping {
     /// ```
     pub fn point_of_image_point(&self, img_point: &Point2) -> Point2 {
         let p = self.origin + (img_point.coords * self.px_size);
+        self.inverse * p
+    }
+
+    pub fn point_of_image_point_i(&self, img_point: Point2I) -> Point2 {
+        let c = Vector2::new(img_point.x as f64, img_point.y as f64);
+        let p = self.origin + (c * self.px_size);
         self.inverse * p
     }
 

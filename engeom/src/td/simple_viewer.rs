@@ -1,11 +1,11 @@
-use crate::td::{CameraControl, ModState, ToCgVec3, ToEngeom3, mod_state};
+use crate::td::{CameraControl, ModState, ToCgVec3, ToEngeom3, mod_state, ToCpuMesh, cpu_mat};
 use crate::{Iso3, Point3, Result};
 use itertools::Itertools;
 use std::collections::HashMap;
 use three_d::{
     AmbientLight, Angle, AxisAlignedBoundingBox, Camera, ClearState, ColorMaterial, Context,
-    CoreError, CpuMaterial, CpuMesh, DirectionalLight, Event, FrameOutput, Gm, Mesh, MouseButton,
-    Object, PhysicalMaterial, Srgba, Window, WindowSettings, degrees, pick, vec3,
+    CoreError, CpuMaterial, CpuMesh, DirectionalLight, Event, FrameOutput, Gm, Material, Mesh,
+    MouseButton, Object, PhysicalMaterial, Srgba, Window, WindowSettings, degrees, pick, vec3,
 };
 
 pub struct SimpleViewer {
@@ -13,6 +13,7 @@ pub struct SimpleViewer {
     next_id: usize,
     window: Window,
     context: Context,
+    pub shadows_on: bool,
 }
 
 impl SimpleViewer {
@@ -61,6 +62,7 @@ impl SimpleViewer {
             next_id: 0,
             window,
             context,
+            shadows_on: true,
         })
     }
 
@@ -91,6 +93,30 @@ impl SimpleViewer {
         self.items.insert(id, item);
         self.next_id += 1;
         id
+    }
+
+    pub fn add_polyline(
+        &mut self,
+        points: &[Point3],
+        color: (u8, u8, u8),
+        thickness: f64,
+    ) -> Result<()> {
+        if points.len() < 2 {
+            return Ok(()); // Not enough points to create a polyline
+        }
+
+        let mut mesh = crate::Mesh::create_cylinder_between(&points[0], &points[1], thickness, 6);
+        for i in 2..points.len() {
+            let next_mesh =
+                crate::Mesh::create_cylinder_between(&points[i - 1], &points[i], thickness, 6);
+            mesh.append(&next_mesh)?
+        }
+
+        let cpu_mesh = mesh.to_cpu_mesh();
+        self.add_mesh(cpu_mesh, cpu_mat(color.0, color.1, color.2, 255, 1.0, 0.0));
+
+
+        Ok(())
     }
 
     pub fn remove_item(&mut self, id: usize) {
@@ -129,7 +155,7 @@ impl SimpleViewer {
             10000.0,
         );
 
-        let mut shadows_on = true;
+        let mut shadows_on = self.shadows_on;
         let mut control = CameraControl::new(1.0, 1.0, Iso3::from(center), d);
         control.set_view(&mut camera);
 

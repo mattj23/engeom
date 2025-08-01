@@ -1,8 +1,9 @@
 use crate::common::Resample;
+use crate::common::domain_window::DomainWindowIter;
 use crate::common::points::{dist, ramer_douglas_peucker};
 use crate::errors::InvalidGeometry;
 use crate::geom3::{Iso3, Plane3, Point3, UnitVec3};
-use crate::{Result, SurfacePoint3};
+use crate::{Func1, Polynomial, Result, Smoothing, SurfacePoint3, SvdBasis3};
 use parry3d_f64::na::Unit;
 use parry3d_f64::query::PointQueryWithLocation;
 use parry3d_f64::shape::Polyline;
@@ -94,7 +95,7 @@ pub struct Curve3 {
 
 impl Curve3 {
     pub fn vtx(&self, i: usize) -> Point3 {
-        self.line.vertices()[i]
+        self.line.vertices()[i].clone()
     }
 
     pub fn points(&self) -> &[Point3] {
@@ -162,7 +163,7 @@ impl Curve3 {
         };
 
         CurveStation3::new(
-            self.line.vertices()[index],
+            self.line.vertices()[index].clone(),
             self.dir_of_vertex(index),
             i,
             f,
@@ -255,6 +256,56 @@ impl Curve3 {
         let new_points = ramer_douglas_peucker(self.line.vertices(), tol);
         Self::from_points(&new_points, tol).unwrap()
     }
+
+    pub fn smoothed(&self, mode: Smoothing) -> Result<Self> {
+        match mode {
+            Smoothing::Gaussian(_sigma) => {
+                todo!()
+            }
+            Smoothing::Quadratic(window) => smooth_by_polynomial::<3>(self, window),
+            Smoothing::Cubic(window) => smooth_by_polynomial::<4>(self, window),
+        }
+    }
+
+    pub fn window_iter(&self, window_size: f64) -> DomainWindowIter {
+        DomainWindowIter::new(self.lengths(), window_size)
+    }
+}
+
+fn smooth_by_polynomial<const D: usize>(curve: &Curve3, window_size: f64) -> Result<Curve3> {
+    let mut new_points = Vec::new();
+    for window in curve.window_iter(window_size) {
+        let points = window
+            .iter()
+            .map(|i| curve.line.vertices()[i])
+            .collect::<Vec<_>>();
+
+        if points.len() < 3 {
+            new_points.push(curve.line.vertices()[window.index].clone());
+            continue;
+        }
+
+        let svd = SvdBasis3::from_points(&points, None);
+        let svd_t = Iso3::from(&svd);
+
+        let mut xs = Vec::new();
+        let mut ys = Vec::new();
+        for p in &points {
+            let pt = svd_t * p;
+            xs.push(pt.x);
+            ys.push(pt.y);
+        }
+
+        let Some(poly) = Polynomial::<D>::least_squares(&xs, &ys, None) else {
+            return Err("Failed to fit polynomial".into())
+        };
+
+        let x = (svd_t * curve.line.vertices()[window.index].clone()).x;
+        let y = poly.f(x);
+        new_points.push(svd_t.inverse() * Point3::new(x, y, 0.0));
+    }
+
+    Curve3::from_points(&new_points, curve.tol())
 }
 
 fn resample_by_max_spacing(curve: &Curve3, max_spacing: f64) -> Curve3 {

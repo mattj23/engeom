@@ -1,4 +1,3 @@
-use std::io::BufWriter;
 use crate::Result;
 use crate::image::{GenericImage, GrayImage, ImageFormat, ImageReader, Luma};
 use crate::raster2::index_iter::IndexIter;
@@ -10,6 +9,8 @@ use imageproc::drawing::{
 use imageproc::morphology::{dilate_mut, erode_mut};
 use imageproc::rect::Rect;
 use imageproc::region_labelling::Connectivity;
+use parry2d_f64::utils::hashmap::HashMap;
+use std::io::BufWriter;
 use std::path::Path;
 
 type IpPoint = imageproc::point::Point<i32>;
@@ -518,6 +519,63 @@ impl RasterMask {
     pub fn convex_hull(&self) -> Vec<Point2I> {
         let result = imageproc::geometry::convex_hull(self);
         result.into_iter().map(|p| Point2I::new(p.x, p.y)).collect()
+    }
+
+    /// Generates a list of vertices and triangles from the mask, where each true pixel's
+    /// coordinates are treated as a vertex, and each triangle is formed by connecting three
+    /// vertices.
+    ///
+    /// This function is a helper in generating meshes from rasters, in that it will generate
+    /// the triangular mesh structure from the connectivity of the mask pixels, but the actual
+    /// vertices will be calculated through some operation on the pixel index on some other
+    /// data structure, such as a ScalarRaster or a UV map.
+    pub fn triangle_structure(&self) -> (Vec<Point2I>, Vec<[u32; 3]>) {
+        let mut vertices = Vec::new();
+        let mut by_index = HashMap::new();
+        for p in self.iter_true() {
+            vertices.push(p);
+            by_index.insert(p, (vertices.len() - 1) as u32);
+        }
+
+        let mut faces = Vec::<[u32; 3]>::new();
+        for (p, i) in by_index.iter() {
+            let p_right = Point2I::new(p.x + 1, p.y);
+            let p_up = Point2I::new(p.x, p.y + 1);
+            let p_up_right = Point2I::new(p.x + 1, p.y + 1);
+            if let Some(i_up_right) = by_index.get(&p_up_right) {
+                // If we do have the upper right corner, we will form the two faces as possible
+                // going diagonally to the corner
+                if let Some(i_right) = by_index.get(&p_right) {
+                    faces.push([*i, *i_right, *i_up_right]);
+                }
+
+                if let Some(i_up) = by_index.get(&p_up) {
+                    faces.push([*i, *i_up_right, *i_up]);
+                }
+            } else {
+                if let (Some(i_right), Some(i_up)) = (by_index.get(&p_right), by_index.get(&p_up)) {
+                    // If we do not have the upper right corner, but do have the upper and right
+                    // corners independently, we will form the face canted in the other
+                    // direction.
+                    faces.push([*i, *i_right, *i_up]);
+                }
+            }
+
+            // Lastly, we'll check if the point below is missing, if so we'll fill in the
+            // diagonal face if the right and right lower points exist
+            let p_down = Point2I::new(p.x, p.y - 1);
+            if by_index.contains_key(&p_down) {
+                continue;
+            }
+
+            let p_down_right = Point2I::new(p.x + 1, p.y - 1);
+            if let (Some(i_down_right), Some(i_right)) =
+                (by_index.get(&p_down_right), by_index.get(&p_right))
+            {
+                faces.push([*i, *i_down_right, *i_right]);
+            }
+        }
+        (vertices, faces)
     }
 }
 

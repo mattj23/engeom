@@ -3,6 +3,7 @@
 use crate::common::PCoords;
 use crate::common::surface_point::SurfacePoint;
 use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector};
+use crate::common::kd_tree::{KdTree, KdTreeSearch};
 
 /// Calculate the barycentric coordinates of a point `p` with respect to the triangle defined by
 /// points `a`, `b`, and `c` in D-dimensional space.  The barycentric coordinates are a way of
@@ -508,6 +509,63 @@ where
 {
     points.iter().map(|p| transform * p).collect()
 }
+
+
+/// Clusters a set of points by distance tolerance, where all points reachable by a series of hops
+/// less than or equal to the specified tolerance are grouped together into a single cluster.
+///
+/// This implementation does not make use of any spatial data structures, so it is O(n^2) in the
+/// number of points.  Use it for relatively small numbers of points.
+///
+/// # Arguments
+///
+/// * `points`:
+/// * `tol`:
+///
+/// returns: Vec<Vec<OPoint<f64, Const<{ D }>>, Global>, Global>
+pub fn cluster_points_by_tol<const D: usize>(
+    points: &[Point<f64, D>],
+    tol: f64,
+) -> Vec<Vec<Point<f64, D>>> {
+    let mut clusters = Vec::new();
+    let mut working = points.to_vec();
+    let tol2 = tol * tol;
+
+    while !working.is_empty() {
+        let mut group = vec![working.pop().unwrap()];
+        loop {
+            let tree = KdTree::new(&group);
+            let mut to_add = Vec::new();
+            for (i, p) in working.iter().enumerate() {
+                // let (d, _) = tree.nearest_one(&to_slice(p), &squared_euclidean);
+                let (_, d) = tree.nearest_one(p);
+                if d <= tol2 {
+                    to_add.push(i);
+                }
+            }
+
+            if to_add.is_empty() {
+                break;
+            } else {
+                for i in to_add.iter().rev() {
+                    group.push(working.remove(*i));
+                }
+            }
+        }
+        clusters.push(group);
+    }
+
+    clusters
+}
+
+pub fn merge_points_by_tol<const D: usize>(
+    points: &[Point<f64, D>],
+    tol: f64,
+) -> Vec<Point<f64, D>> {
+    let clusters = cluster_points_by_tol(points, tol);
+    clusters.iter().map(|c| mean_point(c)).collect()
+}
+
 
 #[cfg(test)]
 mod tests {

@@ -511,7 +511,7 @@ impl Series1 {
 
     /// Returns a new series that contains the region of the series between x0 and x1, including
     /// the end points. This breaks the regularity of the spacing
-    pub fn between(&self, x0: f64, x1: f64) -> Self {
+    pub fn between(&self, x0: f64, x1: f64) -> Option<Self> {
         let mut xs = Vec::new();
         let mut ys = Vec::new();
 
@@ -536,20 +536,28 @@ impl Series1 {
             i += 1;
         }
 
+        // If the last x value is less than x1, we will add it _if_ x1 is contained in the domain
+        if xs.len() == 0 {
+            return None;
+        }
+
         if xs[xs.len() - 1] < x1 {
-            xs.push(x1);
-            ys.push(self.interpolate(x1));
+            let y1 = self.interpolate(x1);
+            if !y1.is_nan() {
+                xs.push(x1);
+                ys.push(y1);
+            }
         }
 
         let new_xs = DiscreteDomain::try_from(xs).unwrap();
-        Self::new(new_xs, ys)
+        Some(Self::new(new_xs, ys))
     }
 
     pub fn interval(&self) -> Interval {
         Interval::new(self.x_min(), self.x_max())
     }
 
-    pub fn in_interval(&self, interval: Interval) -> Self {
+    pub fn in_interval(&self, interval: Interval) -> Option<Self> {
         self.between(interval.min, interval.max)
     }
 
@@ -600,8 +608,8 @@ impl Series1 {
             (None, Some(self.clone()))
         } else {
             (
-                Some(self.between(self.x_min(), x)),
-                Some(self.between(x, self.x_max())),
+                self.between(self.x_min(), x),
+                self.between(x, self.x_max()),
             )
         }
     }
