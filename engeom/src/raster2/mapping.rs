@@ -3,7 +3,7 @@
 
 use crate::image::GrayImage;
 use crate::na::{DMatrix, Scalar};
-use crate::raster2::Point2I;
+use crate::raster2::{Point2I, RasterMask};
 use crate::{Iso2, Point2, Vector2};
 use num_traits::Zero;
 
@@ -31,10 +31,10 @@ impl RasterMapping {
         DMatrix::zeros(self.shape.0, self.shape.1)
     }
 
-    /// Create a new `image::GrayImage` of the same shape as the raster mapping, filled with zeros.
+    /// Create a new `RasterMask` of the same shape as the raster mapping, filled with zeros.
     /// This is an 8-bit grayscale image that can be used for fast raster masking operations.
-    pub fn make_mask(&self) -> GrayImage {
-        GrayImage::new(self.shape.1 as u32, self.shape.0 as u32)
+    pub fn make_mask(&self) -> RasterMask {
+        RasterMask::empty(self.shape.1 as u32, self.shape.0 as u32)
     }
 
     /// Create a new `ImageMapping` given the origin, shape, pixel size, and an optional transform
@@ -144,6 +144,11 @@ impl RasterMapping {
         Point2::new(x, y)
     }
 
+    pub fn image_index_of(&self, p: &Point2) -> Point2I {
+        let img_point = self.image_point_of(p);
+        Point2I::new(img_point.x as i32, img_point.y as i32)
+    }
+
     /// Return the point in the cartesian space which is mapped to the given row and column of the
     /// image.
     ///
@@ -184,6 +189,14 @@ impl RasterMapping {
         self.inverse * p
     }
 
+    /// Takes a pixel index point (represented as `Point2I`) and returns the corresponding point
+    /// in the cartesian UV space.
+    ///
+    /// # Arguments
+    ///
+    /// * `img_point`: The pixel index point in the image space, represented as `Point2I`.
+    ///
+    /// returns: OPoint<f64, Const<2>>
     pub fn point_of_image_point_i(&self, img_point: Point2I) -> Point2 {
         let c = Vector2::new(img_point.x as f64, img_point.y as f64);
         let p = self.origin + (c * self.px_size);

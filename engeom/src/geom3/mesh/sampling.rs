@@ -64,12 +64,12 @@ impl Mesh {
                 // sample the centroid of the face, as an equally sized neighbor should have its
                 // centroid within the max spacing distance of this triangle's centroid.
                 let bc = [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0];
-                let sp = self.at_barycentric(face_index, bc).unwrap();
+                let sp = self.at_barycentric(face_index, bc).unwrap().sp;
                 sampled.push(MeshSurfPoint { face_index, bc, sp });
             } else {
                 let grid = barycentric_grid(&a, &b, &c, max_spacing);
                 for bc in grid {
-                    let sp = self.at_barycentric(face_index, bc).unwrap();
+                    let sp = self.at_barycentric(face_index, bc).unwrap().sp;
                     sampled.push(MeshSurfPoint { face_index, bc, sp });
                 }
             }

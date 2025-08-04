@@ -9,19 +9,20 @@ mod faces;
 pub mod filtering;
 pub mod half_edge;
 mod measurement;
+mod nav_structure;
 mod outline;
-mod patches;
 mod queries;
 pub mod sampling;
 mod uv_mapping;
 
-use crate::common::PCoords;
+use crate::common::{IndexMask, PCoords};
 use crate::geom3::{Aabb3, IsoExtensions3};
 use crate::na::SVector;
 use crate::{Iso3, Point2, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
 pub use collisions::MeshCollisionSet;
 pub use edges::MeshEdges;
 pub use half_edge::HalfEdgeMesh;
+pub use nav_structure::MeshNav;
 use parry3d_f64::shape::{TriMesh, TriMeshFlags};
 use parry3d_f64::{shape, transformation};
 pub use uv_mapping::UvMapping;
@@ -225,12 +226,13 @@ impl Mesh {
         self.shape.transform_vertices(transform);
     }
 
-    pub fn uv_to_3d(&self, uv: &Point2) -> Option<SurfacePoint3> {
+    pub fn uv_to_3d(&self, uv: &Point2) -> Option<MeshSurfPoint> {
         let (i, bc) = self.uv()?.triangle(uv)?;
-        let t = self.shape.triangle(i);
-        let coords = t.a.coords * bc[0] + t.b.coords * bc[1] + t.c.coords * bc[2];
-
-        t.normal().map(|n| SurfacePoint3::new(coords.into(), n))
+        if let Ok(msp) = self.at_barycentric(i, bc) {
+            Some(msp)
+        } else {
+            None
+        }
     }
 
     pub fn uv_with_tol(
@@ -340,8 +342,26 @@ impl Mesh {
         mesh
     }
 
-    pub fn get_patches(&self) -> Vec<Vec<usize>> {
-        patches::compute_patch_indices(self)
+    /// Create a new `MeshNav` structure for this mesh. This structure is used to efficiently
+    /// navigate the mesh through edges and faces.  It is recommended to use this if you will be
+    /// performing multiple structural queries on the mesh, so that the structure does not need to
+    /// be recomputed each time.
+    pub fn nav(&self) -> MeshNav {
+        MeshNav::new(self)
+    }
+
+    /// Calculates the patches in the mesh. If you are going to be doing multiple queries of the
+    /// structure of the mesh, either use the half-edge representation, or generate a `MeshNav`
+    /// through the `nav()` method to avoid having to recompute the mesh structure each time.
+    ///
+    /// # Arguments
+    ///
+    /// * `mask`:
+    ///
+    /// returns: Result<Vec<IndexMask, Global>, Box<dyn Error, Global>>
+    pub fn get_patches(&self, mask: Option<&IndexMask>) -> Result<Vec<IndexMask>> {
+        let nav = self.nav();
+        nav.patches(mask)
     }
 
     /// Gets the boundary points of each patch in the mesh.  This function will return a list of
@@ -350,13 +370,19 @@ impl Mesh {
     ///
     /// returns: Result<Vec<Vec<usize, Global>, Global>>
     pub fn get_patch_boundary_points(&self) -> Result<Vec<Vec<Point3>>> {
-        let patches = self.get_patches();
-        let mut result = Vec::new();
-        for patch in patches.iter() {
-            result.extend(patches::compute_boundary_points(self, patch)?);
+        let edges = MeshEdges::new(&self)?;
+
+        let mut b_loops = Vec::new();
+        for b_loop in edges.boundary_loops.iter() {
+            b_loops.push(
+                b_loop
+                    .iter()
+                    .map(|vi| self.vertices()[*vi as usize])
+                    .collect(),
+            );
         }
 
-        Ok(result)
+        Ok(b_loops)
     }
 
     pub fn get_face_normals(&self) -> Result<Vec<UnitVec3>> {

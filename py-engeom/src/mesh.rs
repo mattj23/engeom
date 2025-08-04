@@ -375,12 +375,18 @@ impl Mesh {
         Self::from_inner(self.inner.create_from_indices(&indices))
     }
 
-    fn separate_patches(&self) -> Vec<Self> {
-        let patch_groups = self.inner.get_patches();
-        patch_groups
-            .into_iter()
-            .map(|indices| self.create_from_indices(indices))
-            .collect()
+    fn separate_patches(&self) -> PyResult<Vec<Self>> {
+        let patch_groups = self.inner.get_patches(None)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let mut results = Vec::with_capacity(patch_groups.len());
+        for mask in patch_groups.iter() {
+            results.push(
+                self.inner
+                    .create_from_mask(mask)
+                    .map_err(|e| PyValueError::new_err(e.to_string()))?,
+            );
+        }
+        Ok(results.into_iter().map(Self::from_inner).collect())
     }
 
     fn convex_hull(&self) -> Self {

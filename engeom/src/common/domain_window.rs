@@ -148,8 +148,8 @@ mod tests {
             let indices: Vec<usize> = domain
                 .iter()
                 .enumerate()
-                .filter(|(_i, &s)| {
-                    s >= current_position - half_size && s <= current_position + half_size
+                .filter(|(_i, s)| {
+                    **s >= current_position - half_size && **s <= current_position + half_size
                 })
                 .map(|(i, _s)| i)
                 .collect();

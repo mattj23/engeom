@@ -3,6 +3,7 @@
 use super::Mesh;
 use crate::{Point3, Result};
 use std::collections::{HashMap, HashSet};
+use crate::common::IndexMask;
 
 type EdgesFacesLoops = (Vec<[u32; 2]>, Vec<[u32; 3]>, Vec<Vec<u32>>);
 

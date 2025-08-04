@@ -41,7 +41,7 @@ impl Mesh {
     /// * `bc`: An array of barycentric coordinates [u, v, w] where u + v + w = 1.0.
     ///
     /// returns: Result<SurfacePoint<3>, Box<dyn Error, Global>>
-    pub fn at_barycentric(&self, face_id: u32, bc: [f64; 3]) -> Result<SurfacePoint3> {
+    pub fn at_barycentric(&self, face_id: u32, bc: [f64; 3]) -> Result<MeshSurfPoint> {
         if face_id >= self.faces().len() as u32 {
             return Err("Invalid face ID".into());
         }
@@ -49,8 +49,12 @@ impl Mesh {
         let face = self.shape.triangle(face_id);
         let coords = face.a.coords * bc[0] + face.b.coords * bc[1] + face.c.coords * bc[2];
         let normal = face.normal().ok_or("No face normal found")?;
-
-        Ok(SurfacePoint3::new(coords.into(), normal))
+        let sp = SurfacePoint3::new(coords.into(), normal);
+        Ok(MeshSurfPoint {
+            face_index: face_id,
+            bc,
+            sp,
+        })
     }
 
     /// Find the index of the face that is closest to the given point in local coordinates.

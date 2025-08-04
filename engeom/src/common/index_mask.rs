@@ -71,6 +71,10 @@ impl IndexMask {
         }
     }
 
+    pub fn count_true(&self) -> usize {
+        self.iter_true().count()
+    }
+
     pub fn clone_indices_of<T: Clone>(&self, items: &[T]) -> Result<Vec<T>> {
         if items.len() != self.len() {
             return Err(format!(

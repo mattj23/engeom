@@ -105,8 +105,8 @@ impl UvMapping {
     ///
     /// returns: RasterMapping
     pub fn make_raster_mapping(&self, px_size: f64, padding: usize) -> RasterMapping {
-        let origin: Point2 = self.tri_map.local_aabb().mins;
-        let max = self.tri_map.local_aabb().maxs;
+        let origin: Point2 = self.tri_map.local_aabb().mins.clone();
+        let max = self.tri_map.local_aabb().maxs.clone();
         let size = max - origin;
 
         let width_px = (size.x / px_size).ceil() as usize + padding * 2;
