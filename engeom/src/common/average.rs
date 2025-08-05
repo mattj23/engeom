@@ -46,7 +46,10 @@ where
         self.count = self.count + weight;
     }
 
-    pub fn average(&self) -> T {
-        self.sum / self.count
+    pub fn average(&self) -> Option<T> {
+        if self.count.is_zero() {
+            return None;
+        }
+        Some(self.sum / self.count)
     }
 }

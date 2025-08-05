@@ -28,6 +28,23 @@ pub fn convex_hull_2d(points: &[Point2]) -> Vec<usize> {
     convex_hull_idx(points)
 }
 
+pub fn farthest_pair_on_hull(all_points: &[Point2], hull_indices: &[usize]) -> (usize, usize) {
+    // Find the farthest pair of points on the convex hull
+    let mut max_dist = 0.0;
+    let mut max_pair = (0, 0);
+    for i in 0..hull_indices.len() {
+        for j in i + 1..hull_indices.len() {
+            let d = dist(&all_points[hull_indices[i]], &all_points[hull_indices[j]]);
+            if d > max_dist {
+                max_dist = d;
+                max_pair = (hull_indices[i], hull_indices[j]);
+            }
+        }
+    }
+
+    max_pair
+}
+
 /// Finds the indices of the two points in a convex hull which are farthest apart. This is done by
 /// calculating the distance between every pair of points in the hull and returning the indices of
 /// the pair with the greatest distance. Needs to be replaced with the rotating caliper algorithm.

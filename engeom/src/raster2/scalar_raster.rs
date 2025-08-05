@@ -396,6 +396,26 @@ impl ScalarRaster {
         img.save(path).map_err(|e| e.into())
     }
 
+    pub fn to_rgba(&self, limits: Option<(f64, f64)>) -> RgbaImage {
+        let working = if let Some((min_z, max_z)) = limits {
+            self.with_new_z_limits(min_z, max_z)
+        } else {
+            self.clone()
+        };
+
+        let mut img = RgbaImage::new(working.width(), working.height());
+        for p in working.mask.iter_true() {
+            let value = (working.u_at(p).unwrap() / 256) as u8;
+            img.put_pixel(
+                p.x as u32,
+                p.y as u32,
+                Rgba([value, value, value, 255]),
+            );
+        }
+
+        img
+    }
+
     // ============================================================================================
     // Creation operations
     // ============================================================================================

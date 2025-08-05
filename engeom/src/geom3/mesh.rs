@@ -25,6 +25,7 @@ pub use half_edge::HalfEdgeMesh;
 pub use nav_structure::MeshNav;
 use parry3d_f64::shape::{TriMesh, TriMeshFlags};
 use parry3d_f64::{shape, transformation};
+use parry3d_f64::query::PointQueryWithLocation;
 pub use uv_mapping::UvMapping;
 
 /// A struct which represents a point on the surface of a mesh, including the index of the face
@@ -233,6 +234,15 @@ impl Mesh {
         } else {
             None
         }
+    }
+
+    pub fn project_to_uv(&self, p: &impl PCoords<3>) -> Option<Point2> {
+        let Some(uv_map) = self.uv() else {
+            return None;
+        };
+
+        let mp = self.surf_closest_to(p);
+        Some(uv_map.point(mp.face_index, mp.bc))
     }
 
     pub fn uv_with_tol(
