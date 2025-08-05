@@ -5,6 +5,7 @@ use crate::raster2::{LabeledRegions, Point2I, zhang_suen_thinning};
 use imageproc::distance_transform::Norm;
 use imageproc::drawing::{
     draw_filled_circle_mut, draw_filled_rect_mut, draw_hollow_circle_mut, draw_hollow_rect_mut,
+    draw_polygon_mut,
 };
 use imageproc::morphology::{dilate_mut, erode_mut};
 use imageproc::rect::Rect;
@@ -506,6 +507,16 @@ impl RasterMask {
             draw_filled_circle_mut(&mut self.buffer, (center.x, center.y), radius, color);
         } else {
             draw_hollow_circle_mut(&mut self.buffer, (center.x, center.y), radius, color);
+        }
+    }
+
+    pub fn draw_polygon_mut(&mut self, points: &[Point2I], value: bool, filled: bool) {
+        let color = if value { Luma([255]) } else { Luma([0]) };
+        if filled {
+            let ipoints: Vec<IpPoint> = points.iter().map(|p| IpPoint::new(p.x, p.y)).collect();
+            draw_polygon_mut(&mut self.buffer, &ipoints, color);
+        } else {
+            todo!("drawing a hollow polygon is not implemented yet");
         }
     }
 
