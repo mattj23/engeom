@@ -510,14 +510,19 @@ impl RasterMask {
         }
     }
 
-    pub fn draw_polygon_mut(&mut self, points: &[Point2I], value: bool, filled: bool) {
+    pub fn draw_polygon_mut(&mut self, points: &[Point2I], value: bool, filled: bool) -> Result<()> {
         let color = if value { Luma([255]) } else { Luma([0]) };
         if filled {
-            let ipoints: Vec<IpPoint> = points.iter().map(|p| IpPoint::new(p.x, p.y)).collect();
+            let ipoints = polygon_ipoints(points);
+            if ipoints.len() < 3 {
+                return Err("Cannot draw a polygon with less than 3 points".into());
+            }
             draw_polygon_mut(&mut self.buffer, &ipoints, color);
         } else {
             todo!("drawing a hollow polygon is not implemented yet");
         }
+
+        Ok(())
     }
 
     // ==========================================================================================
@@ -588,6 +593,16 @@ impl RasterMask {
         }
         (vertices, faces)
     }
+}
+
+fn polygon_ipoints(points: &[Point2I]) -> Vec<IpPoint> {
+    let mut working = points.to_vec();
+    while working.len() > 2 && working[0] == working[working.len() - 1] {
+        // Remove the last point if it is the same as the first point
+        working.pop();
+    }
+
+    working.iter().map(|p| IpPoint::new(p.x, p.y)).collect()
 }
 
 pub struct RasterMaskTrueIterator<'a> {
