@@ -164,8 +164,15 @@ impl<'a> MeshNav<'a> {
                 }
             } else {
                 let start_id = *queue.iter().next().unwrap();
+                queue.remove(&start_id);
                 working.push(start_id);
             }
+        }
+
+        // If there's any remaining working loop, add it to the list
+        if !working.is_empty() {
+            working.reverse();
+            all_loops.push(working);
         }
 
         all_loops
