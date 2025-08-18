@@ -103,6 +103,11 @@ impl Mesh {
         SurfacePoint3::from_inner(self.inner.surf_closest_to(&p).sp)
     }
 
+    fn point_closest_to(&self, x: f64, y: f64, z: f64) -> Point3 {
+        let p = engeom::Point3::new(x, y, z);
+        Point3::from_inner(self.inner.point_closest_to(&p))
+    }
+
     fn append(&mut self, other: &Mesh) -> PyResult<()> {
         self.clear_cached();
         self.inner

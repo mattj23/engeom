@@ -1317,6 +1317,15 @@ class Mesh:
         :return: a `SurfacePoint3` object containing the closest point and normal
         """
         ...
+    def point_closest_to(self, x: float, y: float, z: float) -> Point3:
+        """
+        Find the closest point on the surface of the mesh to a given point in space, returning the point
+        :param x: the x coordinate of the point to find the closest point to
+        :param y: the y coordinate of the point to find the closest point to
+        :param z: the z coordinate of the point to find the closest point to
+        :return: a `Point3` object containing the closest point and normal
+        """
+        ...
 
     def visual_outline(
             self,
