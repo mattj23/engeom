@@ -166,7 +166,7 @@ impl From<&SvdBasis3> for Plane3 {
     ///    Point3::new(5.0, 10.0, 16.0),
     ///    Point3::new(5.0, 11.0, 15.0),
     /// ];
-    /// let svd = SvdBasis3::from_points(&points, None);
+    /// let svd = SvdBasis3::from_points(&points, None).unwrap();
     /// let plane = Plane3::from(&svd);
     /// assert_relative_eq!(plane.normal.x, 1.0, epsilon = 1e-6);
     /// assert_relative_eq!(plane.d, 5.0, epsilon = 1e-6);

@@ -1,10 +1,10 @@
 //! This module has a struct that provides quick lookups of associations between faces and
 //! edges in a triangular mesh.
 
-use crate::common::IndexMask;
-use crate::geom3::mesh::edges::edge_key;
 use crate::Mesh;
 use crate::Result;
+use crate::common::IndexMask;
+use crate::geom3::mesh::edges::edge_key;
 use parry3d_f64::utils::hashmap::HashMap;
 use parry3d_f64::utils::hashset::HashSet;
 use std::io::Write;
@@ -36,6 +36,16 @@ impl<'a> MeshNav<'a> {
             face_to_edges,
             edge_to_faces,
         }
+    }
+
+    pub fn faces_with_vertex(&self, vertex: u32) -> Vec<u32> {
+        let mut indices = Vec::new();
+        for (i, face) in self.mesh.faces().iter().enumerate() {
+            if face.contains(&vertex) {
+                indices.push(i as u32);
+            }
+        }
+        indices
     }
 
     pub fn patches(&self, mask: Option<&IndexMask>) -> Result<Vec<IndexMask>> {
@@ -129,21 +139,51 @@ impl<'a> MeshNav<'a> {
         edges
     }
 
+
+    /// Returns a list of vertices that are part of non-manifold edges, meaning that the vertices
+    /// are boundary vertices but are connected to more than two other vertices. These are the
+    /// specific vertices which will result in an error when running the `boundary_loops`
+    /// function.
+    ///
+    /// # Arguments
+    ///
+    /// * `mask`: an optional mask that filters the faces to consider when finding non-manifold
+    ///   boundary vertices.
+    ///
+    /// returns: Vec<u32, Global>
+    pub fn nonmanifold_boundary_vertices(&self, mask: Option<&IndexMask>) -> Vec<u32> {
+        let mut duplicates = HashSet::new();
+        let edges = self.boundary_edges(mask);
+        let mut edge_map = HashMap::new();
+        for edge in edges {
+            if edge_map.insert(edge[0], edge[1]).is_some() {
+                duplicates.insert(edge[0]);
+            }
+        }
+
+        duplicates.into_iter().collect::<Vec<_>>()
+    }
+
     /// Returns a list of boundary loops in the mesh. A boundary loop is a closed path of vertices
     /// that form a loop on the boundary of the mesh. If a mask is provided, the function will
     /// only consider faces that are included in the mask, similar to if the mesh had been pruned
     /// with the mask.
     ///
+    /// If a non-manifold edge vertex is found, the function will return an error. To see which
+    /// specific vertices are non-manifold, use the `nonmanifold_boundary_vertices` method.
+    ///
     /// # Arguments
     ///
     /// * `mask`: an optional mask that filters the faces to consider when finding boundary loops.
     ///
-    /// returns: Vec<Vec<u32, Global>, Global>
-    pub fn boundary_loops(&self, mask: Option<&IndexMask>) -> Vec<Vec<u32>> {
+    /// returns: Result<Vec<Vec<u32, Global>, Global>, Box<dyn Error, Global>>
+    pub fn boundary_loops(&self, mask: Option<&IndexMask>) -> Result<Vec<Vec<u32>>> {
         let edges = self.boundary_edges(mask);
         let mut edge_map = HashMap::new();
         for edge in edges {
-            edge_map.insert(edge[0], edge[1]);
+            if edge_map.insert(edge[0], edge[1]).is_some() {
+                return Err(format!("Non-manifold edge found: {}-{}", edge[0], edge[1]).into());
+            }
         }
 
         let mut all_loops = Vec::new();
@@ -154,7 +194,6 @@ impl<'a> MeshNav<'a> {
             if let Some(last_id) = working.last() {
                 let next_id = edge_map[last_id];
                 queue.remove(&next_id);
-
                 if *working.first().unwrap() == next_id {
                     working.reverse();
                     all_loops.push(working);
@@ -175,9 +214,8 @@ impl<'a> MeshNav<'a> {
             all_loops.push(working);
         }
 
-        all_loops
+        Ok(all_loops)
     }
-
 
     /// This is a morphological operation that flood-selects a patch of faces that are contained
     /// within a loop of vertices. It can be used to fill holes in a selection.
@@ -306,7 +344,7 @@ mod tests {
 
         let nav = MeshNav::new(&mesh);
 
-        let loops = nav.boundary_loops(Some(&indices));
+        let loops = nav.boundary_loops(Some(&indices)).unwrap();
         assert_eq!(loops.len(), 4, "Expected four boundary loops from the mask");
 
         let mut lengths = loops.iter().map(|loop_| loop_.len()).collect::<Vec<_>>();
@@ -326,12 +364,16 @@ mod tests {
         let indices = faces_from_mask(&mask, &mapping, &mesh);
         let nav = MeshNav::new(&mesh);
 
-        let mut boundary_loops = nav.boundary_loops(Some(&indices));
+        let mut boundary_loops = nav.boundary_loops(Some(&indices)).unwrap();
         boundary_loops.sort_by(|a, b| a.len().cmp(&b.len()));
         let mut working = boundary_loops[0].clone();
         working.reverse();
 
         let inner = nav.get_patch_inside_loop(&working).unwrap();
-        assert_eq!(inner.count_true(), 4960, "Inner loop filled should have 4960 faces");
+        assert_eq!(
+            inner.count_true(),
+            4960,
+            "Inner loop filled should have 4960 faces"
+        );
     }
 }

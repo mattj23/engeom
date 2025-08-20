@@ -55,6 +55,7 @@ pub struct RasterKernel {
     pub values: DMatrix<f64>,
     pub size: usize,
     pub tail_n: i32,
+    pub sum_abs: f64,
 }
 
 impl RasterKernel {
@@ -93,10 +94,13 @@ impl RasterKernel {
         let size = values.nrows();
         let tail_n = (size as i32 - 1) / 2; // The tail length is half the size minus one
 
+        let sum_abs = values.abs().sum();
+
         Ok(Self {
             values,
             size,
             tail_n,
+            sum_abs,
         })
     }
 
@@ -287,7 +291,7 @@ impl RasterKernel {
         if kernel_sum.abs() < f64::EPSILON {
             f64::NAN
         } else {
-            pixel_sum / kernel_sum
+            pixel_sum / kernel_sum / self.sum_abs
         }
     }
 }
