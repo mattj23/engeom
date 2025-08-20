@@ -74,7 +74,7 @@ fn svd_normal(neighbors: &[usize], points: &[Point3]) -> (UnitVec3, f64) {
     }
     let working = neighbors.iter().map(|&i| points[i]).collect::<Vec<_>>();
 
-    let svd = SvdBasis3::from_points(&working, None);
+    let svd = SvdBasis3::from_points(&working, None).unwrap();
     let st_dev = svd.basis_stdevs();
     // TODO: I don't remember where this formula comes from
     let certainty = (st_dev[1] / st_dev[0]) * (st_dev[0] - st_dev[2]) / st_dev[0];

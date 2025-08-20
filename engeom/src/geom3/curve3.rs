@@ -285,7 +285,8 @@ fn smooth_by_polynomial<const D: usize>(curve: &Curve3, window_size: f64) -> Res
             continue;
         }
 
-        let svd = SvdBasis3::from_points(&points, None);
+        let svd = SvdBasis3::from_points(&points, None)
+            .ok_or("Failed to compute SVD basis")?;
         let svd_t = Iso3::from(&svd);
 
         let mut xs = Vec::new();

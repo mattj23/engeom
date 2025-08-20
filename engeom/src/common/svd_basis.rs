@@ -97,7 +97,7 @@ impl<const D: usize> SvdBasis<D> {
     /// ```
     ///
     /// ```
-    pub fn from_points(points: &[Point<f64, D>], weights: Option<&[f64]>) -> Self {
+    pub fn from_points(points: &[Point<f64, D>], weights: Option<&[f64]>) -> Option<Self> {
         if let Some(w) = weights {
             let center = mean_point_weighted(points, w);
             let vectors = points
@@ -191,7 +191,7 @@ impl<const D: usize> SvdBasis<D> {
 fn svd_from_vectors<const D: usize>(
     vecs: &[SVector<f64, D>],
     center: Option<Point<f64, D>>,
-) -> SvdBasis<D> {
+) -> Option<SvdBasis<D>> {
     let n = vecs.len();
     let mut matrix = DMatrix::zeros(n, D);
     for (i, p) in vecs.iter().enumerate() {
@@ -201,7 +201,11 @@ fn svd_from_vectors<const D: usize>(
     }
 
     let result = matrix.svd(false, true);
-    let v_t = result.v_t.unwrap();
+    let v_t = result.v_t?;
+
+    if v_t.nrows() != D || v_t.ncols() != D {
+        return None;
+    }
 
     let mut basis = [SVector::<f64, D>::zeros(); D];
     let mut scales = [0.0; D];
@@ -212,12 +216,12 @@ fn svd_from_vectors<const D: usize>(
         scales[i] = result.singular_values[i];
     }
 
-    SvdBasis {
+    Some(SvdBasis {
         basis,
         sv: scales,
         center: center.unwrap_or(Point::<f64, D>::origin()),
         n,
-    }
+    })
 }
 
 pub fn iso3_from_basis(basis: &[SVector<f64, 3>; 3], origin: &Point<f64, 3>) -> Iso3 {
@@ -310,7 +314,7 @@ mod tests {
             Point3::new(0.0, -1.0, 0.0),
         ];
 
-        let result = SvdBasis3::from_points(&points, None);
+        let result = SvdBasis3::from_points(&points, None).unwrap();
         assert_relative_eq!(result.center, Point3::origin());
         assert_relative_eq!(result.basis[0], Vector3::x_axis());
         assert_relative_eq!(result.basis[1], Vector3::y_axis());

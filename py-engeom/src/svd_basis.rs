@@ -34,7 +34,13 @@ impl SvdBasis2 {
             None => engeom::SvdBasis2::from_points(&points, None),
         };
 
-        Ok(Self { inner: basis })
+        if basis.is_none() {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "Failed to create SvdBasis2 from points",
+            ));
+        }
+
+        Ok(Self { inner: basis.unwrap() })
     }
 
     fn rank(&self, tol: f64) -> usize {
@@ -102,7 +108,13 @@ impl SvdBasis3 {
             None => engeom::SvdBasis3::from_points(&points, None),
         };
 
-        Ok(Self { inner: basis })
+        if basis.is_none() {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "Failed to create SvdBasis3 from points",
+            ));
+        }
+
+        Ok(Self { inner: basis.unwrap() })
     }
 
     fn rank(&self, tol: f64) -> usize {

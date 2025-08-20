@@ -380,7 +380,11 @@ pub fn sac_check(
     let mut points = neighbors.iter().map(|n| n.sp.point).collect::<Vec<_>>();
     points.push(check_point.sp.point);
 
-    let basis = SvdBasis3::from_points(&points, None);
+    let Some(basis) = SvdBasis3::from_points(&points, None) else {
+        // If we can't compute a basis, the points are too far apart or too noisy
+        return false;
+    };
+
     let iso = Iso3::from(&basis);
 
     // Now we'll move the points to the basis coordinates

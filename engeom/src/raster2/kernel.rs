@@ -278,12 +278,13 @@ impl RasterKernel {
                 let kj = min_kj + j;
                 let mi = min_mi + i;
                 let mj = min_mj + j;
+
                 pixel_sum += matrix[(mi, mj)] * self.values[(ki, kj)];
-                kernel_sum += mask[(mi, mj)] * self.values[(ki, kj)];
+                kernel_sum += mask[(mi, mj)] * self.values[(ki, kj)].abs();
             }
         }
 
-        if kernel_sum == 0.0 {
+        if kernel_sum.abs() < f64::EPSILON {
             f64::NAN
         } else {
             pixel_sum / kernel_sum

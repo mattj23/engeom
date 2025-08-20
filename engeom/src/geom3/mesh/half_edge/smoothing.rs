@@ -40,7 +40,10 @@ impl HalfEdgeSmoothing for HalfEdgeMesh {
             let mut n_points: Vec<Point3> = neighbors.iter().map(|(p, _)| *p).collect();
             n_points.push(this_point); // Include the current point
 
-            let basis = SvdBasis3::from_points(&n_points, None);
+            let Some(basis) = SvdBasis3::from_points(&n_points, None) else {
+                continue;
+            };
+
             let t = Iso3::from(&basis);
 
             let transformed = n_points.iter().map(|p| t * p).collect::<Vec<_>>();
