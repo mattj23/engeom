@@ -279,6 +279,7 @@ impl IndexMask {
         }
         Ok(())
     }
+
 }
 
 pub struct MaskTrueIterator<'a> {

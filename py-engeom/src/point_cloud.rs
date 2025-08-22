@@ -131,6 +131,13 @@ impl PointCloud {
         Ok(Self::from_inner(inner))
     }
 
+    #[staticmethod]
+    fn load_bxyz(path: PathBuf) -> PyResult<Self> {
+        let inner = engeom::io::load_bxyz(&path)
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(inner))
+    }
+
     fn cloned(&self) -> Self {
         self.clone()
     }

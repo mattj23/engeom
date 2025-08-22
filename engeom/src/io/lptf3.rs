@@ -39,6 +39,7 @@
 //! At the end of the point entries, there will be either another frame header or the end of the
 //! file.
 
+mod comprehensive;
 mod downsample;
 mod loader;
 mod mesh;
@@ -54,6 +55,7 @@ use std::path::Path;
 pub use self::downsample::Lptf3DsParams;
 pub use self::loader::Lptf3Loader;
 pub use self::uncertainty::*;
+pub use self::comprehensive::*;
 
 /// The Lptf3Load enum defines the different ways to load data from a LPTF3 file, and is used to
 /// pass these options to loading functions.

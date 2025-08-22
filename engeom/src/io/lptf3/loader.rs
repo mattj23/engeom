@@ -1,4 +1,4 @@
-use crate::Point3;
+use crate::{Point2, Point3};
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
@@ -282,6 +282,10 @@ impl FramePoint {
 
     pub fn at_y(&self, y: f64) -> Point3 {
         Point3::new(self.x, y, self.z)
+    }
+
+    pub fn as_point2(&self) -> Point2 {
+        Point2::new(self.x, self.z)
     }
 }
 

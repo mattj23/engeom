@@ -1317,6 +1317,7 @@ class Mesh:
         :return: a `SurfacePoint3` object containing the closest point and normal
         """
         ...
+
     def point_closest_to(self, x: float, y: float, z: float) -> Point3:
         """
         Find the closest point on the surface of the mesh to a given point in space, returning the point
@@ -1995,6 +1996,17 @@ class PointCloud:
 
         :param path: the path to the LPTF3 file to load.
         :param params: the method and parameters to use when loading the LPTF3 file.
+        """
+        ...
+
+    @staticmethod
+    def load_bxyz(path: str | Path) -> PointCloud:
+        """
+        Load a point cloud from a BXYZ file. The BXYZ format is a binary format for storing 3D point clouds with
+        optional normals and colors.
+
+        :param path: the path to the BXYZ file to load.
+        :return: a new `PointCloud` object containing the points, normals, and colors from the BXYZ file.
         """
         ...
 
