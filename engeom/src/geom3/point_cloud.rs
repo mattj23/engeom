@@ -20,6 +20,8 @@ pub trait PointCloudFeatures {
     fn normals(&self) -> Option<&[UnitVec3]>;
     fn colors(&self) -> Option<&[[u8; 3]]>;
 
+    fn std_devs(&self) -> Option<&[f64]>;
+
     fn is_empty(&self) -> bool {
         self.points().is_empty()
     }
@@ -49,7 +51,13 @@ pub trait PointCloudFeatures {
             None
         };
 
-        PointCloud::try_new(points, normals, colors)
+        let std_devs = if let Some(s) = self.std_devs() {
+            Some(mask.clone_indices_of(s)?)
+        } else {
+            None
+        };
+
+        PointCloud::try_new(points, normals, colors, std_devs)
     }
 
     fn create_from_indices(&self, indices: &[usize]) -> Result<PointCloud> {
@@ -61,12 +69,14 @@ pub trait PointCloudFeatures {
         let points = self.points();
         let normals = self.normals();
         let colors = self.colors();
+        let std_devs = self.std_devs();
 
         let points = indices.iter().map(|i| points[*i]).collect();
         let normals = normals.map(|n| indices.iter().map(|i| n[*i]).collect());
         let colors = colors.map(|c| indices.iter().map(|i| c[*i]).collect());
+        let std_devs = std_devs.map(|s| indices.iter().map(|i| s[*i]).collect());
 
-        PointCloud::try_new(points, normals, colors)
+        PointCloud::try_new(points, normals, colors, std_devs)
     }
 }
 
@@ -77,6 +87,7 @@ pub struct PointCloud {
     points: Vec<Point3>,
     normals: Option<Vec<UnitVec3>>,
     colors: Option<Vec<[u8; 3]>>,
+    std_devs: Option<Vec<f64>>,
 }
 
 impl PointCloud {
@@ -101,6 +112,7 @@ impl PointCloud {
         points: Vec<Point3>,
         normals: Option<Vec<UnitVec3>>,
         colors: Option<Vec<[u8; 3]>>,
+        std_devs: Option<Vec<f64>>,
     ) -> Result<Self> {
         if let Some(normals) = &normals {
             if normals.len() != points.len() {
@@ -113,18 +125,26 @@ impl PointCloud {
                 return Err("colors must have the same length as points".into());
             }
         }
+
+        if let Some(std_devs) = &std_devs {
+            if std_devs.len() != points.len() {
+                return Err("std_devs must have the same length as points".into());
+            }
+        }
+
         Ok(Self {
             tree_uuid: Uuid::new_v4(),
             points,
             normals,
             colors,
+            std_devs,
         })
     }
 
     pub fn from_surface_points(points: &[SurfacePoint3]) -> Self {
         let normals = points.iter().map(|p| p.normal).collect::<Vec<_>>();
         let points = points.iter().map(|p| p.point).collect();
-        Self::try_new(points, Some(normals), None).unwrap()
+        Self::try_new(points, Some(normals), None, None).unwrap()
     }
 
     /// Merges another point cloud into this one, modifying this point cloud in place and
@@ -238,12 +258,13 @@ impl PointCloud {
     /// ```
     ///
     /// ```
-    pub fn empty(has_normals: bool, has_colors: bool) -> Self {
+    pub fn empty(has_normals: bool, has_colors: bool, has_std_devs: bool) -> Self {
         Self {
             tree_uuid: Uuid::new_v4(),
             points: Vec::new(),
             normals: if has_normals { Some(Vec::new()) } else { None },
             colors: if has_colors { Some(Vec::new()) } else { None },
+            std_devs: if has_std_devs { Some(Vec::new()) } else { None },
         }
     }
 
@@ -293,13 +314,13 @@ impl TryFrom<(&[Point3], &[UnitVec3])> for PointCloud {
             return Err("points and normals must have the same length".into());
         }
 
-        Self::try_new(points.to_vec(), Some(normals.to_vec()), None)
+        Self::try_new(points.to_vec(), Some(normals.to_vec()), None, None)
     }
 }
 
 impl From<&[Point3]> for PointCloud {
     fn from(points: &[Point3]) -> Self {
-        Self::try_new(points.to_vec(), None, None)
+        Self::try_new(points.to_vec(), None, None, None)
             .expect("Failed to create point cloud from points, this should not happen")
     }
 }
@@ -308,7 +329,7 @@ impl From<&[SurfacePoint3]> for PointCloud {
     fn from(points: &[SurfacePoint3]) -> Self {
         let normals = points.iter().map(|p| p.normal).collect::<Vec<_>>();
         let points = points.iter().map(|p| p.point).collect();
-        Self::try_new(points, Some(normals), None)
+        Self::try_new(points, Some(normals), None, None)
             .expect("Points and normals must have the same length, this should not have happened")
     }
 }
@@ -324,6 +345,10 @@ impl PointCloudFeatures for PointCloud {
 
     fn colors(&self) -> Option<&[[u8; 3]]> {
         self.colors.as_deref()
+    }
+
+    fn std_devs(&self) -> Option<&[f64]> {
+        self.std_devs.as_deref()
     }
 }
 
@@ -462,5 +487,9 @@ impl PointCloudFeatures for PointCloudKdTree<'_> {
 
     fn colors(&self) -> Option<&[[u8; 3]]> {
         self.cloud.colors.as_deref()
+    }
+
+    fn std_devs(&self) -> Option<&[f64]> {
+        self.cloud.std_devs.as_deref()
     }
 }

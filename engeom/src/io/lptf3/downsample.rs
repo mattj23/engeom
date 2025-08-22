@@ -32,7 +32,7 @@ pub fn load_lptf3_downfilter(file_path: &Path, params: Lptf3DsParams) -> Result<
     } else {
         None
     };
-    PointCloud::try_new(final_points, None, c)
+    PointCloud::try_new(final_points, None, c, None)
 }
 
 pub struct Lptf3Downsampled {

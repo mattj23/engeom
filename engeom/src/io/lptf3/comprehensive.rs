@@ -30,7 +30,7 @@ pub fn load_lptf3_comprehensive(
     uncertainty_model: &dyn Lptf3UncertaintyModel,
     bad_edge_count: usize,
     ray_check: Option<(&LaserProfileGeom, f64)>,
-) -> Result<(PointCloud, Vec<f64>)> {
+) -> Result<PointCloud> {
     let base_params = Lptf3Load::SmoothSample(Lptf3DsParams::new(8, 1.5, 1.0, 1.0));
     let half_mesh = load_lptf3_mesh(file_path, base_params)?;
     let mesh = Mesh::try_from(&half_mesh)?;
@@ -147,7 +147,5 @@ pub fn load_lptf3_comprehensive(
 
     let c = if loader.has_color { Some(colors) } else { None };
 
-    let cloud = PointCloud::try_new(points, Some(normals), c)?;
-
-    Ok((cloud, uncertainties))
+    PointCloud::try_new(points, Some(normals), c, Some(uncertainties))
 }

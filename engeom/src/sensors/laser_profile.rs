@@ -265,7 +265,7 @@ impl SimulatedPointSensor for LaserProfile {
                 }
 
                 // Create the witness ray
-                let impact = ray.point_at(ri.time_of_impact);
+                let impact: Point3 = ray.point_at(ri.time_of_impact);
                 let witness = Ray::new(emitter, impact - detector);
 
                 // Check if the witness ray intersects with the obstruction
@@ -289,7 +289,7 @@ impl SimulatedPointSensor for LaserProfile {
         }
 
         // This should be safe because we assembled the points and normals together
-        let cloud = PointCloud::try_new(points, Some(normals), None).unwrap();
+        let cloud = PointCloud::try_new(points, Some(normals), None, None).unwrap();
 
         (cloud, None)
     }
@@ -354,7 +354,7 @@ impl SimulatedPointSensor for PanningLaserProfile {
             normals.extend(cloud.normals().unwrap());
         }
 
-        let cloud = PointCloud::try_new(points, Some(normals), None).unwrap();
+        let cloud = PointCloud::try_new(points, Some(normals), None, None).unwrap();
 
         (cloud, None)
     }

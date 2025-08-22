@@ -172,7 +172,7 @@ fn load_take_every(file_path: &Path, take_every: Option<u32>) -> Result<PointClo
 
     let c = if loader.has_color { Some(colors) } else { None };
 
-    PointCloud::try_new(points, None, c)
+    PointCloud::try_new(points, None, c, None)
 }
 
 fn get_loader_point_rows(
