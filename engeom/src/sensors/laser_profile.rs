@@ -13,6 +13,23 @@ use crate::{Iso3, Mesh, Point3, PointCloud, PointCloudFeatures, UnitVec3, Vector
 use parry3d_f64::query::{Ray, RayCast};
 use std::f64::consts::PI;
 
+#[derive(Debug, Clone)]
+pub struct LaserProfileGeom {
+    pub emitter_z: f64,
+    pub detector_y: f64,
+    pub detector_z: f64,
+}
+
+impl LaserProfileGeom {
+    pub fn new(emitter_z: f64, detector_y: f64, detector_z: f64) -> Self {
+        Self {
+            emitter_z,
+            detector_y,
+            detector_z,
+        }
+    }
+}
+
 /// Represents the geometry of a laser profile line sensor, which emits a laser line into a scene
 /// and detects the reflection of that line to triangulate the distance to points on a surface.
 #[derive(Debug, Clone)]

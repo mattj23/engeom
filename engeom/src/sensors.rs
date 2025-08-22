@@ -4,7 +4,7 @@ mod laser_profile;
 
 use crate::{Iso3, Mesh, PointCloud};
 
-pub use laser_profile::{LaserProfile, PanningLaserProfile};
+pub use laser_profile::{LaserProfile, PanningLaserProfile, LaserProfileGeom};
 
 pub trait SimulatedPointSensor {
     /// Simulate the measurement of a sensor which produces a point cloud. The exact way that the

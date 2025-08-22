@@ -1,9 +1,11 @@
 use crate::common::{DiscreteDomain, IndexMask};
 use crate::io::lptf3::{Lptf3Loader, Lptf3UncertaintyModel};
 use crate::io::{Lptf3DsParams, Lptf3Load, load_lptf3_mesh, write_mesh_stl};
-use crate::{Mesh, Point3, PointCloud, Result, UnitVec3};
-use std::path::Path;
+use crate::sensors::LaserProfileGeom;
+use crate::{Mesh, Point3, PointCloud, Result, SurfacePoint3, UnitVec3};
+use parry3d_f64::query::{Ray, RayCast};
 use rayon::prelude::*;
+use std::path::Path;
 
 struct ProcessedFrame {
     y: f64,
@@ -27,9 +29,7 @@ pub fn load_lptf3_comprehensive(
     file_path: &Path,
     uncertainty_model: &dyn Lptf3UncertaintyModel,
     bad_edge_count: usize,
-    emitter_z: f64,
-    detector_y: f64,
-    detector_z: f64,
+    ray_check: Option<(&LaserProfileGeom, f64)>,
 ) -> Result<(PointCloud, Vec<f64>)> {
     let base_params = Lptf3Load::SmoothSample(Lptf3DsParams::new(8, 1.5, 1.0, 1.0));
     let half_mesh = load_lptf3_mesh(file_path, base_params)?;
@@ -45,7 +45,8 @@ pub fn load_lptf3_comprehensive(
         frames.push(frame);
     }
 
-    let mut results = frames.par_iter()
+    let mut results = frames
+        .par_iter()
         .map(|frame| {
             let mut edge_mask = IndexMask::new(frame.points.len(), false);
             edge_mask.set(0, true);
@@ -69,7 +70,9 @@ pub fn load_lptf3_comprehensive(
                 .map(|&i| frame.points[i].x)
                 .collect::<Vec<_>>();
             let xs = DiscreteDomain::try_from(xs).expect("Failed to create discrete domain");
-            let mut ci = xs.closest_index(frame.points[0].x).expect("Failed to find closest index");
+            let mut ci = xs
+                .closest_index(frame.points[0].x)
+                .expect("Failed to find closest index");
 
             for i in 0..edge_mask.len() {
                 if edge_mask.get(i) {
@@ -93,12 +96,27 @@ pub fn load_lptf3_comprehensive(
                 }
             }
 
+            // Figure out the position of the scanner head
+
             let mut points = Vec::new();
             let mut normals = Vec::new();
             let mut colors = Vec::new();
             edge_mask.not_mut();
+            // edge_mask.fill(true);
+
             for i in edge_mask.to_indices() {
                 let p = frame.points[i].at_y(frame.y_pos);
+
+                if let Some((rc, offset)) = ray_check {
+                    let detector = Point3::new(0.0, frame.y_pos + rc.detector_y, rc.detector_z);
+                    let ray_point = SurfacePoint3::new_normalize(p, detector - p).shift(offset);
+                    let ray = Ray::from(&ray_point);
+                    let intersect = mesh.tri_mesh().cast_local_ray(&ray, f64::INFINITY, false);
+                    if intersect.is_some() {
+                        continue;
+                    }
+                }
+
                 let mp = mesh.surf_closest_to(&p);
                 points.push(p);
                 normals.push(mp.sp.normal);

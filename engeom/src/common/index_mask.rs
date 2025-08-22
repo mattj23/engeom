@@ -280,6 +280,12 @@ impl IndexMask {
         Ok(())
     }
 
+    pub fn fill(&mut self, value: bool) {
+        for u in self.mask.as_raw_mut_slice() {
+            *u = if value { !0 } else { 0 };
+        }
+    }
+
 }
 
 pub struct MaskTrueIterator<'a> {
