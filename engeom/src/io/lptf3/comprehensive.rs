@@ -1,9 +1,16 @@
-use crate::common::IndexMask;
+use crate::common::{DiscreteDomain, IndexMask};
 use crate::io::lptf3::{Lptf3Loader, Lptf3UncertaintyModel};
 use crate::io::{Lptf3DsParams, Lptf3Load, load_lptf3_mesh, write_mesh_stl};
-use crate::{Mesh, PointCloud, Result};
+use crate::{Mesh, Point3, PointCloud, Result, UnitVec3};
 use std::path::Path;
-use stl_io::write_stl;
+use crate::common::kd_tree::KdTree;
+
+struct ProcessedFrame {
+    points: Vec<Point3>,
+    normals: Vec<UnitVec3>,
+    colors: Vec<u8>,
+    uncert: Vec<f64>,
+}
 
 pub fn load_lptf3_comprehensive(
     file_path: &Path,
@@ -22,6 +29,14 @@ pub fn load_lptf3_comprehensive(
     let mut normals = Vec::new();
     let mut colors = Vec::new();
     let mut uncertainties = Vec::new();
+
+    // let mut frames = Vec::new();
+    // while let Some(frame) = loader.get_next_frame_points()? {
+    //     if frame.points.len() < 2 {
+    //         continue;
+    //     }
+    //     frames.push(frame);
+    // }
 
     while let Some(frame) = loader.get_next_frame_points()? {
         if frame.points.len() < 2 {
@@ -44,24 +59,33 @@ pub fn load_lptf3_comprehensive(
         }
 
         // Pass to mark neighbors of bad edges
-        let mut xs = edge_mask
+        let xs = edge_mask
             .to_indices()
             .iter()
             .map(|&i| frame.points[i].x)
             .collect::<Vec<_>>();
+        let xs = DiscreteDomain::try_from(xs)?;
+        let mut ci = xs.closest_index(frame.points[0].x).expect("Failed to find closest index");
 
         for i in 0..edge_mask.len() {
             if edge_mask.get(i) {
                 continue;
             }
-            let x_dist = xs
-                .iter()
-                .map(|x| (frame.points[i].x - *x).abs())
-                .min_by(|a, b| a.abs().partial_cmp(&b.abs()).unwrap());
-            if let Some(d) = x_dist {
-                if d.abs() < loader.y_translation * bad_edge_count as f64 {
-                    edge_mask.set(i, true);
-                }
+
+            let d0 = (frame.points[i].x - xs.values()[ci]).abs();
+            let d1 = if ci < xs.values().len() - 1 {
+                (frame.points[i].x - xs.values()[ci + 1]).abs()
+            } else {
+                f64::INFINITY
+            };
+            if d1 < d0 {
+                ci += 1;
+            }
+            let d = d0.min(d1);
+
+            if d < loader.y_translation * bad_edge_count as f64 {
+                edge_mask.set(i, true);
+                continue;
             }
         }
 

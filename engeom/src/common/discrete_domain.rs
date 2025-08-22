@@ -177,6 +177,35 @@ impl DiscreteDomain {
     pub fn bounds_unchecked(&self) -> Interval {
         Interval::new(self.values[0], self.values[self.values.len() - 1])
     }
+
+    pub fn closest_index(&self, value: f64) -> Option<usize> {
+        if self.is_empty() {
+            return None;
+        }
+        if self.len() == 1 {
+            return Some(0);
+        }
+        if value >= self.values[self.len() - 1] {
+            return Some(self.len() - 1);
+        }
+        if value <= self.values[0] {
+            return Some(0);
+        }
+
+        let index = self.index_of(value)?;
+        if index == self.len() - 1 {
+            return Some(self.len() - 1);
+        }
+
+        let lower_value = self.values[index];
+        let upper_value = self.values[index + 1];
+
+        if (value - lower_value).abs() < (value - upper_value).abs() {
+            Some(index)
+        } else {
+            Some(index + 1)
+        }
+    }
 }
 
 impl Deref for DiscreteDomain {
@@ -209,6 +238,7 @@ impl TryFrom<Vec<f64>> for DiscreteDomain {
 
 #[cfg(test)]
 mod tests {
+    use rand::Rng;
     use super::*;
     use test_case::test_case;
 
@@ -271,5 +301,35 @@ mod tests {
     fn index_of_value(x: f64, expected: Option<usize>) {
         let domain = DiscreteDomain::try_from(vec![1.0, 2.0, 3.0]).unwrap();
         assert_eq!(domain.index_of(x), expected);
+    }
+
+    fn brute_force_closest_index(domain: &DiscreteDomain, value: f64) -> Option<usize> {
+        if domain.is_empty() {
+            return None;
+        }
+        let mut closest_index = 0;
+        let mut closest_distance = (value - domain.values[0]).abs();
+        for (i, &v) in domain.values.iter().enumerate() {
+            let distance = (value - v).abs();
+            if distance < closest_distance {
+                closest_distance = distance;
+                closest_index = i;
+            }
+        }
+        Some(closest_index)
+    }
+
+    #[test]
+    fn stress_test_closest() {
+        let n = 1000;
+        let mut rng = rand::rng();
+        let domain = DiscreteDomain::linear(-10.0, 10.0, 100);
+        for _ in 0..n {
+            let test_val = rng.random_range(-12.0..12.0);
+            let closest_index = domain.closest_index(test_val);
+            let expected = brute_force_closest_index(&domain, test_val);
+
+            assert_eq!(closest_index, expected, "Failed for test value: {}", test_val);
+        }
     }
 }
