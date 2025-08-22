@@ -102,7 +102,6 @@ pub fn load_lptf3_comprehensive(
             let mut normals = Vec::new();
             let mut colors = Vec::new();
             edge_mask.not_mut();
-            // edge_mask.fill(true);
 
             for i in edge_mask.to_indices() {
                 let p = frame.points[i].at_y(frame.y_pos);
