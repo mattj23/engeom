@@ -15,6 +15,7 @@ use crate::{Point2, Result, Series1, Vector2};
 use colorgrad::Gradient;
 use imageproc::distance_transform::Norm::L1;
 use imageproc::morphology::{dilate_mut, erode_mut};
+use imageproc::region_labelling::Connectivity;
 use rayon::prelude::*;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Cursor, Read, Write};
@@ -406,11 +407,7 @@ impl ScalarRaster {
         let mut img = RgbaImage::new(working.width(), working.height());
         for p in working.mask.iter_true() {
             let value = (working.u_at(p).unwrap() / 256) as u8;
-            img.put_pixel(
-                p.x as u32,
-                p.y as u32,
-                Rgba([value, value, value, 255]),
-            );
+            img.put_pixel(p.x as u32, p.y as u32, Rgba([value, value, value, 255]));
         }
 
         img
@@ -1071,6 +1068,32 @@ impl ScalarRaster {
         }
 
         blurred
+    }
+
+    // ============================================================================================
+    // Morphological Operations
+    // ============================================================================================
+    pub fn erode_mut(&mut self, count: usize) -> Result<()> {
+        let mut eroded = self.mask.clone();
+        eroded.erode_alternating_norms_mut(count);
+        eroded.not_mut();
+        eroded.and_mut(&self.mask)?;
+        for p in eroded.iter_true() {
+            self.set_u_at(p, None)?;
+        }
+        Ok(())
+    }
+
+    pub fn erode_from_border_mut(&mut self, count: usize) -> Result<()> {
+        let mut eroded = self.mask.get_flood_fill_from_borders(Connectivity::Eight);
+        eroded.not_mut();
+        eroded.erode_alternating_norms_mut(count);
+        eroded.not_mut();
+        eroded.and_mut(&self.mask)?;
+        for p in eroded.iter_true() {
+            self.set_u_at(p, None)?;
+        }
+        Ok(())
     }
 }
 
