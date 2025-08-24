@@ -118,7 +118,7 @@ impl PointCloud {
     #[new]
     fn new<'py>(points: PyReadonlyArray2<'py, f64>) -> PyResult<Self> {
         let cloud_points = array_to_points3(&points.as_array())?;
-        let cloud = engeom::PointCloud::try_new(cloud_points, None, None)
+        let cloud = engeom::PointCloud::try_new(cloud_points, None, None, None)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         Ok(Self::from_inner(cloud))
