@@ -8,7 +8,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-pub use lptf3::{Lptf3DsParams, Lptf3Load, load_lptf3, load_lptf3_mesh};
+pub use lptf3::{Lptf3DsParams, Lptf3Load, load_lptf3, load_lptf3_mesh, lptf3_point_distribution};
 pub use point_cloud::*;
 
 #[cfg(feature = "stl")]

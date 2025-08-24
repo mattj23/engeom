@@ -72,6 +72,42 @@ pub trait Lptf3UncertaintyModel {
     fn value(&self, x: f64, z: f64) -> f64;
 }
 
+/// Quickly get the point distribution for the LPTF3 file, which returns a vector of point counts
+/// for bins of the given size. For certain applications this is a quick way to heuristically check
+/// if a scan of a known scene roughly matches the expected data.
+///
+/// # Arguments
+///
+/// * `file_path`:
+/// * `bin_size`:
+///
+/// returns: Result<Vec<usize, Global>, Box<dyn Error, Global>>
+///
+/// # Examples
+///
+/// ```
+///
+/// ```
+pub fn lptf3_point_distribution(file_path: &Path, bin_size: f64) -> Result<Vec<usize>> {
+    let mut distribution = Vec::new();
+    let mut loader = Lptf3Loader::new(file_path, None, true)?;
+    while let Some(full) = loader.get_next_frame_points()? {
+        if full.y_pos < 0.0 {
+            // This shouldn't happen
+            continue;
+        }
+
+        let index = (full.y_pos / bin_size).floor() as usize;
+        if index >= distribution.len() {
+            distribution.resize(index + 1, 0);
+        }
+
+        distribution[index] += full.points.len();
+    }
+
+    Ok(distribution)
+}
+
 /// Read a lptf3 (Laser Profile Triangulation Format 3D) file and return a `PointCloud`.
 ///
 /// This function reads a LPTF3 file, which is a compact file format for storing 3D point data
