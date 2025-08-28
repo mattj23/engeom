@@ -537,6 +537,14 @@ class Iso3:
         Create an isometry from a translation and a quaternion representing the rotation.
         :return: an isometry containing both translation and rotation components.
         """
+        ...
+
+    def to_quaternion(self) -> Tuple[float, float, float, float, float, float, float]:
+        """
+        Convert the isometry to a tuple containing the translation and quaternion components.
+        :return: a tuple of 7 floats in the order (tx, ty, tz, i, j, k, w)
+        """
+        ...
 
     @staticmethod
     def from_translation(x: float, y: float, z: float) -> Iso3:

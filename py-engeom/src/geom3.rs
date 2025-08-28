@@ -733,6 +733,12 @@ impl Iso3 {
         }
     }
 
+    fn to_quaternion(&self) -> (f64, f64, f64, f64, f64, f64, f64) {
+        let t = &self.inner.translation;
+        let r = &self.inner.rotation.quaternion();
+        (t.x, t.y, t.z, r.i, r.j, r.k, r.w)
+    }
+
     fn to_xyzwpr(&self) -> Vec<f64> {
         let v = engeom::geom3::XyzWpr::from(&self.inner);
         vec![v.x, v.y, v.z, v.w, v.p, v.r]
