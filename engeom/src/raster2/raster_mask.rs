@@ -562,18 +562,21 @@ impl RasterMask {
                 // If we do have the upper right corner, we will form the two faces as possible
                 // going diagonally to the corner
                 if let Some(i_right) = by_index.get(&p_right) {
-                    faces.push([*i, *i_right, *i_up_right]);
+                    // faces.push([*i, *i_right, *i_up_right]);
+                    faces.push([*i, *i_up_right, *i_right]);
                 }
 
                 if let Some(i_up) = by_index.get(&p_up) {
-                    faces.push([*i, *i_up_right, *i_up]);
+                    // faces.push([*i, *i_up_right, *i_up]);
+                    faces.push([*i, *i_up, *i_up_right]);
                 }
             } else {
                 if let (Some(i_right), Some(i_up)) = (by_index.get(&p_right), by_index.get(&p_up)) {
                     // If we do not have the upper right corner, but do have the upper and right
                     // corners independently, we will form the face canted in the other
                     // direction.
-                    faces.push([*i, *i_right, *i_up]);
+                    // faces.push([*i, *i_right, *i_up]);
+                    faces.push([*i, *i_up, *i_right]);
                 }
             }
 
@@ -588,7 +591,8 @@ impl RasterMask {
             if let (Some(i_down_right), Some(i_right)) =
                 (by_index.get(&p_down_right), by_index.get(&p_right))
             {
-                faces.push([*i, *i_down_right, *i_right]);
+                // faces.push([*i, *i_down_right, *i_right]);
+                faces.push([*i, *i_right, *i_down_right]);
             }
         }
         (vertices, faces)
