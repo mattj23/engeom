@@ -164,6 +164,19 @@ impl<'a> MeshNav<'a> {
         duplicates.into_iter().collect::<Vec<_>>()
     }
 
+    pub fn boundary_vertices(&self, mask: Option<&IndexMask>) -> Vec<u32> {
+        let edges = self.boundary_edges(mask);
+        let mut vertices = HashSet::new();
+        for edge in edges {
+            vertices.insert(edge[0]);
+            vertices.insert(edge[1]);
+        }
+
+        let mut result = vertices.into_iter().collect::<Vec<_>>();
+        result.sort();
+        result
+    }
+
     /// Returns a list of boundary loops in the mesh. A boundary loop is a closed path of vertices
     /// that form a loop on the boundary of the mesh. If a mask is provided, the function will
     /// only consider faces that are included in the mask, similar to if the mesh had been pruned
