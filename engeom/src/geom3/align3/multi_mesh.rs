@@ -7,13 +7,13 @@
 //! with a relatively large amount of overlap between meshes.  This code was implemented to perform
 //! bundle adjustment between metrology quality scans of objects with unambiguous morphology.
 
-use crate::Result;
 use crate::common::points::dist;
 use crate::geom3::Align3;
 use crate::geom3::align3::jacobian::{point_plane_jacobian, point_plane_jacobian_rev};
 use crate::geom3::align3::multi_param::ParamHandler;
 use crate::geom3::align3::{GAPParams, distance_weight, normal_weight, simple_alignment_points};
 use crate::na::{DMatrix, Dyn, Matrix, Owned, U1, Vector};
+use crate::{Mesh, Result};
 use faer::prelude::default;
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use rayon::prelude::*;
@@ -22,26 +22,57 @@ use std::time::Instant;
 use crate::geom3::align3::mesh::{AlignmentMesh, generate_alignment_points};
 use crate::geom3::mesh::MeshSurfPoint;
 
+pub fn multi_mesh_adjustment_with_points(
+    meshes: &[AlignmentMesh],
+    points: Vec<MulMeshAlignPoint>,
+    static_i: usize,
+    opts: MMOpts,
+) -> Result<Vec<Align3>> {
+
+    let problem = MultiMeshProblem::new(meshes, points, static_i, opts);
+    let (result, report) = LevenbergMarquardt::new().minimize(problem);
+    // println!("minimize: {:?}", start.elapsed());
+    if report.termination.was_successful() {
+        let alignments = (0..meshes.len())
+            .map(|i| result.params.get_transform(i))
+            .collect::<Vec<_>>();
+
+        let mut grouped = (0..meshes.len()).map(|_| Vec::new()).collect::<Vec<_>>();
+        let residuals = result.residuals().unwrap();
+
+        for (i, p) in result.point_handles.iter().enumerate() {
+            grouped[p.mesh_i].push(residuals[i]);
+        }
+
+        Ok(alignments
+            .iter()
+            .zip(grouped)
+            .map(|(a, g)| Align3::new(*a, g))
+            .collect())
+    } else {
+        // println!("{:?}", report.termination);
+        Err("Failed to converge".into())
+    }
+}
+
 /// Options for the multi-mesh simultaneous alignment algorithm.
 #[derive(Debug, Clone, Copy)]
 pub struct MMOpts {
     pub search_radius: f64,
     pub respect_normals: bool,
-    pub sample: GAPParams,
 }
 
 impl MMOpts {
-    pub fn new(search_radius: f64, respect_normals: bool, sample: GAPParams) -> Self {
+    pub fn new(search_radius: f64, respect_normals: bool) -> Self {
         Self {
             search_radius,
             respect_normals,
-            sample,
         }
     }
 }
 
-pub fn multi_mesh_adjustment(meshes: &[AlignmentMesh], opts: MMOpts) -> Result<Vec<Align3>> {
-    let matrix = correspondence_matrix(meshes, &opts.sample);
+pub fn multi_mesh_adjustment(meshes: &[AlignmentMesh], opts: MMOpts, sample_opts: GAPParams) -> Result<Vec<Align3>> {
+    let matrix = correspondence_matrix(meshes, &sample_opts);
     let mut corr = &matrix / matrix.max();
     corr.apply(|x| *x = x.sqrt());
 
@@ -57,9 +88,9 @@ pub fn multi_mesh_adjustment(meshes: &[AlignmentMesh], opts: MMOpts) -> Result<V
     let reference_order = corr_pairs.iter().map(|(i, _)| *i).collect::<Vec<_>>();
 
     let static_i = reference_order[0];
-    println!("correspondence matrix: {}", matrix);
-    println!("static_i: {}", static_i);
-    println!("corr: {:?}", corr_pairs);
+    // println!("correspondence matrix: {}", matrix);
+    // println!("static_i: {}", static_i);
+    // println!("corr: {:?}", corr_pairs);
 
     // Now we want to generate the test points. Each test point is a point in a point cloud which
     // is being matched to another point cloud.  We want to generate these such that for each
@@ -85,17 +116,11 @@ pub fn multi_mesh_adjustment(meshes: &[AlignmentMesh], opts: MMOpts) -> Result<V
                 .transform()
                 .inv_mul(&meshes[*mesh_i].transform());
             let mut to_test = Vec::new();
-            // let samples = generate_alignment_points(
-            //     meshes[*mesh_i].mesh,
-            //     meshes[*ref_i].mesh,
-            //     &t,
-            //     &opts.sample,
-            // );
-            let samples = simple_alignment_points(
-                    meshes[*mesh_i].mesh,
-                    meshes[*ref_i].mesh,
-                    &t,
-                    opts.sample.sample_spacing
+            let samples = generate_alignment_points(
+                meshes[*mesh_i].mesh,
+                meshes[*ref_i].mesh,
+                &t,
+                &sample_opts,
             );
             for mp in samples {
                 // Check if there is weight associated with this point
@@ -109,7 +134,7 @@ pub fn multi_mesh_adjustment(meshes: &[AlignmentMesh], opts: MMOpts) -> Result<V
                     1.0
                 };
 
-                to_test.push(TestPoint::new(*mesh_i, mp, *ref_i, weight, 0.0));
+                to_test.push(MulMeshAlignPoint::new(*mesh_i, mp, *ref_i, weight, 0.0));
             }
             to_test
         })
@@ -150,7 +175,7 @@ pub fn multi_mesh_adjustment(meshes: &[AlignmentMesh], opts: MMOpts) -> Result<V
     }
 }
 
-struct TestPoint {
+pub struct MulMeshAlignPoint {
     /// The index of the mesh this point belongs to
     pub mesh_i: usize,
 
@@ -166,8 +191,8 @@ struct TestPoint {
     pub uncert: f64,
 }
 
-impl TestPoint {
-    fn new(mesh_i: usize, mp: MeshSurfPoint, ref_i: usize, weight: f64, uncert: f64) -> Self {
+impl MulMeshAlignPoint {
+    pub fn new(mesh_i: usize, mp: MeshSurfPoint, ref_i: usize, weight: f64, uncert: f64) -> Self {
         Self {
             mesh_i,
             mp,
@@ -185,7 +210,7 @@ struct MultiMeshProblem<'a> {
     /// The collection of alignment point handles, each specifying which mesh/index it belongs to,
     /// and which mesh it is being matched to.  This allows the same point to be used against
     /// multiple targets.
-    point_handles: Vec<TestPoint>,
+    point_handles: Vec<MulMeshAlignPoint>,
 
     /// The collection of sample points after they've been moved by the optimizer. These correspond
     /// to the point handles, and are used to compute the residuals.
@@ -210,7 +235,7 @@ struct MultiMeshProblem<'a> {
 impl<'a> MultiMeshProblem<'a> {
     fn new(
         meshes: &'a [AlignmentMesh],
-        point_handles: Vec<TestPoint>,
+        point_handles: Vec<MulMeshAlignPoint>,
         static_i: usize,
         options: MMOpts,
     ) -> Self {

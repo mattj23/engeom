@@ -233,7 +233,6 @@ impl GAPParams {
 pub fn simple_alignment_points(
     test_mesh: &Mesh,
     ref_mesh: &Mesh,
-    iso: &Iso3,
     spacing: f64,
 ) -> Vec<MeshSurfPoint> {
     let start = std::time::Instant::now();
