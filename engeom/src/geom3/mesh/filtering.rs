@@ -7,6 +7,7 @@ use crate::{Plane3, Result};
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
+use parry3d_f64::query::PointQuery;
 
 pub struct TriangleFilter<'a> {
     mesh: &'a Mesh,
@@ -390,16 +391,30 @@ impl TriangleFilter<'_> {
         mode: SelectOp,
     ) -> Self {
         // Project every vertex onto the other mesh
-        let projected = self
+        let projected: Vec<Option<Point3>> = self
             .mesh
             .vertices()
             .iter()
-            .map(|v| other.surf_closest_to(v).sp.point)
-            .collect::<Vec<_>>();
+            .map(|v| {
+                other.shape.project_local_point_with_max_dist(v, false, distance_tol)
+                    .map(|p| p.point)
+            })
+            .collect();
 
         let to_check = self.to_check(mode);
         let mut pass_mask = IndexMask::new(self.mesh.faces().len(), false);
         for i in to_check.iter_true() {
+            let f = self.mesh.faces()[i];
+            let Some(v0) = projected[f[0] as usize] else {
+                continue;
+            };
+            let Some(v1) = projected[f[1] as usize] else {
+                continue;
+            };
+            let Some(v2) = projected[f[2] as usize] else {
+                continue;
+            };
+
             let tri = self.mesh.tri_mesh().triangle(i as u32);
             let area_original = tri.area();
             if area_original < 1e-12 {
@@ -425,10 +440,6 @@ impl TriangleFilter<'_> {
                 continue;
             }
 
-            let f = self.mesh.faces()[i];
-            let v0 = projected[f[0] as usize];
-            let v1 = projected[f[1] as usize];
-            let v2 = projected[f[2] as usize];
 
             // What's the area of the triangle formed by the projected points?
             let area_proj = area(&v0, &v1, &v2);

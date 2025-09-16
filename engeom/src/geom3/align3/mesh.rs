@@ -236,10 +236,12 @@ pub fn simple_alignment_points(
     iso: &Iso3,
     spacing: f64,
 ) -> Vec<MeshSurfPoint> {
+    let start = std::time::Instant::now();
     let overlap = test_mesh
         .face_select(Selection::None)
         .faces_overlap(ref_mesh, PI / 4.0, 2.0, SelectOp::Add)
         .take_mask();
+    println!("Overlap computed in {:?}", start.elapsed());
 
     if overlap.count_true() == 0 {
         return Vec::new();
