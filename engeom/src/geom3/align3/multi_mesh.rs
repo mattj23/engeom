@@ -12,7 +12,7 @@ use crate::common::points::dist;
 use crate::geom3::Align3;
 use crate::geom3::align3::jacobian::{point_plane_jacobian, point_plane_jacobian_rev};
 use crate::geom3::align3::multi_param::ParamHandler;
-use crate::geom3::align3::{GAPParams, distance_weight, normal_weight};
+use crate::geom3::align3::{GAPParams, distance_weight, normal_weight, simple_alignment_points};
 use crate::na::{DMatrix, Dyn, Matrix, Owned, U1, Vector};
 use faer::prelude::default;
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
@@ -57,9 +57,9 @@ pub fn multi_mesh_adjustment(meshes: &[AlignmentMesh], opts: MMOpts) -> Result<V
     let reference_order = corr_pairs.iter().map(|(i, _)| *i).collect::<Vec<_>>();
 
     let static_i = reference_order[0];
-    // println!("correspondence matrix: {}", matrix);
-    // println!("static_i: {}", static_i);
-    // println!("corr: {:?}", corr_pairs);
+    println!("correspondence matrix: {}", matrix);
+    println!("static_i: {}", static_i);
+    println!("corr: {:?}", corr_pairs);
 
     // Now we want to generate the test points. Each test point is a point in a point cloud which
     // is being matched to another point cloud.  We want to generate these such that for each
@@ -85,11 +85,17 @@ pub fn multi_mesh_adjustment(meshes: &[AlignmentMesh], opts: MMOpts) -> Result<V
                 .transform()
                 .inv_mul(&meshes[*mesh_i].transform());
             let mut to_test = Vec::new();
-            let samples = generate_alignment_points(
-                meshes[*mesh_i].mesh,
-                meshes[*ref_i].mesh,
-                &t,
-                &opts.sample,
+            // let samples = generate_alignment_points(
+            //     meshes[*mesh_i].mesh,
+            //     meshes[*ref_i].mesh,
+            //     &t,
+            //     &opts.sample,
+            // );
+            let samples = simple_alignment_points(
+                    meshes[*mesh_i].mesh,
+                    meshes[*ref_i].mesh,
+                    &t,
+                    opts.sample.sample_spacing
             );
             for mp in samples {
                 // Check if there is weight associated with this point

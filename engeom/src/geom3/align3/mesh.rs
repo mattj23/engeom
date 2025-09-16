@@ -1,11 +1,12 @@
 //! This module has some common abstractions and tools for aligning meshes
 
+use std::f64::consts::PI;
 use crate::common::IndexMask;
 use crate::common::kd_tree::KdTreeSearch;
 use crate::common::points::{dist, mean_point};
 use crate::common::vec_f64::mean_and_stdev;
 use crate::geom3::mesh::MeshSurfPoint;
-use crate::{Iso3, KdTree3, Mesh, SvdBasis3, To2D, TransformBy};
+use crate::{Iso3, KdTree3, Mesh, SelectOp, Selection, SvdBasis3, To2D, TransformBy};
 use parry2d_f64::transformation::convex_hull;
 use std::num::NonZero;
 
@@ -229,6 +230,43 @@ impl GAPParams {
     }
 }
 
+pub fn simple_alignment_points(
+    test_mesh: &Mesh,
+    ref_mesh: &Mesh,
+    iso: &Iso3,
+    spacing: f64,
+) -> Vec<MeshSurfPoint> {
+    let overlap = test_mesh
+        .face_select(Selection::None)
+        .faces_overlap(ref_mesh, PI / 4.0, 2.0, SelectOp::Add)
+        .take_mask();
+
+    if overlap.count_true() == 0 {
+        return Vec::new();
+    }
+
+    let overlap = test_mesh.create_from_mask(&overlap)
+        .expect("Failed to create overlap mesh, should not be possible");
+    let all_points = overlap.sample_poisson(spacing);
+
+    // let mut candidates = Vec::new();
+    // for pnt in all_points.iter() {
+    //     let moved = iso * pnt.sp;
+    //     let closest = ref_mesh.surf_closest_to(&moved.point);
+    //     if moved.normal.dot(&closest.normal()) < 0.0 {
+    //         continue;
+    //     }
+    //
+    //     if closest.sp.planar_distance(&moved.point) > 0.1 {
+    //         continue;
+    //     }
+    //
+    //     candidates.push(*pnt);
+    // }
+
+    all_points
+}
+
 /// A sampling algorithm that finds a set of ideal alignment points on a test mesh which can be
 /// used to align it with a reference mesh.  Pay close attention to the parameters.
 ///
@@ -302,6 +340,8 @@ pub fn generate_alignment_points(
         }
     }
 
+
+    /*
     // Lastly, we'll filter out candidates more than 3 standard deviations beyond the mean distance
     // to the reference mesh.
     if let Some(sigma) = params.filter_distances {
@@ -313,6 +353,7 @@ pub fn generate_alignment_points(
             }
         }
     }
+    */
 
     candidates.into_iter().map(|(_, p)| *p).collect()
 }

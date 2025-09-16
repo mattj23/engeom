@@ -1,11 +1,12 @@
 //! This module has implementations of different ways of filtering/reducing a mesh
 
-use crate::common::points::dist;
+use crate::common::points::{area, dist, mean_point};
 use crate::common::{IndexMask, PCoords, SelectOp, Selection};
 use crate::{Mesh, Point3, SurfacePoint3, UnitVec3, Vector3};
 use crate::{Plane3, Result};
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
+use std::f64::consts::PI;
 
 pub struct TriangleFilter<'a> {
     mesh: &'a Mesh,
@@ -379,6 +380,80 @@ impl TriangleFilter<'_> {
             filter = filter.expand(exclude, mode)?;
         }
         Ok(filter)
+    }
+
+    pub fn faces_overlap(
+        self,
+        other: &Mesh,
+        angle_tol: f64,
+        distance_tol: f64,
+        mode: SelectOp,
+    ) -> Self {
+        // Project every vertex onto the other mesh
+        let projected = self
+            .mesh
+            .vertices()
+            .iter()
+            .map(|v| other.surf_closest_to(v).sp.point)
+            .collect::<Vec<_>>();
+
+        let to_check = self.to_check(mode);
+        let mut pass_mask = IndexMask::new(self.mesh.faces().len(), false);
+        for i in to_check.iter_true() {
+            let tri = self.mesh.tri_mesh().triangle(i as u32);
+            let area_original = tri.area();
+            if area_original < 1e-12 {
+                continue;
+            }
+
+            let Some(face_normal) = tri.normal() else {
+                continue;
+            };
+
+            // Check that the centroid falls on a triangle of the other mesh with a normal
+            // facing the same direction
+            let centroid = mean_point(&[tri.a.clone(), tri.b.clone(), tri.c.clone()]);
+            let mp = other.surf_closest_to(&centroid);
+            if mp.normal().angle(&face_normal) > PI * 0.45 {
+                continue;
+            }
+
+            // Check that the angle to the centroid is within the angle tolerance
+            let v_to_centroid = (mp.point() - centroid).normalize();
+            let a_to_centroid = face_normal.angle(&v_to_centroid);
+            if a_to_centroid > angle_tol && a_to_centroid < (PI - angle_tol) {
+                continue;
+            }
+
+            let f = self.mesh.faces()[i];
+            let v0 = projected[f[0] as usize];
+            let v1 = projected[f[1] as usize];
+            let v2 = projected[f[2] as usize];
+
+            // What's the area of the triangle formed by the projected points?
+            let area_proj = area(&v0, &v1, &v2);
+            if area_proj < 1e-12 {
+                continue;
+            }
+
+            if dist(&v0, &tri.a) > distance_tol
+                || dist(&v1, &tri.b) > distance_tol
+                || dist(&v2, &tri.c) > distance_tol
+            {
+                continue;
+            }
+
+            let e0 = v1 - v0;
+            let e1 = v2 - v0;
+            let n = e0.cross(&e1).normalize();
+            if face_normal.angle(&n) > angle_tol {
+                continue;
+            }
+
+            pass_mask.set(i, true);
+        }
+
+        self.mutate_pass_list(mode, &pass_mask)
     }
 }
 

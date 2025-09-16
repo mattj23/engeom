@@ -5,6 +5,23 @@ use crate::common::surface_point::SurfacePoint;
 use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector};
 use crate::common::kd_tree::{KdTree, KdTreeSearch};
 
+pub fn area<const D: usize>(
+    pa: &impl PCoords<D>,
+    pb: &impl PCoords<D>,
+    pc: &impl PCoords<D>,
+) -> f64 {
+    let ab = pb.coords() - pa.coords();
+    let ac = pc.coords() - pa.coords();
+
+    if D == 2 {
+        0.5 * (ab[0] * ac[1] - ab[1] * ac[0]).abs()
+    } else if D == 3 {
+        0.5 * ab.cross(&ac).norm()
+    } else {
+        panic!("Area calculation is only implemented for 2D and 3D points");
+    }
+}
+
 /// Calculate the barycentric coordinates of a point `p` with respect to the triangle defined by
 /// points `a`, `b`, and `c` in D-dimensional space.  The barycentric coordinates are a way of
 /// expressing the position of a point within a triangle as a combination of the triangle's
