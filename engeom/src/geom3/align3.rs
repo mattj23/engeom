@@ -7,6 +7,7 @@ pub mod multi_param;
 mod points_to_cloud;
 mod points_to_mesh;
 mod rotations;
+mod point_stability;
 
 use crate::geom3::{Iso3, Point3, Vector3};
 use parry3d_f64::na::{Translation3, UnitQuaternion, Vector6};
@@ -19,6 +20,7 @@ pub use self::multi_mesh::{MMOpts, multi_mesh_adjustment};
 pub use self::points_to_cloud::points_to_cloud;
 pub use self::points_to_mesh::points_to_mesh;
 pub use self::rotations::RotationMatrices;
+pub use self::point_stability::{point_stability, StabilityResult, point_stability_reduce};
 
 #[derive(Clone, Copy, Debug)]
 pub enum SampleMode {
@@ -126,6 +128,11 @@ impl RcParams3 {
 
     pub fn set(&mut self, x: &T3Storage) {
         self.x = *x;
+        self.compute();
+    }
+
+    pub fn set_index(&mut self, index: usize, value: f64) {
+        self.x[index] = value;
         self.compute();
     }
 
