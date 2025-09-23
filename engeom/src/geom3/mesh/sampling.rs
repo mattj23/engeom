@@ -239,7 +239,8 @@ mod tests {
 
         let points = sampled.iter().map(|mp| mp.sp.point).collect::<Vec<_>>();
 
-        let tree = KdTree3::new(&points);
+        let tree = KdTree3::new(&points)
+            .expect("Tree construction failed");
         for mp in &sampled {
             let neighbors = tree.within(&mp.sp.point, r);
             assert_eq!(neighbors.len(), 1, "Missed duplicate");
@@ -282,7 +283,8 @@ mod tests {
             );
         }
 
-        let tree = KdTree::new(&grid_points);
+        let tree = KdTree::new(&grid_points)
+            .expect("Tree construction failed");
 
         // Check that no point in the grid is more than max_spacing from another point in the grid
         for point in &grid_points {

@@ -300,7 +300,7 @@ impl PointCloud {
         if self.points.is_empty() {
             return Err("Cannot create a KD tree from an empty point cloud".into());
         }
-        let tree = KdTree3::new(&self.points);
+        let tree = KdTree3::new(&self.points)?;
         Ok(MatchedTree::new(self.tree_uuid, tree))
     }
 }

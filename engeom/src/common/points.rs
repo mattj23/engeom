@@ -551,7 +551,8 @@ pub fn cluster_points_by_tol<const D: usize>(
     while !working.is_empty() {
         let mut group = vec![working.pop().unwrap()];
         loop {
-            let tree = KdTree::new(&group);
+            let tree = KdTree::new(&group)
+                .expect("KD tree construction failed. Are there enough points?");
             let mut to_add = Vec::new();
             for (i, p) in working.iter().enumerate() {
                 // let (d, _) = tree.nearest_one(&to_slice(p), &squared_euclidean);

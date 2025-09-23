@@ -316,14 +316,15 @@ pub fn generate_alignment_points(
     // We start with a Poisson disk sampling of the test mesh to get a set of points that are
     // well distributed across the surface and spaced at a roughly known distance.
     let all_points = test_mesh.sample_poisson(params.sample_spacing);
-    let tree = KdTree3::new(&all_points);
+    let tree = KdTree3::new(&all_points)
+        .expect("KD tree build failed");
 
     // Now we're going to iterate through the points and find ones which meet the criteria for
     // being paired with the reference mesh.
     let mut candidates = Vec::new();
     for (i, pnt) in all_points.iter().enumerate() {
         // Find the nearest 7 to the point in the reference mesh.
-        let nearest = tree.nearest(pnt, NonZero::new(7).unwrap());
+        let nearest = tree.nearest(pnt, 7);
 
         // Prepare a vec with the neighbor points
         let mut neighbors = Vec::new();

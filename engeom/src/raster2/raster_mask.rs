@@ -599,6 +599,7 @@ impl RasterMask {
     }
 }
 
+
 fn polygon_ipoints(points: &[Point2I]) -> Vec<IpPoint> {
     let mut working = points.to_vec();
     while working.len() > 2 && working[0] == working[working.len() - 1] {

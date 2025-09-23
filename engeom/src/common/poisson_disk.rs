@@ -24,7 +24,8 @@ pub fn sample_poisson_disk_all<const D: usize>(
     radius: f64,
 ) -> IndexMask {
     let pre_mask = voxel_downsample(points, radius * 0.25);
-    let partial_tree = PartialKdTree::new(points, &pre_mask);
+    let partial_tree = PartialKdTree::new(points, &pre_mask)
+        .expect("KD tree construction failed. Are there enough points?");
 
     let mut skip_mask = pre_mask.clone();
     let mut final_mask = IndexMask::new(points.len(), false);
@@ -71,7 +72,8 @@ mod tests {
 
             // Brute force check that each point only has one point (itself) within the radius
             let kept = keep.clone_indices_of(&points).unwrap();
-            let tree = KdTree::new(&kept);
+            let tree = KdTree::new(&kept)
+                .expect("Tree construction failed");
             for (i, &p) in kept.iter().enumerate() {
                 let within = tree.within(&p, r);
                 assert_eq!(within.len(), 1);
