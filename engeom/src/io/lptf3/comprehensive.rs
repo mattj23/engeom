@@ -1,6 +1,6 @@
 use crate::common::{DiscreteDomain, IndexMask};
 use crate::io::lptf3::{Lptf3Loader, Lptf3UncertaintyModel};
-use crate::io::{Lptf3DsParams, Lptf3Load, load_lptf3_mesh, write_mesh_stl};
+use crate::io::{Lptf3DsParams, Lptf3Load, load_lptf3_mesh};
 use crate::sensors::LaserProfileGeom;
 use crate::{Mesh, Point3, PointCloud, Result, SurfacePoint3, UnitVec3};
 use parry3d_f64::query::{Ray, RayCast};
