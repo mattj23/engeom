@@ -49,7 +49,7 @@ pub fn point_stability_reduce(
         dr_from_dt(points, dt)
     };
 
-    let mut baseline = point_stability(points, dt, Some(dr))?;
+    let baseline = point_stability(points, dt, Some(dr))?;
     let reference = baseline
         .summary()
         .into_iter()
@@ -77,8 +77,8 @@ pub fn point_stability_reduce(
 
     for i in 0..points.len() {
         let mut added = HashSet::new();
-        for j in 0..6 {
-            passed[j].insert(ordered[j][i].0);
+        for (j, p) in passed.iter_mut().take(6).enumerate() {
+            p.insert(ordered[j][i].0);
             added.insert(ordered[j][i].0);
         }
         let mut to_remove = Vec::new();
@@ -89,9 +89,12 @@ pub fn point_stability_reduce(
             }
         }
         for idx in to_remove.iter() {
-            for j in 0..6 {
-                passed[j].remove(idx);
+            for p in passed.iter_mut() {
+                p.remove(idx);
             }
+            // for j in 0..6 {
+            //     passed[j].remove(idx);
+            // }
         }
     }
 
@@ -106,7 +109,7 @@ pub fn point_stability_reduce(
             .iter()
             .enumerate()
             .filter(|(i, _)| !skip.contains(i))
-            .map(|(_, p)| p.clone())
+            .map(|(_, p)| *p)
             .collect::<Vec<_>>();
         let reduced_stability = point_stability(&reduced, dt, Some(dr))?;
         let reduced_summary = reduced_stability.summary();
@@ -187,7 +190,7 @@ struct PointStability {
 
 impl PointStability {
     fn new(points: &[SurfacePoint3], fixed_dim: usize, fixed_value: f64) -> Self {
-        let mean = mean_point(&points);
+        let mean = mean_point(points);
         let params = RcParams3::from_initial(&Iso3::identity(), &mean);
 
         let mut item = Self {

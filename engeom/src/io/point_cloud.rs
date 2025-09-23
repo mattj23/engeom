@@ -4,7 +4,6 @@ use crate::{PointCloud, PointCloudFeatures, Result, UnitVec3, Vector3};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
-use std::ptr::write;
 
 fn write_to_f32(writer: &mut impl Write, value: f64) -> Result<()> {
     let bytes = (value as f32).to_le_bytes();
@@ -21,7 +20,7 @@ fn read_from_f32(reader: &mut impl Read) -> Result<f64> {
 
 pub fn write_bxyz(path: &Path, cloud: &PointCloud) -> Result<()> {
     // The fields are X, Y, Z, NX, NY, NZ, R, G, B, STDEV
-    let mut header_bytes = vec![
+    let header_bytes = vec![
         cloud.normals().is_some(),
         cloud.colors().is_some(),
         cloud.std_devs().is_some(),

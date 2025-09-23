@@ -72,7 +72,7 @@ impl<const D: usize> KdTree<D> {
         }
         let mut tree = KdTreeInner::new(D);
         for (i, e) in entries.iter().enumerate() {
-            tree.add(e.clone(), i)?;
+            tree.add(*e, i)?;
         }
         Ok(Self { tree })
     }
@@ -97,7 +97,7 @@ impl<const D: usize> KdTreeSearch<D> for KdTree<D> {
     fn nearest_one(&self, point: &impl PCoords<D>) -> (usize, f64) {
         if let Ok(item) = self
             .tree
-            .nearest(&point.coords().as_slice(), 1, &squared_euclidean)
+            .nearest(point.coords().as_slice(), 1, &squared_euclidean)
         {
             let (d, u) = &item[0];
             (**u, d.sqrt())
@@ -123,7 +123,7 @@ impl<const D: usize> KdTreeSearch<D> for KdTree<D> {
     fn nearest(&self, point: &impl PCoords<D>, count: usize) -> Vec<(usize, f64)> {
         let result = self
             .tree
-            .nearest(&point.coords().as_slice(), count, &squared_euclidean);
+            .nearest(point.coords().as_slice(), count, &squared_euclidean);
 
         if let Ok(neighbors) = result {
             neighbors.iter().map(|(d, u)| (**u, d.sqrt())).collect()
@@ -148,7 +148,7 @@ impl<const D: usize> KdTreeSearch<D> for KdTree<D> {
     /// ```
     fn within(&self, point: &impl PCoords<D>, radius: f64) -> Vec<(usize, f64)> {
         if let Ok(result) = self.tree.within(
-            &point.coords().as_slice(),
+            point.coords().as_slice(),
             radius * radius,
             &squared_euclidean,
         ) {

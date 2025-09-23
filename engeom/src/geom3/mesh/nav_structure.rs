@@ -7,7 +7,6 @@ use crate::common::IndexMask;
 use crate::geom3::mesh::edges::edge_key;
 use parry3d_f64::utils::hashmap::HashMap;
 use parry3d_f64::utils::hashset::HashSet;
-use std::io::Write;
 
 pub struct MeshNav<'a> {
     pub mesh: &'a Mesh,

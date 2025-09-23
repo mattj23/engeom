@@ -234,11 +234,10 @@ impl Curve2 {
         }
 
         // Check if the curve is supposed to be closed
-        if let (true, Some(start), Some(end)) = (force_closed, pts.first(), pts.last()) {
-            if dist(start, end) > tol {
+        if let (true, Some(start), Some(end)) = (force_closed, pts.first(), pts.last())
+            && dist(start, end) > tol {
                 pts.push(*start);
             }
-        }
 
         let is_closed = pts.len() >= 2 && dist(&pts[0], pts.last().unwrap()) <= tol;
 
@@ -369,7 +368,7 @@ impl Curve2 {
         }
     }
 
-    fn at_vertex(&self, index: usize) -> CurveStation2 {
+    fn at_vertex(&self, index: usize) -> CurveStation2<'_> {
         let v = self.line.vertices();
         let (i, f) = if index == v.len() - 1 {
             (index - 1, 1.0)
@@ -380,15 +379,15 @@ impl Curve2 {
         CurveStation2::new(self.vtx(index), self.dir_of_vertex(index), i, f, self)
     }
 
-    pub fn at_front(&self) -> CurveStation2 {
+    pub fn at_front(&self) -> CurveStation2<'_> {
         self.at_vertex(0)
     }
 
-    pub fn at_back(&self) -> CurveStation2 {
+    pub fn at_back(&self) -> CurveStation2<'_> {
         self.at_vertex(self.line.vertices().len() - 1)
     }
 
-    pub fn at_length(&self, length: f64) -> Option<CurveStation2> {
+    pub fn at_length(&self, length: f64) -> Option<CurveStation2<'_>> {
         if length < 0.0 || length > self.length() {
             None
         } else {
@@ -412,11 +411,11 @@ impl Curve2 {
         }
     }
 
-    pub fn at_fraction(&self, fraction: f64) -> Option<CurveStation2> {
+    pub fn at_fraction(&self, fraction: f64) -> Option<CurveStation2<'_>> {
         self.at_length(fraction * self.length())
     }
 
-    pub fn at_closest_to_point(&self, test_point: &Point2) -> CurveStation2 {
+    pub fn at_closest_to_point(&self, test_point: &Point2) -> CurveStation2<'_> {
         let (prj, loc) = self
             .line
             .project_local_point_and_get_location(test_point, false);
@@ -801,7 +800,7 @@ impl Curve2 {
         }
     }
 
-    pub fn iter(&self) -> Curve2Iterator {
+    pub fn iter(&self) -> Curve2Iterator<'_> {
         Curve2Iterator {
             curve: self,
             index: 0,
@@ -1023,12 +1022,11 @@ impl Curve2 {
         let mut i = 0;
 
         while i < self.count() {
-            if let Some((i0, i1, arc)) = self.equivalent_arc_at(i, tol) {
-                if i1 - i0 + 1 >= min_points {
+            if let Some((i0, i1, arc)) = self.equivalent_arc_at(i, tol)
+                && i1 - i0 + 1 >= min_points {
                     arcs.push((i0, i1, arc));
                     i = i1 + 1;
                 }
-            }
 
             i += 1;
         }

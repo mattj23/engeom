@@ -92,7 +92,7 @@ impl PointCloud {
         }
     }
 
-    pub fn with_tree(&mut self) -> PyResult<PointCloudKdTree> {
+    pub fn with_tree(&mut self) -> PyResult<PointCloudKdTree<'_>> {
         if self.matched_tree.is_none() {
             let tree = self
                 .inner

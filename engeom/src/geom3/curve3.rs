@@ -95,7 +95,7 @@ pub struct Curve3 {
 
 impl Curve3 {
     pub fn vtx(&self, i: usize) -> Point3 {
-        self.line.vertices()[i].clone()
+        self.line.vertices()[i]
     }
 
     pub fn points(&self) -> &[Point3] {
@@ -155,7 +155,7 @@ impl Curve3 {
         }
     }
 
-    fn at_vertex(&self, index: usize) -> CurveStation3 {
+    fn at_vertex(&self, index: usize) -> CurveStation3<'_> {
         let (i, f) = if index == self.line.vertices().len() - 1 {
             (index - 1, 1.0)
         } else {
@@ -163,7 +163,7 @@ impl Curve3 {
         };
 
         CurveStation3::new(
-            self.line.vertices()[index].clone(),
+            self.line.vertices()[index],
             self.dir_of_vertex(index),
             i,
             f,
@@ -171,7 +171,7 @@ impl Curve3 {
         )
     }
 
-    pub fn at_length(&self, length: f64) -> Option<CurveStation3> {
+    pub fn at_length(&self, length: f64) -> Option<CurveStation3<'_>> {
         if length < 0.0 || length > self.length() {
             None
         } else {
@@ -192,11 +192,11 @@ impl Curve3 {
         }
     }
 
-    pub fn at_fraction(&self, fraction: f64) -> Option<CurveStation3> {
+    pub fn at_fraction(&self, fraction: f64) -> Option<CurveStation3<'_>> {
         self.at_length(fraction * self.length())
     }
 
-    pub fn at_closest_to_point(&self, test_point: &Point3) -> CurveStation3 {
+    pub fn at_closest_to_point(&self, test_point: &Point3) -> CurveStation3<'_> {
         let (prj, loc) = self
             .line
             .project_local_point_and_get_location(test_point, false);
@@ -237,15 +237,15 @@ impl Curve3 {
         self.line.vertices().to_vec()
     }
 
-    pub fn at_front(&self) -> CurveStation3 {
+    pub fn at_front(&self) -> CurveStation3<'_> {
         self.at_vertex(0)
     }
 
-    pub fn at_back(&self) -> CurveStation3 {
+    pub fn at_back(&self) -> CurveStation3<'_> {
         self.at_vertex(self.line.vertices().len() - 1)
     }
 
-    pub fn iter(&self) -> Curve3Iterator {
+    pub fn iter(&self) -> Curve3Iterator<'_> {
         Curve3Iterator {
             curve: self,
             index: 0,
@@ -267,7 +267,7 @@ impl Curve3 {
         }
     }
 
-    pub fn window_iter(&self, window_size: f64) -> DomainWindowIter {
+    pub fn window_iter(&self, window_size: f64) -> DomainWindowIter<'_> {
         DomainWindowIter::new(self.lengths(), window_size)
     }
 }
@@ -281,7 +281,7 @@ fn smooth_by_polynomial<const D: usize>(curve: &Curve3, window_size: f64) -> Res
             .collect::<Vec<_>>();
 
         if points.len() < 3 {
-            new_points.push(curve.line.vertices()[window.index].clone());
+            new_points.push(curve.line.vertices()[window.index]);
             continue;
         }
 
@@ -301,7 +301,7 @@ fn smooth_by_polynomial<const D: usize>(curve: &Curve3, window_size: f64) -> Res
             return Err("Failed to fit polynomial".into())
         };
 
-        let x = (svd_t * curve.line.vertices()[window.index].clone()).x;
+        let x = (svd_t * curve.line.vertices()[window.index]).x;
         let y = poly.f(x);
         new_points.push(svd_t.inverse() * Point3::new(x, y, 0.0));
     }

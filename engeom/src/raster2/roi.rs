@@ -37,12 +37,12 @@ impl RoiOverlap {
         Self { a, b, i }
     }
 
-    pub fn iter_intersection_a(&self) -> RoiIterator {
+    pub fn iter_intersection_a(&self) -> RoiIterator<'_> {
         let offset = self.i.min - self.a.min;
         RoiIterator::new(&self.i, offset)
     }
 
-    pub fn iter_intersection_b(&self) -> RoiIterator {
+    pub fn iter_intersection_b(&self) -> RoiIterator<'_> {
         let offset = self.i.min - self.b.min;
         RoiIterator::new(&self.i, offset)
     }
@@ -145,7 +145,7 @@ impl RasterRoi {
         }
     }
 
-    pub fn iter_points(&self) -> RoiIterator {
+    pub fn iter_points(&self) -> RoiIterator<'_> {
         RoiIterator::new(self, Vector2I::default())
     }
 

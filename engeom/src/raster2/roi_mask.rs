@@ -30,7 +30,7 @@ impl RoiMask {
     /// original image.  However, if the mask has been expanded or contracted, the points which are
     /// visited by the iterator will not necessarily be the full set of points in the mask and/or
     /// the full set of points in the original ROI.
-    pub fn iter_shared_points(&self) -> RoiIterator {
+    pub fn iter_shared_points(&self) -> RoiIterator<'_> {
         self.overlay.iter_intersection_a()
     }
 

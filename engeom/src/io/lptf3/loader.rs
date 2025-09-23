@@ -119,8 +119,8 @@ impl Lptf3Loader {
         }
 
         // If this frame is being skipped, we seek to the next frame and return Skip
-        if let Some(take_n) = self.take_every {
-            if header.frame_index % take_n != 0 {
+        if let Some(take_n) = self.take_every
+            && header.frame_index % take_n != 0 {
                 if self.return_all {
                     header.skip = true;
                 } else {
@@ -129,7 +129,6 @@ impl Lptf3Loader {
                     return Ok(HdrRd::Skip);
                 }
             }
-        }
 
         Ok(HdrRd::Valid(header))
     }

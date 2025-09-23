@@ -120,7 +120,7 @@ impl LabeledRegions {
     ///   the background label.
     ///
     /// returns: Option<Region>
-    pub fn get_region(&self, label: u32) -> Option<Region> {
+    pub fn get_region(&self, label: u32) -> Option<Region<'_>> {
         if label == 0 || label as usize >= self.raw_roi.len() {
             return None; // Label 0 is reserved for the background
         }
@@ -136,7 +136,7 @@ impl LabeledRegions {
         })
     }
 
-    pub fn iter(&self) -> RegionIterator {
+    pub fn iter(&self) -> RegionIterator<'_> {
         RegionIterator {
             labeled: self,
             current: 1, // Start at 1 to skip the background label

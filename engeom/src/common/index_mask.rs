@@ -64,7 +64,7 @@ impl IndexMask {
         self.mask.len()
     }
 
-    pub fn iter_true(&self) -> MaskTrueIterator {
+    pub fn iter_true(&self) -> MaskTrueIterator<'_> {
         MaskTrueIterator {
             mask: self,
             current: 0,

@@ -220,8 +220,8 @@ impl Series1 {
     /// # Arguments
     ///
     /// * `other`: A reference to the other series to concatenate, which will be appended to the
-    ///  end of the first series. The minimum x value of the second series must be greater than
-    /// the maximum x value of the first series.
+    ///   end of the first series. The minimum x value of the second series must be greater than
+    ///   the maximum x value of the first series.
     ///
     /// returns: Result<Series1, Box<dyn Error, Global>>
     ///
@@ -537,7 +537,7 @@ impl Series1 {
         }
 
         // If the last x value is less than x1, we will add it _if_ x1 is contained in the domain
-        if xs.len() == 0 {
+        if xs.is_empty() {
             return None;
         }
 

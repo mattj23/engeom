@@ -224,7 +224,7 @@ impl RasterMask {
     // Truth operations
     // ==========================================================================================
 
-    pub fn iter_true(&self) -> RasterMaskTrueIterator {
+    pub fn iter_true(&self) -> RasterMaskTrueIterator<'_> {
         RasterMaskTrueIterator {
             mask: self,
             x: 0,
@@ -570,14 +570,12 @@ impl RasterMask {
                     // faces.push([*i, *i_up_right, *i_up]);
                     faces.push([*i, *i_up, *i_up_right]);
                 }
-            } else {
-                if let (Some(i_right), Some(i_up)) = (by_index.get(&p_right), by_index.get(&p_up)) {
-                    // If we do not have the upper right corner, but do have the upper and right
-                    // corners independently, we will form the face canted in the other
-                    // direction.
-                    // faces.push([*i, *i_right, *i_up]);
-                    faces.push([*i, *i_up, *i_right]);
-                }
+            } else if let (Some(i_right), Some(i_up)) = (by_index.get(&p_right), by_index.get(&p_up)) {
+                // If we do not have the upper right corner, but do have the upper and right
+                // corners independently, we will form the face canted in the other
+                // direction.
+                // faces.push([*i, *i_right, *i_up]);
+                faces.push([*i, *i_up, *i_right]);
             }
 
             // Lastly, we'll check if the point below is missing, if so we'll fill in the

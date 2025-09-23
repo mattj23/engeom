@@ -16,7 +16,7 @@
 /// ```
 ///
 /// ```
-pub fn iter_domain_window(domain: &[f64], window_size: f64) -> DomainWindowIter {
+pub fn iter_domain_window(domain: &[f64], window_size: f64) -> DomainWindowIter<'_> {
     DomainWindowIter::new(domain, window_size)
 }
 

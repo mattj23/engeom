@@ -8,18 +8,17 @@
 //! bundle adjustment between metrology quality scans of objects with unambiguous morphology.
 
 use crate::common::points::dist;
-use crate::geom3::Align3;
 use crate::geom3::align3::jacobian::{point_plane_jacobian, point_plane_jacobian_rev};
 use crate::geom3::align3::multi_param::ParamHandler;
-use crate::geom3::align3::{GAPParams, distance_weight, normal_weight, simple_alignment_points};
-use crate::na::{DMatrix, Dyn, Matrix, Owned, U1, Vector};
-use crate::{Mesh, Result};
+use crate::geom3::align3::{distance_weight, normal_weight, GAPParams};
+use crate::geom3::Align3;
+use crate::na::{DMatrix, Dyn, Matrix, Owned, Vector, U1};
+use crate::Result;
 use faer::prelude::default;
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use rayon::prelude::*;
-use std::time::Instant;
 
-use crate::geom3::align3::mesh::{AlignmentMesh, generate_alignment_points};
+use crate::geom3::align3::mesh::{generate_alignment_points, AlignmentMesh};
 use crate::geom3::mesh::MeshSurfPoint;
 
 pub fn multi_mesh_adjustment_with_points(
@@ -108,7 +107,6 @@ pub fn multi_mesh_adjustment(meshes: &[AlignmentMesh], opts: MMOpts, sample_opts
         }
     }
 
-    let start = Instant::now();
     let handles = work_list
         .par_iter()
         .map(|(mesh_i, ref_i)| {
@@ -143,15 +141,12 @@ pub fn multi_mesh_adjustment(meshes: &[AlignmentMesh], opts: MMOpts, sample_opts
 
     // println!("test_points: {:?}", start.elapsed());
     // println!("handles: {:?}", handles.len());
-    let weighted_count = handles.iter().filter(|h| h.weight > 1.01).count();
+    // let weighted_count = handles.iter().filter(|h| h.weight > 1.01).count();
     // println!("weighted n={weighted_count}");
 
     // Now we want to create the problem and solve it
-    let start = Instant::now();
-
     let problem = MultiMeshProblem::new(meshes, handles, static_i, opts);
     let (result, report) = LevenbergMarquardt::new().minimize(problem);
-    // println!("minimize: {:?}", start.elapsed());
     if report.termination.was_successful() {
         let alignments = (0..meshes.len())
             .map(|i| result.params.get_transform(i))
@@ -170,7 +165,6 @@ pub fn multi_mesh_adjustment(meshes: &[AlignmentMesh], opts: MMOpts, sample_opts
             .map(|(a, g)| Align3::new(*a, g))
             .collect())
     } else {
-        // println!("{:?}", report.termination);
         Err("Failed to converge".into())
     }
 }

@@ -25,7 +25,6 @@ pub use half_edge::HalfEdgeMesh;
 pub use nav_structure::MeshNav;
 use parry3d_f64::shape::{TriMesh, TriMeshFlags};
 use parry3d_f64::{shape, transformation};
-use parry3d_f64::query::PointQueryWithLocation;
 pub use uv_mapping::UvMapping;
 
 /// A struct which represents a point on the surface of a mesh, including the index of the face
@@ -131,7 +130,7 @@ impl Mesh {
 }
 
 impl Mesh {
-    pub fn calc_edges(&self) -> Result<MeshEdges> {
+    pub fn calc_edges(&self) -> Result<MeshEdges<'_>> {
         MeshEdges::new(self)
     }
 
@@ -229,18 +228,11 @@ impl Mesh {
 
     pub fn uv_to_3d(&self, uv: &Point2) -> Option<MeshSurfPoint> {
         let (i, bc) = self.uv()?.triangle(uv)?;
-        if let Ok(msp) = self.at_barycentric(i, bc) {
-            Some(msp)
-        } else {
-            None
-        }
+        self.at_barycentric(i, bc).ok()
     }
 
     pub fn project_to_uv(&self, p: &impl PCoords<3>) -> Option<Point2> {
-        let Some(uv_map) = self.uv() else {
-            return None;
-        };
-
+        let uv_map = self.uv()?;
         let mp = self.surf_closest_to(p);
         Some(uv_map.point(mp.face_index, mp.bc))
     }
@@ -356,7 +348,7 @@ impl Mesh {
     /// navigate the mesh through edges and faces.  It is recommended to use this if you will be
     /// performing multiple structural queries on the mesh, so that the structure does not need to
     /// be recomputed each time.
-    pub fn nav(&self) -> MeshNav {
+    pub fn nav(&self) -> MeshNav<'_> {
         MeshNav::new(self)
     }
 
@@ -380,7 +372,7 @@ impl Mesh {
     ///
     /// returns: Result<Vec<Vec<usize, Global>, Global>>
     pub fn get_patch_boundary_points(&self) -> Result<Vec<Vec<Point3>>> {
-        let edges = MeshEdges::new(&self)?;
+        let edges = MeshEdges::new(self)?;
 
         let mut b_loops = Vec::new();
         for b_loop in edges.boundary_loops.iter() {

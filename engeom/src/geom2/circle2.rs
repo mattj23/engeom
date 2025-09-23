@@ -915,7 +915,7 @@ impl LeastSquaresProblem<f64, Dyn, U3> for CircleFit<'_> {
             // Fill in the jacobian for this row
             jac[(i, 0)] = -n.x * self.weights[i];
             jac[(i, 1)] = -n.y * self.weights[i];
-            jac[(i, 2)] = -1.0 * self.weights[i];
+            jac[(i, 2)] = -self.weights[i];
         }
 
         Some(jac)

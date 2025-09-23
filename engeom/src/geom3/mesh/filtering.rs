@@ -427,7 +427,7 @@ impl TriangleFilter<'_> {
 
             // Check that the centroid falls on a triangle of the other mesh with a normal
             // facing the same direction
-            let centroid = mean_point(&[tri.a.clone(), tri.b.clone(), tri.c.clone()]);
+            let centroid = mean_point(&[tri.a, tri.b, tri.c]);
             let mp = other.surf_closest_to(&centroid);
             if mp.normal().angle(&face_normal) > PI * 0.45 {
                 continue;
@@ -499,7 +499,7 @@ impl Mesh {
     /// ```
     ///
     /// ```
-    pub fn face_select(&self, start: Selection) -> TriangleFilter {
+    pub fn face_select(&self, start: Selection) -> TriangleFilter<'_> {
         let mask = match start {
             Selection::None => IndexMask::new(self.faces().len(), false),
             Selection::All => IndexMask::new(self.faces().len(), true),

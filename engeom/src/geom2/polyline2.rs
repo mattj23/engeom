@@ -153,11 +153,10 @@ impl SimdVisitor<u32, SimdAabb> for RayVisitor {
         let mask = cast_ray(bv, &self.ray).0;
         if let Some(data) = data {
             for (i, &d_opt) in data.iter().enumerate().take(SIMD_WIDTH) {
-                if mask.extract(i) {
-                    if let Some(d) = d_opt {
+                if mask.extract(i)
+                    && let Some(d) = d_opt {
                         self.collector.push(*d);
                     }
-                }
             }
         }
         SimdVisitStatus::MaybeContinue(mask)

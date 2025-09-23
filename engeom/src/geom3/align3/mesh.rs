@@ -4,11 +4,9 @@ use std::f64::consts::PI;
 use crate::common::IndexMask;
 use crate::common::kd_tree::KdTreeSearch;
 use crate::common::points::{dist, mean_point};
-use crate::common::vec_f64::mean_and_stdev;
 use crate::geom3::mesh::MeshSurfPoint;
 use crate::{Iso3, KdTree3, Mesh, SelectOp, Selection, SvdBasis3, To2D, TransformBy};
 use parry2d_f64::transformation::convex_hull;
-use std::num::NonZero;
 
 #[derive(Clone)]
 pub struct FaceIndexWeight {
@@ -248,7 +246,7 @@ pub fn simple_alignment_points(
 
     let overlap = test_mesh.create_from_mask(&overlap)
         .expect("Failed to create overlap mesh, should not be possible");
-    let all_points = overlap.sample_poisson(spacing);
+    
 
     // let mut candidates = Vec::new();
     // for pnt in all_points.iter() {
@@ -265,7 +263,7 @@ pub fn simple_alignment_points(
     //     candidates.push(*pnt);
     // }
 
-    all_points
+    overlap.sample_poisson(spacing)
 }
 
 /// A sampling algorithm that finds a set of ideal alignment points on a test mesh which can be

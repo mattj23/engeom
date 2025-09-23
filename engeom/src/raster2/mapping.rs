@@ -1,7 +1,6 @@
 //! This module contains an abstraction for mapping between a 2D cartesian space of real numbers
 //! and a raster space of pixels.
 
-use crate::image::GrayImage;
 use crate::na::{DMatrix, Scalar};
 use crate::raster2::{Point2I, RasterMask};
 use crate::{Iso2, Point2, Vector2};
@@ -203,7 +202,7 @@ impl RasterMapping {
         self.inverse * p
     }
 
-    pub fn iter_row_col(&self) -> RowColIter {
+    pub fn iter_row_col(&self) -> RowColIter<'_> {
         RowColIter::new(self)
     }
 }
