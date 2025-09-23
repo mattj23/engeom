@@ -115,19 +115,22 @@ impl PointCloud {
         std_devs: Option<Vec<f64>>,
     ) -> Result<Self> {
         if let Some(normals) = &normals
-            && normals.len() != points.len() {
-                return Err("normals must have the same length as points".into());
-            }
+            && normals.len() != points.len()
+        {
+            return Err("normals must have the same length as points".into());
+        }
 
         if let Some(colors) = &colors
-            && colors.len() != points.len() {
-                return Err("colors must have the same length as points".into());
-            }
+            && colors.len() != points.len()
+        {
+            return Err("colors must have the same length as points".into());
+        }
 
         if let Some(std_devs) = &std_devs
-            && std_devs.len() != points.len() {
-                return Err("std_devs must have the same length as points".into());
-            }
+            && std_devs.len() != points.len()
+        {
+            return Err("std_devs must have the same length as points".into());
+        }
 
         Ok(Self {
             tree_uuid: Uuid::new_v4(),

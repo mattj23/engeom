@@ -133,8 +133,7 @@ impl PointCloud {
 
     #[staticmethod]
     fn load_bxyz(path: PathBuf) -> PyResult<Self> {
-        let inner = engeom::io::load_bxyz(&path)
-            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        let inner = engeom::io::load_bxyz(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
         Ok(Self::from_inner(inner))
     }
 

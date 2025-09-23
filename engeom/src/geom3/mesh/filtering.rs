@@ -5,9 +5,9 @@ use crate::common::{IndexMask, PCoords, SelectOp, Selection};
 use crate::{Mesh, Point3, SurfacePoint3, UnitVec3, Vector3};
 use crate::{Plane3, Result};
 use itertools::Itertools;
+use parry3d_f64::query::PointQuery;
 use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
-use parry3d_f64::query::PointQuery;
 
 pub struct TriangleFilter<'a> {
     mesh: &'a Mesh,
@@ -396,7 +396,9 @@ impl TriangleFilter<'_> {
             .vertices()
             .iter()
             .map(|v| {
-                other.shape.project_local_point_with_max_dist(v, false, distance_tol)
+                other
+                    .shape
+                    .project_local_point_with_max_dist(v, false, distance_tol)
                     .map(|p| p.point)
             })
             .collect();
@@ -439,7 +441,6 @@ impl TriangleFilter<'_> {
             if a_to_centroid > angle_tol && a_to_centroid < (PI - angle_tol) {
                 continue;
             }
-
 
             // What's the area of the triangle formed by the projected points?
             let area_proj = area(&v0, &v1, &v2);

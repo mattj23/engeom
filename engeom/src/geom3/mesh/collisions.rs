@@ -119,12 +119,13 @@ impl MeshCollisionSet {
                 // Check for collision
                 if let Ok(check) =
                     intersection_test(iso1, mesh1.mesh.tri_mesh(), iso2, mesh2.mesh.tri_mesh())
-                    && check {
-                        pairs.push((id1, id2));
-                        if stop_at_first {
-                            break;
-                        }
+                    && check
+                {
+                    pairs.push((id1, id2));
+                    if stop_at_first {
+                        break;
                     }
+                }
             }
         }
 

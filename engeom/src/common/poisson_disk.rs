@@ -72,8 +72,7 @@ mod tests {
 
             // Brute force check that each point only has one point (itself) within the radius
             let kept = keep.clone_indices_of(&points).unwrap();
-            let tree = KdTree::new(&kept)
-                .expect("Tree construction failed");
+            let tree = KdTree::new(&kept).expect("Tree construction failed");
             for (i, &p) in kept.iter().enumerate() {
                 let within = tree.within(&p, r);
                 assert_eq!(within.len(), 1);

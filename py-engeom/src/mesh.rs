@@ -381,7 +381,9 @@ impl Mesh {
     }
 
     fn separate_patches(&self) -> PyResult<Vec<Self>> {
-        let patch_groups = self.inner.get_patches(None)
+        let patch_groups = self
+            .inner
+            .get_patches(None)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let mut results = Vec::with_capacity(patch_groups.len());
         for mask in patch_groups.iter() {

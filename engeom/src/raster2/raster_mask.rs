@@ -510,7 +510,12 @@ impl RasterMask {
         }
     }
 
-    pub fn draw_polygon_mut(&mut self, points: &[Point2I], value: bool, filled: bool) -> Result<()> {
+    pub fn draw_polygon_mut(
+        &mut self,
+        points: &[Point2I],
+        value: bool,
+        filled: bool,
+    ) -> Result<()> {
         let color = if value { Luma([255]) } else { Luma([0]) };
         if filled {
             let ipoints = polygon_ipoints(points);
@@ -570,7 +575,9 @@ impl RasterMask {
                     // faces.push([*i, *i_up_right, *i_up]);
                     faces.push([*i, *i_up, *i_up_right]);
                 }
-            } else if let (Some(i_right), Some(i_up)) = (by_index.get(&p_right), by_index.get(&p_up)) {
+            } else if let (Some(i_right), Some(i_up)) =
+                (by_index.get(&p_right), by_index.get(&p_up))
+            {
                 // If we do not have the upper right corner, but do have the upper and right
                 // corners independently, we will form the face canted in the other
                 // direction.
@@ -596,7 +603,6 @@ impl RasterMask {
         (vertices, faces)
     }
 }
-
 
 fn polygon_ipoints(points: &[Point2I]) -> Vec<IpPoint> {
     let mut working = points.to_vec();

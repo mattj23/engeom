@@ -52,10 +52,10 @@ use crate::io::lptf3::mesh::load_lptf3_mesh_core;
 use crate::{Point3, PointCloud, Result};
 use std::path::Path;
 
+pub use self::comprehensive::*;
 pub use self::downsample::Lptf3DsParams;
 pub use self::loader::Lptf3Loader;
 pub use self::uncertainty::*;
-pub use self::comprehensive::*;
 
 /// The Lptf3Load enum defines the different ways to load data from a LPTF3 file, and is used to
 /// pass these options to loading functions.

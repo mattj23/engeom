@@ -607,10 +607,7 @@ impl Series1 {
         } else if x < self.x_min() {
             (None, Some(self.clone()))
         } else {
-            (
-                self.between(self.x_min(), x),
-                self.between(x, self.x_max()),
-            )
+            (self.between(self.x_min(), x), self.between(x, self.x_max()))
         }
     }
     // ===========================================================================================

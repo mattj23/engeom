@@ -238,8 +238,8 @@ impl TryFrom<Vec<f64>> for DiscreteDomain {
 
 #[cfg(test)]
 mod tests {
-    use rand::Rng;
     use super::*;
+    use rand::Rng;
     use test_case::test_case;
 
     #[test]
@@ -329,7 +329,11 @@ mod tests {
             let closest_index = domain.closest_index(test_val);
             let expected = brute_force_closest_index(&domain, test_val);
 
-            assert_eq!(closest_index, expected, "Failed for test value: {}", test_val);
+            assert_eq!(
+                closest_index, expected,
+                "Failed for test value: {}",
+                test_val
+            );
         }
     }
 }

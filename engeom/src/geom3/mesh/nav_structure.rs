@@ -138,7 +138,6 @@ impl<'a> MeshNav<'a> {
         edges
     }
 
-
     /// Returns a list of vertices that are part of non-manifold edges, meaning that the vertices
     /// are boundary vertices but are connected to more than two other vertices. These are the
     /// specific vertices which will result in an error when running the `boundary_loops`

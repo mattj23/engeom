@@ -40,7 +40,9 @@ impl SvdBasis2 {
             ));
         }
 
-        Ok(Self { inner: basis.unwrap() })
+        Ok(Self {
+            inner: basis.unwrap(),
+        })
     }
 
     fn rank(&self, tol: f64) -> usize {
@@ -114,7 +116,9 @@ impl SvdBasis3 {
             ));
         }
 
-        Ok(Self { inner: basis.unwrap() })
+        Ok(Self {
+            inner: basis.unwrap(),
+        })
     }
 
     fn rank(&self, tol: f64) -> usize {

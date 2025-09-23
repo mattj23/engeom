@@ -1,7 +1,7 @@
 //! This module contains common constructs for working with angles
 
-use std::f64::consts::PI;
 use serde::{Deserialize, Serialize};
+use std::f64::consts::PI;
 
 pub const ANGLE_TOL: f64 = 1.0e-12;
 

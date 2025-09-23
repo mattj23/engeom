@@ -7,18 +7,18 @@
 //! with a relatively large amount of overlap between meshes.  This code was implemented to perform
 //! bundle adjustment between metrology quality scans of objects with unambiguous morphology.
 
+use crate::Result;
 use crate::common::points::dist;
+use crate::geom3::Align3;
 use crate::geom3::align3::jacobian::{point_plane_jacobian, point_plane_jacobian_rev};
 use crate::geom3::align3::multi_param::ParamHandler;
-use crate::geom3::align3::{distance_weight, normal_weight, GAPParams};
-use crate::geom3::Align3;
-use crate::na::{DMatrix, Dyn, Matrix, Owned, Vector, U1};
-use crate::Result;
+use crate::geom3::align3::{GAPParams, distance_weight, normal_weight};
+use crate::na::{DMatrix, Dyn, Matrix, Owned, U1, Vector};
 use faer::prelude::default;
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use rayon::prelude::*;
 
-use crate::geom3::align3::mesh::{generate_alignment_points, AlignmentMesh};
+use crate::geom3::align3::mesh::{AlignmentMesh, generate_alignment_points};
 use crate::geom3::mesh::MeshSurfPoint;
 
 pub fn multi_mesh_adjustment_with_points(
@@ -27,7 +27,6 @@ pub fn multi_mesh_adjustment_with_points(
     static_i: usize,
     opts: MMOpts,
 ) -> Result<Vec<Align3>> {
-
     let problem = MultiMeshProblem::new(meshes, points, static_i, opts);
     let (result, report) = LevenbergMarquardt::new().minimize(problem);
     // println!("minimize: {:?}", start.elapsed());
@@ -70,7 +69,11 @@ impl MMOpts {
     }
 }
 
-pub fn multi_mesh_adjustment(meshes: &[AlignmentMesh], opts: MMOpts, sample_opts: GAPParams) -> Result<Vec<Align3>> {
+pub fn multi_mesh_adjustment(
+    meshes: &[AlignmentMesh],
+    opts: MMOpts,
+    sample_opts: GAPParams,
+) -> Result<Vec<Align3>> {
     let matrix = correspondence_matrix(meshes, &sample_opts);
     let mut corr = &matrix / matrix.max();
     corr.apply(|x| *x = x.sqrt());

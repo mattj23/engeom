@@ -1,4 +1,4 @@
-use crate::td::{CameraControl, ModState, ToCgVec3, ToEngeom3, mod_state, ToCpuMesh, cpu_mat};
+use crate::td::{CameraControl, ModState, ToCgVec3, ToCpuMesh, ToEngeom3, cpu_mat, mod_state};
 use crate::{Iso3, Point3, Result};
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -114,7 +114,6 @@ impl SimpleViewer {
 
         let cpu_mesh = mesh.to_cpu_mesh();
         self.add_mesh(cpu_mesh, cpu_mat(color.0, color.1, color.2, 255, 1.0, 0.0));
-
 
         Ok(())
     }

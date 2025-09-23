@@ -235,9 +235,10 @@ impl Curve2 {
 
         // Check if the curve is supposed to be closed
         if let (true, Some(start), Some(end)) = (force_closed, pts.first(), pts.last())
-            && dist(start, end) > tol {
-                pts.push(*start);
-            }
+            && dist(start, end) > tol
+        {
+            pts.push(*start);
+        }
 
         let is_closed = pts.len() >= 2 && dist(&pts[0], pts.last().unwrap()) <= tol;
 
@@ -1023,10 +1024,11 @@ impl Curve2 {
 
         while i < self.count() {
             if let Some((i0, i1, arc)) = self.equivalent_arc_at(i, tol)
-                && i1 - i0 + 1 >= min_points {
-                    arcs.push((i0, i1, arc));
-                    i = i1 + 1;
-                }
+                && i1 - i0 + 1 >= min_points
+            {
+                arcs.push((i0, i1, arc));
+                i = i1 + 1;
+            }
 
             i += 1;
         }

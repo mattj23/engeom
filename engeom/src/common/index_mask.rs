@@ -285,7 +285,6 @@ impl IndexMask {
             *u = if value { !0 } else { 0 };
         }
     }
-
 }
 
 pub struct MaskTrueIterator<'a> {

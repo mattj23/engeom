@@ -285,8 +285,7 @@ fn smooth_by_polynomial<const D: usize>(curve: &Curve3, window_size: f64) -> Res
             continue;
         }
 
-        let svd = SvdBasis3::from_points(&points, None)
-            .ok_or("Failed to compute SVD basis")?;
+        let svd = SvdBasis3::from_points(&points, None).ok_or("Failed to compute SVD basis")?;
         let svd_t = Iso3::from(&svd);
 
         let mut xs = Vec::new();
@@ -298,7 +297,7 @@ fn smooth_by_polynomial<const D: usize>(curve: &Curve3, window_size: f64) -> Res
         }
 
         let Some(poly) = Polynomial::<D>::least_squares(&xs, &ys, None) else {
-            return Err("Failed to fit polynomial".into())
+            return Err("Failed to fit polynomial".into());
         };
 
         let x = (svd_t * curve.line.vertices()[window.index]).x;

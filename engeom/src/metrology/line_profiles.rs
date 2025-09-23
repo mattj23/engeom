@@ -35,9 +35,10 @@ pub fn line_surface_deviations(
     for p in actual {
         let closest = nominal.at_closest_to_point(p);
         if let Some(i) = interval
-            && !i.contains(closest.length_along()) {
-                continue;
-            }
+            && !i.contains(closest.length_along())
+        {
+            continue;
+        }
 
         result.push(point_curve2_deviation(&closest, p));
     }

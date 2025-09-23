@@ -245,14 +245,16 @@ pub fn extract_edge_sub_curve(
     let perimeter = section.length();
 
     if let Some(p0) = portion0
-        && p0.length() < perimeter * frac {
-            return Some(p0);
-        }
+        && p0.length() < perimeter * frac
+    {
+        return Some(p0);
+    }
 
     if let Some(p1) = portion1
-        && p1.length() < perimeter * frac {
-            return Some(p1);
-        }
+        && p1.length() < perimeter * frac
+    {
+        return Some(p1);
+    }
 
     None
 }
@@ -356,9 +358,10 @@ impl OrientedCircles {
         let mut c = circle;
 
         if let Some(last) = self.last()
-            && last.spanning_ray.dir().dot(&c.spanning_ray.dir()) < 0.0 {
-                c.reverse_in_place();
-            }
+            && last.spanning_ray.dir().dot(&c.spanning_ray.dir()) < 0.0
+        {
+            c.reverse_in_place();
+        }
 
         if self.reversed {
             self.circles.insert(0, c);

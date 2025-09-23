@@ -1,12 +1,12 @@
 //! This module has some common abstractions and tools for aligning meshes
 
-use std::f64::consts::PI;
 use crate::common::IndexMask;
 use crate::common::kd_tree::KdTreeSearch;
 use crate::common::points::{dist, mean_point};
 use crate::geom3::mesh::MeshSurfPoint;
 use crate::{Iso3, KdTree3, Mesh, SelectOp, Selection, SvdBasis3, To2D, TransformBy};
 use parry2d_f64::transformation::convex_hull;
+use std::f64::consts::PI;
 
 #[derive(Clone)]
 pub struct FaceIndexWeight {
@@ -244,9 +244,9 @@ pub fn simple_alignment_points(
         return Vec::new();
     }
 
-    let overlap = test_mesh.create_from_mask(&overlap)
+    let overlap = test_mesh
+        .create_from_mask(&overlap)
         .expect("Failed to create overlap mesh, should not be possible");
-    
 
     // let mut candidates = Vec::new();
     // for pnt in all_points.iter() {
@@ -314,8 +314,7 @@ pub fn generate_alignment_points(
     // We start with a Poisson disk sampling of the test mesh to get a set of points that are
     // well distributed across the surface and spaced at a roughly known distance.
     let all_points = test_mesh.sample_poisson(params.sample_spacing);
-    let tree = KdTree3::new(&all_points)
-        .expect("KD tree build failed");
+    let tree = KdTree3::new(&all_points).expect("KD tree build failed");
 
     // Now we're going to iterate through the points and find ones which meet the criteria for
     // being paired with the reference mesh.
@@ -339,7 +338,6 @@ pub fn generate_alignment_points(
             candidates.push((d, pnt))
         }
     }
-
 
     /*
     // Lastly, we'll filter out candidates more than 3 standard deviations beyond the mean distance

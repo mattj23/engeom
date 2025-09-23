@@ -1,9 +1,9 @@
 //! Common operations on f64 points in D-dimensional space.
 
 use crate::common::PCoords;
+use crate::common::kd_tree::{KdTree, KdTreeSearch};
 use crate::common::surface_point::SurfacePoint;
 use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector};
-use crate::common::kd_tree::{KdTree, KdTreeSearch};
 
 pub fn area<const D: usize>(
     pa: &impl PCoords<D>,
@@ -527,7 +527,6 @@ where
     points.iter().map(|p| transform * p).collect()
 }
 
-
 /// Clusters a set of points by distance tolerance, where all points reachable by a series of hops
 /// less than or equal to the specified tolerance are grouped together into a single cluster.
 ///
@@ -551,8 +550,8 @@ pub fn cluster_points_by_tol<const D: usize>(
     while !working.is_empty() {
         let mut group = vec![working.pop().unwrap()];
         loop {
-            let tree = KdTree::new(&group)
-                .expect("KD tree construction failed. Are there enough points?");
+            let tree =
+                KdTree::new(&group).expect("KD tree construction failed. Are there enough points?");
             let mut to_add = Vec::new();
             for (i, p) in working.iter().enumerate() {
                 // let (d, _) = tree.nearest_one(&to_slice(p), &squared_euclidean);
@@ -583,7 +582,6 @@ pub fn merge_points_by_tol<const D: usize>(
     let clusters = cluster_points_by_tol(points, tol);
     clusters.iter().map(|c| mean_point(c)).collect()
 }
-
 
 #[cfg(test)]
 mod tests {
