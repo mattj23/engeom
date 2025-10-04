@@ -80,7 +80,7 @@ pub fn slice_to_vectors<const D: usize>(slice: &[[f64; D]]) -> Vec<SVector<f64, 
 /// assert_eq!(points[2], Point2::new(2.0, 2.5));
 /// ```
 pub fn unflatten_points<const D: usize>(values: &[f64]) -> Result<Vec<Point<f64, D>>> {
-    if values.len() % D != 0 {
+    if values.len().is_multiple_of(D) {
         return Err(Box::new(FailedConversion::InvalidCount));
     }
 
@@ -120,7 +120,7 @@ pub fn unflatten_points<const D: usize>(values: &[f64]) -> Result<Vec<Point<f64,
 /// assert_eq!(points[2], Vector2::new(2.0, 2.5));
 /// ```
 pub fn unflatten_vectors<const D: usize>(values: &[f64]) -> Result<Vec<SVector<f64, D>>> {
-    if values.len() % D != 0 {
+    if values.len().is_multiple_of(D) {
         return Err(Box::new(FailedConversion::InvalidCount));
     }
 

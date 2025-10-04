@@ -88,7 +88,7 @@ impl RasterKernel {
         if values.nrows() != values.ncols() {
             return Err("Kernel must be square (nrows == ncols)".into());
         }
-        if values.nrows() % 2 == 0 {
+        if values.nrows().is_multiple_of(2) {
             return Err("Kernel size must be odd (nrows and ncols must be odd)".into());
         }
         let size = values.nrows();

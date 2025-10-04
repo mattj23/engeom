@@ -88,7 +88,7 @@ pub fn compute_median(values: &[f64]) -> Result<f64> {
         let mut sorted = values.to_vec();
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let mid = sorted.len() / 2;
-        if sorted.len() % 2 == 0 {
+        if sorted.len().is_multiple_of(2) {
             Ok((sorted[mid] + sorted[mid - 1]) / 2.0)
         } else {
             Ok(sorted[mid])
