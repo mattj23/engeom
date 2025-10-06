@@ -103,6 +103,12 @@ impl Mesh {
         SurfacePoint3::from_inner(self.inner.surf_closest_to(&p).sp)
     }
 
+    fn barycentric_closest_to(&self, x: f64, y: f64, z: f64) -> (u32, [f64; 3]) {
+        let p = engeom::Point3::new(x, y, z);
+        let msp = self.inner.surf_closest_to(&p);
+        (msp.face_index, msp.bc)
+    }
+
     fn point_closest_to(&self, x: f64, y: f64, z: f64) -> Point3 {
         let p = engeom::Point3::new(x, y, z);
         Point3::from_inner(self.inner.point_closest_to(&p))

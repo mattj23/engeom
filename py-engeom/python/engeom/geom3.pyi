@@ -1326,6 +1326,17 @@ class Mesh:
         """
         ...
 
+    def barycentric_closest_to(self, x: float, y: float, z: float) -> Tuple[int, List[float]]:
+        """
+        Find the closest point on the surface of the mesh to a given point in space, returning the triangle index and
+        the barycentric coordinates of the closest point within that triangle.
+        :param x: the x coordinate of the point to find the closest point to
+        :param y: the y coordinate of the point to find the closest point to
+        :param z: the z coordinate of the point to find the closest point to
+        :return: a tuple containing the triangle index and a list of three barycentric coordinates
+        """
+        ...
+
     def point_closest_to(self, x: float, y: float, z: float) -> Point3:
         """
         Find the closest point on the surface of the mesh to a given point in space, returning the point
