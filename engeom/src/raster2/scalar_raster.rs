@@ -11,7 +11,7 @@ use crate::na::DMatrix;
 use crate::raster2::area_average::AreaAverage;
 use crate::raster2::raster_mask::RasterMask;
 use crate::raster2::{FastApproxKernel, Point2I, Point2IIndexAccess, RasterKernel, inpaint};
-use crate::{Point2, Result, Series1, Vector2};
+use crate::{Mesh, Point2, Point3, Result, Series1, Vector2};
 use colorgrad::Gradient;
 use imageproc::distance_transform::Norm::L1;
 use imageproc::morphology::{dilate_mut, erode_mut};
@@ -357,6 +357,20 @@ impl ScalarRaster {
     // ============================================================================================
     // Visualization/helper functions
     // ============================================================================================
+
+    pub fn build_depth_mesh(&self) -> Result<Mesh> {
+        let (pixels, faces) = self.mask.triangle_structure();
+
+        let points = pixels
+            .into_iter()
+            .map(|p| {
+                let z = self.f_at(p);
+                Point3::new(p.x as f64 * self.px_size, p.y as f64 * self.px_size, z)
+            })
+            .collect::<Vec<_>>();
+
+        Ok(Mesh::new(points, faces, false))
+    }
 
     /// This function will render the depth map to an image file using a color gradient map from
     /// the `colorgrad` crate.  Optionally, you can provide a tuple of `(min_z, max_z)` to clip

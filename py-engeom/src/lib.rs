@@ -12,8 +12,19 @@ mod raster;
 mod ray_casting;
 mod sensors;
 mod svd_basis;
+mod raster2;
 
 use pyo3::prelude::*;
+
+/// Raster in 2D space.
+fn register_raster2(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
+    let child = PyModule::new(parent_module.py(), "_raster2")?;
+
+    // Primitive geometry types
+    child.add_class::<raster2::ScalarRaster>()?;
+
+    parent_module.add_submodule(&child)
+}
 
 /// Geometry in 2D space.
 fn register_geom2(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -126,6 +137,9 @@ fn register_sensor_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
 fn py_engeom(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // 2D geometry submodule
     register_geom2(m)?;
+
+    // 2D raster submodule
+    register_raster2(m)?;
 
     // 3D geometry submodule
     register_geom3(m)?;
