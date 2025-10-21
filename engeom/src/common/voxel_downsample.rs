@@ -1,5 +1,6 @@
 //! This module provides functionality for voxel downsampling of points
 
+use faer::prelude::default;
 use crate::common::IndexMask;
 use crate::common::PCoords;
 use crate::na::SVector;
@@ -24,7 +25,7 @@ use parry3d_f64::utils::hashmap::HashMap;
 ///
 /// returns: IndexMask
 pub fn voxel_downsample<const D: usize>(points: &[impl PCoords<D>], voxel_size: f64) -> IndexMask {
-    let mut voxel_map = HashMap::new();
+    let mut voxel_map = HashMap::with_hasher(default());
     let mut mask = IndexMask::new(points.len(), false);
 
     for (i, xyz) in points.iter().enumerate() {

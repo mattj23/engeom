@@ -1,13 +1,11 @@
-use super::signed_angle;
+use super::{Aabb2, Iso2, Point2, Vector2, signed_angle};
+use crate::common::PCoords;
 use crate::common::points::mid_point;
-use parry2d_f64::bounding_volume::SimdAabb;
-use parry2d_f64::math::{DIM, SIMD_WIDTH, SimdBool, SimdReal};
-use parry2d_f64::na::{Isometry2, Point2, SimdPartialOrd, SimdValue, Vector2};
-use parry2d_f64::partitioning::{SimdVisitStatus, SimdVisitor};
-use parry2d_f64::query::{Ray, SimdRay};
-use parry2d_f64::shape::{Polyline, SimdCompositeShape};
-
 use crate::geom2::line2::{Line2, intersect_rays};
+use parry2d_f64::partitioning::TraversalAction;
+// use parry2d_f64::na::{, SimdPartialOrd, SimdValue};
+use parry2d_f64::query::{Ray, RayCast};
+use parry2d_f64::shape::Polyline;
 use serde::{Deserialize, Serialize};
 
 /// A `SpanningRay` is a special case of ray which spans two points in a polyline, typically when
@@ -24,7 +22,9 @@ impl SpanningRay {
         self.ray
     }
 
-    pub fn new(p0: Point2<f64>, p1: Point2<f64>) -> Self {
+    pub fn new(p0: &impl PCoords<2>, p1: &impl PCoords<2>) -> Self {
+        let p0 = Point2::from(p0.coords());
+        let p1 = Point2::from(p1.coords());
         Self {
             ray: Ray::new(p0, p1 - p0),
         }
@@ -35,12 +35,12 @@ impl SpanningRay {
         let angle = signed_angle(&self.ray.dir, &other.ray.dir) * 0.5;
         Ray::new(
             mid_point(&self.ray.origin, &other.ray.origin),
-            Isometry2::rotation(angle) * self.ray.dir,
+            Iso2::rotation(angle) * self.ray.dir,
         )
     }
 
     pub fn reversed(&self) -> Self {
-        Self::new(self.ray.point_at(1.0), self.ray.origin)
+        Self::new(&self.ray.point_at(1.0), &self.ray.origin)
     }
 }
 
@@ -61,15 +61,15 @@ pub fn ray_intersect_with_edge(line: &Polyline, ray: &Ray, edge_index: usize) ->
 }
 
 impl Line2 for SpanningRay {
-    fn origin(&self) -> Point2<f64> {
+    fn origin(&self) -> Point2 {
         self.ray.origin
     }
 
-    fn dir(&self) -> Vector2<f64> {
+    fn dir(&self) -> Vector2 {
         self.ray.dir
     }
 
-    fn at(&self, t: f64) -> Point2<f64> {
+    fn at(&self, t: f64) -> Point2 {
         self.ray.point_at(t)
     }
 }
@@ -105,8 +105,8 @@ pub fn spanning_ray(line: &Polyline, ray: &Ray) -> Option<SpanningRay> {
     results.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
     if results.len() == 2 {
         Some(SpanningRay::new(
-            ray.point_at(results[0].0),
-            ray.point_at(results[1].0),
+            &ray.point_at(results[0].0),
+            &ray.point_at(results[1].0),
         ))
     } else {
         None
@@ -114,11 +114,23 @@ pub fn spanning_ray(line: &Polyline, ray: &Ray) -> Option<SpanningRay> {
 }
 
 pub fn polyline_intersections(polyline: &Polyline, ray: &Ray) -> Vec<(f64, usize)> {
-    let mut results = Vec::new();
-    let mut visitor = RayVisitor::new(ray);
-    polyline.qbvh().traverse_depth_first(&mut visitor);
+    let mut candidates = Vec::new();
+    let r_inv = Vector2::new(1.0 / ray.dir.x, 1.0 / ray.dir.y);
 
-    for i in visitor.collector.iter() {
+    polyline.bvh().traverse(|node| {
+        if let Some(data) = node.leaf_data() {
+            candidates.push(data)
+        };
+
+        if !slab_method(&node.aabb(), ray, &r_inv) {
+            TraversalAction::Prune
+        } else {
+            TraversalAction::Continue
+        }
+    });
+
+    let mut results = Vec::new();
+    for i in candidates.iter() {
         if let Some(t) = ray_intersect_with_edge(polyline, ray, *i as usize) {
             results.push((t, *i as usize));
         }
@@ -130,80 +142,20 @@ pub fn polyline_intersections(polyline: &Polyline, ray: &Ray) -> Vec<(f64, usize
     results
 }
 
-struct RayVisitor {
-    ray: SimdRay,
-    collector: Vec<u32>,
-}
+fn slab_method(bv: &Aabb2, ray: &Ray, n_inv: &Vector2) -> bool {
+    let mut t1 = (bv.mins.x - ray.origin.x) * n_inv.x;
+    let mut t2 = (bv.maxs.x - ray.origin.x) * n_inv.x;
 
-impl RayVisitor {
-    pub fn new(ray: &Ray) -> Self {
-        Self {
-            ray: SimdRay::splat(*ray),
-            collector: Vec::new(),
-        }
-    }
-}
+    let tmin = t1.min(t2);
+    let tmax = t1.max(t2);
 
-impl SimdVisitor<u32, SimdAabb> for RayVisitor {
-    fn visit(
-        &mut self,
-        bv: &SimdAabb,
-        data: Option<[Option<&u32>; SIMD_WIDTH]>,
-    ) -> SimdVisitStatus {
-        let mask = cast_ray(bv, &self.ray).0;
-        if let Some(data) = data {
-            for (i, &d_opt) in data.iter().enumerate().take(SIMD_WIDTH) {
-                if mask.extract(i)
-                    && let Some(d) = d_opt
-                {
-                    self.collector.push(*d);
-                }
-            }
-        }
-        SimdVisitStatus::MaybeContinue(mask)
-    }
-}
+    t1 = (bv.mins.y - ray.origin.y) * n_inv.y;
+    t2 = (bv.maxs.y - ray.origin.y) * n_inv.y;
 
-/// Performs a ray cast except that it does not fail with negative t values.
-fn cast_ray(bv: &SimdAabb, ray: &SimdRay) -> (SimdBool, SimdReal) {
-    let zero = SimdReal::splat(0.0);
-    let one = SimdReal::splat(1.0);
-    let infinity = SimdReal::splat(f64::MAX);
+    let tmin = tmin.max(t1.min(t2).min(tmax));
+    let tmax = tmax.min(t1.max(t2).max(tmin));
 
-    let mut hit = SimdBool::splat(true);
-    let mut tmin = SimdReal::splat(f64::MIN);
-    let mut tmax = SimdReal::splat(f64::MAX);
-
-    // TODO: could this be optimized more considering we really just need a boolean answer?
-    for i in 0usize..DIM {
-        let is_not_zero = ray.dir[i].simd_ne(zero);
-        let is_zero_test = ray.origin[i].simd_ge(bv.mins[i]) & ray.origin[i].simd_le(bv.maxs[i]);
-        let is_not_zero_test = {
-            let denom = one / ray.dir[i];
-            let mut inter_with_near_plane =
-                ((bv.mins[i] - ray.origin[i]) * denom).select(is_not_zero, -infinity);
-            let mut inter_with_far_plane =
-                ((bv.maxs[i] - ray.origin[i]) * denom).select(is_not_zero, infinity);
-
-            let gt = inter_with_near_plane.simd_gt(inter_with_far_plane);
-            simd_swap(gt, &mut inter_with_near_plane, &mut inter_with_far_plane);
-
-            tmin = tmin.simd_max(inter_with_near_plane);
-            tmax = tmax.simd_min(inter_with_far_plane);
-
-            tmin.simd_le(tmax)
-        };
-
-        hit = hit & is_not_zero_test.select(is_not_zero, is_zero_test);
-    }
-
-    (hit, tmin)
-}
-
-fn simd_swap(do_swap: SimdBool, a: &mut SimdReal, b: &mut SimdReal) {
-    let _a = *a;
-    *a = b.select(do_swap, *a);
-    *b = _a.select(do_swap, *b);
+    tmax >= tmin
 }
 
 #[cfg(test)]
@@ -214,8 +166,8 @@ mod tests {
 
     #[test]
     fn test_symmetry_ray() {
-        let s0 = SpanningRay::new(Point2::new(1.0, 0.0), Point2::new(2.0, 0.0));
-        let s1 = SpanningRay::new(Point2::new(0.0, 1.0), Point2::new(0.0, 2.0));
+        let s0 = SpanningRay::new(&Point2::new(1.0, 0.0), &Point2::new(2.0, 0.0));
+        let s1 = SpanningRay::new(&Point2::new(0.0, 1.0), &Point2::new(0.0, 2.0));
         let r = s0.symmetry(&s1);
         let en = Vector2::new(1.0, 1.0).normalize();
 
@@ -260,9 +212,9 @@ mod tests {
         let line = sample_polyline();
 
         for i in 1..360 {
-            let ai = Isometry2::rotation(i as f64 / 180.0 * PI) * Point2::new(10.0, 0.0);
+            let ai = Iso2::rotation(i as f64 / 180.0 * PI) * Point2::new(10.0, 0.0);
             for j in 1..360 {
-                let aj = Isometry2::rotation(j as f64 / 180.0 * PI) * Vector2::new(1.0, 0.0);
+                let aj = Iso2::rotation(j as f64 / 180.0 * PI) * Vector2::new(1.0, 0.0);
                 let ray = Ray::new(ai, aj);
 
                 let mut naive = naive_ray_intersections(&line, &ray);
@@ -280,7 +232,7 @@ mod tests {
     }
 
     fn sample_polyline() -> Polyline {
-        let points: Vec<Point2<f64>> = vec![
+        let points: Vec<Point2> = vec![
             Point2::new(5.0, 0.0),
             Point2::new(3.5, 0.9),
             Point2::new(4.0, 2.3),

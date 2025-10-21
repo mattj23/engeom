@@ -10,6 +10,7 @@ use uuid::Uuid;
 use crate::common::IndexMask;
 use crate::common::poisson_disk::sample_poisson_disk_all;
 pub use normal_estimation::{NormalEstimates, estimate_by_neighborhood};
+use crate::geom3::Aabb3;
 
 pub trait PointCloudOverlap<TOther> {
     fn overlap_by_reciprocity(&self, other: &TOther, max_distance: f64) -> Vec<usize>;
@@ -30,8 +31,10 @@ pub trait PointCloudFeatures {
         self.points().len()
     }
 
-    fn aabb(&self) -> Aabb {
-        Aabb::from_points(self.points())
+    fn aabb(&self) -> Aabb3 {
+        // TODO: there must be a more efficient way to do this without allocating a new Vec,
+        // I don't know why parry changed this
+        Aabb3::from_points(self.points().to_vec())
     }
 
     fn create_from_mask(&self, mask: &IndexMask) -> Result<PointCloud> {

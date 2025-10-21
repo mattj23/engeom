@@ -21,7 +21,7 @@ bitvec = {version = "1.0.1", features = ["serde"]}
 
 serde_json = "1.0.140"
 itertools = "0.14.0"
-levenberg-marquardt = "0.14.0"
+levenberg-marquardt = "0.15.0"
 stl_io = { version = "0.8.5", optional = true }
 num-traits = "0.2.19"
 faer = "0.22.6"
@@ -33,7 +33,7 @@ colorgrad = "0.7.2"
 [dev-dependencies]
 test-case = "3.3.1"
 approx = "0.5.1"
-criterion = "0.6.0"
+criterion = "0.7.0"
 rand = "0.9.1"
 
 [[bench]]

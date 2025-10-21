@@ -3,10 +3,9 @@
 use crate::common::points::barycentric;
 use crate::raster2::RasterMapping;
 use crate::{Point2, Result, Vector2};
-use parry2d_f64::bounding_volume::SimdAabb;
 use parry2d_f64::math::{Point, SIMD_WIDTH, SimdReal};
 use parry2d_f64::na::{SimdBool, SimdValue};
-use parry2d_f64::partitioning::{SimdVisitStatus, SimdVisitor};
+use parry2d_f64::partitioning::TraversalAction;
 use parry2d_f64::query::PointQuery;
 use parry2d_f64::shape::TriMesh;
 
@@ -86,11 +85,24 @@ impl UvMapping {
     ///
     /// returns: Option<(u32, [f64; 3])>
     pub fn triangle(&self, point: &Point2) -> Option<(u32, [f64; 3])> {
-        // self.tri_map.qbvh().traverse_depth_first()
+        let mut result: Option<(u32, [f64; 3])> = None;
+        self.tri_map.bvh().traverse(|node| {
+            if !node.aabb().contains_local_point(point) {
+                return TraversalAction::Prune;
+            }
 
-        let mut visitor = TriangleVisitor::new(&self.tri_map, *point);
-        let _ = self.tri_map.qbvh().traverse_depth_first(&mut visitor);
-        visitor.result
+            if let Some(index) = node.leaf_data() {
+                let tri = self.tri_map.triangle(index);
+                if tri.contains_local_point(point) {
+                    let bc = barycentric(&tri.a, &tri.b, &tri.c, point);
+                    result = Some((index, bc));
+                    return TraversalAction::EarlyExit;
+                }
+            }
+            TraversalAction::Continue
+        });
+
+        result
     }
 
     /// Creates a raster mapping for the UV space based on the triangle mesh. The raster mapping
@@ -117,6 +129,7 @@ impl UvMapping {
     }
 }
 
+/*
 struct TriangleVisitor<'a> {
     tri_mesh: &'a TriMesh,
     point: Point2,
@@ -161,6 +174,7 @@ impl SimdVisitor<u32, SimdAabb> for TriangleVisitor<'_> {
         SimdVisitStatus::MaybeContinue(mask)
     }
 }
+*/
 
 #[cfg(test)]
 mod tests {

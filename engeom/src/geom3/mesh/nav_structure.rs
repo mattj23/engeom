@@ -1,6 +1,7 @@
 //! This module has a struct that provides quick lookups of associations between faces and
 //! edges in a triangular mesh.
 
+use faer::prelude::default;
 use crate::Mesh;
 use crate::Result;
 use crate::common::IndexMask;
@@ -17,7 +18,7 @@ pub struct MeshNav<'a> {
 impl<'a> MeshNav<'a> {
     pub fn new(mesh: &'a Mesh) -> Self {
         let mut face_to_edges = Vec::new();
-        let mut edge_to_faces: HashMap<[u32; 2], Vec<u32>> = HashMap::new();
+        let mut edge_to_faces: HashMap<[u32; 2], Vec<u32>> = HashMap::with_hasher(default());
 
         for (i, face) in mesh.faces().iter().enumerate() {
             let e0 = edge_key(&[face[0], face[1]]);
@@ -49,7 +50,7 @@ impl<'a> MeshNav<'a> {
 
     pub fn patches(&self, mask: Option<&IndexMask>) -> Result<Vec<IndexMask>> {
         let mut results = Vec::new();
-        let mut remaining = HashSet::new();
+        let mut remaining = HashSet::with_hasher(default());
         if let Some(m) = mask {
             for i in m.iter_true() {
                 remaining.insert(i as u32);
@@ -150,9 +151,9 @@ impl<'a> MeshNav<'a> {
     ///
     /// returns: Vec<u32, Global>
     pub fn nonmanifold_boundary_vertices(&self, mask: Option<&IndexMask>) -> Vec<u32> {
-        let mut duplicates = HashSet::new();
+        let mut duplicates = HashSet::with_hasher(default());
         let edges = self.boundary_edges(mask);
-        let mut edge_map = HashMap::new();
+        let mut edge_map = HashMap::with_hasher(default());
         for edge in edges {
             if edge_map.insert(edge[0], edge[1]).is_some() {
                 duplicates.insert(edge[0]);
@@ -164,7 +165,7 @@ impl<'a> MeshNav<'a> {
 
     pub fn boundary_vertices(&self, mask: Option<&IndexMask>) -> Vec<u32> {
         let edges = self.boundary_edges(mask);
-        let mut vertices = HashSet::new();
+        let mut vertices = HashSet::with_hasher(default());
         for edge in edges {
             vertices.insert(edge[0]);
             vertices.insert(edge[1]);
@@ -190,7 +191,7 @@ impl<'a> MeshNav<'a> {
     /// returns: Result<Vec<Vec<u32, Global>, Global>, Box<dyn Error, Global>>
     pub fn boundary_loops(&self, mask: Option<&IndexMask>) -> Result<Vec<Vec<u32>>> {
         let edges = self.boundary_edges(mask);
-        let mut edge_map = HashMap::new();
+        let mut edge_map = HashMap::with_hasher(default());
         for edge in edges {
             if edge_map.insert(edge[0], edge[1]).is_some() {
                 return Err(format!("Non-manifold edge found: {}-{}", edge[0], edge[1]).into());
@@ -248,7 +249,7 @@ impl<'a> MeshNav<'a> {
     pub fn get_patch_inside_loop(&self, vertex_loop: &[u32]) -> Result<IndexMask> {
         let mut outside = IndexMask::new(self.mesh.faces().len(), false);
         let mut inside = IndexMask::new(self.mesh.faces().len(), false);
-        let mut working = HashSet::new();
+        let mut working = HashSet::with_hasher(default());
 
         // Prepare the inside and outside masks
         for i in 0..vertex_loop.len() {

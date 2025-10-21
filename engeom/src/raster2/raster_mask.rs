@@ -13,6 +13,7 @@ use imageproc::region_labelling::Connectivity;
 use parry2d_f64::utils::hashmap::HashMap;
 use std::io::BufWriter;
 use std::path::Path;
+use faer::prelude::default;
 
 type IpPoint = imageproc::point::Point<i32>;
 
@@ -552,7 +553,7 @@ impl RasterMask {
     /// data structure, such as a ScalarRaster or a UV map.
     pub fn triangle_structure(&self) -> (Vec<Point2I>, Vec<[u32; 3]>) {
         let mut vertices = Vec::new();
-        let mut by_index = HashMap::new();
+        let mut by_index = HashMap::with_hasher(default());
         for p in self.iter_true() {
             vertices.push(p);
             by_index.insert(p, (vertices.len() - 1) as u32);

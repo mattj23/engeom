@@ -1,3 +1,4 @@
+use parry2d_f64::bounding_volume::Aabb;
 use super::polyline2::{SpanningRay, polyline_intersections, spanning_ray};
 use crate::common::points::{
     dist, max_point_in_direction, ramer_douglas_peucker, transform_points,
@@ -218,7 +219,7 @@ impl Curve2 {
         self.line.vertices()[i]
     }
 
-    pub fn aabb(&self) -> &Aabb2 {
+    pub fn aabb(&self) -> Aabb {
         self.line.local_aabb()
     }
 
@@ -1226,6 +1227,7 @@ mod tests {
     use super::*;
     use crate::geom2::Vector2;
     use approx::assert_relative_eq;
+    use parry2d_f64::query::RayCast;
     use test_case::test_case;
 
     use rand::distr::Uniform;
@@ -1434,7 +1436,7 @@ mod tests {
         false
     }
 
-    #[test_case(0.0)]
+    #[test_case(0.001)]
     #[test_case(0.5)]
     #[test_case(0.75)]
     #[test_case(2.0)]

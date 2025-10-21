@@ -23,7 +23,7 @@ pub fn arc_aabb2(circle: &Circle2, angle0: f64, angle: f64) -> Aabb2 {
     }
 
     Aabb2::from_points(
-        &a.iter()
+        a.iter()
             .map(|&t| circle.point_at_angle(t))
             .collect::<Vec<_>>(),
     )
@@ -57,7 +57,7 @@ mod tests {
                 .iter()
                 .map(|&t| circle.point_at_angle(t))
                 .collect::<Vec<_>>();
-            let expected = Aabb2::from_points(&points);
+            let expected = Aabb2::from_points(points);
             assert!(
                 dist(&aabb.mins, &expected.mins) < 1.0e-4,
                 "radius: {}, angle0: {}, angle: {}",
@@ -91,7 +91,7 @@ mod tests {
             .iter()
             .map(|&t| circle.point_at_angle(t))
             .collect::<Vec<_>>();
-        let expected = Aabb2::from_points(&points);
+        let expected = Aabb2::from_points(points);
 
         // Construct the AABB using the function
         let aabb = arc_aabb2(&circle, a0, a);
@@ -113,7 +113,7 @@ mod tests {
             .iter()
             .map(|&t| circle.point_at_angle(t))
             .collect::<Vec<_>>();
-        let expected = Aabb2::from_points(&points);
+        let expected = Aabb2::from_points(points);
 
         // Construct the AABB using the function
         let aabb = arc_aabb2(&circle, a0, a);

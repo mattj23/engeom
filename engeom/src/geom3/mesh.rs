@@ -25,6 +25,7 @@ pub use half_edge::HalfEdgeMesh;
 pub use nav_structure::MeshNav;
 use parry3d_f64::shape::{TriMesh, TriMeshFlags};
 use parry3d_f64::{shape, transformation};
+use parry3d_f64::bounding_volume::Aabb;
 pub use uv_mapping::UvMapping;
 
 /// A struct which represents a point on the surface of a mesh, including the index of the face
@@ -101,7 +102,7 @@ pub struct Mesh {
 // Core access
 impl Mesh {
     /// Get a reference to the AABB of the underlying mesh in the local coordinate system.
-    pub fn aabb(&self) -> &Aabb3 {
+    pub fn aabb(&self) -> Aabb {
         self.shape.local_aabb()
     }
 

@@ -824,7 +824,7 @@ impl Curve2 {
 
     #[getter]
     fn aabb(&self) -> Aabb2 {
-        Aabb2::from_inner(*self.inner.aabb())
+        Aabb2::from_inner(self.inner.aabb())
     }
 
     fn at_length(&self, length: f64) -> PyResult<CurveStation2> {

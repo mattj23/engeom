@@ -80,7 +80,7 @@ impl Mesh {
 
     #[getter]
     fn aabb(&self) -> Aabb3 {
-        Aabb3::from_inner(*self.inner.aabb())
+        Aabb3::from_inner(self.inner.aabb())
     }
 
     #[staticmethod]

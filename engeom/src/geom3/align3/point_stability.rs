@@ -1,5 +1,6 @@
 //! This module is for testing the alignment stability contributions of points
 
+use faer::prelude::default;
 use crate::common::points::mean_point;
 use crate::geom3::align3::RcParams3;
 use crate::geom3::align3::jacobian::{copy_jacobian, point_plane_jacobian};
@@ -73,10 +74,10 @@ pub fn point_stability_reduce(
     };
 
     let mut pop_order = Vec::new();
-    let mut passed = vec![HashSet::new(); 6];
+    let mut passed = vec![HashSet::with_hasher(default()); 6];
 
     for i in 0..points.len() {
-        let mut added = HashSet::new();
+        let mut added = HashSet::with_hasher(default());
         for (j, p) in passed.iter_mut().take(6).enumerate() {
             p.insert(ordered[j][i].0);
             added.insert(ordered[j][i].0);
