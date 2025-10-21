@@ -1,9 +1,9 @@
 //! This module provides functionality for voxel downsampling of points
 
-use faer::prelude::default;
 use crate::common::IndexMask;
 use crate::common::PCoords;
 use crate::na::SVector;
+use faer::prelude::default;
 use parry3d_f64::utils::hashmap::HashMap;
 
 /// Perform a voxel downsample of the given set of points, returning a mask that indicates which

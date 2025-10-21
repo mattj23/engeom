@@ -2,6 +2,7 @@ use crate::Result;
 use crate::image::{GenericImage, GrayImage, ImageFormat, ImageReader, Luma};
 use crate::raster2::index_iter::IndexIter;
 use crate::raster2::{LabeledRegions, Point2I, zhang_suen_thinning};
+use faer::prelude::default;
 use imageproc::distance_transform::Norm;
 use imageproc::drawing::{
     draw_filled_circle_mut, draw_filled_rect_mut, draw_hollow_circle_mut, draw_hollow_rect_mut,
@@ -13,7 +14,6 @@ use imageproc::region_labelling::Connectivity;
 use parry2d_f64::utils::hashmap::HashMap;
 use std::io::BufWriter;
 use std::path::Path;
-use faer::prelude::default;
 
 type IpPoint = imageproc::point::Point<i32>;
 

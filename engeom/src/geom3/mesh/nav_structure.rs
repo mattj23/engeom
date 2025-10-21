@@ -1,11 +1,11 @@
 //! This module has a struct that provides quick lookups of associations between faces and
 //! edges in a triangular mesh.
 
-use faer::prelude::default;
 use crate::Mesh;
 use crate::Result;
 use crate::common::IndexMask;
 use crate::geom3::mesh::edges::edge_key;
+use faer::prelude::default;
 use parry3d_f64::utils::hashmap::HashMap;
 use parry3d_f64::utils::hashset::HashSet;
 

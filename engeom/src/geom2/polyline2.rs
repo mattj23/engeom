@@ -3,8 +3,7 @@ use crate::common::PCoords;
 use crate::common::points::mid_point;
 use crate::geom2::line2::{Line2, intersect_rays};
 use parry2d_f64::partitioning::TraversalAction;
-// use parry2d_f64::na::{, SimdPartialOrd, SimdValue};
-use parry2d_f64::query::{Ray, RayCast};
+use parry2d_f64::query::Ray;
 use parry2d_f64::shape::Polyline;
 use serde::{Deserialize, Serialize};
 

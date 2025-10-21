@@ -1,6 +1,6 @@
-use pyo3::prelude::*;
-use engeom::raster2::Point2I;
 use crate::mesh::Mesh;
+use engeom::raster2::Point2I;
+use pyo3::prelude::*;
 
 #[pyclass]
 pub struct ScalarRaster {
@@ -19,7 +19,6 @@ impl ScalarRaster {
 
 #[pymethods]
 impl ScalarRaster {
-
     #[getter]
     fn px_size(&self) -> f64 {
         self.inner.px_size
@@ -45,11 +44,12 @@ impl ScalarRaster {
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(raster))
     }
-    
+
     fn build_depth_mesh(&self) -> PyResult<Mesh> {
-        let inner = self.inner.build_depth_mesh()
+        let inner = self
+            .inner
+            .build_depth_mesh()
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
         Ok(Mesh::from_inner(inner))
     }
-
 }

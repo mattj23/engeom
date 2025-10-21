@@ -16,16 +16,16 @@ pub mod sampling;
 mod uv_mapping;
 
 use crate::common::{IndexMask, PCoords};
-use crate::geom3::{Aabb3, IsoExtensions3};
+use crate::geom3::IsoExtensions3;
 use crate::na::SVector;
 use crate::{Iso3, Point2, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
 pub use collisions::MeshCollisionSet;
 pub use edges::MeshEdges;
 pub use half_edge::HalfEdgeMesh;
 pub use nav_structure::MeshNav;
+use parry3d_f64::bounding_volume::Aabb;
 use parry3d_f64::shape::{TriMesh, TriMeshFlags};
 use parry3d_f64::{shape, transformation};
-use parry3d_f64::bounding_volume::Aabb;
 pub use uv_mapping::UvMapping;
 
 /// A struct which represents a point on the surface of a mesh, including the index of the face

@@ -9,10 +9,10 @@ mod mesh;
 mod metrology;
 mod point_cloud;
 mod raster;
+mod raster2;
 mod ray_casting;
 mod sensors;
 mod svd_basis;
-mod raster2;
 
 use pyo3::prelude::*;
 

@@ -1,4 +1,3 @@
-use parry2d_f64::bounding_volume::Aabb;
 use super::polyline2::{SpanningRay, polyline_intersections, spanning_ray};
 use crate::common::points::{
     dist, max_point_in_direction, ramer_douglas_peucker, transform_points,
@@ -7,8 +6,9 @@ use crate::common::{Intersection, Resample};
 use crate::errors::InvalidGeometry;
 use crate::geom2::hull::convex_hull_2d;
 use crate::geom2::line2::Segment2;
-use crate::geom2::{Aabb2, Iso2, Line2, Point2, SurfacePoint2, UnitVec2, intersection_param};
+use crate::geom2::{Iso2, Line2, Point2, SurfacePoint2, UnitVec2, intersection_param};
 use crate::{Arc2, Circle2, Result, Series1, Vector2};
+use parry2d_f64::bounding_volume::Aabb;
 use parry2d_f64::na::Unit;
 use parry2d_f64::query::{PointQueryWithLocation, Ray};
 use parry2d_f64::shape::{ConvexPolygon, Polyline};

@@ -3,8 +3,6 @@
 use crate::common::points::barycentric;
 use crate::raster2::RasterMapping;
 use crate::{Point2, Result, Vector2};
-use parry2d_f64::math::{Point, SIMD_WIDTH, SimdReal};
-use parry2d_f64::na::{SimdBool, SimdValue};
 use parry2d_f64::partitioning::TraversalAction;
 use parry2d_f64::query::PointQuery;
 use parry2d_f64::shape::TriMesh;
@@ -128,53 +126,6 @@ impl UvMapping {
         RasterMapping::new(padded_origin, (height_px, width_px), px_size, None)
     }
 }
-
-/*
-struct TriangleVisitor<'a> {
-    tri_mesh: &'a TriMesh,
-    point: Point2,
-    result: Option<(u32, [f64; 3])>,
-}
-
-impl<'a> TriangleVisitor<'a> {
-    pub fn new(tri_mesh: &'a TriMesh, point: Point2) -> Self {
-        Self {
-            tri_mesh,
-            point,
-            result: None,
-        }
-    }
-}
-
-impl SimdVisitor<u32, SimdAabb> for TriangleVisitor<'_> {
-    fn visit(
-        &mut self,
-        bv: &SimdAabb,
-        data: Option<[Option<&u32>; SIMD_WIDTH]>,
-    ) -> SimdVisitStatus {
-        let simd_point: Point<SimdReal> = Point::splat(self.point);
-        let mask = bv.contains_local_point(&simd_point);
-
-        if let Some(data) = data {
-            let bitmask = mask.bitmask();
-
-            for (ii, data) in data.into_iter().enumerate() {
-                if (bitmask & (1 << ii)) != 0 {
-                    let Some(index) = data else { continue };
-                    let tri = self.tri_mesh.triangle(*index);
-                    if tri.contains_local_point(&self.point) {
-                        let bc = barycentric(&tri.a, &tri.b, &tri.c, &self.point);
-                        self.result = Some((*index, bc));
-                        return SimdVisitStatus::ExitEarly;
-                    }
-                }
-            }
-        }
-
-        SimdVisitStatus::MaybeContinue(mask)
-    }
-}
-*/
 
 #[cfg(test)]
 mod tests {

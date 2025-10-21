@@ -1,12 +1,12 @@
 //! This module is for testing the alignment stability contributions of points
 
-use faer::prelude::default;
 use crate::common::points::mean_point;
 use crate::geom3::align3::RcParams3;
 use crate::geom3::align3::jacobian::{copy_jacobian, point_plane_jacobian};
 use crate::geom3::mesh::MeshSurfPoint;
 use crate::na::{Dyn, Matrix, Owned, U1, U6, Vector};
 use crate::{Iso3, Result, SurfacePoint3};
+use faer::prelude::default;
 use itertools::all;
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use parry3d_f64::utils::hashset::HashSet;

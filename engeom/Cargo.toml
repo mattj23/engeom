@@ -24,7 +24,7 @@ itertools = "0.14.0"
 levenberg-marquardt = "0.15.0"
 stl_io = { version = "0.8.5", optional = true }
 num-traits = "0.2.19"
-faer = "0.22.6"
+faer = "0.23.2"
 kdtree = "0.7.0"
 
 imageproc = "0.25.0"
