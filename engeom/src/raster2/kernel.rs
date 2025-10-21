@@ -346,7 +346,7 @@ mod tests {
         let mut count_ki = 0;
 
         for ki in 0..k_size {
-            let mi = (a as i32 - tail_n + ki as i32);
+            let mi = a as i32 - tail_n + ki as i32;
             if mi < 0 || mi >= count as i32 {
                 continue; // Out of bounds
             }

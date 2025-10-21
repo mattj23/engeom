@@ -202,7 +202,7 @@ mod tests {
 
     #[test]
     fn matrix_point_index_get() -> Result<()> {
-        let mut matrix = DMatrix::from_row_slice(3, 3, &[1i32, 2, 3, 4, 5, 6, 7, 8, 9]);
+        let matrix = DMatrix::from_row_slice(3, 3, &[1i32, 2, 3, 4, 5, 6, 7, 8, 9]);
         assert_eq!(matrix.get_at(Point2I::new(0, 0)), Some(1));
         assert_eq!(matrix.get_at(Point2I::new(1, 0)), Some(2));
         assert_eq!(matrix.get_at(Point2I::new(2, 0)), Some(3));

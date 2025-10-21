@@ -80,7 +80,7 @@ impl From<&XyzWpr> for Iso3 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geom3::IsoExtensions3;
+    
     use crate::na::{Matrix4, try_convert};
     use approx::assert_relative_eq;
     use test_case::test_case;

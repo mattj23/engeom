@@ -3,7 +3,6 @@ mod normal_estimation;
 use crate::common::kd_tree::{KdTreeSearch, MatchedTree};
 use crate::common::points::dist;
 use crate::{Iso3, KdTree3, Mesh, Point3, Result, SurfacePoint3, UnitVec3};
-use parry3d_f64::bounding_volume;
 use uuid::Uuid;
 
 use crate::common::IndexMask;

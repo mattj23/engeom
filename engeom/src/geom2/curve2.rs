@@ -1227,7 +1227,7 @@ mod tests {
     use super::*;
     use crate::geom2::Vector2;
     use approx::assert_relative_eq;
-    use parry2d_f64::query::RayCast;
+    
     use test_case::test_case;
 
     use rand::distr::Uniform;
