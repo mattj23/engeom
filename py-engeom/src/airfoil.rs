@@ -178,6 +178,7 @@ impl InscribedCircle {
 pub enum EdgeType {
     Open,
     Closed,
+    Sharp,
 }
 
 #[pymethods]
@@ -186,6 +187,7 @@ impl EdgeType {
         match self {
             EdgeType::Open => "EdgeType.Open".to_string(),
             EdgeType::Closed => "EdgeType.Closed".to_string(),
+            EdgeType::Sharp => "EdgeType.Sharp".to_string(),
         }
     }
 }
@@ -221,6 +223,13 @@ impl EdgeResult {
             EdgeGeometry::Open => EdgeType::Open.into_bound_py_any(py),
             EdgeGeometry::Closed => EdgeType::Closed.into_bound_py_any(py),
             EdgeGeometry::Arc(a) => Arc2::from_inner(a).into_bound_py_any(py),
+            EdgeGeometry::Sharp => EdgeType::Sharp.into_bound_py_any(py),
+            EdgeGeometry::Square((p0, p1)) => {
+                (Point2::from_inner(p0), Point2::from_inner(p1)).into_bound_py_any(py)
+            }
+            EdgeGeometry::RoundedFace((arc0, arc1)) => {
+                (Arc2::from_inner(arc0), Arc2::from_inner(arc1)).into_bound_py_any(py)
+            }
         }
     }
 }

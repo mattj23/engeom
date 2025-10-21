@@ -4,6 +4,7 @@ use crate::{Iso2, SvdBasis2};
 use parry2d_f64::na::{Matrix2, Rotation2, Translation2, UnitComplex};
 use parry3d_f64::na::{DMatrix, Matrix3, Point, SVector, Translation3, Unit, UnitQuaternion};
 use std::f64::consts::FRAC_PI_2;
+use crate::common::PCoords;
 
 /// This structure contains the results of using singular value decomposition to determine the
 /// basis vectors of a set of points and their singular values (scales). This can be used to roughly
@@ -97,18 +98,18 @@ impl<const D: usize> SvdBasis<D> {
     /// ```
     ///
     /// ```
-    pub fn from_points(points: &[Point<f64, D>], weights: Option<&[f64]>) -> Option<Self> {
+    pub fn from_points(points: &[impl PCoords<D>], weights: Option<&[f64]>) -> Option<Self> {
         if let Some(w) = weights {
             let center = mean_point_weighted(points, w);
             let vectors = points
                 .iter()
                 .zip(w)
-                .map(|(p, w)| p - center * *w)
+                .map(|(p, w)| p.coords() - center.coords * *w)
                 .collect::<Vec<_>>();
             svd_from_vectors(&vectors, Some(center))
         } else {
             let center = mean_point(points);
-            let vectors = points.iter().map(|p| p - center).collect::<Vec<_>>();
+            let vectors = points.iter().map(|p| p.coords() - center.coords).collect::<Vec<_>>();
             svd_from_vectors(&vectors, Some(center))
         }
     }

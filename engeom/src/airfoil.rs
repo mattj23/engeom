@@ -19,7 +19,7 @@ use crate::stats::compute_mean;
 pub use camber::extract_camber_line;
 pub use edges::{
     ConstRadiusEdge, ConvergeTangentEdge, FitRadiusEdge, IntersectEdge, OpenEdge, OpenIntersectGap,
-    RansacRadiusEdge, TraceToMaxCurvature,
+    RansacRadiusEdge, TraceToMaxCurvature, EdgeAutoDetect,
 };
 pub use inscribed_circle::InscribedCircle;
 pub use orientation::{DirectionFwd, TMaxFwd};
@@ -135,8 +135,17 @@ pub enum EdgeGeometry {
     /// The section is known to be open at this edge
     Open,
 
+    /// The edge comes to a sharp point
+    Sharp,
+
     /// The edge is closed and has a constant radius region represented by an arc
     Arc(Arc2),
+
+    /// The edge is closed and has a "square" face with two corner points
+    Square((Point2, Point2)),
+
+    /// The edge is closed and has a rounded face with two arc regions and a flat region in between
+    RoundedFace((Arc2, Arc2))
 }
 
 /// An airfoil edge is a generic construct used to represent the leading and trailing edges of an
@@ -167,6 +176,14 @@ impl AirfoilEdge {
 
     fn arc(point: Point2, arc: Arc2) -> Self {
         AirfoilEdge::new(point, EdgeGeometry::Arc(arc))
+    }
+
+    fn square(point: Point2, corners: (Point2, Point2)) -> Self {
+        AirfoilEdge::new(point, EdgeGeometry::Square(corners))
+    }
+
+    fn sharp(point: Point2) -> Self {
+        AirfoilEdge::new(point, EdgeGeometry::Sharp)
     }
 }
 

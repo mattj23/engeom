@@ -117,9 +117,10 @@ pub fn extract_camber_line(
 ///
 /// * `section`: the airfoil section curve
 /// * `last_station`: the last inscribed circle found
+/// * `general_tol`: a general tolerance value which may be used to adjust search parameters
 ///
 /// returns: RayAdvance
-fn advance_search_along_ray(section: &Curve2, last_station: &InscribedCircle) -> RayAdvance {
+fn advance_search_along_ray(section: &Curve2, last_station: &InscribedCircle, general_tol: f64) -> RayAdvance {
     // We will begin by finding the camber point/direction of the last station, which will be used
     // to jump forward and create a new spanning ray.  However, we'll first check the distance from
     // the camber point to the farthest point on the section in the camber direction.  As we get
@@ -133,11 +134,11 @@ fn advance_search_along_ray(section: &Curve2, last_station: &InscribedCircle) ->
         .unwrap();
     let distance = camber_point.scalar_projection(&farthest);
 
-    // When the distance beyond the last inscribed circle is less than 25% of the circle's radius,
+    // When the distance beyond the last inscribed circle is less than 3/8 of the circle's radius,
     // we will consider ourselves close enough to the edge of the airfoil to terminate the search.
     // Getting closer to the edge will increase the probability that the assumptions of no local
     // maxima along the ray are violated.
-    if distance - last_station.radius() < last_station.radius() * 0.25 {
+    if distance - last_station.radius() < last_station.radius() * 0.375 {
         return RayAdvance::End;
     }
 
@@ -147,7 +148,11 @@ fn advance_search_along_ray(section: &Curve2, last_station: &InscribedCircle) ->
     // radius, we will consider the search to have advanced.
     let mut frac = 0.25;
     while frac > 0.05 {
-        let next_center = camber_point.at_distance(frac * last_station.radius());
+        let advance_dist = frac * last_station.radius();
+        if advance_dist < general_tol {
+            return RayAdvance::End;
+        }
+        let next_center = camber_point.at_distance(advance_dist);
         let test_dir = rot90(Ccw) * camber_point.normal;
         let test_ray = Ray::new(next_center, test_dir.into_inner());
 
@@ -224,7 +229,7 @@ fn extract_half_camber_line(
 
         let station = &stations.last().expect("Station was not transferred");
 
-        match advance_search_along_ray(curve, station) {
+        match advance_search_along_ray(curve, station, outer_tol) {
             RayAdvance::Valid(r) => {
                 ray = r;
             }

@@ -1,5 +1,7 @@
 //! This module contains tools to work with the leading and trailing edges of the airfoil section.
 
+mod detect;
+
 use crate::AngleDir::Ccw;
 use crate::airfoil::helpers::{
     OrientedCircles, extract_curve_beyond_station, extract_edge_sub_curve,
@@ -11,6 +13,8 @@ use crate::common::{BestFit, linear_space};
 use crate::geom2::{Ray2, Segment2, rot90};
 use crate::{Circle2, Curve2, Result};
 use parry2d_f64::query::Ray;
+
+pub use detect::EdgeAutoDetect;
 
 /// This struct implements the `EdgeLocation` trait and does not attempt to locate the edge of
 /// the airfoil section. It will return `None` for the edge point and the original collection of
