@@ -1,10 +1,10 @@
 use super::points::{mean_point, mean_point_weighted};
+use crate::common::PCoords;
 use crate::geom3::{Iso3, SvdBasis3, UnitVec3};
 use crate::{Iso2, SvdBasis2};
 use parry2d_f64::na::{Matrix2, Rotation2, Translation2, UnitComplex};
 use parry3d_f64::na::{DMatrix, Matrix3, Point, SVector, Translation3, Unit, UnitQuaternion};
 use std::f64::consts::FRAC_PI_2;
-use crate::common::PCoords;
 
 /// This structure contains the results of using singular value decomposition to determine the
 /// basis vectors of a set of points and their singular values (scales). This can be used to roughly
@@ -109,7 +109,10 @@ impl<const D: usize> SvdBasis<D> {
             svd_from_vectors(&vectors, Some(center))
         } else {
             let center = mean_point(points);
-            let vectors = points.iter().map(|p| p.coords() - center.coords).collect::<Vec<_>>();
+            let vectors = points
+                .iter()
+                .map(|p| p.coords() - center.coords)
+                .collect::<Vec<_>>();
             svd_from_vectors(&vectors, Some(center))
         }
     }

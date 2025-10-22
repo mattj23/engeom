@@ -120,7 +120,11 @@ pub fn extract_camber_line(
 /// * `general_tol`: a general tolerance value which may be used to adjust search parameters
 ///
 /// returns: RayAdvance
-fn advance_search_along_ray(section: &Curve2, last_station: &InscribedCircle, general_tol: f64) -> RayAdvance {
+fn advance_search_along_ray(
+    section: &Curve2,
+    last_station: &InscribedCircle,
+    general_tol: f64,
+) -> RayAdvance {
     // We will begin by finding the camber point/direction of the last station, which will be used
     // to jump forward and create a new spanning ray.  However, we'll first check the distance from
     // the camber point to the farthest point on the section in the camber direction.  As we get

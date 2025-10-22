@@ -68,7 +68,6 @@ impl EdgeLocate for EdgeAutoDetect {
         if corners.len() >= 2 && (corners[0].1 + corners[1].1) < 210.0f64.to_radians() {
             let p0 = edge_curve.points()[corners[0].0];
             let p1 = edge_curve.points()[corners[1].0];
-            println!("Square edge detected with angles {:?} and {:?}", corners[0].1.to_degrees(), corners[1].1.to_degrees());
             let edge = AirfoilEdge::square(te_intersect, (p0, p1));
             return Ok((Some(edge), working_stations.take_circles()));
         }
@@ -127,4 +126,3 @@ fn corner_vertices(curve: &Curve2, angle_max: f64) -> Vec<(usize, f64)> {
     corners.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
     corners
 }
-

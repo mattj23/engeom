@@ -18,8 +18,8 @@ use crate::metrology::Distance2;
 use crate::stats::compute_mean;
 pub use camber::extract_camber_line;
 pub use edges::{
-    ConstRadiusEdge, ConvergeTangentEdge, FitRadiusEdge, IntersectEdge, OpenEdge, OpenIntersectGap,
-    RansacRadiusEdge, TraceToMaxCurvature, EdgeAutoDetect,
+    ConstRadiusEdge, ConvergeTangentEdge, EdgeAutoDetect, FitRadiusEdge, IntersectEdge, OpenEdge,
+    OpenIntersectGap, RansacRadiusEdge, TraceToMaxCurvature,
 };
 pub use inscribed_circle::InscribedCircle;
 pub use orientation::{DirectionFwd, TMaxFwd};
@@ -145,7 +145,7 @@ pub enum EdgeGeometry {
     Square((Point2, Point2)),
 
     /// The edge is closed and has a rounded face with two arc regions and a flat region in between
-    RoundedFace((Arc2, Arc2))
+    RoundedFace((Arc2, Arc2)),
 }
 
 /// An airfoil edge is a generic construct used to represent the leading and trailing edges of an

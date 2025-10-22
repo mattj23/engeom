@@ -94,6 +94,10 @@ pub struct Curve3 {
 }
 
 impl Curve3 {
+    pub fn line(&self) -> &Polyline {
+        &self.line
+    }
+
     pub fn vtx(&self, i: usize) -> Point3 {
         self.line.vertices()[i]
     }

@@ -2,7 +2,7 @@ use super::polyline2::{SpanningRay, polyline_intersections, spanning_ray};
 use crate::common::points::{
     dist, max_point_in_direction, ramer_douglas_peucker, transform_points,
 };
-use crate::common::{Intersection, Resample};
+use crate::common::{Intersection, PCoords, Resample};
 use crate::errors::InvalidGeometry;
 use crate::geom2::hull::convex_hull_2d;
 use crate::geom2::line2::Segment2;
@@ -103,6 +103,26 @@ impl<'a> CurveStation2<'a> {
             Some(self.curve.at_back())
         } else {
             None
+        }
+    }
+
+    /// Traverse to a new station along the curve by the specified distance.  If the distance
+    /// moves the station beyond the start or end of the curve, this will return None, unless
+    /// the curve is closed, in which case it will wrap around.
+    ///
+    /// # Arguments
+    ///
+    /// * `distance`: The distance to move along the curve.  Positive values move forward,
+    ///   negative values move backward.
+    ///
+    /// returns: Option<CurveStation2>
+    pub fn traverse(&self, distance: f64) -> Option<Self> {
+        let target_length = self.length_along() + distance;
+        if self.curve.is_closed {
+            self.curve
+                .at_length(target_length.rem_euclid(self.curve.length()))
+        } else {
+            self.curve.at_length(target_length)
         }
     }
 
@@ -417,10 +437,9 @@ impl Curve2 {
         self.at_length(fraction * self.length())
     }
 
-    pub fn at_closest_to_point(&self, test_point: &Point2) -> CurveStation2<'_> {
-        let (prj, loc) = self
-            .line
-            .project_local_point_and_get_location(test_point, false);
+    pub fn at_closest_to_point(&self, test_point: &impl PCoords<2>) -> CurveStation2<'_> {
+        let p = Point2::from(test_point.coords());
+        let (prj, loc) = self.line.project_local_point_and_get_location(&p, false);
         let (edge_index, sp) = loc;
         let dir = self.dir_of_edge(edge_index as usize);
 
@@ -1227,7 +1246,7 @@ mod tests {
     use super::*;
     use crate::geom2::Vector2;
     use approx::assert_relative_eq;
-    
+
     use test_case::test_case;
 
     use rand::distr::Uniform;
