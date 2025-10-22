@@ -253,6 +253,15 @@ else:
             x, y = zip(*[_tuplefy(p) for p in points])
             return self.ax.plot(x, y, marker, markersize=markersize, **kwargs)
 
+        def surface_points(self, *points: SurfacePoint2, arrow_len=1, marker="o", markersize="5", **kwargs):
+            x, y = zip(*[(p.point.x, p.point.y) for p in points])
+            color = kwargs.get("color", "black")
+            kwargs["color"] = color
+            self.ax.plot(x, y, marker, markersize=markersize, **kwargs)
+            for p in points:
+                p: SurfacePoint2
+                self.arrow(p.point, p.at_distance(arrow_len), arrow="->", color=color)
+
         def labeled_arrow(self, start: PlotCoords, end: PlotCoords, text: str, fraction: float = 0.5,
                           shift: PlotCoords | None = None,
                           arrow="->", color="black", linewidth: float | None = None, linestyle="-",
