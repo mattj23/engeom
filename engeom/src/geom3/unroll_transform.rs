@@ -30,11 +30,11 @@ impl UnrollTransform {
         let inv = iso.inverse();
         Ok(UnrollTransform { iso, inv, radius })
     }
-    
+
     pub fn to_world_bulk(&self, points: &[impl PCoords<3>]) -> Vec<Point3> {
         points.iter().map(|p| self.to_world(p)).collect()
     }
-    
+
     pub fn to_surface_bulk(&self, points: &[impl PCoords<3>]) -> Vec<Point3> {
         points.iter().map(|p| self.to_surface(p)).collect()
     }

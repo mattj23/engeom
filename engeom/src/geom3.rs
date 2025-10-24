@@ -4,8 +4,8 @@ mod iso3;
 pub mod mesh;
 mod plane3;
 pub mod point_cloud;
-mod xyzwpr;
 mod unroll_transform;
+mod xyzwpr;
 
 use parry3d_f64::na::UnitQuaternion;
 
@@ -14,12 +14,12 @@ use crate::common::surface_point::{SurfacePoint, SurfacePointCollection};
 use crate::common::svd_basis::SvdBasis;
 pub use curve3::{Curve3, CurveStation3};
 pub use iso3::IsoExtensions3;
-pub use unroll_transform::UnrollTransform;
 pub use mesh::{Mesh, MeshCollisionSet, UvMapping};
 use parry3d_f64::query::Ray;
 pub use plane3::Plane3;
 pub use point_cloud::{PointCloud, PointCloudFeatures, PointCloudKdTree, PointCloudOverlap};
 use std::ops;
+pub use unroll_transform::UnrollTransform;
 pub use xyzwpr::XyzWpr;
 
 pub type Point3 = parry3d_f64::na::Point3<f64>;
