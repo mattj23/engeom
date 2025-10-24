@@ -116,6 +116,16 @@ impl To3D for &[Point2] {
     }
 }
 
+impl To3D for Vec<Point2> {
+    type T3D = Vec<Point3>;
+
+    /// Converts a slice of 2D points to a slice of 3D points by adding a zero-valued Z component
+    /// to each point.
+    fn to_3d(&self) -> Self::T3D {
+        self.iter().map(|p| p.to_3d()).collect()
+    }
+}
+
 impl To3D for Point2 {
     type T3D = crate::geom3::Point3;
 

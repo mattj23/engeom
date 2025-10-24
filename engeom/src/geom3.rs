@@ -14,6 +14,7 @@ use crate::common::surface_point::{SurfacePoint, SurfacePointCollection};
 use crate::common::svd_basis::SvdBasis;
 pub use curve3::{Curve3, CurveStation3};
 pub use iso3::IsoExtensions3;
+pub use unroll_transform::UnrollTransform;
 pub use mesh::{Mesh, MeshCollisionSet, UvMapping};
 use parry3d_f64::query::Ray;
 pub use plane3::Plane3;
