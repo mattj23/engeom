@@ -1,6 +1,7 @@
 use crate::Result;
 use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector, Unit};
 use serde::{Deserialize, Serialize};
+use crate::common::PCoords;
 
 /// A `SurfacePoint` is a struct which is used to represent a point on a surface (n-1 dimensional
 /// manifold) in n-dimensional space. It is defined by a point and a normal vector. Mathematically,
@@ -49,13 +50,13 @@ impl<const D: usize> SurfacePoint<D> {
     ///
     /// assert_relative_eq!(scalar_projection, -1.0, epsilon = 1e-6);
     /// ```
-    pub fn scalar_projection(&self, other: &Point<f64, D>) -> f64 {
-        self.normal.dot(&(other - self.point))
+    pub fn scalar_projection(&self, other: &impl PCoords<D>) -> f64 {
+        self.normal.dot(&(other.coords() - self.point.coords))
     }
 
     /// Returns the point on the line defined by the point and normal that is closest to the other
     /// point, aka the projection of the other point onto the line defined by this surface point.
-    pub fn projection(&self, other: &Point<f64, D>) -> Point<f64, D> {
+    pub fn projection(&self, other: &impl PCoords<D>) -> Point<f64, D> {
         self.at_distance(self.scalar_projection(other))
     }
 
@@ -76,9 +77,9 @@ impl<const D: usize> SurfacePoint<D> {
     /// surface point. This is a complement to the `scalar_projection` method, except that it can
     /// only compute the magnitude of the distance, since the number of other dimensions may be
     /// greater than one.
-    pub fn planar_distance(&self, other: &Point<f64, D>) -> f64 {
+    pub fn planar_distance(&self, other: &impl PCoords<D>) -> f64 {
         let projection = self.projection(other);
-        (projection - other).norm()
+        (projection.coords - other.coords()).norm()
     }
 
     /// Returns a new surface point shifted from the original surface point by the given distance

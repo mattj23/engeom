@@ -5,6 +5,7 @@ pub mod mesh;
 mod plane3;
 pub mod point_cloud;
 mod xyzwpr;
+mod unroll_transform;
 
 use parry3d_f64::na::UnitQuaternion;
 

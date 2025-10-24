@@ -133,7 +133,7 @@ mod tests {
         let t = params.transform() * t_i;
 
         let moved = t * *p;
-        let d0 = closest.scalar_projection(&p).abs();
+        let d0 = closest.scalar_projection(p).abs();
         let d1 = closest.scalar_projection(&moved).abs();
         (d1 - d0) / NUMERIC_EPSILON
     }

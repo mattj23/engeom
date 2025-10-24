@@ -92,7 +92,7 @@ mod tests {
         let t = params.transform() * t_i;
 
         let moved = t * *p;
-        let d0 = s.scalar_projection(&p);
+        let d0 = s.scalar_projection(p);
         let d1 = s.scalar_projection(&moved);
         (d1 - d0) / NUMERIC_EPS
     }
