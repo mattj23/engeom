@@ -1,13 +1,16 @@
 use crate::AngleDir::{Ccw, Cw};
-use crate::Result;
 use crate::common::points::dist;
-use crate::common::{BestFit, Intersection, PCoords, angle_signed_pi, signed_compliment_2pi, shortest_angle_between, ANGLE_TOL, angle_in_direction};
+use crate::common::{
+    ANGLE_TOL, BestFit, Intersection, PCoords, angle_in_direction, angle_signed_pi,
+    shortest_angle_between, signed_compliment_2pi,
+};
 use crate::geom2::aabb2::{arc_aabb2, circle_aabb2};
 use crate::geom2::line2::{Segment2, intersect_lines};
 use crate::geom2::{Aabb2, HasBounds2, Iso2, Line2, Point2, Vector2, directed_angle, signed_angle};
 use crate::geom3::Vector3;
 use crate::stats::{compute_mean, compute_st_dev};
 use crate::{AngleInterval, SurfacePoint2};
+use crate::{Arc2, Result};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use parry2d_f64::na::{Dyn, Matrix, Owned, U1, U3, Vector};
 use parry2d_f64::shape::Ball;
@@ -479,12 +482,7 @@ impl Circle2 {
 
     /// Create a full arc of the circle, starting at zero and extending for 2π radians.
     pub fn to_arc(&self) -> Arc2 {
-        Arc2 {
-            circle: *self,
-            angle0: 0.0,
-            angle: 2.0 * std::f64::consts::PI,
-            aabb: self.aabb,
-        }
+        Arc2::new(*self, 0.0, 2.0 * std::f64::consts::PI)
     }
 
     /// Create a partial arc of the circle, starting at `angle0` and extending for `angle` radians.
@@ -502,13 +500,7 @@ impl Circle2 {
     ///
     /// ```
     pub fn to_partial_arc(&self, angle0: f64, angle: f64) -> Arc2 {
-        let aabb = arc_aabb2(self, angle0, angle);
-        Arc2 {
-            circle: *self,
-            angle0,
-            angle,
-            aabb,
-        }
+        Arc2::new(*self, angle0, angle)
     }
 
     /// Computes the distance from the test point to the outer perimeter of the circle. If the
@@ -710,188 +702,6 @@ impl Intersection<&Segment2, Vec<Point2>> for Circle2 {
     }
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
-pub struct Arc2 {
-    pub circle: Circle2,
-    pub angle0: f64,
-    pub angle: f64,
-    aabb: Aabb2,
-}
-
-impl Arc2 {
-    /// Create an arc from a center point, a radius, starting at `angle0` and extending for
-    /// `angle` radians.
-    ///
-    /// # Arguments
-    ///
-    /// * `center`: The arc center point
-    /// * `radius`: The arc radius
-    /// * `angle0`: The angle in radians (with respect to the x-axis) at which the arc starts
-    /// * `angle`: The angle in radians which the arc sweeps through, beginning at `angle0`. A
-    ///   positive value indicates a counter-clockwise sweep, while a negative value indicates a
-    ///   clockwise sweep.
-    ///
-    /// returns: Arc2
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
-    pub fn circle_angles(center: Point2, radius: f64, angle0: f64, angle: f64) -> Self {
-        let circle = Circle2::from_point(center, radius);
-        let aabb = arc_aabb2(&circle, angle0, angle);
-        Self {
-            circle,
-            angle0,
-            angle,
-            aabb,
-        }
-    }
-
-    /// Create an arc from a center point, a radius, a point on the perimeter, and an included
-    /// angle starting at the point.
-    ///
-    /// # Arguments
-    ///
-    /// * `center`: The arc center point
-    /// * `radius`: The arc radius
-    /// * `point`: A point on the perimeter of the arc at which the arc starting point should be
-    ///   located
-    /// * `angle`: The angle in radians which the arc sweeps through, beginning at the point. A
-    ///   positive value indicates a counter-clockwise sweep, while a negative value indicates a
-    ///   clockwise sweep.
-    ///
-    /// returns: Arc2
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
-    pub fn circle_point_angle(center: Point2, radius: f64, point: Point2, angle: f64) -> Self {
-        let circle = Circle2::from_point(center, radius);
-        let angle0 = circle.angle_of_point(&point);
-        let aabb = arc_aabb2(&circle, angle0, angle);
-        Self {
-            circle,
-            angle0,
-            angle,
-            aabb,
-        }
-    }
-
-    /// Create an arc from three points. The arc will begin at the first point, pass through the
-    /// second point, and end at the third point.
-    ///
-    /// # Arguments
-    ///
-    /// * `p0`: The starting point of the arc
-    /// * `p1`: A point on the arc, between the start and end points
-    /// * `p2`: The ending point of the arc
-    ///
-    /// returns: Arc2
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
-    pub fn three_points(p0: Point2, p1: Point2, p2: Point2) -> Self {
-        let circle = Circle2::from_3_points(&p0, &p1, &p2).unwrap();
-        let angle0 = circle.angle_of_point(&p0);
-        let v0 = p0 - circle.center;
-        let v2 = p2 - circle.center;
-
-        let det = (p1.x - p0.x) * (p1.y + p0.y)
-            + (p2.x - p1.x) * (p2.y + p1.y)
-            + (p0.x - p2.x) * (p0.y + p2.y);
-        let angle = if det < 0.0 {
-            directed_angle(&v0, &v2, Ccw)
-        } else {
-            -directed_angle(&v0, &v2, Cw)
-        };
-
-        let aabb = arc_aabb2(&circle, angle0, angle);
-        Self {
-            circle,
-            angle0,
-            angle,
-            aabb,
-        }
-    }
-
-    pub fn length(&self) -> f64 {
-        self.circle.ball.radius * self.angle.abs()
-    }
-
-    pub fn center(&self) -> Point2 {
-        self.circle.center
-    }
-
-    pub fn radius(&self) -> f64 {
-        self.circle.ball.radius
-    }
-
-    pub fn point_at_angle(&self, angle: f64) -> Point2 {
-        self.circle.point_at_angle(self.angle0 + angle)
-    }
-
-    pub fn point_at_fraction(&self, fraction: f64) -> Point2 {
-        self.point_at_angle(self.angle * fraction)
-    }
-
-    pub fn point_at_length(&self, length: f64) -> Point2 {
-        self.point_at_fraction(length / self.length())
-    }
-
-    pub fn start(&self) -> Point2 {
-        self.point_at_angle(0.0)
-    }
-
-    pub fn end(&self) -> Point2 {
-        self.point_at_angle(self.angle)
-    }
-
-    pub fn is_ccw(&self) -> bool {
-        self.angle > 0.0
-    }
-
-    pub fn angle_interval(&self) -> AngleInterval {
-        AngleInterval::new(self.angle0, self.angle)
-    }
-
-    pub fn is_theta_on_arc(&self, theta: f64) -> bool {
-        self.angle_interval().contains(theta)
-    }
-
-    pub fn theta_to_fraction(&self, theta: f64) -> f64 {
-        let theta = angle_signed_pi(theta);
-        if shortest_angle_between(theta, self.angle0).abs() < ANGLE_TOL {
-            return 0.0;
-        }
-        if shortest_angle_between(theta, self.angle0 + self.angle).abs() < ANGLE_TOL {
-            return 1.0;
-        }
-
-        if self.is_ccw() {
-            angle_in_direction(self.angle0, theta, Ccw) / self.angle
-        } else {
-            angle_in_direction(self.angle0, theta, Cw) / -self.angle
-        }
-    }
-
-    pub fn at_fraction(&self, fraction: f64) -> Point2 {
-        self.point_at_fraction(fraction)
-    }
-}
-
-impl HasBounds2 for Arc2 {
-    fn aabb(&self) -> &Aabb2 {
-        &self.aabb
-    }
-}
-
 type Residuals = Matrix<f64, Dyn, U1, Owned<f64, Dyn, U1>>;
 
 ///
@@ -1036,9 +846,11 @@ impl LeastSquaresProblem<f64, Dyn, U3> for CircleFit<'_> {
         Some(jac)
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Arc2;
     use crate::geom2::Ray2;
     use approx::assert_relative_eq;
     use imageproc::point::Point;
@@ -1061,12 +873,12 @@ mod tests {
         let mut rng = rand::rng();
 
         for _ in 0..1000 {
-            // let expected = Circle2::new(
-            //     rng.random_range(-5.0..5.0),
-            //     rng.random_range(-5.0..5.0),
-            //     rng.random_range(0.5..2.0),
-            // );
-            let expected = Circle2::new(0.0, 0.0, 1.0);
+            let expected = Circle2::new(
+                rng.random_range(-5.0..5.0),
+                rng.random_range(-5.0..5.0),
+                rng.random_range(0.5..2.0),
+            );
+            // let expected = Circle2::new(0.0, 0.0, 1.0);
 
             let tr = rng.random_range(0.01..5.0) + expected.r();
             let tv = Iso2::rotation(rng.random_range(-PI..PI)) * Vector2::new(tr, 0.0);
@@ -1148,32 +960,6 @@ mod tests {
         assert_relative_eq!(result[0].y, 0.8660254037844386, epsilon = 1.0e-10);
         assert_relative_eq!(result[1].x, 0.5, epsilon = 1.0e-10);
         assert_relative_eq!(result[1].y, -0.8660254037844386, epsilon = 1.0e-10);
-    }
-
-    #[test]
-    fn three_point_arc_ccw() {
-        let p0 = Point2::new(1.0, 0.0);
-        let p1 = Point2::new(0.0, 1.0);
-        let p2 = Point2::new(0.0, -1.0);
-        let arc = Arc2::three_points(p0, p1, p2);
-
-        assert_relative_eq!(Point2::origin(), arc.center());
-        assert_relative_eq!(1.0, arc.radius());
-        assert_relative_eq!(0.0, arc.angle0);
-        assert_relative_eq!(3.0 * PI / 2.0, arc.angle);
-    }
-
-    #[test]
-    fn three_point_arc_cw() {
-        let p2 = Point2::new(1.0, 0.0);
-        let p1 = Point2::new(0.0, 1.0);
-        let p0 = Point2::new(0.0, -1.0);
-        let arc = Arc2::three_points(p0, p1, p2);
-
-        assert_relative_eq!(Point2::origin(), arc.center());
-        assert_relative_eq!(1.0, arc.radius());
-        assert_relative_eq!(-PI / 2.0, arc.angle0);
-        assert_relative_eq!(-3.0 * PI / 2.0, arc.angle);
     }
 
     #[test]

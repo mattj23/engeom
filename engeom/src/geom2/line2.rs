@@ -1,8 +1,8 @@
+use crate::common::PCoords;
 use crate::common::points::dist;
 use crate::geom2::Ray2;
 use crate::{Iso2, Point2, Result, TransformBy, UnitVec2, Vector2};
 use parry2d_f64::query::Ray;
-use crate::common::PCoords;
 
 /// Compute the intersection parameters between two parameterized lines. Will return None if
 /// the two directions are parallel to each other

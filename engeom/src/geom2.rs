@@ -1,12 +1,13 @@
 pub mod aabb2;
 pub mod align2;
 mod angles2;
+mod arc2;
+mod boundary;
 mod circle2;
 mod curve2;
 pub mod hull;
 mod line2;
 pub mod polyline2;
-mod boundary;
 
 use crate::AngleDir;
 use crate::AngleDir::Cw;
@@ -28,10 +29,11 @@ pub type KdTree2 = crate::common::kd_tree::KdTree<2>;
 
 pub use self::aabb2::Aabb2;
 pub use self::angles2::{directed_angle, rot90, rot270, signed_angle};
-pub use self::circle2::{Arc2, Circle2};
+pub use self::arc2::Arc2;
+pub use self::boundary::BoundaryElement;
+pub use self::circle2::Circle2;
 pub use self::curve2::{Curve2, CurveStation2};
 pub use self::line2::{Line2, Segment2, intersect_rays, intersection_param};
-pub use self::boundary::BoundaryElement;
 
 pub trait HasBounds2 {
     fn aabb(&self) -> &Aabb2;

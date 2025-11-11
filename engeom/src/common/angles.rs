@@ -72,11 +72,7 @@ pub fn angle_in_direction(radians0: f64, radians1: f64, angle_dir: AngleDir) -> 
 pub fn shortest_angle_between(radians0: f64, radians1: f64) -> f64 {
     let cw = angle_in_direction(radians0, radians1, AngleDir::Cw);
     let ccw = angle_in_direction(radians0, radians1, AngleDir::Ccw);
-    if cw < ccw {
-        -cw
-    } else {
-        ccw
-    }
+    if cw < ccw { -cw } else { ccw }
 }
 
 /// Re-expresses an angle, specified in radians, in the range [-pi, pi].  If the angle was already
