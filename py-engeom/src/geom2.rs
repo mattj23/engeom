@@ -450,6 +450,36 @@ impl Circle2 {
         Point2::from_inner(self.inner.point_at_angle(angle))
     }
 
+    fn project_point_to_perimeter(&self, other: &Point2) -> Option<Point2> {
+        self.inner
+            .project_point_to_perimeter(other.get_inner())
+            .map(Point2::from_inner)
+    }
+
+    fn angle_of_point(&self, other: &Point2) -> f64 {
+        self.inner.angle_of_point(other.get_inner())
+    }
+
+    fn intersections_with(&self, other: &Circle2) -> Vec<Point2> {
+        self.inner
+            .intersections_with(&other.inner)
+            .into_iter()
+            .map(Point2::from_inner)
+            .collect()
+    }
+
+    fn distance_to(&self, point: &Point2) -> f64 {
+        self.inner.distance_to(point.get_inner())
+    }
+
+    fn tangent_points_to(&self, point: &Point2) -> Option<(Point2, Point2)> {
+        let pts = self
+            .inner
+            .tangent_points_to(point.get_inner())
+            .map(|(p1, p2)| (Point2::from_inner(p1), Point2::from_inner(p2)))?;
+        Some(pts)
+    }
+
     #[staticmethod]
     #[pyo3(signature=(points, guess=None, sigma=None))]
     fn fitting<'py>(

@@ -1,13 +1,13 @@
 use crate::AngleDir::{Ccw, Cw};
-use crate::AngleInterval;
 use crate::Result;
 use crate::common::points::dist;
-use crate::common::{BestFit, Intersection, signed_compliment_2pi};
+use crate::common::{BestFit, Intersection, PCoords, signed_compliment_2pi};
 use crate::geom2::aabb2::{arc_aabb2, circle_aabb2};
-use crate::geom2::line2::Segment2;
+use crate::geom2::line2::{Segment2, intersect_lines};
 use crate::geom2::{Aabb2, HasBounds2, Iso2, Line2, Point2, Vector2, directed_angle, signed_angle};
 use crate::geom3::Vector3;
 use crate::stats::{compute_mean, compute_st_dev};
+use crate::{AngleInterval, SurfacePoint2};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use parry2d_f64::na::{Dyn, Matrix, Owned, U1, U3, Vector};
 use parry2d_f64::shape::Ball;
@@ -23,6 +23,10 @@ pub struct Circle2 {
     pub ball: Ball,
     aabb: Aabb2,
 }
+
+//=============================================================================================
+// Creation Methods
+//=============================================================================================
 
 impl Circle2 {
     /// Create a new circle from the x and y coordinates of its center and its radius
@@ -233,6 +237,88 @@ impl Circle2 {
         }
     }
 
+    /// Creates a circle at the tangent of a corner.  The corner is defined by a corner point and
+    /// two direction vectors which define the directions of the two lines which meet at the corner.
+    /// The radius argument specifies the radius of the tangent circle.  The circle is created by
+    /// finding the bisector of the angle formed by the two lines, and then offsetting each line
+    /// by the radius in the positive direction of the bisector. The intersection of the two offset
+    /// lines is the center of the tangent circle.
+    ///
+    /// This method will return an error if the two direction vectors are collinear (i.e. the angle
+    /// between them is zero or 180 degrees), as in that case a unique tangent circle cannot be
+    /// defined.
+    ///
+    /// This construction method is similar to putting a fillet on the corner formed by the two
+    /// lines.
+    ///
+    /// # Arguments
+    ///
+    /// * `corner`: the corner point where the two lines meet
+    /// * `d0`: the direction vector of the first line
+    /// * `d1`: the direction vector of the second line
+    /// * `radius`: the radius of the tangent circle
+    ///
+    /// returns: Result<Circle2, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::{Circle2, Point2, Vector2};
+    /// use approx::assert_relative_eq;
+    /// let corner = Point2::new(1.0, 1.0);
+    /// let d0 = Vector2::new(1.0, 0.0); // Horizontal line to the right
+    /// let d1 = Vector2::new(0.0, 1.0); // Vertical line upwards
+    /// let radius = 1.0;
+    ///
+    /// let circle = Circle2::tangent_to_corner(&corner, &d0, &d1, radius).unwrap();
+    /// assert_relative_eq!(circle.x(), 2.0);
+    /// assert_relative_eq!(circle.y(), 2.0);
+    /// assert_relative_eq!(circle.r(), radius);
+    /// ```
+    pub fn tangent_to_corner(
+        corner: &impl PCoords<2>,
+        d0: &Vector2,
+        d1: &Vector2,
+        radius: f64,
+    ) -> Result<Circle2> {
+        // Compute the angle from the direction of line a to the direction of line b
+        let angle = signed_angle(d0, d1);
+
+        // Figure out the bisector direction
+        let bisector = Iso2::rotation(angle / 2.0) * d0.normalize();
+
+        let a = SurfacePoint2::new_normalize(Point2::from(corner.coords()), *d0);
+        let b = SurfacePoint2::new_normalize(Point2::from(corner.coords()), *d1);
+
+        let da = if bisector.dot(&a.orthogonal()) > 0.0 {
+            radius
+        } else {
+            -radius
+        };
+        let db = if bisector.dot(&b.orthogonal()) > 0.0 {
+            radius
+        } else {
+            -radius
+        };
+
+        let a1 = a.shift_orthogonal(da);
+        let b1 = b.shift_orthogonal(db);
+
+        let ts = intersect_lines(&a1, &b1);
+        if let Some((t_a, _t_b)) = ts {
+            let center = a1.at(t_a);
+            Ok(Circle2::from_point(center, radius))
+        } else {
+            Err("Failed to compute tangent circle from lines".into())
+        }
+    }
+}
+
+//=============================================================================================
+// Operational Methods
+//=============================================================================================
+
+impl Circle2 {
     /// Returns the x coordinate of the circle's center
     pub fn x(&self) -> f64 {
         self.center.x
@@ -479,24 +565,22 @@ impl Circle2 {
     /// assert_relative_eq!(p1, Point2::new(0.0, -1.0));
     /// ```
     pub fn tangent_points_to(&self, point: &Point2) -> Option<(Point2, Point2)> {
-        let d = dist(&self.center, point);
+        let dv = point - self.center;
+        let d = dv.norm();
         if d <= self.ball.radius {
             return None;
         }
 
         let angle = f64::asin(self.ball.radius / d);
-        let theta = f64::atan2(point.y - self.center.y, point.x - self.center.x);
+        let h = (d.powi(2) - self.r().powi(2)).sqrt();
+        let d1 = self.r() * f64::sin(angle);
+        let e0 = self.r() * f64::cos(angle);
 
-        let p0 = Point2::new(
-            self.center.x + self.ball.radius * f64::cos(theta - angle),
-            self.center.y + self.ball.radius * f64::sin(theta - angle),
-        );
+        let d_vec = SurfacePoint2::new_normalize(self.center, dv);
+        let e = d_vec.orthogonal();
 
-        let p1 = Point2::new(
-            self.center.x + self.ball.radius * f64::cos(theta + angle),
-            self.center.y + self.ball.radius * f64::sin(theta + angle),
-        );
-
+        let p0 = d_vec.at_distance(d1) + e * e0;
+        let p1 = d_vec.at_distance(d1) + e * -e0;
         Some((p0, p1))
     }
 
@@ -926,8 +1010,46 @@ mod tests {
     use super::*;
     use crate::geom2::Ray2;
     use approx::assert_relative_eq;
+    use rand::Rng;
     use std::f64::consts::PI;
+    use imageproc::point::Point;
     use test_case::test_case;
+
+    #[test]
+    fn simple_tangent_corner() {
+        let corner = Point2::new(1.0, 1.0);
+        let v0 = Vector2::new(-1.0, 0.0);
+        let v1 = Vector2::new(0.0, -1.0);
+        let circle = Circle2::tangent_to_corner(&corner, &v0, &v1, 1.0).unwrap();
+        assert_relative_eq!(circle.center, Point2::new(0.0, 0.0), epsilon = 1.0e-8);
+        assert_relative_eq!(circle.r(), 1.0, epsilon = 1.0e-8);
+    }
+
+    #[test]
+    fn stress_tangent_lines() {
+        let mut rng = rand::rng();
+
+        for _ in 0..1000 {
+            // let expected = Circle2::new(
+            //     rng.random_range(-5.0..5.0),
+            //     rng.random_range(-5.0..5.0),
+            //     rng.random_range(0.5..2.0),
+            // );
+            let expected = Circle2::new(0.0, 0.0, 1.0);
+
+            let tr = rng.random_range(0.01..5.0) + expected.r();
+            let tv = Iso2::rotation(rng.random_range(-PI..PI)) * Vector2::new(tr, 0.0);
+            let tc = expected.center + tv;
+
+            let (p0, p1) = expected.tangent_points_to(&tc).unwrap();
+
+            let result =
+                Circle2::tangent_to_corner(&tc, &(p0 - tc), &(p1 - tc), expected.r()).unwrap();
+
+            assert_relative_eq!(expected.center, result.center, epsilon = 1.0e-8);
+            assert_relative_eq!(expected.r(), result.r(), epsilon = 1.0e-8);
+        }
+    }
 
     #[test_case((0.0, 0.0, 2.0), None)]
     #[test_case((1.0, 0.0, 1.0), Some(((0.0, -1.0, 1.0, -1.0), (0.0, 1.0, 1.0, 1.0))))]
@@ -1030,5 +1152,14 @@ mod tests {
         let (p0, p1) = c.tangent_points_to(&p).unwrap();
         assert_relative_eq!(p0, Point2::new(-1.0, 0.0));
         assert_relative_eq!(p1, Point2::new(0.0, -1.0));
+    }
+
+    #[test]
+    fn tangent_points_to() {
+        let c = Circle2::new(0.5, -0.25, 1.1);
+        let p = Point2::new(-2.1, -3.0);
+        let (p0, p1) = c.tangent_points_to(&p).unwrap();
+        assert_relative_eq!(p0, Point2::new(-0.4844568895369135, 0.24075924101671814));
+        assert_relative_eq!(p1, Point2::new(1.045148109645135, -1.2054127582099456));
     }
 }

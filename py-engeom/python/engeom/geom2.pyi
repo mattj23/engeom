@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Iterable, Tuple, TypeVar, Iterator, Any
+from typing import Iterable, Tuple, TypeVar, Iterator, Any, List
 
 from numpy.typing import NDArray
 from engeom.engeom import ResampleEnum
@@ -1067,6 +1067,56 @@ class Circle2:
         :return: a new `Circle2` object representing the fitted circle.
         """
         ...
+
+    def project_point_to_perimeter(self, point: Point2) -> Point2:
+        """
+        Project a point onto the perimeter of the circle.
+
+        :param point: the point to project.
+        :return: the projected point on the perimeter of the circle.
+        """
+        ...
+
+    def angle_of_point(self, point: Point2) -> float:
+        """
+        Get the angle of a point on the perimeter of the circle, measured in radians from the positive x-axis, and
+        where a positive angle is a counter-clockwise rotation.
+
+        :param point: the point on the perimeter of the circle.
+        :return: the angle in radians of the point on the perimeter of the circle.
+        """
+        ...
+
+    def intersections_with(self, other: Circle2) -> List[Point2]:
+        """
+        Get the intersection points between this circle and another circle.
+
+        :param other: the other circle to intersect with.
+        :return: a list of intersection points. The list will contain 0, 1, or 2 points depending on the number of
+        intersections.
+        """
+        ...
+
+    def distance_to(self, point: Point2) -> float:
+        """
+        Get the distance from a point to the perimeter of the circle.
+
+        :param point: the point to measure the distance from.
+        :return: the distance from the point to the perimeter of the circle. The distance will be negative if the
+        point is inside the circle.
+        """
+        ...
+
+    def tangent_points_to(self, point: Point2) -> List[Point2]:
+        """
+        Get the tangent points on the circle from a given point outside the circle.
+
+        :param point: the point outside the circle.
+        :return: a list of tangent points on the circle. The list will contain 0, 1, or 2 points depending on the
+        position of the point relative to the circle.
+        """
+        ...
+
 
 
 class Arc2:

@@ -71,6 +71,24 @@ impl SurfacePointCollection<2> for &Vec<SurfacePoint2> {
     }
 }
 
+impl Line2 for SurfacePoint2 {
+    fn origin(&self) -> Point2 {
+        self.point
+    }
+
+    fn dir(&self) -> Vector2 {
+        self.normal.into_inner()
+    }
+
+    fn at(&self, t: f64) -> Point2 {
+        self.at_distance(t)
+    }
+
+    fn orthogonal(&self) -> Vector2 {
+        rot90(Cw) * self.normal.into_inner()
+    }
+}
+
 impl SurfacePoint2 {
     /// Shift a surface point in the direction orthogonal to its normal (sideways) by the given
     /// distance. The direction of travel is the surface point's normal vector rotated by 90 degrees

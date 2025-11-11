@@ -22,6 +22,10 @@ pub fn intersection_param(
     Some(((dy * bd.x - dx * bd.y) / det, (dy * ad.x - dx * ad.y) / det))
 }
 
+pub fn intersect_lines(a: &impl Line2, b: &impl Line2) -> Option<(f64, f64)> {
+    intersection_param(&a.origin(), &a.dir(), &b.origin(), &b.dir())
+}
+
 pub fn intersect_rays(r0: &Ray, r1: &Ray) -> Option<(f64, f64)> {
     intersection_param(&r0.origin, &r0.dir, &r1.origin, &r1.dir)
 }
