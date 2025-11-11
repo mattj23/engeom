@@ -1,7 +1,7 @@
 use crate::AngleDir::{Ccw, Cw};
 use crate::Result;
 use crate::common::points::dist;
-use crate::common::{BestFit, Intersection, PCoords, signed_compliment_2pi};
+use crate::common::{BestFit, Intersection, PCoords, angle_signed_pi, signed_compliment_2pi, shortest_angle_between, ANGLE_TOL, angle_in_direction};
 use crate::geom2::aabb2::{arc_aabb2, circle_aabb2};
 use crate::geom2::line2::{Segment2, intersect_lines};
 use crate::geom2::{Aabb2, HasBounds2, Iso2, Line2, Point2, Vector2, directed_angle, signed_angle};
@@ -408,8 +408,8 @@ impl Circle2 {
     ///
     /// assert_relative_eq!(a, FRAC_PI_2);
     /// ```
-    pub fn angle_of_point(&self, point: &Point2) -> f64 {
-        let v = point - self.center;
+    pub fn angle_of_point(&self, point: &impl PCoords<2>) -> f64 {
+        let v = point.coords() - self.center.coords;
         v.y.atan2(v.x)
     }
 
@@ -572,7 +572,6 @@ impl Circle2 {
         }
 
         let angle = f64::asin(self.ball.radius / d);
-        let h = (d.powi(2) - self.r().powi(2)).sqrt();
         let d1 = self.r() * f64::sin(angle);
         let e0 = self.r() * f64::cos(angle);
 
@@ -667,7 +666,7 @@ impl HasBounds2 for Circle2 {
 /// ```
 ///
 /// ```
-pub fn intersection_line_circle(line: &dyn Line2, circle: &Circle2) -> Vec<f64> {
+pub fn intersection_line_circle(line: &impl Line2, circle: &Circle2) -> Vec<f64> {
     // Get the parameter of the circle center onto the line
     let tc = line.projected_parameter(&circle.center);
 
@@ -853,6 +852,38 @@ impl Arc2 {
     pub fn end(&self) -> Point2 {
         self.point_at_angle(self.angle)
     }
+
+    pub fn is_ccw(&self) -> bool {
+        self.angle > 0.0
+    }
+
+    pub fn angle_interval(&self) -> AngleInterval {
+        AngleInterval::new(self.angle0, self.angle)
+    }
+
+    pub fn is_theta_on_arc(&self, theta: f64) -> bool {
+        self.angle_interval().contains(theta)
+    }
+
+    pub fn theta_to_fraction(&self, theta: f64) -> f64 {
+        let theta = angle_signed_pi(theta);
+        if shortest_angle_between(theta, self.angle0).abs() < ANGLE_TOL {
+            return 0.0;
+        }
+        if shortest_angle_between(theta, self.angle0 + self.angle).abs() < ANGLE_TOL {
+            return 1.0;
+        }
+
+        if self.is_ccw() {
+            angle_in_direction(self.angle0, theta, Ccw) / self.angle
+        } else {
+            angle_in_direction(self.angle0, theta, Cw) / -self.angle
+        }
+    }
+
+    pub fn at_fraction(&self, fraction: f64) -> Point2 {
+        self.point_at_fraction(fraction)
+    }
 }
 
 impl HasBounds2 for Arc2 {
@@ -1010,9 +1041,9 @@ mod tests {
     use super::*;
     use crate::geom2::Ray2;
     use approx::assert_relative_eq;
+    use imageproc::point::Point;
     use rand::Rng;
     use std::f64::consts::PI;
-    use imageproc::point::Point;
     use test_case::test_case;
 
     #[test]

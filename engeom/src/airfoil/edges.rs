@@ -1,6 +1,7 @@
 //! This module contains tools to work with the leading and trailing edges of the airfoil section.
 
 mod detect;
+mod rounded_square;
 
 use crate::AngleDir::Ccw;
 use crate::airfoil::helpers::{

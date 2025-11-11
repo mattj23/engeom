@@ -6,6 +6,7 @@ mod curve2;
 pub mod hull;
 mod line2;
 pub mod polyline2;
+mod boundary;
 
 use crate::AngleDir;
 use crate::AngleDir::Cw;
@@ -30,6 +31,7 @@ pub use self::angles2::{directed_angle, rot90, rot270, signed_angle};
 pub use self::circle2::{Arc2, Circle2};
 pub use self::curve2::{Curve2, CurveStation2};
 pub use self::line2::{Line2, Segment2, intersect_rays, intersection_param};
+pub use self::boundary::BoundaryElement;
 
 pub trait HasBounds2 {
     fn aabb(&self) -> &Aabb2;

@@ -2,6 +2,7 @@ use crate::common::points::dist;
 use crate::geom2::Ray2;
 use crate::{Iso2, Point2, Result, TransformBy, UnitVec2, Vector2};
 use parry2d_f64::query::Ray;
+use crate::common::PCoords;
 
 /// Compute the intersection parameters between two parameterized lines. Will return None if
 /// the two directions are parallel to each other
@@ -35,12 +36,12 @@ pub trait Line2 {
     fn dir(&self) -> Vector2;
     fn at(&self, t: f64) -> Point2;
 
-    fn projected_parameter(&self, p: &Point2) -> f64 {
-        let n = p - self.origin();
+    fn projected_parameter(&self, p: &impl PCoords<2>) -> f64 {
+        let n = p.coords() - self.origin().coords;
         self.dir().dot(&n) / self.dir().dot(&self.dir())
     }
 
-    fn projected_point(&self, p: &Point2) -> Point2 {
+    fn projected_point(&self, p: &impl PCoords<2>) -> Point2 {
         self.at(self.projected_parameter(p))
     }
 
@@ -84,6 +85,10 @@ impl Segment2 {
         let ap = p - self.a;
         let bp = p - self.b;
         ap.dot(&bp) <= 0.0
+    }
+
+    pub fn length(&self) -> f64 {
+        dist(&self.a, &self.b)
     }
 
     /// Create a new segment that is shifted by distance `d` in the direction of the segment
