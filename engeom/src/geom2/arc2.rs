@@ -1,9 +1,12 @@
 use crate::AngleDir::{Ccw, Cw};
-use crate::common::{ANGLE_TOL, angle_in_direction, angle_signed_pi, shortest_angle_between};
+use crate::common::points::dist;
+use crate::common::{
+    ANGLE_TOL, PCoords, angle_in_direction, angle_signed_pi, shortest_angle_between,
+};
 use crate::geom2::aabb2::arc_aabb2;
 use crate::geom2::circle2::intersection_line_circle;
-use crate::geom2::{Aabb2, HasBounds2, directed_angle};
-use crate::{AngleInterval, Circle2, Iso2, Point2, Vector2};
+use crate::geom2::{Aabb2, BoundaryElement, HasBounds2, directed_angle};
+use crate::{AngleInterval, Circle2, Iso2, Point2, SurfacePoint2, Vector2};
 use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
@@ -195,6 +198,36 @@ impl Arc2 {
 impl HasBounds2 for Arc2 {
     fn aabb(&self) -> &Aabb2 {
         &self.aabb
+    }
+}
+
+impl BoundaryElement for Arc2 {
+    fn closest_to_point(&self, point: &impl PCoords<2>) -> f64 {
+        let theta = self.circle.angle_of_point(point);
+        if self.is_theta_on_arc(theta) {
+            self.theta_to_fraction(theta) * self.length()
+        } else {
+            let d0 = dist(&self.at_start(), point);
+            let d1 = dist(&self.at_end(), point);
+            if d0 < d1 { 0.0 } else { self.length() }
+        }
+    }
+
+    fn aabb(&self) -> Aabb2 {
+        Arc2::aabb(self)
+    }
+
+    fn at_start(&self) -> SurfacePoint2 {
+        self.at_length(0.0)
+    }
+
+    fn at_end(&self) -> SurfacePoint2 {
+        self.at_length(self.length())
+    }
+
+    fn at_length(&self, length: f64) -> SurfacePoint2 {
+        let p = self.point_at_length(length);
+        SurfacePoint2::new_normalize(p, p - self.center())
     }
 }
 
