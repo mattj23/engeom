@@ -5,14 +5,14 @@ use crate::common::points::{
 use crate::common::{Intersection, PCoords, Resample};
 use crate::errors::InvalidGeometry;
 use crate::geom2::hull::convex_hull_2d;
-use crate::geom2::line2::Segment2;
-use crate::geom2::{Iso2, Line2, Point2, SurfacePoint2, UnitVec2, intersection_param};
+use crate::geom2::{Iso2, Line2, Point2, SurfacePoint2, UnitVec2, intersection_param, Segment2};
 use crate::{Arc2, Circle2, Result, Series1, Vector2};
 use parry2d_f64::bounding_volume::Aabb;
 use parry2d_f64::na::Unit;
 use parry2d_f64::query::{PointQueryWithLocation, Ray};
 use parry2d_f64::shape::{ConvexPolygon, Polyline};
 use serde::{Deserialize, Serialize};
+use crate::na::SVector;
 
 /// A `CurveStation2` is a convenience struct which represents a location on the manifold defined
 /// by the curve. It has a point, a direction, and a normal. It has an index and a fraction which
@@ -211,6 +211,12 @@ impl<'a> CurveStation2<'a> {
         } else {
             self.surface_point()
         }
+    }
+}
+
+impl PCoords<2> for CurveStation2<'_> {
+    fn coords(&self) -> SVector<f64, 2> {
+        self.point.coords()
     }
 }
 
@@ -907,7 +913,7 @@ impl Curve2 {
         let mut new_points = Vec::with_capacity(self.count());
 
         for i in 0..self.count() - 1 {
-            let seg = Segment2::try_new(self.vtx(i), self.vtx(i + 1))?;
+            let seg = Segment2::try_new(&self.vtx(i), &self.vtx(i + 1))?;
             new_segments.push(seg.offsetted(offset));
         }
 
@@ -1124,7 +1130,7 @@ impl Intersection<&Circle2, Vec<Point2>> for Curve2 {
 
         // TODO: We should be able to use the bvh to prune the segments we need to check
         for i in 0..self.count() - 1 {
-            if let Ok(seg) = Segment2::try_new(self.vtx(i), self.vtx(i + 1)) {
+            if let Ok(seg) = Segment2::try_new(&self.vtx(i), &self.vtx(i + 1)) {
                 for p in other.intersection(&seg) {
                     points.push(p);
                 }

@@ -1,22 +1,21 @@
-use crate::AngleDir::{Ccw, Cw};
 use crate::common::points::dist;
 use crate::common::{
-    ANGLE_TOL, BestFit, Intersection, PCoords, angle_in_direction, angle_signed_pi,
-    shortest_angle_between, signed_compliment_2pi,
+    signed_compliment_2pi, BestFit, Intersection
+    , PCoords,
 };
-use crate::geom2::aabb2::{arc_aabb2, circle_aabb2};
-use crate::geom2::line2::{Segment2, intersect_lines};
-use crate::geom2::{Aabb2, HasBounds2, Iso2, Line2, Point2, Vector2, directed_angle, signed_angle};
+use crate::geom2::aabb2::circle_aabb2;
+use crate::geom2::line2::intersect_lines;
+use crate::geom2::{signed_angle, Aabb2, HasBounds2, Iso2, Line2, Point2, Segment2, Vector2};
 use crate::geom3::Vector3;
 use crate::stats::{compute_mean, compute_st_dev};
 use crate::{AngleInterval, SurfacePoint2};
 use crate::{Arc2, Result};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
-use parry2d_f64::na::{Dyn, Matrix, Owned, U1, U3, Vector};
+use parry2d_f64::na::{Dyn, Matrix, Owned, Vector, U1, U3};
 use parry2d_f64::shape::Ball;
-use rand::SeedableRng;
 use rand::distr::{Distribution, Uniform};
 use rand::prelude::StdRng;
+use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 use std::f64::consts::FRAC_PI_2;
 
@@ -606,7 +605,7 @@ impl Circle2 {
         } else if (self.ball.radius - other.ball.radius).abs() < 1.0e-10 {
             // If the circles have the same radius, the outer tangent method must be computed
             // by a simpler, special case
-            let s = Segment2::try_new(self.center, other.center).unwrap();
+            let s = Segment2::try_new(&self.center, &other.center).unwrap();
             Some((
                 s.offsetted(self.ball.radius),
                 s.offsetted(-self.ball.radius),
@@ -627,8 +626,8 @@ impl Circle2 {
             let proxy = Circle2::new(other.x(), other.y(), other.r() - self.r());
             // p0 is in the negative half space and p1 is in the positive half space
             let (p0, p1) = proxy.tangent_points_to(&self.center).unwrap();
-            let s0 = Segment2::try_new(self.center, p0).unwrap();
-            let s1 = Segment2::try_new(self.center, p1).unwrap();
+            let s0 = Segment2::try_new(&self.center, &p0).unwrap();
+            let s1 = Segment2::try_new(&self.center, &p1).unwrap();
 
             Some((s0.offsetted(-self.r()), s1.offsetted(self.r())))
         }
@@ -850,8 +849,8 @@ impl LeastSquaresProblem<f64, Dyn, U3> for CircleFit<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Arc2;
     use crate::geom2::Ray2;
+    use crate::Arc2;
     use approx::assert_relative_eq;
     use imageproc::point::Point;
     use rand::Rng;

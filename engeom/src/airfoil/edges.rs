@@ -86,7 +86,7 @@ impl EdgeLocate for OpenIntersectGap {
         let mut working_stations = OrientedCircles::new(stations, front);
 
         // end_cap is a segment that spans the first and last points of the open section
-        let end_cap = Segment2::try_new(section.at_front().point(), section.at_back().point())?;
+        let end_cap = Segment2::try_new(&section.at_front(), &section.at_back())?;
 
         let mut end_point = working_stations.end_intersection_with_seg(&end_cap)?;
         let mut drift = f64::INFINITY;

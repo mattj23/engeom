@@ -8,13 +8,16 @@ mod curve2;
 pub mod hull;
 mod line2;
 pub mod polyline2;
+mod segment2;
 
 use crate::AngleDir;
 use crate::AngleDir::Cw;
-use crate::common::SurfacePointCollection;
 use crate::common::surface_point::SurfacePoint;
 use crate::common::svd_basis::SvdBasis;
+use crate::common::{PCoords, SurfacePointCollection};
+use crate::na::SVector;
 use parry2d_f64::na::UnitComplex;
+use serde::{Deserialize, Serialize};
 use std::ops;
 
 pub type Point2 = parry2d_f64::na::Point2<f64>;
@@ -33,7 +36,52 @@ pub use self::arc2::Arc2;
 pub use self::boundary::BoundaryElement;
 pub use self::circle2::Circle2;
 pub use self::curve2::{Curve2, CurveStation2};
-pub use self::line2::{Line2, Segment2, intersect_rays, intersection_param};
+pub use self::line2::{Line2, intersect_rays, intersection_param};
+pub use self::segment2::Segment2;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ManifoldPosition2 {
+    /// The position of the point along the manifold length
+    pub l: f64,
+
+    /// The position of the point in full 2D cartesian space
+    pub point: Point2,
+
+    /// The direction of the positive manifold length in full 2D cartesian space at the current
+    /// position. You can think of this vector as pointing in the direction of the point at
+    /// `self.l + epsilon`
+    pub direction: UnitVec2,
+
+    /// The direction of the manifold surface normal in full 2D cartesian space at the current
+    /// position. This should follow the counter-clockwise winding order convention, so for most
+    /// manifolds this will be equivalent to `self.direction` rotated clockwise by 90 degrees.
+    pub normal: UnitVec2,
+}
+
+impl ManifoldPosition2 {
+    pub fn new(t: f64, point: Point2, direction: UnitVec2, normal: UnitVec2) -> Self {
+        Self {
+            l: t,
+            point,
+            direction,
+            normal,
+        }
+    }
+
+    pub fn normal_scalar_projection(&self, other: &impl PCoords<2>) -> f64 {
+        self.normal.dot(&(other.coords() - self.point.coords))
+    }
+
+    pub fn direction_scalar_project(&self, other: &impl PCoords<2>) -> f64 {
+        self.direction.dot(&(other.coords() - self.point.coords))
+    }
+}
+
+impl PCoords<2> for ManifoldPosition2 {
+    fn coords(&self) -> SVector<f64, 2> {
+        self.point.coords
+    }
+}
 
 pub trait HasBounds2 {
     fn aabb(&self) -> &Aabb2;

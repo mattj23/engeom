@@ -5,8 +5,8 @@ use crate::common::{
 };
 use crate::geom2::aabb2::arc_aabb2;
 use crate::geom2::circle2::intersection_line_circle;
-use crate::geom2::{Aabb2, BoundaryElement, HasBounds2, directed_angle};
-use crate::{AngleInterval, Circle2, Iso2, Point2, SurfacePoint2, Vector2};
+use crate::geom2::{Aabb2, BoundaryElement, HasBounds2, ManifoldPosition2, directed_angle, rot90};
+use crate::{AngleInterval, Circle2, Iso2, Point2, SurfacePoint2, UnitVec2, Vector2};
 use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
@@ -202,32 +202,39 @@ impl HasBounds2 for Arc2 {
 }
 
 impl BoundaryElement for Arc2 {
-    fn closest_to_point(&self, point: &impl PCoords<2>) -> f64 {
+    fn length(&self) -> f64 {
+        Arc2::length(self)
+    }
+
+    fn at_length(&self, length: f64) -> ManifoldPosition2 {
+        // Get the point at the specified length along the arc
+        let point = self.point_at_length(length);
+
+        // The normal direction will be either towards or away from the center depending on whether
+        // the arc is going clockwise or counterclockwise
+        let normal = UnitVec2::new_normalize((point - self.circle.center) * self.angle.signum());
+
+        // The manifold direction will be the normal direction rotated 90 degrees clockwise
+        let direction = rot90(Cw) * normal;
+
+        ManifoldPosition2::new(length, point, direction, normal)
+    }
+
+    fn closest_to_point(&self, point: &impl PCoords<2>) -> ManifoldPosition2 {
         let theta = self.circle.angle_of_point(point);
-        if self.is_theta_on_arc(theta) {
+        let t = if self.is_theta_on_arc(theta) {
             self.theta_to_fraction(theta) * self.length()
         } else {
             let d0 = dist(&self.at_start(), point);
             let d1 = dist(&self.at_end(), point);
             if d0 < d1 { 0.0 } else { self.length() }
-        }
+        };
+
+        self.at_length(t)
     }
 
     fn aabb(&self) -> Aabb2 {
-        Arc2::aabb(self)
-    }
-
-    fn at_start(&self) -> SurfacePoint2 {
-        self.at_length(0.0)
-    }
-
-    fn at_end(&self) -> SurfacePoint2 {
-        self.at_length(self.length())
-    }
-
-    fn at_length(&self, length: f64) -> SurfacePoint2 {
-        let p = self.point_at_length(length);
-        SurfacePoint2::new_normalize(p, p - self.center())
+        self.aabb
     }
 }
 

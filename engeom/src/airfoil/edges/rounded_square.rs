@@ -4,7 +4,7 @@ use crate::geom2::{BoundaryElement, Line2, Segment2};
 use crate::{Arc2, Curve2, Point2, Result};
 
 pub fn best_fit_rounded_square(edge_curve: &Curve2, te_intr: &Point2) -> Result<()> {
-    let root_seg = Segment2::try_new(edge_curve.at_front().point(), edge_curve.at_back().point())?;
+    let root_seg = Segment2::try_new(&edge_curve.at_front(), &edge_curve.at_back())?;
     let root_center = mid_point(&root_seg.a, &root_seg.b);
 
     let c0 = te_intr + (root_seg.a - &root_center);
@@ -40,10 +40,9 @@ fn check_update(best: &mut f64, candidate: f64) {
 }
 
 fn dist_to(element: &impl BoundaryElement, p: &impl PCoords<2>) -> f64 {
-    let closest_len = element.closest_to_point(p);
-    let closest_pt = element.at_length(closest_len);
-    let d = dist(&closest_pt, p);
-    if closest_pt.projected_parameter(p) < 0.0 {
+    let closest = element.closest_to_point(p);
+    let d = dist(&closest, p);
+    if closest.normal_scalar_projection(p) < 0.0 {
         -d
     } else {
         d

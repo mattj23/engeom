@@ -549,7 +549,7 @@ impl Segment2 {
         let p0 = engeom::Point2::new(x0, y0);
         let p1 = engeom::Point2::new(x1, y1);
         Ok(Self {
-            inner: engeom::geom2::Segment2::try_new(p0, p1)
+            inner: engeom::geom2::Segment2::try_new(&p0, &p1)
                 .map_err(|e| PyValueError::new_err(e.to_string()))?,
         })
     }
