@@ -1,15 +1,15 @@
+use crate::common::points::dist;
 use crate::common::PCoords;
-use crate::common::points::{dist, mid_point};
-use crate::geom2::{BoundaryElement, Line2, Segment2};
+use crate::geom2::{BoundaryElement, Segment2};
 use crate::{Arc2, Curve2, Point2, Result};
 
 pub fn best_fit_rounded_square(edge_curve: &Curve2, te_intr: &Point2) -> Result<()> {
-    let root_seg = Segment2::try_new(&edge_curve.at_front(), &edge_curve.at_back())?;
-    let root_center = mid_point(&root_seg.a, &root_seg.b);
+    // let root_seg = Segment2::try_new(&edge_curve.at_front(), &edge_curve.at_back())?;
+    // let root_center = mid_point(&root_seg.a, &root_seg.b);
 
-    let c0 = te_intr + (root_seg.a - &root_center);
-    let c1 = te_intr + (root_seg.b - &root_center);
-    let r0 = dist(&root_seg.a, &root_seg.b) / 4.0;
+    // let c0 = te_intr + (root_seg.a - &root_center);
+    // let c1 = te_intr + (root_seg.b - &root_center);
+    // let r0 = dist(&root_seg.a, &root_seg.b) / 4.0;
 
     todo!()
 }

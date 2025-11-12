@@ -1,7 +1,5 @@
 use crate::common::PCoords;
-use crate::common::points::dist;
-use crate::geom2::{Aabb2, Line2, ManifoldPosition2};
-use crate::{Arc2, SurfacePoint2};
+use crate::geom2::{Aabb2, ManifoldPosition2};
 
 pub trait BoundaryElement {
     /// The total length of the element's manifold domain. For example, for a line segment this
