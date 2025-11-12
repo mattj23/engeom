@@ -63,7 +63,7 @@ impl Segment2 {
     /// use engeom::geom2::{Point2, Segment2};
     /// let a = Point2::new(0.0, 0.0);
     /// let b = Point2::new(1.0, 0.0);
-    /// let s = Segment2::try_new(a, b).unwrap();
+    /// let s = Segment2::try_new(&a, &b).unwrap();
     ///
     /// let s1 = s.offsetted(1.0);
     ///
