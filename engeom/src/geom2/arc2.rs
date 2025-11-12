@@ -153,11 +153,11 @@ impl Arc2 {
         self.point_at_fraction(length / self.length())
     }
 
-    pub fn start(&self) -> Point2 {
+    pub fn a(&self) -> Point2 {
         self.point_at_angle(0.0)
     }
 
-    pub fn end(&self) -> Point2 {
+    pub fn b(&self) -> Point2 {
         self.point_at_angle(self.angle)
     }
 
@@ -339,8 +339,8 @@ mod tests {
         let tol = 0.01;
         let points = arc.make_points(tol);
 
-        assert_relative_eq!(arc.start(), points.first().unwrap(), epsilon = 1e-8);
-        assert_relative_eq!(arc.end(), points.last().unwrap(), epsilon = 1e-8);
+        assert_relative_eq!(arc.a(), points.first().unwrap(), epsilon = 1e-8);
+        assert_relative_eq!(arc.b(), points.last().unwrap(), epsilon = 1e-8);
     }
 
     #[test]

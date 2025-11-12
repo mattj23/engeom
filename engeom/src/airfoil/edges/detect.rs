@@ -1,6 +1,5 @@
-use crate::airfoil::helpers::{
-    OrientedCircles, extract_curve_beyond_station,
-};
+use crate::airfoil::edges::rounded_square::best_fit_rounded_square;
+use crate::airfoil::helpers::{OrientedCircles, extract_curve_beyond_station};
 use crate::airfoil::{AirfoilEdge, EdgeLocate, InscribedCircle, OpenIntersectGap};
 use crate::{Curve2, Result};
 
@@ -80,6 +79,8 @@ impl EdgeLocate for EdgeAutoDetect {
 
         // Rounded square edge detection
         // ----------------------------------------------------------------------------------------
+        println!("Running rounded square edge detection...");
+        best_fit_rounded_square(&edge_curve, &te_intersect)?;
 
         todo!()
     }

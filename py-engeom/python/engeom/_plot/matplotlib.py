@@ -2,7 +2,7 @@ from typing import List, Iterable, Tuple, Union
 import numpy
 
 from .common import LabelPlace
-from engeom.geom2 import Curve2, Circle2, Aabb2, Point2, Vector2, SurfacePoint2
+from engeom.geom2 import Curve2, Circle2, Aabb2, Point2, Vector2, SurfacePoint2, Arc2, Segment2
 from engeom.geom3 import Vector3, Mesh, Point3
 from engeom.metrology import Distance2
 
@@ -123,7 +123,39 @@ else:
             self.ax.set_xlim(box.min.x, box.max.x)
             self.ax.set_ylim(box.min.y, box.max.y)
 
-        def plot_circle(self, *circle: Circle2 | Iterable[float], **kwargs):
+        def arc(self, arc: Arc2, **kwargs):
+            """
+
+            :param arc:
+            :return:
+            """
+            from matplotlib.patches import Arc
+
+            # Arcs are drawn by matplotlib in a counter-clockwise direction, so if the sweep is negative we
+            # need to swap the start and end angles.
+            if arc.angle < 0.0:
+                start_angle = arc.angle0 + arc.angle
+                sweep_angle = -arc.angle
+            else:
+                start_angle = arc.angle0
+                sweep_angle = arc.angle
+
+            patch = Arc((arc.center.x, arc.center.y), 2 * arc.r, 2 * arc.r,
+                        angle=numpy.rad2deg(start_angle),
+                        theta1=0.0,
+                        theta2=numpy.rad2deg(sweep_angle),
+                        **kwargs)
+            self.ax.add_patch(patch)
+
+        def segment(self, seg: Segment2, **kwargs):
+            """
+            Plot a segment on a Matplotlib Axes object.
+            :param seg: a Segment2 object
+            :param kwargs: keyword arguments to pass to the plot function
+            """
+            self.ax.plot([seg.a.x, seg.b.x], [seg.a.y, seg.b.y], **kwargs)
+
+        def plot_circle(self, *circle: Circle2 | Iterable[float], fill=False, **kwargs):
             """
             Plot a circle on a Matplotlib Axes object.
             :param circle: a Circle2 object
@@ -133,10 +165,10 @@ else:
 
             for cdata in circle:
                 if isinstance(cdata, Circle2):
-                    c = Circle((cdata.center.x, cdata.center.y), cdata.r, **kwargs)
+                    c = Circle((cdata.center.x, cdata.center.y), cdata.r, fill=fill, **kwargs)
                 else:
                     x, y, r, *_ = cdata
-                    c = Circle((x, y), r, **kwargs)
+                    c = Circle((x, y), r, fill=fill, **kwargs)
                 self.ax.add_patch(c)
 
         def plot_curve(self, curve: Curve2, **kwargs):

@@ -77,7 +77,6 @@ pub fn point_stability_reduce(
     let mut passed = vec![HashSet::with_hasher(default()); 6];
 
     for i in 0..points.len() {
-
         let mut added = HashSet::with_hasher(default());
         for (j, p) in passed.iter_mut().take(6).enumerate() {
             p.insert(ordered[j][i].0);

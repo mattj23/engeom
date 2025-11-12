@@ -524,7 +524,6 @@ impl Circle2 {
 // ================================================================================================
 // Segment
 // ================================================================================================
-// TODO: Type hints for this
 
 #[pyclass]
 #[derive(Clone, Debug)]
@@ -574,6 +573,16 @@ impl Segment2 {
     #[getter]
     fn direction(&self) -> Vector2 {
         Vector2::from_inner(self.inner.dir())
+    }
+
+    #[getter]
+    fn length(&self) -> f64 {
+        self.inner.length
+    }
+
+    #[getter]
+    fn aabb(&self) -> Aabb2 {
+        Aabb2::from_inner(self.inner.aabb())
     }
 }
 
@@ -627,27 +636,17 @@ impl Arc2 {
     }
 
     #[getter]
-    fn x(&self) -> f64 {
-        self.inner.center().x
-    }
-
-    #[getter]
-    fn y(&self) -> f64 {
-        self.inner.center().y
-    }
-
-    #[getter]
     fn r(&self) -> f64 {
         self.inner.radius()
     }
 
     #[getter]
-    fn start(&self) -> f64 {
+    fn angle0(&self) -> f64 {
         self.inner.angle0
     }
 
     #[getter]
-    fn sweep(&self) -> f64 {
+    fn angle(&self) -> f64 {
         self.inner.angle
     }
 
@@ -657,13 +656,18 @@ impl Arc2 {
     }
 
     #[getter]
-    fn start_point(&self) -> Point2 {
-        Point2::from_inner(self.inner.start())
+    fn a(&self) -> Point2 {
+        Point2::from_inner(self.inner.a())
     }
 
     #[getter]
-    fn end_point(&self) -> Point2 {
-        Point2::from_inner(self.inner.end())
+    fn b(&self) -> Point2 {
+        Point2::from_inner(self.inner.b())
+    }
+
+    #[getter]
+    fn circle(&self) -> Circle2 {
+        Circle2::from_inner(self.inner.circle)
     }
 }
 

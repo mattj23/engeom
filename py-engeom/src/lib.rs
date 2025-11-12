@@ -35,6 +35,8 @@ fn register_geom2(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_class::<geom2::Point2>()?;
     child.add_class::<geom2::SurfacePoint2>()?;
     child.add_class::<geom2::Circle2>()?;
+    child.add_class::<geom2::Arc2>()?;
+    child.add_class::<geom2::Segment2>()?;
 
     // Curves and other complex geometries
     child.add_class::<geom2::Curve2>()?;

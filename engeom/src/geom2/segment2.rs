@@ -42,7 +42,7 @@ impl Segment2 {
     pub fn scalar_projection(&self, other: &impl PCoords<2>) -> f64 {
         let dir = self.b - self.a;
         let test = other.coords() - self.a.coords();
-        dir.dot(&test)
+        dir.dot(&test) / self.length.powi(2)
     }
 
     /// Create a new segment that is shifted by distance `d` in the direction of the segment
@@ -147,5 +147,39 @@ impl BoundaryElement for Segment2 {
 
     fn at_end(&self) -> ManifoldPosition2 {
         self.at_t(1.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use approx::assert_relative_eq;
+
+    #[test]
+    fn length_simple() {
+        let a = Point2::new(1.0, 1.0);
+        let b = Point2::new(5.0, 1.0);
+        let seg = Segment2::try_new(&a, &b).unwrap();
+        assert_relative_eq!(seg.length(), 4.0);
+    }
+
+    #[test]
+    fn scalar_projection_simple() {
+        let a = Point2::new(1.0, 1.0);
+        let b = Point2::new(5.0, 1.0);
+        let seg = Segment2::try_new(&a, &b).unwrap();
+        let test_point = Point2::new(3.0, 2.0);
+        let t = seg.scalar_projection(&test_point);
+        assert_relative_eq!(0.5, t, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn closest_to_simple() {
+        let a = Point2::new(1.0, 1.0);
+        let b = Point2::new(4.0, 1.0);
+        let seg = Segment2::try_new(&a, &b).unwrap();
+        let test_point = Point2::new(2.0, 3.0);
+        let closest = seg.closest_to_point(&test_point);
+        assert_relative_eq!(closest.point, Point2::new(2.0, 1.0), epsilon = 1e-6);
     }
 }

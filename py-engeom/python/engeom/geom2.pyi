@@ -968,7 +968,6 @@ class Curve2:
         ...
 
 
-
 class Circle2:
     """
     A class representing a circle in 2D space. The circle is defined by a center point and a radius.
@@ -1118,6 +1117,62 @@ class Circle2:
         ...
 
 
+class Segment2:
+    """
+    A class representing a line segment in 2D space. The segment is defined by two endpoints.
+    """
+
+    def __init__(self, x0: float, y0: float, x1: float, y1: float):
+        """
+        Create a line segment from two endpoints.
+        :param x0: the x-coordinate of the first endpoint.
+        :param y0: the y-coordinate of the first endpoint.
+        :param x1: the x-coordinate of the second endpoint.
+        :param y1: the y-coordinate of the second endpoint.
+        """
+        ...
+
+    @property
+    def a(self) -> Point2:
+        """
+        Get the first endpoint of the segment.
+        :return: the first endpoint of the segment.
+        """
+        ...
+
+    @property
+    def b(self) -> Point2:
+        """
+        Get the second endpoint of the segment.
+        :return: the second endpoint of the segment.
+        """
+        ...
+
+    @property
+    def length(self) -> float:
+        """
+        Get the length of the segment.
+        :return: the length of the segment.
+        """
+        ...
+
+    @property
+    def direction(self) -> Vector2:
+        """
+        Get the direction vector of the segment, which is a unit vector pointing from the first endpoint to the second
+        endpoint.
+        :return: the direction vector of the segment.
+        """
+        ...
+
+    @property
+    def aabb(self) -> Aabb2:
+        """
+        Get the axis-aligned bounding box of the segment.
+        :return: the axis-aligned bounding box of the segment.
+        """
+        ...
+
 
 class Arc2:
     """
@@ -1155,22 +1210,6 @@ class Arc2:
         ...
 
     @property
-    def x(self) -> float:
-        """
-        Get the x-coordinate of the center of the arc.
-        :return: the x-coordinate of the arc center.
-        """
-        ...
-
-    @property
-    def y(self) -> float:
-        """
-        Get the y-coordinate of the center of the arc.
-        :return: the y-coordinate of the arc center
-        """
-        ...
-
-    @property
     def r(self) -> float:
         """
         Get the radius of the arc
@@ -1179,7 +1218,7 @@ class Arc2:
         ...
 
     @property
-    def start(self) -> float:
+    def angle0(self) -> float:
         """
         Get the start angle of the arc, in radians.
         :return: the start angle of the arc in radians.
@@ -1187,7 +1226,7 @@ class Arc2:
         ...
 
     @property
-    def sweep(self) -> float:
+    def angle(self) -> float:
         """
         Get the sweep angle of the arc, in radians.
         :return: the sweep angle of the arc in radians.
@@ -1203,7 +1242,7 @@ class Arc2:
         ...
 
     @property
-    def start_point(self) -> Point2:
+    def a(self) -> Point2:
         """
         Get the start point of the arc.
         :return: the start point of the arc.
@@ -1211,10 +1250,18 @@ class Arc2:
         ...
 
     @property
-    def end_point(self) -> Point2:
+    def b(self) -> Point2:
         """
         Get the end point of the arc.
         :return: the end point of the arc.
+        """
+        ...
+
+    @property
+    def circle(self) -> Circle2:
+        """
+        Get the circle that has the segment as its diameter.
+        :return: the circle that has the segment as its diameter.
         """
         ...
 
