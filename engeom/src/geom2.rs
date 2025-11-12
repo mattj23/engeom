@@ -221,10 +221,43 @@ impl SurfacePoint2 {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use approx::assert_relative_eq;
+    use rand::Rng;
     use std::f64::consts::PI;
+
+    pub struct Random2 {
+        rng: rand::rngs::ThreadRng,
+    }
+
+    impl Random2 {
+        pub fn new() -> Self {
+            Self { rng: rand::rng() }
+        }
+
+        pub fn point(&mut self, limit: f64) -> Point2 {
+            Point2::new(
+                self.rng.random_range(-limit..limit),
+                self.rng.random_range(-limit..limit),
+            )
+        }
+
+        pub fn angle_sym_pi(&mut self) -> f64 {
+            self.rng.random_range(-PI..PI)
+        }
+        pub fn angle_sym_2pi(&mut self) -> f64 {
+            self.rng.random_range(-2.0 * PI..2.0 * PI)
+        }
+
+        pub fn angle_pos_2pi(&mut self) -> f64 {
+            self.rng.random_range(0.0..2.0 * PI)
+        }
+
+        pub fn positive(&mut self, limit: f64) -> f64 {
+            self.rng.random_range(0.0..limit)
+        }
+    }
 
     #[test]
     fn iso2_only_rotates_vector() {

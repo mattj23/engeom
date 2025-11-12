@@ -1,21 +1,18 @@
 use crate::common::points::dist;
-use crate::common::{
-    signed_compliment_2pi, BestFit, Intersection
-    , PCoords,
-};
+use crate::common::{BestFit, Intersection, PCoords, signed_compliment_2pi};
 use crate::geom2::aabb2::circle_aabb2;
 use crate::geom2::line2::intersect_lines;
-use crate::geom2::{signed_angle, Aabb2, HasBounds2, Iso2, Line2, Point2, Segment2, Vector2};
+use crate::geom2::{Aabb2, HasBounds2, Iso2, Line2, Point2, Segment2, Vector2, signed_angle};
 use crate::geom3::Vector3;
 use crate::stats::{compute_mean, compute_st_dev};
 use crate::{AngleInterval, SurfacePoint2};
 use crate::{Arc2, Result};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
-use parry2d_f64::na::{Dyn, Matrix, Owned, Vector, U1, U3};
+use parry2d_f64::na::{Dyn, Matrix, Owned, U1, U3, Vector};
 use parry2d_f64::shape::Ball;
+use rand::SeedableRng;
 use rand::distr::{Distribution, Uniform};
 use rand::prelude::StdRng;
-use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 use std::f64::consts::FRAC_PI_2;
 
@@ -849,8 +846,8 @@ impl LeastSquaresProblem<f64, Dyn, U3> for CircleFit<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geom2::Ray2;
     use crate::Arc2;
+    use crate::geom2::Ray2;
     use approx::assert_relative_eq;
     use imageproc::point::Point;
     use rand::Rng;

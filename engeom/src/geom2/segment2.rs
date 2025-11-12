@@ -100,7 +100,6 @@ impl Segment2 {
         let normal = rot90(Cw) * direction;
         ManifoldPosition2::new(t * self.length, point, direction, normal)
     }
-
 }
 
 impl TransformBy<Iso2, Segment2> for Segment2 {

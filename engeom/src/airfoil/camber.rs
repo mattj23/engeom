@@ -23,8 +23,9 @@ use parry2d_f64::shape::ConvexPolygon;
 ///
 /// returns: Result<Unit<Matrix<f64, Const<2>, Const<1>, ArrayStorage<f64, 2, 1>>>, Box<dyn Error, Global>>
 pub fn camber_detect_upper_dir(camber_line: &Curve2) -> Result<UnitVec2> {
-    let check = Segment2::try_new( &camber_line.at_front(), &camber_line.at_back() )
-    .map_err(|_| "Failed to create segment from camber line while detecting face orientation")?;
+    let check = Segment2::try_new(&camber_line.at_front(), &camber_line.at_back()).map_err(
+        |_| "Failed to create segment from camber line while detecting face orientation",
+    )?;
 
     let resampled = camber_line.resample(ByCount(50))?;
 
