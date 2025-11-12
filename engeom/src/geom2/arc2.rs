@@ -247,8 +247,8 @@ impl BoundaryElement for Arc2 {
         // the arc is going clockwise or counterclockwise
         let normal = UnitVec2::new_normalize((point - self.circle.center) * self.angle.signum());
 
-        // The manifold direction will be the normal direction rotated 90 degrees clockwise
-        let direction = rot90(Cw) * normal;
+        // The manifold direction will be the normal direction rotated 90 degrees counter-clockwise
+        let direction = rot90(Ccw) * normal;
 
         ManifoldPosition2::new(length, point, direction, normal)
     }
@@ -276,13 +276,13 @@ mod tests {
     use super::*;
     use crate::common::points::mid_point;
     use crate::geom2::Ray2;
+    use crate::geom2::tests::Random2;
     use crate::{Arc2, Curve2};
     use approx::assert_relative_eq;
     use imageproc::point::Point;
     use num_traits::float::FloatCore;
     use std::f64::consts::PI;
     use test_case::test_case;
-    use crate::geom2::tests::Random2;
 
     #[test]
     fn three_point_arc_ccw() {
@@ -375,12 +375,12 @@ mod tests {
     }
 
     #[test]
-    fn stress_test_distances() {
+    fn stress_test_closest() {
         let mut rnd = Random2::new();
-        let tol = 0.00005;
+        let tol = 0.00001;
 
         for _ in 0..100 {
-            let circle = Circle2::from_point(rnd.point(10.0), rnd.positive(5.0) + 0.1);
+            let circle = Circle2::from_point(rnd.point(10.0), rnd.positive(5.0) + 0.5);
             let arc = Arc2::new(circle, rnd.angle_sym_pi(), rnd.angle_sym_2pi());
 
             let points = arc.make_points(tol);
@@ -400,8 +400,28 @@ mod tests {
                 // The distance between the two points must be less than the distance between
                 // curve vertices
                 let d = dist(&expected, &actual);
-                assert!(d < arc_len, "Distance {} exceeds arc segment length {}", d, arc_len);
+                assert!(
+                    d < arc_len,
+                    "Distance {} exceeds arc segment length {}",
+                    d,
+                    arc_len
+                );
 
+                let direction_angle = expected.direction().angle(&actual.direction);
+                let normal_angle = expected.normal().angle(&actual.normal);
+
+                // Because of the discretization, the directions and normals will have more noise
+                // in them, so we use a looser tolerance here
+                assert!(
+                    direction_angle.abs() < 2e-2,
+                    "Direction angle difference too large: {}",
+                    direction_angle
+                );
+                assert!(
+                    normal_angle.abs() < 2e-2,
+                    "Normal angle difference too large: {}",
+                    normal_angle
+                );
             }
         }
     }
