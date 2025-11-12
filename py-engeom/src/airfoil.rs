@@ -227,7 +227,7 @@ impl EdgeResult {
             EdgeGeometry::Square((p0, p1)) => {
                 (Point2::from_inner(p0), Point2::from_inner(p1)).into_bound_py_any(py)
             }
-            EdgeGeometry::RoundedFace((arc0, arc1)) => {
+            EdgeGeometry::RoundedSquare((arc0, arc1)) => {
                 (Arc2::from_inner(arc0), Arc2::from_inner(arc1)).into_bound_py_any(py)
             }
         }

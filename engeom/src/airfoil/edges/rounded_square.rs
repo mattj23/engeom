@@ -1,11 +1,13 @@
 use crate::common::PCoords;
 use crate::common::points::{dist, mid_point};
 use crate::geom2::{BoundaryElement, Segment2};
-use crate::{Arc2, Circle2, Curve2, Point2, Result, Vector2};
+use crate::na::{Dyn, Matrix, Owned, U1, U6, Vector, Vector6};
+use crate::{Arc2, Circle2, Curve2, Point2, Result};
+use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
+use num_traits::float::TotalOrder;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 
-pub fn best_fit_rounded_square(edge_curve: &Curve2, te_intr: &Point2) -> Result<()> {
+pub fn best_fit_rounded_square(edge_curve: &Curve2, te_intr: &Point2) -> Result<(Arc2, Arc2, f64)> {
     let root_seg = Segment2::try_new(&edge_curve.at_front(), &edge_curve.at_back())?;
     let root_center = mid_point(&root_seg.a, &root_seg.b);
 
@@ -13,15 +15,99 @@ pub fn best_fit_rounded_square(edge_curve: &Curve2, te_intr: &Point2) -> Result<
     let c1 = te_intr + (root_seg.b - &root_center);
     let r0 = dist(&root_seg.a, &root_seg.b) / 4.0;
 
-    todo!()
+    // Make default params
+    let default_x = [c0.x, c0.y, c1.x, c1.y, r0, r0];
+
+    let points = edge_curve.clone_points();
+    let fit = RoundedSquareEdgeFit::new(&points, default_x)?;
+    let (result, report) = LevenbergMarquardt::new().minimize(fit);
+
+    if !report.termination.was_successful() {
+        return Err("Rounded square edge fitting did not converge successfully".into());
+    }
+
+    let edge = RoundedSquareEdge::from_params(&root_seg.a, &root_seg.b, &result.params())?;
+    let max_residual = *result
+        .residuals()
+        .unwrap()
+        .map(|x| x.abs())
+        .iter()
+        .max_by(|a, b| a.total_cmp(b))
+        .unwrap();
+
+    Ok((edge.arc0, edge.arc1, max_residual))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct TempOutput {
-    points: Vec<Point2>,
-    edge: RoundedSquareEdge,
-    corner0: Point2,
-    corner1: Point2,
+struct RoundedSquareEdgeFit<'a> {
+    points: &'a [Point2],
+    start: Point2,
+    end: Point2,
+    x: Vector6<f64>,
+}
+
+impl<'a> RoundedSquareEdgeFit<'a> {
+    pub fn new(points: &'a [Point2], initial_x: [f64; 6]) -> Result<Self> {
+        let start = points[0];
+        let end = points[points.len() - 1];
+        let x = Vector6::<f64>::from_column_slice(&initial_x);
+
+        Ok(RoundedSquareEdgeFit {
+            points,
+            start,
+            end,
+            x,
+        })
+    }
+}
+
+impl LeastSquaresProblem<f64, Dyn, U6> for RoundedSquareEdgeFit<'_> {
+    type ResidualStorage = Owned<f64, Dyn, U1>;
+    type JacobianStorage = Owned<f64, Dyn, U6>;
+    type ParameterStorage = Owned<f64, U6>;
+
+    fn set_params(&mut self, x: &Vector<f64, U6, Self::ParameterStorage>) {
+        self.x = x.clone();
+    }
+
+    fn params(&self) -> Vector<f64, U6, Self::ParameterStorage> {
+        self.x.clone()
+    }
+
+    fn residuals(&self) -> Option<Vector<f64, Dyn, Self::ResidualStorage>> {
+        let current = RoundedSquareEdge::from_params(&self.start, &self.end, &self.x).ok()?;
+        let mut res = Matrix::<f64, Dyn, U1, Self::ResidualStorage>::zeros(self.points.len());
+
+        for (i, p) in self.points.iter().enumerate() {
+            res[i] = current.distance_to(p);
+        }
+
+        Some(res)
+    }
+
+    fn jacobian(&self) -> Option<Matrix<f64, Dyn, U6, Self::JacobianStorage>> {
+        let current = RoundedSquareEdge::from_params(&self.start, &self.end, &self.x).ok()?;
+        let mut jac = Matrix::<f64, Dyn, U6, Self::JacobianStorage>::zeros(self.points.len());
+        let delta = 1e-6;
+
+        let mut deltas = Vec::with_capacity(6);
+        for i in 0..6 {
+            let mut delta_x = self.x.clone();
+            delta_x[i] += delta;
+            let perturbed =
+                RoundedSquareEdge::from_params(&self.start, &self.end, &delta_x).ok()?;
+            deltas.push(perturbed);
+        }
+
+        for (i, p) in self.points.iter().enumerate() {
+            let base_dist = current.distance_to(p);
+            for j in 0..6 {
+                let perturbed_dist = deltas[j].distance_to(p);
+                jac[(i, j)] = (perturbed_dist - base_dist) / delta;
+            }
+        }
+
+        Some(jac)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,6 +127,15 @@ impl RoundedSquareEdge {
         check_update(&mut best, dist_to(&self.arc1, point));
         check_update(&mut best, dist_to(&self.seg2, point));
         best
+    }
+
+    pub fn from_params(start: &Point2, end: &Point2, x: &Vector6<f64>) -> Result<Self> {
+        let corner0 = Point2::new(x[0], x[1]);
+        let corner1 = Point2::new(x[2], x[3]);
+        let r0 = x[4];
+        let r1 = x[5];
+
+        Self::build(&start, &corner0, &corner1, &end, r0, r1)
     }
 
     pub fn build(
@@ -107,46 +202,6 @@ struct SquareEnd {
 }
 
 impl SquareEnd {
-    pub fn corner0(&self) -> &Point2 {
-        &self.seg0.b
-    }
-
-    pub fn corner1(&self) -> &Point2 {
-        &self.seg1.b
-    }
-
-    pub fn start(&self) -> &Point2 {
-        &self.seg0.a
-    }
-
-    pub fn end(&self) -> &Point2 {
-        &self.seg2.b
-    }
-
-    pub fn corner0_v0(&self) -> Vector2 {
-        self.start() - self.corner0()
-    }
-
-    pub fn corner0_v1(&self) -> Vector2 {
-        self.corner1() - self.corner0()
-    }
-
-    pub fn corner1_v0(&self) -> Vector2 {
-        self.corner0() - self.corner1()
-    }
-
-    pub fn corner1_v1(&self) -> Vector2 {
-        self.end() - self.corner1()
-    }
-
-    pub fn try_circle0(&self, r0: f64) -> Result<Circle2> {
-        Circle2::tangent_to_corner(self.corner0(), &self.corner0_v0(), &self.corner0_v1(), r0)
-    }
-
-    pub fn try_circle1(&self, r1: f64) -> Result<Circle2> {
-        Circle2::tangent_to_corner(self.corner1(), &self.corner1_v0(), &self.corner1_v1(), r1)
-    }
-
     pub fn new(start: &Point2, corner0: &Point2, corner1: &Point2, end: &Point2) -> Result<Self> {
         let seg0 = Segment2::try_new(start, corner0)?;
         let seg1 = Segment2::try_new(corner0, corner1)?;
