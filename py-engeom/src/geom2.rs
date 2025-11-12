@@ -613,8 +613,8 @@ impl Arc2 {
             self.inner.center().x,
             self.inner.center().y,
             self.inner.radius(),
-            self.inner.angle0,
-            self.inner.angle
+            self.inner.angle0(),
+            self.inner.angle(),
         )
     }
 
@@ -642,12 +642,12 @@ impl Arc2 {
 
     #[getter]
     fn angle0(&self) -> f64 {
-        self.inner.angle0
+        self.inner.angle0()
     }
 
     #[getter]
     fn angle(&self) -> f64 {
-        self.inner.angle
+        self.inner.angle()
     }
 
     #[getter]
@@ -667,7 +667,7 @@ impl Arc2 {
 
     #[getter]
     fn circle(&self) -> Circle2 {
-        Circle2::from_inner(self.inner.circle)
+        Circle2::from_inner(self.inner.circle())
     }
 }
 

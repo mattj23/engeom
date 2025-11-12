@@ -450,7 +450,7 @@ impl EdgeLocate for ConstRadiusEdge {
         let spanning = section
             .try_create_spanning_ray(&test_ray)
             .ok_or("Failed to create final spanning ray for constant radius edge algorithm.")?;
-        let last_circle = InscribedCircle::new(spanning, a0, a1, best_arc.circle);
+        let last_circle = InscribedCircle::new(spanning, a0, a1, best_arc.circle());
         working_stations.push(last_circle);
 
         // let mut stack = vec![last_circle];

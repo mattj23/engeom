@@ -10,9 +10,10 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct Arc2 {
-    pub circle: Circle2,
-    pub angle0: f64,
-    pub angle: f64,
+    center: Point2,
+    radius: f64,
+    angle0: f64,
+    angle: f64,
     aabb: Aabb2,
 }
 
@@ -20,7 +21,8 @@ impl Arc2 {
     pub fn new(circle: Circle2, angle0: f64, angle: f64) -> Self {
         let aabb = arc_aabb2(&circle, angle0, angle);
         Self {
-            circle,
+            center: circle.center,
+            radius: circle.r(),
             angle0,
             angle,
             aabb,
@@ -50,7 +52,8 @@ impl Arc2 {
         let circle = Circle2::from_point(center, radius);
         let aabb = arc_aabb2(&circle, angle0, angle);
         Self {
-            circle,
+            center,
+            radius,
             angle0,
             angle,
             aabb,
@@ -82,7 +85,8 @@ impl Arc2 {
         let angle0 = circle.angle_of_point(&point);
         let aabb = arc_aabb2(&circle, angle0, angle);
         Self {
-            circle,
+            center,
+            radius,
             angle0,
             angle,
             aabb,
@@ -122,27 +126,40 @@ impl Arc2 {
 
         let aabb = arc_aabb2(&circle, angle0, angle);
         Self {
-            circle,
+            center: circle.center,
+            radius: circle.r(),
             angle0,
             angle,
             aabb,
         }
     }
 
+    pub fn angle0(&self) -> f64 {
+        self.angle0
+    }
+
+    pub fn angle(&self) -> f64 {
+        self.angle
+    }
+
     pub fn length(&self) -> f64 {
-        self.circle.ball.radius * self.angle.abs()
+        self.radius * self.angle.abs()
+    }
+
+    pub fn circle(&self) -> Circle2 {
+        Circle2::from_point(self.center, self.radius)
     }
 
     pub fn center(&self) -> Point2 {
-        self.circle.center
+        self.center
     }
 
     pub fn radius(&self) -> f64 {
-        self.circle.ball.radius
+        self.radius
     }
 
     pub fn point_at_angle(&self, angle: f64) -> Point2 {
-        self.circle.point_at_angle(self.angle0 + angle)
+        self.circle().point_at_angle(self.angle0 + angle)
     }
 
     pub fn point_at_fraction(&self, fraction: f64) -> Point2 {
@@ -244,7 +261,7 @@ impl BoundaryElement for Arc2 {
 
         // The normal direction will be either towards or away from the center depending on whether
         // the arc is going clockwise or counterclockwise
-        let normal = UnitVec2::new_normalize((point - self.circle.center) * self.angle.signum());
+        let normal = UnitVec2::new_normalize((point - self.center) * self.angle.signum());
 
         // The manifold direction will be the normal direction rotated 90 degrees counter-clockwise
         let direction = rot90(Ccw) * normal;
@@ -253,7 +270,7 @@ impl BoundaryElement for Arc2 {
     }
 
     fn closest_to_point(&self, point: &impl PCoords<2>) -> ManifoldPosition2 {
-        let theta = self.circle.angle_of_point(point);
+        let theta = self.circle().angle_of_point(point);
         let t = if self.is_theta_on_arc(theta) {
             self.theta_to_fraction(theta) * self.length()
         } else {
@@ -324,10 +341,10 @@ mod tests {
             let p1 = points[i + 1];
             let mid = mid_point(&p0, &p1);
 
-            let d = arc.circle.distance_to(&mid);
+            let d = arc.circle().distance_to(&mid);
             assert!(d.abs() < tol, "Distance {} exceeds tolerance {}", d, tol);
-            assert_relative_eq!(0.0, arc.circle.distance_to(&p0), epsilon = 1e-8);
-            assert_relative_eq!(0.0, arc.circle.distance_to(&p1), epsilon = 1e-8);
+            assert_relative_eq!(0.0, arc.circle().distance_to(&p0), epsilon = 1e-8);
+            assert_relative_eq!(0.0, arc.circle().distance_to(&p1), epsilon = 1e-8);
         }
     }
 
