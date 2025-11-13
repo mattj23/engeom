@@ -3,7 +3,7 @@
 //! edges, computing angles, thicknesses, and other properties.
 
 mod camber;
-mod edges;
+pub mod edges;
 pub mod helpers;
 mod inscribed_circle;
 mod orientation;

@@ -16,6 +16,7 @@ use crate::{Circle2, Curve2, Result};
 use parry2d_f64::query::Ray;
 
 pub use detect::EdgeAutoDetect;
+pub use rounded_square::{RoundedSquareEdge, best_fit_rounded_square};
 
 /// This struct implements the `EdgeLocation` trait and does not attempt to locate the edge of
 /// the airfoil section. It will return `None` for the edge point and the original collection of

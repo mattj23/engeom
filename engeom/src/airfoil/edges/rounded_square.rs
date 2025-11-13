@@ -4,7 +4,6 @@ use crate::geom2::{BoundaryElement, Segment2};
 use crate::na::{Dyn, Matrix, Owned, U1, U6, Vector, Vector6};
 use crate::{Arc2, Circle2, Curve2, Point2, Result};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
-use num_traits::float::TotalOrder;
 use serde::{Deserialize, Serialize};
 
 pub fn best_fit_rounded_square(edge_curve: &Curve2, te_intr: &Point2) -> Result<(Arc2, Arc2, f64)> {
@@ -111,12 +110,12 @@ impl LeastSquaresProblem<f64, Dyn, U6> for RoundedSquareEdgeFit<'_> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct RoundedSquareEdge {
-    seg0: Segment2,
-    arc0: Arc2,
-    seg1: Segment2,
-    arc1: Arc2,
-    seg2: Segment2,
+pub struct RoundedSquareEdge {
+    pub seg0: Segment2,
+    pub arc0: Arc2,
+    pub seg1: Segment2,
+    pub arc1: Arc2,
+    pub seg2: Segment2,
 }
 
 impl RoundedSquareEdge {
