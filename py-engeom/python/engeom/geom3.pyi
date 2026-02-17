@@ -961,6 +961,46 @@ class Plane3:
         """
         ...
 
+    @property
+    def a(self) -> float:
+        """
+        Get the x value of the unit normal vector.
+        :return: the x value of the unit normal vector.
+        """
+        ...
+
+    @property
+    def b(self) -> float:
+        """
+        Get the y value of the unit normal vector.
+        :return: the y value of the unit normal vector.
+        """
+        ...
+
+    @property
+    def c(self) -> float:
+        """
+        Get the z value of the unit normal vector.
+        :return: the z value of the unit normal vector.
+        """
+        ...
+
+    @property
+    def d(self) -> float:
+        """
+        Get the distance from the origin along the normal vector.
+        :return: the distance from the origin along the normal vector.
+        """
+        ...
+
+    @property
+    def normal(self) -> Vector3:
+        """
+        Get the normal vector of the plane as a Vector3 object.
+        :return: a Vector3 object representing the normal vector of the plane.
+        """
+        ...
+
 
 class Mesh:
     """

@@ -462,6 +462,31 @@ impl Plane3 {
     fn intersection_distance(&self, sp: &SurfacePoint3) -> Option<f64> {
         self.inner.intersection_distance(sp.get_inner())
     }
+
+    #[getter]
+    fn a(&self) -> f64 {
+        self.inner.normal.x
+    }
+
+    #[getter]
+    fn b(&self) -> f64 {
+        self.inner.normal.y
+    }
+
+    #[getter]
+    fn c(&self) -> f64 {
+        self.inner.normal.z
+    }
+
+    #[getter]
+    fn d(&self) -> f64 {
+        self.inner.d
+    }
+
+    #[getter]
+    fn normal(&self) -> Vector3 {
+        Vector3::from_inner(self.inner.normal.into_inner())
+    }
 }
 
 // ================================================================================================
