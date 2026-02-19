@@ -6,6 +6,8 @@ from typing import Tuple, Iterable, List, TypeVar, Iterator, Any
 import numpy
 from numpy.typing import NDArray
 import engeom
+from engeom.geom2 import Vector2, Point2, SurfacePoint2
+
 import metrology
 
 Transformable3 = TypeVar("Transformable3", Vector3, Point3, Plane3, Iso3, SurfacePoint3)
@@ -221,6 +223,13 @@ class Vector3(Iterable[float]):
         """
         ...
 
+    def to_2d(self) -> Vector2:
+        """
+        Convert the vector to a 2D vector by dropping the z component.
+        :return: a new Vector2 object containing the x and y components of this vector.
+        """
+        ...
+
 
 class Point3(Iterable[float]):
     """
@@ -365,6 +374,13 @@ class Point3(Iterable[float]):
         """
         ...
 
+    def to_2d(self) -> Point2:
+        """
+        Convert the point to a 2D point by dropping the z coordinate.
+        :return: a new Point2 object containing the x and y coordinates of this point.
+        """
+        ...
+
 
 class SurfacePoint3:
     """
@@ -500,6 +516,14 @@ class SurfacePoint3:
         normal vector is unchanged.
         :param offset: the distance to shift the position by along the normal vector.
         :return:
+        """
+        ...
+
+    def to_2d(self) -> SurfacePoint2:
+        """
+        Convert the surface point to a 2D surface point by dropping the z coordinate and the z component of the normal.
+        :return: a new SurfacePoint2 object containing the x and y coordinates of the point and the x and y components
+        of the normal.
         """
         ...
 
