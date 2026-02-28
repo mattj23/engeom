@@ -3,7 +3,7 @@
 //! edges, computing angles, thicknesses, and other properties.
 
 mod camber;
-mod edges;
+pub mod edges;
 pub mod helpers;
 mod inscribed_circle;
 mod orientation;
@@ -145,7 +145,7 @@ pub enum EdgeGeometry {
     Square((Point2, Point2)),
 
     /// The edge is closed and has a rounded face with two arc regions and a flat region in between
-    RoundedFace((Arc2, Arc2)),
+    RoundedSquare((Arc2, Arc2)),
 }
 
 /// An airfoil edge is a generic construct used to represent the leading and trailing edges of an
@@ -184,6 +184,10 @@ impl AirfoilEdge {
 
     fn sharp(point: Point2) -> Self {
         AirfoilEdge::new(point, EdgeGeometry::Sharp)
+    }
+
+    fn rounded_square(point: Point2, arc0: Arc2, arc1: Arc2) -> Self {
+        AirfoilEdge::new(point, EdgeGeometry::RoundedSquare((arc0, arc1)))
     }
 }
 

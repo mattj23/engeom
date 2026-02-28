@@ -1,6 +1,7 @@
 //! This module contains tools to work with the leading and trailing edges of the airfoil section.
 
 mod detect;
+mod rounded_square;
 
 use crate::AngleDir::Ccw;
 use crate::airfoil::helpers::{
@@ -15,6 +16,7 @@ use crate::{Circle2, Curve2, Result};
 use parry2d_f64::query::Ray;
 
 pub use detect::EdgeAutoDetect;
+pub use rounded_square::{RoundedSquareEdge, best_fit_rounded_square};
 
 /// This struct implements the `EdgeLocation` trait and does not attempt to locate the edge of
 /// the airfoil section. It will return `None` for the edge point and the original collection of
@@ -85,7 +87,7 @@ impl EdgeLocate for OpenIntersectGap {
         let mut working_stations = OrientedCircles::new(stations, front);
 
         // end_cap is a segment that spans the first and last points of the open section
-        let end_cap = Segment2::try_new(section.at_front().point(), section.at_back().point())?;
+        let end_cap = Segment2::try_new(&section.at_front(), &section.at_back())?;
 
         let mut end_point = working_stations.end_intersection_with_seg(&end_cap)?;
         let mut drift = f64::INFINITY;
@@ -449,7 +451,7 @@ impl EdgeLocate for ConstRadiusEdge {
         let spanning = section
             .try_create_spanning_ray(&test_ray)
             .ok_or("Failed to create final spanning ray for constant radius edge algorithm.")?;
-        let last_circle = InscribedCircle::new(spanning, a0, a1, best_arc.circle);
+        let last_circle = InscribedCircle::new(spanning, a0, a1, best_arc.circle());
         working_stations.push(last_circle);
 
         // let mut stack = vec![last_circle];

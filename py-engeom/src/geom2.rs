@@ -450,6 +450,36 @@ impl Circle2 {
         Point2::from_inner(self.inner.point_at_angle(angle))
     }
 
+    fn project_point_to_perimeter(&self, other: &Point2) -> Option<Point2> {
+        self.inner
+            .project_point_to_perimeter(other.get_inner())
+            .map(Point2::from_inner)
+    }
+
+    fn angle_of_point(&self, other: &Point2) -> f64 {
+        self.inner.angle_of_point(other.get_inner())
+    }
+
+    fn intersections_with(&self, other: &Circle2) -> Vec<Point2> {
+        self.inner
+            .intersections_with(&other.inner)
+            .into_iter()
+            .map(Point2::from_inner)
+            .collect()
+    }
+
+    fn distance_to(&self, point: &Point2) -> f64 {
+        self.inner.distance_to(point.get_inner())
+    }
+
+    fn tangent_points_to(&self, point: &Point2) -> Option<(Point2, Point2)> {
+        let pts = self
+            .inner
+            .tangent_points_to(point.get_inner())
+            .map(|(p1, p2)| (Point2::from_inner(p1), Point2::from_inner(p2)))?;
+        Some(pts)
+    }
+
     #[staticmethod]
     #[pyo3(signature=(points, guess=None, sigma=None))]
     fn fitting<'py>(
@@ -494,7 +524,6 @@ impl Circle2 {
 // ================================================================================================
 // Segment
 // ================================================================================================
-// TODO: Type hints for this
 
 #[pyclass]
 #[derive(Clone, Debug)]
@@ -519,7 +548,7 @@ impl Segment2 {
         let p0 = engeom::Point2::new(x0, y0);
         let p1 = engeom::Point2::new(x1, y1);
         Ok(Self {
-            inner: engeom::geom2::Segment2::try_new(p0, p1)
+            inner: engeom::geom2::Segment2::try_new(&p0, &p1)
                 .map_err(|e| PyValueError::new_err(e.to_string()))?,
         })
     }
@@ -544,6 +573,16 @@ impl Segment2 {
     #[getter]
     fn direction(&self) -> Vector2 {
         Vector2::from_inner(self.inner.dir())
+    }
+
+    #[getter]
+    fn length(&self) -> f64 {
+        self.inner.length
+    }
+
+    #[getter]
+    fn aabb(&self) -> Aabb2 {
+        Aabb2::from_inner(self.inner.aabb())
     }
 }
 
@@ -574,8 +613,8 @@ impl Arc2 {
             self.inner.center().x,
             self.inner.center().y,
             self.inner.radius(),
-            self.inner.angle0,
-            self.inner.angle
+            self.inner.angle0(),
+            self.inner.angle(),
         )
     }
 
@@ -597,28 +636,18 @@ impl Arc2 {
     }
 
     #[getter]
-    fn x(&self) -> f64 {
-        self.inner.center().x
-    }
-
-    #[getter]
-    fn y(&self) -> f64 {
-        self.inner.center().y
-    }
-
-    #[getter]
     fn r(&self) -> f64 {
         self.inner.radius()
     }
 
     #[getter]
-    fn start(&self) -> f64 {
-        self.inner.angle0
+    fn angle0(&self) -> f64 {
+        self.inner.angle0()
     }
 
     #[getter]
-    fn sweep(&self) -> f64 {
-        self.inner.angle
+    fn angle(&self) -> f64 {
+        self.inner.angle()
     }
 
     #[getter]
@@ -627,13 +656,18 @@ impl Arc2 {
     }
 
     #[getter]
-    fn start_point(&self) -> Point2 {
-        Point2::from_inner(self.inner.start())
+    fn a(&self) -> Point2 {
+        Point2::from_inner(self.inner.a())
     }
 
     #[getter]
-    fn end_point(&self) -> Point2 {
-        Point2::from_inner(self.inner.end())
+    fn b(&self) -> Point2 {
+        Point2::from_inner(self.inner.b())
+    }
+
+    #[getter]
+    fn circle(&self) -> Circle2 {
+        Circle2::from_inner(self.inner.circle())
     }
 }
 

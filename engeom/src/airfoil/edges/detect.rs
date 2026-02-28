@@ -1,14 +1,7 @@
-use crate::AngleDir::Ccw;
-use crate::airfoil::helpers::{
-    OrientedCircles, extract_curve_beyond_station, extract_edge_sub_curve,
-    inscribed_from_spanning_ray, refine_stations,
-};
-use crate::airfoil::{AirfoilEdge, EdgeGeometry, EdgeLocate, InscribedCircle, OpenIntersectGap};
-use crate::common::points::{dist, mid_point};
-use crate::common::{BestFit, linear_space};
-use crate::geom2::{Ray2, Segment2, rot90};
-use crate::{Circle2, Curve2, Result};
-use parry2d_f64::query::Ray;
+use crate::airfoil::edges::rounded_square::best_fit_rounded_square;
+use crate::airfoil::helpers::{OrientedCircles, extract_curve_beyond_station};
+use crate::airfoil::{AirfoilEdge, EdgeLocate, InscribedCircle, OpenIntersectGap};
+use crate::{Curve2, Result};
 
 /// This struct implements the `EdgeLocation` trait and attempts to locate the edge of the airfoil
 /// using a sequence of simple detection methods.  It will check for an open edge, a sharp corner,
@@ -38,7 +31,7 @@ impl EdgeLocate for EdgeAutoDetect {
         front: bool,
         af_tol: f64,
     ) -> Result<(Option<AirfoilEdge>, Vec<InscribedCircle>)> {
-        let mut working_stations = OrientedCircles::new(stations, front);
+        let working_stations = OrientedCircles::new(stations, front);
 
         let station = working_stations
             .last()
@@ -48,7 +41,7 @@ impl EdgeLocate for EdgeAutoDetect {
         // ----------------------------------------------------------------------------------------
         // Check if we get an intersection at the end. If not, this is probably an open edge, and
         // we should return an open intersection edge
-        let Ok(te_intersect) = working_stations.intersect_from_end(&section) else {
+        let Ok(te_intersect) = working_stations.intersect_from_end(section) else {
             let open = OpenIntersectGap::new(10);
             return open.find_edge(section, working_stations.take_circles(), front, af_tol);
         };
@@ -86,8 +79,15 @@ impl EdgeLocate for EdgeAutoDetect {
 
         // Rounded square edge detection
         // ----------------------------------------------------------------------------------------
+        if let Ok((arc0, arc1, max_resid)) = best_fit_rounded_square(&edge_curve, &te_intersect)
+        {
+            if max_resid < self.tol {
+                let edge = AirfoilEdge::rounded_square(te_intersect, arc0, arc1);
+                return Ok((Some(edge), working_stations.take_circles()));
+            }
+        }
 
-        todo!()
+        todo!("Implement full radius edge detection.");
     }
 }
 

@@ -93,9 +93,6 @@ pub fn point_stability_reduce(
             for p in passed.iter_mut() {
                 p.remove(idx);
             }
-            // for j in 0..6 {
-            //     passed[j].remove(idx);
-            // }
         }
     }
 

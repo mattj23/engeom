@@ -1,6 +1,6 @@
-use crate::common::points::dist;
+use crate::common::PCoords;
 use crate::geom2::Ray2;
-use crate::{Iso2, Point2, Result, TransformBy, UnitVec2, Vector2};
+use crate::{Iso2, Point2, Vector2};
 use parry2d_f64::query::Ray;
 
 /// Compute the intersection parameters between two parameterized lines. Will return None if
@@ -22,6 +22,10 @@ pub fn intersection_param(
     Some(((dy * bd.x - dx * bd.y) / det, (dy * ad.x - dx * ad.y) / det))
 }
 
+pub fn intersect_lines(a: &impl Line2, b: &impl Line2) -> Option<(f64, f64)> {
+    intersection_param(&a.origin(), &a.dir(), &b.origin(), &b.dir())
+}
+
 pub fn intersect_rays(r0: &Ray, r1: &Ray) -> Option<(f64, f64)> {
     intersection_param(&r0.origin, &r0.dir, &r1.origin, &r1.dir)
 }
@@ -31,12 +35,12 @@ pub trait Line2 {
     fn dir(&self) -> Vector2;
     fn at(&self, t: f64) -> Point2;
 
-    fn projected_parameter(&self, p: &Point2) -> f64 {
-        let n = p - self.origin();
+    fn projected_parameter(&self, p: &impl PCoords<2>) -> f64 {
+        let n = p.coords() - self.origin().coords;
         self.dir().dot(&n) / self.dir().dot(&self.dir())
     }
 
-    fn projected_point(&self, p: &Point2) -> Point2 {
+    fn projected_point(&self, p: &impl PCoords<2>) -> Point2 {
         self.at(self.projected_parameter(p))
     }
 
@@ -58,92 +62,6 @@ impl Line2 for Ray2 {
 
     fn at(&self, t: f64) -> Point2 {
         self.point_at(t)
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Segment2 {
-    pub a: Point2,
-    pub b: Point2,
-}
-
-impl Segment2 {
-    pub fn try_new(a: Point2, b: Point2) -> Result<Self> {
-        if dist(&a, &b) < 1e-12 {
-            Err("The two points are too close to each other".into())
-        } else {
-            Ok(Self { a, b })
-        }
-    }
-
-    pub fn is_on(&self, p: &Point2) -> bool {
-        let ap = p - self.a;
-        let bp = p - self.b;
-        ap.dot(&bp) <= 0.0
-    }
-
-    /// Create a new segment that is shifted by distance `d` in the direction of the segment
-    /// normal vector. The normal vector is the direction vector rotated by 90 degrees clockwise,
-    /// in keeping with the general convention of a normal vector pointing outwards from a
-    /// counter-clockwise wound polyline.
-    ///
-    /// # Arguments
-    ///
-    /// * `d`: the distance to shift the segment along its normal vector
-    ///
-    /// returns: Segment2
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use approx::assert_relative_eq;
-    /// use engeom::geom2::{Point2, Segment2};
-    /// let a = Point2::new(0.0, 0.0);
-    /// let b = Point2::new(1.0, 0.0);
-    /// let s = Segment2::try_new(a, b).unwrap();
-    ///
-    /// let s1 = s.offsetted(1.0);
-    ///
-    /// assert_relative_eq!(s1.a, Point2::new(0.0, -1.0), epsilon = 1.0e-6);
-    /// assert_relative_eq!(s1.b, Point2::new(1.0, -1.0), epsilon = 1.0e-6);
-    /// ```
-    pub fn offsetted(&self, d: f64) -> Self {
-        let n = UnitVec2::new_normalize(self.orthogonal());
-        Self {
-            a: self.a + n.into_inner() * d,
-            b: self.b + n.into_inner() * d,
-        }
-    }
-
-    /// Create a new segment with the points reversed
-    pub fn reversed(&self) -> Self {
-        Self {
-            a: self.b,
-            b: self.a,
-        }
-    }
-}
-
-impl TransformBy<Iso2, Segment2> for Segment2 {
-    fn transform_by(&self, t: &Iso2) -> Self {
-        Self {
-            a: t.transform_point(&self.a),
-            b: t.transform_point(&self.b),
-        }
-    }
-}
-
-impl Line2 for Segment2 {
-    fn origin(&self) -> Point2 {
-        self.a
-    }
-
-    fn dir(&self) -> Vector2 {
-        self.b - self.a
-    }
-
-    fn at(&self, t: f64) -> Point2 {
-        self.a + self.dir() * t
     }
 }
 

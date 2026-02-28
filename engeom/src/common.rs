@@ -19,10 +19,7 @@ mod voxel_downsample;
 
 use crate::na::{Point, SVector};
 pub use align::DistMode;
-pub use angles::{
-    AngleDir, AngleInterval, angle_in_direction, angle_signed_pi, angle_to_2pi,
-    signed_compliment_2pi,
-};
+pub use angles::*;
 pub use convert_2d_3d::{To2D, To3D};
 pub use discrete_domain::{DiscreteDomain, linear_space};
 pub use domain_map::DomainMap;

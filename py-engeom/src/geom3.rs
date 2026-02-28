@@ -1,6 +1,8 @@
 use crate::common::Resample;
 use crate::conversions::{array_to_points3, array_to_vectors3, points_to_array, vectors_to_array};
+use crate::geom2::{Point2, Vector2, SurfacePoint2};
 use engeom::geom3::IsoExtensions3;
+use engeom::common::To2D;
 use numpy::ndarray::{Array1, Array2};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray2, PyUntypedArrayMethods};
 use parry3d_f64::na::{Quaternion, Translation3, UnitQuaternion};
@@ -157,6 +159,10 @@ impl Vector3 {
             inner: engeom::Vector3::new(self.inner.x, y, self.inner.z),
         }
     }
+
+    fn to_2d(&self) -> Vector2 {
+        Vector2::from_inner(self.inner.to_2d())
+    }
 }
 
 // ================================================================================================
@@ -292,6 +298,10 @@ impl Point3 {
             inner: engeom::Point3::new(self.inner.x, self.inner.y, z),
         }
     }
+
+    fn to_2d(&self) -> Point2 {
+        Point2::from_inner(self.inner.to_2d())
+    }
 }
 
 // ================================================================================================
@@ -406,6 +416,10 @@ impl SurfacePoint3 {
     fn shift(&self, offset: f64) -> Self {
         Self::from_inner(self.inner.shift(offset))
     }
+
+    fn to_2d(&self) -> SurfacePoint2 {
+        SurfacePoint2::from_inner(self.inner.to_2d())
+    }
 }
 
 // ================================================================================================
@@ -461,6 +475,31 @@ impl Plane3 {
 
     fn intersection_distance(&self, sp: &SurfacePoint3) -> Option<f64> {
         self.inner.intersection_distance(sp.get_inner())
+    }
+
+    #[getter]
+    fn a(&self) -> f64 {
+        self.inner.normal.x
+    }
+
+    #[getter]
+    fn b(&self) -> f64 {
+        self.inner.normal.y
+    }
+
+    #[getter]
+    fn c(&self) -> f64 {
+        self.inner.normal.z
+    }
+
+    #[getter]
+    fn d(&self) -> f64 {
+        self.inner.d
+    }
+
+    #[getter]
+    fn normal(&self) -> Vector3 {
+        Vector3::from_inner(self.inner.normal.into_inner())
     }
 }
 

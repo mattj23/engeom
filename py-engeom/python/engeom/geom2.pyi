@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Iterable, Tuple, TypeVar, Iterator, Any
+from typing import Iterable, Tuple, TypeVar, Iterator, Any, List
 
 from numpy.typing import NDArray
 from engeom.engeom import ResampleEnum
@@ -968,7 +968,6 @@ class Curve2:
         ...
 
 
-
 class Circle2:
     """
     A class representing a circle in 2D space. The circle is defined by a center point and a radius.
@@ -1068,6 +1067,112 @@ class Circle2:
         """
         ...
 
+    def project_point_to_perimeter(self, point: Point2) -> Point2:
+        """
+        Project a point onto the perimeter of the circle.
+
+        :param point: the point to project.
+        :return: the projected point on the perimeter of the circle.
+        """
+        ...
+
+    def angle_of_point(self, point: Point2) -> float:
+        """
+        Get the angle of a point on the perimeter of the circle, measured in radians from the positive x-axis, and
+        where a positive angle is a counter-clockwise rotation.
+
+        :param point: the point on the perimeter of the circle.
+        :return: the angle in radians of the point on the perimeter of the circle.
+        """
+        ...
+
+    def intersections_with(self, other: Circle2) -> List[Point2]:
+        """
+        Get the intersection points between this circle and another circle.
+
+        :param other: the other circle to intersect with.
+        :return: a list of intersection points. The list will contain 0, 1, or 2 points depending on the number of
+        intersections.
+        """
+        ...
+
+    def distance_to(self, point: Point2) -> float:
+        """
+        Get the distance from a point to the perimeter of the circle.
+
+        :param point: the point to measure the distance from.
+        :return: the distance from the point to the perimeter of the circle. The distance will be negative if the
+        point is inside the circle.
+        """
+        ...
+
+    def tangent_points_to(self, point: Point2) -> List[Point2]:
+        """
+        Get the tangent points on the circle from a given point outside the circle.
+
+        :param point: the point outside the circle.
+        :return: a list of tangent points on the circle. The list will contain 0, 1, or 2 points depending on the
+        position of the point relative to the circle.
+        """
+        ...
+
+
+class Segment2:
+    """
+    A class representing a line segment in 2D space. The segment is defined by two endpoints.
+    """
+
+    def __init__(self, x0: float, y0: float, x1: float, y1: float):
+        """
+        Create a line segment from two endpoints.
+        :param x0: the x-coordinate of the first endpoint.
+        :param y0: the y-coordinate of the first endpoint.
+        :param x1: the x-coordinate of the second endpoint.
+        :param y1: the y-coordinate of the second endpoint.
+        """
+        ...
+
+    @property
+    def a(self) -> Point2:
+        """
+        Get the first endpoint of the segment.
+        :return: the first endpoint of the segment.
+        """
+        ...
+
+    @property
+    def b(self) -> Point2:
+        """
+        Get the second endpoint of the segment.
+        :return: the second endpoint of the segment.
+        """
+        ...
+
+    @property
+    def length(self) -> float:
+        """
+        Get the length of the segment.
+        :return: the length of the segment.
+        """
+        ...
+
+    @property
+    def direction(self) -> Vector2:
+        """
+        Get the direction vector of the segment, which is a unit vector pointing from the first endpoint to the second
+        endpoint.
+        :return: the direction vector of the segment.
+        """
+        ...
+
+    @property
+    def aabb(self) -> Aabb2:
+        """
+        Get the axis-aligned bounding box of the segment.
+        :return: the axis-aligned bounding box of the segment.
+        """
+        ...
+
 
 class Arc2:
     """
@@ -1105,22 +1210,6 @@ class Arc2:
         ...
 
     @property
-    def x(self) -> float:
-        """
-        Get the x-coordinate of the center of the arc.
-        :return: the x-coordinate of the arc center.
-        """
-        ...
-
-    @property
-    def y(self) -> float:
-        """
-        Get the y-coordinate of the center of the arc.
-        :return: the y-coordinate of the arc center
-        """
-        ...
-
-    @property
     def r(self) -> float:
         """
         Get the radius of the arc
@@ -1129,7 +1218,7 @@ class Arc2:
         ...
 
     @property
-    def start(self) -> float:
+    def angle0(self) -> float:
         """
         Get the start angle of the arc, in radians.
         :return: the start angle of the arc in radians.
@@ -1137,7 +1226,7 @@ class Arc2:
         ...
 
     @property
-    def sweep(self) -> float:
+    def angle(self) -> float:
         """
         Get the sweep angle of the arc, in radians.
         :return: the sweep angle of the arc in radians.
@@ -1153,7 +1242,7 @@ class Arc2:
         ...
 
     @property
-    def start_point(self) -> Point2:
+    def a(self) -> Point2:
         """
         Get the start point of the arc.
         :return: the start point of the arc.
@@ -1161,10 +1250,18 @@ class Arc2:
         ...
 
     @property
-    def end_point(self) -> Point2:
+    def b(self) -> Point2:
         """
         Get the end point of the arc.
         :return: the end point of the arc.
+        """
+        ...
+
+    @property
+    def circle(self) -> Circle2:
+        """
+        Get the circle that has the segment as its diameter.
+        :return: the circle that has the segment as its diameter.
         """
         ...
 

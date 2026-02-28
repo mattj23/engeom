@@ -1,13 +1,12 @@
-use crate::AngleDir::{Ccw, Cw};
-use crate::AngleInterval;
-use crate::Result;
 use crate::common::points::dist;
-use crate::common::{BestFit, Intersection, signed_compliment_2pi};
-use crate::geom2::aabb2::{arc_aabb2, circle_aabb2};
-use crate::geom2::line2::Segment2;
-use crate::geom2::{Aabb2, HasBounds2, Iso2, Line2, Point2, Vector2, directed_angle, signed_angle};
+use crate::common::{BestFit, Intersection, PCoords, signed_compliment_2pi};
+use crate::geom2::aabb2::circle_aabb2;
+use crate::geom2::line2::intersect_lines;
+use crate::geom2::{Aabb2, HasBounds2, Iso2, Line2, Point2, Segment2, Vector2, signed_angle};
 use crate::geom3::Vector3;
 use crate::stats::{compute_mean, compute_st_dev};
+use crate::{AngleInterval, SurfacePoint2};
+use crate::{Arc2, Result};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use parry2d_f64::na::{Dyn, Matrix, Owned, U1, U3, Vector};
 use parry2d_f64::shape::Ball;
@@ -23,6 +22,10 @@ pub struct Circle2 {
     pub ball: Ball,
     aabb: Aabb2,
 }
+
+//=============================================================================================
+// Creation Methods
+//=============================================================================================
 
 impl Circle2 {
     /// Create a new circle from the x and y coordinates of its center and its radius
@@ -233,6 +236,88 @@ impl Circle2 {
         }
     }
 
+    /// Creates a circle at the tangent of a corner.  The corner is defined by a corner point and
+    /// two direction vectors which define the directions of the two lines which meet at the corner.
+    /// The radius argument specifies the radius of the tangent circle.  The circle is created by
+    /// finding the bisector of the angle formed by the two lines, and then offsetting each line
+    /// by the radius in the positive direction of the bisector. The intersection of the two offset
+    /// lines is the center of the tangent circle.
+    ///
+    /// This method will return an error if the two direction vectors are collinear (i.e. the angle
+    /// between them is zero or 180 degrees), as in that case a unique tangent circle cannot be
+    /// defined.
+    ///
+    /// This construction method is similar to putting a fillet on the corner formed by the two
+    /// lines.
+    ///
+    /// # Arguments
+    ///
+    /// * `corner`: the corner point where the two lines meet
+    /// * `d0`: the direction vector of the first line
+    /// * `d1`: the direction vector of the second line
+    /// * `radius`: the radius of the tangent circle
+    ///
+    /// returns: Result<Circle2, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::{Circle2, Point2, Vector2};
+    /// use approx::assert_relative_eq;
+    /// let corner = Point2::new(1.0, 1.0);
+    /// let d0 = Vector2::new(1.0, 0.0); // Horizontal line to the right
+    /// let d1 = Vector2::new(0.0, 1.0); // Vertical line upwards
+    /// let radius = 1.0;
+    ///
+    /// let circle = Circle2::tangent_to_corner(&corner, &d0, &d1, radius).unwrap();
+    /// assert_relative_eq!(circle.x(), 2.0);
+    /// assert_relative_eq!(circle.y(), 2.0);
+    /// assert_relative_eq!(circle.r(), radius);
+    /// ```
+    pub fn tangent_to_corner(
+        corner: &impl PCoords<2>,
+        d0: &Vector2,
+        d1: &Vector2,
+        radius: f64,
+    ) -> Result<Circle2> {
+        // Compute the angle from the direction of line a to the direction of line b
+        let angle = signed_angle(d0, d1);
+
+        // Figure out the bisector direction
+        let bisector = Iso2::rotation(angle / 2.0) * d0.normalize();
+
+        let a = SurfacePoint2::new_normalize(Point2::from(corner.coords()), *d0);
+        let b = SurfacePoint2::new_normalize(Point2::from(corner.coords()), *d1);
+
+        let da = if bisector.dot(&a.orthogonal()) > 0.0 {
+            radius
+        } else {
+            -radius
+        };
+        let db = if bisector.dot(&b.orthogonal()) > 0.0 {
+            radius
+        } else {
+            -radius
+        };
+
+        let a1 = a.shift_orthogonal(da);
+        let b1 = b.shift_orthogonal(db);
+
+        let ts = intersect_lines(&a1, &b1);
+        if let Some((t_a, _t_b)) = ts {
+            let center = a1.at(t_a);
+            Ok(Circle2::from_point(center, radius))
+        } else {
+            Err("Failed to compute tangent circle from lines".into())
+        }
+    }
+}
+
+//=============================================================================================
+// Operational Methods
+//=============================================================================================
+
+impl Circle2 {
     /// Returns the x coordinate of the circle's center
     pub fn x(&self) -> f64 {
         self.center.x
@@ -322,8 +407,8 @@ impl Circle2 {
     ///
     /// assert_relative_eq!(a, FRAC_PI_2);
     /// ```
-    pub fn angle_of_point(&self, point: &Point2) -> f64 {
-        let v = point - self.center;
+    pub fn angle_of_point(&self, point: &impl PCoords<2>) -> f64 {
+        let v = point.coords() - self.center.coords;
         v.y.atan2(v.x)
     }
 
@@ -393,12 +478,7 @@ impl Circle2 {
 
     /// Create a full arc of the circle, starting at zero and extending for 2π radians.
     pub fn to_arc(&self) -> Arc2 {
-        Arc2 {
-            circle: *self,
-            angle0: 0.0,
-            angle: 2.0 * std::f64::consts::PI,
-            aabb: self.aabb,
-        }
+        Arc2::new(*self, 0.0, 2.0 * std::f64::consts::PI)
     }
 
     /// Create a partial arc of the circle, starting at `angle0` and extending for `angle` radians.
@@ -416,13 +496,7 @@ impl Circle2 {
     ///
     /// ```
     pub fn to_partial_arc(&self, angle0: f64, angle: f64) -> Arc2 {
-        let aabb = arc_aabb2(self, angle0, angle);
-        Arc2 {
-            circle: *self,
-            angle0,
-            angle,
-            aabb,
-        }
+        Arc2::new(*self, angle0, angle)
     }
 
     /// Computes the distance from the test point to the outer perimeter of the circle. If the
@@ -479,24 +553,21 @@ impl Circle2 {
     /// assert_relative_eq!(p1, Point2::new(0.0, -1.0));
     /// ```
     pub fn tangent_points_to(&self, point: &Point2) -> Option<(Point2, Point2)> {
-        let d = dist(&self.center, point);
+        let dv = point - self.center;
+        let d = dv.norm();
         if d <= self.ball.radius {
             return None;
         }
 
         let angle = f64::asin(self.ball.radius / d);
-        let theta = f64::atan2(point.y - self.center.y, point.x - self.center.x);
+        let d1 = self.r() * f64::sin(angle);
+        let e0 = self.r() * f64::cos(angle);
 
-        let p0 = Point2::new(
-            self.center.x + self.ball.radius * f64::cos(theta - angle),
-            self.center.y + self.ball.radius * f64::sin(theta - angle),
-        );
+        let d_vec = SurfacePoint2::new_normalize(self.center, dv);
+        let e = d_vec.orthogonal();
 
-        let p1 = Point2::new(
-            self.center.x + self.ball.radius * f64::cos(theta + angle),
-            self.center.y + self.ball.radius * f64::sin(theta + angle),
-        );
-
+        let p0 = d_vec.at_distance(d1) + e * e0;
+        let p1 = d_vec.at_distance(d1) + e * -e0;
         Some((p0, p1))
     }
 
@@ -531,7 +602,7 @@ impl Circle2 {
         } else if (self.ball.radius - other.ball.radius).abs() < 1.0e-10 {
             // If the circles have the same radius, the outer tangent method must be computed
             // by a simpler, special case
-            let s = Segment2::try_new(self.center, other.center).unwrap();
+            let s = Segment2::try_new(&self.center, &other.center).unwrap();
             Some((
                 s.offsetted(self.ball.radius),
                 s.offsetted(-self.ball.radius),
@@ -552,8 +623,8 @@ impl Circle2 {
             let proxy = Circle2::new(other.x(), other.y(), other.r() - self.r());
             // p0 is in the negative half space and p1 is in the positive half space
             let (p0, p1) = proxy.tangent_points_to(&self.center).unwrap();
-            let s0 = Segment2::try_new(self.center, p0).unwrap();
-            let s1 = Segment2::try_new(self.center, p1).unwrap();
+            let s0 = Segment2::try_new(&self.center, &p0).unwrap();
+            let s1 = Segment2::try_new(&self.center, &p1).unwrap();
 
             Some((s0.offsetted(-self.r()), s1.offsetted(self.r())))
         }
@@ -583,7 +654,7 @@ impl HasBounds2 for Circle2 {
 /// ```
 ///
 /// ```
-pub fn intersection_line_circle(line: &dyn Line2, circle: &Circle2) -> Vec<f64> {
+pub fn intersection_line_circle(line: &impl Line2, circle: &Circle2) -> Vec<f64> {
     // Get the parameter of the circle center onto the line
     let tc = line.projected_parameter(&circle.center);
 
@@ -624,156 +695,6 @@ impl Intersection<&Segment2, Vec<Point2>> for Circle2 {
                 }
             })
             .collect()
-    }
-}
-
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
-pub struct Arc2 {
-    pub circle: Circle2,
-    pub angle0: f64,
-    pub angle: f64,
-    aabb: Aabb2,
-}
-
-impl Arc2 {
-    /// Create an arc from a center point, a radius, starting at `angle0` and extending for
-    /// `angle` radians.
-    ///
-    /// # Arguments
-    ///
-    /// * `center`: The arc center point
-    /// * `radius`: The arc radius
-    /// * `angle0`: The angle in radians (with respect to the x-axis) at which the arc starts
-    /// * `angle`: The angle in radians which the arc sweeps through, beginning at `angle0`. A
-    ///   positive value indicates a counter-clockwise sweep, while a negative value indicates a
-    ///   clockwise sweep.
-    ///
-    /// returns: Arc2
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
-    pub fn circle_angles(center: Point2, radius: f64, angle0: f64, angle: f64) -> Self {
-        let circle = Circle2::from_point(center, radius);
-        let aabb = arc_aabb2(&circle, angle0, angle);
-        Self {
-            circle,
-            angle0,
-            angle,
-            aabb,
-        }
-    }
-
-    /// Create an arc from a center point, a radius, a point on the perimeter, and an included
-    /// angle starting at the point.
-    ///
-    /// # Arguments
-    ///
-    /// * `center`: The arc center point
-    /// * `radius`: The arc radius
-    /// * `point`: A point on the perimeter of the arc at which the arc starting point should be
-    ///   located
-    /// * `angle`: The angle in radians which the arc sweeps through, beginning at the point. A
-    ///   positive value indicates a counter-clockwise sweep, while a negative value indicates a
-    ///   clockwise sweep.
-    ///
-    /// returns: Arc2
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
-    pub fn circle_point_angle(center: Point2, radius: f64, point: Point2, angle: f64) -> Self {
-        let circle = Circle2::from_point(center, radius);
-        let angle0 = circle.angle_of_point(&point);
-        let aabb = arc_aabb2(&circle, angle0, angle);
-        Self {
-            circle,
-            angle0,
-            angle,
-            aabb,
-        }
-    }
-
-    /// Create an arc from three points. The arc will begin at the first point, pass through the
-    /// second point, and end at the third point.
-    ///
-    /// # Arguments
-    ///
-    /// * `p0`: The starting point of the arc
-    /// * `p1`: A point on the arc, between the start and end points
-    /// * `p2`: The ending point of the arc
-    ///
-    /// returns: Arc2
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
-    pub fn three_points(p0: Point2, p1: Point2, p2: Point2) -> Self {
-        let circle = Circle2::from_3_points(&p0, &p1, &p2).unwrap();
-        let angle0 = circle.angle_of_point(&p0);
-        let v0 = p0 - circle.center;
-        let v2 = p2 - circle.center;
-
-        let det = (p1.x - p0.x) * (p1.y + p0.y)
-            + (p2.x - p1.x) * (p2.y + p1.y)
-            + (p0.x - p2.x) * (p0.y + p2.y);
-        let angle = if det < 0.0 {
-            directed_angle(&v0, &v2, Ccw)
-        } else {
-            -directed_angle(&v0, &v2, Cw)
-        };
-
-        let aabb = arc_aabb2(&circle, angle0, angle);
-        Self {
-            circle,
-            angle0,
-            angle,
-            aabb,
-        }
-    }
-
-    pub fn length(&self) -> f64 {
-        self.circle.ball.radius * self.angle.abs()
-    }
-
-    pub fn center(&self) -> Point2 {
-        self.circle.center
-    }
-
-    pub fn radius(&self) -> f64 {
-        self.circle.ball.radius
-    }
-
-    pub fn point_at_angle(&self, angle: f64) -> Point2 {
-        self.circle.point_at_angle(self.angle0 + angle)
-    }
-
-    pub fn point_at_fraction(&self, fraction: f64) -> Point2 {
-        self.point_at_angle(self.angle * fraction)
-    }
-
-    pub fn point_at_length(&self, length: f64) -> Point2 {
-        self.point_at_fraction(length / self.length())
-    }
-
-    pub fn start(&self) -> Point2 {
-        self.point_at_angle(0.0)
-    }
-
-    pub fn end(&self) -> Point2 {
-        self.point_at_angle(self.angle)
-    }
-}
-
-impl HasBounds2 for Arc2 {
-    fn aabb(&self) -> &Aabb2 {
-        &self.aabb
     }
 }
 
@@ -921,13 +842,53 @@ impl LeastSquaresProblem<f64, Dyn, U3> for CircleFit<'_> {
         Some(jac)
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Arc2;
     use crate::geom2::Ray2;
     use approx::assert_relative_eq;
+    use imageproc::point::Point;
+    use rand::Rng;
     use std::f64::consts::PI;
     use test_case::test_case;
+
+    #[test]
+    fn simple_tangent_corner() {
+        let corner = Point2::new(1.0, 1.0);
+        let v0 = Vector2::new(-1.0, 0.0);
+        let v1 = Vector2::new(0.0, -1.0);
+        let circle = Circle2::tangent_to_corner(&corner, &v0, &v1, 1.0).unwrap();
+        assert_relative_eq!(circle.center, Point2::new(0.0, 0.0), epsilon = 1.0e-8);
+        assert_relative_eq!(circle.r(), 1.0, epsilon = 1.0e-8);
+    }
+
+    #[test]
+    fn stress_tangent_lines() {
+        let mut rng = rand::rng();
+
+        for _ in 0..1000 {
+            let expected = Circle2::new(
+                rng.random_range(-5.0..5.0),
+                rng.random_range(-5.0..5.0),
+                rng.random_range(0.5..2.0),
+            );
+            // let expected = Circle2::new(0.0, 0.0, 1.0);
+
+            let tr = rng.random_range(0.01..5.0) + expected.r();
+            let tv = Iso2::rotation(rng.random_range(-PI..PI)) * Vector2::new(tr, 0.0);
+            let tc = expected.center + tv;
+
+            let (p0, p1) = expected.tangent_points_to(&tc).unwrap();
+
+            let result =
+                Circle2::tangent_to_corner(&tc, &(p0 - tc), &(p1 - tc), expected.r()).unwrap();
+
+            assert_relative_eq!(expected.center, result.center, epsilon = 1.0e-8);
+            assert_relative_eq!(expected.r(), result.r(), epsilon = 1.0e-8);
+        }
+    }
 
     #[test_case((0.0, 0.0, 2.0), None)]
     #[test_case((1.0, 0.0, 1.0), Some(((0.0, -1.0, 1.0, -1.0), (0.0, 1.0, 1.0, 1.0))))]
@@ -998,37 +959,20 @@ mod tests {
     }
 
     #[test]
-    fn three_point_arc_ccw() {
-        let p0 = Point2::new(1.0, 0.0);
-        let p1 = Point2::new(0.0, 1.0);
-        let p2 = Point2::new(0.0, -1.0);
-        let arc = Arc2::three_points(p0, p1, p2);
-
-        assert_relative_eq!(Point2::origin(), arc.center());
-        assert_relative_eq!(1.0, arc.radius());
-        assert_relative_eq!(0.0, arc.angle0);
-        assert_relative_eq!(3.0 * PI / 2.0, arc.angle);
-    }
-
-    #[test]
-    fn three_point_arc_cw() {
-        let p2 = Point2::new(1.0, 0.0);
-        let p1 = Point2::new(0.0, 1.0);
-        let p0 = Point2::new(0.0, -1.0);
-        let arc = Arc2::three_points(p0, p1, p2);
-
-        assert_relative_eq!(Point2::origin(), arc.center());
-        assert_relative_eq!(1.0, arc.radius());
-        assert_relative_eq!(-PI / 2.0, arc.angle0);
-        assert_relative_eq!(-3.0 * PI / 2.0, arc.angle);
-    }
-
-    #[test]
     fn tangent_points_to_simple() {
         let c = Circle2::new(0.0, 0.0, 1.0);
         let p = Point2::new(-1.0, -1.0);
         let (p0, p1) = c.tangent_points_to(&p).unwrap();
         assert_relative_eq!(p0, Point2::new(-1.0, 0.0));
         assert_relative_eq!(p1, Point2::new(0.0, -1.0));
+    }
+
+    #[test]
+    fn tangent_points_to() {
+        let c = Circle2::new(0.5, -0.25, 1.1);
+        let p = Point2::new(-2.1, -3.0);
+        let (p0, p1) = c.tangent_points_to(&p).unwrap();
+        assert_relative_eq!(p0, Point2::new(-0.4844568895369135, 0.24075924101671814));
+        assert_relative_eq!(p1, Point2::new(1.045148109645135, -1.2054127582099456));
     }
 }

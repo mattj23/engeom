@@ -1,18 +1,23 @@
 pub mod aabb2;
 pub mod align2;
 mod angles2;
+mod arc2;
+mod boundary;
 mod circle2;
 mod curve2;
 pub mod hull;
 mod line2;
 pub mod polyline2;
+mod segment2;
 
 use crate::AngleDir;
 use crate::AngleDir::Cw;
-use crate::common::SurfacePointCollection;
 use crate::common::surface_point::SurfacePoint;
 use crate::common::svd_basis::SvdBasis;
+use crate::common::{PCoords, SurfacePointCollection};
+use crate::na::SVector;
 use parry2d_f64::na::UnitComplex;
+use serde::{Deserialize, Serialize};
 use std::ops;
 
 pub type Point2 = parry2d_f64::na::Point2<f64>;
@@ -27,9 +32,56 @@ pub type KdTree2 = crate::common::kd_tree::KdTree<2>;
 
 pub use self::aabb2::Aabb2;
 pub use self::angles2::{directed_angle, rot90, rot270, signed_angle};
-pub use self::circle2::{Arc2, Circle2};
+pub use self::arc2::Arc2;
+pub use self::boundary::BoundaryElement;
+pub use self::circle2::Circle2;
 pub use self::curve2::{Curve2, CurveStation2};
-pub use self::line2::{Line2, Segment2, intersect_rays, intersection_param};
+pub use self::line2::{Line2, intersect_rays, intersection_param, intersect_lines};
+pub use self::segment2::Segment2;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ManifoldPosition2 {
+    /// The position of the point along the manifold length
+    pub l: f64,
+
+    /// The position of the point in full 2D cartesian space
+    pub point: Point2,
+
+    /// The direction of the positive manifold length in full 2D cartesian space at the current
+    /// position. You can think of this vector as pointing in the direction of the point at
+    /// `self.l + epsilon`
+    pub direction: UnitVec2,
+
+    /// The direction of the manifold surface normal in full 2D cartesian space at the current
+    /// position. This should follow the counter-clockwise winding order convention, so for most
+    /// manifolds this will be equivalent to `self.direction` rotated clockwise by 90 degrees.
+    pub normal: UnitVec2,
+}
+
+impl ManifoldPosition2 {
+    pub fn new(t: f64, point: Point2, direction: UnitVec2, normal: UnitVec2) -> Self {
+        Self {
+            l: t,
+            point,
+            direction,
+            normal,
+        }
+    }
+
+    pub fn normal_scalar_projection(&self, other: &impl PCoords<2>) -> f64 {
+        self.normal.dot(&(other.coords() - self.point.coords))
+    }
+
+    pub fn direction_scalar_project(&self, other: &impl PCoords<2>) -> f64 {
+        self.direction.dot(&(other.coords() - self.point.coords))
+    }
+}
+
+impl PCoords<2> for ManifoldPosition2 {
+    fn coords(&self) -> SVector<f64, 2> {
+        self.point.coords
+    }
+}
 
 pub trait HasBounds2 {
     fn aabb(&self) -> &Aabb2;
@@ -68,6 +120,24 @@ impl SurfacePointCollection<2> for &Vec<SurfacePoint2> {
 
     fn clone_normals(&self) -> Vec<UnitVec2> {
         self.iter().map(|sp| sp.normal).collect()
+    }
+}
+
+impl Line2 for SurfacePoint2 {
+    fn origin(&self) -> Point2 {
+        self.point
+    }
+
+    fn dir(&self) -> Vector2 {
+        self.normal.into_inner()
+    }
+
+    fn at(&self, t: f64) -> Point2 {
+        self.at_distance(t)
+    }
+
+    fn orthogonal(&self) -> Vector2 {
+        rot90(Cw) * self.normal.into_inner()
     }
 }
 
@@ -151,10 +221,43 @@ impl SurfacePoint2 {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use approx::assert_relative_eq;
+    use rand::Rng;
     use std::f64::consts::PI;
+
+    pub struct Random2 {
+        rng: rand::rngs::ThreadRng,
+    }
+
+    impl Random2 {
+        pub fn new() -> Self {
+            Self { rng: rand::rng() }
+        }
+
+        pub fn point(&mut self, limit: f64) -> Point2 {
+            Point2::new(
+                self.rng.random_range(-limit..limit),
+                self.rng.random_range(-limit..limit),
+            )
+        }
+
+        pub fn angle_sym_pi(&mut self) -> f64 {
+            self.rng.random_range(-PI..PI)
+        }
+        pub fn angle_sym_2pi(&mut self) -> f64 {
+            self.rng.random_range(-2.0 * PI..2.0 * PI)
+        }
+
+        pub fn angle_pos_2pi(&mut self) -> f64 {
+            self.rng.random_range(0.0..2.0 * PI)
+        }
+
+        pub fn positive(&mut self, limit: f64) -> f64 {
+            self.rng.random_range(0.0..limit)
+        }
+    }
 
     #[test]
     fn iso2_only_rotates_vector() {
