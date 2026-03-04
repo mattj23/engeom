@@ -2,7 +2,7 @@
 
 use crate::airfoil::InscribedCircle;
 use crate::common::Intersection;
-use crate::common::points::dist;
+use crate::common::points::{dist, ramer_douglas_peucker};
 use crate::geom2::polyline2::SpanningRay;
 use crate::geom2::{Line2, Segment2, UnitVec2, intersection_param};
 use crate::{Circle2, Curve2, Point2, Result, SurfacePoint2};
@@ -405,22 +405,32 @@ impl OrientedCircles {
     /// two circles in the collection, an error will be returned.
     pub fn end_sp(&self) -> Result<SurfacePoint2> {
         if self.circles.len() < 2 {
-            Err(Box::from(
+            return Err(Box::from(
                 "Cannot create a curve from less than two circles",
             ))
-        } else {
-            let (p0, p1) = if self.reversed {
-                (self.circles[1].circle.center, self.circles[0].circle.center)
-            } else {
-                (
-                    self.circles[self.circles.len() - 2].circle.center,
-                    self.circles.last().unwrap().circle.center,
-                )
-            };
-
-            let d = UnitVec2::try_new(p1 - p0, 1e-12).ok_or("Failed to create direction vector")?;
-            Ok(SurfacePoint2::new(p1, d))
         }
+        // To deal with the case where the centers are too close, let's extract just the center
+        // points and use the simplification algorithm on it
+        let centers = self.circles.iter().map(|c| c.circle.center).collect::<Vec<_>>();
+        let simplified = ramer_douglas_peucker(&centers, 1e-4);
+        if simplified.len() < 2 {
+            return Err(Box::from(
+                "Failed to simplify circle centers, not enough points remaining",
+            ));
+        }
+
+        let (p0, p1) = if self.reversed {
+            (simplified[1], simplified[0])
+        } else {
+            (
+                simplified[simplified.len() - 2],
+                simplified[simplified.len() - 1],
+            )
+        };
+
+        let d = UnitVec2::try_new(p1 - p0, 1e-12)
+            .ok_or(format!("Failed to create direction vector ({} circles)", self.circles.len()))?;
+        Ok(SurfacePoint2::new(p1, d))
     }
 
     pub fn end_intersection_with_seg(&self, seg: &Segment2) -> Result<Point2> {
