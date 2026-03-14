@@ -22,7 +22,7 @@ enum Vector2OrPoint2 {
 // Vectors
 // ================================================================================================
 
-#[pyclass]
+#[pyclass(module = "engeom.geom2")]
 #[derive(Clone, Debug)]
 pub struct Vector2 {
     inner: engeom::Vector2,
@@ -45,6 +45,22 @@ impl Vector2 {
         Self {
             inner: engeom::Vector2::new(x, y),
         }
+    }
+
+    fn __getstate__(&self) -> (f64, f64) {
+        (self.inner.x, self.inner.y)
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64) {
+        (self.inner.x, self.inner.y)
+    }
+
+    fn __setstate__(&mut self, state: (f64, f64)) {
+        self.inner = engeom::Vector2::new(state.0, state.1);
+    }
+
+    fn __eq__(&self, other: &Self) -> bool {
+        self.inner == other.inner
     }
 
     #[getter]
@@ -153,7 +169,7 @@ impl Vector2 {
 // Points
 // ================================================================================================
 
-#[pyclass]
+#[pyclass(module = "engeom.geom2")]
 #[derive(Clone, Debug)]
 pub struct Point2 {
     inner: engeom::Point2,
@@ -176,6 +192,22 @@ impl Point2 {
         Self {
             inner: engeom::Point2::new(x, y),
         }
+    }
+
+    fn __getstate__(&self) -> (f64, f64) {
+        (self.inner.x, self.inner.y)
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64) {
+        (self.inner.x, self.inner.y)
+    }
+
+    fn __setstate__(&mut self, state: (f64, f64)) {
+        self.inner = engeom::Point2::new(state.0, state.1);
+    }
+
+    fn __eq__(&self, other: &Self) -> bool {
+        self.inner == other.inner
     }
 
     #[getter]
@@ -274,7 +306,7 @@ impl Point2 {
 // ================================================================================================
 // Surface Point
 // ================================================================================================
-#[pyclass]
+#[pyclass(module = "engeom.geom2")]
 #[derive(Clone, Debug)]
 pub struct SurfacePoint2 {
     pub inner: engeom::SurfacePoint2,
@@ -300,6 +332,35 @@ impl SurfacePoint2 {
                 engeom::Vector2::new(nx, ny),
             ),
         }
+    }
+
+    fn __getstate__(&self) -> (f64, f64, f64, f64) {
+        (
+            self.inner.point.x,
+            self.inner.point.y,
+            self.inner.normal.x,
+            self.inner.normal.y,
+        )
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64, f64, f64) {
+        (
+            self.inner.point.x,
+            self.inner.point.y,
+            self.inner.normal.x,
+            self.inner.normal.y,
+        )
+    }
+
+    fn __setstate__(&mut self, state: (f64, f64, f64, f64)) {
+        self.inner = engeom::SurfacePoint2::new_normalize(
+            engeom::Point2::new(state.0, state.1),
+            engeom::Vector2::new(state.2, state.3),
+        );
+    }
+
+    fn __eq__(&self, other: &Self) -> bool {
+        self.inner.point == other.inner.point && self.inner.normal == other.inner.normal
     }
 
     #[getter]
@@ -387,7 +448,7 @@ impl SurfacePoint2 {
 // ================================================================================================
 // Circle
 // ================================================================================================
-#[pyclass]
+#[pyclass(module = "engeom.geom2")]
 #[derive(Clone, Debug)]
 pub struct Circle2 {
     inner: engeom::Circle2,
@@ -410,6 +471,22 @@ impl Circle2 {
         Self {
             inner: engeom::Circle2::new(x, y, r),
         }
+    }
+
+    fn __getstate__(&self) -> (f64, f64, f64) {
+        (self.inner.center.x, self.inner.center.y, self.inner.r())
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64, f64) {
+        (self.inner.center.x, self.inner.center.y, self.inner.r())
+    }
+
+    fn __setstate__(&mut self, state: (f64, f64, f64)) {
+        self.inner = engeom::Circle2::new(state.0, state.1, state.2);
+    }
+
+    fn __eq__(&self, other: &Self) -> bool {
+        self.inner.center == other.inner.center && self.inner.r() == other.inner.r()
     }
 
     #[getter]
@@ -525,7 +602,7 @@ impl Circle2 {
 // Segment
 // ================================================================================================
 
-#[pyclass]
+#[pyclass(module = "engeom.geom2")]
 #[derive(Clone, Debug)]
 pub struct Segment2 {
     inner: engeom::geom2::Segment2,
@@ -551,6 +628,35 @@ impl Segment2 {
             inner: engeom::geom2::Segment2::try_new(&p0, &p1)
                 .map_err(|e| PyValueError::new_err(e.to_string()))?,
         })
+    }
+
+    fn __getstate__(&self) -> (f64, f64, f64, f64) {
+        (
+            self.inner.a.x,
+            self.inner.a.y,
+            self.inner.b.x,
+            self.inner.b.y,
+        )
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64, f64, f64) {
+        (
+            self.inner.a.x,
+            self.inner.a.y,
+            self.inner.b.x,
+            self.inner.b.y,
+        )
+    }
+
+    fn __setstate__(&mut self, state: (f64, f64, f64, f64)) {
+        let p0 = engeom::Point2::new(state.0, state.1);
+        let p1 = engeom::Point2::new(state.2, state.3);
+        self.inner = engeom::geom2::Segment2::try_new(&p0, &p1)
+            .expect("Invalid segment points in __setstate__");
+    }
+
+    fn __eq__(&self, other: &Self) -> bool {
+        self.inner.a == other.inner.a && self.inner.b == other.inner.b
     }
 
     fn __repr__(&self) -> String {
@@ -589,7 +695,7 @@ impl Segment2 {
 // ================================================================================================
 // Arc
 // ================================================================================================
-#[pyclass]
+#[pyclass(module = "engeom.geom2")]
 #[derive(Clone, Debug)]
 pub struct Arc2 {
     inner: engeom::Arc2,
@@ -616,6 +722,42 @@ impl Arc2 {
             self.inner.angle0(),
             self.inner.angle(),
         )
+    }
+
+    fn __getstate__(&self) -> (f64, f64, f64, f64, f64) {
+        (
+            self.inner.center().x,
+            self.inner.center().y,
+            self.inner.radius(),
+            self.inner.angle0(),
+            self.inner.angle(),
+        )
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64, f64, f64, f64) {
+        (
+            self.inner.center().x,
+            self.inner.center().y,
+            self.inner.radius(),
+            self.inner.angle0(),
+            self.inner.angle(),
+        )
+    }
+
+    fn __setstate__(&mut self, state: (f64, f64, f64, f64, f64)) {
+        self.inner = engeom::Arc2::circle_angles(
+            engeom::Point2::new(state.0, state.1),
+            state.2,
+            state.3,
+            state.4,
+        );
+    }
+
+    fn __eq__(&self, other: &Self) -> bool {
+        self.inner.center() == other.inner.center()
+            && self.inner.radius() == other.inner.radius()
+            && self.inner.angle0() == other.inner.angle0()
+            && self.inner.angle() == other.inner.angle()
     }
 
     #[new]
