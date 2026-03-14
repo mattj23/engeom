@@ -1,16 +1,16 @@
 use crate::common::Resample;
 use crate::conversions::{array_to_points3, array_to_vectors3, points_to_array, vectors_to_array};
-use crate::geom2::{Point2, Vector2, SurfacePoint2};
-use engeom::geom3::IsoExtensions3;
+use crate::geom2::{Point2, SurfacePoint2, Vector2};
 use engeom::common::To2D;
+use engeom::geom3::IsoExtensions3;
 use numpy::ndarray::{Array1, Array2};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray2, PyUntypedArrayMethods};
 use parry3d_f64::na::{Quaternion, Translation3, UnitQuaternion};
 use pyo3::exceptions::PyValueError;
 use pyo3::types::PyIterator;
 use pyo3::{
-    Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyResult, Python, pyclass,
-    pymethods,
+    pyclass, pymethods, Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyResult,
+    Python,
 };
 
 #[derive(FromPyObject)]
@@ -23,7 +23,7 @@ enum Vector3OrPoint3 {
 // Vectors
 // ================================================================================================
 
-#[pyclass]
+#[pyclass(module="engeom.geom3")]
 #[derive(Clone, Debug)]
 pub struct Vector3 {
     inner: engeom::Vector3,
@@ -46,6 +46,22 @@ impl Vector3 {
         Self {
             inner: engeom::Vector3::new(x, y, z),
         }
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64, f64) {
+        (self.inner.x, self.inner.y, self.inner.z)
+    }
+
+    fn __getstate__(&self) -> (f64, f64, f64) {
+        (self.inner.x, self.inner.y, self.inner.z)
+    }
+
+    fn __setstate__(&mut self, state: (f64, f64, f64)) {
+        self.inner = engeom::Vector3::new(state.0, state.1, state.2);
+    }
+
+    fn __eq__(&self, other: &Vector3) -> bool {
+        self.inner == other.inner
     }
 
     #[getter]
