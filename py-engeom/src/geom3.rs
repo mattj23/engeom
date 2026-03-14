@@ -1,8 +1,8 @@
 use crate::common::Resample;
 use crate::conversions::{array_to_points3, array_to_vectors3, points_to_array, vectors_to_array};
-use crate::geom2::{Point2, Vector2, SurfacePoint2};
-use engeom::geom3::IsoExtensions3;
+use crate::geom2::{Point2, SurfacePoint2, Vector2};
 use engeom::common::To2D;
+use engeom::geom3::IsoExtensions3;
 use numpy::ndarray::{Array1, Array2};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray2, PyUntypedArrayMethods};
 use parry3d_f64::na::{Quaternion, Translation3, UnitQuaternion};
@@ -23,7 +23,7 @@ enum Vector3OrPoint3 {
 // Vectors
 // ================================================================================================
 
-#[pyclass]
+#[pyclass(module = "engeom.geom3")]
 #[derive(Clone, Debug)]
 pub struct Vector3 {
     inner: engeom::Vector3,
@@ -46,6 +46,22 @@ impl Vector3 {
         Self {
             inner: engeom::Vector3::new(x, y, z),
         }
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64, f64) {
+        (self.inner.x, self.inner.y, self.inner.z)
+    }
+
+    fn __getstate__(&self) -> (f64, f64, f64) {
+        (self.inner.x, self.inner.y, self.inner.z)
+    }
+
+    fn __setstate__(&mut self, state: (f64, f64, f64)) {
+        self.inner = engeom::Vector3::new(state.0, state.1, state.2);
+    }
+
+    fn __eq__(&self, other: &Vector3) -> bool {
+        self.inner == other.inner
     }
 
     #[getter]
@@ -169,7 +185,7 @@ impl Vector3 {
 // Points
 // ================================================================================================
 
-#[pyclass]
+#[pyclass(module = "engeom.geom3")]
 #[derive(Clone, Debug)]
 pub struct Point3 {
     inner: engeom::Point3,
@@ -192,6 +208,22 @@ impl Point3 {
         Self {
             inner: engeom::Point3::new(x, y, z),
         }
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64, f64) {
+        (self.inner.x, self.inner.y, self.inner.z)
+    }
+
+    fn __getstate__(&self) -> (f64, f64, f64) {
+        (self.inner.x, self.inner.y, self.inner.z)
+    }
+
+    fn __setstate__(&mut self, state: (f64, f64, f64)) {
+        self.inner = engeom::Point3::new(state.0, state.1, state.2);
+    }
+
+    fn __eq__(&self, other: &Point3) -> bool {
+        self.inner == other.inner
     }
 
     #[getter]
@@ -307,7 +339,7 @@ impl Point3 {
 // ================================================================================================
 // Surface Point
 // ================================================================================================
-#[pyclass]
+#[pyclass(module = "engeom.geom3")]
 #[derive(Clone, Debug)]
 pub struct SurfacePoint3 {
     pub inner: engeom::SurfacePoint3,
@@ -333,6 +365,38 @@ impl SurfacePoint3 {
                 engeom::Vector3::new(nx, ny, nz),
             ),
         }
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64, f64, f64, f64, f64) {
+        (
+            self.inner.point.x,
+            self.inner.point.y,
+            self.inner.point.z,
+            self.inner.normal.x,
+            self.inner.normal.y,
+            self.inner.normal.z,
+        )
+    }
+
+    fn __getstate__(&self) -> (f64, f64, f64, f64, f64, f64) {
+        (
+            self.inner.point.x,
+            self.inner.point.y,
+            self.inner.point.z,
+            self.inner.normal.x,
+            self.inner.normal.y,
+            self.inner.normal.z,
+        )
+    }
+
+    fn __setstate__(&mut self, state: (f64, f64, f64, f64, f64, f64)) {
+        let p = engeom::Point3::new(state.0, state.1, state.2);
+        let v = engeom::Vector3::new(state.3, state.4, state.5);
+        self.inner = engeom::SurfacePoint3::new_normalize(p, v);
+    }
+
+    fn __eq__(&self, other: &SurfacePoint3) -> bool {
+        self.inner.point == other.inner.point && self.inner.normal == other.inner.normal
     }
 
     #[getter]
@@ -425,7 +489,7 @@ impl SurfacePoint3 {
 // ================================================================================================
 // Plane
 // ================================================================================================
-#[pyclass]
+#[pyclass(module = "engeom.geom3")]
 #[derive(Clone, Debug)]
 pub struct Plane3 {
     pub inner: engeom::Plane3,
@@ -459,6 +523,37 @@ impl Plane3 {
             "Plane3({}, {}, {}, {})",
             self.inner.normal.x, self.inner.normal.y, self.inner.normal.z, self.inner.d
         )
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64, f64, f64) {
+        (
+            self.inner.normal.x,
+            self.inner.normal.y,
+            self.inner.normal.z,
+            self.inner.d,
+        )
+    }
+
+    fn __getstate__(&self) -> (f64, f64, f64, f64) {
+        (
+            self.inner.normal.x,
+            self.inner.normal.y,
+            self.inner.normal.z,
+            self.inner.d,
+        )
+    }
+
+    fn __setstate__(&mut self, state: (f64, f64, f64, f64)) -> PyResult<()> {
+        let v = engeom::Vector3::new(state.0, state.1, state.2);
+        let normal = engeom::UnitVec3::try_new(v, 1.0e-6)
+            .ok_or_else(|| PyValueError::new_err("Invalid normal vector"))?;
+
+        self.inner = engeom::Plane3::new(normal, state.3);
+        Ok(())
+    }
+
+    fn __eq__(&self, other: &Plane3) -> bool {
+        self.inner.normal == other.inner.normal && self.inner.d == other.inner.d
     }
 
     fn inverted_normal(&self) -> Self {
@@ -689,7 +784,7 @@ impl From<engeom::CurveStation3<'_>> for CurveStation3 {
 // Transformations
 // ================================================================================================
 
-#[pyclass]
+#[pyclass(module = "engeom.geom3")]
 #[derive(Clone, Debug)]
 pub struct XyzWpr {
     inner: engeom::geom3::XyzWpr,
@@ -714,7 +809,7 @@ enum Transformable3 {
     Sp(SurfacePoint3),
 }
 
-#[pyclass]
+#[pyclass(module = "engeom.geom3")]
 #[derive(Clone, Debug)]
 pub struct Iso3 {
     inner: engeom::Iso3,
@@ -743,6 +838,10 @@ impl Iso3 {
             self.inner.rotation.k,
             self.inner.rotation.w,
         )
+    }
+
+    fn __eq__(&self, other: &Iso3) -> PyResult<bool> {
+        Ok(self.inner == other.inner)
     }
 
     #[getter]
