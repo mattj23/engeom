@@ -36,7 +36,7 @@ pub use self::arc2::Arc2;
 pub use self::boundary::BoundaryElement;
 pub use self::circle2::Circle2;
 pub use self::curve2::{Curve2, CurveStation2};
-pub use self::line2::{Line2, intersect_rays, intersection_param, intersect_lines};
+pub use self::line2::{Line2, intersect_lines, intersect_rays, intersection_param};
 pub use self::segment2::Segment2;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

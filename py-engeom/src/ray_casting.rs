@@ -6,7 +6,7 @@ use parry3d_f64::query::{Ray as PRay3, RayCast};
 use pyo3::exceptions::PyValueError;
 use pyo3::{Bound, PyResult, Python, pyclass, pymethods};
 
-#[pyclass]
+#[pyclass(from_py_object, module = "engeom.geom3")]
 #[derive(Clone)]
 pub struct RayBundle3 {
     inner: Vec<PRay3>,

@@ -407,11 +407,15 @@ impl OrientedCircles {
         if self.circles.len() < 2 {
             return Err(Box::from(
                 "Cannot create a curve from less than two circles",
-            ))
+            ));
         }
         // To deal with the case where the centers are too close, let's extract just the center
         // points and use the simplification algorithm on it
-        let centers = self.circles.iter().map(|c| c.circle.center).collect::<Vec<_>>();
+        let centers = self
+            .circles
+            .iter()
+            .map(|c| c.circle.center)
+            .collect::<Vec<_>>();
         let simplified = ramer_douglas_peucker(&centers, 1e-4);
         if simplified.len() < 2 {
             return Err(Box::from(
@@ -428,8 +432,10 @@ impl OrientedCircles {
             )
         };
 
-        let d = UnitVec2::try_new(p1 - p0, 1e-12)
-            .ok_or(format!("Failed to create direction vector ({} circles)", self.circles.len()))?;
+        let d = UnitVec2::try_new(p1 - p0, 1e-12).ok_or(format!(
+            "Failed to create direction vector ({} circles)",
+            self.circles.len()
+        ))?;
         Ok(SurfacePoint2::new(p1, d))
     }
 

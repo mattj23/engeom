@@ -5,7 +5,7 @@ use numpy::ndarray::Array1;
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::prelude::*;
 
-#[pyclass]
+#[pyclass(module = "engeom.geom2")]
 pub struct SvdBasis2 {
     inner: engeom::SvdBasis2,
 }
@@ -80,7 +80,7 @@ impl SvdBasis2 {
     }
 }
 
-#[pyclass]
+#[pyclass(module = "engeom.geom3")]
 pub struct SvdBasis3 {
     inner: engeom::SvdBasis3,
 }

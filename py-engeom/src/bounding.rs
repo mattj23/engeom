@@ -7,7 +7,7 @@ use pyo3::{PyResult, pyclass, pymethods};
 // Aabb2
 // ================================================================================================
 
-#[pyclass]
+#[pyclass(from_py_object, module = "engeom.geom2")]
 #[derive(Clone, Debug)]
 pub struct Aabb2 {
     inner: engeom::geom2::Aabb2,
@@ -145,7 +145,7 @@ impl Aabb2 {
 // Aabb3
 // ================================================================================================
 
-#[pyclass]
+#[pyclass(from_py_object, module = "engeom.geom3")]
 #[derive(Clone, Debug)]
 pub struct Aabb3 {
     inner: engeom::geom3::Aabb3,

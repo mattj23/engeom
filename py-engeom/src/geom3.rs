@@ -23,7 +23,7 @@ enum Vector3OrPoint3 {
 // Vectors
 // ================================================================================================
 
-#[pyclass(module = "engeom.geom3")]
+#[pyclass(from_py_object, module = "engeom.geom3")]
 #[derive(Clone, Debug)]
 pub struct Vector3 {
     inner: engeom::Vector3,
@@ -185,7 +185,7 @@ impl Vector3 {
 // Points
 // ================================================================================================
 
-#[pyclass(module = "engeom.geom3")]
+#[pyclass(from_py_object, module = "engeom.geom3")]
 #[derive(Clone, Debug)]
 pub struct Point3 {
     inner: engeom::Point3,
@@ -339,7 +339,7 @@ impl Point3 {
 // ================================================================================================
 // Surface Point
 // ================================================================================================
-#[pyclass(module = "engeom.geom3")]
+#[pyclass(from_py_object, module = "engeom.geom3")]
 #[derive(Clone, Debug)]
 pub struct SurfacePoint3 {
     pub inner: engeom::SurfacePoint3,
@@ -489,7 +489,7 @@ impl SurfacePoint3 {
 // ================================================================================================
 // Plane
 // ================================================================================================
-#[pyclass(module = "engeom.geom3")]
+#[pyclass(from_py_object, module = "engeom.geom3")]
 #[derive(Clone, Debug)]
 pub struct Plane3 {
     pub inner: engeom::Plane3,
@@ -601,7 +601,7 @@ impl Plane3 {
 // ================================================================================================
 // Curve
 // ================================================================================================
-#[pyclass]
+#[pyclass(from_py_object, module = "engeom.geom3")]
 #[derive(Clone, Debug)]
 pub struct CurveStation3 {
     i_point: engeom::Point3,
@@ -665,7 +665,7 @@ impl CurveStation3 {
     }
 }
 
-#[pyclass]
+#[pyclass(from_py_object, module = "engeom.geom3")]
 pub struct Curve3 {
     inner: engeom::Curve3,
     points: Option<Py<PyArray2<f64>>>,
@@ -784,22 +784,6 @@ impl From<engeom::CurveStation3<'_>> for CurveStation3 {
 // Transformations
 // ================================================================================================
 
-#[pyclass(module = "engeom.geom3")]
-#[derive(Clone, Debug)]
-pub struct XyzWpr {
-    inner: engeom::geom3::XyzWpr,
-}
-
-impl XyzWpr {
-    pub fn get_inner(&self) -> &engeom::geom3::XyzWpr {
-        &self.inner
-    }
-
-    pub fn from_inner(inner: engeom::geom3::XyzWpr) -> Self {
-        Self { inner }
-    }
-}
-
 #[derive(FromPyObject)]
 enum Transformable3 {
     Iso(Iso3),
@@ -809,7 +793,7 @@ enum Transformable3 {
     Sp(SurfacePoint3),
 }
 
-#[pyclass(module = "engeom.geom3")]
+#[pyclass(from_py_object, module = "engeom.geom3")]
 #[derive(Clone, Debug)]
 pub struct Iso3 {
     inner: engeom::Iso3,

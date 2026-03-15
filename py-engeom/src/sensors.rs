@@ -4,7 +4,7 @@ use crate::point_cloud::PointCloud;
 use engeom::sensors::SimulatedPointSensor;
 use pyo3::{PyResult, pyclass, pymethods};
 
-#[pyclass]
+#[pyclass(from_py_object, module = "engeom.sensors")]
 #[derive(Clone)]
 pub struct LaserProfile {
     pub inner: engeom::sensors::LaserProfile,
@@ -85,7 +85,7 @@ impl LaserProfile {
     // }
 }
 
-#[pyclass]
+#[pyclass(from_py_object, module = "engeom.sensors")]
 #[derive(Clone)]
 pub struct PanningLaserProfile {
     pub inner: engeom::sensors::PanningLaserProfile,

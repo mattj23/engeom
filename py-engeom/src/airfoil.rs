@@ -10,7 +10,7 @@ use rmp_serde::{from_slice, to_vec_named};
 // ================================================================================================
 // Orientation Methods
 // ================================================================================================
-#[pyclass]
+#[pyclass(from_py_object, module = "engeom.airfoil")]
 #[derive(Clone, Copy, Debug)]
 pub enum FaceOrient {
     Detect {},
@@ -38,7 +38,7 @@ impl From<FaceOrient> for engeom::airfoil::FaceOrient {
     }
 }
 
-#[pyclass]
+#[pyclass(from_py_object, module = "engeom.airfoil")]
 #[derive(Clone, Copy, Debug)]
 pub enum AfGage {
     OnCamber { d: f64 },
@@ -64,7 +64,7 @@ impl From<AfGage> for engeom::airfoil::AfGage {
     }
 }
 
-#[pyclass]
+#[pyclass(from_py_object, module = "engeom.airfoil")]
 #[derive(Clone, Copy, Debug)]
 pub enum MclOrient {
     TmaxFwd {},
@@ -95,7 +95,7 @@ impl From<MclOrient> for Box<dyn engeom::airfoil::CamberOrient> {
 // ================================================================================================
 // Edge Extraction Methods
 // ================================================================================================
-#[pyclass]
+#[pyclass(from_py_object, module = "engeom.airfoil")]
 #[derive(Clone, Copy, Debug)]
 pub enum EdgeFind {
     Open {},
@@ -135,7 +135,7 @@ impl From<EdgeFind> for Box<dyn engeom::airfoil::EdgeLocate> {
 // Inscribed Circle
 // ================================================================================================
 
-#[pyclass]
+#[pyclass(from_py_object, module = "engeom.airfoil")]
 #[derive(Clone)]
 pub struct InscribedCircle {
     inner: engeom::airfoil::InscribedCircle,
@@ -173,7 +173,7 @@ impl InscribedCircle {
 // Airfoil geometry result
 // ================================================================================================
 
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, from_py_object, module = "engeom.airfoil")]
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum EdgeType {
     Open,
@@ -192,7 +192,7 @@ impl EdgeType {
     }
 }
 
-#[pyclass]
+#[pyclass(from_py_object, module = "engeom.airfoil")]
 #[derive(Clone)]
 pub struct EdgeResult {
     inner: engeom::airfoil::AirfoilEdge,
@@ -234,7 +234,7 @@ impl EdgeResult {
     }
 }
 
-#[pyclass]
+#[pyclass(from_py_object, module = "engeom.airfoil")]
 pub struct AirfoilGeometry {
     inner: engeom::airfoil::AirfoilGeometry,
 

@@ -8,7 +8,7 @@ use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use std::path::PathBuf;
 
-#[pyclass]
+#[pyclass(from_py_object, module = "engeom.geom3")]
 #[derive(Clone, Copy, Debug)]
 pub enum Lptf3Load {
     All {},
@@ -61,7 +61,7 @@ impl From<Lptf3Load> for engeom::io::Lptf3Load {
     }
 }
 
-#[pyclass]
+#[pyclass(from_py_object, module = "engeom.geom3")]
 pub struct PointCloud {
     inner: engeom::PointCloud,
     points: Option<Py<PyArray2<f64>>>,

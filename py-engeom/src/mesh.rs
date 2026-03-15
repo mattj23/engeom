@@ -15,7 +15,7 @@ use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use std::path::PathBuf;
 
-#[pyclass]
+#[pyclass(from_py_object, module = "engeom.geom3")]
 pub struct Mesh {
     inner: engeom::Mesh,
     vertices: Option<Py<PyArray2<f64>>>,
@@ -482,7 +482,7 @@ impl Mesh {
     }
 }
 
-#[pyclass]
+#[pyclass(module = "engeom.geom3")]
 pub struct FaceFilterHandle {
     mesh: Py<Mesh>,
     indices: Vec<usize>,
@@ -558,7 +558,7 @@ impl FaceFilterHandle {
     }
 }
 
-#[pyclass]
+#[pyclass(module = "engeom.geom3")]
 pub struct MeshCollisionSet {
     inner: engeom::geom3::MeshCollisionSet,
 }

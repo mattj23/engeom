@@ -22,7 +22,7 @@ enum Vector2OrPoint2 {
 // Vectors
 // ================================================================================================
 
-#[pyclass(module = "engeom.geom2")]
+#[pyclass(from_py_object, module = "engeom.geom2")]
 #[derive(Clone, Debug)]
 pub struct Vector2 {
     inner: engeom::Vector2,
@@ -169,7 +169,7 @@ impl Vector2 {
 // Points
 // ================================================================================================
 
-#[pyclass(module = "engeom.geom2")]
+#[pyclass(from_py_object, module = "engeom.geom2")]
 #[derive(Clone, Debug)]
 pub struct Point2 {
     inner: engeom::Point2,
@@ -306,7 +306,7 @@ impl Point2 {
 // ================================================================================================
 // Surface Point
 // ================================================================================================
-#[pyclass(module = "engeom.geom2")]
+#[pyclass(from_py_object, module = "engeom.geom2")]
 #[derive(Clone, Debug)]
 pub struct SurfacePoint2 {
     pub inner: engeom::SurfacePoint2,
@@ -448,7 +448,7 @@ impl SurfacePoint2 {
 // ================================================================================================
 // Circle
 // ================================================================================================
-#[pyclass(module = "engeom.geom2")]
+#[pyclass(from_py_object, module = "engeom.geom2")]
 #[derive(Clone, Debug)]
 pub struct Circle2 {
     inner: engeom::Circle2,
@@ -602,7 +602,7 @@ impl Circle2 {
 // Segment
 // ================================================================================================
 
-#[pyclass(module = "engeom.geom2")]
+#[pyclass(from_py_object, module = "engeom.geom2")]
 #[derive(Clone, Debug)]
 pub struct Segment2 {
     inner: engeom::geom2::Segment2,
@@ -695,7 +695,7 @@ impl Segment2 {
 // ================================================================================================
 // Arc
 // ================================================================================================
-#[pyclass(module = "engeom.geom2")]
+#[pyclass(from_py_object, module = "engeom.geom2")]
 #[derive(Clone, Debug)]
 pub struct Arc2 {
     inner: engeom::Arc2,
@@ -817,7 +817,7 @@ impl Arc2 {
 // Curve
 // ================================================================================================
 
-#[pyclass]
+#[pyclass(from_py_object, module = "engeom.geom2")]
 #[derive(Clone, Debug)]
 pub struct CurveStation2 {
     i_point: engeom::Point2,
@@ -910,7 +910,7 @@ impl From<engeom::CurveStation2<'_>> for CurveStation2 {
     }
 }
 
-#[pyclass]
+#[pyclass(from_py_object, module = "engeom.geom2")]
 pub struct Curve2 {
     inner: engeom::Curve2,
     points: Option<Py<PyArray2<f64>>>,
@@ -1155,7 +1155,7 @@ enum Transformable2 {
     Sp(SurfacePoint2),
 }
 
-#[pyclass]
+#[pyclass(from_py_object, module = "engeom.geom2")]
 #[derive(Clone, Debug)]
 pub struct Iso2 {
     inner: engeom::Iso2,

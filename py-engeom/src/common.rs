@@ -1,7 +1,7 @@
 use engeom::common::DistMode;
 use pyo3::prelude::*;
 
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, from_py_object, module = "engeom.common")]
 #[derive(PartialEq, Copy, Clone, Debug)]
 pub enum SelectOp {
     Add = 0,
@@ -19,7 +19,7 @@ impl From<SelectOp> for engeom::common::SelectOp {
     }
 }
 
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, from_py_object, module = "engeom.common")]
 #[derive(PartialEq, Copy, Clone, Debug)]
 pub enum DeviationMode {
     Point,
@@ -35,7 +35,7 @@ impl From<DeviationMode> for DistMode {
     }
 }
 
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum Resample {
     Count(usize),
