@@ -700,7 +700,7 @@ dependencies = [
 
 [[package]]
 name = "engeom"
-version = "0.2.19"
+version = "0.2.20"
 dependencies = [
  "alum",
  "approx 0.5.1",
@@ -2504,7 +2504,7 @@ checksum = "40e24eee682d89fb193496edf918a7f407d30175b2e785fe057e4392dfd182e0"
 
 [[package]]
 name = "py-engeom"
-version = "0.2.19"
+version = "0.2.20"
 dependencies = [
  "engeom",
  "numpy",
