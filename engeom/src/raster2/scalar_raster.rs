@@ -167,7 +167,7 @@ impl ScalarRaster {
     /// `[u16::MIN, u16::MAX]`, where `min_z` maps to `u16::MIN` and `max_z` maps to `u16::MAX`.
     fn f_to_u(&self, val: f64) -> u16 {
         let f = (val.clamp(self.min_z, self.max_z) - self.min_z) / (self.max_z - self.min_z);
-        (f * (u16::MAX - u16::MIN) as f64) as u16 + u16::MIN
+        (f * u16::MAX as f64) as u16
     }
 
     /// Internal function to convert a `u16` value to a floating point value based on the
@@ -176,7 +176,7 @@ impl ScalarRaster {
     /// This function is used to convert the `u16` values stored in the raster back to their
     /// floating point representation.
     fn u_to_f(&self, val: u16) -> f64 {
-        let f = (val - u16::MIN) as f64 / (u16::MAX - u16::MIN) as f64;
+        let f = val as f64 / u16::MAX as f64;
         f * (self.max_z - self.min_z) + self.min_z
     }
 

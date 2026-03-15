@@ -80,12 +80,10 @@ impl EdgeLocate for EdgeAutoDetect {
         // Rounded square edge detection
         // ----------------------------------------------------------------------------------------
         if let Ok((arc0, arc1, max_resid)) = best_fit_rounded_square(&edge_curve, &te_intersect)
-        {
-            if max_resid < self.tol {
+            && max_resid < self.tol {
                 let edge = AirfoilEdge::rounded_square(te_intersect, arc0, arc1);
                 return Ok((Some(edge), working_stations.take_circles()));
             }
-        }
 
         todo!("Implement full radius edge detection.");
     }

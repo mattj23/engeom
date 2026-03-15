@@ -76,6 +76,9 @@ pub fn point_stability_reduce(
     let mut pop_order = Vec::new();
     let mut passed = vec![HashSet::with_hasher(default()); 6];
 
+    // There may be a better way to do this, but clippy's needless_range_loop lint somehow misses
+    // that it's not indexing ordered but ordered[j] so it's suggestion isn't viable
+    #[allow(clippy::needless_range_loop)]
     for i in 0..points.len() {
         let mut added = HashSet::with_hasher(default());
         for (j, p) in passed.iter_mut().take(6).enumerate() {

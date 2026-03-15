@@ -10,8 +10,8 @@ pub fn best_fit_rounded_square(edge_curve: &Curve2, te_intr: &Point2) -> Result<
     let root_seg = Segment2::try_new(&edge_curve.at_front(), &edge_curve.at_back())?;
     let root_center = mid_point(&root_seg.a, &root_seg.b);
 
-    let c0 = te_intr + (root_seg.a - &root_center);
-    let c1 = te_intr + (root_seg.b - &root_center);
+    let c0 = te_intr + (root_seg.a - root_center);
+    let c1 = te_intr + (root_seg.b - root_center);
     let r0 = dist(&root_seg.a, &root_seg.b) / 4.0;
 
     // Make default params
@@ -65,11 +65,11 @@ impl LeastSquaresProblem<f64, Dyn, U6> for RoundedSquareEdgeFit<'_> {
     type ParameterStorage = Owned<f64, U6>;
 
     fn set_params(&mut self, x: &Vector<f64, U6, Self::ParameterStorage>) {
-        self.x = x.clone();
+        self.x = *x;
     }
 
     fn params(&self) -> Vector<f64, U6, Self::ParameterStorage> {
-        self.x.clone()
+        self.x
     }
 
     fn residuals(&self) -> Option<Vector<f64, Dyn, Self::ResidualStorage>> {
@@ -90,7 +90,7 @@ impl LeastSquaresProblem<f64, Dyn, U6> for RoundedSquareEdgeFit<'_> {
 
         let mut deltas = Vec::with_capacity(6);
         for i in 0..6 {
-            let mut delta_x = self.x.clone();
+            let mut delta_x = self.x;
             delta_x[i] += delta;
             let perturbed =
                 RoundedSquareEdge::from_params(&self.start, &self.end, &delta_x).ok()?;
@@ -134,7 +134,7 @@ impl RoundedSquareEdge {
         let r0 = x[4];
         let r1 = x[5];
 
-        Self::build(&start, &corner0, &corner1, &end, r0, r1)
+        Self::build(start, &corner0, &corner1, end, r0, r1)
     }
 
     pub fn build(
@@ -183,7 +183,7 @@ fn arc_from_circle(seg0: &Segment2, seg1: &Segment2, radius: f64) -> Result<Arc2
     let m0 = seg0.closest_to_point(&circle.center);
     let m1 = seg1.closest_to_point(&circle.center);
     let mc = circle
-        .project_point_to_perimeter(&corner)
+        .project_point_to_perimeter(corner)
         .ok_or("Failed to project corner point to circle perimeter")?;
 
     Ok(Arc2::three_points(m0.point, mc, m1.point))
