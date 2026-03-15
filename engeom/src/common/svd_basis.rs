@@ -332,13 +332,11 @@ mod tests {
             UnitQuaternion::from_euler_angles(0.0, 0.0, PI / 4.0),
         );
 
-        let basis = [
+        [
             iso * Vector3::new(1.0, 0.0, 0.0),
             iso * Vector3::new(0.0, 1.0, 0.0),
             iso * Vector3::new(0.0, 0.0, 1.0),
-        ];
-
-        basis
+        ]
     }
 
     #[test]

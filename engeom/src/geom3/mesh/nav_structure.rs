@@ -377,7 +377,7 @@ mod tests {
         let nav = MeshNav::new(&mesh);
 
         let mut boundary_loops = nav.boundary_loops(Some(&indices)).unwrap();
-        boundary_loops.sort_by(|a, b| a.len().cmp(&b.len()));
+        boundary_loops.sort_by_key(|a| a.len());
         let mut working = boundary_loops[0].clone();
         working.reverse();
 

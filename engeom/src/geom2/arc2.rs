@@ -291,14 +291,12 @@ impl BoundaryElement for Arc2 {
 mod tests {
     use super::*;
     use crate::common::points::mid_point;
-    use crate::geom2::Ray2;
+
     use crate::geom2::tests::Random2;
     use crate::{Arc2, Curve2};
     use approx::assert_relative_eq;
-    use imageproc::point::Point;
-    use num_traits::float::FloatCore;
+
     use std::f64::consts::PI;
-    use test_case::test_case;
 
     #[test]
     fn three_point_arc_ccw() {

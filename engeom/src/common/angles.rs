@@ -290,7 +290,7 @@ mod tests {
             let angle = rnd.random_range(-8.0 * PI..8.0 * PI);
             let test = angle_to_2pi(angle);
             assert!(
-                test >= 0.0 && test < 2.0 * PI,
+                (0.0..2.0 * PI).contains(&test),
                 "Failed Angle to 2pi: angle={}, test={}",
                 angle,
                 test
@@ -308,7 +308,7 @@ mod tests {
             let angle = rnd.random_range(-8.0 * PI..8.0 * PI);
             let test = angle_signed_pi(angle);
             assert!(
-                test >= -PI && test < PI,
+                (-PI..PI).contains(&test),
                 "Failed Angle Signed Pi: angle={}, test={}",
                 angle,
                 test
@@ -334,7 +334,7 @@ mod tests {
             let test = angle_in_direction(start, end, AngleDir::Ccw);
 
             assert!(
-                test >= 0.0 && test < 2.0 * PI,
+                (0.0..2.0 * PI).contains(&test),
                 "Failed Angle in Direction CW: start={}, end={}, test={} not in [0, 2pi]",
                 start,
                 end,
@@ -364,7 +364,7 @@ mod tests {
             let test = angle_in_direction(start, end, AngleDir::Cw);
 
             assert!(
-                test >= 0.0 && test < 2.0 * PI,
+                (0.0..2.0 * PI).contains(&test),
                 "Failed Angle in Direction CW: start={}, end={}, test={} not in [0, 2pi]",
                 start,
                 end,

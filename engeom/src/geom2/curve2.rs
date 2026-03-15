@@ -1294,8 +1294,8 @@ mod tests {
                 c = dist.sample(&mut rn);
             }
 
-            let p_a = curve.at_length(a).unwrap().point;
-            let p_b = curve.at_length(b).unwrap().point;
+            let _p_a = curve.at_length(a).unwrap().point;
+            let _p_b = curve.at_length(b).unwrap().point;
             let p_c = curve.at_length(c).unwrap().point;
 
             let segment = curve.between_lengths_by_control(a, b, c);
@@ -1337,7 +1337,7 @@ mod tests {
     #[test]
     fn offset_segments_parallel() {
         let curve = Curve2::from_points(
-            &sample_points(&vec![(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)]),
+            &sample_points(&[(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)]),
             1e-6,
             false,
         )

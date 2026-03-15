@@ -717,7 +717,7 @@ mod tests {
         let true_indices = mask
             .buffer
             .as_raw()
-            .into_iter()
+            .iter()
             .enumerate()
             .filter_map(|(i, &v)| if v > 0 { Some(i) } else { None })
             .collect::<Vec<_>>();

@@ -158,7 +158,7 @@ mod tests {
         let mesh1 = Mesh::create_box(1.0, 1.0, 1.0, true);
         let mesh2 = Mesh::create_box(1.0, 1.0, 1.0, true);
 
-        let id1 = set.add_stationary(mesh1);
+        let _id1 = set.add_stationary(mesh1);
         let id2 = set.add_moving(mesh2);
 
         let transforms = vec![(id2, Iso3::translation(0.5, 0.5, 0.5))];
@@ -189,7 +189,7 @@ mod tests {
         let mesh1 = Mesh::create_box(1.0, 1.0, 1.0, true);
         let mesh2 = Mesh::create_box(1.0, 1.0, 1.0, true);
 
-        let id1 = set.add_stationary(mesh1);
+        let _id1 = set.add_stationary(mesh1);
         let id2 = set.add_moving(mesh2);
 
         let transforms = vec![(id2, Iso3::translation(2.5, 0.5, 0.5))];

@@ -338,8 +338,8 @@ mod tests {
     fn obviously_correct_window(a: usize, count: usize, tail_n: i32) -> (usize, usize, usize) {
         let k_size = (tail_n * 2 + 1) as usize;
 
-        let start = a as i32 - tail_n;
-        let end = a as i32 + tail_n;
+        let _start = a as i32 - tail_n;
+        let _end = a as i32 + tail_n;
 
         let mut min_mi = None;
         let mut min_ki = None;

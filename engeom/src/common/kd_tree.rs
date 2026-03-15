@@ -304,7 +304,7 @@ mod tests {
 
             for &i in indices.iter() {
                 let p = &points[i];
-                let (j, d) = fixed_tree.nearest_one(p);
+                let (j, _d) = fixed_tree.nearest_one(p);
                 let (k, e) = partial_tree.nearest_one(p);
                 assert_eq!(i, j);
                 assert_eq!(i, k);

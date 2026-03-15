@@ -205,7 +205,7 @@ mod tests {
 
     #[test]
     fn isometry_to_xyzwpr_single() {
-        let x = XyzWpr::new(
+        let _x = XyzWpr::new(
             151.8000000000,
             677.1000000000,
             277.0000000000,

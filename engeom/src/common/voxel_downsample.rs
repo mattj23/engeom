@@ -75,7 +75,7 @@ mod tests {
 
                 let count = thinned
                     .iter()
-                    .filter(|p| aabb.contains_local_point(*p))
+                    .filter(|p| aabb.contains_local_point(p))
                     .count();
 
                 assert_eq!(count, 1);

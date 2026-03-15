@@ -231,6 +231,12 @@ pub mod tests {
         rng: rand::rngs::ThreadRng,
     }
 
+    impl Default for Random2 {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
     impl Random2 {
         pub fn new() -> Self {
             Self { rng: rand::rng() }
