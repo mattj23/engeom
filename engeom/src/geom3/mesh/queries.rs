@@ -42,7 +42,6 @@ impl Mesh {
     ///
     /// returns: Result<SurfacePoint<3>, Box<dyn Error, Global>>
     pub fn at_barycentric(&self, face_id: u32, bc: [f64; 3]) -> Result<MeshSurfPoint> {
-        // TODO: Needs test coverage
         if face_id >= self.faces().len() as u32 {
             return Err("Invalid face ID".into());
         }
@@ -66,7 +65,6 @@ impl Mesh {
     ///
     /// returns: u32
     pub fn face_closest_to(&self, point: &impl PCoords<3>) -> u32 {
-        // TODO: Needs test coverage
         let point = Point3::from(point.coords());
         let result = self
             .shape
@@ -281,7 +279,9 @@ impl Mesh {
 mod tests {
     use super::*;
     use crate::geom3::Mesh;
+    use crate::tests::stanford_bun_4;
     use approx::assert_relative_eq;
+    use parry3d_f64::na::Vector3;
 
     #[test]
     fn distance_closest_to_unit_box_face() {
@@ -317,5 +317,218 @@ mod tests {
 
         assert_relative_eq!(distance, 3.0_f64.sqrt(), epsilon = 1.0e-12);
         assert_relative_eq!(closest, Point3::new(0.5, 0.5, 0.5), epsilon = 1.0e-12);
+    }
+
+    #[test]
+    fn closest_to_matches_brute_force_on_unit_box() {
+        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+        let eps = 1.0e-12;
+
+        for (face_index, face) in mesh.faces().iter().enumerate() {
+            let face_index = face_index as u32;
+            let a = mesh.vertices()[face[0] as usize];
+            let b = mesh.vertices()[face[1] as usize];
+            let c = mesh.vertices()[face[2] as usize];
+
+            let centroid = Point3::from((a.coords + b.coords + c.coords) / 3.0);
+            let normal = mesh.tri_mesh().triangle(face_index).normal().unwrap();
+
+            let edge1 = b - a;
+            let edge2 = c - a;
+            let tangent = if edge1.norm_squared() > eps {
+                edge1.normalize()
+            } else {
+                edge2.normalize()
+            };
+            let bitangent = normal.cross(&tangent).normalize();
+
+            // Sample points across the face plane and slightly off the surface on both sides.
+            for u in [-0.40, -0.20, 0.0, 0.20, 0.40] {
+                for v in [-0.40, -0.20, 0.0, 0.20, 0.40] {
+                    for n in [-0.25, 0.0, 0.25] {
+                        let query =
+                            centroid + tangent * u + bitangent * v + normal.into_inner() * n;
+
+                        let brute = brute_force_closest(&query, &mesh);
+
+                        // Check the closest face
+                        let closest_face = mesh.face_closest_to(&query);
+                        assert!(
+                            brute.iter().any(|(id, _)| *id == closest_face),
+                            "face_closest_to returned face {} for query {:?}, but brute force found {:?}",
+                            closest_face,
+                            query,
+                            brute.iter().map(|(id, _)| *id).collect::<Vec<_>>()
+                        );
+
+                        // Check the closest surface
+                        let closest_surf = mesh.surf_closest_to(&query);
+                        assert!(
+                            brute.iter().any(|(id, _)| *id == closest_surf.face_index),
+                            "surf_closest_to returned face {} for query {:?}, but brute force found {:?}",
+                            closest_surf.face_index,
+                            query,
+                            brute.iter().map(|(id, _)| *id).collect::<Vec<_>>()
+                        );
+                        let cp = brute
+                            .iter()
+                            .find(|(id, _)| *id == closest_surf.face_index)
+                            .unwrap()
+                            .1;
+                        assert_relative_eq!(cp, closest_surf.sp.point, epsilon = 1.0e-12);
+                        let abc = mesh
+                            .at_barycentric(closest_surf.face_index, closest_surf.bc)
+                            .unwrap();
+                        assert_relative_eq!(cp, abc.sp.point, epsilon = 1.0e-12);
+                        assert_relative_eq!(
+                            abc.sp.normal,
+                            closest_surf.sp.normal,
+                            epsilon = 1.0e-12
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn at_barycentric_matches_face_vertices_and_center() {
+        let mesh = stanford_bun_4();
+
+        for (face_id, face) in mesh.faces().iter().enumerate() {
+            let face_id = face_id as u32;
+            let a = mesh.vertices()[face[0] as usize];
+            let b = mesh.vertices()[face[1] as usize];
+            let c = mesh.vertices()[face[2] as usize];
+
+            let expected_normal = mesh.tri_mesh().triangle(face_id).normal().unwrap();
+
+            let vertex_cases = [
+                ([1.0, 0.0, 0.0], a),
+                ([0.0, 1.0, 0.0], b),
+                ([0.0, 0.0, 1.0], c),
+                (
+                    [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0],
+                    Point3::from((a.coords + b.coords + c.coords) / 3.0),
+                ),
+            ];
+
+            for (bc, expected_point) in vertex_cases {
+                let sp = mesh.at_barycentric(face_id, bc).unwrap();
+
+                assert_eq!(sp.face_index, face_id);
+                assert_relative_eq!(sp.bc[0], bc[0], epsilon = 1.0e-12);
+                assert_relative_eq!(sp.bc[1], bc[1], epsilon = 1.0e-12);
+                assert_relative_eq!(sp.bc[2], bc[2], epsilon = 1.0e-12);
+                assert_relative_eq!(sp.point(), expected_point, epsilon = 1.0e-12);
+                assert_relative_eq!(
+                    sp.normal().into_inner(),
+                    expected_normal.into_inner(),
+                    epsilon = 1.0e-12
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn check_brute_force_closest_edge() {
+        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+        let point = Point3::new(1.5, 1.5, 0.0);
+
+        let results = brute_force_closest(&point, &mesh);
+        assert_eq!(results.len(), 2);
+        for (_, p) in results.iter() {
+            assert_relative_eq!(*p, Point3::new(0.5, 0.5, 0.0), epsilon = 1.0e-12);
+        }
+    }
+
+    #[test]
+    fn check_brute_force_closest_face() {
+        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+        let point = Point3::new(0.33, 0.0, 0.51);
+
+        let results = brute_force_closest(&point, &mesh);
+        assert_eq!(results.len(), 1);
+        for (_, p) in results.iter() {
+            assert_relative_eq!(*p, Point3::new(0.33, 0.0, 0.5), epsilon = 1.0e-12);
+        }
+    }
+
+    fn brute_force_closest(query_point: &Point3, mesh: &Mesh) -> Vec<(u32, Point3)> {
+        let mut closest: Vec<(u32, Point3)> = Vec::new();
+        let mut best_dist = f64::INFINITY;
+
+        for (face_index, face) in mesh.faces().iter().enumerate() {
+            let a = mesh.vertices()[face[0] as usize];
+            let b = mesh.vertices()[face[1] as usize];
+            let c = mesh.vertices()[face[2] as usize];
+
+            let closest_point = manual_closest_point_on_triangle(a, b, c, *query_point);
+            let dist = dist(&closest_point, query_point);
+
+            if dist + f64::EPSILON < best_dist {
+                best_dist = dist;
+                closest.clear();
+                closest.push((face_index as u32, closest_point));
+            } else if (dist - best_dist).abs() <= f64::EPSILON {
+                closest.push((face_index as u32, closest_point));
+            }
+        }
+
+        closest
+    }
+
+    fn manual_closest_distance_to_triangle(a: Point3, b: Point3, c: Point3, p: Point3) -> f64 {
+        dist(&manual_closest_point_on_triangle(a, b, c, p), &p)
+    }
+
+    fn manual_closest_point_on_triangle(a: Point3, b: Point3, c: Point3, p: Point3) -> Point3 {
+        let ab = b - a;
+        let ac = c - a;
+        let ap = p - a;
+
+        let d1 = ab.dot(&ap);
+        let d2 = ac.dot(&ap);
+        if d1 <= 0.0 && d2 <= 0.0 {
+            return a;
+        }
+
+        let bp = p - b;
+        let d3 = ab.dot(&bp);
+        let d4 = ac.dot(&bp);
+        if d3 >= 0.0 && d4 <= d3 {
+            return b;
+        }
+
+        let vc = d1 * d4 - d3 * d2;
+        if vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0 {
+            let v = d1 / (d1 - d3);
+            return a + ab * v;
+        }
+
+        let cp = p - c;
+        let d5 = ab.dot(&cp);
+        let d6 = ac.dot(&cp);
+        if d6 >= 0.0 && d5 <= d6 {
+            return c;
+        }
+
+        let vb = d5 * d2 - d1 * d6;
+        if vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0 {
+            let w = d2 / (d2 - d6);
+            return a + ac * w;
+        }
+
+        let va = d3 * d6 - d5 * d4;
+        if va <= 0.0 && (d4 - d3) >= 0.0 && (d5 - d6) >= 0.0 {
+            let bc = c - b;
+            let w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+            return b + bc * w;
+        }
+
+        let denom = 1.0 / (va + vb + vc);
+        let v = vb * denom;
+        let w = vc * denom;
+        a + ab * v + ac * w
     }
 }
