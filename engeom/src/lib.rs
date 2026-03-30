@@ -68,18 +68,23 @@ pub mod tests {
     use crate::Mesh;
     use crate::io::u_bytes_to_mesh;
 
+    /// Load a mesh with the stanford bunny reconstruction at resolution 4. The vertices are within
+    /// 0.00000189 of the original ply file.
     pub fn stanford_bun_4() -> Mesh {
         let bytes = include_bytes!("../tests/data/bun_zipper_res4.umesh");
         let (vertices, triangles) = u_bytes_to_mesh(bytes).unwrap();
         Mesh::new(vertices, triangles, false)
     }
 
+    /// Load a mesh with the stanford bunny reconstruction at resolution 2. The vertices are within
+    /// 0.00000189 of the original ply file.
     pub fn stanford_bun_2() -> Mesh {
         let bytes = include_bytes!("../tests/data/bun_zipper_res2.umesh");
         let (vertices, triangles) = u_bytes_to_mesh(bytes).unwrap();
         Mesh::new(vertices, triangles, false)
     }
 
+    /// Get the path to the test data directory.
     pub fn get_test_data_path() -> std::path::PathBuf {
         let mut path = std::env::current_dir().unwrap();
         path.push("tests");
@@ -87,6 +92,8 @@ pub mod tests {
         path
     }
 
+    /// Get the path to a test file in the test data directory. This does not check if the file
+    /// exists.
     pub fn get_test_file_path(str: &str) -> std::path::PathBuf {
         let mut path = get_test_data_path();
         path.push(str);
