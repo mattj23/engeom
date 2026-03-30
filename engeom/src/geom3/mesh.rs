@@ -290,14 +290,12 @@ impl Mesh {
         Self::new(vertices, faces, true)
     }
 
-
     pub fn create_sphere(radius: f64, n_theta: usize, n_phi: usize) -> Self {
         let sphere = shape::Ball::new(radius);
         let (vertices, faces) = sphere.to_trimesh(n_theta as u32, n_phi as u32);
 
         Self::new(vertices, faces, true)
     }
-
 
     /// Create a box mesh with the given dimensions, centered at the origin.
     ///

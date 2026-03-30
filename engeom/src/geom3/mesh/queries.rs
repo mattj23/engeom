@@ -104,26 +104,26 @@ impl Mesh {
         }
     }
 
-        /// Find the closest point on the mesh surface to the specified point.
-        ///
-        /// This returns only the projected position, not the face index, barycentric
-        /// coordinates, or surface normal. If the point projects onto an edge or vertex,
-        /// the returned position is the nearest point on the mesh surface at that location.
-        ///
-        /// # Arguments
-        ///
-        /// * `point` - The test point to project onto the mesh.
-        ///
-        /// # Returns
-        ///
-        /// The closest point on the mesh surface to `point`.
-        pub fn point_closest_to(&self, point: &impl PCoords<3>) -> Point3 {
-            let query = Point3::from(point.coords());
-            let (result, _) = self
-                .shape
-                .project_local_point_and_get_location(&query, self.is_solid);
-            result.point
-        }
+    /// Find the closest point on the mesh surface to the specified point.
+    ///
+    /// This returns only the projected position, not the face index, barycentric
+    /// coordinates, or surface normal. If the point projects onto an edge or vertex,
+    /// the returned position is the nearest point on the mesh surface at that location.
+    ///
+    /// # Arguments
+    ///
+    /// * `point` - The test point to project onto the mesh.
+    ///
+    /// # Returns
+    ///
+    /// The closest point on the mesh surface to `point`.
+    pub fn point_closest_to(&self, point: &impl PCoords<3>) -> Point3 {
+        let query = Point3::from(point.coords());
+        let (result, _) = self
+            .shape
+            .project_local_point_and_get_location(&query, self.is_solid);
+        result.point
+    }
 
     pub fn project_with_max_dist(
         &self,
