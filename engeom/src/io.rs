@@ -1,5 +1,7 @@
 pub mod lptf3;
 mod point_cloud;
+mod micro_mesh;
+mod ply;
 
 use crate::Result;
 use parry3d_f64::na::{Point3, Vector3};
@@ -10,6 +12,10 @@ use std::path::Path;
 
 pub use lptf3::{Lptf3DsParams, Lptf3Load, load_lptf3, load_lptf3_mesh, lptf3_point_distribution};
 pub use point_cloud::*;
+pub use micro_mesh::*;
+
+#[cfg(feature = "ply")]
+pub use ply::*;
 
 #[cfg(feature = "stl")]
 use stl_io;

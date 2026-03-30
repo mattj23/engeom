@@ -718,6 +718,7 @@ dependencies = [
  "rand 0.9.2",
  "rayon",
  "serde",
+ "serde-ply",
  "serde_json",
  "stl_io",
  "test-case",
@@ -3000,6 +3001,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f0e2c6ed6606019b4e29e69dbaba95b11854410e5347d525002456dbbb786b6"
 dependencies = [
  "serde_derive",
+]
+
+[[package]]
+name = "serde-ply"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df40fb29a8f8b021ecd9bddaeb09c9d86b6801ed020167b0e384560d5c9ce90b"
+dependencies = [
+ "byteorder",
+ "serde",
+ "thiserror 2.0.12",
 ]
 
 [[package]]

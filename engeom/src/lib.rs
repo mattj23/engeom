@@ -64,4 +64,17 @@ pub use common::{To2D, To3D, TransformBy};
 pub use common::{BestFit, Resample, SelectOp, Selection, Smoothing};
 
 #[cfg(test)]
-mod tests {}
+pub mod tests {
+    pub fn get_test_data_path() -> std::path::PathBuf {
+        let mut path = std::env::current_dir().unwrap();
+        path.push("tests");
+        path.push("data");
+        path
+    }
+
+    pub fn get_test_file_path(str: &str) -> std::path::PathBuf {
+        let mut path = get_test_data_path();
+        path.push(str);
+        path
+    }
+}
