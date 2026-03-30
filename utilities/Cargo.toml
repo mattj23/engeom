@@ -4,5 +4,5 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-engeom = {path = "../engeom", features = ["stl", "three_d", "ply"]}
-clap = { version = "4.6.0" , features=["derive"]}
+engeom = {path = "../engeom", features = ["stl", "ply"]}
+clap = { version = "4.6", features=["derive"]}

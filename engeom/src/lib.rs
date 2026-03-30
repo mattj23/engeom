@@ -65,6 +65,21 @@ pub use common::{BestFit, Resample, SelectOp, Selection, Smoothing};
 
 #[cfg(test)]
 pub mod tests {
+    use crate::Mesh;
+    use crate::io::u_bytes_to_mesh;
+
+    pub fn stanford_bun_4() -> Mesh {
+        let bytes = include_bytes!("../tests/data/bun_zipper_res4.umesh");
+        let (vertices, triangles) = u_bytes_to_mesh(bytes).unwrap();
+        Mesh::new(vertices, triangles, false)
+    }
+
+    pub fn stanford_bun_2() -> Mesh {
+        let bytes = include_bytes!("../tests/data/bun_zipper_res2.umesh");
+        let (vertices, triangles) = u_bytes_to_mesh(bytes).unwrap();
+        Mesh::new(vertices, triangles, false)
+    }
+
     pub fn get_test_data_path() -> std::path::PathBuf {
         let mut path = std::env::current_dir().unwrap();
         path.push("tests");

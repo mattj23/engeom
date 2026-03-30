@@ -60,31 +60,25 @@ struct PlyData {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::get_test_file_path;
+    use crate::tests::{get_test_file_path, stanford_bun_4};
     use approx::assert_relative_eq;
 
     #[test]
     fn load_ply_mesh_test() -> Result<()> {
         let path = get_test_file_path("bun_zipper_res4.ply");
         let mesh = load_ply_mesh(&path)?;
+        let expected = stanford_bun_4();
 
-        assert_eq!(mesh.faces().len(), 948);
+        assert_eq!(mesh.faces().len(), expected.faces().len());
+        assert_eq!(mesh.vertices().len(), expected.vertices().len());
+        for (a, b) in mesh.faces().iter().zip(expected.faces().iter()) {
+            assert_eq!(a, b);
+        }
 
-        assert_relative_eq!(
-            mesh.vertices()[0],
-            Point3::new(-0.0312216, 0.126304, 0.00514924),
-            epsilon = 1e-6
-        );
-        assert_relative_eq!(
-            mesh.vertices()[300],
-            Point3::new(0.0414633, 0.0456301, -0.00354513),
-            epsilon = 1e-6
-        );
-        assert_relative_eq!(
-            mesh.vertices()[400],
-            Point3::new(-0.0422796, 0.0699944, -0.0161463),
-            epsilon = 1e-6
-        );
+        for (a, b) in mesh.vertices().iter().zip(expected.vertices().iter()) {
+            assert_relative_eq!(a, b, epsilon = 0.000002);
+        }
+
         Ok(())
     }
 }
