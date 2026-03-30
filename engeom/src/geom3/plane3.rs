@@ -1,6 +1,6 @@
 use crate::common::PCoords;
 use crate::geom3::UnitVec3;
-use crate::{Iso3, Point3, SurfacePoint3, SvdBasis3};
+use crate::{Iso3, Point3, SurfacePoint3, SvdBasis3, Vector3};
 
 #[derive(Debug, Clone)]
 pub struct Plane3 {
@@ -9,6 +9,21 @@ pub struct Plane3 {
 }
 
 impl Plane3 {
+    /// Creates a plane with normal along the x-axis and offset 0.0
+    pub fn x_axis() -> Self {
+        Self::new(Vector3::x_axis(), 0.0)
+    }
+
+    /// Creates a plane with normal along the y-axis and offset 0.0
+    pub fn y_axis() -> Self {
+        Self::new(Vector3::y_axis(), 0.0)
+    }
+
+    /// Creates a plane with normal along the z-axis and offset 0.0
+    pub fn z_axis() -> Self {
+        Self::new(Vector3::z_axis(), 0.0)
+    }
+
     pub fn new(normal: UnitVec3, d: f64) -> Self {
         Self { normal, d }
     }

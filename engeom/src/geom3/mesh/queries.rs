@@ -125,12 +125,13 @@ impl Mesh {
 
     pub fn project_with_max_dist(
         &self,
-        point: &Point3,
+        point: &impl PCoords<3>,
         max_dist: f64,
     ) -> Option<(PointProjection, u32, TrianglePointLocation)> {
         // TODO: Needs test coverage
+        let point = Point3::from(point.coords());
         self.shape
-            .project_local_point_and_get_location_with_max_dist(point, self.is_solid, max_dist)
+            .project_local_point_and_get_location_with_max_dist(&point, self.is_solid, max_dist)
             .map(|(prj, (id, loc))| (prj, id, loc))
     }
 
@@ -156,16 +157,17 @@ impl Mesh {
     /// returns: Option<(PointProjection, u32, TrianglePointLocation)>
     pub fn project_with_tol(
         &self,
-        point: &Point3,
+        point: &impl PCoords<3>,
         max_dist: f64,
         max_angle: f64,
         transform: Option<&Iso3>,
     ) -> Option<(PointProjection, u32, TrianglePointLocation)> {
         // TODO: Needs test coverage
+        let point = Point3::from(point.coords());
         let point = if let Some(transform) = transform {
             transform * point
         } else {
-            *point
+            point
         };
 
         let result = self
@@ -221,6 +223,23 @@ impl Mesh {
         result
     }
 
+    /// Split the mesh by a plane into the portions on the negative and positive sides.
+    ///
+    /// If the plane intersects the mesh, the result contains two new meshes:
+    /// - `Pair(negative, positive)` when the mesh is cut into two parts
+    /// - `Negative` when the entire mesh lies on the negative side of the plane
+    /// - `Positive` when the entire mesh lies on the positive side of the plane
+    ///
+    /// The returned meshes are newly constructed from the split triangle meshes and are not
+    /// solid.
+    ///
+    /// # Arguments
+    ///
+    /// * `plane`: the plane used to split the mesh
+    ///
+    /// # Returns
+    ///
+    /// A `SplitResult<Mesh>` describing how the mesh relates to the plane.
     pub fn split(&self, plane: &Plane3) -> SplitResult<Mesh> {
         // TODO: Needs test coverage
         let result = self.shape.local_split(&plane.normal, plane.d, 1.0e-6);
@@ -250,7 +269,7 @@ impl Mesh {
     /// ```
     ///
     /// ```
-    pub fn section(&self, plane: &Plane3, tol: Option<f64>) -> crate::Result<Vec<Curve3>> {
+    pub fn section(&self, plane: &Plane3, tol: Option<f64>) -> Result<Vec<Curve3>> {
         // TODO: Needs test coverage
         let tol = tol.unwrap_or(1.0e-6);
         let mut collected = Vec::new();
@@ -477,9 +496,47 @@ mod tests {
 
         closest
     }
+    #[test]
+    fn split_unit_box_through_center_yields_two_nonempty_parts() {
+        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+        let plane = Plane3::x_axis();
 
-    fn manual_closest_distance_to_triangle(a: Point3, b: Point3, c: Point3, p: Point3) -> f64 {
-        dist(&manual_closest_point_on_triangle(a, b, c, p), &p)
+        match mesh.split(&plane) {
+            SplitResult::Pair(negative, positive) => {
+                assert!(!negative.faces().is_empty());
+                assert!(!positive.faces().is_empty());
+
+                for vertex in negative.vertices() {
+                    assert!(vertex.x <= 1.0e-12);
+                }
+                for vertex in positive.vertices() {
+                    assert!(vertex.x >= -1.0e-12);
+                }
+            }
+            _ => panic!("expected mesh to split into two parts"),
+        }
+    }
+
+    #[test]
+    fn split_unit_box_with_plane_outside_returns_positive_side() {
+        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+        let plane = Plane3::new(Vector3::x_axis(), -2.0);
+
+        match mesh.split(&plane) {
+            SplitResult::Positive => {}
+            _ => panic!("expected whole mesh on positive side"),
+        }
+    }
+
+    #[test]
+    fn split_unit_box_with_plane_outside_returns_negative_side() {
+        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+        let plane = Plane3::new(Vector3::x_axis(), 2.0);
+
+        match mesh.split(&plane) {
+            SplitResult::Negative => {}
+            _ => panic!("expected whole mesh on negative side"),
+        }
     }
 
     fn manual_closest_point_on_triangle(a: Point3, b: Point3, c: Point3, p: Point3) -> Point3 {
