@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["engeom", "py-engeom"]
+members = ["engeom", "py-engeom", "utilities"]
 
 [workspace.package]
 version = "0.2.20"
