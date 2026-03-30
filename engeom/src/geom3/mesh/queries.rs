@@ -10,7 +10,7 @@ use parry3d_f64::shape::TrianglePointLocation;
 use std::f64::consts::PI;
 
 impl Mesh {
-    /// This is an extremely simple closest distance query which returns only the scalar distance
+    /// This is an extremely simple closest distance query that returns only the scalar distance
     /// from the mesh to the point. It does not return any information about the face or which
     /// side of the corresponding face normal the point is on.  It will always return a single
     /// zero or positive value, which is the distance from the point to its closest projection on
@@ -42,6 +42,7 @@ impl Mesh {
     ///
     /// returns: Result<SurfacePoint<3>, Box<dyn Error, Global>>
     pub fn at_barycentric(&self, face_id: u32, bc: [f64; 3]) -> Result<MeshSurfPoint> {
+        // TODO: Needs test coverage
         if face_id >= self.faces().len() as u32 {
             return Err("Invalid face ID".into());
         }
@@ -65,6 +66,7 @@ impl Mesh {
     ///
     /// returns: u32
     pub fn face_closest_to(&self, point: &impl PCoords<3>) -> u32 {
+        // TODO: Needs test coverage
         let point = Point3::from(point.coords());
         let result = self
             .shape
@@ -102,18 +104,33 @@ impl Mesh {
         }
     }
 
-    pub fn point_closest_to(&self, point: &Point3) -> Point3 {
-        let (result, _) = self
-            .shape
-            .project_local_point_and_get_location(point, self.is_solid);
-        result.point
-    }
+        /// Find the closest point on the mesh surface to the specified point.
+        ///
+        /// This returns only the projected position, not the face index, barycentric
+        /// coordinates, or surface normal. If the point projects onto an edge or vertex,
+        /// the returned position is the nearest point on the mesh surface at that location.
+        ///
+        /// # Arguments
+        ///
+        /// * `point` - The test point to project onto the mesh.
+        ///
+        /// # Returns
+        ///
+        /// The closest point on the mesh surface to `point`.
+        pub fn point_closest_to(&self, point: &impl PCoords<3>) -> Point3 {
+            let query = Point3::from(point.coords());
+            let (result, _) = self
+                .shape
+                .project_local_point_and_get_location(&query, self.is_solid);
+            result.point
+        }
 
     pub fn project_with_max_dist(
         &self,
         point: &Point3,
         max_dist: f64,
     ) -> Option<(PointProjection, u32, TrianglePointLocation)> {
+        // TODO: Needs test coverage
         self.shape
             .project_local_point_and_get_location_with_max_dist(point, self.is_solid, max_dist)
             .map(|(prj, (id, loc))| (prj, id, loc))
@@ -146,6 +163,7 @@ impl Mesh {
         max_angle: f64,
         transform: Option<&Iso3>,
     ) -> Option<(PointProjection, u32, TrianglePointLocation)> {
+        // TODO: Needs test coverage
         let point = if let Some(transform) = transform {
             transform * point
         } else {
@@ -192,6 +210,7 @@ impl Mesh {
         max_angle: f64,
         transform: Option<&Iso3>,
     ) -> Vec<usize> {
+        // TODO: Needs test coverage
         let mut result = Vec::new();
         for (i, point) in points.iter().enumerate() {
             if self
@@ -205,6 +224,7 @@ impl Mesh {
     }
 
     pub fn split(&self, plane: &Plane3) -> SplitResult<Mesh> {
+        // TODO: Needs test coverage
         let result = self.shape.local_split(&plane.normal, plane.d, 1.0e-6);
         match result {
             SplitResult::Pair(a, b) => {
@@ -233,6 +253,7 @@ impl Mesh {
     ///
     /// ```
     pub fn section(&self, plane: &Plane3, tol: Option<f64>) -> crate::Result<Vec<Curve3>> {
+        // TODO: Needs test coverage
         let tol = tol.unwrap_or(1.0e-6);
         let mut collected = Vec::new();
         let result = self
@@ -253,5 +274,48 @@ impl Mesh {
         }
 
         Ok(collected)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geom3::Mesh;
+    use approx::assert_relative_eq;
+
+    #[test]
+    fn distance_closest_to_unit_box_face() {
+        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+        let point = Point3::new(1.5, 0.0, 0.0);
+
+        let distance = mesh.distance_closest_to(&point);
+        let closest = mesh.point_closest_to(&point);
+
+        assert_relative_eq!(distance, 1.0, epsilon = 1.0e-12);
+        assert_relative_eq!(closest, Point3::new(0.5, 0.0, 0.0), epsilon = 1.0e-12);
+    }
+
+    #[test]
+    fn distance_closest_to_unit_box_edge() {
+        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+        let point = Point3::new(1.5, 1.5, 0.0);
+
+        let distance = mesh.distance_closest_to(&point);
+        let closest = mesh.point_closest_to(&point);
+
+        assert_relative_eq!(distance, 2.0_f64.sqrt(), epsilon = 1.0e-12);
+        assert_relative_eq!(closest, Point3::new(0.5, 0.5, 0.0), epsilon = 1.0e-12);
+    }
+
+    #[test]
+    fn distance_closest_to_unit_box_corner_vertex() {
+        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+        let point = Point3::new(1.5, 1.5, 1.5);
+
+        let distance = mesh.distance_closest_to(&point);
+        let closest = mesh.point_closest_to(&point);
+
+        assert_relative_eq!(distance, 3.0_f64.sqrt(), epsilon = 1.0e-12);
+        assert_relative_eq!(closest, Point3::new(0.5, 0.5, 0.5), epsilon = 1.0e-12);
     }
 }

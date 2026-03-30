@@ -290,6 +290,7 @@ impl Mesh {
         Self::new(vertices, faces, true)
     }
 
+
     pub fn create_sphere(radius: f64, n_theta: usize, n_phi: usize) -> Self {
         let sphere = shape::Ball::new(radius);
         let (vertices, faces) = sphere.to_trimesh(n_theta as u32, n_phi as u32);
@@ -297,6 +298,32 @@ impl Mesh {
         Self::new(vertices, faces, true)
     }
 
+
+    /// Create a box mesh with the given dimensions, centered at the origin.
+    ///
+    /// # Arguments
+    ///
+    /// * `length`: the dimension of the box in the x direction
+    /// * `width`: the dimension of the box in the y direction
+    /// * `height`: the dimension of the box in the z direction
+    /// * `is_solid`: whether the box is solid or hollow, used for some specific distance queries
+    ///   in the underlying parry library
+    ///
+    /// returns: Mesh
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::Mesh;
+    /// use approx::assert_relative_eq;
+    /// let mesh = Mesh::create_box(2.0, 4.0, 6.0, false);
+    /// assert_relative_eq!(mesh.aabb().maxs.x, 1.0);
+    /// assert_relative_eq!(mesh.aabb().maxs.y, 2.0);
+    /// assert_relative_eq!(mesh.aabb().maxs.z, 3.0);
+    /// assert_relative_eq!(mesh.aabb().mins.x, -1.0);
+    /// assert_relative_eq!(mesh.aabb().mins.y, -2.0);
+    /// assert_relative_eq!(mesh.aabb().mins.z, -3.0);
+    /// ```
     pub fn create_box(length: f64, width: f64, height: f64, is_solid: bool) -> Self {
         let bx = shape::Cuboid::new(Vector3::new(length / 2.0, width / 2.0, height / 2.0));
         let (vertices, triangles) = bx.to_trimesh();
