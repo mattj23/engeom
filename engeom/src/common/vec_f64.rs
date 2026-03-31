@@ -1,5 +1,24 @@
 //! This module contains a set of common functions for working with vectors and slices of f64 values
 
+/// Compute the arithmetic mean of a slice of f64 values.
+///
+/// Returns `f64::NAN` if the slice is empty.
+///
+/// # Arguments
+///
+/// * `values`: the slice of f64 values to average
+///
+/// returns: f64
+///
+/// # Examples
+///
+/// ```
+/// use engeom::common::vec_f64::mean_value;
+/// let values = vec![1.0, 2.0, 3.0];
+/// assert_eq!(mean_value(&values), 2.0);
+///
+/// assert!(mean_value(&[]).is_nan());
+/// ```
 pub fn mean_value(values: &[f64]) -> f64 {
     if values.is_empty() {
         return f64::NAN; // Return NaN if the slice is empty
@@ -7,6 +26,28 @@ pub fn mean_value(values: &[f64]) -> f64 {
     values.iter().sum::<f64>() / values.len() as f64
 }
 
+/// Compute the mean and population standard deviation of a slice of f64 values.
+///
+/// Returns `None` if the slice is empty.
+///
+/// # Arguments
+///
+/// * `values`: the slice of f64 values to summarize
+///
+/// returns: `Option<(f64, f64)>` — `Some((mean, stdev))` or `None`
+///
+/// # Examples
+///
+/// ```
+/// use engeom::common::vec_f64::mean_and_stdev;
+/// use approx::assert_relative_eq;
+///
+/// let (mean, stdev) = mean_and_stdev(&[2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0]).unwrap();
+/// assert_relative_eq!(mean, 5.0, epsilon = 1e-12);
+/// assert_relative_eq!(stdev, 2.0, epsilon = 1e-12);
+///
+/// assert!(mean_and_stdev(&[]).is_none());
+/// ```
 pub fn mean_and_stdev(values: &[f64]) -> Option<(f64, f64)> {
     if values.is_empty() {
         return None;
@@ -49,7 +90,10 @@ pub fn has_nan(values: &[f64]) -> bool {
 /// # Examples
 ///
 /// ```
-///
+/// use engeom::common::vec_f64::are_all_finite;
+/// assert!(are_all_finite(&[1.0, 2.0, 3.0]));
+/// assert!(!are_all_finite(&[1.0, f64::INFINITY, 3.0]));
+/// assert!(!are_all_finite(&[1.0, f64::NAN, 3.0]));
 /// ```
 pub fn are_all_finite(values: &[f64]) -> bool {
     values.iter().all(|v| v.is_finite())
@@ -156,6 +200,54 @@ pub fn sort_nan_panics(values: &mut [f64]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
+
+    #[test]
+    fn mean_value_empty_returns_nan() {
+        assert!(mean_value(&[]).is_nan());
+    }
+
+    #[test]
+    fn mean_value_single_element() {
+        assert_relative_eq!(mean_value(&[7.0]), 7.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn mean_value_uniform_values() {
+        assert_relative_eq!(mean_value(&[3.0, 3.0, 3.0]), 3.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn mean_value_typical() {
+        assert_relative_eq!(mean_value(&[1.0, 2.0, 3.0, 4.0]), 2.5, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn mean_and_stdev_empty_returns_none() {
+        assert!(mean_and_stdev(&[]).is_none());
+    }
+
+    #[test]
+    fn mean_and_stdev_single_element_has_zero_stdev() {
+        let (mean, stdev) = mean_and_stdev(&[5.0]).unwrap();
+        assert_relative_eq!(mean, 5.0, epsilon = 1e-12);
+        assert_relative_eq!(stdev, 0.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn mean_and_stdev_uniform_values_have_zero_stdev() {
+        let (mean, stdev) = mean_and_stdev(&[4.0, 4.0, 4.0]).unwrap();
+        assert_relative_eq!(mean, 4.0, epsilon = 1e-12);
+        assert_relative_eq!(stdev, 0.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn mean_and_stdev_known_values() {
+        // Population stdev of [2, 4, 4, 4, 5, 5, 7, 9] = 2.0, mean = 5.0
+        let (mean, stdev) = mean_and_stdev(&[2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0]).unwrap();
+        assert_relative_eq!(mean, 5.0, epsilon = 1e-12);
+        assert_relative_eq!(stdev, 2.0, epsilon = 1e-12);
+    }
 
     #[test]
     fn has_nan_test() {
