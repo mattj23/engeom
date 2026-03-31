@@ -305,9 +305,10 @@ impl From<SvdBasis2> for Iso2 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geom2::{Point2, Vector2};
     use crate::geom3::{Point3, Vector3};
     use approx::assert_relative_eq;
-    use std::f64::consts::{PI, SQRT_2};
+    use std::f64::consts::{FRAC_PI_4, PI, SQRT_2};
 
     #[test]
     fn from_points_perfect() {
@@ -374,5 +375,336 @@ mod tests {
         let result = iso * test_point;
 
         assert_relative_eq!(result, Point3::new(SQRT_2 * 2.0, 0.0, 0.0), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn largest_returns_first_basis_vector() {
+        // X spread ±2, Y spread ±1 → X is largest
+        let points = vec![
+            Point3::new(-2.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(0.0, -1.0, 0.0),
+        ];
+        let basis = SvdBasis3::from_points(&points, None).unwrap();
+        let largest = basis.largest();
+        // Component-wise abs to ignore sign conventions
+        assert_relative_eq!(
+            largest.into_inner().abs(),
+            Vector3::x_axis().into_inner().abs(),
+            epsilon = 1e-10
+        );
+    }
+
+    #[test]
+    fn smallest_returns_last_basis_vector() {
+        // Z has zero spread → smallest
+        let points = vec![
+            Point3::new(-2.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(0.0, -1.0, 0.0),
+        ];
+        let basis = SvdBasis3::from_points(&points, None).unwrap();
+        let smallest = basis.smallest();
+        assert_relative_eq!(
+            smallest.into_inner().abs(),
+            Vector3::z_axis().into_inner().abs(),
+            epsilon = 1e-10
+        );
+    }
+
+    #[test]
+    fn basis_variances_match_formula() {
+        let points = vec![
+            Point3::new(-2.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(0.0, -1.0, 0.0),
+        ];
+        let basis = SvdBasis3::from_points(&points, None).unwrap();
+        let variances = basis.basis_variances();
+        for (i, &var) in variances.iter().enumerate() {
+            assert_relative_eq!(var, basis.sv[i].powi(2) / basis.n as f64, epsilon = 1e-10);
+        }
+    }
+
+    #[test]
+    fn basis_stdevs_are_sqrt_of_variances() {
+        let points = vec![
+            Point3::new(-2.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(0.0, -1.0, 0.0),
+        ];
+        let basis = SvdBasis3::from_points(&points, None).unwrap();
+        let variances = basis.basis_variances();
+        let stdevs = basis.basis_stdevs();
+        for (&var, &std) in variances.iter().zip(stdevs.iter()) {
+            assert_relative_eq!(std, var.sqrt(), epsilon = 1e-10);
+        }
+    }
+
+    #[test]
+    fn rank_collinear_points_is_1() {
+        let points: Vec<Point3> = (0..5).map(|i| Point3::new(i as f64, 0.0, 0.0)).collect();
+        let basis = SvdBasis3::from_points(&points, None).unwrap();
+        assert_eq!(basis.rank(1e-10), 1);
+    }
+
+    #[test]
+    fn rank_planar_points_is_2() {
+        let points = vec![
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(-1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(0.0, -1.0, 0.0),
+        ];
+        let basis = SvdBasis3::from_points(&points, None).unwrap();
+        assert_eq!(basis.rank(1e-10), 2);
+    }
+
+    #[test]
+    fn rank_3d_points_is_3() {
+        let points = vec![
+            Point3::new(-2.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(0.0, -1.0, 0.0),
+            Point3::new(0.0, 0.0, 0.5),
+            Point3::new(0.0, 0.0, -0.5),
+        ];
+        let basis = SvdBasis3::from_points(&points, None).unwrap();
+        assert_eq!(basis.rank(1e-10), 3);
+    }
+
+    #[test]
+    fn rank_with_high_tolerance_reduces_rank() {
+        let points = vec![
+            Point3::new(-2.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(0.0, -1.0, 0.0),
+            Point3::new(0.0, 0.0, 0.5),
+            Point3::new(0.0, 0.0, -0.5),
+        ];
+        let basis = SvdBasis3::from_points(&points, None).unwrap();
+        // A tolerance above the smallest SV should drop the rank
+        let tol = basis.sv[2] + 0.1;
+        assert_eq!(basis.rank(tol), 2);
+    }
+
+    #[test]
+    fn point_to_basis_and_back_round_trips() {
+        let points = vec![
+            Point3::new(-2.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(0.0, -1.0, 0.0),
+        ];
+        let basis = SvdBasis3::from_points(&points, None).unwrap();
+        let p = Point3::new(1.5, 0.5, 0.0);
+        let in_basis = basis.point_to_basis(&p);
+        let back = basis.point_from_basis(&in_basis);
+        assert_relative_eq!(back, p, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn point_to_basis_axis_aligned_preserves_coords() {
+        // Axis-aligned basis centered at origin → basis coords equal global coords
+        let points = vec![
+            Point3::new(-2.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(0.0, -1.0, 0.0),
+        ];
+        let basis = SvdBasis3::from_points(&points, None).unwrap();
+        let p = Point3::new(1.0, 0.5, 0.0);
+        let in_basis = basis.point_to_basis(&p);
+        assert_relative_eq!(in_basis.x, 1.0, epsilon = 1e-10);
+        assert_relative_eq!(in_basis.y, 0.5, epsilon = 1e-10);
+        assert_relative_eq!(in_basis.z, 0.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn vec_to_basis_axis_aligned() {
+        let points = vec![
+            Point3::new(-2.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(0.0, -1.0, 0.0),
+        ];
+        let basis = SvdBasis3::from_points(&points, None).unwrap();
+        let v = Vector3::new(1.0, 0.0, 0.0);
+        let vb = basis.vec_to_basis(&v);
+        assert_relative_eq!(vb[0], 1.0, epsilon = 1e-10);
+        assert_relative_eq!(vb[1], 0.0, epsilon = 1e-10);
+        assert_relative_eq!(vb[2], 0.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn from_points_2d_axis_aligned() {
+        let points = vec![
+            Point2::new(-2.0, 0.0),
+            Point2::new(2.0, 0.0),
+            Point2::new(0.0, 1.0),
+            Point2::new(0.0, -1.0),
+        ];
+        let basis = SvdBasis2::from_points(&points, None).unwrap();
+        assert_relative_eq!(basis.center, Point2::origin());
+        assert_relative_eq!(
+            basis.basis[0].abs(),
+            Vector2::x_axis().into_inner().abs(),
+            epsilon = 1e-10
+        );
+        assert_eq!(basis.n, 4);
+    }
+
+    #[test]
+    fn from_points_2d_point_round_trip() {
+        let points = vec![
+            Point2::new(-2.0, 0.0),
+            Point2::new(2.0, 0.0),
+            Point2::new(0.0, 1.0),
+            Point2::new(0.0, -1.0),
+        ];
+        let basis = SvdBasis2::from_points(&points, None).unwrap();
+        let p = Point2::new(1.0, 0.5);
+        let back = basis.point_from_basis(&basis.point_to_basis(&p));
+        assert_relative_eq!(back, p, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn from_points_with_equal_weights_returns_some() {
+        let points = vec![
+            Point3::new(-2.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(0.0, -1.0, 0.0),
+        ];
+        let weights = vec![1.0f64; 4];
+        let result = SvdBasis3::from_points(&points, Some(&weights));
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().n, 4);
+    }
+
+    #[test]
+    fn iso3_from_xyo_identity_axes() {
+        let x0 = UnitVec3::new_normalize(Vector3::new(1.0, 0.0, 0.0));
+        let y = UnitVec3::new_normalize(Vector3::new(0.0, 1.0, 0.0));
+        let iso = iso3_from_xyo(&x0, &y, &Point3::origin());
+        // With identity orientation, points should be unchanged
+        let p = Point3::new(1.0, 2.0, 3.0);
+        let result = iso * p;
+        assert_relative_eq!(result, p, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn iso3_from_xyo_orthogonalizes_y() {
+        // y has an X component that must be removed
+        let x0 = UnitVec3::new_normalize(Vector3::new(1.0, 0.0, 0.0));
+        let y = UnitVec3::new_normalize(Vector3::new(1.0, 1.0, 0.0));
+        let iso = iso3_from_xyo(&x0, &y, &Point3::origin());
+        // A point purely in the Y direction should have no X component in local frame
+        let p = Point3::new(0.0, 1.0, 0.0);
+        let result = iso * p;
+        assert_relative_eq!(result.x, 0.0, epsilon = 1e-10);
+        assert_relative_eq!(result.y, 1.0, epsilon = 1e-10);
+        assert_relative_eq!(result.z, 0.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn iso3_from_xyo_with_origin_offset() {
+        let x0 = UnitVec3::new_normalize(Vector3::new(1.0, 0.0, 0.0));
+        let y = UnitVec3::new_normalize(Vector3::new(0.0, 1.0, 0.0));
+        let origin = Point3::new(1.0, 1.0, 0.0);
+        let iso = iso3_from_xyo(&x0, &y, &origin);
+        // A point at the origin location should map to the local origin
+        let result = iso * origin;
+        assert_relative_eq!(result, Point3::origin(), epsilon = 1e-10);
+    }
+
+    #[test]
+    fn iso2_from_basis_identity() {
+        let basis = [Vector2::new(1.0, 0.0), Vector2::new(0.0, 1.0)];
+        let iso = iso2_from_basis(&basis, &Point2::origin());
+        let p = Point2::new(1.0, 2.0);
+        assert_relative_eq!(iso * p, p, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn iso2_from_basis_rotated_45_degrees() {
+        let c = FRAC_PI_4.cos();
+        let s = FRAC_PI_4.sin();
+        let basis = [Vector2::new(c, s), Vector2::new(-s, c)];
+        let iso = iso2_from_basis(&basis, &Point2::origin());
+        // A point along the basis direction should land on local +X
+        let p = Point2::new(c, s);
+        let result = iso * p;
+        assert_relative_eq!(result.x, 1.0, epsilon = 1e-10);
+        assert_relative_eq!(result.y, 0.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn iso2_from_basis_with_origin_offset() {
+        let basis = [Vector2::new(1.0, 0.0), Vector2::new(0.0, 1.0)];
+        let origin = Point2::new(3.0, 4.0);
+        let iso = iso2_from_basis(&basis, &origin);
+        let result = iso * origin;
+        assert_relative_eq!(result, Point2::origin(), epsilon = 1e-10);
+    }
+
+    #[test]
+    fn from_ref_svd_basis3_for_iso3_maps_center_to_origin() {
+        let points = vec![
+            Point3::new(-2.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(0.0, -1.0, 0.0),
+        ];
+        let basis = SvdBasis3::from_points(&points, None).unwrap();
+        let iso = Iso3::from(&basis);
+        assert_relative_eq!(iso * basis.center, Point3::origin(), epsilon = 1e-10);
+    }
+
+    #[test]
+    fn from_owned_svd_basis3_for_iso3_maps_center_to_origin() {
+        let points = vec![
+            Point3::new(-2.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(0.0, -1.0, 0.0),
+        ];
+        let basis = SvdBasis3::from_points(&points, None).unwrap();
+        let center = basis.center;
+        let iso = Iso3::from(basis);
+        assert_relative_eq!(iso * center, Point3::origin(), epsilon = 1e-10);
+    }
+
+    #[test]
+    fn from_ref_svd_basis2_for_iso2_maps_center_to_origin() {
+        let points = vec![
+            Point2::new(-2.0, 0.0),
+            Point2::new(2.0, 0.0),
+            Point2::new(0.0, 1.0),
+            Point2::new(0.0, -1.0),
+        ];
+        let basis = SvdBasis2::from_points(&points, None).unwrap();
+        let iso = Iso2::from(&basis);
+        assert_relative_eq!(iso * basis.center, Point2::origin(), epsilon = 1e-10);
+    }
+
+    #[test]
+    fn from_owned_svd_basis2_for_iso2_maps_center_to_origin() {
+        let points = vec![
+            Point2::new(-2.0, 0.0),
+            Point2::new(2.0, 0.0),
+            Point2::new(0.0, 1.0),
+            Point2::new(0.0, -1.0),
+        ];
+        let basis = SvdBasis2::from_points(&points, None).unwrap();
+        let center = basis.center;
+        let iso = Iso2::from(basis);
+        assert_relative_eq!(iso * center, Point2::origin(), epsilon = 1e-10);
     }
 }
