@@ -477,7 +477,7 @@ impl SurfacePoint3 {
         Plane3::from_inner(engeom::Plane3::from(&self.inner))
     }
 
-    fn shift(&self, offset: f64) -> Self {
+    fn new_shifted(&self, offset: f64) -> Self {
         Self::from_inner(self.inner.new_shifted(offset))
     }
 

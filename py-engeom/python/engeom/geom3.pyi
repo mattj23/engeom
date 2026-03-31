@@ -510,7 +510,7 @@ class SurfacePoint3:
         """
         ...
 
-    def shift(self, offset: float) -> SurfacePoint3:
+    def new_shifted(self, offset: float) -> SurfacePoint3:
         """
         Return a new surface point with the position shifted by the specified distance along the normal vector. The
         normal vector is unchanged.

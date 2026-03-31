@@ -440,7 +440,7 @@ impl SurfacePoint2 {
         Self::from_inner(self.inner.rot_normal(angle))
     }
 
-    fn shift(&self, distance: f64) -> Self {
+    fn new_shifted(&self, distance: f64) -> Self {
         Self::from_inner(self.inner.new_shifted(distance))
     }
 }
