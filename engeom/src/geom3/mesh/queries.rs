@@ -241,7 +241,6 @@ impl Mesh {
     ///
     /// A `SplitResult<Mesh>` describing how the mesh relates to the plane.
     pub fn split(&self, plane: &Plane3) -> SplitResult<Mesh> {
-        // TODO: Needs test coverage
         let result = self.shape.local_split(&plane.normal, plane.d, 1.0e-6);
         match result {
             SplitResult::Pair(a, b) => {
@@ -259,23 +258,17 @@ impl Mesh {
     ///
     /// # Arguments
     ///
-    /// * `plane`:
-    /// * `tol`:
+    /// * `plane`: the plane used to section the mesh
+    /// * `tol`: the tolerance used for the intersection and for the construction of the curves,
+    ///   defaults to 1.0e-6
     ///
     /// returns: Result<Vec<Curve3, Global>, Box<dyn Error, Global>>
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
     pub fn section(&self, plane: &Plane3, tol: Option<f64>) -> Result<Vec<Curve3>> {
-        // TODO: Needs test coverage
         let tol = tol.unwrap_or(1.0e-6);
         let mut collected = Vec::new();
         let result = self
             .shape
-            .intersection_with_local_plane(&plane.normal, plane.d, 1.0e-6);
+            .intersection_with_local_plane(&plane.normal, plane.d, tol);
 
         if let IntersectResult::Intersect(pline) = result {
             let chains = chained_indices(pline.indices());
@@ -536,6 +529,63 @@ mod tests {
         match mesh.split(&plane) {
             SplitResult::Negative => {}
             _ => panic!("expected whole mesh on negative side"),
+        }
+    }
+
+    #[test]
+    fn section_unit_cylinder_in_xz_plane_creates_one_circle_curve() {
+        use std::f64::consts::TAU;
+
+        let mesh = Mesh::create_cylinder(1.0, 2.0, 256);
+        let plane = Plane3::y_axis();
+
+        let curves = mesh.section(&plane, Some(1.0e-10)).unwrap();
+        assert_eq!(curves.len(), 1);
+
+        let curve = &curves[0];
+        assert!(curve.count() >= 3);
+
+        for vertex in curve.vertices() {
+            assert_relative_eq!(vertex.y, 0.0, epsilon = 1.0e-12);
+
+            let radius = (vertex.x * vertex.x + vertex.z * vertex.z).sqrt();
+            // The tolerance has to be high enough to account for the fact that the cylinder
+            // faces have a diagonal in them and where they pass through y=0 is halfway between
+            // the arc endpoints formed by the vertices that were deliberately placed at the radius
+            assert_relative_eq!(radius, 1.0, epsilon = 1.0e-4);
+        }
+
+        assert_relative_eq!(curve.length(), TAU, epsilon = 1.0e-2);
+    }
+
+    #[test]
+    fn section_two_unit_cylinder_in_xy_plane_creates_two_circles_curves() {
+        use std::f64::consts::TAU;
+
+        let mut mesh = Mesh::create_cylinder(1.0, 2.0, 256);
+        mesh.transform_by(&Iso3::translation(0.0, 0.0, -2.0));
+        let mut m1 = Mesh::create_cylinder(1.0, 2.0, 256);
+        m1.transform_by(&Iso3::translation(0.0, 0.0, 2.0));
+
+        mesh.append(&mut m1).unwrap();
+
+        let plane = Plane3::y_axis();
+
+        let curves = mesh.section(&plane, Some(1.0e-10)).unwrap();
+        assert_eq!(curves.len(), 2);
+
+        for curve in curves.iter() {
+            assert!(curve.count() >= 3);
+            assert_relative_eq!(curve.length(), TAU, epsilon = 1.0e-2);
+
+            let expected_center = if curve.vertices()[0].z > 0.0 {
+                Point3::new(0.0, 0.0, 2.0)
+            } else {
+                Point3::new(0.0, 0.0, -2.0)
+            };
+            for vertex in curve.vertices() {
+                assert_relative_eq!(dist(&expected_center, vertex), 1.0, epsilon = 1.0e-4);
+            }
         }
     }
 

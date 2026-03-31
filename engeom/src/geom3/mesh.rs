@@ -290,6 +290,35 @@ impl Mesh {
         Self::new(vertices, faces, true)
     }
 
+    /// Create a spherical mesh centered at the origin. The `n_theta` and `n_phi` parameters control
+    /// the tessellation density.
+    ///
+    /// # Arguments
+    ///
+    /// * `radius` - Radius of the sphere.
+    /// * `n_theta` - Number of subdivisions around the polar direction.
+    /// * `n_phi` - Number of subdivisions around the azimuthal direction.
+    ///
+    /// returns: Mesh
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::Mesh;
+    /// use approx::assert_relative_eq;
+    ///
+    /// let n_t = 14;
+    /// let n_p = 15;
+    /// let sphere = Mesh::create_sphere(1.0, n_t, n_p);
+    ///
+    /// assert_eq!(sphere.vertices().len(), n_t * (n_p - 1) + 2);
+    ///
+    /// // Verify that the vertices are on the surface of the unit sphere.
+    /// for vertex in sphere.vertices() {
+    ///     let dist_from_origin = vertex.coords.norm();
+    ///     assert_relative_eq!(dist_from_origin, 1.0)
+    /// }
+    /// ```
     pub fn create_sphere(radius: f64, n_theta: usize, n_phi: usize) -> Self {
         let sphere = shape::Ball::new(radius);
         let (vertices, faces) = sphere.to_trimesh(n_theta as u32, n_phi as u32);
@@ -328,6 +357,38 @@ impl Mesh {
         Self::new(vertices, triangles, is_solid)
     }
 
+    /// Create a cylindrical mesh centered at the origin and aligned with the local `y` axis.
+    /// The `radius` controls the cylinder radius, `height` its full height, and `steps`
+    /// controls the tessellation density around the circumference.
+    ///
+    /// # Arguments
+    ///
+    /// * `radius` - Radius of the cylinder.
+    /// * `height` - Full height of the cylinder (along the y-axis).
+    /// * `steps` - Number of subdivisions around the cylinder axis.
+    ///
+    /// returns: Mesh
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::{Mesh, Point3};
+    /// use approx::assert_relative_eq;
+    ///
+    /// let cyl = Mesh::create_cylinder(1.0, 4.0, 16);
+    ///
+    /// assert_relative_eq!(cyl.aabb().mins.z, -1.0);
+    /// assert_relative_eq!(cyl.aabb().maxs.z,  1.0);
+    /// assert_relative_eq!(cyl.aabb().mins.x, -1.0);
+    /// assert_relative_eq!(cyl.aabb().maxs.x,  1.0);
+    /// assert_relative_eq!(cyl.aabb().mins.y, -2.0);
+    /// assert_relative_eq!(cyl.aabb().maxs.y,  2.0);
+    ///
+    /// for vertex in cyl.vertices() {
+    ///     let proj = Point3::new(vertex.x, 0.0, vertex.z);
+    ///     assert_relative_eq!(proj.coords.norm(), 1.0);
+    /// }
+    /// ```
     pub fn create_cylinder(radius: f64, height: f64, steps: usize) -> Self {
         let cyl = shape::Cylinder::new(height / 2.0, radius);
         let (vertices, faces) = cyl.to_trimesh(steps as u32);
