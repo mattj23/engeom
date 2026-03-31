@@ -700,22 +700,7 @@ impl Intersection<&Segment2, Vec<Point2>> for Circle2 {
 
 type Residuals = Matrix<f64, Dyn, U1, Owned<f64, Dyn, U1>>;
 
-///
-///
-/// # Arguments
-///
-/// * `points`:
-/// * `initial`:
-/// * `mode`:
-///
-/// returns: Result<Circle2, Box<dyn Error, Global>>
-///
-/// # Examples
-///
-/// ```
-///
-/// ```
-pub fn fit_circle(points: &[Point2], initial: &Circle2, mode: BestFit) -> Result<Circle2> {
+fn fit_circle(points: &[Point2], initial: &Circle2, mode: BestFit) -> Result<Circle2> {
     let problem = CircleFit::new(points, mode, initial);
     let (result, report) = LevenbergMarquardt::new().minimize(problem);
 
@@ -849,9 +834,8 @@ mod tests {
     use rand::RngExt;
 
     use crate::geom2::Ray2;
-    use approx::{assert_abs_diff_eq, assert_relative_eq};
+    use approx::assert_relative_eq;
 
-    use rand::Rng;
     use rand_distr::Normal;
     use std::f64::consts::PI;
     use test_case::test_case;

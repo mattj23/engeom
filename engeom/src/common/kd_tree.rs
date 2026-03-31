@@ -4,21 +4,6 @@ use kdtree::KdTree as KdTreeInner;
 use kdtree::distance::squared_euclidean;
 use uuid::Uuid;
 
-// fn check_tree() {
-//     let a: ([f64; 2], usize) = ([0f64, 0f64], 0);
-//     let b: ([f64; 2], usize) = ([1f64, 1f64], 1);
-//     let c: ([f64; 2], usize) = ([2f64, 2f64], 2);
-//     let d: ([f64; 2], usize) = ([3f64, 3f64], 3);
-//
-//     let dimensions = 2;
-//     let mut kdtree = KdTreeInner::new(dimensions);
-//
-//     kdtree.add(&a.0, a.1).unwrap();
-//     kdtree.add(&b.0, b.1).unwrap();
-//     kdtree.add(&c.0, c.1).unwrap();
-//     kdtree.add(&d.0, d.1).unwrap();
-// }
-
 /// A KD tree associated with a unique UUID, such that it can be checked to be matched against a
 /// specific entity.  The idea is that the UUID of the associated object will change if the object
 /// points are modified, and thus the matched tree can be validated before use.
@@ -238,8 +223,10 @@ impl<const D: usize> KdTreeSearch<D> for PartialKdTree<D> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Point2;
     use crate::common::indices::index_vec;
+    use crate::common::points::dist;
+    use crate::tests::stanford_bun_2;
+    use crate::{Point2, Point3};
     use approx::assert_relative_eq;
     use rand::prelude::SliceRandom;
 
@@ -312,5 +299,123 @@ mod tests {
                 assert_relative_eq!(0.0, e, epsilon = 1e-6);
             }
         }
+    }
+
+    #[test]
+    fn partial_kd_tree_nearest() -> Result<()> {
+        let mesh = stanford_bun_2();
+        let even = (0..mesh.vertices().len()).step_by(2).collect::<Vec<_>>();
+        let mask = IndexMask::try_from_indices(&even, mesh.vertices().len())?;
+        let reduced_points = mask.clone_indices_of(&mesh.vertices())?;
+        let reduced_tree = KdTree::new(&reduced_points)?;
+
+        let partial_tree = PartialKdTree::new(mesh.vertices(), &mask)?;
+        let n = 3;
+
+        for p in mesh.vertices().iter() {
+            let mut result = partial_tree
+                .nearest(p, n)
+                .iter()
+                .map(|x| x.0)
+                .collect::<Vec<_>>();
+            let mut reduced_result = reduced_tree
+                .nearest(p, n)
+                .iter()
+                .map(|x| x.0)
+                .collect::<Vec<_>>();
+            result.sort();
+            reduced_result.sort();
+
+            assert_eq!(result.len(), reduced_result.len());
+            for (a, b) in result.iter().zip(reduced_result.iter()) {
+                assert_relative_eq!(mesh.vertices()[*a], reduced_points[*b], epsilon = 1e-6);
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn kd_tree_nearest_one_matches_brute_force_on_stanford_bun_vertices() {
+        let mesh = stanford_bun_2();
+        let vertices = mesh.vertices().to_vec();
+        let tree = KdTree::new(&vertices).expect("KD tree creation failed");
+
+        for (expected_index, query) in vertices.iter().enumerate() {
+            let (actual_index, actual_distance) = tree.nearest_one(query);
+            assert_eq!(actual_index, expected_index);
+            assert_relative_eq!(actual_distance, 0.0, epsilon = 1e-6);
+
+            let expected = brute_force_nearest_n(&vertices, query, 1);
+            assert_eq!(expected.len(), 1);
+            assert_eq!(expected[0].0, expected_index);
+            assert_relative_eq!(expected[0].1, 0.0, epsilon = 1e-6);
+        }
+    }
+
+    #[test]
+    fn kd_tree_nearest_matches_brute_force_on_stanford_bun_vertices() {
+        let mesh = stanford_bun_2();
+        let vertices = mesh.vertices().to_vec();
+        let tree = KdTree::new(&vertices).expect("KD tree creation failed");
+
+        for query in &vertices {
+            let expected = brute_force_nearest_n(&vertices, query, 3);
+            let actual = tree.nearest(query, 3);
+
+            assert_eq!(actual.len(), expected.len());
+            for ((actual_index, actual_distance), (expected_index, expected_distance)) in
+                actual.iter().zip(expected.iter())
+            {
+                assert_eq!(actual_index, expected_index);
+                assert_relative_eq!(actual_distance, expected_distance, epsilon = 1e-6);
+            }
+        }
+    }
+
+    #[test]
+    fn kd_tree_within_matches_brute_force_on_stanford_bun_vertices() {
+        let mesh = stanford_bun_2();
+        let vertices = mesh.vertices().to_vec();
+        let tree = KdTree::new(&vertices).expect("KD tree creation failed");
+
+        let search_dist = mesh.aabb().extents().x * 0.1;
+
+        for query in vertices.iter() {
+            let expected = vertices
+                .iter()
+                .filter(|p| dist(query, *p) < search_dist)
+                .count();
+            let tested = tree.within(query, search_dist).len();
+            assert_eq!(tested, expected);
+        }
+    }
+
+    /// Returns the `count` nearest points to `query` as `(index, distance)` pairs,
+    /// sorted from nearest to farthest.
+    ///
+    /// If `count` is larger than the number of points, all points are returned.
+    ///
+    /// This is brute force: it checks every point in the collection.
+    pub fn brute_force_nearest_n(
+        points: &[Point3],
+        query: &Point3,
+        count: usize,
+    ) -> Vec<(usize, f64)> {
+        let mut neighbors: Vec<(usize, f64)> = points
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let dx = p.x - query.x;
+                let dy = p.y - query.y;
+                let dz = p.z - query.z;
+                let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+                (i, dist)
+            })
+            .collect();
+
+        neighbors.sort_by(|a, b| a.1.total_cmp(&b.1));
+        neighbors.truncate(count);
+        neighbors
     }
 }

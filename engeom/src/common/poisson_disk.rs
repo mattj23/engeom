@@ -63,8 +63,6 @@ mod tests {
 
         for _ in 0..100 {
             let points = random_points(n, mx);
-            // let mut indices = index_vec(None, n);
-            // indices.shuffle(&mut rand::rng());
 
             let keep = sample_poisson_disk_all(&points, r);
             let at_least = (mx * mx) / (r * r) * 0.25;

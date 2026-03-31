@@ -4,7 +4,7 @@
 use num_traits::{One, Zero};
 use std::ops::{Add, Div};
 
-/// This is a very simple, low memory struct to compute the average or weighted average of a set of
+/// This is a very simple, low-memory struct to compute the average or weighted average of a set of
 /// values using a sum and a count. The only reason that you would use this instead of two
 /// variables is when you're trying to average several different things at once, and you want to
 /// halve the number of variables you need to keep track of.
