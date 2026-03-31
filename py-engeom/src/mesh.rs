@@ -150,7 +150,12 @@ impl Mesh {
         self.vertex_normals.as_ref().unwrap().bind(py)
     }
 
+    fn new_offset_vertices(&self, offset: f64) -> Self {
+        Self::from_inner(self.inner.new_offset_vertices(offset))
+    }
+
     fn get_patch_boundaries(&self) -> PyResult<Vec<Curve3>> {
+        // TODO: Is this actually used? What's the difference between it and `boundary_curves`?
         let boundaries = self
             .inner
             .get_patch_boundary_points()

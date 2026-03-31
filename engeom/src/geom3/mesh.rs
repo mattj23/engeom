@@ -27,7 +27,7 @@ use parry3d_f64::shape::{TriMesh, TriMeshFlags};
 use parry3d_f64::{shape, transformation};
 pub use uv_mapping::UvMapping;
 
-/// A struct which represents a point on the surface of a mesh, including the index of the face
+/// A struct that represents a point on the surface of a mesh, including the index of the face
 /// on which it lies, its barycentric coordinates, and the point/normal representation in space.
 /// This representation has no link back to the original mesh, so the face index and barycentric
 /// coordinates will be invalid if (1) the mesh is modified, or (2) if you attempt to use them on
@@ -98,7 +98,10 @@ pub struct Mesh {
     uv: Option<UvMapping>,
 }
 
+// ===============================================================================================
 // Core access
+// ===============================================================================================
+
 impl Mesh {
     /// Get a reference to the AABB of the underlying mesh in the local coordinate system.
     pub fn aabb(&self) -> Aabb {
@@ -129,11 +132,10 @@ impl Mesh {
     }
 }
 
+// ===============================================================================================
+// General creation methods
+// ===============================================================================================
 impl Mesh {
-    pub fn calc_edges(&self) -> Result<MeshEdges<'_>> {
-        MeshEdges::new(self)
-    }
-
     /// Create a new mesh from a list of vertices and a list of triangles.  Additional options can
     /// be set to merge duplicate vertices and delete degenerate triangles.
     ///
@@ -200,6 +202,53 @@ impl Mesh {
             uv: None,
         }
     }
+}
+
+// ===============================================================================================
+// Mutation/Transformation
+// ===============================================================================================
+impl Mesh {
+    /// Transform the mesh in place by applying the given transformation to all vertices.
+    pub fn transform_by(&mut self, transform: &Iso3) {
+        self.shape.transform_vertices(transform);
+    }
+
+    /// Create a new mesh by offsetting each vertex along its smoothed vertex normal.
+    ///
+    /// The offset is applied as `vertex + offset * normal`, where the normal is the
+    /// normalized per-vertex normal computed from adjacent face normals.
+    ///
+    /// Positive offsets expand the mesh outward; negative offsets shrink it inward.
+    /// The original mesh is not modified.
+    ///
+    /// # Arguments
+    ///
+    /// * `offset`: The distance to offset each vertex along its normal.
+    ///
+    /// returns: Mesh
+    pub fn new_offset_vertices(&self, offset: f64) -> Self {
+        // These are already normalized
+        let normals = self.get_vertex_normals();
+
+        let updated = self
+            .vertices()
+            .iter()
+            .zip(normals.iter())
+            .map(|(v, n)| v + offset * n)
+            .collect();
+
+        Self::new(updated, self.faces().to_vec(), self.is_solid)
+    }
+}
+
+// ===============================================================================================
+// Unsorted
+// ===============================================================================================
+
+impl Mesh {
+    pub fn calc_edges(&self) -> Result<MeshEdges<'_>> {
+        MeshEdges::new(self)
+    }
 
     /// Return a convex hull of the points in the mesh.
     pub fn convex_hull(&self) -> Self {
@@ -219,11 +268,6 @@ impl Mesh {
 
     pub fn uv(&self) -> Option<&UvMapping> {
         self.uv.as_ref()
-    }
-
-    /// Transform the mesh in place by applying the given transformation to all vertices.
-    pub fn transform_by(&mut self, transform: &Iso3) {
-        self.shape.transform_vertices(transform);
     }
 
     pub fn uv_to_3d(&self, uv: &Point2) -> Option<MeshSurfPoint> {
@@ -268,7 +312,113 @@ impl Mesh {
             None
         }
     }
+    /// Create a new `MeshNav` structure for this mesh. This structure is used to efficiently
+    /// navigate the mesh through edges and faces.  It is recommended to use this if you will be
+    /// performing multiple structural queries on the mesh, so that the structure does not need to
+    /// be recomputed each time.
+    pub fn nav(&self) -> MeshNav<'_> {
+        MeshNav::new(self)
+    }
 
+    /// Calculates the patches in the mesh. If you are going to be doing multiple queries of the
+    /// structure of the mesh, either use the half-edge representation, or generate a `MeshNav`
+    /// through the `nav()` method to avoid having to recompute the mesh structure each time.
+    ///
+    /// # Arguments
+    ///
+    /// * `mask`:
+    ///
+    /// returns: Result<Vec<IndexMask, Global>, Box<dyn Error, Global>>
+    pub fn get_patches(&self, mask: Option<&IndexMask>) -> Result<Vec<IndexMask>> {
+        let nav = self.nav();
+        nav.patches(mask)
+    }
+
+    /// Gets the boundary points of each patch in the mesh.  This function will return a list of
+    /// lists of points, where each list of points is the boundary of a patch.  Note that this
+    /// function will not work on non-manifold meshes.
+    ///
+    /// returns: Result<Vec<Vec<usize, Global>, Global>>
+    pub fn get_patch_boundary_points(&self) -> Result<Vec<Vec<Point3>>> {
+        let edges = MeshEdges::new(self)?;
+
+        let mut b_loops = Vec::new();
+        for b_loop in edges.boundary_loops.iter() {
+            b_loops.push(
+                b_loop
+                    .iter()
+                    .map(|vi| self.vertices()[*vi as usize])
+                    .collect(),
+            );
+        }
+
+        Ok(b_loops)
+    }
+
+    pub fn get_face_normals(&self) -> Result<Vec<UnitVec3>> {
+        let mut result = Vec::new();
+        for t in self.shape.triangles() {
+            if let Some(n) = t.normal() {
+                result.push(n);
+            } else {
+                return Err("Failed to get normal".into());
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Calculates and returns the areas of all triangular faces in the shape.
+    ///
+    /// This function iterates over all the triangles in the shape, computes the area
+    /// of each triangle using the `area` method, and collects the results into a vector.
+    pub fn get_face_areas(&self) -> Vec<f64> {
+        self.shape.triangles().map(|t| t.area()).collect::<Vec<_>>()
+    }
+
+    /// Compute smooth per-vertex normals by averaging the normals of all adjacent triangles
+    /// weighted by triangle area. At the end of the computation, the normals are normalized to
+    /// have unit length.
+    ///
+    /// Be aware that vertices that are not referenced by any valid triangle keep the zero vector.
+    ///
+    /// Also, be aware that this may not produce the results you expect for meshes with large flat
+    /// surfaces represented by multiple triangles. For example, on a cube mesh, not all corner
+    /// vertices will point along the diagonals, since each vertex will have some faces where it
+    /// touches two triangles and may have some faces where it touches only one triangle, making
+    /// the weights uneven.
+    pub fn get_vertex_normals(&self) -> Vec<Vector3> {
+        let mut sums: Vec<Vector3> = vec![Vector3::new(0.0, 0.0, 0.0); self.shape.vertices().len()];
+        let mut weights = vec![0.0; self.shape.vertices().len()];
+
+        for (face_i, tri) in self.shape.triangles().enumerate() {
+            let indices = self.shape.indices()[face_i];
+            let a = tri.area();
+            if let Some(n) = tri.normal() {
+                for i in indices {
+                    sums[i as usize] += n.into_inner() * a;
+                    weights[i as usize] += a;
+                }
+            }
+        }
+
+        // Normalize the normals
+        for i in 0..sums.len() {
+            if weights[i] > 0.0 {
+                let v = sums[i] / weights[i];
+                sums[i] = v.normalize();
+            }
+        }
+
+        sums
+    }
+}
+
+// ===============================================================================================
+// Shape creation methods
+// ===============================================================================================
+
+impl Mesh {
     pub fn create_cone(half_height: f64, radius: f64, steps: usize) -> Self {
         let cone = shape::Cone::new(half_height, radius);
         let (vertices, faces) = cone.to_trimesh(steps as u32);
@@ -429,84 +579,37 @@ impl Mesh {
         mesh.transform_by(&transform);
         mesh
     }
+}
 
-    /// Create a new `MeshNav` structure for this mesh. This structure is used to efficiently
-    /// navigate the mesh through edges and faces.  It is recommended to use this if you will be
-    /// performing multiple structural queries on the mesh, so that the structure does not need to
-    /// be recomputed each time.
-    pub fn nav(&self) -> MeshNav<'_> {
-        MeshNav::new(self)
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tests::stanford_bun_4;
+    use approx::assert_relative_eq;
+
+    #[test]
+    fn vertex_normals_match_vertex_count_and_are_normalized() {
+        let mesh = stanford_bun_4();
+        let normals = mesh.get_vertex_normals();
+
+        assert_eq!(normals.len(), mesh.vertices().len());
+
+        for normal in normals {
+            assert_relative_eq!(normal.norm(), 1.0, epsilon = 1.0e-12);
+        }
     }
 
-    /// Calculates the patches in the mesh. If you are going to be doing multiple queries of the
-    /// structure of the mesh, either use the half-edge representation, or generate a `MeshNav`
-    /// through the `nav()` method to avoid having to recompute the mesh structure each time.
-    ///
-    /// # Arguments
-    ///
-    /// * `mask`:
-    ///
-    /// returns: Result<Vec<IndexMask, Global>, Box<dyn Error, Global>>
-    pub fn get_patches(&self, mask: Option<&IndexMask>) -> Result<Vec<IndexMask>> {
-        let nav = self.nav();
-        nav.patches(mask)
-    }
+    #[test]
+    fn new_offset_vertices_preserves_spherical_radius() {
+        let radius = 1.0;
+        let offset = 0.1;
+        let mesh = Mesh::create_sphere(radius, 100, 100);
+        let offset_mesh = mesh.new_offset_vertices(offset);
 
-    /// Gets the boundary points of each patch in the mesh.  This function will return a list of
-    /// lists of points, where each list of points is the boundary of a patch.  Note that this
-    /// function will not work on non-manifold meshes.
-    ///
-    /// returns: Result<Vec<Vec<usize, Global>, Global>>
-    pub fn get_patch_boundary_points(&self) -> Result<Vec<Vec<Point3>>> {
-        let edges = MeshEdges::new(self)?;
+        assert_eq!(mesh.vertices().len(), offset_mesh.vertices().len());
 
-        let mut b_loops = Vec::new();
-        for b_loop in edges.boundary_loops.iter() {
-            b_loops.push(
-                b_loop
-                    .iter()
-                    .map(|vi| self.vertices()[*vi as usize])
-                    .collect(),
-            );
+        for vertex in offset_mesh.vertices() {
+            assert_relative_eq!(vertex.coords.norm(), radius + offset, epsilon = 1.0e-5);
         }
-
-        Ok(b_loops)
-    }
-
-    pub fn get_face_normals(&self) -> Result<Vec<UnitVec3>> {
-        let mut result = Vec::new();
-        for t in self.shape.triangles() {
-            if let Some(n) = t.normal() {
-                result.push(n);
-            } else {
-                return Err("Failed to get normal".into());
-            }
-        }
-
-        Ok(result)
-    }
-
-    pub fn get_vertex_normals(&self) -> Vec<Vector3> {
-        let mut sums: Vec<Vector3> = vec![Vector3::new(0.0, 0.0, 0.0); self.shape.vertices().len()];
-        let mut counts = vec![0; self.shape.vertices().len()];
-
-        for (indices, tri) in self.shape.indices().iter().zip(self.shape.triangles()) {
-            if let Some(n) = tri.normal() {
-                for i in indices {
-                    sums[*i as usize] += n.into_inner();
-                    counts[*i as usize] += 1;
-                }
-            }
-        }
-
-        // Normalize the normals
-        for i in 0..sums.len() {
-            if counts[i] > 0 {
-                let v = sums[i] / counts[i] as f64;
-                sums[i] = v.normalize();
-            }
-        }
-
-        sums
     }
 }

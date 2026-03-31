@@ -1125,6 +1125,16 @@ class Mesh:
 
         :return: an independent copy of the mesh.
         """
+        ...
+
+    def new_offset_vertices(self, offset: float) -> Mesh:
+        """
+        Create a new mesh with the same structure, but in which the vertices have been offset by the specified amount
+        along their normal directions. The vertex normals are calculated through the same method as `vertex_normals`,
+        which involves an area-weighted average of the normals of the triangles that share a vertex.
+        :param offset: the amount to offset the vertices by in their respective normal directions
+        :return: a new mesh with the vertices offset
+        """
 
     def transform_by(self, iso: Iso3):
         """
@@ -1168,7 +1178,7 @@ class Mesh:
         """
         Will return an immutable view of the vertex normals of the mesh as a numpy array of shape (n, 3), where n is the
         number of vertices in the mesh.  If a vertex has no faces, the normal will be (0, 0, 0), otherwise the normal
-        will have been averaged from the normals of the faces that share the vertex.
+        will have been area-weight averaged from the normals of the faces that share the vertex.
         :return: a numpy array of shape (n, 3) containing the normals of the vertices of the mesh.
         """
         ...

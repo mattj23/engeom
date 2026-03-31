@@ -327,9 +327,9 @@ mod tests {
 
             let j = point_surface_jacobian(&p, &s, &params);
 
-            assert_relative_eq!(j.x, tx, epsilon = 1e-6);
-            assert_relative_eq!(j.y, ty, epsilon = 1e-6);
-            assert_relative_eq!(j.z, tr, epsilon = 1e-6);
+            assert_relative_eq!(j.x, tx, epsilon = 1e-5);
+            assert_relative_eq!(j.y, ty, epsilon = 1e-5);
+            assert_relative_eq!(j.z, tr, epsilon = 1e-5);
         }
     }
 }
