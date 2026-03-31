@@ -18,12 +18,23 @@ impl IndexMask {
     /// * `len`: the length of the mask
     /// * `value`: the initial value for each index in the mask
     ///
-    /// returns: IndexMask
+    /// returns: `IndexMask`
     pub fn new(len: usize, value: bool) -> Self {
         let mask = BitVec::repeat(value, len);
         IndexMask { mask }
     }
 
+    /// Create an `IndexMask` from a list of indices that should be set to `true`.
+    ///
+    /// Any index not listed will be `false`. Returns an error if any index is out of bounds for the
+    /// specified mask length.
+    ///
+    /// # Arguments
+    ///
+    /// * `indices`: the indices to mark as `true`
+    /// * `len`: the total length of the mask
+    ///
+    /// returns: `Result<IndexMask>`
     pub fn try_from_indices(indices: &[usize], len: usize) -> Result<Self> {
         let mut mask = BitVec::repeat(false, len);
         for &index in indices {
@@ -35,7 +46,7 @@ impl IndexMask {
         Ok(IndexMask { mask })
     }
 
-    /// Get the index values stored in the mask as a vector of usize.
+    /// Get the index values stored in the mask as a vector of `usize`.
     pub fn to_indices(&self) -> Vec<usize> {
         let mut indices = Vec::with_capacity(self.mask.len() / 16);
 
@@ -64,6 +75,7 @@ impl IndexMask {
         self.mask.len()
     }
 
+    /// Iterate over the indices where the mask is `true`.
     pub fn iter_true(&self) -> MaskTrueIterator<'_> {
         MaskTrueIterator {
             mask: self,
@@ -71,10 +83,20 @@ impl IndexMask {
         }
     }
 
+    /// Get the number of indices where the mask is `true`.
     pub fn count_true(&self) -> usize {
         self.iter_true().count()
     }
 
+    /// Clone the elements from `items` whose indices are marked `true` in this mask.
+    ///
+    /// The input slice must have the same length as the mask.
+    ///
+    /// # Arguments
+    ///
+    /// * `items`: the items to select from
+    ///
+    /// returns: `Result<Vec<T>>`
     pub fn clone_indices_of<T: Clone>(&self, items: &[T]) -> Result<Vec<T>> {
         if items.len() != self.len() {
             return Err(format!(
@@ -195,6 +217,10 @@ impl IndexMask {
         new_mask.and_mut(other)?;
         Ok(new_mask)
     }
+
+    /// Perform a bitwise AND operation with another mask, modifying this mask in place.
+    ///
+    /// Returns an error if the masks are different lengths.
     pub fn and_mut(&mut self, other: &IndexMask) -> Result<()> {
         if self.mask.len() != other.mask.len() {
             return Err("Masks must be of the same length".into());
@@ -209,9 +235,9 @@ impl IndexMask {
     /// lengths are different, but the result will not be what's expected. ONLY USE THIS IF YOU ARE
     /// SURE THAT THE MASKS ARE OF THE SAME LENGTH.
     ///
-    /// Because the index mask internally uses a bit vector backed by `usize`, don't expect this
+    /// Because the index mask internally uses a bit-vector backed by `usize`, don't expect this
     /// method to combine only up to the length of the shorter mask. If this mask is longer than
-    /// `other`, the extra bits at the end of the last 64 bit chunk will contaminate their
+    /// `other`, the extra bits at the end of the last 64-bit chunk will contaminate their
     /// counterparts in this mask.
     ///
     /// # Arguments
@@ -280,6 +306,7 @@ impl IndexMask {
         Ok(())
     }
 
+    /// Fill the entire mask with a single boolean value.
     pub fn fill(&mut self, value: bool) {
         for u in self.mask.as_raw_mut_slice() {
             *u = if value { !0 } else { 0 };
@@ -311,6 +338,132 @@ impl<'a> Iterator for MaskTrueIterator<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn or_returns_new_mask_with_union_and_keeps_inputs() {
+        let left = IndexMask::try_from_indices(&[0, 2, 5], 8).unwrap();
+        let right = IndexMask::try_from_indices(&[1, 2, 6], 8).unwrap();
+
+        let result = left.or(&right).unwrap();
+
+        assert_eq!(result.to_indices(), vec![0, 1, 2, 5, 6]);
+        assert_eq!(left.to_indices(), vec![0, 2, 5]);
+        assert_eq!(right.to_indices(), vec![1, 2, 6]);
+    }
+
+    #[test]
+    fn or_returns_error_for_different_lengths() {
+        let left = IndexMask::new(4, true);
+        let right = IndexMask::new(5, false);
+
+        let err = left.or(&right).unwrap_err();
+
+        assert_eq!(err.to_string(), "Masks must be of the same length");
+    }
+
+    #[test]
+    fn not_returns_new_inverted_mask_without_modifying_original() {
+        let mask = IndexMask::try_from_indices(&[1, 3, 4], 6).unwrap();
+
+        let inverted = mask.not();
+
+        assert_eq!(inverted.to_indices(), vec![0, 2, 5]);
+        assert_eq!(mask.to_indices(), vec![1, 3, 4]);
+    }
+
+    #[test]
+    fn clone_indices_of_returns_error_when_item_length_does_not_match_mask_length() {
+        let mask = IndexMask::try_from_indices(&[0, 2], 4).unwrap();
+        let items = vec!["a", "b", "c"];
+
+        let err = mask.clone_indices_of(&items).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "Items length 3 does not match mask length 4"
+        );
+    }
+
+    #[test]
+    fn fill_sets_all_bits_to_false() {
+        let mut mask = IndexMask::new(10, true);
+
+        mask.fill(false);
+
+        assert_eq!(mask.len(), 10);
+        assert_eq!(mask.to_indices(), Vec::<usize>::new());
+        for i in 0..mask.len() {
+            assert!(!mask.get(i), "expected index {} to be false", i);
+        }
+    }
+
+    #[test]
+    fn fill_sets_all_bits_to_true() {
+        let mut mask = IndexMask::new(7, false);
+
+        mask.fill(true);
+
+        assert_eq!(mask.len(), 7);
+        assert_eq!(mask.to_indices(), vec![0, 1, 2, 3, 4, 5, 6]);
+        for i in 0..mask.len() {
+            assert!(mask.get(i), "expected index {} to be true", i);
+        }
+    }
+
+    #[test]
+    fn and_not_mut_removes_bits_present_in_other() {
+        let mut left = IndexMask::try_from_indices(&[0, 2, 4, 6], 8).unwrap();
+        let right = IndexMask::try_from_indices(&[2, 3, 6, 7], 8).unwrap();
+
+        left.and_not_mut(&right).unwrap();
+
+        assert_eq!(left.to_indices(), vec![0, 4]);
+    }
+
+    #[test]
+    fn and_not_returns_new_mask_without_modifying_original() {
+        let left = IndexMask::try_from_indices(&[1, 2, 5, 7], 8).unwrap();
+        let right = IndexMask::try_from_indices(&[2, 4, 7], 8).unwrap();
+
+        let result = left.and_not(&right).unwrap();
+
+        assert_eq!(result.to_indices(), vec![1, 5]);
+        assert_eq!(left.to_indices(), vec![1, 2, 5, 7]);
+        assert_eq!(right.to_indices(), vec![2, 4, 7]);
+    }
+
+    #[test]
+    fn and_returns_new_mask_with_intersection_and_keeps_inputs() {
+        let left = IndexMask::try_from_indices(&[0, 2, 3, 6], 8).unwrap();
+        let right = IndexMask::try_from_indices(&[1, 2, 6, 7], 8).unwrap();
+
+        let result = left.and(&right).unwrap();
+
+        assert_eq!(result.to_indices(), vec![2, 6]);
+        assert_eq!(left.to_indices(), vec![0, 2, 3, 6]);
+        assert_eq!(right.to_indices(), vec![1, 2, 6, 7]);
+    }
+
+    #[test]
+    fn and_not_mut_returns_error_for_different_lengths() {
+        let mut left = IndexMask::new(4, true);
+        let right = IndexMask::new(5, false);
+
+        let err = left.and_not_mut(&right).unwrap_err();
+
+        assert_eq!(err.to_string(), "Masks must be of the same length");
+        assert_eq!(left.to_indices(), vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn and_returns_error_for_different_lengths() {
+        let left = IndexMask::new(4, true);
+        let right = IndexMask::new(5, false);
+
+        let err = left.and(&right).unwrap_err();
+
+        assert_eq!(err.to_string(), "Masks must be of the same length");
+    }
 
     #[cfg(test)]
     mod stress_tests {
