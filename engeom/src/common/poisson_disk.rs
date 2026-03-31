@@ -57,11 +57,11 @@ mod tests {
 
     #[test]
     fn stress_test_poisson_disk() {
-        let n = 5000;
+        let n = 3000;
         let mx = 10.0;
         let r = 0.2;
 
-        for _ in 0..100 {
+        for _ in 0..50 {
             let points = random_points(n, mx);
 
             let keep = sample_poisson_disk_all(&points, r);

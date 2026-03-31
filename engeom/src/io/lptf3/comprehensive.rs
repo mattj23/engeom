@@ -108,7 +108,8 @@ pub fn load_lptf3_comprehensive(
 
                 if let Some((rc, offset)) = ray_check {
                     let detector = Point3::new(0.0, frame.y_pos + rc.detector_y, rc.detector_z);
-                    let ray_point = SurfacePoint3::new_normalize(p, detector - p).new_shifted(offset);
+                    let ray_point =
+                        SurfacePoint3::new_normalize(p, detector - p).new_shifted(offset);
                     let ray = Ray::from(&ray_point);
                     let intersect = mesh.tri_mesh().cast_local_ray(&ray, f64::INFINITY, false);
                     if intersect.is_some() {

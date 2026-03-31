@@ -14,10 +14,13 @@ pub struct SurfacePoint<const D: usize> {
 }
 
 impl<const D: usize> SurfacePoint<D> {
+    /// Creates a new `SurfacePoint` from a point and an already-normalized unit normal.
     pub fn new(point: Point<f64, D>, normal: Unit<SVector<f64, D>>) -> Self {
         Self { point, normal }
     }
 
+    /// Creates a new `SurfacePoint` from a point and an arbitrary normal vector, normalizing the
+    /// vector in the process.
     pub fn new_normalize(point: Point<f64, D>, normal: SVector<f64, D>) -> Self {
         Self::new(point, Unit::new_normalize(normal))
     }
@@ -153,7 +156,195 @@ pub fn surface_point_vector<const D: usize>(
         .collect())
 }
 
+/// A trait for collections of `SurfacePoint` instances that can produce owned copies of their
+/// points and normals as flat `Vec`s. Implemented for slices and `Vec` references of typed
+/// surface point aliases such as `SurfacePoint2` and `SurfacePoint3`.
 pub trait SurfacePointCollection<const D: usize> {
+    /// Returns a `Vec` of cloned position points from this collection.
     fn clone_points(&self) -> Vec<Point<f64, D>>;
+
+    /// Returns a `Vec` of cloned unit normals from this collection.
     fn clone_normals(&self) -> Vec<Unit<SVector<f64, D>>>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use approx::assert_relative_eq;
+    use parry3d_f64::na::{Point2, Point3, Vector2, Vector3};
+
+    fn sp2(px: f64, py: f64, nx: f64, ny: f64) -> SurfacePoint<2> {
+        SurfacePoint::new_normalize(Point2::new(px, py), Vector2::new(nx, ny))
+    }
+
+    fn sp3(px: f64, py: f64, pz: f64, nx: f64, ny: f64, nz: f64) -> SurfacePoint<3> {
+        SurfacePoint::new_normalize(Point3::new(px, py, pz), Vector3::new(nx, ny, nz))
+    }
+
+    #[test]
+    fn new_stores_point_and_normal() {
+        let sp = sp2(1.0, 2.0, 0.0, 1.0);
+        assert_relative_eq!(sp.point, Point2::new(1.0, 2.0));
+        assert_relative_eq!(sp.normal.into_inner(), Vector2::new(0.0, 1.0));
+    }
+
+    #[test]
+    fn new_normalize_normalizes_the_vector() {
+        let sp = SurfacePoint::new_normalize(Point2::new(0.0, 0.0), Vector2::new(0.0, 3.0));
+        assert_relative_eq!(sp.normal.into_inner().norm(), 1.0, epsilon = 1e-12);
+        assert_relative_eq!(
+            sp.normal.into_inner(),
+            Vector2::new(0.0, 1.0),
+            epsilon = 1e-12
+        );
+    }
+
+    #[test]
+    fn at_distance_positive_moves_along_normal() {
+        let sp = sp2(0.0, 0.0, 0.0, 1.0);
+        let p = sp.at_distance(3.0);
+        assert_relative_eq!(p, Point2::new(0.0, 3.0), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn at_distance_negative_moves_opposite_normal() {
+        let sp = sp2(1.0, 1.0, 1.0, 0.0);
+        let p = sp.at_distance(-2.0);
+        assert_relative_eq!(p, Point2::new(-1.0, 1.0), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn at_distance_zero_returns_the_origin_point() {
+        let sp = sp3(3.0, 4.0, 5.0, 0.0, 0.0, 1.0);
+        assert_relative_eq!(sp.at_distance(0.0), sp.point, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn scalar_projection_point_ahead_of_plane() {
+        let sp = sp2(0.0, 0.0, 0.0, 1.0); // normal = +y
+        let other = Point2::new(0.0, 5.0);
+        assert_relative_eq!(sp.scalar_projection(&other), 5.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn scalar_projection_point_behind_plane() {
+        let sp = sp2(0.0, 0.0, 0.0, 1.0); // normal = +y
+        let other = Point2::new(1.0, -3.0);
+        assert_relative_eq!(sp.scalar_projection(&other), -3.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn scalar_projection_point_on_plane_is_zero() {
+        let sp = sp2(0.0, 0.0, 1.0, 0.0); // normal = +x, point at origin
+        let other = Point2::new(0.0, 7.0); // lies on the plane x = 0
+        assert_relative_eq!(sp.scalar_projection(&other), 0.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn scalar_projection_offset_origin() {
+        // Surface point not at origin: the projection should be relative to sp.point
+        let sp = sp2(0.0, 2.0, 0.0, 1.0); // normal = +y, point at (0, 2)
+        let other = Point2::new(0.0, 5.0);
+        assert_relative_eq!(sp.scalar_projection(&other), 3.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn projection_lands_on_the_line() {
+        let sp = sp2(0.0, 0.0, 0.0, 1.0); // vertical line through origin
+        let other = Point2::new(4.0, 3.0);
+        let proj = sp.projection(&other);
+        assert_relative_eq!(proj, Point2::new(0.0, 3.0), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn projection_of_point_already_on_line_is_itself() {
+        let sp = sp2(0.0, 0.0, 0.0, 1.0);
+        let on_line = Point2::new(0.0, 7.0);
+        assert_relative_eq!(sp.projection(&on_line), on_line, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn reversed_flips_normal_keeps_point() {
+        let sp = sp2(1.0, 2.0, 0.0, 1.0);
+        let rev = sp.reversed();
+        assert_relative_eq!(rev.point, sp.point);
+        assert_relative_eq!(
+            rev.normal.into_inner(),
+            -sp.normal.into_inner(),
+            epsilon = 1e-12
+        );
+    }
+
+    #[test]
+    fn reversed_twice_is_identity() {
+        let sp = sp3(1.0, 2.0, 3.0, 1.0, 1.0, 0.0);
+        let twice = sp.reversed().reversed();
+        assert_relative_eq!(twice.point, sp.point);
+        assert_relative_eq!(
+            twice.normal.into_inner(),
+            sp.normal.into_inner(),
+            epsilon = 1e-12
+        );
+    }
+
+    #[test]
+    fn planar_distance_measures_lateral_offset() {
+        // Normal is +y; lateral distance is along x
+        let sp = sp2(0.0, 0.0, 0.0, 1.0);
+        let other = Point2::new(3.0, 7.0);
+        assert_relative_eq!(sp.planar_distance(&other), 3.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn planar_distance_zero_for_point_on_line() {
+        let sp = sp2(0.0, 0.0, 0.0, 1.0);
+        let on_line = Point2::new(0.0, 5.0);
+        assert_relative_eq!(sp.planar_distance(&on_line), 0.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn planar_distance_3d() {
+        // Normal is +z; lateral distance is in xy-plane
+        let sp = sp3(0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
+        let other = Point3::new(3.0, 4.0, 10.0); // distance from z-axis in xy = 5
+        assert_relative_eq!(sp.planar_distance(&other), 5.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn new_shifted_moves_point_keeps_normal() {
+        let sp = sp2(0.0, 0.0, 0.0, 1.0); // normal = +y
+        let shifted = sp.new_shifted(4.0);
+        assert_relative_eq!(shifted.point, Point2::new(0.0, 4.0), epsilon = 1e-12);
+        assert_relative_eq!(
+            shifted.normal.into_inner(),
+            sp.normal.into_inner(),
+            epsilon = 1e-12
+        );
+    }
+
+    #[test]
+    fn new_shifted_negative_offset() {
+        let sp = sp2(0.0, 5.0, 0.0, 1.0); // normal = +y, point at (0, 5)
+        let shifted = sp.new_shifted(-3.0);
+        assert_relative_eq!(shifted.point, Point2::new(0.0, 2.0), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn surface_point_vector_builds_correctly() {
+        let points = vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)];
+        let normals = vec![Vector2::new(0.0, 1.0), Vector2::new(0.0, 1.0)];
+        let spv = surface_point_vector(&points, &normals).unwrap();
+        assert_eq!(spv.len(), 2);
+        assert_relative_eq!(spv[0].point, points[0]);
+        assert_relative_eq!(spv[1].point, points[1]);
+        assert_relative_eq!(spv[0].normal.into_inner(), normals[0]);
+        assert_relative_eq!(spv[1].normal.into_inner(), normals[1]);
+    }
+
+    #[test]
+    fn surface_point_vector_length_mismatch_returns_error() {
+        let points = vec![Point2::new(0.0, 0.0)];
+        let normals: Vec<Vector2<f64>> = vec![];
+        assert!(surface_point_vector(&points, &normals).is_err());
+    }
 }
