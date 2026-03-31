@@ -441,7 +441,7 @@ impl SurfacePoint2 {
     }
 
     fn shift(&self, distance: f64) -> Self {
-        Self::from_inner(self.inner.shift(distance))
+        Self::from_inner(self.inner.new_shifted(distance))
     }
 }
 

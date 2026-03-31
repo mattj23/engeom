@@ -3,7 +3,7 @@ use crate::common::PCoords;
 use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector, Unit};
 use serde::{Deserialize, Serialize};
 
-/// A `SurfacePoint` is a struct which is used to represent a point on a surface (n-1 dimensional
+/// A `SurfacePoint` is a struct that is used to represent a point on a surface (n-1 dimensional
 /// manifold) in n-dimensional space. It is defined by a point and a normal vector. Mathematically,
 /// a `SurfacePoint` is identical to a parameterized line or a ray with a unit direction. It also
 /// uniquely defines half-spaces (so a plane in 3D and a half-space line in 2D).
@@ -100,11 +100,11 @@ impl<const D: usize> SurfacePoint<D> {
     ///
     /// let sp = SurfacePoint2::new_normalize(Point2::new(0.0, 0.0), Vector2::new(0.0, 1.0));
     ///
-    /// let shifted = sp.shift(2.0);
+    /// let shifted = sp.new_shifted(2.0);
     /// assert_relative_eq!(shifted.point, Point2::new(0.0, 2.0), epsilon = 1e-6);
     /// assert_relative_eq!(shifted.normal.into_inner(), Vector2::new(0.0, 1.0), epsilon = 1e-6);
     /// ```
-    pub fn shift(&self, offset: f64) -> Self {
+    pub fn new_shifted(&self, offset: f64) -> Self {
         let new_point = self.point + self.normal.as_ref() * offset;
         Self::new(new_point, self.normal)
     }

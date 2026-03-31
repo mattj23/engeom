@@ -9,8 +9,8 @@ use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector};
 /// Returns the area of a triangle defined by three points.
 ///
 /// This function supports only 2D and 3D points:
-/// - In 2D, the area is computed from the absolute value of the signed cross product.
-/// - In 3D, the area is computed as half of the norm of the cross product of two triangle edges.
+/// - In 2D, the area is computed from the absolute value of the signed cross-product.
+/// - In 3D, the area is computed as half of the norm of the cross-product of two triangle edges.
 ///
 /// # Panics
 ///
@@ -207,6 +207,7 @@ pub fn mean_point_weighted<const D: usize>(
     points: &[impl PCoords<D>],
     weights: &[f64],
 ) -> Point<f64, D> {
+    // TODO: needs test coverage
     let mut sum = SVector::<f64, D>::zeros();
     let mut total_weight = 0.0;
     for (p, w) in points.iter().zip(weights) {
@@ -248,6 +249,7 @@ pub fn evenly_spaced_points<const D: usize>(
     end: &impl PCoords<D>,
     num_points: usize,
 ) -> Vec<Point<f64, D>> {
+    // TODO: needs test coverage
     let mut result = Vec::new();
     let step = (end.coords() - start.coords()) / (num_points - 1) as f64;
     for i in 0..num_points {
@@ -548,6 +550,7 @@ pub fn transform_points<R, const D: usize>(
 where
     R: AbstractRotation<f64, D>,
 {
+    // TODO: needs test coverage
     points.iter().map(|p| transform * p).collect()
 }
 
@@ -830,6 +833,15 @@ mod tests {
 
         let area = triangle_area(&a, &b, &c);
 
+        assert_relative_eq!(area, 3.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn triangle_area_3d() {
+        let a = Point3::new(0.0, 0.0, 0.0);
+        let b = Point3::new(2.0, 0.0, 0.0);
+        let c = Point3::new(0.0, 3.0, 0.0);
+        let area = triangle_area(&a, &b, &c);
         assert_relative_eq!(area, 3.0, epsilon = 1e-12);
     }
 

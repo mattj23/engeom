@@ -478,7 +478,7 @@ impl SurfacePoint3 {
     }
 
     fn shift(&self, offset: f64) -> Self {
-        Self::from_inner(self.inner.shift(offset))
+        Self::from_inner(self.inner.new_shifted(offset))
     }
 
     fn to_2d(&self) -> SurfacePoint2 {
