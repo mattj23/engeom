@@ -180,8 +180,8 @@ impl IndexMask {
     ///
     /// Because the index mask internally uses a bit vector backed by `usize`, don't expect this
     /// method to combine only up to the length of the shorter mask. If this mask is longer than
-    /// `other`, the extra bits at the end of the last 64 bit chunk will contaminate their
-    /// counterparts in this mask.
+    /// `other`, the extra bits at the end of the last `usize::BITS`-bit chunk will contaminate
+    /// their counterparts in this mask.
     ///
     /// # Arguments
     ///
@@ -237,8 +237,8 @@ impl IndexMask {
     ///
     /// Because the index mask internally uses a bit-vector backed by `usize`, don't expect this
     /// method to combine only up to the length of the shorter mask. If this mask is longer than
-    /// `other`, the extra bits at the end of the last 64-bit chunk will contaminate their
-    /// counterparts in this mask.
+    /// `other`, the extra bits at the end of the last `usize::BITS`-bit chunk will contaminate
+    /// their counterparts in this mask.
     ///
     /// # Arguments
     ///
@@ -323,7 +323,7 @@ impl IndexMask {
         {
             false
         } else {
-            for i in (last_chunk * 64)..self.mask.len() {
+            for i in (last_chunk * usize::BITS as usize)..self.mask.len() {
                 if self.get(i) {
                     return false;
                 }
