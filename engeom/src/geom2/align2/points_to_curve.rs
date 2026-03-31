@@ -11,7 +11,7 @@ struct PointsToCurve<'a> {
     /// The original, unmodified points to be aligned.
     points: &'a [Point2],
 
-    /// The curve which the points are being aligned to
+    /// The curve that the points are being aligned to
     curve: &'a Curve2,
 
     params: RcParams2,

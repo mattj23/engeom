@@ -45,10 +45,10 @@ impl Segment2 {
         dir.dot(&test) / self.length.powi(2)
     }
 
-    /// Create a new segment that is shifted by distance `d` in the direction of the segment
-    /// normal vector. The normal vector is the direction vector rotated by 90 degrees clockwise,
-    /// in keeping with the general convention of a normal vector pointing outwards from a
-    /// counter-clockwise wound polyline.
+    /// Create a new segment shifted by distance `d` in the direction of the segment normal vector.
+    /// The normal vector is the direction vector rotated by 90 degrees clockwise, in keeping with
+    /// the general convention of a normal vector pointing outwards from a counter-clockwise wound
+    /// polyline.
     ///
     /// # Arguments
     ///
@@ -65,12 +65,12 @@ impl Segment2 {
     /// let b = Point2::new(1.0, 0.0);
     /// let s = Segment2::try_new(&a, &b).unwrap();
     ///
-    /// let s1 = s.offsetted(1.0);
+    /// let s1 = s.with_offset(1.0);
     ///
     /// assert_relative_eq!(s1.a, Point2::new(0.0, -1.0), epsilon = 1.0e-6);
     /// assert_relative_eq!(s1.b, Point2::new(1.0, -1.0), epsilon = 1.0e-6);
     /// ```
-    pub fn offsetted(&self, d: f64) -> Self {
+    pub fn with_offset(&self, d: f64) -> Self {
         let n = UnitVec2::new_normalize(self.orthogonal());
         Self {
             a: self.a + n.into_inner() * d,

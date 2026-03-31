@@ -914,7 +914,7 @@ impl Curve2 {
 
         for i in 0..self.count() - 1 {
             let seg = Segment2::try_new(&self.vtx(i), &self.vtx(i + 1))?;
-            new_segments.push(seg.offsetted(offset));
+            new_segments.push(seg.with_offset(offset));
         }
 
         // Special case for the first vertex if the curve is closed

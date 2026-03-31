@@ -5,7 +5,6 @@
 mod collisions;
 mod conformal;
 mod edges;
-mod faces;
 pub mod filtering;
 pub mod half_edge;
 mod measurement;

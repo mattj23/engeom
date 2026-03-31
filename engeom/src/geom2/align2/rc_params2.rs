@@ -16,7 +16,7 @@ use crate::geom2::{Iso2, Point2};
 ///
 #[derive(Clone)]
 pub struct RcParams2 {
-    /// The rotation center point in the same coordinate system as the test entity
+    /// The rotation center points in the same coordinate system as the test entity
     rc: Point2,
 
     /// The current parameters

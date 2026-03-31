@@ -604,8 +604,8 @@ impl Circle2 {
             // by a simpler, special case
             let s = Segment2::try_new(&self.center, &other.center).unwrap();
             Some((
-                s.offsetted(self.ball.radius),
-                s.offsetted(-self.ball.radius),
+                s.with_offset(self.ball.radius),
+                s.with_offset(-self.ball.radius),
             ))
         } else if self.ball.radius > other.ball.radius {
             if let Some((seg0, seg1)) = other.outer_tangents_to(self) {
@@ -626,7 +626,7 @@ impl Circle2 {
             let s0 = Segment2::try_new(&self.center, &p0).unwrap();
             let s1 = Segment2::try_new(&self.center, &p1).unwrap();
 
-            Some((s0.offsetted(-self.r()), s1.offsetted(self.r())))
+            Some((s0.with_offset(-self.r()), s1.with_offset(self.r())))
         }
     }
 }
