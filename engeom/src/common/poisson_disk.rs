@@ -24,7 +24,7 @@ pub fn sample_poisson_disk_all<const D: usize>(
     radius: f64,
 ) -> IndexMask {
     let pre_mask = voxel_downsample(points, radius * 0.25);
-    let partial_tree = PartialKdTree::new(points, &pre_mask)
+    let partial_tree = PartialKdTree::try_new(points, &pre_mask)
         .expect("KD tree construction failed. Are there enough points?");
 
     let mut skip_mask = pre_mask.clone();

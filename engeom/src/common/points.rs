@@ -1,11 +1,35 @@
 //! Common operations on f64 points in D-dimensional space.
 
-use crate::common::PCoords;
-use crate::common::kd_tree::{KdTree, KdTreeSearch};
+use crate::Result;
+use crate::common::kd_tree::{KdTreeSearch, PartialKdTree};
 use crate::common::surface_point::SurfacePoint;
+use crate::common::{IndexMask, PCoords};
 use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector};
 
-pub fn area<const D: usize>(
+/// Returns the area of a triangle defined by three points.
+///
+/// This function supports only 2D and 3D points:
+/// - In 2D, the area is computed from the absolute value of the signed cross product.
+/// - In 3D, the area is computed as half of the norm of the cross product of two triangle edges.
+///
+/// # Panics
+///
+/// Panics if `D` is not `2` or `3`.
+///
+/// # Examples
+///
+/// ```
+/// use engeom::common::points::triangle_area;
+/// use engeom::Point2;
+///
+/// let a = Point2::new(0.0, 0.0);
+/// let b = Point2::new(2.0, 0.0);
+/// let c = Point2::new(0.0, 2.0);
+///
+/// let area = triangle_area(&a, &b, &c);
+/// assert_eq!(area, 2.0);
+/// ```
+pub fn triangle_area<const D: usize>(
     pa: &impl PCoords<D>,
     pb: &impl PCoords<D>,
     pc: &impl PCoords<D>,
@@ -535,28 +559,28 @@ where
 ///
 /// # Arguments
 ///
-/// * `points`:
-/// * `tol`:
+/// * `points`: the set of points from which to create clusters
+/// * `tol`: the maximum distance between points in a cluster
 ///
-/// returns: Vec<Vec<OPoint<f64, Const<{ D }>>, Global>, Global>
+/// returns: Vec<Vec<usize, Global>, Global>
 pub fn cluster_points_by_tol<const D: usize>(
     points: &[Point<f64, D>],
     tol: f64,
-) -> Vec<Vec<Point<f64, D>>> {
+) -> Result<Vec<Vec<usize>>> {
     let mut clusters = Vec::new();
-    let mut working = points.to_vec();
-    let tol2 = tol * tol;
+    let mut working = IndexMask::new(points.len(), true);
 
     while !working.is_empty() {
-        let mut group = vec![working.pop().unwrap()];
+        let mut group_mask = IndexMask::new(points.len(), false);
+        group_mask.set(working.pop_true().unwrap(), true);
         loop {
-            let tree =
-                KdTree::new(&group).expect("KD tree construction failed. Are there enough points?");
+            let tree = PartialKdTree::try_new(points, &group_mask)?;
             let mut to_add = Vec::new();
-            for (i, p) in working.iter().enumerate() {
-                // let (d, _) = tree.nearest_one(&to_slice(p), &squared_euclidean);
-                let (_, d) = tree.nearest_one(p);
-                if d <= tol2 {
+
+            // TODO: this can definitely be made more efficient by pre-selecting candidates
+            for i in working.iter_true() {
+                let (_, d) = tree.nearest_one(&points[i]);
+                if d <= tol {
                     to_add.push(i);
                 }
             }
@@ -565,31 +589,45 @@ pub fn cluster_points_by_tol<const D: usize>(
                 break;
             } else {
                 for i in to_add.iter().rev() {
-                    group.push(working.remove(*i));
+                    group_mask.set(*i, true);
+                    working.set(*i, false);
                 }
             }
         }
-        clusters.push(group);
+        clusters.push(group_mask.to_indices());
     }
 
-    clusters
+    Ok(clusters)
 }
 
+/// Merges a set of points into a reduced set of points by merging clusters of points that are
+/// within a specified distance tolerance. Each cluster is replaced by the mean of the points in the
+/// cluster.
+///
+/// # Arguments
+///
+/// * `points`: the set of points to merge
+/// * `tol`: points within this distance of each other are merged into a single point
+///
+/// returns: Result<Vec<OPoint<f64, Const<{ D }>>, Global>, Box<dyn Error, Global>>
 pub fn merge_points_by_tol<const D: usize>(
     points: &[Point<f64, D>],
     tol: f64,
-) -> Vec<Point<f64, D>> {
-    let clusters = cluster_points_by_tol(points, tol);
-    clusters.iter().map(|c| mean_point(c)).collect()
+) -> Result<Vec<Point<f64, D>>> {
+    let clusters = cluster_points_by_tol(points, tol)?;
+    Ok(clusters
+        .iter()
+        .map(|c| mean_point(&c.iter().map(|i| points[*i]).collect::<Vec<_>>()))
+        .collect())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Vector2;
     use crate::geom2::{Curve2, Point2};
+    use crate::{Point3, Vector2};
     use approx::assert_relative_eq;
-    use rand::{Rng, RngExt};
+    use rand::RngExt;
 
     #[test]
     fn distance_calc() {
@@ -691,5 +729,129 @@ mod tests {
 
         let (_, max) = max_point_in_direction(&points, &dir).unwrap();
         assert_relative_eq!(max, Point2::new(10.0, 0.0));
+    }
+
+    #[test]
+    fn clustering_by_tolerance_0() -> Result<()> {
+        let points = vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(2.0, 0.0),
+            Point2::new(0.0, 5.0),
+            Point2::new(1.0, 5.0),
+            Point2::new(0.0, 20.0),
+        ];
+
+        let mut c = cluster_points_by_tol(&points, 5.1)?;
+        c.sort_by(|a, b| a.len().partial_cmp(&b.len()).unwrap());
+        assert_eq!(c.len(), 2);
+        assert_eq!(c[0].len(), 1);
+        assert_eq!(c[1].len(), 5);
+
+        let mut c0 = c[0].to_vec();
+        c0.sort();
+        let mut c1 = c[1].to_vec();
+        c1.sort();
+
+        assert_eq!(c0, vec![5]);
+        assert_eq!(c1, vec![0, 1, 2, 3, 4]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn clustering_by_tolerance_1() -> Result<()> {
+        let points = vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(2.0, 0.0),
+            Point2::new(0.0, 5.0),
+            Point2::new(1.0, 5.0),
+            Point2::new(0.0, 20.0),
+        ];
+
+        let mut c = cluster_points_by_tol(&points, 1.1)?;
+        assert_eq!(c.len(), 3);
+        c.sort_by(|a, b| a.len().partial_cmp(&b.len()).unwrap());
+
+        let mut c0 = c[0].to_vec();
+        c0.sort();
+        let mut c1 = c[1].to_vec();
+        c1.sort();
+        let mut c2 = c[2].to_vec();
+        c2.sort();
+
+        assert_eq!(c0, vec![5]);
+        assert_eq!(c1, vec![3, 4]);
+        assert_eq!(c2, vec![0, 1, 2]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn merge_points_by_tolerance() -> Result<()> {
+        let points = vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(2.0, 0.0),
+            Point2::new(0.0, 5.0),
+            Point2::new(1.0, 5.0),
+            Point2::new(0.0, 20.0),
+        ];
+
+        let mut merged = merge_points_by_tol(&points, 1.1)?;
+        assert_eq!(merged.len(), 3);
+
+        merged.sort_by(|a, b| a.y.partial_cmp(&b.y).unwrap());
+
+        assert_relative_eq!(merged[0], Point2::new(1.0, 0.0));
+        assert_relative_eq!(merged[1], Point2::new(0.5, 5.0));
+        assert_relative_eq!(merged[2], Point2::new(0.0, 20.0));
+
+        Ok(())
+    }
+
+    #[test]
+    fn three_point_angle_right_angle_2d() {
+        let pc = Point2::new(0.0, 0.0);
+        let p1 = Point2::new(1.0, 0.0);
+        let p2 = Point2::new(0.0, 1.0);
+
+        let angle = three_point_angle(&pc, &p1, &p2);
+
+        assert_relative_eq!(angle, std::f64::consts::FRAC_PI_2, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn triangle_area_2d() {
+        let a = Point2::new(0.0, 0.0);
+        let b = Point2::new(2.0, 0.0);
+        let c = Point2::new(0.0, 3.0);
+
+        let area = triangle_area(&a, &b, &c);
+
+        assert_relative_eq!(area, 3.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn linear_interpolation_error_zero_on_line() {
+        let p0 = Point2::new(0.0, 0.0);
+        let p1 = Point2::new(2.0, 0.0);
+        let p_test = Point2::new(1.0, 0.0);
+
+        let error = linear_interpolation_error(&p0, &p1, &p_test);
+
+        assert_relative_eq!(error, 0.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn linear_interpolation_error_one_on_line() {
+        let p0 = Point2::new(0.0, 0.0);
+        let p1 = Point2::new(2.0, 0.0);
+        let p_test = Point2::new(1.0, 1.0);
+
+        let error = linear_interpolation_error(&p0, &p1, &p_test);
+
+        assert_relative_eq!(error, 1.0, epsilon = 1e-12);
     }
 }

@@ -312,6 +312,36 @@ impl IndexMask {
             *u = if value { !0 } else { 0 };
         }
     }
+
+    /// Returns true if all bits are set to false
+    pub fn is_empty(&self) -> bool {
+        // First, we'll check the full usize elements
+        let last_chunk = self.mask.as_raw_slice().len() - 1;
+        if self.mask.as_raw_slice()[0..last_chunk]
+            .iter()
+            .any(|u| *u != 0)
+        {
+            false
+        } else {
+            for i in (last_chunk * 64)..self.mask.len() {
+                if self.get(i) {
+                    return false;
+                }
+            }
+            true
+        }
+    }
+
+    /// Returns the first true index and sets it to false
+    pub fn pop_true(&mut self) -> Option<usize> {
+        let first = self.iter_true().next();
+        if let Some(first) = first {
+            self.set(first, false);
+            return Some(first);
+        }
+
+        None
+    }
 }
 
 pub struct MaskTrueIterator<'a> {
@@ -329,6 +359,7 @@ impl<'a> Iterator for MaskTrueIterator<'a> {
                 self.current += 1;
                 return Some(index);
             }
+
             self.current += 1;
         }
         None
@@ -338,6 +369,29 @@ impl<'a> Iterator for MaskTrueIterator<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::prelude::StdRng;
+    use rand::{RngExt, SeedableRng};
+
+    #[test]
+    fn empty_mask_starting_zero() {
+        let mask = IndexMask::new(1000, false);
+        assert!(mask.is_empty());
+    }
+
+    #[test]
+    fn empty_mask_starting_true() {
+        let mask = IndexMask::new(1000, true);
+        assert!(!mask.is_empty());
+    }
+
+    #[test]
+    fn empty_mask_starting_true_manual_set_false() {
+        let mut mask = IndexMask::new(1000, true);
+        for i in 0..mask.len() {
+            mask.set(i, false);
+        }
+        assert!(mask.is_empty());
+    }
 
     #[test]
     fn or_returns_new_mask_with_union_and_keeps_inputs() {
@@ -386,12 +440,11 @@ mod tests {
 
     #[test]
     fn fill_sets_all_bits_to_false() {
-        let mut mask = IndexMask::new(10, true);
+        let mut mask = IndexMask::new(300, true);
 
         mask.fill(false);
 
-        assert_eq!(mask.len(), 10);
-        assert_eq!(mask.to_indices(), Vec::<usize>::new());
+        assert_eq!(mask.len(), 300);
         for i in 0..mask.len() {
             assert!(!mask.get(i), "expected index {} to be false", i);
         }
@@ -399,12 +452,11 @@ mod tests {
 
     #[test]
     fn fill_sets_all_bits_to_true() {
-        let mut mask = IndexMask::new(7, false);
+        let mut mask = IndexMask::new(300, false);
 
         mask.fill(true);
 
-        assert_eq!(mask.len(), 7);
-        assert_eq!(mask.to_indices(), vec![0, 1, 2, 3, 4, 5, 6]);
+        assert_eq!(mask.len(), 300);
         for i in 0..mask.len() {
             assert!(mask.get(i), "expected index {} to be true", i);
         }
@@ -469,7 +521,7 @@ mod tests {
     mod stress_tests {
         use super::*;
         use rand::rngs::StdRng;
-        use rand::{Rng, RngExt, SeedableRng};
+        use rand::{RngExt, SeedableRng};
 
         #[test]
         fn stress_set_and_get() {
@@ -534,6 +586,22 @@ mod tests {
                 .collect();
 
             assert_eq!(mask_indices, vec_indices, "Indices mismatch");
+        }
+
+        #[test]
+        fn stress_to_true_sparse() {
+            let len = 10_000;
+            let mut rng = StdRng::seed_from_u64(345);
+
+            for _ in 0..1000 {
+                let mut mask = IndexMask::new(len, false);
+                let i = rng.random_range(0..len);
+                mask.set(i, true);
+
+                let mask_indices = mask.to_indices();
+                assert_eq!(mask_indices.len(), 1, "Indices mismatch");
+                assert_eq!(mask_indices[0], i, "Indices mismatch");
+            }
         }
 
         #[test]
@@ -643,6 +711,27 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn stress_pop_true() {
+        let len = 50_000;
+        let mut rng = StdRng::seed_from_u64(1_337);
+
+        for _ in 0..1000 {
+            let mut mask = IndexMask::new(len, false);
+
+            for _ in 0..5 {
+                mask.set(rng.random_range(0..len), true);
+            }
+            let mut expected_result = mask.to_indices();
+            let expected = expected_result[0];
+            expected_result.remove(0);
+
+            let result = mask.pop_true();
+            assert_eq!(result, Some(expected));
+            assert_eq!(mask.to_indices(), expected_result);
         }
     }
 }

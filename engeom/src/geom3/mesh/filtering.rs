@@ -1,6 +1,6 @@
 //! This module has implementations of different ways of filtering/reducing a mesh
 
-use crate::common::points::{area, dist, mean_point};
+use crate::common::points::{dist, mean_point, triangle_area};
 use crate::common::{IndexMask, PCoords, SelectOp, Selection};
 use crate::{Mesh, Point3, SurfacePoint3, UnitVec3, Vector3};
 use crate::{Plane3, Result};
@@ -443,7 +443,7 @@ impl TriangleFilter<'_> {
             }
 
             // What's the area of the triangle formed by the projected points?
-            let area_proj = area(&v0, &v1, &v2);
+            let area_proj = triangle_area(&v0, &v1, &v2);
             if area_proj < 1e-12 {
                 continue;
             }

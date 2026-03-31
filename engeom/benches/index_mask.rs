@@ -48,6 +48,40 @@ fn index_mask_to_vec(c: &mut Criterion) {
     });
 }
 
+fn index_mask_sparse_to_vec(c: &mut Criterion) {
+    let mut mask = IndexMask::new(N, false);
+    mask.set(300, true);
+    mask.set(301, true);
+    mask.set(20000, true);
+
+    c.bench_function("index_mask sparse to vec", |b| {
+        b.iter(|| {
+            let _v = black_box(&mask).to_indices();
+        })
+    });
+}
+
+fn index_mask_empty(c: &mut Criterion) {
+    let mask = prep_mask(76);
+
+    c.bench_function("index_mask empty", |b| {
+        b.iter(|| {
+            let _v = black_box(&mask).is_empty();
+        })
+    });
+}
+
+fn index_mask_sparse_empty(c: &mut Criterion) {
+    let mut mask = IndexMask::new(N, false);
+    mask.set(N - 30, true);
+
+    c.bench_function("index_mask sparse empty", |b| {
+        b.iter(|| {
+            let _v = black_box(&mask).is_empty();
+        })
+    });
+}
+
 fn prep_mask(m: usize) -> IndexMask {
     let to_set = (0..N).filter(|i| i % m == 0).collect::<Vec<_>>();
     let mut mask = IndexMask::new(N, false);
@@ -63,6 +97,9 @@ criterion_group!(
     index_mask_set,
     index_mask_get,
     index_mask_flip,
-    index_mask_to_vec
+    index_mask_to_vec,
+    index_mask_sparse_to_vec,
+    index_mask_empty,
+    index_mask_sparse_empty,
 );
 criterion_main!(benches);

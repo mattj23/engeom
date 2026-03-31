@@ -176,7 +176,7 @@ impl<const D: usize> PartialKdTree<D> {
     /// ```
     ///
     /// ```
-    pub fn new(all_points: &[impl PCoords<D>], mask: &IndexMask) -> Result<Self> {
+    pub fn try_new(all_points: &[impl PCoords<D>], mask: &IndexMask) -> Result<Self> {
         if mask.len() != all_points.len() {
             panic!("Mask length must match the length of all_points");
         }
@@ -287,7 +287,8 @@ mod tests {
             }
             let indices = mask.to_indices();
 
-            let partial_tree = PartialKdTree::new(&points, &mask).expect("KD tree creation failed");
+            let partial_tree =
+                PartialKdTree::try_new(&points, &mask).expect("KD tree creation failed");
 
             for &i in indices.iter() {
                 let p = &points[i];
@@ -309,7 +310,7 @@ mod tests {
         let reduced_points = mask.clone_indices_of(&mesh.vertices())?;
         let reduced_tree = KdTree::new(&reduced_points)?;
 
-        let partial_tree = PartialKdTree::new(mesh.vertices(), &mask)?;
+        let partial_tree = PartialKdTree::try_new(mesh.vertices(), &mask)?;
         let n = 3;
 
         for p in mesh.vertices().iter() {
