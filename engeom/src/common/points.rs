@@ -589,7 +589,7 @@ mod tests {
     use crate::Vector2;
     use crate::geom2::{Curve2, Point2};
     use approx::assert_relative_eq;
-    use rand::Rng;
+    use rand::{Rng, RngExt};
 
     #[test]
     fn distance_calc() {

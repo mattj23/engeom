@@ -64,7 +64,7 @@ mod tests {
     use crate::geom3::XyzWpr;
     use crate::{Iso3, Vector3};
     use approx::assert_relative_eq;
-    use rand::Rng;
+    use rand::{Rng, RngExt};
     use std::f64::consts::PI;
 
     #[test]

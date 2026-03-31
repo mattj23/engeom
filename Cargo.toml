@@ -9,6 +9,7 @@ edition = "2024"
 [workspace.dependencies]
 parry3d-f64 = { version = "0.25.1", features = ["serde-serialize"] }
 parry2d-f64 = { version = "0.25.1", features = ["serde-serialize"] }
-rand = "0.9.1"
+rand = "0.10.0"
+rand_distr = "0.6.0"
 rayon = "1.11.0"
 uuid = "1.18.0"

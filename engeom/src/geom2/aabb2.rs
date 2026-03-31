@@ -35,7 +35,7 @@ mod tests {
     use crate::common::linear_space;
     use crate::common::points::dist;
     use approx::assert_relative_eq;
-    use rand::Rng;
+    use rand::{Rng, RngExt};
 
     #[test]
     fn stress_test_arc_aabb2() {

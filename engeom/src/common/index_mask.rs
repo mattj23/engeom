@@ -316,7 +316,7 @@ mod tests {
     mod stress_tests {
         use super::*;
         use rand::rngs::StdRng;
-        use rand::{Rng, SeedableRng};
+        use rand::{Rng, RngExt, SeedableRng};
 
         #[test]
         fn stress_set_and_get() {

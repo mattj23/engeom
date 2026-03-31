@@ -13,6 +13,7 @@ parry3d-f64 = { workspace = true, features = ["serde-serialize"] }
 parry2d-f64 = { workspace = true, features = ["serde-serialize"] }
 rayon = { workspace = true }
 rand = { workspace = true }
+rand_distr = {workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 
 alum = { version = "0.6.1", default-features = false, features = ["decimate", "subdiv"] }
@@ -37,7 +38,6 @@ serde-ply = { version = "0.2.2" , optional = true}
 test-case = "3.3.1"
 approx = "0.5.1"
 criterion = "0.7.0"
-rand = "0.9.1"
 
 
 # =============================================================================================

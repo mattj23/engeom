@@ -269,7 +269,7 @@ mod tests {
     use crate::common::linear_space;
     use crate::{Circle2, Iso2};
     use approx::assert_relative_eq;
-    use rand::Rng;
+    use rand::{Rng, RngExt};
     use test_case::test_case;
 
     #[test_case(90.0, -270.0)]

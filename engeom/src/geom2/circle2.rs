@@ -846,11 +846,13 @@ impl LeastSquaresProblem<f64, Dyn, U3> for CircleFit<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::RngExt;
 
     use crate::geom2::Ray2;
-    use approx::assert_relative_eq;
+    use approx::{assert_abs_diff_eq, assert_relative_eq};
 
     use rand::Rng;
+    use rand_distr::Normal;
     use std::f64::consts::PI;
     use test_case::test_case;
 
@@ -974,5 +976,54 @@ mod tests {
         let (p0, p1) = c.tangent_points_to(&p).unwrap();
         assert_relative_eq!(p0, Point2::new(-0.4844568895369135, 0.24075924101671814));
         assert_relative_eq!(p1, Point2::new(1.045148109645135, -1.2054127582099456));
+    }
+
+    #[test]
+    fn least_squares_fit() -> Result<()> {
+        let expected = Circle2::new(2.0, 3.0, 1.0);
+        let samples = make_sample_circle_points(&expected, 500, Some(0.01));
+        let guess = Circle2::new(0.0, 0.0, 1.0);
+        let result = Circle2::fitting_circle(&samples, &guess, BestFit::All)?;
+
+        assert_relative_eq!(result.center, expected.center, epsilon = 3.0e-3);
+        assert_relative_eq!(result.r(), expected.r(), epsilon = 3.0e-3);
+        Ok(())
+    }
+
+    #[test]
+    fn ransac_fit() -> Result<()> {
+        let expected = Circle2::new(2.0, 3.0, 1.2);
+        let decoy = Circle2::new(0.0, 0.0, 1.0);
+
+        let samples = [
+            make_sample_circle_points(&expected, 100, None),
+            make_sample_circle_points(&decoy, 50, None),
+        ]
+        .concat();
+
+        let result = Circle2::ransac(&samples, 0.005, None, None, None)?;
+
+        assert_relative_eq!(result.center, expected.center, epsilon = 3.0e-3);
+        assert_relative_eq!(result.r(), expected.r(), epsilon = 3.0e-3);
+        Ok(())
+    }
+
+    fn make_sample_circle_points(c: &Circle2, n: usize, sigma: Option<f64>) -> Vec<Point2> {
+        let mut points = Vec::with_capacity(n);
+        let angle_step = 2.0 * PI / (n as f64);
+        let mut rng = rand::rng();
+
+        for i in 0..n {
+            let angle = angle_step * i as f64;
+            let r = if let Some(sigma) = sigma {
+                Normal::new(0.0, sigma).unwrap().sample(&mut rng)
+            } else {
+                0.0
+            } + c.r();
+
+            let point = c.center + Vector2::new(r * angle.cos(), r * angle.sin());
+            points.push(point);
+        }
+        points
     }
 }

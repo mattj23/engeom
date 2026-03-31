@@ -224,7 +224,7 @@ impl SurfacePoint2 {
 pub mod tests {
     use super::*;
     use approx::assert_relative_eq;
-    use rand::Rng;
+    use rand::{Rng, RngExt};
     use std::f64::consts::PI;
 
     pub struct Random2 {
