@@ -236,6 +236,7 @@ pub struct Curve2 {
 }
 
 impl Curve2 {
+    /// Returns a slice of all vertex positions in the curve, in order.
     pub fn points(&self) -> &[Point2] {
         self.line.vertices()
     }
@@ -245,6 +246,7 @@ impl Curve2 {
         self.line.vertices()[i]
     }
 
+    /// Returns the axis-aligned bounding box enclosing all curve vertices.
     pub fn aabb(&self) -> Aabb {
         self.line.local_aabb()
     }
@@ -308,12 +310,6 @@ impl Curve2 {
     ///   not within the tolerance of each other
     ///
     /// returns: Result<Curve2, Box<dyn Error, Global>>
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
     pub fn from_points_ccw(points: &[Point2], tol: f64, force_closed: bool) -> Result<Self> {
         let mut d_sum = 0;
         let hull = convex_hull_2d(points);
@@ -356,14 +352,18 @@ impl Curve2 {
         if votes < 0.0 { Ok(c.reversed()) } else { Ok(c) }
     }
 
+    /// Returns the number of vertices in the curve.
     pub fn count(&self) -> usize {
         self.line.vertices().len()
     }
 
+    /// Returns the cumulative arc lengths at each vertex. The first value is always `0.0`
+    /// and the last value equals the total arc length of the curve.
     pub fn lengths(&self) -> &Vec<f64> {
         &self.lengths
     }
 
+    /// Returns the tolerance used by this curve, which was set at construction time.
     pub fn tol(&self) -> f64 {
         self.tol
     }
@@ -407,14 +407,24 @@ impl Curve2 {
         CurveStation2::new(self.vtx(index), self.dir_of_vertex(index), i, f, self)
     }
 
+    /// Returns a `CurveStation2` positioned at the first vertex of the curve.
     pub fn at_front(&self) -> CurveStation2<'_> {
         self.at_vertex(0)
     }
 
+    /// Returns a `CurveStation2` positioned at the last vertex of the curve.
     pub fn at_back(&self) -> CurveStation2<'_> {
         self.at_vertex(self.line.vertices().len() - 1)
     }
 
+    /// Returns a `CurveStation2` at the given arc length along the curve.  Returns `None`
+    /// if `length` is outside `[0, total_length]`.
+    ///
+    /// # Arguments
+    ///
+    /// * `length`: Arc length measured from the start of the curve.
+    ///
+    /// returns: Option<CurveStation2>
     pub fn at_length(&self, length: f64) -> Option<CurveStation2<'_>> {
         if length < 0.0 || length > self.length() {
             None
@@ -439,10 +449,25 @@ impl Curve2 {
         }
     }
 
+    /// Returns a `CurveStation2` at the given fraction of the total arc length.  Returns
+    /// `None` if `fraction` is outside `[0.0, 1.0]`.
+    ///
+    /// # Arguments
+    ///
+    /// * `fraction`: Value in `[0.0, 1.0]` where `0.0` is the start and `1.0` is the end.
+    ///
+    /// returns: Option<CurveStation2>
     pub fn at_fraction(&self, fraction: f64) -> Option<CurveStation2<'_>> {
         self.at_length(fraction * self.length())
     }
 
+    /// Returns the `CurveStation2` whose point is closest to `test_point`.
+    ///
+    /// # Arguments
+    ///
+    /// * `test_point`: The reference point to project onto the curve.
+    ///
+    /// returns: CurveStation2
     pub fn at_closest_to_point(&self, test_point: &impl PCoords<2>) -> CurveStation2<'_> {
         let p = Point2::from(test_point.coords());
         let (prj, loc) = self.line.project_local_point_and_get_location(&p, false);
@@ -458,6 +483,13 @@ impl Curve2 {
         )
     }
 
+    /// Returns the minimum distance from any point on the curve to `test_point`.
+    ///
+    /// # Arguments
+    ///
+    /// * `test_point`: The point to measure the distance to.
+    ///
+    /// returns: f64
     pub fn dist_to_point(&self, test_point: &Point2) -> f64 {
         let (prj, _) = self
             .line
@@ -465,10 +497,12 @@ impl Curve2 {
         dist(&prj.point, test_point)
     }
 
+    /// Returns `true` if this curve is closed, i.e. its first and last vertices coincide.
     pub fn is_closed(&self) -> bool {
         self.is_closed
     }
 
+    /// Returns the total arc length of the curve.
     pub fn length(&self) -> f64 {
         *self.lengths.last().unwrap_or(&0.0)
     }
@@ -827,6 +861,7 @@ impl Curve2 {
         }
     }
 
+    /// Returns an iterator over `CurveStation2` values at each vertex of the curve, in order.
     pub fn iter(&self) -> Curve2Iterator<'_> {
         Curve2Iterator {
             curve: self,
@@ -1062,6 +1097,15 @@ impl Curve2 {
         arcs
     }
 
+    /// Attempts to find the largest arc centered around `seed_index` that fits all of its
+    /// span's curve points within `tol`.  Returns `(start_index, end_index, arc)` on success.
+    ///
+    /// # Arguments
+    ///
+    /// * `seed_index`: The vertex index around which to search for a matching arc.
+    /// * `tol`: The maximum allowable distance between the arc and any curve point.
+    ///
+    /// returns: Option<(usize, usize, Arc2)>
     pub fn equivalent_arc_at(&self, seed_index: usize, tol: f64) -> Option<(usize, usize, Arc2)> {
         // TODO: this is hacked together, fix it
 
