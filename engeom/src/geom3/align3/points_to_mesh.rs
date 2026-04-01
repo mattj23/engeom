@@ -172,7 +172,11 @@ impl LeastSquaresProblem<f64, Dyn, U6> for PointsToMesh<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::points::transform_points;
+    use crate::tests::engine_blade;
+    use crate::{SelectOp, Selection};
     use approx::assert_relative_eq;
+    use std::f64::consts::PI;
 
     /// This tests whether the initial transform is correctly re-expressed in the problem's frame
     /// as rotations around the mean point.
@@ -189,5 +193,45 @@ mod tests {
         let problem = PointsToMesh::new(&points, &box_mesh, &initial, DistMode::ToPlane);
         let result = problem.current_transform();
         assert_relative_eq!(result.to_matrix(), initial.to_matrix(), epsilon = 1e-8);
+    }
+
+    #[test]
+    fn blade_example() -> Result<()> {
+        let mesh = engine_blade();
+        let mask = mesh
+            .face_select(Selection::None)
+            .facing(&Vector3::y(), PI / 4.0, SelectOp::Add)
+            .take_mask();
+        let expected_points = mesh
+            .sample_poisson(2.0, Some(&mask))
+            .iter()
+            .map(|mp| mp.point())
+            .collect::<Vec<_>>();
+
+        let disturb = Iso3::from_parts(
+            Translation3::new(-100.0, 150.0, 0.0),
+            UnitQuaternion::new(Vector3::new(1.0, 1.0, 1.0).normalize() * PI / 6.0),
+        );
+
+        let to_align = transform_points(&expected_points, &disturb);
+
+        let result = points_to_mesh(&to_align, &mesh, &Iso3::identity(), DistMode::ToPoint)?;
+
+        let aligned = transform_points(&to_align, result.transform());
+
+        let max_deviation = aligned
+            .iter()
+            .zip(expected_points.iter())
+            .map(|(a, e)| (a - e).norm())
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
+
+        assert!(
+            max_deviation < 1e-6,
+            "Max deviation is too high: {}",
+            max_deviation
+        );
+
+        Ok(())
     }
 }

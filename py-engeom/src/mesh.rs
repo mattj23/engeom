@@ -325,7 +325,7 @@ impl Mesh {
     }
 
     fn sample_poisson<'py>(&self, py: Python<'py>, radius: f64) -> Bound<'py, PyArray2<f64>> {
-        let mps = self.inner.sample_poisson(radius);
+        let mps = self.inner.sample_poisson(radius, None);
         let mut result = Array2::zeros((mps.len(), 6));
         for (i, mp) in mps.iter().enumerate() {
             result[[i, 0]] = mp.sp.point.x;
@@ -510,8 +510,7 @@ impl Mesh {
             file_bytes
         };
 
-        let mesh = u_bytes_to_mesh(&deflated)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let mesh = u_bytes_to_mesh(&deflated).map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(mesh))
     }
 

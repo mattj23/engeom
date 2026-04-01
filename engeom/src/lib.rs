@@ -89,6 +89,14 @@ pub mod tests {
         u_bytes_to_mesh(&deflate_bytes(bytes).unwrap()).unwrap()
     }
 
+    /// Load a mesh of a small engine blade. The mesh has 21795 vertices and 43586 faces. Dimensions
+    /// are in millimeters. The mesh has been processed externally to remove mesh errors and should
+    /// be watertight.
+    pub fn engine_blade() -> Mesh {
+        let bytes = include_bytes!("../tests/data/engine-blade.umesh.gz");
+        u_bytes_to_mesh(&deflate_bytes(bytes).unwrap()).unwrap()
+    }
+
     /// Get the path to the test data directory.
     pub fn get_test_data_path() -> std::path::PathBuf {
         let mut path = std::env::current_dir().unwrap();

@@ -273,21 +273,16 @@ pub fn simple_alignment_points(
     ref_mesh: &Mesh,
     spacing: f64,
 ) -> Vec<MeshSurfPoint> {
-    let start = std::time::Instant::now();
     let overlap = test_mesh
         .face_select(Selection::None)
         .faces_overlap(ref_mesh, PI / 4.0, 2.0, SelectOp::Add)
         .take_mask();
 
     if overlap.count_true() == 0 {
-        return Vec::new();
+        Vec::new()
+    } else {
+        test_mesh.sample_poisson(spacing, Some(&overlap))
     }
-
-    let overlap = test_mesh
-        .create_from_mask(&overlap)
-        .expect("Failed to create overlap mesh, should not be possible");
-
-    overlap.sample_poisson(spacing)
 }
 
 /// A sampling algorithm that finds a set of ideal alignment points on a test mesh which can be
@@ -337,7 +332,7 @@ pub fn generate_alignment_points(
 ) -> Vec<MeshSurfPoint> {
     // We start with a Poisson disk sampling of the test mesh to get a set of points that are
     // well distributed across the surface and spaced at a roughly known distance.
-    let all_points = test_mesh.sample_poisson(params.sample_spacing);
+    let all_points = test_mesh.sample_poisson(params.sample_spacing, None);
     let tree = KdTree3::new(&all_points).expect("KD tree build failed");
 
     // Now we're going to iterate through the points and find ones which meet the criteria for

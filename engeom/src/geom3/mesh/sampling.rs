@@ -1,8 +1,9 @@
 use super::{Mesh, MeshSurfPoint};
-use crate::common::linear_space;
 use crate::common::points::dist;
 use crate::common::poisson_disk::sample_poisson_disk_all;
+use crate::common::{IndexMask, linear_space};
 use crate::{Point3, SurfacePoint3};
+use itertools::Itertools;
 
 fn bc_to_point(bc: [f64; 3], a: &Point3, b: &Point3, c: &Point3) -> Point3 {
     (a.coords * bc[0] + b.coords * bc[1] + c.coords * bc[2]).into()
@@ -36,8 +37,12 @@ impl Mesh {
         result
     }
 
-    pub fn sample_poisson(&self, radius: f64) -> Vec<MeshSurfPoint> {
-        let starting = self.sample_surface_dense(radius * 0.5);
+    pub fn sample_poisson(
+        &self,
+        radius: f64,
+        index_mask: Option<&IndexMask>,
+    ) -> Vec<MeshSurfPoint> {
+        let starting = self.sample_surface_dense(radius * 0.5, index_mask);
         let mask = sample_poisson_disk_all(&starting, radius);
 
         let mut result = Vec::new();
@@ -48,9 +53,33 @@ impl Mesh {
         result
     }
 
-    pub fn sample_surface_dense(&self, max_spacing: f64) -> Vec<MeshSurfPoint> {
+    /// Generate a dense sampling of the surface of a mesh, where points are guaranteed to be no
+    /// more than `max_spacing` units apart but have no guarantees about how close together they
+    /// may be.
+    ///
+    /// TODO: test these guarantees
+    ///
+    /// # Arguments
+    ///
+    /// * `max_spacing`: the maximum distance between any two points in the sampling
+    /// * `index_mask`: Optional mask to apply to the sampling, only sampling faces that are true
+    ///   in the mask
+    ///
+    /// returns: Vec<MeshSurfPoint, Global>
+    pub fn sample_surface_dense(
+        &self,
+        max_spacing: f64,
+        index_mask: Option<&IndexMask>,
+    ) -> Vec<MeshSurfPoint> {
         let mut sampled = Vec::with_capacity(self.faces().len());
+
         for (face_i, vert) in self.faces().iter().enumerate() {
+            if let Some(index_mask) = index_mask {
+                if !index_mask.get(face_i) {
+                    continue;
+                }
+            }
+
             let a = self.vertices()[vert[0] as usize];
             let b = self.vertices()[vert[1] as usize];
             let c = self.vertices()[vert[2] as usize];
@@ -78,8 +107,12 @@ impl Mesh {
         sampled
     }
 
-    pub fn sample_dense(&self, max_spacing: f64) -> Vec<SurfacePoint3> {
-        self.sample_surface_dense(max_spacing)
+    pub fn sample_dense(
+        &self,
+        max_spacing: f64,
+        index_mask: Option<&IndexMask>,
+    ) -> Vec<SurfacePoint3> {
+        self.sample_surface_dense(max_spacing, index_mask)
             .into_iter()
             .map(|msp| msp.sp)
             .collect()
@@ -235,7 +268,7 @@ mod tests {
     fn check_kiddo_bug() {
         let mesh = Mesh::create_sphere(100.0, 300, 300);
         let r = 5.0;
-        let sampled = mesh.sample_poisson(r);
+        let sampled = mesh.sample_poisson(r, None);
 
         let points = sampled.iter().map(|mp| mp.sp.point).collect::<Vec<_>>();
 
@@ -243,6 +276,27 @@ mod tests {
         for mp in &sampled {
             let neighbors = tree.within(&mp.sp.point, r);
             assert_eq!(neighbors.len(), 1, "Missed duplicate");
+        }
+    }
+
+    #[test]
+    fn sample_poisson_index_mask_restricts_to_masked_faces() {
+        let mesh = Mesh::create_sphere(100.0, 30, 30);
+        let n_faces = mesh.faces().len();
+
+        // Mask only the first half of the faces
+        let masked_indices: Vec<usize> = (0..n_faces / 2).collect();
+        let mask = IndexMask::try_from_indices(&masked_indices, n_faces).unwrap();
+
+        let sampled = mesh.sample_poisson(5.0, Some(&mask));
+
+        assert!(!sampled.is_empty(), "Expected at least one sample");
+        for mp in &sampled {
+            assert!(
+                mask.get(mp.face_index as usize),
+                "face_index {} is not in the mask",
+                mp.face_index
+            );
         }
     }
 
