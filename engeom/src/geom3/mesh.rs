@@ -222,7 +222,10 @@ impl Mesh {
     ///
     /// returns: Mesh
     pub fn new_scaled_uniform(&self, scale: f64) -> Self {
-        let new_shape = self.shape.clone().scaled(&Vector3::new(scale, scale, scale));
+        let new_shape = self
+            .shape
+            .clone()
+            .scaled(&Vector3::new(scale, scale, scale));
         Mesh::new_take_trimesh(new_shape, self.is_solid)
     }
 

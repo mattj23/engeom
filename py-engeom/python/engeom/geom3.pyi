@@ -1080,6 +1080,22 @@ class Mesh:
         ...
 
     @staticmethod
+    def load_umesh(path: str | Path) -> Mesh:
+        """
+        Load a mesh from the micro mesh (.umesh) format. This format was made for this library as a way of doing lossy
+        compression on very small meshes which have less than 2^16 vertices. The compression works by discretizing each
+        dimension to a 16-bit integer within the bounding box of the mesh, so the quality loss varies based on the
+        physical size of the mesh. However, for meshes of most physical objects the accuracy loss is well below the
+        measurement noise floor of the sensing system.
+
+        This function will load both gzip deflated umesh files and uncompressed umesh files.
+
+        :param path: the path to the file to be loaded
+        :return: a loaded mesh
+        """
+        ...
+
+    @staticmethod
     def load_ply(path: str | Path) -> Mesh:
         """
         Loads a PLY (Polygon File Format or Stanford Triangle Format) file and returns its corresponding
