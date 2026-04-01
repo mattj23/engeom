@@ -1140,6 +1140,16 @@ class Mesh:
         """
         ...
 
+    def new_scaled_uniform(self, scale: float) -> Mesh:
+        """
+        Create a new mesh with all vertices scaled uniformly by the given factor. The original mesh
+        is not modified.
+
+        :param scale: the scale factor to apply to all vertices
+        :return: a new mesh with all vertices scaled
+        """
+        ...
+
     def new_offset_vertices(self, offset: float) -> Mesh:
         """
         Create a new mesh with the same structure, but in which the vertices have been offset by the specified amount

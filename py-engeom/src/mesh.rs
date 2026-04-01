@@ -157,6 +157,10 @@ impl Mesh {
         self.vertex_normals.as_ref().unwrap().bind(py)
     }
 
+    fn new_scaled_uniform(&self, scale: f64) -> Self {
+        Self::from_inner(self.inner.new_scaled_uniform(scale))
+    }
+
     fn new_offset_vertices(&self, offset: f64) -> Self {
         Self::from_inner(self.inner.new_offset_vertices(offset))
     }

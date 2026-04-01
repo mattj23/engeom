@@ -214,6 +214,18 @@ impl Mesh {
         self.shape.transform_vertices(transform);
     }
 
+    /// Create a new mesh by scaling all vertices uniformly.
+    ///
+    /// # Arguments
+    ///
+    /// * `scale`: a scale factor to apply to all vertices
+    ///
+    /// returns: Mesh
+    pub fn new_scaled_uniform(&self, scale: f64) -> Self {
+        let new_shape = self.shape.clone().scaled(&Vector3::new(scale, scale, scale));
+        Mesh::new_take_trimesh(new_shape, self.is_solid)
+    }
+
     /// Create a new mesh by offsetting each vertex along its smoothed vertex normal.
     ///
     /// The offset is applied as `vertex + offset * normal`, where the normal is the
@@ -624,6 +636,20 @@ mod tests {
 
         for normal in normals {
             assert_relative_eq!(normal.norm(), 1.0, epsilon = 1.0e-12);
+        }
+    }
+
+    #[test]
+    fn new_scaled_uniform_scales_spherical_radius() {
+        let radius = 1.0;
+        let scale = 2.5;
+        let mesh = Mesh::create_sphere(radius, 100, 100);
+        let scaled = mesh.new_scaled_uniform(scale);
+
+        assert_eq!(mesh.vertices().len(), scaled.vertices().len());
+
+        for vertex in scaled.vertices() {
+            assert_relative_eq!(vertex.coords.norm(), radius * scale, epsilon = 1.0e-12);
         }
     }
 
