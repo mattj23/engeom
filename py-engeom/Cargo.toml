@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 [dependencies]
 pyo3 = { version = "0.28.1", features = ["abi3-py38", "extension-module"] }
 numpy = "0.28.0"
-engeom = { path = "../engeom", features = ["stl"] }
+engeom = { path = "../engeom", features = ["stl", "ply"] }
 parry3d-f64 = { workspace = true, features = ["serde-serialize"] }
 parry2d-f64 = { workspace = true, features = ["serde-serialize"] }
 rmp-serde = "1.3.0"

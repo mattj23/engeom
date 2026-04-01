@@ -1080,6 +1080,19 @@ class Mesh:
         ...
 
     @staticmethod
+    def load_ply(path: str | Path) -> Mesh:
+        """
+        Loads a PLY (Polygon File Format or Stanford Triangle Format) file and returns its corresponding
+        mesh representation. This method reads and parses the PLY file to construct a Mesh object that
+        contains vertices, edges, and faces.
+
+        :param path: The file path to the PLY file, provided as a string or Path object.
+        :return: A Mesh object constructed from the contents of the PLY file. The mesh includes the geometric structure
+            specified in the file.
+        """
+        ...
+
+    @staticmethod
     def load_lptf3(path: str | Path, params: Lptf3LoadEnum) -> Mesh:
         """
         This function reads a LPTF3 file, which is a compact file format for storing 3D point data

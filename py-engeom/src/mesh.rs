@@ -92,6 +92,13 @@ impl Mesh {
         Ok(Self::from_inner(mesh))
     }
 
+    #[staticmethod]
+    fn load_ply(path: PathBuf) -> PyResult<Self> {
+        let mesh =
+            engeom::io::load_ply_mesh(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(mesh))
+    }
+
     fn transform_by(&mut self, iso: &Iso3) {
         self.inner.transform_by(iso.get_inner());
 

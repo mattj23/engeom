@@ -17,7 +17,7 @@ use rayon::prelude::*;
 /// the surface point.
 ///
 /// The `mode` parameter determines whether the residuals being minimized are the entire Euclidean
-/// distance between the points and their closest corresponding point on the surface of the mesh, or
+/// distance between the points and their closest corresponding point on the surface of the mesh or
 /// just the component of that distance orthogonal to the surface normal:
 ///
 /// `DistMode::ToPoint` is often useful when you know that the points will match well with the

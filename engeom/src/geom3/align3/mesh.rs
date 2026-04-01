@@ -92,6 +92,21 @@ impl<'a> AlignmentMesh<'a> {
 // Residual weighting
 // ===============================================================================================
 
+/// This is a trait for a generic mesh weight providing entity. When given a `MeshSurfPoint`, it
+/// should return a weight that will be applied to the residual at that point during the
+/// alignment process. This allows for flexible weighting strategies, such as proximity to another
+/// mesh, or being in a specific set of faces, or having a specific direction, etc.
+pub trait MeshWeight {
+    /// Returns the weight of the mesh point.
+    ///
+    /// # Arguments
+    ///
+    /// * `point`: The mesh point for which to compute the weight.
+    ///
+    /// returns: f64
+    fn weight(&self, point: &MeshSurfPoint) -> f64;
+}
+
 #[derive(Clone)]
 pub struct FaceIndexWeight {
     mask: IndexMask,
@@ -175,23 +190,6 @@ impl MeshWeight for NearMeshWeight {
         // Return the weight if all conditions are met
         self.weight
     }
-}
-
-/// This is a trait for a generic mesh weight providing entity. When given a `MeshSurfPoint`, it
-/// should return a weight that will be applied to the residual at that point during the
-/// alignment process. This allows for flexible weighting strategies, such as proximity to another
-/// mesh, or being in a specific set of faces, or having a specific direction, etc.
-///
-/// TODO: Currently weights are only applied once when a sample point is created.
-pub trait MeshWeight {
-    /// Returns the weight of the mesh point.
-    ///
-    /// # Arguments
-    ///
-    /// * `point`: The mesh point for which to compute the weight.
-    ///
-    /// returns: f64
-    fn weight(&self, point: &MeshSurfPoint) -> f64;
 }
 
 // ===============================================================================================
