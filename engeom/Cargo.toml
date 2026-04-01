@@ -15,6 +15,7 @@ rayon = { workspace = true }
 rand = { workspace = true }
 rand_distr = {workspace = true }
 uuid = { workspace = true, features = ["v4"] }
+flate2 = { workspace = true }
 
 alum = { version = "0.6.1", default-features = false, features = ["decimate", "subdiv"] }
 three-d = { version = "0.18.2", optional = true }

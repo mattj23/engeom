@@ -1,7 +1,10 @@
 use clap::{Parser, Subcommand};
 use engeom::Result;
-use engeom::io::{load_ply_mesh, read_mesh_stl, u_bytes_to_mesh, u_mesh_to_bytes};
+use engeom::io::{load_ply_mesh, read_mesh_stl, u_bytes_to_mesh_data, u_mesh_data_to_bytes};
+use flate2::Compression;
+use flate2::write::GzEncoder;
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -20,10 +23,13 @@ enum Commands {
         input: PathBuf,
         /// Output binary file
         output: PathBuf,
+        /// Compress the output with gzip
+        #[arg(long)]
+        compress: bool,
     },
 }
 
-fn cmd_to_umesh(input: &PathBuf, output: &PathBuf) -> Result<()> {
+fn cmd_to_umesh(input: &PathBuf, output: &PathBuf, compress: bool) -> Result<()> {
     let ext = input
         .extension()
         .and_then(|e| e.to_str())
@@ -45,10 +51,10 @@ fn cmd_to_umesh(input: &PathBuf, output: &PathBuf) -> Result<()> {
         _ => return Err("Input file must have a .stl or .ply extension".into()),
     };
 
-    let bytes = u_mesh_to_bytes(&vertices, &triangles)?;
+    let bytes = u_mesh_data_to_bytes(&vertices, &triangles)?;
 
     // Load it back again and check the deviation
-    let (u_vert, _) = u_bytes_to_mesh(&bytes)?;
+    let (u_vert, _) = u_bytes_to_mesh_data(&bytes)?;
 
     // Verify that the number of vertices is the same
     if (vertices.len() as u32) != u_vert.len() as u32 {
@@ -75,7 +81,14 @@ fn cmd_to_umesh(input: &PathBuf, output: &PathBuf) -> Result<()> {
     println!(" > Max deviation: {}", max_dev);
     println!(" > Average deviation: {}", avg_dev);
 
-    fs::write(output, bytes)?;
+    if compress {
+        let file = fs::File::create(output)?;
+        let mut encoder = GzEncoder::new(file, Compression::best());
+        encoder.write_all(&bytes)?;
+        encoder.finish()?;
+    } else {
+        fs::write(output, bytes)?;
+    }
     Ok(())
 }
 
@@ -83,7 +96,11 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match &cli.command {
-        Commands::ToUmesh { input, output } => cmd_to_umesh(input, output),
+        Commands::ToUmesh {
+            input,
+            output,
+            compress,
+        } => cmd_to_umesh(input, output, *compress),
     };
 
     if let Err(e) = result {

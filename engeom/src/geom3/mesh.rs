@@ -16,6 +16,7 @@ mod uv_mapping;
 
 use crate::common::{IndexMask, PCoords};
 use crate::geom3::IsoExtensions3;
+use crate::io::{deflate_bytes, u_bytes_to_mesh};
 use crate::na::SVector;
 use crate::{Iso3, Point2, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
 pub use collisions::MeshCollisionSet;
@@ -578,6 +579,33 @@ impl Mesh {
         let mut mesh = Self::new(vertices, faces, true);
         mesh.transform_by(&transform);
         mesh
+    }
+
+    /// Load a Stanford bunny mesh embedded in the binary with 453 vertices and 948 faces. This
+    /// mesh has been compressed into the 16-bit micro mesh format. The mesh structure is the same
+    /// as the corresponding `bun_zipper_res3.ply` mesh, but some precision has been lost in the
+    /// conversion. The maximum vertex deviation from the original is 0.00000189 meters.
+    pub fn stanford_bunny_res4() -> Self {
+        let bytes = include_bytes!("../../tests/data/stanford_bun_4.umesh.gz");
+        u_bytes_to_mesh(&deflate_bytes(bytes).unwrap()).unwrap()
+    }
+
+    /// Load a Stanford bunny mesh embedded in the binary with 1889 vertices and 3851 faces. This
+    /// mesh has been compressed into the 16-bit micro mesh format. The mesh structure is the same
+    /// as the corresponding `bun_zipper_res3.ply` mesh, but some precision has been lost in the
+    /// conversion. The maximum vertex deviation from the original is 0.00000189 meters.
+    pub fn stanford_bunny_res3() -> Self {
+        let bytes = include_bytes!("../../tests/data/stanford_bun_3.umesh.gz");
+        u_bytes_to_mesh(&deflate_bytes(bytes).unwrap()).unwrap()
+    }
+
+    /// Load a Stanford bunny mesh embedded in the binary with 8171 vertices and 16301 faces. This
+    /// mesh has been compressed into the 16-bit micro mesh format. The mesh structure is the same
+    /// as the corresponding `bun_zipper_res2.ply` mesh, but some precision has been lost in the
+    /// conversion. The maximum vertex deviation from the original is 0.00000189 meters.
+    pub fn stanford_bunny_res2() -> Self {
+        let bytes = include_bytes!("../../tests/data/stanford_bun_2.umesh.gz");
+        u_bytes_to_mesh(&deflate_bytes(bytes).unwrap()).unwrap()
     }
 }
 

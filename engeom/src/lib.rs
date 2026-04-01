@@ -39,7 +39,7 @@ pub use serde_json;
 #[cfg(feature = "three_d")]
 pub use three_d;
 
-// Common one dimensional functions
+// Common one-dimensional functions
 pub use func1::{Func1, Gaussian1, Line1, Polynomial, Series1};
 
 // Extremely common angle tools
@@ -66,22 +66,27 @@ pub use common::{BestFit, Resample, SelectOp, Selection, Smoothing};
 #[cfg(test)]
 pub mod tests {
     use crate::Mesh;
-    use crate::io::u_bytes_to_mesh;
+    use crate::io::{deflate_bytes, u_bytes_to_mesh, u_bytes_to_mesh_data};
 
     /// Load a mesh with the stanford bunny reconstruction at resolution 4. The vertices are within
     /// 0.00000189 of the original ply file.
     pub fn stanford_bun_4() -> Mesh {
-        let bytes = include_bytes!("../tests/data/bun_zipper_res4.umesh");
-        let (vertices, triangles) = u_bytes_to_mesh(bytes).unwrap();
-        Mesh::new(vertices, triangles, false)
+        let bytes = include_bytes!("../tests/data/stanford_bun_4.umesh.gz");
+        u_bytes_to_mesh(&deflate_bytes(bytes).unwrap()).unwrap()
     }
 
     /// Load a mesh with the stanford bunny reconstruction at resolution 2. The vertices are within
     /// 0.00000189 of the original ply file.
     pub fn stanford_bun_2() -> Mesh {
-        let bytes = include_bytes!("../tests/data/bun_zipper_res2.umesh");
-        let (vertices, triangles) = u_bytes_to_mesh(bytes).unwrap();
-        Mesh::new(vertices, triangles, false)
+        let bytes = include_bytes!("../tests/data/stanford_bun_2.umesh.gz");
+        u_bytes_to_mesh(&deflate_bytes(bytes).unwrap()).unwrap()
+    }
+
+    /// Load a mesh with the stanford bunny reconstruction at resolution 3. The vertices are within
+    /// 0.00000189 of the original ply file.
+    pub fn stanford_bun_3() -> Mesh {
+        let bytes = include_bytes!("../tests/data/stanford_bun_3.umesh.gz");
+        u_bytes_to_mesh(&deflate_bytes(bytes).unwrap()).unwrap()
     }
 
     /// Get the path to the test data directory.

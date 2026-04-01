@@ -4,15 +4,16 @@ mod ply;
 mod point_cloud;
 
 use crate::Result;
-use parry3d_f64::na::{Point3, Vector3};
-use serde::Serialize;
-use std::fs::{File, OpenOptions};
-use std::io::{BufWriter, Write};
-use std::path::Path;
-
+use flate2::read::GzDecoder;
+use flate2::{Compression, write::DeflateEncoder};
 pub use lptf3::{Lptf3DsParams, Lptf3Load, load_lptf3, load_lptf3_mesh, lptf3_point_distribution};
 pub use micro_mesh::*;
+use parry3d_f64::na::{Point3, Vector3};
 pub use point_cloud::*;
+use serde::Serialize;
+use std::fs::{File, OpenOptions};
+use std::io::{BufWriter, Read, Write};
+use std::path::Path;
 
 #[cfg(feature = "ply")]
 pub use ply::*;
@@ -137,4 +138,18 @@ where
     let bytes = serde_json::to_vec_pretty(item)?;
     writer.write_all(&bytes)?;
     Ok(())
+}
+
+/// Deflates the input bytes using gzip compression.
+///
+/// # Arguments
+///
+/// * `input`: the input bytes to deflate
+///
+/// returns: Result<Vec<u8, Global>, Error>
+pub fn deflate_bytes(input: &[u8]) -> std::io::Result<Vec<u8>> {
+    let mut decoder = GzDecoder::new(input);
+    let mut result = Vec::new();
+    decoder.read_to_end(&mut result)?;
+    Ok(result)
 }

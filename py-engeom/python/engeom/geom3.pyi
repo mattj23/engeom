@@ -1582,6 +1582,51 @@ class Mesh:
         """
         ...
 
+    @staticmethod
+    def stanford_bunny_res4() -> Mesh:
+        """
+        Returns a low-resolution version of the Stanford Bunny mesh with 453 vertices and 948 faces
+        that has been embedded into the binary. The mesh structure is the same as the original
+        `bun_zipper_res4.ply` but it was compressed with the 16-bit micro mesh format and so some
+        precision has been lost in the vertex coordinates.
+
+        The mesh dimensions are in meters, and the maximum vertex deviation from the original is
+        0.00000189 meters.
+
+        :return: a new `Mesh` object representing the Stanford Bunny
+        """
+        ...
+
+    @staticmethod
+    def stanford_bunny_res3() -> Mesh:
+        """
+        Returns a medium-resolution version of the Stanford Bunny mesh with 1889 vertices and 3851 faces
+        that has been embedded into the binary. The mesh structure is the same as the original
+        `bun_zipper_res3.ply` but it was compressed with the 16-bit micro mesh format and so some
+        precision has been lost in the vertex coordinates.
+
+        The mesh dimensions are in meters, and the maximum vertex deviation from the original is
+        0.00000189 meters.
+
+        :return: a new `Mesh` object representing the Stanford Bunny
+        """
+        ...
+
+    @staticmethod
+    def stanford_bunny_res2() -> Mesh:
+        """
+        Returns a higher-resolution version of the Stanford Bunny mesh with 8171 vertices and 16301 faces
+        that has been embedded into the binary. The mesh structure is the same as the original
+        `bun_zipper_res2.ply` but it was compressed with the 16-bit micro mesh format and so some
+        precision has been lost in the vertex coordinates.
+
+        The mesh dimensions are in meters, and the maximum vertex deviation from the original is
+        0.00000189 meters.
+
+        :return: a new `Mesh` object representing the Stanford Bunny
+        """
+        ...
+
 
 class FaceFilterHandle:
     """

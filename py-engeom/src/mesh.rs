@@ -492,6 +492,24 @@ impl Mesh {
 
         Ok(Self::from_inner(mesh))
     }
+
+    #[staticmethod]
+    fn stanford_bunny_res4() -> Self {
+        let mesh = engeom::Mesh::stanford_bunny_res4();
+        Self::from_inner(mesh)
+    }
+
+    #[staticmethod]
+    fn stanford_bunny_res3() -> Self {
+        let mesh = engeom::Mesh::stanford_bunny_res3();
+        Self::from_inner(mesh)
+    }
+
+    #[staticmethod]
+    fn stanford_bunny_res2() -> Self {
+        let mesh = engeom::Mesh::stanford_bunny_res2();
+        Self::from_inner(mesh)
+    }
 }
 
 #[pyclass(module = "engeom.geom3")]

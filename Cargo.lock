@@ -793,6 +793,7 @@ dependencies = [
  "colorgrad",
  "criterion",
  "faer",
+ "flate2",
  "imageproc",
  "itertools 0.14.0",
  "kdtree",
@@ -954,9 +955,9 @@ dependencies = [
 
 [[package]]
 name = "flate2"
-version = "1.1.2"
+version = "1.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a3d7db9596fecd151c5f638c0ee5d5bd487b6e0ea232e5dc96d5250f6f94b1d"
+checksum = "843fba2746e448b37e26a819579957415c8cef339bf08564fe8b7ddbd959573c"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
@@ -3774,6 +3775,7 @@ version = "0.2.21"
 dependencies = [
  "clap",
  "engeom",
+ "flate2",
 ]
 
 [[package]]
