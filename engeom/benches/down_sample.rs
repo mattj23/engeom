@@ -8,7 +8,7 @@ fn poisson_downsample(c: &mut Criterion) {
     c.bench_function("downsample mesh_poisson", |b| {
         let mesh = Mesh::create_sphere(100.0, 500, 500);
         b.iter(|| {
-            let _results = black_box(&mesh).sample_poisson(5.0);
+            let _results = black_box(&mesh).sample_poisson(5.0, None);
         })
     });
 }
