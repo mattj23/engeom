@@ -1,5 +1,22 @@
-//! This module contains common helpers for computing the values of the jacobian matrix for
-//! different Levenberg-Marquardt alignments.
+//! Utilities for building Jacobian rows for 3d geometric optimization problems.
+//!
+//! A **Jacobian** is a matrix of partial derivatives. In this module, each row describes how a
+//! distance-like residual changes when the underlying transform parameters are perturbed. These
+//! derivatives are especially useful in iterative solvers such as least-squares optimization,
+//! where the Jacobian helps the solver decide how to update position and orientation parameters.
+//!
+//! The functionality in this module focuses on common geometric distance models used throughout the
+//! crate:
+//!
+//! - Point-to-plane approximations, where a point is compared against a nearby surface point and
+//!   normal
+//! - A reverse point-to-plane form for cases where the reference entity is transformed instead of
+//!   the test point, this is used for multi-mesh alignments
+//! - Point-to-point distance derivatives
+//! - Helpers for inserting a single Jacobian row into a larger matrix
+//!
+//! These helpers are intended to make it easy to assemble Jacobians for alignment, registration,
+//! and fitting routines in a consistent 6-parameter rigid-body setting.
 
 use super::*;
 use crate::geom3::{Point3, SurfacePoint3};
@@ -56,21 +73,16 @@ pub fn point_plane_jacobian_rev(p: &Point3, c: &SurfacePoint3, params: &RcParams
     point_plane_core(-s, c, from_rc, params)
 }
 
-fn point_plane_core(s: f64, c: &SurfacePoint3, from_rc: Point3, params: &RcParams3) -> T3Storage {
-    let mut result = T3Storage::zeros();
-    let n = c.normal.into_inner() * s;
-
-    result[0] = n.x;
-    result[1] = n.y;
-    result[2] = n.z;
-
-    result[3] = n.dot(&(params.rotations().rd.x * from_rc).coords);
-    result[4] = n.dot(&(params.rotations().rd.y * from_rc).coords);
-    result[5] = n.dot(&(params.rotations().rd.z * from_rc).coords);
-
-    result
-}
-
+/// This is a helper function for computing the partial derivatives of the parameters for a
+/// distance function approximated by a point and another point.
+///
+/// # Arguments
+///
+/// * `p`: the test point (a sample point in the data being optimized)
+/// * `c`: the reference point (a point in the model) closest to `p`
+/// * `params`: the parameters of the current alignment
+///
+/// returns: Matrix<f64, Const<6>, Const<1>, ArrayStorage<f64, 6, 1>>
 pub fn point_point_jacobian(p: &Point3, c: &Point3, params: &RcParams3) -> T3Storage {
     let mut result = T3Storage::zeros();
     let m = p - c;
@@ -91,14 +103,43 @@ pub fn point_point_jacobian(p: &Point3, c: &Point3, params: &RcParams3) -> T3Sto
     }
 }
 
+/// A core function for computing the partial derivatives of the parameters for a distance function
+/// approximated by a point and its closest point on a plane (represented as a `SurfacePoint3`).
+/// The internal functionality is common between `point_plane_jacobian` and
+/// `point_plane_jacobian_rev`, the two callers, which differ only in the sign of the scalar
+/// projection of the test point onto the plane.
+///
+/// # Arguments
+///
+/// * `s`: the sign of the scalar projection of the test point onto the plane
+/// * `c`: the reference surface point (a point and normal in the model) closest to `p`
+/// * `from_rc`: the point with relation to the current center of rotation
+/// * `params`: the parameters of the current alignment
+///
+/// returns: Matrix<f64, Const<6>, Const<1>, ArrayStorage<f64, 6, 1>>
+fn point_plane_core(s: f64, c: &SurfacePoint3, from_rc: Point3, params: &RcParams3) -> T3Storage {
+    let mut result = T3Storage::zeros();
+    let n = c.normal.into_inner() * s;
+
+    result[0] = n.x;
+    result[1] = n.y;
+    result[2] = n.z;
+
+    result[3] = n.dot(&(params.rotations().rd.x * from_rc).coords);
+    result[4] = n.dot(&(params.rotations().rd.y * from_rc).coords);
+    result[5] = n.dot(&(params.rotations().rd.z * from_rc).coords);
+
+    result
+}
+
 /// Generic helper to copy the contents of a single row into a larger jacobian matrix of either
 /// fixed or dynamic row count
 ///
 /// # Arguments
 ///
-/// * `j`:
-/// * `matrix`:
-/// * `row`:
+/// * `j`: The source Jacobian row to copy
+/// * `matrix`: The destination matrix to copy into
+/// * `row`: The row index in the destination matrix to copy into
 ///
 /// returns: ()
 pub fn copy_jacobian<R, S>(j: &T3Storage, matrix: &mut Matrix<f64, R, U6, S>, row: usize)
@@ -111,6 +152,17 @@ where
 
 #[cfg(test)]
 mod tests {
+    //! For lack of a more clever way of testing the jacobians, I've written a bunch of numerical
+    //! versions of the jacobian calculations. The speed of the LM solver in the real implementation
+    //! depends pretty heavily on how the real jacobian calculations work from making the assumption
+    //! that an infinitesimally small motion of a test point against the closest surface of a
+    //! reference won't change the location of the closest point, allowing the partial differentials
+    //! to be approximated just from the deviation and surface directions.
+    //!
+    //! Since I had to figure these out on my own, I wanted to check them against something that
+    //! I had relatively high confidence in, and the numerical method seemed like the most
+    //! straightforward, obviously correct option.  I use the numerical alternative to check against
+    //! a few different categories of cases.
     use super::*;
     use crate::geom3::Point3;
     use approx::assert_relative_eq;
@@ -158,6 +210,24 @@ mod tests {
         let moved = closest.transformed(&t);
         let d1 = moved.scalar_projection(p);
 
+        (d1 - d0) / NUMERIC_EPSILON
+    }
+
+    /// Numerical approximation of the derivative of the Euclidean distance |p - c| with respect
+    /// to parameter `index`, using a forward finite difference.  The point `p` is moved by the
+    /// incremental transform produced by perturbing the parameter, and the distance to the fixed
+    /// reference point `c` is measured before and after.
+    fn point_point_numeric(params: &RcParams3, p: &Point3, c: &Point3, index: usize) -> f64 {
+        let mut params = params.clone();
+        let t_i = params.transform().inverse();
+        let mut x = *params.x();
+        x[index] += NUMERIC_EPSILON;
+        params.set(&x);
+        let t = params.transform() * t_i;
+
+        let moved = t * *p;
+        let d0 = (p - c).norm();
+        let d1 = (moved - c).norm();
         (d1 - d0) / NUMERIC_EPSILON
     }
 
@@ -350,6 +420,77 @@ mod tests {
             test.b,
             epsilon = 1e-6
         );
+    }
+
+    #[test]
+    fn test_point_point_translation() {
+        let p = Point3::new(1.0, 2.0, 3.0);
+        let c = Point3::new(0.5, 1.5, 2.5);
+
+        let initial = Iso3::from_parts(
+            Translation3::new(3.0, -2.0, 1.0),
+            UnitQuaternion::from_euler_angles(0.1, -0.2, 0.3),
+        );
+        let rc = Point3::new(1.0, 1.0, 1.0);
+        let params = RcParams3::from_initial(&initial, &(initial.inverse() * rc));
+
+        let test = point_point_jacobian(&p, &c, &params);
+
+        for i in 0..3 {
+            assert_relative_eq!(
+                point_point_numeric(&params, &p, &c, i),
+                test[i],
+                epsilon = 1e-6
+            );
+        }
+    }
+
+    #[test]
+    fn test_point_point_rotation_identity() {
+        let p = Point3::new(1.0, 2.0, 3.0);
+        let c = Point3::new(0.0, 0.5, 1.0);
+        let rc = Point3::origin();
+
+        let params = RcParams3::from_initial(&Iso3::identity(), &rc);
+        let test = point_point_jacobian(&p, &c, &params);
+
+        for i in 3..6 {
+            assert_relative_eq!(
+                point_point_numeric(&params, &p, &c, i),
+                test[i],
+                epsilon = 1e-6
+            );
+        }
+    }
+
+    #[test]
+    fn test_point_point_rotation_offset_rc() {
+        let p = Point3::new(1.0, 2.0, 3.0);
+        let c = Point3::new(0.0, 0.5, 1.0);
+        let rc = Point3::new(-1.0, -2.0, 0.5);
+
+        let params = RcParams3::from_initial(&Iso3::identity(), &rc);
+        let test = point_point_jacobian(&p, &c, &params);
+
+        for i in 3..6 {
+            assert_relative_eq!(
+                point_point_numeric(&params, &p, &c, i),
+                test[i],
+                epsilon = 1e-6
+            );
+        }
+    }
+
+    #[test]
+    fn test_point_point_coincident_returns_zero() {
+        // When p == c the jacobian should be all zeros (distance is zero, gradient undefined)
+        let p = Point3::new(1.0, 2.0, 3.0);
+        let c = p;
+        let params = RcParams3::from_initial(&Iso3::identity(), &Point3::origin());
+        let test = point_point_jacobian(&p, &c, &params);
+        for i in 0..6 {
+            assert_eq!(test[i], 0.0);
+        }
     }
 
     #[test]
