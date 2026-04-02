@@ -922,7 +922,8 @@ impl Iso3 {
                 Point3::from_inner(self.inner * other.inner).into_bound_py_any(py)
             }
             Transformable3::Plane(other) => {
-                Plane3::from_inner(other.inner.transform_by(&self.inner)).into_bound_py_any(py)
+                Plane3::from_inner(other.inner.new_transformed_by(&self.inner))
+                    .into_bound_py_any(py)
             }
             Transformable3::Sp(other) => {
                 SurfacePoint3::from_inner(other.inner.transformed(&self.inner))

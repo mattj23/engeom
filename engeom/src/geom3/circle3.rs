@@ -2,6 +2,7 @@ use crate::common::PCoords;
 use crate::geom3::iso3::IsoExtensions3;
 use crate::geom3::manifold::Manifold1Pos3;
 use crate::{Iso3, Plane3, Point3, Result, UnitVec3, Vector3};
+use std::ops;
 
 /// A flat circle in 3D space, defined by a radius and a world isometry. The circle can be thought
 /// of as a circle of radius `r` sitting at the origin of the XY plane, then transformed by the
@@ -171,6 +172,34 @@ impl Circle3 {
         };
         let iso = Iso3::try_from_basis_zy(&normal.into_inner(), &reference, Some(*center))?;
         Ok(Self::new(radius, iso))
+    }
+}
+
+impl ops::Mul<Circle3> for Iso3 {
+    type Output = Circle3;
+    fn mul(self, rhs: Circle3) -> Circle3 {
+        rhs.new_transformed_by(&self)
+    }
+}
+
+impl ops::Mul<&Circle3> for Iso3 {
+    type Output = Circle3;
+    fn mul(self, rhs: &Circle3) -> Circle3 {
+        rhs.new_transformed_by(&self)
+    }
+}
+
+impl ops::Mul<Circle3> for &Iso3 {
+    type Output = Circle3;
+    fn mul(self, rhs: Circle3) -> Circle3 {
+        rhs.new_transformed_by(self)
+    }
+}
+
+impl ops::Mul<&Circle3> for &Iso3 {
+    type Output = Circle3;
+    fn mul(self, rhs: &Circle3) -> Circle3 {
+        rhs.new_transformed_by(self)
     }
 }
 

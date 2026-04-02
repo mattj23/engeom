@@ -4,6 +4,7 @@ use crate::geom3::circle3::Circle3;
 use crate::geom3::plane3::Plane3;
 use crate::geom3::sphere3::Sphere3;
 use crate::{Iso3, Point3, Vector3};
+use std::ops;
 
 /// A parameterized line in 3D space: `P(t) = origin + t * direction`.
 ///
@@ -191,6 +192,34 @@ fn solve_sphere_quadratic(origin: &Point3, dir: &Vector3, center: &Point3, r: f6
     } else {
         let sq = discriminant.sqrt();
         vec![(-b - sq) / (2.0 * a), (-b + sq) / (2.0 * a)]
+    }
+}
+
+impl ops::Mul<Line3> for Iso3 {
+    type Output = Line3;
+    fn mul(self, rhs: Line3) -> Line3 {
+        rhs.new_transformed_by(&self)
+    }
+}
+
+impl ops::Mul<&Line3> for Iso3 {
+    type Output = Line3;
+    fn mul(self, rhs: &Line3) -> Line3 {
+        rhs.new_transformed_by(&self)
+    }
+}
+
+impl ops::Mul<Line3> for &Iso3 {
+    type Output = Line3;
+    fn mul(self, rhs: Line3) -> Line3 {
+        rhs.new_transformed_by(self)
+    }
+}
+
+impl ops::Mul<&Line3> for &Iso3 {
+    type Output = Line3;
+    fn mul(self, rhs: &Line3) -> Line3 {
+        rhs.new_transformed_by(self)
     }
 }
 

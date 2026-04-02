@@ -5,6 +5,7 @@ use crate::{Iso3, Point3, Result, SurfacePoint3, UnitVec3};
 use parry3d_f64::na::{Translation3, UnitQuaternion};
 use parry3d_f64::query::{Ray, RayCast};
 use parry3d_f64::shape::Ball;
+use std::ops;
 
 /// A sphere in 3D space, defined by a center point and a radius.
 #[derive(Debug, Clone)]
@@ -121,6 +122,34 @@ impl Sphere3 {
         let point = ray.origin + ray.dir * hit.time_of_impact;
         let normal = UnitVec3::new_normalize(hit.normal);
         Some(SurfacePoint3::new(point, normal))
+    }
+}
+
+impl ops::Mul<Sphere3> for Iso3 {
+    type Output = Sphere3;
+    fn mul(self, rhs: Sphere3) -> Sphere3 {
+        rhs.new_transformed_by(&self)
+    }
+}
+
+impl ops::Mul<&Sphere3> for Iso3 {
+    type Output = Sphere3;
+    fn mul(self, rhs: &Sphere3) -> Sphere3 {
+        rhs.new_transformed_by(&self)
+    }
+}
+
+impl ops::Mul<Sphere3> for &Iso3 {
+    type Output = Sphere3;
+    fn mul(self, rhs: Sphere3) -> Sphere3 {
+        rhs.new_transformed_by(self)
+    }
+}
+
+impl ops::Mul<&Sphere3> for &Iso3 {
+    type Output = Sphere3;
+    fn mul(self, rhs: &Sphere3) -> Sphere3 {
+        rhs.new_transformed_by(self)
     }
 }
 
