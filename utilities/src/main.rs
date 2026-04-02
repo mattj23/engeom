@@ -5,7 +5,7 @@ use flate2::Compression;
 use flate2::write::GzEncoder;
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(name = "engeom-utils")]
@@ -29,7 +29,7 @@ enum Commands {
     },
 }
 
-fn cmd_to_umesh(input: &PathBuf, output: &PathBuf, compress: bool) -> Result<()> {
+fn cmd_to_umesh(input: &Path, output: &PathBuf, compress: bool) -> Result<()> {
     let ext = input
         .extension()
         .and_then(|e| e.to_str())

@@ -1,5 +1,6 @@
 //! This module contains tools for simulating sensors and sensor data
 
+pub mod camera;
 mod laser_profile;
 
 use crate::{Iso3, Mesh, PointCloud};
