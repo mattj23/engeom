@@ -1,5 +1,7 @@
 [package]
 name = "engeom"
+description = "Library for working with geometry with a focus on engineering metrology applications."
+license="MIT OR Apache-2.0"
 version.workspace = true
 edition.workspace = true
 
