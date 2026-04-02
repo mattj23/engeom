@@ -96,6 +96,46 @@ impl Circle3 {
         self.at_angle(self.closest_angle(test_point))
     }
 
+    /// Intersects the circle with a plane, returning 0, 1, or 2 intersection angles (in radians).
+    ///
+    /// Returns an empty vec if the plane does not intersect the circle, a single angle if the
+    /// plane is tangent to the circle, or two angles if the plane cuts through it. Returns empty
+    /// for the degenerate case where the plane is parallel to (or coincident with) the circle's
+    /// plane. Angles are in the range `(-π, π]` and can be passed directly to `at_angle`.
+    ///
+    /// # Arguments
+    ///
+    /// * `plane`: the plane to intersect with
+    ///
+    /// returns: Vec<f64>
+    pub fn intersect_plane(&self, plane: &Plane3) -> Vec<f64> {
+        let x_axis = self.iso * Vector3::x();
+        let y_axis = self.iso * Vector3::y();
+        let a = self.radius * plane.normal.dot(&x_axis);
+        let b = self.radius * plane.normal.dot(&y_axis);
+        let c = plane.d - plane.normal.dot(&self.center().coords);
+
+        let r_amp = (a * a + b * b).sqrt();
+        if r_amp < 1e-10 {
+            // Plane normal is (anti)parallel to circle normal — plane is parallel to the circle.
+            return vec![];
+        }
+
+        let ratio = c / r_amp;
+        if ratio > 1.0 + 1e-10 || ratio < -1.0 - 1e-10 {
+            return vec![];
+        }
+
+        let phi = b.atan2(a);
+        let delta = ratio.clamp(-1.0, 1.0).acos();
+
+        if delta < 1e-9 || (std::f64::consts::PI - delta) < 1e-9 {
+            vec![phi + delta]
+        } else {
+            vec![phi + delta, phi - delta]
+        }
+    }
+
     /// Create a circle from a center point, a normal direction, and a radius. An arbitrary
     /// orientation around the normal is chosen for the isometry's x/y axes.
     ///
@@ -232,5 +272,102 @@ mod tests {
         let r = rng.random_range(0.8..5.0);
         let iso = random_iso3();
         Circle3::new(r, iso)
+    }
+
+    #[test]
+    fn plane_through_diameter_gives_two_angles() {
+        // Circle in XY plane, radius 3 at origin. Plane XZ (y=0) cuts at (±3, 0, 0).
+        let circle = Circle3::from_point_normal(
+            &Point3::origin(),
+            &UnitVec3::new_normalize(Vector3::z()),
+            3.0,
+        )
+        .unwrap();
+        let plane = Plane3::xz(); // y=0
+        let angles = circle.intersect_plane(&plane);
+        assert_eq!(angles.len(), 2);
+        // Both angles must produce points on the plane and on the circle
+        for &a in &angles {
+            let pt = circle.at_angle(a).point;
+            assert_relative_eq!(plane.signed_distance_to_point(&pt), 0.0, epsilon = 1e-10);
+            assert_relative_eq!((pt - circle.center()).norm(), circle.r(), epsilon = 1e-10);
+        }
+        // The two points should be antipodal
+        let p0 = circle.at_angle(angles[0]).point;
+        let p1 = circle.at_angle(angles[1]).point;
+        let mid = Point3::from((p0.coords + p1.coords) / 2.0);
+        assert_relative_eq!(mid, circle.center(), epsilon = 1e-10);
+    }
+
+    #[test]
+    fn plane_tangent_gives_one_angle() {
+        // Circle in XY plane at origin, radius 2. Plane y=2 is tangent at (0,2,0).
+        let circle = Circle3::from_point_normal(
+            &Point3::origin(),
+            &UnitVec3::new_normalize(Vector3::z()),
+            2.0,
+        )
+        .unwrap();
+        let plane = Plane3::new(Vector3::y_axis(), 2.0);
+        let angles = circle.intersect_plane(&plane);
+        assert_eq!(angles.len(), 1);
+        let pt = circle.at_angle(angles[0]).point;
+        assert_relative_eq!(pt, Point3::new(0.0, 2.0, 0.0), epsilon = 1e-10);
+    }
+
+    #[test]
+    fn plane_misses_gives_empty() {
+        let circle = Circle3::from_point_normal(
+            &Point3::origin(),
+            &UnitVec3::new_normalize(Vector3::z()),
+            1.0,
+        )
+        .unwrap();
+        let plane = Plane3::new(Vector3::y_axis(), 5.0); // y=5, outside circle
+        assert!(circle.intersect_plane(&plane).is_empty());
+    }
+
+    #[test]
+    fn parallel_plane_gives_empty() {
+        // Plane parallel to the circle's own plane
+        let circle = Circle3::from_point_normal(
+            &Point3::origin(),
+            &UnitVec3::new_normalize(Vector3::z()),
+            1.0,
+        )
+        .unwrap();
+        let plane = Plane3::new(Vector3::z_axis(), 1.0); // z=1, parallel but offset
+        assert!(circle.intersect_plane(&plane).is_empty());
+    }
+
+    #[test]
+    fn stress_intersect_plane_angles_on_circle_and_plane() {
+        // For a random circle and a plane through two known on-circle points, verify the
+        // returned angles produce points that lie on both the circle and the plane.
+        for _ in 0..500 {
+            let circle = random_circle();
+            let mut rng = rand::rng();
+            let angle = rng.random_range(-PI..PI);
+            // Build a plane that passes through a diameter of the circle
+            let p1 = circle.at_angle(angle).point;
+            let p2 = circle.at_angle(angle + PI).point;
+            let some_other = p1 + Vector3::z() * 3.0;
+            let plane = Plane3::from((&p1, &p2, &some_other));
+
+            let angles = circle.intersect_plane(&plane);
+            assert!(
+                !angles.is_empty(),
+                "expected intersection with diameter plane"
+            );
+            for &a in &angles {
+                let pt = circle.at_angle(a).point;
+                assert_relative_eq!(
+                    plane.signed_distance_to_point(&pt).abs(),
+                    0.0,
+                    epsilon = 1e-8
+                );
+                assert_relative_eq!((pt - circle.center()).norm(), circle.r(), epsilon = 1e-8);
+            }
+        }
     }
 }

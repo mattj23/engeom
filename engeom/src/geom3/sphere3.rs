@@ -161,7 +161,11 @@ mod tests {
         let test = Point3::new(0.5, 0.0, 0.0);
         let sp = sphere.closest_point(&test).unwrap();
         // should still project to the surface in the same direction
-        assert_relative_eq!((sp.point - sphere.center()).norm(), sphere.r(), epsilon = 1e-12);
+        assert_relative_eq!(
+            (sp.point - sphere.center()).norm(),
+            sphere.r(),
+            epsilon = 1e-12
+        );
         assert_relative_eq!(sp.point, Point3::new(1.0, 0.0, 0.0), epsilon = 1e-12);
     }
 
@@ -188,7 +192,11 @@ mod tests {
         let circle = sphere.intersect_plane(&plane).unwrap();
         assert_relative_eq!(circle.r(), 1.0, epsilon = 1e-12);
         assert_relative_eq!(circle.center(), Point3::origin(), epsilon = 1e-12);
-        assert_relative_eq!(circle.normal().into_inner(), crate::Vector3::z(), epsilon = 1e-12);
+        assert_relative_eq!(
+            circle.normal().into_inner(),
+            crate::Vector3::z(),
+            epsilon = 1e-12
+        );
     }
 
     #[test]
@@ -234,7 +242,11 @@ mod tests {
         let normal = crate::UnitVec3::new_normalize(crate::Vector3::new(1.0, 1.0, 0.0));
         let plane = Plane3::new(normal, 0.0);
         let circle = sphere.intersect_plane(&plane).unwrap();
-        assert_relative_eq!(circle.normal().into_inner(), normal.into_inner(), epsilon = 1e-12);
+        assert_relative_eq!(
+            circle.normal().into_inner(),
+            normal.into_inner(),
+            epsilon = 1e-12
+        );
     }
 
     #[test]
@@ -310,7 +322,10 @@ mod tests {
     #[test]
     fn ray_hits_front_of_unit_sphere() {
         let sphere = unit_sphere();
-        let ray = Ray::new(Point3::new(5.0, 0.0, 0.0), (-crate::Vector3::x()).normalize());
+        let ray = Ray::new(
+            Point3::new(5.0, 0.0, 0.0),
+            (-crate::Vector3::x()).normalize(),
+        );
         let sp = sphere.ray_intersection(&ray).unwrap();
         assert_relative_eq!(sp.point, Point3::new(1.0, 0.0, 0.0), epsilon = 1e-12);
         assert_relative_eq!(sp.normal.into_inner(), crate::Vector3::x(), epsilon = 1e-12);
@@ -319,7 +334,10 @@ mod tests {
     #[test]
     fn ray_misses_returns_none() {
         let sphere = unit_sphere();
-        let ray = Ray::new(Point3::new(5.0, 5.0, 0.0), (-crate::Vector3::x()).normalize());
+        let ray = Ray::new(
+            Point3::new(5.0, 5.0, 0.0),
+            (-crate::Vector3::x()).normalize(),
+        );
         assert!(sphere.ray_intersection(&ray).is_none());
     }
 
@@ -337,7 +355,10 @@ mod tests {
     #[test]
     fn ray_intersection_normal_points_outward() {
         let sphere = unit_sphere();
-        let ray = Ray::new(Point3::new(0.0, 5.0, 0.0), (-crate::Vector3::y()).normalize());
+        let ray = Ray::new(
+            Point3::new(0.0, 5.0, 0.0),
+            (-crate::Vector3::y()).normalize(),
+        );
         let sp = sphere.ray_intersection(&ray).unwrap();
         // normal at the top of the sphere should point in +Y
         assert_relative_eq!(sp.normal.into_inner(), crate::Vector3::y(), epsilon = 1e-12);
