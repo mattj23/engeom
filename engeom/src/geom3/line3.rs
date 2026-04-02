@@ -3,7 +3,7 @@ use crate::common::points::dist;
 use crate::geom3::circle3::Circle3;
 use crate::geom3::plane3::Plane3;
 use crate::geom3::sphere3::Sphere3;
-use crate::{Point3, Vector3};
+use crate::{Iso3, Point3, Vector3};
 
 /// A parameterized line in 3D space: `P(t) = origin + t * direction`.
 ///
@@ -120,6 +120,19 @@ impl Line3 {
         (pt - self.closest_point(&pt)).norm()
     }
 
+    /// Returns a new line with both origin and direction transformed by the given isometry.
+    pub fn new_transformed_by(&self, iso: &Iso3) -> Self {
+        let mut clone = self.clone();
+        clone.transform_by(iso);
+        clone
+    }
+
+    /// Transforms this line in place by the given isometry.
+    pub fn transform_by(&mut self, iso: &Iso3) {
+        self.origin = iso * self.origin;
+        self.direction = iso.rotation * self.direction;
+    }
+
     /// Intersects the line with a plane, returning the parameter `t` at the intersection, or
     /// `None` if the line is parallel to (or lies within) the plane.
     pub fn intersect_plane(&self, plane: &Plane3) -> Option<f64> {
@@ -185,7 +198,7 @@ fn solve_sphere_quadratic(origin: &Point3, dir: &Vector3, center: &Point3, r: f6
 mod tests {
     use super::*;
     use crate::geom3::sphere3::Sphere3;
-    use crate::geom3::tests::{random_iso3, random_point3};
+    use crate::geom3::tests::RandomGeometry;
     use crate::{Plane3, UnitVec3};
     use approx::assert_relative_eq;
 
@@ -291,10 +304,11 @@ mod tests {
 
     #[test]
     fn stress_closest_point_is_perpendicular() {
+        let mut rg = RandomGeometry::new();
         for _ in 0..500 {
-            let iso = random_iso3();
+            let iso = rg.iso3(10.0);
             let line = Line3::new(iso * Point3::origin(), iso.rotation * Vector3::x());
-            let pt = random_point3();
+            let pt = rg.point3(10.0);
             let cp = line.closest_point(&pt);
             // Vector from closest point to test point must be perpendicular to direction
             assert_relative_eq!((pt - cp).dot(&line.direction()), 0.0, epsilon = 1e-10);
@@ -333,10 +347,12 @@ mod tests {
 
     #[test]
     fn stress_intersect_plane_result_on_plane() {
+        let mut rg = RandomGeometry::new();
+
         for _ in 0..500 {
-            let iso = random_iso3();
+            let iso = rg.iso3(10.0);
             let origin = iso * Point3::origin();
-            let dir = iso.rotation * Vector3::new(1.0, 0.5, 0.3).normalize();
+            let dir = rg.vector3(2.0);
             let line = Line3::new(origin, dir);
             let plane = Plane3::new(UnitVec3::new_normalize(iso.rotation * Vector3::z()), 2.0);
 
@@ -394,14 +410,31 @@ mod tests {
 
     #[test]
     fn stress_intersect_sphere_points_on_surface() {
-        for _ in 0..500 {
-            let sphere = Sphere3::new(random_point3(), 2.0);
-            let iso = random_iso3();
-            let line = Line3::new_normalize(iso * Point3::origin(), iso.rotation * Vector3::x());
+        let mut rg = RandomGeometry::new();
+        for _ in 0..1000 {
+            let sphere = Sphere3::new(rg.point3(2.0), rg.sample_f64(0.1, 3.0));
+            let line = Line3::new(rg.point3(3.0), rg.vector3(2.0));
 
             for &t in &line.intersect_sphere(&sphere) {
                 let dist = (line.at(t) - sphere.center()).norm();
                 assert_relative_eq!(dist, sphere.r(), epsilon = 1e-8);
+            }
+        }
+    }
+
+    #[test]
+    fn new_transformed_by_isometry_preserves_point_on_line() {
+        let mut rg = RandomGeometry::new();
+
+        for _ in 0..500 {
+            let original = Line3::new(rg.point3(10.0), rg.vector3(1.0));
+            let iso = rg.iso3(10.0);
+            let transformed = original.new_transformed_by(&iso);
+
+            for t in [-3.0, -1.0, -0.001, 0.0, 0.001, 1.0, 3.0] {
+                let p0 = original.at(t);
+                let p1 = transformed.at(t);
+                assert_relative_eq!(iso * p0, p1, epsilon = 1e-12);
             }
         }
     }

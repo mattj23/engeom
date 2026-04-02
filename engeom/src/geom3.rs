@@ -105,34 +105,82 @@ impl Default for SurfacePoint3 {
 #[cfg(test)]
 pub mod tests {
     use crate::na::{Translation3, UnitQuaternion};
-    use crate::{Iso3, Point3, Vector3};
+    use crate::{Iso3, Point3, UnitVec3, Vector3};
     use rand::distr::{Distribution, Uniform};
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
     use std::f64::consts::PI;
 
-    pub fn random_iso3() -> Iso3 {
-        let mut rn = rand::rng();
-        let v = Vector3::new(
-            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rn),
-            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rn),
-            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rn),
-        );
-        let e = Vector3::new(
-            Uniform::try_from(-PI..PI).unwrap().sample(&mut rn),
-            Uniform::try_from(-PI..PI).unwrap().sample(&mut rn),
-            Uniform::try_from(-PI..PI).unwrap().sample(&mut rn),
-        );
-        Iso3::from_parts(
-            Translation3::from(v),
-            UnitQuaternion::from_euler_angles(e.x, e.y, e.z),
-        )
+    enum RngSource {
+        Seeded(StdRng),
+        Thread,
     }
 
-    pub fn random_point3() -> Point3 {
-        let mut rng = rand::rng();
-        Point3::new(
-            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rng),
-            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rng),
-            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rng),
-        )
+    /// A helper for generating random geometric entities in tests. Can be constructed with either
+    /// a fixed seed (for reproducible tests) or using the default thread RNG.
+    pub struct RandomGeometry {
+        rng: RngSource,
+    }
+
+    impl RandomGeometry {
+        /// Create a `RandomGeometry` that uses the default thread RNG.
+        pub fn new() -> Self {
+            Self {
+                rng: RngSource::Thread,
+            }
+        }
+
+        /// Create a `RandomGeometry` seeded with a fixed value for reproducible tests.
+        pub fn from_seed(seed: u64) -> Self {
+            Self {
+                rng: RngSource::Seeded(StdRng::seed_from_u64(seed)),
+            }
+        }
+
+        pub(crate) fn sample_f64(&mut self, lo: f64, hi: f64) -> f64 {
+            let u = Uniform::new(lo, hi).unwrap();
+            match &mut self.rng {
+                RngSource::Seeded(r) => u.sample(r),
+                RngSource::Thread => u.sample(&mut rand::rng()),
+            }
+        }
+
+        /// Returns a random `Iso3` with translation components in `[-10, 10]` and arbitrary
+        /// rotation.
+        pub fn iso3(&mut self, t: f64) -> Iso3 {
+            let tx = self.sample_f64(-t, t);
+            let ty = self.sample_f64(-t, t);
+            let tz = self.sample_f64(-t, t);
+            let rx = self.sample_f64(-PI, PI);
+            let ry = self.sample_f64(-PI, PI);
+            let rz = self.sample_f64(-PI, PI);
+            Iso3::from_parts(
+                Translation3::from(Vector3::new(tx, ty, tz)),
+                UnitQuaternion::from_euler_angles(rx, ry, rz),
+            )
+        }
+
+        /// Returns a random `Point3` with each component in `[-limit, limit]`.
+        pub fn point3(&mut self, limit: f64) -> Point3 {
+            Point3::new(
+                self.sample_f64(-limit, limit),
+                self.sample_f64(-limit, limit),
+                self.sample_f64(-limit, limit),
+            )
+        }
+
+        /// Returns a random `Vector3` with each component in `[-limit, limit]`.
+        pub fn vector3(&mut self, limit: f64) -> Vector3 {
+            Vector3::new(
+                self.sample_f64(-limit, limit),
+                self.sample_f64(-limit, limit),
+                self.sample_f64(-limit, limit),
+            )
+        }
+
+        /// Returns a random unit vector.
+        pub fn unit_vec3(&mut self) -> UnitVec3 {
+            self.iso3(1.0).rotation * Vector3::x_axis()
+        }
     }
 }

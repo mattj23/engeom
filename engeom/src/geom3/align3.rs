@@ -171,8 +171,8 @@ impl RcParams3 {
 mod tests {
     use super::*;
     use crate::common::linear_space;
-    use crate::geom3::tests::{random_iso3, random_point3};
 
+    use crate::geom3::tests::RandomGeometry;
     use approx::assert_relative_eq;
 
     #[test]
@@ -194,8 +194,9 @@ mod tests {
 
     #[test]
     fn test_iso3_param_round_trips_stress_test() {
+        let mut rg = RandomGeometry::new();
         for _ in 0..10000 {
-            let t = random_iso3();
+            let t = rg.iso3(10.0);
             let p = param_from_iso3(&t);
             let t2 = iso3_from_param(&p);
 
@@ -205,9 +206,10 @@ mod tests {
 
     #[test]
     fn test_iso3_param_round_trips_stress_test_rc() {
+        let mut rg = RandomGeometry::new();
         for _ in 0..10000 {
-            let t = random_iso3();
-            let rc = random_point3();
+            let t = rg.iso3(10.0);
+            let rc = rg.point3(10.0);
             let p = RcParams3::from_initial(&t, &rc);
             let t2 = p.transform();
 

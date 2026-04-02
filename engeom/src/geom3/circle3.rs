@@ -177,12 +177,12 @@ impl Circle3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Curve3;
     use crate::common::linear_space;
-    use crate::geom3::tests::{random_iso3, random_point3};
-    use crate::{Curve3, SurfacePoint3};
+    use crate::geom3::tests::RandomGeometry;
     use approx::assert_relative_eq;
     use rand::RngExt;
-    use std::f64::consts::{FRAC_PI_2, PI};
+    use std::f64::consts::PI;
 
     /// Build a circle with a non-trivial orientation
     fn tilted_circle() -> Circle3 {
@@ -219,6 +219,7 @@ mod tests {
     #[test]
     fn stress_closest_position() -> Result<()> {
         let n = 1000;
+        let mut rg = RandomGeometry::new();
 
         for _ in 0..n {
             let circle = random_circle();
@@ -230,7 +231,7 @@ mod tests {
             let curve = Curve3::from_points(&points, 1e-10)?;
 
             for _ in 0..10 {
-                let test_pt = random_point3();
+                let test_pt = rg.point3(10.0);
                 let expected = curve.at_closest_to_point(&test_pt).point();
                 let test_result = circle.closest_position(&test_pt);
 
@@ -268,9 +269,9 @@ mod tests {
     }
 
     fn random_circle() -> Circle3 {
-        let mut rng = rand::rng();
-        let r = rng.random_range(0.8..5.0);
-        let iso = random_iso3();
+        let mut rg = RandomGeometry::new();
+        let r = rg.sample_f64(0.8, 5.0);
+        let iso = rg.iso3(10.0);
         Circle3::new(r, iso)
     }
 
