@@ -171,38 +171,9 @@ impl RcParams3 {
 mod tests {
     use super::*;
     use crate::common::linear_space;
-    use crate::geom3::Vector3;
+    use crate::geom3::tests::{random_iso3, random_point3};
+
     use approx::assert_relative_eq;
-    use rand::distr::Uniform;
-    use rand::prelude::*;
-    use std::f64::consts::PI;
-
-    fn random_iso3() -> Iso3 {
-        let mut rn = rand::rng();
-        let v = Vector3::new(
-            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rn),
-            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rn),
-            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rn),
-        );
-        let e = Vector3::new(
-            Uniform::try_from(-PI..PI).unwrap().sample(&mut rn),
-            Uniform::try_from(-PI..PI).unwrap().sample(&mut rn),
-            Uniform::try_from(-PI..PI).unwrap().sample(&mut rn),
-        );
-        Iso3::from_parts(
-            Translation3::from(v),
-            UnitQuaternion::from_euler_angles(e.x, e.y, e.z),
-        )
-    }
-
-    fn random_point3() -> Point3 {
-        let mut rng = rand::rng();
-        Point3::new(
-            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rng),
-            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rng),
-            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rng),
-        )
-    }
 
     #[test]
     fn check_distance_weight() {

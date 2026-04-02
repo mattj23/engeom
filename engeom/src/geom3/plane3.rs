@@ -1,6 +1,7 @@
 use crate::common::PCoords;
 use crate::geom3::UnitVec3;
 use crate::{Iso3, Point3, SurfacePoint3, SvdBasis3, Vector3};
+use std::ops;
 
 #[derive(Debug, Clone)]
 pub struct Plane3 {
@@ -10,17 +11,17 @@ pub struct Plane3 {
 
 impl Plane3 {
     /// Creates a plane with normal along the x-axis and offset 0.0
-    pub fn x_axis() -> Self {
+    pub fn yz() -> Self {
         Self::new(Vector3::x_axis(), 0.0)
     }
 
     /// Creates a plane with normal along the y-axis and offset 0.0
-    pub fn y_axis() -> Self {
+    pub fn xz() -> Self {
         Self::new(Vector3::y_axis(), 0.0)
     }
 
     /// Creates a plane with normal along the z-axis and offset 0.0
-    pub fn z_axis() -> Self {
+    pub fn xy() -> Self {
         Self::new(Vector3::z_axis(), 0.0)
     }
 
@@ -66,7 +67,7 @@ impl Plane3 {
     }
 
     /// Measure and return the distance from the plane to a point in 3D space. The distance is
-    /// always positive, and indicates the shortest distance from the point to the plane. If you
+    /// always positive and indicates the shortest distance from the point to the plane. If you
     /// need to know whether the point is above or below the plane, use `signed_distance_to_point`.
     ///
     /// # Arguments
@@ -224,5 +225,33 @@ impl From<(&UnitVec3, &Point3)> for Plane3 {
 impl From<&SurfacePoint3> for Plane3 {
     fn from(surface_point: &SurfacePoint3) -> Self {
         Self::from((&surface_point.normal, &surface_point.point))
+    }
+}
+
+impl ops::Mul<Plane3> for Iso3 {
+    type Output = Plane3;
+    fn mul(self, rhs: Plane3) -> Plane3 {
+        rhs.transform_by(&self)
+    }
+}
+
+impl ops::Mul<&Plane3> for Iso3 {
+    type Output = Plane3;
+    fn mul(self, rhs: &Plane3) -> Plane3 {
+        rhs.transform_by(&self)
+    }
+}
+
+impl ops::Mul<Plane3> for &Iso3 {
+    type Output = Plane3;
+    fn mul(self, rhs: Plane3) -> Plane3 {
+        rhs.transform_by(self)
+    }
+}
+
+impl ops::Mul<&Plane3> for &Iso3 {
+    type Output = Plane3;
+    fn mul(self, rhs: &Plane3) -> Plane3 {
+        rhs.transform_by(self)
     }
 }

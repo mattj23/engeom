@@ -1,6 +1,8 @@
 pub mod align3;
+mod circle3;
 mod curve3;
 mod iso3;
+mod manifold;
 pub mod mesh;
 mod plane3;
 pub mod point_cloud;
@@ -12,8 +14,10 @@ use parry3d_f64::na::UnitQuaternion;
 use crate::TransformBy;
 use crate::common::surface_point::{SurfacePoint, SurfacePointCollection};
 use crate::common::svd_basis::SvdBasis;
+pub use circle3::Circle3;
 pub use curve3::{Curve3, CurveStation3};
 pub use iso3::IsoExtensions3;
+pub use manifold::Manifold1Pos3;
 pub use mesh::{Mesh, MeshCollisionSet, UvMapping};
 use parry3d_f64::query::Ray;
 pub use plane3::Plane3;
@@ -91,5 +95,40 @@ impl From<&SurfacePoint3> for Ray {
 impl Default for SurfacePoint3 {
     fn default() -> Self {
         SurfacePoint3::new(Point3::origin(), Vector3::x_axis())
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use crate::na::{Translation3, UnitQuaternion};
+    use crate::{Iso3, Point3, Vector3};
+    use rand::distr::{Distribution, Uniform};
+    use std::f64::consts::PI;
+
+    pub fn random_iso3() -> Iso3 {
+        let mut rn = rand::rng();
+        let v = Vector3::new(
+            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rn),
+            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rn),
+            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rn),
+        );
+        let e = Vector3::new(
+            Uniform::try_from(-PI..PI).unwrap().sample(&mut rn),
+            Uniform::try_from(-PI..PI).unwrap().sample(&mut rn),
+            Uniform::try_from(-PI..PI).unwrap().sample(&mut rn),
+        );
+        Iso3::from_parts(
+            Translation3::from(v),
+            UnitQuaternion::from_euler_angles(e.x, e.y, e.z),
+        )
+    }
+
+    pub fn random_point3() -> Point3 {
+        let mut rng = rand::rng();
+        Point3::new(
+            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rng),
+            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rng),
+            Uniform::try_from(-10.0..10.0).unwrap().sample(&mut rng),
+        )
     }
 }

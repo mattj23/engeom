@@ -53,8 +53,9 @@ pub use geom2::{
 
 // Extremely common 3D types
 pub use geom3::{
-    Curve3, CurveStation3, Iso3, KdTree3, Mesh, Plane3, Point3, PointCloud, PointCloudFeatures,
-    PointCloudKdTree, PointCloudOverlap, SurfacePoint3, SvdBasis3, UnitVec3, Vector3,
+    Curve3, CurveStation3, Iso3, KdTree3, Manifold1Pos3, Mesh, Plane3, Point3, PointCloud,
+    PointCloudFeatures, PointCloudKdTree, PointCloudOverlap, SurfacePoint3, SvdBasis3, UnitVec3,
+    Vector3,
 };
 
 // Extremely common conversion tools
@@ -65,8 +66,11 @@ pub use common::{BestFit, Resample, SelectOp, Selection, Smoothing};
 
 #[cfg(test)]
 pub mod tests {
-    use crate::Mesh;
     use crate::io::{deflate_bytes, u_bytes_to_mesh, u_bytes_to_mesh_data};
+    use crate::na::{Translation3, UnitQuaternion};
+    use crate::{Iso3, Mesh, Point3, Vector3};
+    use rand::distr::Uniform;
+    use std::f64::consts::PI;
 
     /// Load a mesh with the stanford bunny reconstruction at resolution 4. The vertices are within
     /// 0.00000189 of the original ply file.

@@ -492,7 +492,7 @@ mod tests {
     #[test]
     fn split_unit_box_through_center_yields_two_nonempty_parts() {
         let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
-        let plane = Plane3::x_axis();
+        let plane = Plane3::yz();
 
         match mesh.split(&plane) {
             SplitResult::Pair(negative, positive) => {
@@ -537,7 +537,7 @@ mod tests {
         use std::f64::consts::TAU;
 
         let mesh = Mesh::create_cylinder(1.0, 2.0, 256);
-        let plane = Plane3::y_axis();
+        let plane = Plane3::xz();
 
         let curves = mesh.section(&plane, Some(1.0e-10)).unwrap();
         assert_eq!(curves.len(), 1);
@@ -569,7 +569,7 @@ mod tests {
 
         mesh.append(&mut m1).unwrap();
 
-        let plane = Plane3::y_axis();
+        let plane = Plane3::xz();
 
         let curves = mesh.section(&plane, Some(1.0e-10)).unwrap();
         assert_eq!(curves.len(), 2);
