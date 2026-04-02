@@ -6,6 +6,7 @@ mod manifold;
 pub mod mesh;
 mod plane3;
 pub mod point_cloud;
+mod sphere3;
 mod unroll_transform;
 mod xyzwpr;
 
@@ -21,6 +22,7 @@ pub use manifold::Manifold1Pos3;
 pub use mesh::{Mesh, MeshCollisionSet, UvMapping};
 use parry3d_f64::query::Ray;
 pub use plane3::Plane3;
+pub use sphere3::Sphere3;
 pub use point_cloud::{PointCloud, PointCloudFeatures, PointCloudKdTree, PointCloudOverlap};
 use std::ops;
 pub use unroll_transform::UnrollTransform;
