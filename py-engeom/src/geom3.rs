@@ -4,7 +4,7 @@ use crate::geom2::{Point2, SurfacePoint2, Vector2};
 use engeom::common::To2D;
 use engeom::geom3::IsoExtensions3;
 use numpy::ndarray::{Array1, Array2};
-use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray2, PyUntypedArrayMethods};
+use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
 use parry3d_f64::na::{Quaternion, Translation3, UnitQuaternion};
 use pyo3::exceptions::PyValueError;
 use pyo3::types::PyIterator;
@@ -968,6 +968,30 @@ impl Circle3 {
 
     fn intersect_plane(&self, plane: &Plane3) -> Vec<f64> {
         self.inner.intersect_plane(&plane.inner)
+    }
+
+    fn at_angles<'py>(
+        &self,
+        py: Python<'py>,
+        angles: PyReadonlyArray1<'_, f64>,
+    ) -> Bound<'py, PyArray2<f64>> {
+        let angles = angles.as_array();
+        let n = angles.len();
+        let normal = self.inner.normal().into_inner();
+        let mut result = Array2::zeros((n, 9));
+        for (i, &angle) in angles.iter().enumerate() {
+            let m = self.inner.at_angle(angle);
+            result[[i, 0]] = m.point.x;
+            result[[i, 1]] = m.point.y;
+            result[[i, 2]] = m.point.z;
+            result[[i, 3]] = normal.x;
+            result[[i, 4]] = normal.y;
+            result[[i, 5]] = normal.z;
+            result[[i, 6]] = m.direction.x;
+            result[[i, 7]] = m.direction.y;
+            result[[i, 8]] = m.direction.z;
+        }
+        result.into_pyarray(py)
     }
 }
 

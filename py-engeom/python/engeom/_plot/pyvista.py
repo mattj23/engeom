@@ -9,7 +9,7 @@ from typing import List, Any, Dict, Union, Iterable, Tuple
 import numpy
 from pyvista import ColorLike
 
-from engeom.geom3 import Mesh, Curve3, Vector3, Point3, Iso3, SurfacePoint3, PointCloud, Circle3
+from engeom.geom3 import Mesh, Curve3, Vector3, Point3, Iso3, SurfacePoint3, PointCloud, Circle3, Sphere3
 from engeom.metrology import Distance3
 from .common import LabelPlace
 
@@ -39,7 +39,46 @@ else:
 
             :param plotter: The PyVista `Plotter` object to wrap around.
             """
-            self.plotter = plotter
+            self.pv = plotter
+
+        @staticmethod
+        def with_new_plotter(**kwargs) -> PyvistaPlotterHelper:
+            """
+            Create a new PyVista plotter and return a helper for it.
+
+            :param kwargs: Additional keyword arguments to pass to the PyVista `Plotter` constructor.
+            :return: A new `PyvistaPlotterHelper` instance.
+            """
+            plotter = pyvista.Plotter(**kwargs)
+            return PyvistaPlotterHelper(plotter)
+
+        def show(self):
+            """
+            Show the plotter.
+            """
+            self.pv.show()
+
+        def sphere(
+                self,
+                sphere: Sphere3,
+                n_theta: int = 360,
+                n_phi: int = 180,
+                color: ColorLike | None = "green",
+                opacity: float | None = None,
+        ) -> pyvista.vtkActor:
+            """
+            Add a `Sphere3` to the plotter
+
+            :param sphere: The sphere to plot.
+            :param n_theta: The number of segments used to approximate the sphere in the theta direction. Higher values produce a smoother result.
+            :param n_phi: The number of segments used to approximate the sphere in the phi direction. Higher values produce a smoother result.
+            :param color: The color of the sphere. Set to `None` to use the default PyVista color.
+            :param opacity: Opacity of the sphere (0.0–1.0). If `None`, the default PyVista opacity is used.
+            :return: The PyVista `vtkActor` representing the sphere.
+            """
+            mesh = Mesh.create_sphere(sphere.r, n_theta, n_phi)
+            mesh.transform_by(Iso3.from_translation(*sphere.center))
+            return self.mesh(mesh, color=color, opacity=opacity)
 
         def circle(
                 self,
@@ -50,28 +89,39 @@ else:
                 edge_width: float = 4.0,
                 line_opacity: float | None = None,
                 face_opacity: float | None = None,
-        ):
+        ) -> list[pyvista.vtkActor]:
+            """
+            Add a `Circle3` to the plotter, optionally rendering a filled face, an outline edge, or both.
+
+            :param circle: The circle to plot.
+            :param n: The number of segments used to approximate the circle. Higher values produce a smoother result.
+            :param edge_color: The color of the outline edge. Set to `None` to suppress the edge entirely.
+            :param face_color: The color of the filled face. Set to `None` to suppress the face entirely.
+            :param edge_width: The pixel width of the outline edge.
+            :param line_opacity: Opacity of the outline edge (0.0–1.0). If `None`, the default PyVista opacity is used.
+            :param face_opacity: Opacity of the filled face (0.0–1.0). If `None`, the default PyVista opacity is used.
+            """
             mesh = Mesh.create_circle(circle.r, n)
             mesh.transform_by(circle.iso)
+            actors = []
             if edge_color is not None:
                 theta = numpy.linspace(0, 2 * numpy.pi, n + 1)
-                points = numpy.zeros(shape=(n + 1, 3))
-                points[:, 0] = circle.r * numpy.cos(theta)
-                points[:, 1] = circle.r * numpy.sin(theta)
-                points = circle.iso.transform_points(points)
+                points = circle.at_angles(theta)
+
                 kwargs = {"color": edge_color, "width": edge_width}
                 if line_opacity is not None:
                     kwargs["opacity"] = line_opacity
-                self.plotter.add_lines(points, connected=True, **kwargs)
+                actors.append(self.pv.add_lines(points[:, :3], connected=True, **kwargs))
 
             if face_color is not None:
                 kwargs = {"color": face_color}
                 if face_opacity is not None:
                     kwargs["opacity"] = face_opacity
-                self.add_mesh(mesh, **kwargs)
+                actors.append(self.mesh(mesh, **kwargs))
+            return actors
 
-        def add_points(self, *points, color: pyvista.ColorLike = "b", point_size: float = 5.0,
-                       render_points_as_spheres: bool = True, **kwargs) -> pyvista.vtkActor:
+        def points(self, *points, color: pyvista.ColorLike = "b", point_size: float = 5.0,
+                   render_points_as_spheres: bool = True, **kwargs) -> pyvista.vtkActor:
             """
             Add one or more discrete points to be plotted.
             :param points: The points to add.
@@ -81,7 +131,7 @@ else:
             :param kwargs: Additional keyword arguments to pass to the PyVista `Plotter.add_points` method.
             :return: The PyVista actor that was added to the plotter.
             """
-            return self.plotter.add_points(
+            return self.pv.add_points(
                 numpy.array([_tuplefy(p) for p in points], dtype=numpy.float64),
                 color=color,
                 point_size=point_size,
@@ -89,7 +139,7 @@ else:
                 **kwargs
             )
 
-        def add_curves(
+        def curves(
                 self,
                 *curves: Curve3,
                 color: pyvista.ColorLike = "w",
@@ -116,7 +166,7 @@ else:
                 curve_vertices.append(c)
 
             vertices = numpy.concatenate(curve_vertices, axis=0)
-            return self.plotter.add_lines(
+            return self.pv.add_lines(
                 vertices,
                 color=color,
                 width=width,
@@ -124,7 +174,7 @@ else:
                 name=name,
             )
 
-        def add_mesh(self, mesh: Mesh, **kwargs) -> pyvista.vtkActor:
+        def mesh(self, mesh: Mesh, **kwargs) -> pyvista.vtkActor:
             """
             Add an `engeom` mesh to be plotted. Additional keyword arguments will be passed directly to the PyVista
             `Plotter.add_mesh` method, allowing for customization of the mesh appearance.
@@ -139,14 +189,14 @@ else:
             prefix = numpy.ones((mesh.faces.shape[0], 1), dtype=mesh.faces.dtype)
             faces = numpy.hstack((prefix * 3, mesh.faces))
             data = pyvista.PolyData(mesh.vertices, faces)
-            return self.plotter.add_mesh(data, **kwargs)
+            return self.pv.add_mesh(data, **kwargs)
 
-        def add_point_cloud(self, cloud: PointCloud, use_colors: bool = True, normal_arrow_size: float = 0.0, **kwargs):
+        def point_cloud(self, cloud: PointCloud, use_colors: bool = True, normal_arrow_size: float = 0.0, **kwargs):
             actors = []
             if normal_arrow_size >= 0.0 and cloud.normals is not None:
                 arrow_color = kwargs.get("color", "gray")
-                arrow_actor = self.plotter.add_arrows(cloud.points, cloud.normals, mag=normal_arrow_size,
-                                                      color=arrow_color, reset_camera=False)
+                arrow_actor = self.pv.add_arrows(cloud.points, cloud.normals, mag=normal_arrow_size,
+                                                 color=arrow_color, reset_camera=False)
                 actors.append(arrow_actor)
 
             if use_colors and cloud.colors is not None:
@@ -154,7 +204,7 @@ else:
                 kwargs["scalars"] = cloud.colors
                 kwargs["rgba"] = True
 
-            point_actor = self.plotter.add_points(cloud.points, **kwargs)
+            point_actor = self.pv.add_points(cloud.points, **kwargs)
             actors.append(point_actor)
 
             return actors
@@ -225,13 +275,13 @@ else:
                 builder.add(label_coords)
 
             points = numpy.array([_tuplefy(p) for p in spheres], dtype=numpy.float64)
-            self.plotter.add_points(points, color="black", point_size=4, render_points_as_spheres=True)
+            self.pv.add_points(points, color="black", point_size=4, render_points_as_spheres=True)
 
             lines = builder.build()
-            self.plotter.add_lines(lines, color="black", width=1.5)
+            self.pv.add_lines(lines, color="black", width=1.5)
 
             value = distance.value * scale_value
-            self.plotter.add_point_labels(
+            self.pv.add_point_labels(
                 [_tuplefy(label_coords)],
                 [template.format(value=value)],
                 show_points=False,
@@ -271,12 +321,12 @@ else:
             points = numpy.array([[0, 0, 0], [size, 0, 0], [0, size, 0], [0, 0, size]], dtype=numpy.float64)
             points = iso.transform_points(points)
 
-            actors = [self.plotter.add_lines(points[[0, 1]], color="red", width=line_width),
-                      self.plotter.add_lines(points[[0, 2]], color="green", width=line_width),
-                      self.plotter.add_lines(points[[0, 3]], color="blue", width=line_width)]
+            actors = [self.pv.add_lines(points[[0, 1]], color="red", width=line_width),
+                      self.pv.add_lines(points[[0, 2]], color="green", width=line_width),
+                      self.pv.add_lines(points[[0, 3]], color="blue", width=line_width)]
 
             if label:
-                actors.append(self.plotter.add_point_labels(
+                actors.append(self.pv.add_point_labels(
                     [points[0]],
                     [label],
                     show_points=False,
@@ -296,7 +346,7 @@ else:
             :param kwargs: Additional keyword arguments to pass to the `pyvista.Label` constructor.
             """
             label = pyvista.Label(text=text, position=_tuplefy(point), **kwargs)
-            self.plotter.add_actor(label)
+            self.pv.add_actor(label)
 
         def arrow(self, start: PlotCoords, direction: PlotCoords,
                   tip_length: float = 0.25,
@@ -305,7 +355,7 @@ else:
                   **kwargs):
             pd = pyvista.Arrow(_tuplefy(start), _tuplefy(direction), tip_length=tip_length, tip_radius=tip_radius,
                                shaft_radius=shaft_radius)
-            self.plotter.add_mesh(pd, **kwargs, color="black")
+            self.pv.add_mesh(pd, **kwargs, color="black")
 
 
     def _cmap_extremes(item: Any) -> Dict[str, pyvista.ColorLike]:

@@ -1390,6 +1390,16 @@ class Circle3:
         """
         ...
 
+    def at_angles(self, angles: NDArray[float]) -> NDArray[float]:
+        """
+        Evaluate the circle at an array of angles, returning an Nx9 array where each row contains
+        the point (columns 0-2), surface normal (columns 3-5), and tangent direction (columns 6-8)
+        at that angle.
+        :param angles: a 1D numpy array of angles in radians.
+        :return: a numpy array of shape (N, 9).
+        """
+        ...
+
 
 class Mesh:
     """

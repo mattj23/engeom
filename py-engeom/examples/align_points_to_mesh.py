@@ -35,7 +35,7 @@ def main():
     # Finally, we'll plot the original points, the aligned points, and the original mesh.
     plotter = Plotter()
     helper = PyvistaPlotterHelper(plotter)
-    helper.add_mesh(mesh, color="white")
+    helper.mesh(mesh, color="white")
     plotter.add_points(to_align, point_size=5, color="red")
     plotter.add_points(aligned, point_size=5, color="green")
     plotter.add_axes()

@@ -7,7 +7,7 @@ def main():
     mesh = Mesh.stanford_bunny_res4()
     plotter = Plotter()
     helper = PyvistaPlotterHelper(plotter)
-    helper.add_mesh(mesh)
+    helper.mesh(mesh)
     plotter.show()
 
 
