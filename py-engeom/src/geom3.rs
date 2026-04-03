@@ -154,7 +154,7 @@ impl Vector3 {
         }
     }
 
-    fn angle_to(&self, other: Vector3) -> f64 {
+    fn angle(&self, other: Vector3) -> f64 {
         self.inner.angle(&other.inner)
     }
 
@@ -556,6 +556,21 @@ impl Plane3 {
         self.inner.normal == other.inner.normal && self.inner.d == other.inner.d
     }
 
+    #[staticmethod]
+    fn xy() -> Self {
+        Self::from_inner(engeom::Plane3::xy())
+    }
+
+    #[staticmethod]
+    fn xz() -> Self {
+        Self::from_inner(engeom::Plane3::xz())
+    }
+
+    #[staticmethod]
+    fn yz() -> Self {
+        Self::from_inner(engeom::Plane3::yz())
+    }
+
     fn inverted_normal(&self) -> Self {
         Self::from_inner(self.inner.inverted_normal())
     }
@@ -564,8 +579,20 @@ impl Plane3 {
         self.inner.signed_distance_to_point(point.get_inner())
     }
 
+    fn distance_to_point(&self, point: Point3) -> f64 {
+        self.inner.distance_to_point(point.get_inner())
+    }
+
+    fn point_is_positive(&self, point: Point3) -> bool {
+        self.inner.point_is_positive(point.get_inner())
+    }
+
     fn project_point(&self, point: Point3) -> Point3 {
         Point3::from_inner(self.inner.project_point(point.get_inner()))
+    }
+
+    fn shifted(&self, shift: f64) -> Self {
+        Self::from_inner(self.inner.shifted(shift))
     }
 
     fn intersection_distance(&self, sp: &SurfacePoint3) -> Option<f64> {
@@ -595,6 +622,301 @@ impl Plane3 {
     #[getter]
     fn normal(&self) -> Vector3 {
         Vector3::from_inner(self.inner.normal.into_inner())
+    }
+
+    fn intersect_plane(&self, other: &Plane3) -> Option<Line3> {
+        self.inner
+            .intersect_plane(&other.inner)
+            .map(Line3::from_inner)
+    }
+}
+
+// ================================================================================================
+// Line3
+// ================================================================================================
+
+#[pyclass(from_py_object, module = "engeom.geom3")]
+#[derive(Clone, Debug)]
+pub struct Line3 {
+    inner: engeom::Line3,
+}
+
+impl Line3 {
+    pub fn get_inner(&self) -> &engeom::Line3 {
+        &self.inner
+    }
+
+    pub fn from_inner(inner: engeom::Line3) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl Line3 {
+    #[new]
+    fn new(ox: f64, oy: f64, oz: f64, dx: f64, dy: f64, dz: f64) -> Self {
+        Self::from_inner(engeom::Line3::new(
+            engeom::Point3::new(ox, oy, oz),
+            engeom::Vector3::new(dx, dy, dz),
+        ))
+    }
+
+    #[staticmethod]
+    fn from_points(p1: Point3, p2: Point3) -> Self {
+        Self::from_inner(engeom::Line3::from_points(*p1.get_inner(), *p2.get_inner()))
+    }
+
+    fn __repr__(&self) -> String {
+        let o = self.inner.origin();
+        let d = self.inner.direction();
+        format!(
+            "Line3(origin=({}, {}, {}), direction=({}, {}, {}))",
+            o.x, o.y, o.z, d.x, d.y, d.z
+        )
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64, f64, f64, f64, f64) {
+        let o = self.inner.origin();
+        let d = self.inner.direction();
+        (o.x, o.y, o.z, d.x, d.y, d.z)
+    }
+
+    fn __getstate__(&self) -> (f64, f64, f64, f64, f64, f64) {
+        let o = self.inner.origin();
+        let d = self.inner.direction();
+        (o.x, o.y, o.z, d.x, d.y, d.z)
+    }
+
+    fn __setstate__(&mut self, state: (f64, f64, f64, f64, f64, f64)) {
+        self.inner = engeom::Line3::new(
+            engeom::Point3::new(state.0, state.1, state.2),
+            engeom::Vector3::new(state.3, state.4, state.5),
+        );
+    }
+
+    #[getter]
+    fn origin(&self) -> Point3 {
+        Point3::from_inner(self.inner.origin())
+    }
+
+    #[getter]
+    fn direction(&self) -> Vector3 {
+        Vector3::from_inner(self.inner.direction())
+    }
+
+    fn at(&self, t: f64) -> Point3 {
+        Point3::from_inner(self.inner.at(t))
+    }
+
+    fn scalar_project(&self, point: Point3) -> f64 {
+        self.inner.scalar_project(point.get_inner())
+    }
+
+    fn closest_point(&self, point: Point3) -> Point3 {
+        Point3::from_inner(self.inner.closest_point(point.get_inner()))
+    }
+
+    fn distance_to(&self, point: Point3) -> f64 {
+        self.inner.distance_to(point.get_inner())
+    }
+
+    fn intersect_plane(&self, plane: &Plane3) -> Option<f64> {
+        self.inner.intersect_plane(&plane.inner)
+    }
+
+    fn project_onto_plane(&self, plane: &Plane3) -> Option<Line3> {
+        self.inner
+            .project_onto_plane(&plane.inner)
+            .map(Line3::from_inner)
+    }
+
+    fn normalized(&self) -> Line3 {
+        Line3::from_inner(self.inner.normalized())
+    }
+}
+
+// ================================================================================================
+// Sphere3
+// ================================================================================================
+
+#[pyclass(from_py_object, module = "engeom.geom3")]
+#[derive(Clone, Debug)]
+pub struct Sphere3 {
+    inner: engeom::Sphere3,
+}
+
+impl Sphere3 {
+    pub fn get_inner(&self) -> &engeom::Sphere3 {
+        &self.inner
+    }
+
+    pub fn from_inner(inner: engeom::Sphere3) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl Sphere3 {
+    #[new]
+    fn new(cx: f64, cy: f64, cz: f64, radius: f64) -> Self {
+        Self::from_inner(engeom::Sphere3::new(
+            engeom::Point3::new(cx, cy, cz),
+            radius,
+        ))
+    }
+
+    fn __repr__(&self) -> String {
+        let c = self.inner.center();
+        format!(
+            "Sphere3(center=({}, {}, {}), radius={})",
+            c.x, c.y, c.z,
+            self.inner.r()
+        )
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64, f64, f64) {
+        let c = self.inner.center();
+        (c.x, c.y, c.z, self.inner.r())
+    }
+
+    fn __getstate__(&self) -> (f64, f64, f64, f64) {
+        let c = self.inner.center();
+        (c.x, c.y, c.z, self.inner.r())
+    }
+
+    fn __setstate__(&mut self, state: (f64, f64, f64, f64)) {
+        self.inner = engeom::Sphere3::new(
+            engeom::Point3::new(state.0, state.1, state.2),
+            state.3,
+        );
+    }
+
+    #[getter]
+    fn center(&self) -> Point3 {
+        Point3::from_inner(self.inner.center())
+    }
+
+    #[getter]
+    fn r(&self) -> f64 {
+        self.inner.r()
+    }
+
+    fn closest_point(&self, test_point: Point3) -> Option<SurfacePoint3> {
+        self.inner
+            .closest_point(test_point.get_inner())
+            .map(SurfacePoint3::from_inner)
+    }
+
+    fn intersect_plane(&self, plane: &Plane3) -> Option<Circle3> {
+        self.inner
+            .intersect_plane(&plane.inner)
+            .map(Circle3::from_inner)
+    }
+
+    fn intersect_sphere(&self, other: &Sphere3) -> Option<Circle3> {
+        self.inner
+            .intersect_sphere(&other.inner)
+            .map(Circle3::from_inner)
+    }
+}
+
+// ================================================================================================
+// Circle3
+// ================================================================================================
+
+#[pyclass(from_py_object, module = "engeom.geom3")]
+#[derive(Clone, Debug)]
+pub struct Circle3 {
+    inner: engeom::geom3::Circle3,
+}
+
+impl Circle3 {
+    pub fn get_inner(&self) -> &engeom::geom3::Circle3 {
+        &self.inner
+    }
+
+    pub fn from_inner(inner: engeom::geom3::Circle3) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl Circle3 {
+    #[new]
+    fn new(cx: f64, cy: f64, cz: f64, nx: f64, ny: f64, nz: f64, radius: f64) -> PyResult<Self> {
+        let center = engeom::Point3::new(cx, cy, cz);
+        let normal = engeom::UnitVec3::try_new(engeom::Vector3::new(nx, ny, nz), 1.0e-6)
+            .ok_or_else(|| PyValueError::new_err("Invalid normal vector"))?;
+        engeom::geom3::Circle3::from_point_normal(&center, &normal, radius)
+            .map(Circle3::from_inner)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    fn __repr__(&self) -> String {
+        let c = self.inner.center();
+        let n = self.inner.normal();
+        format!(
+            "Circle3(center=({}, {}, {}), normal=({}, {}, {}), radius={})",
+            c.x, c.y, c.z, n.x, n.y, n.z,
+            self.inner.r()
+        )
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64, f64, f64, f64, f64, f64) {
+        let c = self.inner.center();
+        let n = self.inner.normal();
+        (c.x, c.y, c.z, n.x, n.y, n.z, self.inner.r())
+    }
+
+    fn __getstate__(&self) -> (f64, f64, f64, f64, f64, f64, f64) {
+        let c = self.inner.center();
+        let n = self.inner.normal();
+        (c.x, c.y, c.z, n.x, n.y, n.z, self.inner.r())
+    }
+
+    fn __setstate__(&mut self, state: (f64, f64, f64, f64, f64, f64, f64)) -> PyResult<()> {
+        let center = engeom::Point3::new(state.0, state.1, state.2);
+        let normal = engeom::UnitVec3::try_new(engeom::Vector3::new(state.3, state.4, state.5), 1.0e-6)
+            .ok_or_else(|| PyValueError::new_err("Invalid normal vector"))?;
+        self.inner = engeom::geom3::Circle3::from_point_normal(&center, &normal, state.6)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(())
+    }
+
+    #[getter]
+    fn r(&self) -> f64 {
+        self.inner.r()
+    }
+
+    #[getter]
+    fn center(&self) -> Point3 {
+        Point3::from_inner(self.inner.center())
+    }
+
+    #[getter]
+    fn normal(&self) -> Vector3 {
+        Vector3::from_inner(self.inner.normal().into_inner())
+    }
+
+    #[getter]
+    fn plane(&self) -> Plane3 {
+        Plane3::from_inner(self.inner.plane())
+    }
+
+    fn at_angle(&self, angle: f64) -> SurfacePoint3 {
+        SurfacePoint3::from_inner(self.inner.at_angle(angle).as_surface_point())
+    }
+
+    fn closest_angle(&self, test_point: Point3) -> f64 {
+        self.inner.closest_angle(test_point.get_inner())
+    }
+
+    fn closest_position(&self, test_point: Point3) -> SurfacePoint3 {
+        SurfacePoint3::from_inner(self.inner.closest_position(test_point.get_inner()).as_surface_point())
+    }
+
+    fn intersect_plane(&self, plane: &Plane3) -> Vec<f64> {
+        self.inner.intersect_plane(&plane.inner)
     }
 }
 
@@ -763,7 +1085,7 @@ impl Curve3 {
         Self::from_inner(self.inner.simplify(tol))
     }
 
-    fn transformed_by(&mut self, iso: Iso3) -> Self {
+    fn transformed_by(&self, iso: Iso3) -> Self {
         Self::from_inner(self.inner.transformed_by(iso.get_inner()))
     }
 }
@@ -791,6 +1113,9 @@ enum Transformable3 {
     Pnt(Point3),
     Plane(Plane3),
     Sp(SurfacePoint3),
+    Line(Line3),
+    Sphere(Sphere3),
+    Circle(Circle3),
 }
 
 #[pyclass(from_py_object, module = "engeom.geom3")]
@@ -927,6 +1252,18 @@ impl Iso3 {
             }
             Transformable3::Sp(other) => {
                 SurfacePoint3::from_inner(other.inner.transformed(&self.inner))
+                    .into_bound_py_any(py)
+            }
+            Transformable3::Line(other) => {
+                Line3::from_inner(other.inner.new_transformed_by(&self.inner))
+                    .into_bound_py_any(py)
+            }
+            Transformable3::Sphere(other) => {
+                Sphere3::from_inner(other.inner.new_transformed_by(&self.inner))
+                    .into_bound_py_any(py)
+            }
+            Transformable3::Circle(other) => {
+                Circle3::from_inner(other.inner.new_transformed_by(&self.inner))
                     .into_bound_py_any(py)
             }
         }

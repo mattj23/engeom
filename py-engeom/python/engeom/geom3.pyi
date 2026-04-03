@@ -188,7 +188,7 @@ class Vector3(Iterable[float]):
         :return: a new vector that has unit length
         """
 
-    def angle_to(self, other: Vector3) -> float:
+    def angle(self, other: Vector3) -> float:
         """
         Calculate the smallest angle between this vector and another vector and return it in radians.
         :param other: the other vector to calculate the angle to.
@@ -953,6 +953,30 @@ class Plane3:
         """
         ...
 
+    @staticmethod
+    def xy() -> Plane3:
+        """
+        Create the XY plane (normal along +Z, passing through the origin).
+        :return: the XY plane.
+        """
+        ...
+
+    @staticmethod
+    def xz() -> Plane3:
+        """
+        Create the XZ plane (normal along +Y, passing through the origin).
+        :return: the XZ plane.
+        """
+        ...
+
+    @staticmethod
+    def yz() -> Plane3:
+        """
+        Create the YZ plane (normal along +X, passing through the origin).
+        :return: the YZ plane.
+        """
+        ...
+
     def inverted_normal(self) -> Plane3:
         """
         Return a new plane with the normal vector inverted.
@@ -962,26 +986,55 @@ class Plane3:
 
     def signed_distance_to_point(self, point: Point3) -> float:
         """
-        Calculate the signed distance from the plane to a point. The distance will be positive if the point is on the
-        same side of the plane as the normal vector, and negative if the point is on the opposite side.
+        Calculate the signed distance from the plane to a point. The distance will be positive if
+        the point is on the same side of the plane as the normal vector, and negative if on the
+        opposite side.
         :param point: the point to calculate the distance to.
         :return: the signed distance from the plane to the point.
         """
         ...
 
+    def distance_to_point(self, point: Point3) -> float:
+        """
+        Calculate the unsigned (absolute) distance from the plane to a point.
+        :param point: the point to calculate the distance to.
+        :return: the distance from the plane to the point.
+        """
+        ...
+
+    def point_is_positive(self, point: Point3) -> bool:
+        """
+        Return True if the point is in the positive half-space defined by the plane's normal
+        (i.e. the signed distance is >= 0).
+        :param point: the point to test.
+        :return: True if the point is on the positive side of the plane.
+        """
+        ...
+
     def project_point(self, point: Point3) -> Point3:
         """
-        Project a point onto the plane. The projected point will be the closest point on the plane to the input point.
+        Project a point onto the plane. The projected point will be the closest point on the plane
+        to the input point.
         :param point: the point to project.
         :return: the projected point.
         """
         ...
 
+    def shifted(self, shift: float) -> Plane3:
+        """
+        Return a new plane shifted along its normal direction by the given distance. A positive
+        value moves the plane in the direction of the normal.
+        :param shift: the distance to shift the plane.
+        :return: a new shifted plane.
+        """
+        ...
+
     def intersection_distance(self, sp: SurfacePoint3) -> float | None:
         """
-
-        :param sp:
-        :return:
+        Calculate the distance along the surface point's normal direction to the plane intersection.
+        Returns None if the surface point's normal is parallel to the plane.
+        :param sp: the surface point to intersect with the plane.
+        :return: the distance along the normal to the intersection, or None.
         """
         ...
 
@@ -1022,6 +1075,284 @@ class Plane3:
         """
         Get the normal vector of the plane as a Vector3 object.
         :return: a Vector3 object representing the normal vector of the plane.
+        """
+        ...
+
+    def intersect_plane(self, other: Plane3) -> Line3 | None:
+        """
+        Intersect this plane with another plane, returning the line of intersection, or None if
+        the planes are parallel or coincident.
+        :param other: the other plane to intersect with.
+        :return: the line of intersection, or None.
+        """
+        ...
+
+
+class Line3:
+    """
+    A parameterized line in 3D space: P(t) = origin + t * direction.
+
+    The direction is not required to be normalized. Use the `normalized()` method or
+    `Line3.from_points` to obtain a unit-speed parameterization where `t` equals arc length.
+    """
+
+    def __init__(self, ox: float, oy: float, oz: float, dx: float, dy: float, dz: float):
+        """
+        Create a line from an origin point (ox, oy, oz) and a direction vector (dx, dy, dz).
+        The direction is stored as-is without normalization.
+        :param ox: x component of the origin.
+        :param oy: y component of the origin.
+        :param oz: z component of the origin.
+        :param dx: x component of the direction.
+        :param dy: y component of the direction.
+        :param dz: z component of the direction.
+        """
+        ...
+
+    @staticmethod
+    def from_points(p1: Point3, p2: Point3) -> Line3:
+        """
+        Create a line through two points. The direction is p2 - p1 (not normalized).
+        :param p1: the origin point.
+        :param p2: a second point on the line.
+        :return: a new Line3.
+        """
+        ...
+
+    @property
+    def origin(self) -> Point3:
+        """
+        The origin point of the line.
+        :return: the origin as a Point3.
+        """
+        ...
+
+    @property
+    def direction(self) -> Vector3:
+        """
+        The direction vector of the line (not necessarily unit length).
+        :return: the direction as a Vector3.
+        """
+        ...
+
+    def at(self, t: float) -> Point3:
+        """
+        Return the point at parameter t: P(t) = origin + t * direction.
+        :param t: the parameter value.
+        :return: the point on the line at t.
+        """
+        ...
+
+    def scalar_project(self, point: Point3) -> float:
+        """
+        Return the parameter t such that P(t) is the closest point on the line to the given point.
+        :param point: the point to project.
+        :return: the parameter t of the closest point.
+        """
+        ...
+
+    def closest_point(self, point: Point3) -> Point3:
+        """
+        Return the closest point on the line to the given point.
+        :param point: the point to find the closest location to.
+        :return: the closest point on the line.
+        """
+        ...
+
+    def distance_to(self, point: Point3) -> float:
+        """
+        Return the perpendicular distance from the given point to the line.
+        :param point: the point to measure the distance from.
+        :return: the perpendicular distance.
+        """
+        ...
+
+    def intersect_plane(self, plane: Plane3) -> float | None:
+        """
+        Intersect the line with a plane, returning the parameter t at the intersection point, or
+        None if the line is parallel to (or lies within) the plane.
+        :param plane: the plane to intersect with.
+        :return: the parameter t at the intersection, or None.
+        """
+        ...
+
+    def project_onto_plane(self, plane: Plane3) -> Line3 | None:
+        """
+        Project this line onto a plane. The projected origin is the closest point on the plane to
+        the line's origin, and the projected direction has its normal component removed. Returns
+        None if the line is perpendicular to the plane (the projection degenerates to a point).
+        :param plane: the plane to project onto.
+        :return: the projected line, or None.
+        """
+        ...
+
+    def normalized(self) -> Line3:
+        """
+        Return a new line with the same origin but a unit-length direction, so that t equals arc
+        length from the origin.
+        :return: a new Line3 with normalized direction.
+        """
+        ...
+
+
+class Sphere3:
+    """
+    A sphere in 3D space, defined by a center point and a radius.
+    """
+
+    def __init__(self, cx: float, cy: float, cz: float, radius: float):
+        """
+        Create a sphere from a center point and a radius.
+        :param cx: x coordinate of the center.
+        :param cy: y coordinate of the center.
+        :param cz: z coordinate of the center.
+        :param radius: the radius of the sphere.
+        """
+        ...
+
+    @property
+    def center(self) -> Point3:
+        """
+        The center point of the sphere.
+        :return: the center as a Point3.
+        """
+        ...
+
+    @property
+    def r(self) -> float:
+        """
+        The radius of the sphere.
+        :return: the radius.
+        """
+        ...
+
+    def closest_point(self, test_point: Point3) -> SurfacePoint3 | None:
+        """
+        Return the closest point on the sphere's surface to test_point, along with the outward
+        surface normal at that point. Returns None if test_point is at the exact center of the
+        sphere.
+        :param test_point: the point to find the closest surface location to.
+        :return: a SurfacePoint3 on the sphere surface, or None.
+        """
+        ...
+
+    def intersect_plane(self, plane: Plane3) -> Circle3 | None:
+        """
+        Intersect the sphere with a plane, returning the resulting circle, or None if the plane
+        does not intersect the sphere.
+        :param plane: the plane to intersect with.
+        :return: the intersection circle, or None.
+        """
+        ...
+
+    def intersect_sphere(self, other: Sphere3) -> Circle3 | None:
+        """
+        Intersect this sphere with another sphere, returning the resulting circle, or None if the
+        spheres do not intersect (too far apart, one inside the other, or concentric).
+        :param other: the other sphere to intersect with.
+        :return: the intersection circle, or None.
+        """
+        ...
+
+
+class Circle3:
+    """
+    A flat circle in 3D space, defined by a center point, a unit normal vector, and a radius.
+    The circle lies in the plane whose normal passes through the center.
+    """
+
+    def __init__(
+        self,
+        cx: float,
+        cy: float,
+        cz: float,
+        nx: float,
+        ny: float,
+        nz: float,
+        radius: float,
+    ):
+        """
+        Create a circle from a center point, a normal direction, and a radius.
+        The normal vector (nx, ny, nz) will be normalized automatically.
+        :param cx: x coordinate of the center.
+        :param cy: y coordinate of the center.
+        :param cz: z coordinate of the center.
+        :param nx: x component of the normal.
+        :param ny: y component of the normal.
+        :param nz: z component of the normal.
+        :param radius: the radius of the circle.
+        :raises ValueError: if the normal vector has zero length.
+        """
+        ...
+
+    @property
+    def r(self) -> float:
+        """
+        The radius of the circle.
+        :return: the radius.
+        """
+        ...
+
+    @property
+    def center(self) -> Point3:
+        """
+        The center point of the circle in world space.
+        :return: the center as a Point3.
+        """
+        ...
+
+    @property
+    def normal(self) -> Vector3:
+        """
+        The unit normal vector of the circle's plane.
+        :return: the normal as a Vector3.
+        """
+        ...
+
+    @property
+    def plane(self) -> Plane3:
+        """
+        The plane that the circle lies in.
+        :return: the plane as a Plane3.
+        """
+        ...
+
+    def at_angle(self, angle: float) -> SurfacePoint3:
+        """
+        Return the point and tangent direction on the circle at the given angle (in radians).
+        The angle is measured from the circle's local x-axis. The returned SurfacePoint3 has
+        the tangent direction as its normal.
+        :param angle: the angle in radians.
+        :return: a SurfacePoint3 with the position and tangent direction.
+        """
+        ...
+
+    def closest_angle(self, test_point: Point3) -> float:
+        """
+        Return the angle (in radians) of the point on the circle closest to test_point.
+        The angle is in the range (-π, π] measured from the circle's local x-axis.
+        :param test_point: the point to find the closest angle to.
+        :return: the angle in radians.
+        """
+        ...
+
+    def closest_position(self, test_point: Point3) -> SurfacePoint3:
+        """
+        Return the point and tangent direction on the circle closest to test_point.
+        The returned SurfacePoint3 has the tangent direction as its normal.
+        :param test_point: the point to find the closest location to.
+        :return: a SurfacePoint3 at the closest position on the circle.
+        """
+        ...
+
+    def intersect_plane(self, plane: Plane3) -> list[float]:
+        """
+        Intersect the circle with a plane, returning 0, 1, or 2 intersection angles in radians.
+        Returns an empty list if the plane does not intersect the circle, a single angle if the
+        plane is tangent to the circle, or two angles if the plane cuts through it. Angles are in
+        the range (-π, π] and can be passed directly to `at_angle`.
+        :param plane: the plane to intersect with.
+        :return: a list of 0, 1, or 2 intersection angles in radians.
         """
         ...
 
