@@ -102,8 +102,11 @@ impl Mesh {
 
     fn transform_by(&mut self, iso: &Iso3) {
         self.inner.transform_by(iso.get_inner());
-
         self.clear_cached()
+    }
+
+    fn new_transformed_by(&self, iso: &Iso3) -> Self {
+        Self::from_inner(self.inner.new_transformed_by(iso.get_inner()))
     }
 
     fn surface_closest_to(&self, x: f64, y: f64, z: f64) -> SurfacePoint3 {

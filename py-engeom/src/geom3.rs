@@ -769,7 +769,9 @@ impl Sphere3 {
         let c = self.inner.center();
         format!(
             "Sphere3(center=({}, {}, {}), radius={})",
-            c.x, c.y, c.z,
+            c.x,
+            c.y,
+            c.z,
             self.inner.r()
         )
     }
@@ -785,10 +787,7 @@ impl Sphere3 {
     }
 
     fn __setstate__(&mut self, state: (f64, f64, f64, f64)) {
-        self.inner = engeom::Sphere3::new(
-            engeom::Point3::new(state.0, state.1, state.2),
-            state.3,
-        );
+        self.inner = engeom::Sphere3::new(engeom::Point3::new(state.0, state.1, state.2), state.3);
     }
 
     #[getter]
@@ -857,7 +856,12 @@ impl Circle3 {
         let n = self.inner.normal();
         format!(
             "Circle3(center=({}, {}, {}), normal=({}, {}, {}), radius={})",
-            c.x, c.y, c.z, n.x, n.y, n.z,
+            c.x,
+            c.y,
+            c.z,
+            n.x,
+            n.y,
+            n.z,
             self.inner.r()
         )
     }
@@ -876,8 +880,9 @@ impl Circle3 {
 
     fn __setstate__(&mut self, state: (f64, f64, f64, f64, f64, f64, f64)) -> PyResult<()> {
         let center = engeom::Point3::new(state.0, state.1, state.2);
-        let normal = engeom::UnitVec3::try_new(engeom::Vector3::new(state.3, state.4, state.5), 1.0e-6)
-            .ok_or_else(|| PyValueError::new_err("Invalid normal vector"))?;
+        let normal =
+            engeom::UnitVec3::try_new(engeom::Vector3::new(state.3, state.4, state.5), 1.0e-6)
+                .ok_or_else(|| PyValueError::new_err("Invalid normal vector"))?;
         self.inner = engeom::geom3::Circle3::from_point_normal(&center, &normal, state.6)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(())
@@ -912,7 +917,11 @@ impl Circle3 {
     }
 
     fn closest_position(&self, test_point: Point3) -> SurfacePoint3 {
-        SurfacePoint3::from_inner(self.inner.closest_position(test_point.get_inner()).as_surface_point())
+        SurfacePoint3::from_inner(
+            self.inner
+                .closest_position(test_point.get_inner())
+                .as_surface_point(),
+        )
     }
 
     fn intersect_plane(&self, plane: &Plane3) -> Vec<f64> {
@@ -1085,8 +1094,8 @@ impl Curve3 {
         Self::from_inner(self.inner.simplify(tol))
     }
 
-    fn transformed_by(&self, iso: Iso3) -> Self {
-        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
+    fn new_transformed_by(&self, iso: Iso3) -> Self {
+        Self::from_inner(self.inner.new_transformed_by(iso.get_inner()))
     }
 }
 
@@ -1255,8 +1264,7 @@ impl Iso3 {
                     .into_bound_py_any(py)
             }
             Transformable3::Line(other) => {
-                Line3::from_inner(other.inner.new_transformed_by(&self.inner))
-                    .into_bound_py_any(py)
+                Line3::from_inner(other.inner.new_transformed_by(&self.inner)).into_bound_py_any(py)
             }
             Transformable3::Sphere(other) => {
                 Sphere3::from_inner(other.inner.new_transformed_by(&self.inner))

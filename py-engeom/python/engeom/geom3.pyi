@@ -1514,6 +1514,15 @@ class Mesh:
         """
         ...
 
+    def new_transformed_by(self, iso: Iso3) -> Mesh:
+        """
+        Returns a new mesh with all vertices transformed by the given isometry, leaving the
+        original unchanged.
+        :param iso: the isometry to transform the mesh by.
+        :return: a new transformed mesh.
+        """
+        ...
+
     def append(self, other: Mesh):
         """
         Append another mesh to this mesh. This will add the vertices and triangles from the other mesh to this mesh,
@@ -2269,7 +2278,7 @@ class Curve3:
         """
         ...
 
-    def transformed_by(self, iso: Iso3) -> Curve3:
+    def new_transformed_by(self, iso: Iso3) -> Curve3:
         """
         Transform the curve by an isometry. This will return a new curve object with the transformed vertices.
 

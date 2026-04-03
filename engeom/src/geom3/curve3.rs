@@ -102,7 +102,7 @@ impl Curve3 {
         self.line.vertices()[i]
     }
 
-    pub fn transformed_by(&self, iso: &Iso3) -> Self {
+    pub fn new_transformed_by(&self, iso: &Iso3) -> Self {
         let points = self
             .line
             .vertices()

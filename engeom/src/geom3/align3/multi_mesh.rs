@@ -281,7 +281,7 @@ impl<'a> MultiMeshProblem<'a> {
                 let ref_mesh = &self.meshes[h.ref_i];
                 let t = self.params.relative_transform(h.mesh_i, h.ref_i);
 
-                let moved = h.mp.transformed_by(&t);
+                let moved = h.mp.new_transformed_by(&t);
                 let closest = ref_mesh.mesh.surf_closest_to(&moved.point());
 
                 // TODO: Uncertainties here for closest

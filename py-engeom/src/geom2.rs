@@ -1094,8 +1094,8 @@ impl Curve2 {
         Ok(Self::from_inner(inner))
     }
 
-    fn transformed_by(&self, iso: &Iso2) -> Self {
-        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
+    fn new_transformed_by(&self, iso: &Iso2) -> Self {
+        Self::from_inner(self.inner.new_transformed_by(iso.get_inner()))
     }
 
     fn to_3d(&self) -> PyResult<crate::geom3::Curve3> {

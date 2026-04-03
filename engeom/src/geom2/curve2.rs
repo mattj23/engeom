@@ -882,7 +882,7 @@ impl Curve2 {
     /// ```
     ///
     /// ```
-    pub fn transformed_by(&self, transform: &Iso2) -> Self {
+    pub fn new_transformed_by(&self, transform: &Iso2) -> Self {
         let points = transform_points(self.line.vertices(), transform);
         Curve2::from_points(&points, self.tol, self.is_closed).unwrap()
     }

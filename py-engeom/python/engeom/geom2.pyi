@@ -896,7 +896,7 @@ class Curve2:
         """
         ...
 
-    def transformed_by(self, transform: Iso2) -> Curve2:
+    def new_transformed_by(self, transform: Iso2) -> Curve2:
         """
         Transform the curve by the given transform and return a new curve.
         :param transform: the transform to apply to the curve.

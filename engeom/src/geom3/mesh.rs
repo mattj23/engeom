@@ -62,7 +62,7 @@ impl MeshSurfPoint {
         self.sp.normal
     }
 
-    pub fn transformed_by(&self, iso: &Iso3) -> Self {
+    pub fn new_transformed_by(&self, iso: &Iso3) -> Self {
         Self {
             face_index: self.face_index,
             bc: self.bc,
@@ -212,6 +212,14 @@ impl Mesh {
     /// Transform the mesh in place by applying the given transformation to all vertices.
     pub fn transform_by(&mut self, transform: &Iso3) {
         self.shape.transform_vertices(transform);
+    }
+
+    /// Returns a new mesh with all vertices transformed by the given isometry, leaving the
+    /// original unchanged.
+    pub fn new_transformed_by(&self, transform: &Iso3) -> Self {
+        let mut result = self.clone();
+        result.transform_by(transform);
+        result
     }
 
     /// Create a new mesh by scaling all vertices uniformly.
