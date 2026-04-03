@@ -97,6 +97,17 @@ impl Line3 {
         self.direction
     }
 
+    /// Normalizes the direction vector in place so that `t` equals arc length from the origin.
+    pub fn normalize(&mut self) {
+        self.direction = self.direction.normalize();
+    }
+
+    /// Returns a new line with the same origin but a normalized direction, so that `t` equals arc
+    /// length from the origin.
+    pub fn normalized(&self) -> Self {
+        Self::new(self.origin, self.direction.normalize())
+    }
+
     /// Returns the point at parameter `t`: `P(t) = origin + t * direction`.
     pub fn at(&self, t: f64) -> Point3 {
         self.origin + self.direction * t
@@ -148,6 +159,36 @@ impl Line3 {
     /// meets the sphere surface.
     pub fn intersect_sphere(&self, sphere: &Sphere3) -> Vec<f64> {
         solve_sphere_quadratic(&self.origin, &self.direction, &sphere.center(), sphere.r())
+    }
+
+    /// Intersect the line with the plane of a circle and check if the intersection point is within
+    /// the circle. Returns `None` if the line does not intersect the circle.
+    ///
+    /// # Arguments
+    ///
+    /// * `circle`: a reference to the circle to intersect with.
+    ///
+    /// returns: Option<f64>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    /// Projects this line onto a plane. The projected origin is the closest point on the plane to
+    /// `self.origin`, and the projected direction is `self.direction` with its normal component
+    /// removed. Returns `None` if the line is perpendicular to the plane (the projection
+    /// degenerates to a point).
+    pub fn project_onto_plane(&self, plane: &Plane3) -> Option<Self> {
+        let projected_direction =
+            self.direction - plane.normal.into_inner() * plane.normal.dot(&self.direction);
+        if projected_direction.norm_squared() < 1e-20 {
+            return None;
+        }
+        Some(Self::new(
+            plane.project_point(&self.origin),
+            projected_direction,
+        ))
     }
 
     /// Intersect the line with the plane of a circle and check if the intersection point is within
@@ -449,6 +490,55 @@ mod tests {
                 assert_relative_eq!(dist, sphere.r(), epsilon = 1e-8);
             }
         }
+    }
+
+    #[test]
+    fn project_onto_plane_origin_lies_on_plane() {
+        let mut rg = RandomGeometry::new();
+        for _ in 0..500 {
+            let iso = rg.iso3(10.0);
+            let plane = Plane3::xy().new_transformed_by(&iso);
+            let line = Line3::new(rg.point3(10.0), rg.vector3(1.0));
+            if let Some(proj) = line.project_onto_plane(&plane) {
+                assert_relative_eq!(
+                    plane.signed_distance_to_point(&proj.origin()).abs(),
+                    0.0,
+                    epsilon = 1e-10
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn project_onto_plane_direction_parallel_to_plane() {
+        let mut rg = RandomGeometry::new();
+        for _ in 0..500 {
+            let iso = rg.iso3(10.0);
+            let plane = Plane3::xy().new_transformed_by(&iso);
+            let line = Line3::new(rg.point3(10.0), rg.vector3(1.0));
+            if let Some(proj) = line.project_onto_plane(&plane) {
+                // projected direction must be perpendicular to the plane normal
+                assert_relative_eq!(plane.normal.dot(&proj.direction()), 0.0, epsilon = 1e-10);
+            }
+        }
+    }
+
+    #[test]
+    fn project_onto_plane_perpendicular_line_returns_none() {
+        // Line along Z projected onto the XY plane: direction collapses to zero
+        let plane = Plane3::xy();
+        let line = Line3::new(Point3::new(1.0, 2.0, 5.0), Vector3::z());
+        assert!(line.project_onto_plane(&plane).is_none());
+    }
+
+    #[test]
+    fn project_onto_plane_already_in_plane() {
+        // A line lying in the XY plane should be unchanged
+        let plane = Plane3::xy();
+        let line = Line3::new(Point3::new(1.0, 2.0, 0.0), Vector3::x());
+        let proj = line.project_onto_plane(&plane).unwrap();
+        assert_relative_eq!(proj.origin(), line.origin(), epsilon = 1e-12);
+        assert_relative_eq!(proj.direction(), line.direction(), epsilon = 1e-12);
     }
 
     #[test]
