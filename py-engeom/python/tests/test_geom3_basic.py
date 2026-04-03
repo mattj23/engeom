@@ -3,7 +3,7 @@
 """
 import math
 import pytest
-from engeom.geom3 import Vector3, Point3, SurfacePoint3, Plane3, Line3, Sphere3, Circle3, Iso3
+from engeom.geom3 import Vector3, Point3, SurfacePoint3, Plane3, Line3, Sphere3, Circle3, Iso3, Manifold1Pos3
 
 
 # ==============================================================================
@@ -96,7 +96,7 @@ def test_plane3_project_point():
 def test_plane3_shifted():
     # Shift XY plane by +3 → plane at z=3
     plane = Plane3.xy()
-    shifted = plane.shifted(3.0)
+    shifted = plane.new_parallel(3.0)
     assert isinstance(shifted, Plane3)
     # Point at z=3 should now be on the plane (distance ~0)
     assert shifted.distance_to_point(Point3(0, 0, 3)) == pytest.approx(0.0, abs=1e-6)
@@ -336,7 +336,7 @@ def test_circle3_zero_normal_raises():
 def test_circle3_at_angle_returns_surface_point():
     c = Circle3(0, 0, 0, 0, 0, 1, 3)
     sp = c.at_angle(0.0)
-    assert isinstance(sp, SurfacePoint3)
+    assert isinstance(sp, Manifold1Pos3)
 
 
 def test_circle3_at_angle_point_on_circumference():
@@ -360,7 +360,7 @@ def test_circle3_at_angle_full_revolution():
 def test_circle3_closest_position():
     c = Circle3(0, 0, 0, 0, 0, 1, 3)
     sp = c.closest_position(Point3(3, 0, 5))
-    assert isinstance(sp, SurfacePoint3)
+    assert isinstance(sp, Manifold1Pos3)
     dist = math.sqrt(sp.point.x**2 + sp.point.y**2 + sp.point.z**2)
     assert dist == pytest.approx(3.0)
 

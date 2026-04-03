@@ -219,7 +219,8 @@ impl Circle2 {
     /// assert_relative_eq!(circle.r(), 1.0);
     ///
     /// ```
-    pub fn from_3_points(p0: &Point2, p1: &Point2, p2: &Point2) -> Result<Circle2> {
+    pub fn from_3_points(p0: &impl PCoords<2>, p1: &impl PCoords<2>, p2: &impl PCoords<2>) -> Result<Circle2> {
+        let (p0, p1, p2) = (p0.coords(), p1.coords(), p2.coords());
         let temp = p1.x.powi(2) + p1.y.powi(2);
         let bc = (p0.x.powi(2) + p0.y.powi(2) - temp) / 2.0;
         let cd = (temp - p2.x.powi(2) - p2.y.powi(2)) / 2.0;
@@ -375,8 +376,8 @@ impl Circle2 {
     /// ```
     ///
     /// ```
-    pub fn project_point_to_perimeter(&self, point: &Point2) -> Option<Point2> {
-        let v = point - self.center;
+    pub fn project_point_to_perimeter(&self, point: &impl PCoords<2>) -> Option<Point2> {
+        let v = point.coords() - self.center.coords;
         if v.norm() < 1.0e-10 {
             None
         } else {
@@ -500,7 +501,7 @@ impl Circle2 {
     }
 
     /// Computes the distance from the test point to the outer perimeter of the circle. If the
-    /// point lies within the circle boundary the distance will be negative.
+    /// point lies within the circle boundary, the distance will be negative.
     ///
     /// # Arguments
     ///
@@ -523,8 +524,13 @@ impl Circle2 {
     /// let d2 = c.distance_to(&Point2::new(2.0, 0.0));
     /// assert_eq!(d2, 1.0);
     /// ```
-    pub fn distance_to(&self, point: &Point2) -> f64 {
+    pub fn distance_to(&self, point: &impl PCoords<2>) -> f64 {
         dist(&self.center, point) - self.ball.radius
+    }
+
+    /// Returns `true` if the point lies at or inside the boundary of the circle.
+    pub fn contains_point(&self, point: &impl PCoords<2>) -> bool {
+        self.distance_to(point) <= 0.0
     }
 
     /// Compute and return the two tangent points on the circle from a given point. If the point is
@@ -552,8 +558,8 @@ impl Circle2 {
     /// assert_relative_eq!(p0, Point2::new(-1.0, 0.0));
     /// assert_relative_eq!(p1, Point2::new(0.0, -1.0));
     /// ```
-    pub fn tangent_points_to(&self, point: &Point2) -> Option<(Point2, Point2)> {
-        let dv = point - self.center;
+    pub fn tangent_points_to(&self, point: &impl PCoords<2>) -> Option<(Point2, Point2)> {
+        let dv = point.coords() - self.center.coords;
         let d = dv.norm();
         if d <= self.ball.radius {
             return None;

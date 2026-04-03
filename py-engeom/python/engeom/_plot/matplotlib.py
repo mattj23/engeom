@@ -4,7 +4,7 @@ import numpy
 
 from .common import LabelPlace
 from engeom.geom2 import Curve2, Circle2, Aabb2, Point2, Vector2, SurfacePoint2, Arc2, Segment2
-from engeom.geom3 import Vector3, Mesh, Point3, Iso3
+from engeom.geom3 import Vector3, Mesh, Point3, Iso3, Line3
 from engeom.metrology import Distance2
 
 PlotCoords = Union[Point2, Vector2, Iterable[float]]
@@ -96,6 +96,34 @@ else:
             self.view = view
             self.helper = helper
 
+        def mesh_edge_point_in_dir(self, view_x: float, view_y: float, mesh: Mesh) -> Point3:
+            """ A quick and rough method for finding a point on the visual perimeter of a mesh in a 2d viewport
+            direction to label something without the arrow overlapping the actual mesh. There's probably a better way
+            to do this."""
+            sample_point = mesh.aabb.center + self.view.inverse() @ (
+                    Vector3(view_x, view_y, 0) * 100 * mesh.aabb.extent.norm())
+            return mesh.point_closest_to(*sample_point)
+
+        def line(self, line: Line3, t: float = 1.0, t0: float | None = None, color: str = "black",
+                 linewidth: float = 1.0, linestyle: str = "-", alpha: float = 1.0, **kwargs):
+            """
+            Draws a line in the 2d view using the provided view. If `t0` is `None`, the line will be drawn from `-t` to
+            `t`. Otherwise, the line will be drawn from `t0` to `t`.
+            :param line: The line to draw.
+            :param t: The ending value to draw the line at. If `t0` is `None`, the line will be drawn from `-t` to `t`.
+            :param t0: The starting value to draw the line at. If `t0` is `None`, the line will be drawn from `-t` to `t`.
+            :param color: The color of the line.
+            :param linewidth: The width of the line.
+            :param linestyle: The style of the line.
+            :param alpha: The transparency of the line.
+            :param kwargs: Additional keyword arguments to pass to the line plot function.
+            """
+            l = self.view @ line
+            p0 = l.at(t0 or -t)
+            p1 = l.at(t)
+            self.helper.ax.plot([p0.x, p1.x], [p0.y, p1.y], color=color, linewidth=linewidth, linestyle=linestyle,
+                                alpha=alpha, **kwargs)
+
         def dimension_arrow(
                 self,
                 point0: PointLike,
@@ -114,16 +142,17 @@ else:
             p1 = _to_3d_point(point1)
             p0_end = p0 + ldr_shift
             p1_end = p1 + ldr_shift
-            label_pos =  p0 + (p1 - p0) * label_position + ldr_shift + lbl_shift
+            label_pos = p0 + (p1 - p0) * label_position + ldr_shift + lbl_shift
 
             self.helper.arrow(self.view @ p0_end, self.view @ p1_end, color=color, linewidth=linewidth, arrow="<->")
             self.helper.text(label, self.view @ label_pos, fontsize=fontsize, ha="center", va="center", color=color,
                              bbox=dict(boxstyle="round", ec="black", fc="w", lw=linewidth))
 
             if ldr_shift.norm() > 0.0:
-                self.helper.arrow(self.view @ p0, self.view @ p0_end, color=color, linewidth=linewidth * 0.75, arrow="-", linestyle="dotted")
-                self.helper.arrow(self.view @ p1, self.view @ p1_end, color=color, linewidth=linewidth * 0.75, arrow="-", linestyle="dotted")
-
+                self.helper.arrow(self.view @ p0, self.view @ p0_end, color=color, linewidth=linewidth * 0.75,
+                                  arrow="-", linestyle="dotted")
+                self.helper.arrow(self.view @ p1, self.view @ p1_end, color=color, linewidth=linewidth * 0.75,
+                                  arrow="-", linestyle="dotted")
 
         def labeled_point(
                 self,
@@ -136,6 +165,12 @@ else:
                 marker: str = "o",
                 marker_size: float = 5.0,
                 weight: str = "normal",
+                arrow: bool = False,
+                arrow_style: str = "->",
+                linewidth: float = 1.5,
+                linestyle: str = "-",
+                arrow_props: dict | None = None,
+                box: bool = False,
         ):
             """
             Generates a labeled point representation on a 3D or 2D space. The labeled point is defined
@@ -151,14 +186,35 @@ else:
             :param marker: The marker style used to visually indicate the point. Defaults to "o".
             :param marker_size: Size of the marker representing the point. Defaults to 5.0.
             :param weight: The font weight of the label text. Defaults to "normal".
+            :param arrow: Whether to display an arrow from the point to the label. Defaults to False.
+            :param arrow_style: The style of the arrow, if arrow is True. Defaults to "->".
+            :param linewidth: The width of the arrow line, if arrow is True. Defaults to 1.5.
+            :param linestyle: The style of the arrow line, if arrow is True. Defaults to "-".
+            :param arrow_props: Extra keyword arguments to pass to the arrow function.
+            :param box: Whether to draw a box around the label. Defaults to False.
             """
             p = _to_3d_point(point)
             o3 = Vector3.zero() if offset_3d is None else _to_3d_point(offset_3d).coords
-            o2 = Vector2.zero() if offset_2d is None else Vector3(*_to_2d_point(offset_2d), 0)
+            o2 = Vector3.zero() if offset_2d is None else Vector3(*_to_2d_point(offset_2d), 0)
+            text_position = self.view @ (p + o3) + o2
 
-            self.helper.points(self.view @ p, marker=marker, markersize=marker_size, color=color)
-            self.helper.text(label, (self.view @ (p + o3)) + o2, fontsize=fontsize, ha="center", va="center",
-                             color=color, weight=weight)
+            if arrow:
+                self.helper.arrow(text_position, self.view @ p, arrow=arrow_style, color=color, linewidth=linewidth,
+                                  linestyle=linestyle, **(arrow_props or {}))
+            text_params = {
+                "fontsize": fontsize,
+                "color": color,
+                "va": "center",
+                "ha": "center",
+                "weight": weight,
+            }
+            if box:
+                text_params["bbox"] = dict(boxstyle="round", ec=color, fc="w", lw=linewidth)
+
+            self.helper.text(label, text_position, **text_params)
+
+            if marker_size > 0.0:
+                self.helper.points(self.view @ p, marker=marker, markersize=marker_size, color=color)
 
         def coordinate_system(
                 self,

@@ -569,6 +569,10 @@ impl Circle2 {
         self.inner.distance_to(point.get_inner())
     }
 
+    fn contains_point(&self, x: f64, y: f64) -> bool {
+        self.inner.contains_point(&[x, y])
+    }
+
     fn tangent_points_to(&self, point: &Point2) -> Option<(Point2, Point2)> {
         let pts = self
             .inner

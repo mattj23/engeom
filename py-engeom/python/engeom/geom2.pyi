@@ -1158,6 +1158,15 @@ class Circle2:
         """
         ...
 
+    def contains_point(self, x: float, y: float) -> bool:
+        """
+        Returns True if the point lies at or inside the boundary of the circle.
+        :param x: the x component of the point to test.
+        :param y: the y component of the point to test.
+        :return: True if the point is inside or on the circle, False otherwise.
+        """
+        ...
+
     def tangent_points_to(self, point: Point2) -> List[Point2]:
         """
         Get the tangent points on the circle from a given point outside the circle.
