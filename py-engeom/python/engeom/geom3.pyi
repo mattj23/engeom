@@ -1336,6 +1336,38 @@ class Sphere3:
         ...
 
 
+class Manifold1Pos3:
+    """
+    A position on a 1D manifold (curve) embedded in 3D space, holding the arc length from the
+    origin, the world-space point, and the tangent direction at that point.
+    """
+
+    @property
+    def l(self) -> float:
+        """
+        The arc length position along the manifold from the reference origin.
+        :return: the arc length as a float.
+        """
+        ...
+
+    @property
+    def point(self) -> Point3:
+        """
+        The position of this manifold point in world-space 3D coordinates.
+        :return: a Point3.
+        """
+        ...
+
+    @property
+    def direction(self) -> Vector3:
+        """
+        The unit tangent direction of the manifold at this position, pointing in the direction of
+        increasing arc length.
+        :return: a unit Vector3.
+        """
+        ...
+
+
 class Circle3:
     """
     A flat circle in 3D space, defined by a center point, a unit normal vector, and a radius.
@@ -1407,13 +1439,12 @@ class Circle3:
         """
         ...
 
-    def at_angle(self, angle: float) -> SurfacePoint3:
+    def at_angle(self, angle: float) -> Manifold1Pos3:
         """
-        Return the point and tangent direction on the circle at the given angle (in radians).
-        The angle is measured from the circle's local x-axis. The returned SurfacePoint3 has
-        the tangent direction as its normal.
+        Return the manifold position on the circle at the given angle (in radians).
+        The angle is measured from the circle's local x-axis.
         :param angle: the angle in radians.
-        :return: a SurfacePoint3 with the position and tangent direction.
+        :return: a Manifold1Pos3 with the arc length, position, and tangent direction.
         """
         ...
 
@@ -1426,12 +1457,11 @@ class Circle3:
         """
         ...
 
-    def closest_position(self, test_point: Point3) -> SurfacePoint3:
+    def closest_position(self, test_point: Point3) -> Manifold1Pos3:
         """
-        Return the point and tangent direction on the circle closest to test_point.
-        The returned SurfacePoint3 has the tangent direction as its normal.
+        Return the manifold position on the circle closest to test_point.
         :param test_point: the point to find the closest location to.
-        :return: a SurfacePoint3 at the closest position on the circle.
+        :return: a Manifold1Pos3 at the closest position on the circle.
         """
         ...
 

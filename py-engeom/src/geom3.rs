@@ -857,6 +857,53 @@ impl Sphere3 {
 }
 
 // ================================================================================================
+// Manifold1Pos3
+// ================================================================================================
+
+#[pyclass(module = "engeom.geom3")]
+#[derive(Clone, Debug)]
+pub struct Manifold1Pos3 {
+    inner: engeom::geom3::Manifold1Pos3,
+}
+
+impl Manifold1Pos3 {
+    pub fn from_inner(inner: engeom::geom3::Manifold1Pos3) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl Manifold1Pos3 {
+    fn __repr__(&self) -> String {
+        format!(
+            "Manifold1Pos3(l={}, point=({}, {}, {}), direction=({}, {}, {}))",
+            self.inner.l,
+            self.inner.point.x,
+            self.inner.point.y,
+            self.inner.point.z,
+            self.inner.direction.x,
+            self.inner.direction.y,
+            self.inner.direction.z,
+        )
+    }
+
+    #[getter]
+    fn l(&self) -> f64 {
+        self.inner.l
+    }
+
+    #[getter]
+    fn point(&self) -> Point3 {
+        Point3::from_inner(self.inner.point)
+    }
+
+    #[getter]
+    fn direction(&self) -> Vector3 {
+        Vector3::from_inner(self.inner.direction.into_inner())
+    }
+}
+
+// ================================================================================================
 // Circle3
 // ================================================================================================
 
@@ -954,20 +1001,16 @@ impl Circle3 {
         Iso3::from_inner(*self.inner.iso())
     }
 
-    fn at_angle(&self, angle: f64) -> SurfacePoint3 {
-        SurfacePoint3::from_inner(self.inner.at_angle(angle).as_surface_point())
+    fn at_angle(&self, angle: f64) -> Manifold1Pos3 {
+        Manifold1Pos3::from_inner(self.inner.at_angle(angle))
     }
 
     fn closest_angle(&self, test_point: Point3) -> f64 {
         self.inner.closest_angle(test_point.get_inner())
     }
 
-    fn closest_position(&self, test_point: Point3) -> SurfacePoint3 {
-        SurfacePoint3::from_inner(
-            self.inner
-                .closest_position(test_point.get_inner())
-                .as_surface_point(),
-        )
+    fn closest_position(&self, test_point: Point3) -> Manifold1Pos3 {
+        Manifold1Pos3::from_inner(self.inner.closest_position(test_point.get_inner()))
     }
 
     fn intersect_plane(&self, plane: &Plane3) -> Vec<f64> {
