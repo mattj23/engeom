@@ -604,6 +604,46 @@ impl Mesh {
         mesh
     }
 
+    /// Create a flat, filled circle mesh lying in the XY plane, centered at the origin, with the
+    /// normal pointing along +Z. The mesh is a triangle fan from the center to `segments` evenly
+    /// spaced perimeter vertices.
+    ///
+    /// # Arguments
+    ///
+    /// * `radius` - Radius of the circle.
+    /// * `segments` - Number of perimeter vertices (and triangles). Must be at least 3.
+    ///
+    /// returns: Mesh
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::Mesh;
+    ///
+    /// let circle = Mesh::create_circle(1.0, 32);
+    /// assert_eq!(circle.vertices().len(), 33); // center + 32 perimeter
+    /// assert_eq!(circle.faces().len(), 32);
+    /// ```
+    pub fn create_circle(radius: f64, segments: usize) -> Self {
+        use std::f64::consts::TAU;
+        let mut vertices = Vec::with_capacity(segments + 1);
+        let mut faces = Vec::with_capacity(segments);
+
+        vertices.push(Point3::origin());
+        for i in 0..segments {
+            let angle = TAU * (i as f64) / (segments as f64);
+            vertices.push(Point3::new(radius * angle.cos(), radius * angle.sin(), 0.0));
+        }
+
+        for i in 0..segments {
+            let a = (i + 1) as u32;
+            let b = ((i + 1) % segments + 1) as u32;
+            faces.push([0u32, a, b]);
+        }
+
+        Self::new(vertices, faces, false)
+    }
+
     /// Load a Stanford bunny mesh embedded in the binary with 453 vertices and 948 faces. This
     /// mesh has been compressed into the 16-bit micro mesh format. The mesh structure is the same
     /// as the corresponding `bun_zipper_res3.ply` mesh, but some precision has been lost in the

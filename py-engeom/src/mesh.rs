@@ -451,6 +451,12 @@ impl Mesh {
     }
 
     #[staticmethod]
+    fn create_circle(radius: f64, segments: usize) -> Self {
+        let mesh = engeom::Mesh::create_circle(radius, segments);
+        Self::from_inner(mesh)
+    }
+
+    #[staticmethod]
     fn create_capsule(p0: Point3, p1: Point3, radius: f64, n_theta: usize, n_phi: usize) -> Self {
         let mesh =
             engeom::Mesh::create_capsule(p0.get_inner(), p1.get_inner(), radius, n_theta, n_phi);

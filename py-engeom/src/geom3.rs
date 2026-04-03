@@ -945,6 +945,11 @@ impl Circle3 {
         Plane3::from_inner(self.inner.plane())
     }
 
+    #[getter]
+    fn iso(&self) -> Iso3 {
+        Iso3::from_inner(*self.inner.iso())
+    }
+
     fn at_angle(&self, angle: f64) -> SurfacePoint3 {
         SurfacePoint3::from_inner(self.inner.at_angle(angle).as_surface_point())
     }

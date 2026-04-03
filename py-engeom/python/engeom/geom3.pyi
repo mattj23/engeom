@@ -1342,6 +1342,15 @@ class Circle3:
         """
         ...
 
+    @property
+    def iso(self) -> Iso3:
+        """
+        The isometry that defines the circle's position and orientation in world space. The circle
+        lies in the XY plane of the isometry's local frame, with the normal along its Z axis.
+        :return: the isometry as an Iso3.
+        """
+        ...
+
     def at_angle(self, angle: float) -> SurfacePoint3:
         """
         Return the point and tangent direction on the circle at the given angle (in radians).
@@ -1919,6 +1928,18 @@ class Mesh:
         :param steps: the number of subdivisions to create vertices around the cone. The more steps the smoother the
         cone will be.
         :return: a new `Mesh` object representing the cone
+        """
+        ...
+
+    @staticmethod
+    def create_circle(radius: float, segments: int) -> Mesh:
+        """
+        Creates a flat, filled circle mesh lying in the XY plane, centered at the origin, with the normal pointing
+        along +Z. The mesh is a triangle fan from the center to `segments` evenly spaced perimeter vertices.
+
+        :param radius: the radius of the circle
+        :param segments: the number of perimeter vertices (and triangles). Higher values produce a smoother circle.
+        :return: a new `Mesh` object representing the circle
         """
         ...
 

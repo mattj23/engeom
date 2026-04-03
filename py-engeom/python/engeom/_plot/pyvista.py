@@ -7,8 +7,9 @@ from __future__ import annotations
 from typing import List, Any, Dict, Union, Iterable, Tuple
 
 import numpy
+from pyvista import ColorLike
 
-from engeom.geom3 import Mesh, Curve3, Vector3, Point3, Iso3, SurfacePoint3, PointCloud
+from engeom.geom3 import Mesh, Curve3, Vector3, Point3, Iso3, SurfacePoint3, PointCloud, Circle3
 from engeom.metrology import Distance3
 from .common import LabelPlace
 
@@ -39,6 +40,35 @@ else:
             :param plotter: The PyVista `Plotter` object to wrap around.
             """
             self.plotter = plotter
+
+        def circle(
+                self,
+                circle: Circle3,
+                n: int = 360,
+                edge_color: ColorLike | None = "black",
+                face_color: ColorLike | None = "green",
+                edge_width: float = 4.0,
+                line_opacity: float | None = None,
+                face_opacity: float | None = None,
+        ):
+            mesh = Mesh.create_circle(circle.r, n)
+            mesh.transform_by(circle.iso)
+            if edge_color is not None:
+                theta = numpy.linspace(0, 2 * numpy.pi, n + 1)
+                points = numpy.zeros(shape=(n + 1, 3))
+                points[:, 0] = circle.r * numpy.cos(theta)
+                points[:, 1] = circle.r * numpy.sin(theta)
+                points = circle.iso.transform_points(points)
+                kwargs = {"color": edge_color, "width": edge_width}
+                if line_opacity is not None:
+                    kwargs["opacity"] = line_opacity
+                self.plotter.add_lines(points, connected=True, **kwargs)
+
+            if face_color is not None:
+                kwargs = {"color": face_color}
+                if face_opacity is not None:
+                    kwargs["opacity"] = face_opacity
+                self.add_mesh(mesh, **kwargs)
 
         def add_points(self, *points, color: pyvista.ColorLike = "b", point_size: float = 5.0,
                        render_points_as_spheres: bool = True, **kwargs) -> pyvista.vtkActor:
