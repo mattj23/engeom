@@ -694,6 +694,10 @@ impl Line3 {
         );
     }
 
+    fn __eq__(&self, other: &Line3) -> bool {
+        self.inner == other.inner
+    }
+
     #[getter]
     fn origin(&self) -> Point3 {
         Point3::from_inner(self.inner.origin())
@@ -788,6 +792,10 @@ impl Sphere3 {
 
     fn __setstate__(&mut self, state: (f64, f64, f64, f64)) {
         self.inner = engeom::Sphere3::new(engeom::Point3::new(state.0, state.1, state.2), state.3);
+    }
+
+    fn __eq__(&self, other: &Sphere3) -> bool {
+        self.inner == other.inner
     }
 
     #[getter]
@@ -886,6 +894,10 @@ impl Circle3 {
         self.inner = engeom::geom3::Circle3::from_point_normal(&center, &normal, state.6)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(())
+    }
+
+    fn __eq__(&self, other: &Circle3) -> bool {
+        self.inner == other.inner
     }
 
     #[getter]

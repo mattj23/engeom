@@ -8,7 +8,7 @@ use parry3d_f64::shape::Ball;
 use std::ops;
 
 /// A sphere in 3D space, defined by a center point and a radius.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Sphere3 {
     center: Point3,
     radius: f64,

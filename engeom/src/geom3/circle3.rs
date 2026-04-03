@@ -7,7 +7,7 @@ use std::ops;
 /// A flat circle in 3D space, defined by a radius and a world isometry. The circle can be thought
 /// of as a circle of radius `r` sitting at the origin of the XY plane, then transformed by the
 /// isometry to position and orientation in 3D space.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Circle3 {
     radius: f64,
     iso: Iso3,

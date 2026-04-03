@@ -10,7 +10,7 @@ use std::ops;
 ///
 /// The direction is not required to be normalized; use `new_normalize` for unit-speed
 /// parameterization where `t` equals unit length.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Line3 {
     origin: Point3,
     direction: Vector3,

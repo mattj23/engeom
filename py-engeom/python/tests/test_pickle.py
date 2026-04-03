@@ -1,6 +1,6 @@
 import pickle
 from engeom.geom2 import Vector2, Point2, SurfacePoint2, Circle2, Segment2, Arc2
-from engeom.geom3 import Vector3, Point3, SurfacePoint3, Plane3
+from engeom.geom3 import Vector3, Point3, SurfacePoint3, Plane3, Line3, Sphere3, Circle3
 
 
 def test_pickle_vector2():
@@ -71,3 +71,21 @@ def test_pickle_plane3():
     pickled_plane = pickle.dumps(plane)
     unpickled_plane = pickle.loads(pickled_plane)
     assert plane == unpickled_plane
+
+
+def test_pickle_line3():
+    line = Line3(1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
+    unpickled = pickle.loads(pickle.dumps(line))
+    assert line == unpickled
+
+
+def test_pickle_sphere3():
+    sphere = Sphere3(1.0, 2.0, 3.0, 4.0)
+    unpickled = pickle.loads(pickle.dumps(sphere))
+    assert sphere == unpickled
+
+
+def test_pickle_circle3():
+    circle = Circle3(1.0, 2.0, 3.0, 0.0, 0.0, 1.0, 5.0)
+    unpickled = pickle.loads(pickle.dumps(circle))
+    assert circle == unpickled
