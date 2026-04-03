@@ -10,7 +10,7 @@ from engeom.geom2 import Vector2, Point2, SurfacePoint2
 
 import metrology
 
-Transformable3 = TypeVar("Transformable3", Vector3, Point3, Plane3, Iso3, SurfacePoint3)
+Transformable3 = TypeVar("Transformable3", Vector3, Point3, Plane3, Iso3, SurfacePoint3, Sphere3, Line3, Circle3)
 PointOrVector3 = TypeVar("PointOrVector3", Vector3, Point3)
 
 type Lptf3LoadEnum = Lptf3Load.All | Lptf3Load.TakeEveryN | Lptf3Load.SmoothSample

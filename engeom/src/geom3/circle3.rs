@@ -41,15 +41,14 @@ impl Circle3 {
 
     /// Returns a new circle transformed by the given isometry, without modifying the original.
     pub fn new_transformed_by(&self, iso: &Iso3) -> Self {
-        Self {
-            radius: self.radius,
-            iso: self.iso * iso,
-        }
+        let mut new_circle = self.clone();
+        new_circle.transform_by(iso);
+        new_circle
     }
 
     /// Transforms this circle in place by the given isometry.
     pub fn transform_by(&mut self, iso: &Iso3) {
-        self.iso = self.iso * iso;
+        self.iso = iso * self.iso;
     }
 
     /// Create a circle from a radius and an isometry. The circle will lie on the XY plane of the
@@ -397,6 +396,56 @@ mod tests {
                     epsilon = 1e-8
                 );
                 assert_relative_eq!((pt - circle.center()).norm(), circle.r(), epsilon = 1e-8);
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Transformation tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn new_transformed_by_identity_preserves_all() {
+        let circle = tilted_circle();
+        let result = circle.new_transformed_by(&Iso3::identity());
+        assert_relative_eq!(result.r(), circle.r(), epsilon = 1e-12);
+        assert_relative_eq!(result.center(), circle.center(), epsilon = 1e-12);
+        assert_relative_eq!(
+            result.normal().into_inner(),
+            circle.normal().into_inner(),
+            epsilon = 1e-12
+        );
+    }
+
+    #[test]
+    fn transform_by_identity_preserves_all() {
+        let mut circle = tilted_circle();
+        let original_center = circle.center();
+        let original_normal = circle.normal().into_inner();
+        let original_r = circle.r();
+        circle.transform_by(&Iso3::identity());
+        assert_relative_eq!(circle.r(), original_r, epsilon = 1e-12);
+        assert_relative_eq!(circle.center(), original_center, epsilon = 1e-12);
+        assert_relative_eq!(
+            circle.normal().into_inner(),
+            original_normal,
+            epsilon = 1e-12
+        );
+    }
+
+    #[test]
+    fn stress_transform_by() {
+        let mut rg = RandomGeometry::new();
+        for _ in 0..1000 {
+            let original = random_circle();
+            let iso = rg.iso3(10.0);
+
+            let moved = original.new_transformed_by(&iso);
+
+            for a in linear_space(-PI, PI, 50).iter() {
+                let test_point = moved.at_angle(*a).point;
+                let expected = original.at_angle(*a).point;
+                assert_relative_eq!(test_point, iso * expected, epsilon = 1e-12);
             }
         }
     }

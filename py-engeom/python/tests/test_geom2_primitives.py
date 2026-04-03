@@ -1,5 +1,5 @@
 """
-    Tests of simple objects in geom2 module.
+    Tests of geometric primitives (vectors, points, etc.) in geom2 module.
 """
 import pytest
 import numpy
