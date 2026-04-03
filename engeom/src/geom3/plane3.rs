@@ -141,13 +141,12 @@ impl Plane3 {
         }
     }
 
-    /// Create a new plane which is shifted along the plane's normal direction by a given distance.
+    /// Create a new plane parallel to this one, displaced along its normal direction by the given
+    /// distance. A positive value moves in the normal direction; negative moves opposite.
     ///
     /// # Arguments
     ///
-    /// * `shift`: The distance to shift the plane along its normal vector. A positive value shifts
-    ///   the plane in its normal direction, while a negative value shifts it in the opposite
-    ///   direction.
+    /// * `shift`: The distance to shift the plane along its normal vector.
     ///
     /// returns: Plane3
     ///
@@ -157,11 +156,11 @@ impl Plane3 {
     /// use engeom::geom3::{Plane3, Point3, Vector3};
     /// use approx::assert_relative_eq;
     /// let plane = Plane3::new(Vector3::x_axis(), -5.0);
-    /// let moved = plane.shifted(2.0);
+    /// let moved = plane.new_parallel(2.0);
     ///
     /// assert_relative_eq!(moved.signed_distance_to_point(&Point3::origin()), 3.0, epsilon = 1e-6);
     /// ```
-    pub fn shifted(&self, shift: f64) -> Self {
+    pub fn new_parallel(&self, shift: f64) -> Self {
         Self::new(self.normal, self.d + shift)
     }
 
@@ -334,4 +333,5 @@ mod tests {
             }
         }
     }
+
 }

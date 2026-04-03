@@ -620,8 +620,8 @@ impl Plane3 {
         Vector3::from_inner(self.inner.project_vector(v.get_inner()))
     }
 
-    fn shifted(&self, shift: f64) -> Self {
-        Self::from_inner(self.inner.shifted(shift))
+    fn new_parallel(&self, shift: f64) -> Self {
+        Self::from_inner(self.inner.new_parallel(shift))
     }
 
     fn intersection_distance(&self, sp: &SurfacePoint3) -> Option<f64> {
@@ -1026,6 +1026,14 @@ impl Circle3 {
 
     fn set_zero_angle(&mut self, angle: f64) {
         self.inner.set_zero_angle(angle);
+    }
+
+    fn flip_normal(&mut self) {
+        self.inner.flip_normal();
+    }
+
+    fn new_flipped_normal(&self) -> Self {
+        Circle3::from_inner(self.inner.new_flipped_normal())
     }
 
     fn at_angles<'py>(

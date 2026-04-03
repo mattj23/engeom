@@ -52,6 +52,21 @@ impl Circle3 {
         self.iso = iso * self.iso;
     }
 
+    /// Flips the normal direction of the circle in place by rotating the isometry 180° around the
+    /// local x-axis. The zero-angle point is preserved, but the normal and winding direction are
+    /// reversed.
+    pub fn flip_normal(&mut self) {
+        let flip = UnitQuaternion::from_axis_angle(&Vector3::x_axis(), std::f64::consts::PI);
+        self.iso.rotation *= flip;
+    }
+
+    /// Returns a new circle with the normal direction flipped, without modifying the original.
+    pub fn new_flipped_normal(&self) -> Self {
+        let mut flipped = self.clone();
+        flipped.flip_normal();
+        flipped
+    }
+
     /// Create a circle from a radius and an isometry. The circle will lie on the XY plane of the
     /// isometry's local frame, centered at the isometry's origin, with the normal along the
     /// isometry's z-axis.

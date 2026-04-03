@@ -1101,12 +1101,12 @@ class Plane3:
         """
         ...
 
-    def shifted(self, shift: float) -> Plane3:
+    def new_parallel(self, shift: float) -> Plane3:
         """
-        Return a new plane shifted along its normal direction by the given distance. A positive
-        value moves the plane in the direction of the normal.
-        :param shift: the distance to shift the plane.
-        :return: a new shifted plane.
+        Return a new plane parallel to this one, displaced along its normal by the given distance.
+        A positive value moves in the normal direction; negative moves opposite.
+        :param shift: the distance to displace the plane along its normal.
+        :return: a new parallel plane.
         """
         ...
 
@@ -1503,6 +1503,21 @@ class Circle3:
         Rotate the circle's isometry around its normal so that the point currently at `angle`
         becomes the new zero angle (aligned with the local x-axis).
         :param angle: the angle in radians to align with zero.
+        """
+        ...
+
+    def flip_normal(self) -> None:
+        """
+        Flip the normal direction of the circle in place. The zero-angle point is preserved, but
+        the normal and winding direction are reversed.
+        """
+        ...
+
+    def new_flipped_normal(self) -> Circle3:
+        """
+        Return a new circle with the normal direction flipped, without modifying the original.
+        The zero-angle point is preserved, but the normal and winding direction are reversed.
+        :return: a new Circle3 with the flipped normal.
         """
         ...
 
