@@ -64,6 +64,26 @@ impl Vector3 {
         self.inner == other.inner
     }
 
+    #[staticmethod]
+    fn zero() -> Self {
+        Self::from_inner(engeom::Vector3::zeros())
+    }
+
+    #[staticmethod]
+    fn x_axis() -> Self {
+        Self::from_inner(engeom::Vector3::x())
+    }
+
+    #[staticmethod]
+    fn y_axis() -> Self {
+        Self::from_inner(engeom::Vector3::y())
+    }
+
+    #[staticmethod]
+    fn z_axis() -> Self {
+        Self::from_inner(engeom::Vector3::z())
+    }
+
     #[getter]
     fn x(&self) -> f64 {
         self.inner.x
@@ -224,6 +244,11 @@ impl Point3 {
 
     fn __eq__(&self, other: &Point3) -> bool {
         self.inner == other.inner
+    }
+
+    #[staticmethod]
+    fn origin() -> Self {
+        Self::from_inner(engeom::Point3::origin())
     }
 
     #[getter]

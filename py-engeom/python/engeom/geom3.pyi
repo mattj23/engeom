@@ -80,6 +80,26 @@ class Vector3(Iterable[float]):
         """
         ...
 
+    @staticmethod
+    def zero() -> Vector3:
+        """ Return the zero vector (0, 0, 0). """
+        ...
+
+    @staticmethod
+    def x_axis() -> Vector3:
+        """ Return the unit vector along the X axis (1, 0, 0). """
+        ...
+
+    @staticmethod
+    def y_axis() -> Vector3:
+        """ Return the unit vector along the Y axis (0, 1, 0). """
+        ...
+
+    @staticmethod
+    def z_axis() -> Vector3:
+        """ Return the unit vector along the Z axis (0, 0, 1). """
+        ...
+
     @property
     def x(self) -> float:
         """
@@ -252,6 +272,11 @@ class Point3(Iterable[float]):
         :param y: the y coordinate of the point
         :param z: the z coordinate of the point
         """
+        ...
+
+    @staticmethod
+    def origin() -> Point3:
+        """ Return the origin point (0, 0, 0). """
         ...
 
     @property

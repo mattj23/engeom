@@ -31,6 +31,21 @@ class Vector2(Iterable[float]):
         """
         ...
 
+    @staticmethod
+    def zero() -> Vector2:
+        """ Return the zero vector (0, 0). """
+        ...
+
+    @staticmethod
+    def x_axis() -> Vector2:
+        """ Return the unit vector along the X axis (1, 0). """
+        ...
+
+    @staticmethod
+    def y_axis() -> Vector2:
+        """ Return the unit vector along the Y axis (0, 1). """
+        ...
+
     @property
     def x(self) -> float:
         """
@@ -173,6 +188,11 @@ class Point2(Iterable[float]):
         :param x: the x component of the point.
         :param y: the y component of the point.
         """
+        ...
+
+    @staticmethod
+    def origin() -> Point2:
+        """ Return the origin point (0, 0). """
         ...
 
     @property

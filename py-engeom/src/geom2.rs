@@ -63,6 +63,21 @@ impl Vector2 {
         self.inner == other.inner
     }
 
+    #[staticmethod]
+    fn zero() -> Self {
+        Self::from_inner(engeom::Vector2::zeros())
+    }
+
+    #[staticmethod]
+    fn x_axis() -> Self {
+        Self::from_inner(engeom::Vector2::x())
+    }
+
+    #[staticmethod]
+    fn y_axis() -> Self {
+        Self::from_inner(engeom::Vector2::y())
+    }
+
     #[getter]
     fn x(&self) -> f64 {
         self.inner.x
@@ -208,6 +223,11 @@ impl Point2 {
 
     fn __eq__(&self, other: &Self) -> bool {
         self.inner == other.inner
+    }
+
+    #[staticmethod]
+    fn origin() -> Self {
+        Self::from_inner(engeom::Point2::origin())
     }
 
     #[getter]
