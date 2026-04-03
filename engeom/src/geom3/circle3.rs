@@ -2,6 +2,7 @@ use crate::common::PCoords;
 use crate::geom3::iso3::IsoExtensions3;
 use crate::geom3::manifold::Manifold1Pos3;
 use crate::{Iso3, Plane3, Point3, Result, UnitVec3, Vector3};
+use parry3d_f64::na::UnitQuaternion;
 use std::ops;
 
 /// A flat circle in 3D space, defined by a radius and a world isometry. The circle can be thought
@@ -64,6 +65,7 @@ impl Circle3 {
         let (sin_a, cos_a) = angle.sin_cos();
         let local_point = Point3::new(self.radius * cos_a, self.radius * sin_a, 0.0);
         let local_tangent = Vector3::new(-sin_a, cos_a, 0.0);
+
         Manifold1Pos3::new(
             self.radius * angle,
             self.iso * local_point,
@@ -134,6 +136,31 @@ impl Circle3 {
         } else {
             vec![phi + delta, phi - delta]
         }
+    }
+
+    /// Rotates the circle's isometry around its normal so that the point currently at `angle`
+    /// becomes the new zero angle (aligned with the local x-axis).
+    pub fn set_zero_angle(&mut self, angle: f64) {
+        let rot = UnitQuaternion::from_axis_angle(&Vector3::z_axis(), angle);
+        self.iso.rotation *= rot;
+    }
+
+    /// Returns the angle (in radians) of the point on the circle that maximizes the dot product
+    /// with the given direction vector. Returns an error if the direction is parallel to the
+    /// circle's normal (all points on the circle are equidistant in that direction).
+    ///
+    /// # Arguments
+    ///
+    /// * `direction`: a vector in world space; the returned angle maximizes `point · direction`
+    ///
+    /// returns: Result<f64>
+    pub fn max_extent_angle(&self, direction: &Vector3) -> Result<f64> {
+        let local = self.iso.inverse().rotation * direction;
+        let mag = (local.x * local.x + local.y * local.y).sqrt();
+        if mag < 1e-10 {
+            return Err("direction is parallel to the circle's normal".into());
+        }
+        Ok(local.y.atan2(local.x))
     }
 
     /// Create a circle from a center point, a normal direction, and a radius. An arbitrary
@@ -397,6 +424,65 @@ mod tests {
                 );
                 assert_relative_eq!((pt - circle.center()).norm(), circle.r(), epsilon = 1e-8);
             }
+        }
+    }
+
+    #[test]
+    fn stress_max_extent_angle() {
+        let n = 1000;
+        let mut rng = rand::rng();
+
+        for _ in 0..n {
+            let circle = random_circle();
+            let dir = Vector3::new(
+                rng.random_range(-1.0..1.0),
+                rng.random_range(-1.0..1.0),
+                rng.random_range(-1.0..1.0),
+            );
+
+            // Skip degenerate directions (parallel to normal)
+            let Ok(angle) = circle.max_extent_angle(&dir) else {
+                continue;
+            };
+
+            let best = circle.at_angle(angle).point;
+            let best_dot = best.coords.dot(&dir);
+
+            // Sample 5000 points and verify none exceeds the returned dot product
+            for &a in linear_space(-PI, PI, 5000).iter() {
+                let pt = circle.at_angle(a).point;
+                assert!(
+                    pt.coords.dot(&dir) <= best_dot + 1e-6,
+                    "found point with larger dot product than max_extent_angle result"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn stress_set_zero_angle() {
+        let n = 1000;
+        let mut rng = rand::rng();
+
+        for _ in 0..n {
+            let original = random_circle();
+            let angle = rng.random_range(-PI..PI);
+
+            // Capture the manifold position at `angle` before re-zeroing
+            let expected = original.at_angle(angle);
+
+            let mut circle = original.clone();
+            circle.set_zero_angle(angle);
+
+            // After re-zeroing, angle 0 should land on the same world-space point
+            let result = circle.at_angle(0.0);
+
+            assert_relative_eq!(result.point, expected.point, epsilon = 1e-12);
+            assert_relative_eq!(
+                result.direction.into_inner(),
+                expected.direction.into_inner(),
+                epsilon = 1e-12
+            );
         }
     }
 

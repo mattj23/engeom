@@ -545,6 +545,38 @@ class Iso2:
         """
         ...
 
+    @property
+    def x_direction(self) -> Vector2:
+        """
+        The world-space direction of the isometry's local x-axis.
+        :return: a unit Vector2 along the transformed x-axis.
+        """
+        ...
+
+    @property
+    def y_direction(self) -> Vector2:
+        """
+        The world-space direction of the isometry's local y-axis.
+        :return: a unit Vector2 along the transformed y-axis.
+        """
+        ...
+
+    @property
+    def x_axis(self) -> SurfacePoint2:
+        """
+        A SurfacePoint2 through the isometry's origin along its local x-axis.
+        :return: a SurfacePoint2 with origin at the isometry's origin and direction along the x-axis.
+        """
+        ...
+
+    @property
+    def y_axis(self) -> SurfacePoint2:
+        """
+        A SurfacePoint2 through the isometry's origin along its local y-axis.
+        :return: a SurfacePoint2 with origin at the isometry's origin and direction along the y-axis.
+        """
+        ...
+
 
 class SvdBasis2:
     """

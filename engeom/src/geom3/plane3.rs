@@ -104,6 +104,11 @@ impl Plane3 {
         point - self.normal.into_inner() * self.signed_distance_to_point(point)
     }
 
+    /// Projects a vector onto the plane by removing the component along the plane's normal.
+    pub fn project_vector(&self, v: &Vector3) -> Vector3 {
+        v - self.normal.into_inner() * self.normal.dot(v)
+    }
+
     /// Intersects this plane with another plane, returning the line of intersection, or `None` if
     /// the planes are parallel (or coincident).
     ///

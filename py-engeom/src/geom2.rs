@@ -1279,4 +1279,28 @@ impl Iso2 {
         let result = vectors_to_array(&transformed);
         Ok(result.into_pyarray(py))
     }
+
+    #[getter]
+    fn x_direction(&self) -> Vector2 {
+        Vector2::from_inner(self.inner.rotation * engeom::Vector2::x())
+    }
+
+    #[getter]
+    fn y_direction(&self) -> Vector2 {
+        Vector2::from_inner(self.inner.rotation * engeom::Vector2::y())
+    }
+
+    #[getter]
+    fn x_axis(&self) -> SurfacePoint2 {
+        let origin = self.inner * engeom::Point2::origin();
+        let direction = self.inner.rotation * engeom::Vector2::x();
+        SurfacePoint2::from_inner(engeom::SurfacePoint2::new_normalize(origin, direction))
+    }
+
+    #[getter]
+    fn y_axis(&self) -> SurfacePoint2 {
+        let origin = self.inner * engeom::Point2::origin();
+        let direction = self.inner.rotation * engeom::Vector2::y();
+        SurfacePoint2::from_inner(engeom::SurfacePoint2::new_normalize(origin, direction))
+    }
 }

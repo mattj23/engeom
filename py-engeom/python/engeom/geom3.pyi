@@ -730,6 +730,54 @@ class Iso3:
         """
         ...
 
+    @property
+    def x_direction(self) -> Vector3:
+        """
+        The world-space direction of the isometry's local x-axis.
+        :return: a unit Vector3 along the transformed x-axis.
+        """
+        ...
+
+    @property
+    def y_direction(self) -> Vector3:
+        """
+        The world-space direction of the isometry's local y-axis.
+        :return: a unit Vector3 along the transformed y-axis.
+        """
+        ...
+
+    @property
+    def z_direction(self) -> Vector3:
+        """
+        The world-space direction of the isometry's local z-axis.
+        :return: a unit Vector3 along the transformed z-axis.
+        """
+        ...
+
+    @property
+    def x_axis(self) -> Line3:
+        """
+        A Line3 through the isometry's origin along its local x-axis.
+        :return: a Line3 with origin at the isometry's origin and direction along the x-axis.
+        """
+        ...
+
+    @property
+    def y_axis(self) -> Line3:
+        """
+        A Line3 through the isometry's origin along its local y-axis.
+        :return: a Line3 with origin at the isometry's origin and direction along the y-axis.
+        """
+        ...
+
+    @property
+    def z_axis(self) -> Line3:
+        """
+        A Line3 through the isometry's origin along its local z-axis.
+        :return: a Line3 with origin at the isometry's origin and direction along the z-axis.
+        """
+        ...
+
     def translation(self) -> Iso3:
         """
         Return the translation component of the isometry as a separate isometry.
@@ -1042,6 +1090,14 @@ class Plane3:
         to the input point.
         :param point: the point to project.
         :return: the projected point.
+        """
+        ...
+
+    def project_vector(self, v: Vector3) -> Vector3:
+        """
+        Project a vector onto the plane by removing the component along the plane's normal.
+        :param v: the vector to project.
+        :return: the projected vector, lying in the plane.
         """
         ...
 
@@ -1397,6 +1453,26 @@ class Circle3:
         at that angle.
         :param angles: a 1D numpy array of angles in radians.
         :return: a numpy array of shape (N, 9).
+        """
+        ...
+
+    def max_extent_angle(self, dx: float, dy: float, dz: float) -> float:
+        """
+        Return the angle (in radians) of the point on the circle that maximizes the dot product
+        with the given direction vector.
+        :param dx: x component of the direction vector.
+        :param dy: y component of the direction vector.
+        :param dz: z component of the direction vector.
+        :return: the angle in radians, in the range (-π, π].
+        :raises ValueError: if the direction is parallel to the circle's normal.
+        """
+        ...
+
+    def set_zero_angle(self, angle: float) -> None:
+        """
+        Rotate the circle's isometry around its normal so that the point currently at `angle`
+        becomes the new zero angle (aligned with the local x-axis).
+        :param angle: the angle in radians to align with zero.
         """
         ...
 

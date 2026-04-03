@@ -616,6 +616,10 @@ impl Plane3 {
         Point3::from_inner(self.inner.project_point(point.get_inner()))
     }
 
+    fn project_vector(&self, v: Vector3) -> Vector3 {
+        Vector3::from_inner(self.inner.project_vector(v.get_inner()))
+    }
+
     fn shifted(&self, shift: f64) -> Self {
         Self::from_inner(self.inner.shifted(shift))
     }
@@ -970,6 +974,17 @@ impl Circle3 {
         self.inner.intersect_plane(&plane.inner)
     }
 
+    fn max_extent_angle(&self, dx: f64, dy: f64, dz: f64) -> PyResult<f64> {
+        let dir = engeom::Vector3::new(dx, dy, dz);
+        self.inner
+            .max_extent_angle(&dir)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    fn set_zero_angle(&mut self, angle: f64) {
+        self.inner.set_zero_angle(angle);
+    }
+
     fn at_angles<'py>(
         &self,
         py: Python<'py>,
@@ -1304,6 +1319,42 @@ impl Iso3 {
         Self {
             inner: self.inner.inverse(),
         }
+    }
+
+    #[getter]
+    fn x_direction(&self) -> Vector3 {
+        Vector3::from_inner(self.inner.rotation * engeom::Vector3::x())
+    }
+
+    #[getter]
+    fn y_direction(&self) -> Vector3 {
+        Vector3::from_inner(self.inner.rotation * engeom::Vector3::y())
+    }
+
+    #[getter]
+    fn z_direction(&self) -> Vector3 {
+        Vector3::from_inner(self.inner.rotation * engeom::Vector3::z())
+    }
+
+    #[getter]
+    fn x_axis(&self) -> Line3 {
+        let origin = self.inner * engeom::Point3::origin();
+        let direction = self.inner.rotation * engeom::Vector3::x();
+        Line3::from_inner(engeom::Line3::new_normalize(origin, direction))
+    }
+
+    #[getter]
+    fn y_axis(&self) -> Line3 {
+        let origin = self.inner * engeom::Point3::origin();
+        let direction = self.inner.rotation * engeom::Vector3::y();
+        Line3::from_inner(engeom::Line3::new_normalize(origin, direction))
+    }
+
+    #[getter]
+    fn z_axis(&self) -> Line3 {
+        let origin = self.inner * engeom::Point3::origin();
+        let direction = self.inner.rotation * engeom::Vector3::z();
+        Line3::from_inner(engeom::Line3::new_normalize(origin, direction))
     }
 
     fn __matmul__<'py>(
