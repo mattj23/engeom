@@ -596,6 +596,15 @@ impl Plane3 {
         Self::from_inner(engeom::Plane3::yz())
     }
 
+    #[staticmethod]
+    fn from_point_normal(px: f64, py: f64, pz: f64, nx: f64, ny: f64, nz: f64) -> PyResult<Self> {
+        let v = engeom::Vector3::new(nx, ny, nz);
+        let normal = engeom::UnitVec3::try_new(v, 1.0e-6)
+            .ok_or_else(|| PyValueError::new_err("Invalid normal vector"))?;
+        let d = normal.dot(&engeom::Vector3::new(px, py, pz));
+        Ok(Self::from_inner(engeom::Plane3::new(normal, d)))
+    }
+
     fn inverted_normal(&self) -> Self {
         Self::from_inner(self.inner.inverted_normal())
     }
@@ -1043,10 +1052,10 @@ impl Circle3 {
     ) -> Bound<'py, PyArray2<f64>> {
         let angles = angles.as_array();
         let n = angles.len();
-        let normal = self.inner.normal().into_inner();
         let mut result = Array2::zeros((n, 9));
         for (i, &angle) in angles.iter().enumerate() {
             let m = self.inner.at_angle(angle);
+            let normal = (m.point - self.inner.center()).normalize();
             result[[i, 0]] = m.point.x;
             result[[i, 1]] = m.point.y;
             result[[i, 2]] = m.point.z;

@@ -1050,6 +1050,21 @@ class Plane3:
         """
         ...
 
+    @staticmethod
+    def from_point_normal(px: float, py: float, pz: float, nx: float, ny: float, nz: float) -> Plane3:
+        """
+        Create a plane passing through a given point with the specified normal direction.
+        :param px: the x component of the point on the plane.
+        :param py: the y component of the point on the plane.
+        :param pz: the z component of the point on the plane.
+        :param nx: the x component of the normal vector.
+        :param ny: the y component of the normal vector.
+        :param nz: the z component of the normal vector.
+        :return: a Plane3 passing through the point with the given normal.
+        :raises ValueError: if the normal vector has zero length.
+        """
+        ...
+
     def inverted_normal(self) -> Plane3:
         """
         Return a new plane with the normal vector inverted.
