@@ -4,6 +4,7 @@ from typing import Iterable, Tuple, TypeVar, Iterator, Any, List
 
 from numpy.typing import NDArray
 from engeom.engeom import ResampleEnum
+from engeom.common import AngleDir
 
 from engeom import geom3
 
@@ -1448,3 +1449,51 @@ class Aabb2:
         :return: True if the point is contained within the AABB, False otherwise.
         """
         ...
+
+
+def rot90(dir: AngleDir) -> Iso2:
+    """
+    Returns an isometry representing a 90-degree rotation in the given direction.
+    A CCW direction produces a positive (counter-clockwise) rotation; CW produces a negative one.
+
+    :param dir: The direction of rotation.
+    :return: An isometry representing the rotation.
+    """
+    ...
+
+
+def rot270(dir: AngleDir) -> Iso2:
+    """
+    Returns an isometry representing a 270-degree rotation in the given direction.
+    A CCW direction produces a negative (clockwise) rotation; CW produces a positive one.
+
+    :param dir: The direction of rotation.
+    :return: An isometry representing the rotation.
+    """
+    ...
+
+
+def signed_angle(v1: Vector2, v2: Vector2) -> float:
+    """
+    Returns the signed angle from `v1` to `v2`, in radians, in the range (-π, π].
+    Positive means the shortest rotation from `v1` to `v2` is counter-clockwise; negative means
+    clockwise.
+
+    :param v1: The reference vector.
+    :param v2: The vector to measure the angle to.
+    :return: The signed angle in radians.
+    """
+    ...
+
+
+def directed_angle(v1: Vector2, v2: Vector2, direction: AngleDir) -> float:
+    """
+    Returns the angle from `v1` to `v2` measured in the given rotational direction, in radians,
+    in the range [0, 2π].
+
+    :param v1: The reference vector.
+    :param v2: The vector to measure the angle to.
+    :param direction: The direction in which to measure the angle.
+    :return: The angle in radians.
+    """
+    ...

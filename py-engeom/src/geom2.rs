@@ -1,5 +1,5 @@
 use crate::bounding::Aabb2;
-use crate::common::Resample;
+use crate::common::{AngleDir, Resample};
 use crate::conversions::{array_to_points2, array_to_vectors2, points_to_array, vectors_to_array};
 use engeom::geom2::{HasBounds2, Line2};
 use engeom::{BestFit, To3D};
@@ -9,13 +9,38 @@ use pyo3::exceptions::PyValueError;
 use pyo3::types::PyIterator;
 use pyo3::{
     Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyResult, Python, pyclass,
-    pymethods,
+    pyfunction, pymethods,
 };
 
 #[derive(FromPyObject)]
 enum Vector2OrPoint2 {
     Vector(Vector2),
     Point(Point2),
+}
+
+/// Returns an isometry representing a 90-degree rotation in the given direction.
+#[pyfunction]
+pub fn rot90(dir: AngleDir) -> Iso2 {
+    Iso2::from_inner(engeom::geom2::rot90(dir.into()))
+}
+
+/// Returns an isometry representing a 270-degree rotation in the given direction.
+#[pyfunction]
+pub fn rot270(dir: AngleDir) -> Iso2 {
+    Iso2::from_inner(engeom::geom2::rot270(dir.into()))
+}
+
+/// Returns the signed angle from `v1` to `v2` in radians, in the range (-π, π].
+/// Positive means the shortest rotation is counter-clockwise; negative means clockwise.
+#[pyfunction]
+pub fn signed_angle(v1: &Vector2, v2: &Vector2) -> f64 {
+    engeom::geom2::signed_angle(v1.get_inner(), v2.get_inner())
+}
+
+/// Returns the angle from `v1` to `v2` measured in the given direction, in radians, in [0, 2π].
+#[pyfunction]
+pub fn directed_angle(v1: &Vector2, v2: &Vector2, direction: AngleDir) -> f64 {
+    engeom::geom2::directed_angle(v1.get_inner(), v2.get_inner(), direction.into())
 }
 
 // ================================================================================================
