@@ -138,6 +138,19 @@ fn register_sensor_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     parent_module.add_submodule(&child)
 }
 
+fn register_common_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
+    let child = PyModule::new(parent_module.py(), "_common")?;
+
+    child.add_class::<common::AngleDir>()?;
+    child.add_function(wrap_pyfunction!(common::angle_in_direction, &child)?)?;
+    child.add_function(wrap_pyfunction!(common::shortest_angle_between, &child)?)?;
+    child.add_function(wrap_pyfunction!(common::angle_signed_pi, &child)?)?;
+    child.add_function(wrap_pyfunction!(common::angle_to_2pi, &child)?)?;
+    child.add_function(wrap_pyfunction!(common::signed_compliment_2pi, &child)?)?;
+
+    parent_module.add_submodule(&child)
+}
+
 /// Engeom is a library for geometric operations in 2D and 3D space.
 #[pymodule(name = "engeom")]
 fn py_engeom(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -164,6 +177,9 @@ fn py_engeom(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Sensor submodule
     register_sensor_module(m)?;
+
+    // Common submodule
+    register_common_module(m)?;
 
     // Common features and primitives
     m.add_class::<common::DeviationMode>()?;
