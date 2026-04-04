@@ -75,12 +75,16 @@ pub fn shortest_angle_between(radians0: f64, radians1: f64) -> f64 {
     if cw < ccw { -cw } else { ccw }
 }
 
-/// Re-expresses an angle, specified in radians, in the range [-pi, pi].  If the angle was already
-/// in the range [-pi, pi], it is returned unchanged.
+/// Re-expresses an angle, specified in radians, in the range [-π, π).  If the angle was already
+/// in the range [-π, π), it is returned unchanged.
+///
+/// > **Note:** π (and any angle equivalent to π) maps to -π, not π, since the range is
+/// > half-open. If your code depends on π being returned for inputs at exactly ±π, use a
+/// > different normalization.
 ///
 /// # Arguments
 ///
-/// * `radians`:
+/// * `radians`: the angle to re-express, in radians
 ///
 /// returns: f64
 ///
@@ -94,13 +98,7 @@ pub fn shortest_angle_between(radians0: f64, radians1: f64) -> f64 {
 /// assert_relative_eq!(new_angle, PI / 2.0, epsilon = 1.0e-10);
 /// ```
 pub fn angle_signed_pi(radians: f64) -> f64 {
-    let mut angle = radians % (2.0 * PI);
-    if angle > PI {
-        angle -= 2.0 * PI;
-    } else if angle < -PI {
-        angle += 2.0 * PI;
-    }
-    angle
+    (radians + PI).rem_euclid(2.0 * PI) - PI
 }
 
 /// Re-expresses an angle, specified in radians, in the range [0, 2pi].  If the angle was already

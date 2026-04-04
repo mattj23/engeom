@@ -1,4 +1,4 @@
-use crate::common::PCoords;
+use crate::common::{PCoords, angle_signed_pi};
 use crate::geom3::iso3::IsoExtensions3;
 use crate::geom3::manifold::Manifold1Pos3;
 use crate::{Iso3, Plane3, Point3, Result, UnitVec3, Vector3};
@@ -147,9 +147,9 @@ impl Circle3 {
         let delta = ratio.clamp(-1.0, 1.0).acos();
 
         if delta < 1e-9 || (std::f64::consts::PI - delta) < 1e-9 {
-            vec![phi + delta]
+            vec![angle_signed_pi(phi + delta)]
         } else {
-            vec![phi + delta, phi - delta]
+            vec![angle_signed_pi(phi + delta), angle_signed_pi(phi - delta)]
         }
     }
 
@@ -498,6 +498,26 @@ mod tests {
                 expected.direction.into_inner(),
                 epsilon = 1e-12
             );
+        }
+    }
+
+    #[test]
+    fn stress_intersect_plane_angles_in_range() {
+        let mut rng = rand::rng();
+        for _ in 0..1000 {
+            let circle = random_circle();
+            let angle = rng.random_range(-PI..PI);
+            let p1 = circle.at_angle(angle).point;
+            let p2 = circle.at_angle(angle + PI).point;
+            let some_other = p1 + Vector3::z() * 3.0;
+            let plane = Plane3::from((&p1, &p2, &some_other));
+
+            for a in circle.intersect_plane(&plane) {
+                assert!(
+                    a > -PI && a <= PI,
+                    "angle {a} is outside (-π, π]"
+                );
+            }
         }
     }
 
