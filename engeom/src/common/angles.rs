@@ -5,14 +5,17 @@ use std::f64::consts::PI;
 
 pub const ANGLE_TOL: f64 = 1.0e-12;
 
-/// Enumerates the two possible directions of rotation, clockwise and counter-clockwise
+/// Lists the two possible directions of rotation, clockwise and counter-clockwise.
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum AngleDir {
+    /// Clockwise rotation (negative angular direction).
     Cw,
+    /// Counter-clockwise rotation (positive angular direction).
     Ccw,
 }
 
 impl AngleDir {
+    /// Returns `-1.0` for `Cw` and `1.0` for `Ccw`, suitable for use as a sign multiplier.
     pub fn to_sign(self) -> f64 {
         match self {
             AngleDir::Cw => -1.0,
@@ -20,6 +23,7 @@ impl AngleDir {
         }
     }
 
+    /// Returns `Cw` if `sign < 0.0`, otherwise `Ccw`.
     pub fn from_sign(sign: f64) -> Self {
         if sign < 0.0 {
             AngleDir::Cw
@@ -28,6 +32,7 @@ impl AngleDir {
         }
     }
 
+    /// Returns the opposite direction: `Cw` <-> `Ccw`.
     pub fn opposite(self) -> Self {
         match self {
             AngleDir::Cw => AngleDir::Ccw,
@@ -39,7 +44,7 @@ impl AngleDir {
 /// Calculates the angle between two angles in a given rotational direction. The angle returned
 /// is the angle in the given rotational direction (clockwise or counter-clockwise) which `radians0`
 /// would need to be rotated to align with `radians1`. The result will always be positive, in the
-/// range [0, 2pi].
+/// range [0, 2π].
 ///
 /// # Arguments
 ///
@@ -52,7 +57,17 @@ impl AngleDir {
 /// # Examples
 ///
 /// ```
+/// use engeom::common::{angle_in_direction, AngleDir};
+/// use std::f64::consts::{PI, FRAC_PI_2};
+/// use approx::assert_relative_eq;
 ///
+/// // Going CCW from 0 to π/2 is a quarter turn
+/// let ccw = angle_in_direction(0.0, FRAC_PI_2, AngleDir::Ccw);
+/// assert_relative_eq!(ccw, FRAC_PI_2, epsilon = 1.0e-10);
+///
+/// // Going CW from 0 to π/2 is three-quarter turns (the long way around)
+/// let cw = angle_in_direction(0.0, FRAC_PI_2, AngleDir::Cw);
+/// assert_relative_eq!(cw, 3.0 * FRAC_PI_2, epsilon = 1.0e-10);
 /// ```
 pub fn angle_in_direction(radians0: f64, radians1: f64, angle_dir: AngleDir) -> f64 {
     let t0 = angle_signed_pi(radians0);
@@ -69,6 +84,33 @@ pub fn angle_in_direction(radians0: f64, radians1: f64, angle_dir: AngleDir) -> 
     }
 }
 
+/// Returns the signed shortest angular distance from `radians0` to `radians1`.
+///
+/// A positive result means the shortest path is counter-clockwise; a negative result means the
+/// shortest path is clockwise. The magnitude is always in the range [0, π].
+///
+/// # Arguments
+///
+/// * `radians0`: the starting angle, in radians
+/// * `radians1`: the ending angle, in radians
+///
+/// returns: f64
+///
+/// # Examples
+///
+/// ```
+/// use engeom::common::shortest_angle_between;
+/// use std::f64::consts::{PI, FRAC_PI_2, FRAC_PI_4};
+/// use approx::assert_relative_eq;
+///
+/// // CCW from 0 to π/2 is the short way, so result is positive
+/// let a = shortest_angle_between(0.0, FRAC_PI_2);
+/// assert_relative_eq!(a, FRAC_PI_2, epsilon = 1.0e-10);
+///
+/// // CW from 0 to -π/4 is the short way, so result is negative
+/// let b = shortest_angle_between(0.0, -FRAC_PI_4);
+/// assert_relative_eq!(b, -FRAC_PI_4, epsilon = 1.0e-10);
+/// ```
 pub fn shortest_angle_between(radians0: f64, radians1: f64) -> f64 {
     let cw = angle_in_direction(radians0, radians1, AngleDir::Cw);
     let ccw = angle_in_direction(radians0, radians1, AngleDir::Ccw);
@@ -127,18 +169,34 @@ pub fn angle_to_2pi(radians: f64) -> f64 {
     angle
 }
 
-/// Returns the signed compliment of an angle, specified in radians, in the range [-2pi, 2pi].
+/// Returns the signed complement of an angle with respect to a full rotation (2π).
+///
+/// Given an angle, this returns the remaining arc needed to complete a full circle, with the same
+/// sign convention: a positive input returns a negative complement (since the remaining arc goes
+/// the other way), and vice versa. The result is in the range (-2π, 2π].
+///
+/// This is useful when you have an arc angle and need the arc that covers the rest of the circle.
 ///
 /// # Arguments
 ///
-/// * `radians`:
+/// * `radians`: the angle to complement, in radians
 ///
 /// returns: f64
 ///
 /// # Examples
 ///
 /// ```
+/// use engeom::common::signed_compliment_2pi;
+/// use std::f64::consts::{PI, FRAC_PI_2};
+/// use approx::assert_relative_eq;
 ///
+/// // A quarter turn CCW leaves three-quarter turns in the CW direction
+/// let a = signed_compliment_2pi(FRAC_PI_2);
+/// assert_relative_eq!(a, -3.0 * FRAC_PI_2, epsilon = 1.0e-10);
+///
+/// // A quarter turn CW leaves three-quarter turns in the CCW direction
+/// let b = signed_compliment_2pi(-FRAC_PI_2);
+/// assert_relative_eq!(b, 3.0 * FRAC_PI_2, epsilon = 1.0e-10);
 /// ```
 pub fn signed_compliment_2pi(radians: f64) -> f64 {
     if radians >= 0.0 {
@@ -269,6 +327,31 @@ mod tests {
     use approx::assert_relative_eq;
     use rand::{Rng, RngExt};
     use test_case::test_case;
+
+    #[test]
+    fn angle_dir_to_sign() {
+        assert_eq!(AngleDir::Cw.to_sign(), -1.0);
+        assert_eq!(AngleDir::Ccw.to_sign(), 1.0);
+    }
+
+    #[test]
+    fn angle_dir_from_sign() {
+        assert_eq!(AngleDir::from_sign(-1.0), AngleDir::Cw);
+        assert_eq!(AngleDir::from_sign(1.0), AngleDir::Ccw);
+        assert_eq!(AngleDir::from_sign(0.0), AngleDir::Ccw);
+    }
+
+    #[test]
+    fn angle_dir_opposite() {
+        assert_eq!(AngleDir::Cw.opposite(), AngleDir::Ccw);
+        assert_eq!(AngleDir::Ccw.opposite(), AngleDir::Cw);
+    }
+
+    #[test]
+    fn angle_dir_roundtrip() {
+        assert_eq!(AngleDir::from_sign(AngleDir::Cw.to_sign()), AngleDir::Cw);
+        assert_eq!(AngleDir::from_sign(AngleDir::Ccw.to_sign()), AngleDir::Ccw);
+    }
 
     #[test_case(90.0, -270.0)]
     #[test_case(180.0, -180.0)]

@@ -513,10 +513,7 @@ mod tests {
             let plane = Plane3::from((&p1, &p2, &some_other));
 
             for a in circle.intersect_plane(&plane) {
-                assert!(
-                    a > -PI && a <= PI,
-                    "angle {a} is outside (-π, π]"
-                );
+                assert!(a > -PI && a <= PI, "angle {a} is outside (-π, π]");
             }
         }
     }

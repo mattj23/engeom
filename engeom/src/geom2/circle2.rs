@@ -219,7 +219,11 @@ impl Circle2 {
     /// assert_relative_eq!(circle.r(), 1.0);
     ///
     /// ```
-    pub fn from_3_points(p0: &impl PCoords<2>, p1: &impl PCoords<2>, p2: &impl PCoords<2>) -> Result<Circle2> {
+    pub fn from_3_points(
+        p0: &impl PCoords<2>,
+        p1: &impl PCoords<2>,
+        p2: &impl PCoords<2>,
+    ) -> Result<Circle2> {
         let (p0, p1, p2) = (p0.coords(), p1.coords(), p2.coords());
         let temp = p1.x.powi(2) + p1.y.powi(2);
         let bc = (p0.x.powi(2) + p0.y.powi(2) - temp) / 2.0;
