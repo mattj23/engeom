@@ -2,6 +2,9 @@ pub mod lptf3;
 mod micro_mesh;
 mod ply;
 mod point_cloud;
+mod binary_mesh;
+
+pub use binary_mesh::{read_mesh_binary_file, write_mesh_binary_file};
 
 use crate::Result;
 use flate2::read::GzDecoder;
