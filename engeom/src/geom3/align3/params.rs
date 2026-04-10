@@ -6,6 +6,7 @@ use crate::na::{Matrix3, Translation};
 use crate::{Iso3, Point3};
 use parry3d_f64::na::UnitQuaternion;
 
+const EPSILON: f64 = 1e-8;
 const SKS_X: Matrix3<f64> = Matrix3::new(0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0);
 const SKS_Y: Matrix3<f64> = Matrix3::new(0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0);
 const SKS_Z: Matrix3<f64> = Matrix3::new(0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0);
@@ -20,14 +21,14 @@ pub struct AlignValues3 {
     /// The location of the rotation center point in the target entity's coordinate system.
     pub rc: Point3,
 
-    /// The jacobian of RX
-    pub d_rx: Matrix3<f64>,
+    /// the numerical jacobian matrix for X
+    pub t_rx: Iso3,
 
-    /// The jacobian of RY
-    pub d_ry: Matrix3<f64>,
+    /// the numerical jacobian matrix for Y
+    pub t_ry: Iso3,
 
-    /// The jacobian of RZ
-    pub d_rz: Matrix3<f64>,
+    /// the numerical jacobian matrix for Z
+    pub t_rz: Iso3,
 
     /// The current working transformation, which is the transformation of the test entity(s) from
     /// their native, local coordinates to the start position in the target entity's coordinate
@@ -82,21 +83,26 @@ impl AlignParams3 {
 
     pub fn current_values(&self) -> AlignValues3 {
         let local = iso3_from_param(&self.storage);
+        let local_drx = numeric_perterb(&self.storage, 3);
+        let local_dry = numeric_perterb(&self.storage, 4);
+        let local_drz = numeric_perterb(&self.storage, 5);
 
         let transform = self.origin_to_center * local * self.center_to_origin * self.working;
-        let inverse = transform.inverse();
+        let t_drx = self.origin_to_center * local_drx * self.center_to_origin * self.working;
+        let t_dry = self.origin_to_center * local_dry * self.center_to_origin * self.working;
+        let t_drz = self.origin_to_center * local_drz * self.center_to_origin * self.working;
+        let t_rx = transform.inverse() * t_drx;
+        let t_ry = transform.inverse() * t_dry;
+        let t_rz = transform.inverse() * t_drz;
 
         let rc = transform * self.rc;
-
-        // Local Jacobian
-        let (dx, dy, dz) = local_jacobians(self.storage[3], self.storage[4], self.storage[5]);
 
         AlignValues3 {
             transform,
             rc,
-            d_rx: dx * inverse.rotation.to_rotation_matrix(),
-            d_ry: dy * inverse.rotation.to_rotation_matrix(),
-            d_rz: dz * inverse.rotation.to_rotation_matrix(),
+            t_rx,
+            t_ry,
+            t_rz,
             working: self.working,
         }
     }
@@ -136,35 +142,41 @@ impl AlignParams3 {
         self.enforce_constraint();
     }
 
-    pub fn set_tx(&mut self, value: f64) {
-        self.storage[0] = value;
-        self.enforce_constraint();
-    }
+    // pub fn set_tx(&mut self, value: f64) {
+    //     self.storage[0] = value;
+    //     self.enforce_constraint();
+    // }
+    //
+    // pub fn set_ty(&mut self, value: f64) {
+    //     self.storage[1] = value;
+    //     self.enforce_constraint();
+    // }
+    //
+    // pub fn set_tz(&mut self, value: f64) {
+    //     self.storage[2] = value;
+    //     self.enforce_constraint();
+    // }
+    //
+    // pub fn set_rx(&mut self, value: f64) {
+    //     self.storage[3] = value;
+    //     self.enforce_constraint();
+    // }
+    //
+    // pub fn set_ry(&mut self, value: f64) {
+    //     self.storage[4] = value;
+    //     self.enforce_constraint();
+    // }
+    //
+    // pub fn set_rz(&mut self, value: f64) {
+    //     self.storage[5] = value;
+    //     self.enforce_constraint();
+    // }
+}
 
-    pub fn set_ty(&mut self, value: f64) {
-        self.storage[1] = value;
-        self.enforce_constraint();
-    }
-
-    pub fn set_tz(&mut self, value: f64) {
-        self.storage[2] = value;
-        self.enforce_constraint();
-    }
-
-    pub fn set_rx(&mut self, value: f64) {
-        self.storage[3] = value;
-        self.enforce_constraint();
-    }
-
-    pub fn set_ry(&mut self, value: f64) {
-        self.storage[4] = value;
-        self.enforce_constraint();
-    }
-
-    pub fn set_rz(&mut self, value: f64) {
-        self.storage[5] = value;
-        self.enforce_constraint();
-    }
+fn numeric_perterb(x: &T3Storage, index: usize) -> Iso3 {
+    let mut x = x.clone();
+    x[index] += EPSILON;
+    iso3_from_param(&x)
 }
 
 // fn local_jacobians(rx: f64, ry: f64, rz: f64) -> (Iso3, Iso3, Iso3) {
@@ -182,7 +194,10 @@ fn local_jacobians(rx: f64, ry: f64, rz: f64) -> (Matrix3<f64>, Matrix3<f64>, Ma
     let dy = m * ck.transpose() * SKS_Y * ck;
     let dz = m * SKS_Z;
 
+    let q_inv = q.inverse().to_rotation_matrix();
+
     // (wrap_iso3(dx), wrap_iso3(dy), wrap_iso3(dz))
+    // (dx * q_inv, dy * q_inv, dz * q_inv)
     (dx, dy, dz)
 }
 
@@ -197,7 +212,7 @@ fn to_matrix(q: &UnitQuaternion<f64>) -> Matrix3<f64> {
 
 #[cfg(test)]
 mod tests {
-    use crate::geom3::align3::params::AlignParams3;
+    use crate::geom3::align3::params::{AlignParams3, EPSILON};
     use crate::geom3::align3::{Dof6, T3Storage};
     use crate::{Iso3, Point3, Vector3};
     use approx::assert_relative_eq;
@@ -225,6 +240,42 @@ mod tests {
         )
     }
 
+    #[test]
+    fn numeric_matrices() {
+        let params = AlignParams3::new_with_values(
+            Point3::new(1.0, 2.0, 3.0),
+            Iso3::identity(),
+            Dof6::default(),
+            T3Storage::new(0.1, 0.2, 0.3, 0.1, 0.2, 0.3),
+        );
+
+        let p0 = Point3::new(3.3, 2.2, 1.1);
+
+        let current = params.current_values();
+
+        let moved = current.transform * p0;
+        let moved_dx = current.t_rx * moved;
+        let moved_dy = current.t_ry * moved;
+        let moved_dz = current.t_rz * moved;
+
+        let mut p_x = params.clone();
+        p_x.set_index(3, params.storage[3] + EPSILON);
+        let expected_x = p_x.current_values().transform * p0;
+
+        let mut p_y = params.clone();
+        p_y.set_index(4, params.storage[4] + EPSILON);
+        let expected_y = p_y.current_values().transform * p0;
+
+        let mut p_z = params.clone();
+        p_z.set_index(5, params.storage[5] + EPSILON);
+        let expected_z = p_z.current_values().transform * p0;
+
+        assert_relative_eq!(expected_x, moved_dx, epsilon = 1e-8);
+        assert_relative_eq!(expected_y, moved_dy, epsilon = 1e-8);
+        assert_relative_eq!(expected_z, moved_dz, epsilon = 1e-8);
+    }
+
+    /*
     #[test]
     fn jacobian_simple_at_origin() {
         let params = AlignParams3::new(Point3::origin(), Iso3::identity(), Dof6::default());
@@ -263,9 +314,10 @@ mod tests {
             epsilon = 1e-12
         );
 
-        let tx = current.d_rx * (moved - current.rc);
-        let ty = current.d_ry * (moved - current.rc);
-        let tz = current.d_rz * (moved - current.rc);
+        let m = current.dx_i * moved;
+        let tx = current.d_rx * m.coords;
+        let ty = current.d_ry * m.coords;
+        let tz = current.d_rz * m.coords;
 
         assert_relative_eq!(tx, ex, epsilon = 1e-12);
         assert_relative_eq!(ty, ey, epsilon = 1e-12);
@@ -292,9 +344,10 @@ mod tests {
             epsilon = 1e-12
         );
 
-        let tx = current.d_rx * (moved - current.rc);
-        let ty = current.d_ry * (moved - current.rc);
-        let tz = current.d_rz * (moved - current.rc);
+        let m = current.dx_i * moved;
+        let tx = current.d_rx * m.coords;
+        let ty = current.d_ry * m.coords;
+        let tz = current.d_rz * m.coords;
 
         assert_relative_eq!(tx, ex, epsilon = 1e-8);
         assert_relative_eq!(ty, ey, epsilon = 1e-8);
@@ -316,14 +369,22 @@ mod tests {
 
         let moved = current.transform * p;
 
-        let tx = current.d_rx * (moved - current.rc);
-        let ty = current.d_ry * (moved - current.rc);
-        let tz = current.d_rz * (moved - current.rc);
+        let m = current.dx_i * moved;
+        assert_relative_eq!(m, Point3::new(1.0, 0.0, 0.0), epsilon = 1e-12);
+        let check_x = current.d_rx * Vector3::new(1.0, 0.0, 0.0);
+        assert_relative_eq!(check_x, Vector3::new(0.0, 0.0, 0.0), epsilon = 1e-12);
+
+
+        let tx = current.d_rx * m.coords;
+        let ty = current.d_ry * m.coords;
+        let tz = current.d_rz * m.coords;
 
         assert_relative_eq!(tx, ex, epsilon = 1e-8);
         assert_relative_eq!(ty, ey, epsilon = 1e-8);
         assert_relative_eq!(tz, ez, epsilon = 1e-8);
     }
+
+     */
 
     // #[test]
     // fn rot_at_origin() {
