@@ -103,6 +103,35 @@ pub fn point_point_jacobian(p: &Point3, c: &Point3, params: &RcParams3) -> T3Sto
     }
 }
 
+/// A core function for computing the partial derivatives of the parameters for a distance function
+/// approximated by a point and its closest point on a plane (represented as a `SurfacePoint3`).
+/// The internal functionality is common between `point_plane_jacobian` and
+/// `point_plane_jacobian_rev`, the two callers, which differ only in the sign of the scalar
+/// projection of the test point onto the plane.
+///
+/// # Arguments
+///
+/// * `s`: the sign of the scalar projection of the test point onto the plane
+/// * `c`: the reference surface point (a point and normal in the model) closest to `p`
+/// * `from_rc`: the point with relation to the current center of rotation
+/// * `params`: the parameters of the current alignment
+///
+/// returns: Matrix<f64, Const<6>, Const<1>, ArrayStorage<f64, 6, 1>>
+fn point_plane_core(s: f64, c: &SurfacePoint3, from_rc: Point3, params: &RcParams3) -> T3Storage {
+    let mut result = T3Storage::zeros();
+    let n = c.normal.into_inner() * s;
+
+    result[0] = n.x;
+    result[1] = n.y;
+    result[2] = n.z;
+
+    result[3] = n.dot(&(params.rotations().rd.x * from_rc).coords);
+    result[4] = n.dot(&(params.rotations().rd.y * from_rc).coords);
+    result[5] = n.dot(&(params.rotations().rd.z * from_rc).coords);
+
+    result
+}
+
 pub fn point_point_jacobian_full(
     p: &Point3,
     c: &Point3,
@@ -178,35 +207,6 @@ pub fn point_plane_jacobian_full(
     if dof.rz {
         result[5] = n.dot(&(rz * from_rc).coords);
     }
-
-    result
-}
-
-/// A core function for computing the partial derivatives of the parameters for a distance function
-/// approximated by a point and its closest point on a plane (represented as a `SurfacePoint3`).
-/// The internal functionality is common between `point_plane_jacobian` and
-/// `point_plane_jacobian_rev`, the two callers, which differ only in the sign of the scalar
-/// projection of the test point onto the plane.
-///
-/// # Arguments
-///
-/// * `s`: the sign of the scalar projection of the test point onto the plane
-/// * `c`: the reference surface point (a point and normal in the model) closest to `p`
-/// * `from_rc`: the point with relation to the current center of rotation
-/// * `params`: the parameters of the current alignment
-///
-/// returns: Matrix<f64, Const<6>, Const<1>, ArrayStorage<f64, 6, 1>>
-fn point_plane_core(s: f64, c: &SurfacePoint3, from_rc: Point3, params: &RcParams3) -> T3Storage {
-    let mut result = T3Storage::zeros();
-    let n = c.normal.into_inner() * s;
-
-    result[0] = n.x;
-    result[1] = n.y;
-    result[2] = n.z;
-
-    result[3] = n.dot(&(params.rotations().rd.x * from_rc).coords);
-    result[4] = n.dot(&(params.rotations().rd.y * from_rc).coords);
-    result[5] = n.dot(&(params.rotations().rd.z * from_rc).coords);
 
     result
 }

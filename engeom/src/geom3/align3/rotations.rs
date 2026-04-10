@@ -7,7 +7,7 @@ const P_Y: Matrix3<f64> = Matrix3::new(0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 
 const P_Z: Matrix3<f64> = Matrix3::new(0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0);
 const EPSILON: f64 = 1e-8;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Euler<T> {
     pub x: T,
     pub y: T,
@@ -20,11 +20,20 @@ impl<T> Euler<T> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RotationMatrices {
+    /// The rotation angles around the x, y, and z axes
     pub r: Euler<f64>,
+
+    /// The total composed rotation matrix of all three axes
     pub q: UnitQuaternion<f64>,
+
+    /// The world-frame Jacobian of the rotation matrix, this shows the motion of the point in
+    /// the world frame for positive value change in each of rx, ry, and rz
     pub d: Euler<Matrix3<f64>>,
+
+    /// The body-frame Jacobian of the rotation matrix, this shows the motion of the point in
+    /// the body frame for positive value change in each of rx, ry, and rz
     pub rd: Euler<Matrix3<f64>>,
 }
 
