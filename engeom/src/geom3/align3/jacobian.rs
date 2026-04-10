@@ -19,6 +19,7 @@
 //! and fitting routines in a consistent 6-parameter rigid-body setting.
 
 use super::*;
+use crate::geom3::align3::params::AlignValues3;
 use crate::geom3::{Point3, SurfacePoint3};
 use parry2d_f64::na::Dim;
 use parry3d_f64::na::{Matrix, RawStorageMut, Storage, U6};
@@ -132,80 +133,62 @@ fn point_plane_core(s: f64, c: &SurfacePoint3, from_rc: Point3, params: &RcParam
     result
 }
 
-pub fn point_point_jacobian_full(
-    p: &Point3,
-    c: &Point3,
-    rc: &Point3,
-    rx: f64,
-    ry: f64,
-    rz: f64,
-    dof: &Dof6,
-) -> T3Storage {
+pub fn point_point_jacobian_full(p: &Point3, c: &Point3, align: &AlignValues3) -> T3Storage {
     let mut result = T3Storage::zeros();
     let m = p - c;
     if m.norm_squared() < 1e-16 {
         result
     } else {
         let n = m.normalize();
-        if dof.tx {
+        if align.dof.tx {
             result.x = n.x;
         }
-        if dof.ty {
+        if align.dof.ty {
             result.y = n.y;
         }
-        if dof.tz {
+        if align.dof.tz {
             result.z = n.z;
         }
 
-        let from_rc = Point3::from(p - rc);
-        if dof.rx {
-            result.w = n.dot(&(rx * from_rc).coords);
+        if align.dof.rx {
+            result.w = n.dot(&align.drx(c));
         }
-        if dof.ry {
-            result.a = n.dot(&(ry * from_rc).coords);
+        if align.dof.ry {
+            result.a = n.dot(&align.dry(c));
         }
-        if dof.rz {
-            result.b = n.dot(&(rz * from_rc).coords);
+        if align.dof.rz {
+            result.b = n.dot(&align.drz(c));
         }
 
         result
     }
 }
 
-pub fn point_plane_jacobian_full(
-    p: &Point3,
-    c: &SurfacePoint3,
-    rc: &Point3,
-    rx: f64,
-    ry: f64,
-    rz: f64,
-    dof: &Dof6,
-) -> T3Storage {
+pub fn point_plane_jacobian_full(p: &Point3, c: &SurfacePoint3, align: &AlignValues3) -> T3Storage {
     let s = c.scalar_projection(p).signum();
 
     // The point with relation to the current center of rotation
-    let from_rc = Point3::from(p - rc);
     let mut result = T3Storage::zeros();
     let n = c.normal.into_inner() * s;
 
-    if dof.tx {
+    if align.dof.tx {
         result[0] = n.x;
     }
-    if dof.ty {
+    if align.dof.ty {
         result[1] = n.y;
     }
-    if dof.tz {
+    if align.dof.tz {
         result[2] = n.z;
     }
 
-    if dof.rx {
-        result[3] = n.dot(&(rx * from_rc).coords);
+    if align.dof.rx {
+        result[3] = n.dot(&align.drx(c));
     }
-    if dof.ry {
-        result[4] = n.dot(&(ry * from_rc).coords);
+    if align.dof.ry {
+        result[4] = n.dot(&align.drx(c));
     }
-    if dof.rz {
-        result[5] = n.dot(&(rz * from_rc).coords);
+    if align.dof.rz {
+        result[5] = n.dot(&align.drx(c));
     }
 
     result

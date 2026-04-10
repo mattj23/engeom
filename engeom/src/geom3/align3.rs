@@ -50,7 +50,7 @@ impl Dof6 {
     }
 
     /// Returns a new Dof3 with all degrees of freedom active.
-    pub fn new_all() -> Self {
+    pub fn all() -> Self {
         Self {
             tx: true,
             ty: true,
@@ -64,7 +64,7 @@ impl Dof6 {
 
 impl Default for Dof6 {
     fn default() -> Self {
-        Self::new_all()
+        Self::all()
     }
 }
 

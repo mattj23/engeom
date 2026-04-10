@@ -41,7 +41,7 @@ use rayon::prelude::*;
 /// * `mode`: either `DistMode::ToPoint` or `DistMode::ToPlane`
 /// * `center`: the rotation center for the alignment, if specified, otherwise the mean point of
 ///   the points will be used
-/// * `constraint`: a 6-DOF constraint to be applied to the alignment
+/// * `dof`: a 6-DOF constraint to be applied to the alignment
 ///
 /// returns: Result<Alignment<Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
 pub fn points_to_mesh(
@@ -50,19 +50,18 @@ pub fn points_to_mesh(
     working_iso: Iso3,
     mode: DistMode,
     center: Option<Point3>,
-    constraint: Dof6,
+    dof: Dof6,
 ) -> Result<Align3> {
     let problem = if let Some(c) = center {
-        PointsToMesh::new_with_center(points, mesh, working_iso, mode, c, constraint)
+        PointsToMesh::new_with_center(points, mesh, working_iso, mode, c, dof)
     } else {
-        PointsToMesh::new_from_mean(points, mesh, working_iso, mode, constraint)
+        PointsToMesh::new_from_mean(points, mesh, working_iso, mode, dof)
     };
 
     let (result, report) = LevenbergMarquardt::new().minimize(problem);
     if report.termination.was_successful() {
         let residuals = result.residuals().unwrap().as_slice().to_vec();
-        let current = result.params.current_values();
-        Ok(Align3::new(current.transform, residuals))
+        Ok(Align3::new(result.params.final_result(), residuals))
     } else {
         Err("Failed to align points to mesh".into())
     }
@@ -206,20 +205,8 @@ impl LeastSquaresProblem<f64, Dyn, U6> for PointsToMesh<'_> {
         let mut jac = Matrix::<f64, Dyn, U6, Self::JacobianStorage>::zeros(self.points.len());
         for (i, (p, c)) in self.moved.iter().zip(self.closest.iter()).enumerate() {
             let values = match self.mode {
-                // DistMode::ToPoint => point_point_jacobian(p, &c.point, &self.params),
-                DistMode::ToPoint => point_point_jacobian_full(
-                    p,
-                    &c.point,
-                    &current.rc,
-                    rx,
-                    ry,
-                    rz,
-                    &self.params.dof,
-                ),
-                // DistMode::ToPlane => point_plane_jacobian(p, c, &self.params),
-                DistMode::ToPlane => {
-                    point_plane_jacobian_full(p, c, &current.rc, rx, ry, rz, &self.params.dof)
-                }
+                DistMode::ToPoint => point_point_jacobian_full(p, &c.point, &current),
+                DistMode::ToPlane => point_plane_jacobian_full(p, c, &current),
             };
             copy_jacobian(&values, &mut jac, i);
         }
@@ -254,94 +241,109 @@ mod tests {
     //     assert_relative_eq!(result.to_matrix(), initial.to_matrix(), epsilon = 1e-8);
     // }
 
-    // #[test]
-    // fn simple_box_disturbed() -> Result<()> {
-    //     // This test is to verify that a simple test against a box that doesn't have large rotations
-    //     // produces a result that is roughly the inverse of the disturbance
-    //     let mesh = Mesh::create_box(10.0, 5.0, 2.0, false);
-    //     let points = clone_points(&mesh.sample_poisson(0.1, None));
-    //     let disturb = Iso3::from_parts(
-    //         Translation3::new(3.0, 2.0, 1.0),
-    //         UnitQuaternion::from_euler_angles(PI / 8.0, PI / 12.0, PI / 16.0),
-    //     );
-    //
-    //     let to_align = transform_points(&points, &disturb);
-    //     let result = points_to_mesh(
-    //         &to_align,
-    //         &mesh,
-    //         Iso3::identity(),
-    //         DistMode::ToPoint,
-    //         None,
-    //         Default::default(),
-    //     )?;
-    //
-    //     assert_relative_eq!(disturb.inverse(), result.transform(), epsilon = 1e-8);
-    //     Ok(())
-    // }
+    #[test]
+    fn simple_box_disturbed() -> Result<()> {
+        // This test is to verify that a simple test against a box that doesn't have large rotations
+        // produces a result that is roughly the inverse of the disturbance
+        let mesh = Mesh::create_box(10.0, 5.0, 2.0, false);
+        let points = clone_points(&mesh.sample_poisson(0.1, None));
+        let disturb = Iso3::from_parts(
+            Translation3::new(3.0, 2.0, 1.0),
+            UnitQuaternion::from_euler_angles(PI / 8.0, PI / 12.0, PI / 16.0),
+        );
 
-    // #[test]
-    // fn simple_box_disturbed_initial() -> Result<()> {
-    //     // This test is to verify that when using an initial transformation that it does not alter
-    //     // the final result transform.
-    //
-    //     let mesh = Mesh::create_box(10.0, 5.0, 2.0, false);
-    //     let points = clone_points(&mesh.sample_poisson(0.1, None));
-    //     let disturb = Iso3::from_parts(
-    //         Translation3::new(3.0, 2.0, 1.0),
-    //         UnitQuaternion::from_euler_angles(PI / 8.0, PI / 12.0, PI / 16.0),
-    //     );
-    //     let to_align = transform_points(&points, &disturb);
-    //
-    //     let initial = Iso3::from_parts(
-    //         Translation3::new(0.5, 0.25, 0.125),
-    //         UnitQuaternion::from_euler_angles(PI / 16.0, PI / 24.0, PI / 32.0),
-    //     );
-    //     let result = points_to_mesh(&to_align, &mesh, &initial, DistMode::ToPoint)?;
-    //
-    //     assert_relative_eq!(disturb.inverse(), result.transform(), epsilon = 1e-8);
-    //     Ok(())
-    // }
-    //
-    // #[test]
-    // fn blade_example() -> Result<()> {
-    //     let mesh = engine_blade();
-    //     let mask = mesh
-    //         .face_select(Selection::None)
-    //         .facing(&Vector3::y(), PI / 4.0, SelectOp::Add)
-    //         .take_mask();
-    //     let expected_points = clone_points(&mesh.sample_poisson(2.0, Some(&mask)));
-    //
-    //     let disturb = Iso3::from_parts(
-    //         Translation3::new(-100.0, 150.0, 0.0),
-    //         UnitQuaternion::new(Vector3::new(1.0, 1.0, 1.0).normalize() * PI / 6.0),
-    //     );
-    //
-    //     let to_align = transform_points(&expected_points, &disturb);
-    //
-    //     let result = points_to_mesh(
-    //         &to_align,
-    //         &mesh,
-    //         &Iso3::identity(),
-    //         DistMode::ToPoint,
-    //         None,
-    //         Default::default(),
-    //     )?;
-    //
-    //     let aligned = transform_points(&to_align, result.transform());
-    //
-    //     let max_deviation = aligned
-    //         .iter()
-    //         .zip(expected_points.iter())
-    //         .map(|(a, e)| (a - e).norm())
-    //         .max_by(|a, b| a.partial_cmp(b).unwrap())
-    //         .unwrap();
-    //
-    //     assert!(
-    //         max_deviation < 1e-6,
-    //         "Max deviation is too high: {}",
-    //         max_deviation
-    //     );
-    //
-    //     Ok(())
-    // }
+        let to_align = transform_points(&points, &disturb);
+        let result = points_to_mesh(
+            &to_align,
+            &mesh,
+            Iso3::identity(),
+            DistMode::ToPoint,
+            None,
+            Default::default(),
+        )?;
+
+        assert_relative_eq!(disturb.inverse(), result.transform(), epsilon = 1e-8);
+        Ok(())
+    }
+
+    #[test]
+    fn simple_box_disturbed_working() -> Result<()> {
+        // This test is to verify that when using a working transform, the overall disturbance
+        // transform is the inverse of `result * working`
+
+        let mesh = Mesh::create_box(10.0, 5.0, 2.0, false);
+        let points = clone_points(&mesh.sample_poisson(0.1, None));
+        let disturb = Iso3::from_parts(
+            Translation3::new(3.0, 2.0, 1.0),
+            UnitQuaternion::from_euler_angles(PI / 8.0, PI / 12.0, PI / 16.0),
+        );
+        let to_align = transform_points(&points, &disturb);
+
+        let working = Iso3::from_parts(
+            Translation3::new(0.5, 0.25, 0.125),
+            UnitQuaternion::from_euler_angles(PI / 16.0, PI / 24.0, PI / 32.0),
+        );
+        let result = points_to_mesh(
+            &to_align,
+            &mesh,
+            working,
+            DistMode::ToPoint,
+            None,
+            Dof6::all(),
+        )?;
+
+        assert_relative_eq!(
+            disturb.inverse(),
+            result.transform() * working,
+            epsilon = 1e-8
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn blade_example() -> Result<()> {
+        let mesh = engine_blade();
+        let mask = mesh
+            .face_select(Selection::None)
+            .facing(&Vector3::y(), PI / 4.0, SelectOp::Add)
+            .take_mask();
+        let expected_points = clone_points(&mesh.sample_poisson(2.0, Some(&mask)));
+
+        // TODO: figure out why this thing lost robustness
+        let disturb = Iso3::from_parts(
+            // Old version that worked
+            // Translation3::new(-100.0, 150.0, 0.0),
+            // UnitQuaternion::new(Vector3::new(1.0, 1.0, 1.0).normalize() * PI / 6.0),
+            Translation3::new(10.0, 10.0, 10.0),
+            UnitQuaternion::new(Vector3::new(1.0, 1.0, 1.0).normalize() * -PI / 16.0),
+        );
+
+        let to_align = transform_points(&expected_points, &disturb);
+
+        let result = points_to_mesh(
+            &to_align,
+            &mesh,
+            Iso3::identity(),
+            DistMode::ToPoint,
+            None,
+            Dof6::all(),
+        )?;
+
+        let aligned = transform_points(&to_align, result.transform());
+
+        let max_deviation = aligned
+            .iter()
+            .zip(expected_points.iter())
+            .map(|(a, e)| (a - e).norm())
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
+
+        assert!(
+            max_deviation < 1e-6,
+            "Max deviation is too high: {}",
+            max_deviation
+        );
+
+        Ok(())
+    }
 }

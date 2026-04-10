@@ -23,7 +23,7 @@ def main():
 
     # We'll clone the points and move them away from the original mesh to have the alignment do something. In
     # reality, the points would have come from some other source, like a 3d scanner.
-    disturb = Iso3.from_translation(-100, 150, 0) @ Iso3.from_rotation(math.pi / 6, 1, 1, 1)
+    disturb = Iso3.from_translation(10, 10, 10) @ Iso3.from_rotation(-math.pi / 16, 1, 1, 1)
     to_align = disturb.transform_points(sample_points[:, :3])
 
     # Now we perform the alignment. If the result is succesful we'll get an `Iso3` back, otherwise the call to
