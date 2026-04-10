@@ -68,6 +68,18 @@ impl AlignParams3 {
         }
     }
 
+    pub fn new_with_values(rc: Point3, working: Iso3, dof: Dof6, storage: T3Storage) -> Self {
+        let shift = Iso3::translation(rc.x, rc.y, rc.z);
+        AlignParams3 {
+            rc,
+            dof,
+            working,
+            storage,
+            center_to_origin: shift.inverse(),
+            origin_to_center: shift,
+        }
+    }
+
     pub fn current_values(&self) -> AlignValues3 {
         let local = iso3_from_param(&self.storage);
 
@@ -155,6 +167,7 @@ impl AlignParams3 {
     }
 }
 
+// fn local_jacobians(rx: f64, ry: f64, rz: f64) -> (Iso3, Iso3, Iso3) {
 fn local_jacobians(rx: f64, ry: f64, rz: f64) -> (Matrix3<f64>, Matrix3<f64>, Matrix3<f64>) {
     let x = UnitQuaternion::from_euler_angles(rx, 0.0, 0.0);
     let y = UnitQuaternion::from_euler_angles(0.0, ry, 0.0);
@@ -184,8 +197,8 @@ fn to_matrix(q: &UnitQuaternion<f64>) -> Matrix3<f64> {
 
 #[cfg(test)]
 mod tests {
-    use crate::geom3::align3::Dof6;
     use crate::geom3::align3::params::AlignParams3;
+    use crate::geom3::align3::{Dof6, T3Storage};
     use crate::{Iso3, Point3, Vector3};
     use approx::assert_relative_eq;
     use std::f64::consts::PI;
@@ -237,18 +250,79 @@ mod tests {
             Iso3::identity(),
             Dof6::default(),
         );
+        // The point is in original test entity space
         let p = Point3::new(2.0, 0.0, 0.0);
 
         let (ex, ey, ez) = numeric_jacobian(&params, &p);
         let current = params.current_values();
 
-        let tx = current.d_rx * p.coords;
-        let ty = current.d_ry * p.coords;
-        let tz = current.d_rz * p.coords;
+        let moved = current.transform * p;
+        assert_relative_eq!(
+            moved - current.rc,
+            Vector3::new(1.0, 0.0, 0.0),
+            epsilon = 1e-12
+        );
+
+        let tx = current.d_rx * (moved - current.rc);
+        let ty = current.d_ry * (moved - current.rc);
+        let tz = current.d_rz * (moved - current.rc);
 
         assert_relative_eq!(tx, ex, epsilon = 1e-12);
         assert_relative_eq!(ty, ey, epsilon = 1e-12);
         assert_relative_eq!(tz, ez, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn jacobian_simple_shift_at_rc() {
+        let params = AlignParams3::new_with_values(
+            Point3::new(1.0, 0.0, 0.0),
+            Iso3::identity(),
+            Dof6::default(),
+            T3Storage::new(2.0, 2.0, 2.0, 0.0, 0.0, 0.0),
+        );
+        let p = Point3::new(2.0, 0.0, 0.0);
+
+        let (ex, ey, ez) = numeric_jacobian(&params, &p);
+        let current = params.current_values();
+
+        let moved = current.transform * p;
+        assert_relative_eq!(
+            moved - current.rc,
+            Vector3::new(1.0, 0.0, 0.0),
+            epsilon = 1e-12
+        );
+
+        let tx = current.d_rx * (moved - current.rc);
+        let ty = current.d_ry * (moved - current.rc);
+        let tz = current.d_rz * (moved - current.rc);
+
+        assert_relative_eq!(tx, ex, epsilon = 1e-8);
+        assert_relative_eq!(ty, ey, epsilon = 1e-8);
+        assert_relative_eq!(tz, ez, epsilon = 1e-8);
+    }
+
+    #[test]
+    fn jacobian_simple_rot_at_rc() {
+        let params = AlignParams3::new_with_values(
+            Point3::new(1.0, 0.0, 0.0),
+            Iso3::identity(),
+            Dof6::default(),
+            T3Storage::new(0.0, 0.0, 0.0, 0.1, 0.2, 0.3),
+        );
+        let p = Point3::new(2.0, 0.0, 0.0);
+
+        let (ex, ey, ez) = numeric_jacobian(&params, &p);
+        let current = params.current_values();
+
+        let moved = current.transform * p;
+
+        let tx = current.d_rx * (moved - current.rc);
+        let ty = current.d_ry * (moved - current.rc);
+        let tz = current.d_rz * (moved - current.rc);
+
+        assert_relative_eq!(tx, ex, epsilon = 1e-8);
+        assert_relative_eq!(ty, ey, epsilon = 1e-8);
+        assert_relative_eq!(tz, ez, epsilon = 1e-8);
     }
 
     // #[test]
