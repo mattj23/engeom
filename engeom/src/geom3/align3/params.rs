@@ -1,8 +1,14 @@
 //! This module contains the parameterization of the alignment problem
 
-use crate::geom3::align3::{Dof6, RotationMatrices, T3Storage, iso3_from_param};
-use crate::na::Matrix3;
+use crate::geom3::align3::rotations::Euler;
+use crate::geom3::align3::{Dof6, T3Storage, iso3_from_param};
+use crate::na::{Matrix3, Translation};
 use crate::{Iso3, Point3};
+use parry3d_f64::na::UnitQuaternion;
+
+const SKS_X: Matrix3<f64> = Matrix3::new(0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0);
+const SKS_Y: Matrix3<f64> = Matrix3::new(0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0);
+const SKS_Z: Matrix3<f64> = Matrix3::new(0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0);
 
 #[derive(Clone, Debug)]
 pub struct AlignValues3 {
@@ -63,14 +69,24 @@ impl AlignParams3 {
     }
 
     pub fn current_values(&self) -> AlignValues3 {
-        let transform = self.origin_to_center
-            * iso3_from_param(&self.storage)
-            * self.center_to_origin
-            * self.working;
+        let local = iso3_from_param(&self.storage);
+
+        let transform = self.origin_to_center * local * self.center_to_origin * self.working;
+        let inverse = transform.inverse();
 
         let rc = transform * self.rc;
 
-        AlignValues3 { transform, rc }
+        // Local Jacobian
+        let (dx, dy, dz) = local_jacobians(self.storage[3], self.storage[4], self.storage[5]);
+
+        AlignValues3 {
+            transform,
+            rc,
+            d_rx: dx * inverse.rotation.to_rotation_matrix(),
+            d_ry: dy * inverse.rotation.to_rotation_matrix(),
+            d_rz: dz * inverse.rotation.to_rotation_matrix(),
+            working: self.working,
+        }
     }
 
     pub fn get_storage(&self) -> T3Storage {
@@ -139,6 +155,33 @@ impl AlignParams3 {
     }
 }
 
+fn local_jacobians(rx: f64, ry: f64, rz: f64) -> (Matrix3<f64>, Matrix3<f64>, Matrix3<f64>) {
+    let x = UnitQuaternion::from_euler_angles(rx, 0.0, 0.0);
+    let y = UnitQuaternion::from_euler_angles(0.0, ry, 0.0);
+    let z = UnitQuaternion::from_euler_angles(0.0, 0.0, rz);
+
+    let q = x * y * z;
+
+    let m = to_matrix(&q);
+    let ck = to_matrix(&z);
+
+    let dx = SKS_X * m;
+    let dy = m * ck.transpose() * SKS_Y * ck;
+    let dz = m * SKS_Z;
+
+    // (wrap_iso3(dx), wrap_iso3(dy), wrap_iso3(dz))
+    (dx, dy, dz)
+}
+
+fn wrap_iso3(m: Matrix3<f64>) -> Iso3 {
+    Iso3::from_parts(Translation::identity(), UnitQuaternion::from_matrix(&m))
+}
+
+fn to_matrix(q: &UnitQuaternion<f64>) -> Matrix3<f64> {
+    let m = q.to_rotation_matrix();
+    *m.matrix()
+}
+
 #[cfg(test)]
 mod tests {
     use crate::geom3::align3::Dof6;
@@ -176,6 +219,27 @@ mod tests {
 
         let (ex, ey, ez) = numeric_jacobian(&params, &p);
 
+        let current = params.current_values();
+
+        let tx = current.d_rx * p.coords;
+        let ty = current.d_ry * p.coords;
+        let tz = current.d_rz * p.coords;
+
+        assert_relative_eq!(tx, ex, epsilon = 1e-12);
+        assert_relative_eq!(ty, ey, epsilon = 1e-12);
+        assert_relative_eq!(tz, ez, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn jacobian_simple_at_rc() {
+        let params = AlignParams3::new(
+            Point3::new(1.0, 0.0, 0.0),
+            Iso3::identity(),
+            Dof6::default(),
+        );
+        let p = Point3::new(2.0, 0.0, 0.0);
+
+        let (ex, ey, ez) = numeric_jacobian(&params, &p);
         let current = params.current_values();
 
         let tx = current.d_rx * p.coords;
