@@ -13,6 +13,7 @@ use crate::geom3::align3::params::AlignParams3;
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use parry3d_f64::na::{Dyn, Matrix, Owned, U1, U6, Vector};
 use rayon::prelude::*;
+use crate::common::vec_f64::mean_and_stdev;
 
 /// Attempts to compute the alignment of a set of points to the surface of a mesh using a
 /// Levenberg-Marquardt solver.  The points are projected onto their closest matching surface point
@@ -80,7 +81,9 @@ struct PointsToMesh<'a> {
     moved: Vec<Point3>,
     closest: Vec<SurfacePoint3>,
     mode: DistMode,
-    constraint: Dof6,
+
+    residuals: Vec<f64>,
+    weights: Vec<f64>,
 }
 
 impl<'a> PointsToMesh<'a> {
@@ -119,7 +122,8 @@ impl<'a> PointsToMesh<'a> {
             moved: vec![Point3::origin(); count],
             closest: vec![Default::default(); count],
             mode,
-            constraint,
+            residuals: vec![0.0; count],
+            weights: vec![1.0; count],
         };
 
         item.move_points();
@@ -170,6 +174,25 @@ impl<'a> PointsToMesh<'a> {
             self.moved[i] = m;
             self.closest[i] = c.sp;
         }
+
+        for (i, (p, c)) in self.moved.iter().zip(self.closest.iter()).enumerate() {
+            self.residuals[i] = match self.mode {
+                DistMode::ToPoint => dist(p, &c.point),
+                DistMode::ToPlane => c.scalar_projection(p).abs(),
+            };
+        }
+
+        // let (mean, stdev) = mean_and_stdev(&self.residuals).unwrap();
+        // let limit = (stdev * 3.0).max(1e-6);
+        // self.weights = (0..self.points.len())
+        //     .map(|i| {
+        //         if (self.residuals[i] - mean).abs() > limit {
+        //             0.0
+        //         } else {
+        //             1.0
+        //         }
+        //     })
+        //     .collect::<Vec<_>>();
     }
 }
 
@@ -189,11 +212,8 @@ impl LeastSquaresProblem<f64, Dyn, U6> for PointsToMesh<'_> {
 
     fn residuals(&self) -> Option<Vector<f64, Dyn, Self::ResidualStorage>> {
         let mut res = Matrix::<f64, Dyn, U1, Self::ResidualStorage>::zeros(self.points.len());
-        for (i, (p, c)) in self.moved.iter().zip(self.closest.iter()).enumerate() {
-            res[i] = match self.mode {
-                DistMode::ToPoint => dist(p, &c.point),
-                DistMode::ToPlane => c.scalar_projection(p).abs(),
-            };
+        for i in 0..self.points.len() {
+            res[i] = self.residuals[i] * self.weights[i];
         }
 
         Some(res)
@@ -201,13 +221,12 @@ impl LeastSquaresProblem<f64, Dyn, U6> for PointsToMesh<'_> {
 
     fn jacobian(&self) -> Option<Matrix<f64, Dyn, U6, Self::JacobianStorage>> {
         let current = self.params.current_values();
-        let (rx, ry, rz) = current.transform.rotation.euler_angles();
         let mut jac = Matrix::<f64, Dyn, U6, Self::JacobianStorage>::zeros(self.points.len());
         for (i, (p, c)) in self.moved.iter().zip(self.closest.iter()).enumerate() {
             let values = match self.mode {
                 DistMode::ToPoint => point_point_jacobian_full(p, &c.point, &current),
                 DistMode::ToPlane => point_plane_jacobian_full(p, c, &current),
-            };
+            } * self.weights[i];
             copy_jacobian(&values, &mut jac, i);
         }
 
