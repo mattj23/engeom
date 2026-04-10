@@ -50,7 +50,7 @@ impl<const D: usize> KdTree<D> {
     /// * `points`: A slice of points.
     ///
     /// returns: KdTree<{ D }>
-    pub fn new(points: &[impl PCoords<D>]) -> Result<Self> {
+    pub fn try_new(points: &[impl PCoords<D>]) -> Result<Self> {
         let mut entries: Vec<[f64; D]> = Vec::with_capacity(points.len());
         for p in points {
             entries.push(p.coords().into());
@@ -187,7 +187,7 @@ impl<const D: usize> PartialKdTree<D> {
             points.push(all_points[i].coords());
             index_map.push(i);
         }
-        let tree = KdTree::new(&points)?;
+        let tree = KdTree::try_new(&points)?;
         Ok(Self { tree, index_map })
     }
 }
@@ -237,7 +237,7 @@ mod tests {
             Point2::new(1.0, 1.0),
             Point2::new(2.0, 2.0),
         ];
-        let tree = KdTree::new(&points).expect("KD tree creation failed");
+        let tree = KdTree::try_new(&points).expect("KD tree creation failed");
         assert_eq!(tree.len(), 3);
     }
 
@@ -248,7 +248,7 @@ mod tests {
             Point2::new(1.0, 1.0),
             Point2::new(2.0, 2.0),
         ];
-        let tree = KdTree::new(&points).expect("KD tree creation failed");
+        let tree = KdTree::try_new(&points).expect("KD tree creation failed");
         let (i, d) = tree.nearest_one(&Point2::new(1.25, 1.25));
         assert_eq!(i, 1);
         assert_relative_eq!(d, (0.25 * 0.25 * 2.0_f64).sqrt(), epsilon = 1e-6);
@@ -261,7 +261,7 @@ mod tests {
             Point2::new(1.0, 0.0),
             Point2::new(2.0, 0.0),
         ];
-        let tree = KdTree::new(&points).expect("KD tree creation failed");
+        let tree = KdTree::try_new(&points).expect("KD tree creation failed");
         let within = tree.within(&Point2::new(3.5, 0.0), 2.0);
         assert_eq!(within.len(), 1);
         assert_eq!(within[0].0, 2);
@@ -274,7 +274,7 @@ mod tests {
             .flat_map(|i| (0..20).map(move |j| Point2::new(i as f64, j as f64)))
             .collect::<Vec<_>>();
 
-        let fixed_tree = KdTree::new(&points).expect("KD tree creation failed");
+        let fixed_tree = KdTree::try_new(&points).expect("KD tree creation failed");
 
         for _ in 0..1000 {
             let mut test_select = index_vec(None, points.len());
@@ -308,7 +308,7 @@ mod tests {
         let even = (0..mesh.vertices().len()).step_by(2).collect::<Vec<_>>();
         let mask = IndexMask::try_from_indices(&even, mesh.vertices().len())?;
         let reduced_points = mask.clone_indices_of(&mesh.vertices())?;
-        let reduced_tree = KdTree::new(&reduced_points)?;
+        let reduced_tree = KdTree::try_new(&reduced_points)?;
 
         let partial_tree = PartialKdTree::try_new(mesh.vertices(), &mask)?;
         let n = 3;
@@ -340,7 +340,7 @@ mod tests {
     fn kd_tree_nearest_one_matches_brute_force_on_stanford_bun_vertices() {
         let mesh = stanford_bun_2();
         let vertices = mesh.vertices().to_vec();
-        let tree = KdTree::new(&vertices).expect("KD tree creation failed");
+        let tree = KdTree::try_new(&vertices).expect("KD tree creation failed");
 
         for (expected_index, query) in vertices.iter().enumerate() {
             let (actual_index, actual_distance) = tree.nearest_one(query);
@@ -358,7 +358,7 @@ mod tests {
     fn kd_tree_nearest_matches_brute_force_on_stanford_bun_vertices() {
         let mesh = stanford_bun_2();
         let vertices = mesh.vertices().to_vec();
-        let tree = KdTree::new(&vertices).expect("KD tree creation failed");
+        let tree = KdTree::try_new(&vertices).expect("KD tree creation failed");
 
         for query in &vertices {
             let expected = brute_force_nearest_n(&vertices, query, 3);
@@ -378,7 +378,7 @@ mod tests {
     fn kd_tree_within_matches_brute_force_on_stanford_bun_vertices() {
         let mesh = stanford_bun_2();
         let vertices = mesh.vertices().to_vec();
-        let tree = KdTree::new(&vertices).expect("KD tree creation failed");
+        let tree = KdTree::try_new(&vertices).expect("KD tree creation failed");
 
         let search_dist = mesh.aabb().extents().x * 0.1;
 

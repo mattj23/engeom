@@ -22,7 +22,7 @@ pub use self::multi_mesh::{
 };
 pub use self::point_stability::{StabilityResult, point_stability, point_stability_reduce};
 pub use self::points_to_cloud::points_to_cloud;
-pub use self::points_to_mesh::points_to_mesh;
+pub use self::points_to_mesh::{points_to_mesh, ransac_points_to_mesh};
 pub use self::rotations::RotationMatrices;
 
 /// A struct that handles constraints on degrees of freedom in R^3 space. Each dimension is

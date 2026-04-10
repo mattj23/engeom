@@ -162,7 +162,7 @@ pub fn ball_pivot_with_centers_2d(
     // with the ball radius. These circles represent the arc of the ball's movement around
     // each point, not the actual ball itself. We use these to find the intersections between the
     // ball trajectories.
-    let tree = KdTree2::new(points)?;
+    let tree = KdTree2::try_new(points)?;
     let circles = points
         .iter()
         .map(|p| Circle2::new(p.x, p.y, radius))
@@ -402,7 +402,7 @@ fn find_start_on_index(points: &[Point2], index: usize, radius: f64) -> Result<(
         .filter(|(i, _)| *i != index)
         .map(|(_, p)| *p)
         .collect::<Vec<_>>();
-    let tree = KdTree2::new(&tree_points)?;
+    let tree = KdTree2::try_new(&tree_points)?;
 
     let circle = Circle2::from_point(points[index], radius);
     let mut best_distance = 0.0;
