@@ -4,6 +4,7 @@ mod mesh_overlap;
 mod mesh_to_mesh;
 mod multi_mesh;
 pub mod multi_param;
+mod params;
 mod point_stability;
 mod points_to_cloud;
 mod points_to_mesh;
@@ -23,6 +24,49 @@ pub use self::point_stability::{StabilityResult, point_stability, point_stabilit
 pub use self::points_to_cloud::points_to_cloud;
 pub use self::points_to_mesh::points_to_mesh;
 pub use self::rotations::RotationMatrices;
+
+/// A struct that handles constraints on degrees of freedom in R^3 space. Each dimension is
+/// represented by a bool which specifies if the degree of freedom is _active_.
+#[derive(Clone, Copy, Debug)]
+pub struct Dof6 {
+    pub tx: bool,
+    pub ty: bool,
+    pub tz: bool,
+    pub rx: bool,
+    pub ry: bool,
+    pub rz: bool,
+}
+
+impl Dof6 {
+    pub fn new(tx: bool, ty: bool, tz: bool, rx: bool, ry: bool, rz: bool) -> Self {
+        Self {
+            tx,
+            ty,
+            tz,
+            rx,
+            ry,
+            rz,
+        }
+    }
+
+    /// Returns a new Dof3 with all degrees of freedom active.
+    pub fn new_all() -> Self {
+        Self {
+            tx: true,
+            ty: true,
+            tz: true,
+            rx: true,
+            ry: true,
+            rz: true,
+        }
+    }
+}
+
+impl Default for Dof6 {
+    fn default() -> Self {
+        Self::new_all()
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub enum SampleMode {
@@ -67,7 +111,7 @@ pub fn normal_weight(n: &Vector3, n_ref: &Vector3) -> f64 {
 /// on alignments happening far from the origins by largely decoupling the translation and rotation
 /// parameters.
 ///
-/// To work, the RcParams struct must be initialized with the rotation center point and it will
+/// To work, the RcParams struct must be initialized with the rotation center point, and it will
 /// manage the storage of the parameters and the conversion to and from the Iso3 transformation.
 ///
 /// However, this is complicated when an initial transformation is provided.
@@ -171,9 +215,67 @@ impl RcParams3 {
 mod tests {
     use super::*;
     use crate::common::linear_space;
+    use std::f64::consts::FRAC_PI_2;
 
     use crate::geom3::tests::RandomGeometry;
     use approx::assert_relative_eq;
+
+    #[test]
+    fn iso3_tx() {
+        let storage = T3Storage::new(1.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        let t = iso3_from_param(&storage);
+        let p = Point3::new(1.0, 0.0, 0.0);
+        let p2 = t * p;
+        assert_relative_eq!(p2.x, 2.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn iso3_ty() {
+        let storage = T3Storage::new(0.0, 1.0, 0.0, 0.0, 0.0, 0.0);
+        let t = iso3_from_param(&storage);
+        let p = Point3::new(0.0, 1.0, 0.0);
+        let p2 = t * p;
+        assert_relative_eq!(p2.y, 2.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn iso3_tz() {
+        let storage = T3Storage::new(0.0, 0.0, 1.0, 0.0, 0.0, 0.0);
+        let t = iso3_from_param(&storage);
+        let p = Point3::new(0.0, 0.0, 1.0);
+        let p2 = t * p;
+        assert_relative_eq!(p2.z, 2.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn iso3_rx() {
+        let storage = T3Storage::new(0.0, 0.0, 0.0, FRAC_PI_2, 0.0, 0.0);
+        let t = iso3_from_param(&storage);
+        let p = Point3::new(0.0, 1.0, 0.0);
+        let test = t * p;
+        let expected = Iso3::rotation(Vector3::x_axis().into_inner() * FRAC_PI_2) * p;
+        assert_relative_eq!(test, expected, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn iso3_ry() {
+        let storage = T3Storage::new(0.0, 0.0, 0.0, 0.0, FRAC_PI_2, 0.0);
+        let t = iso3_from_param(&storage);
+        let p = Point3::new(0.0, 0.0, 1.0);
+        let test = t * p;
+        let expected = Iso3::rotation(Vector3::y_axis().into_inner() * FRAC_PI_2) * p;
+        assert_relative_eq!(test, expected, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn iso3_rz() {
+        let storage = T3Storage::new(0.0, 0.0, 0.0, 0.0, 0.0, FRAC_PI_2);
+        let t = iso3_from_param(&storage);
+        let p = Point3::new(1.0, 0.0, 0.0);
+        let test = t * p;
+        let expected = Iso3::rotation(Vector3::z_axis().into_inner() * FRAC_PI_2) * p;
+        assert_relative_eq!(test, expected, epsilon = 1e-10);
+    }
 
     #[test]
     fn check_distance_weight() {
@@ -193,7 +295,7 @@ mod tests {
     }
 
     #[test]
-    fn test_iso3_param_round_trips_stress_test() {
+    fn iso3_param_round_trips_stress_test() {
         let mut rg = RandomGeometry::new();
         for _ in 0..10000 {
             let t = rg.iso3(10.0);
@@ -205,7 +307,7 @@ mod tests {
     }
 
     #[test]
-    fn test_iso3_param_round_trips_stress_test_rc() {
+    fn iso3_param_round_trips_stress_test_rc() {
         let mut rg = RandomGeometry::new();
         for _ in 0..10000 {
             let t = rg.iso3(10.0);

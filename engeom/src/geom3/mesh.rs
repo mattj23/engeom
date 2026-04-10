@@ -400,6 +400,14 @@ impl Mesh {
         self.shape.triangles().map(|t| t.area()).collect::<Vec<_>>()
     }
 
+    /// Calculates and returns the centroid of all triangular faces in the mesh.
+    pub fn get_face_centers(&self) -> Vec<Point3> {
+        self.shape
+            .triangles()
+            .map(|t| t.center())
+            .collect::<Vec<_>>()
+    }
+
     /// Compute smooth per-vertex normals by averaging the normals of all adjacent triangles
     /// weighted by triangle area. At the end of the computation, the normals are normalized to
     /// have unit length.

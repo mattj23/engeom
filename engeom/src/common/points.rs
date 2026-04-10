@@ -6,6 +6,13 @@ use crate::common::surface_point::SurfacePoint;
 use crate::common::{IndexMask, PCoords};
 use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector};
 
+pub fn clone_points<const D: usize>(collection: &[impl PCoords<D>]) -> Vec<Point<f64, D>> {
+    collection
+        .iter()
+        .map(|pc| Point::from(pc.coords()))
+        .collect()
+}
+
 /// Returns the area of a triangle defined by three points.
 ///
 /// This function supports only 2D and 3D points:

@@ -103,6 +103,85 @@ pub fn point_point_jacobian(p: &Point3, c: &Point3, params: &RcParams3) -> T3Sto
     }
 }
 
+pub fn point_point_jacobian_full(
+    p: &Point3,
+    c: &Point3,
+    rc: &Point3,
+    rx: f64,
+    ry: f64,
+    rz: f64,
+    dof: &Dof6,
+) -> T3Storage {
+    let mut result = T3Storage::zeros();
+    let m = p - c;
+    if m.norm_squared() < 1e-16 {
+        result
+    } else {
+        let n = m.normalize();
+        if dof.tx {
+            result.x = n.x;
+        }
+        if dof.ty {
+            result.y = n.y;
+        }
+        if dof.tz {
+            result.z = n.z;
+        }
+
+        let from_rc = Point3::from(p - rc);
+        if dof.rx {
+            result.w = n.dot(&(rx * from_rc).coords);
+        }
+        if dof.ry {
+            result.a = n.dot(&(ry * from_rc).coords);
+        }
+        if dof.rz {
+            result.b = n.dot(&(rz * from_rc).coords);
+        }
+
+        result
+    }
+}
+
+pub fn point_plane_jacobian_full(
+    p: &Point3,
+    c: &SurfacePoint3,
+    rc: &Point3,
+    rx: f64,
+    ry: f64,
+    rz: f64,
+    dof: &Dof6,
+) -> T3Storage {
+    let s = c.scalar_projection(p).signum();
+
+    // The point with relation to the current center of rotation
+    let from_rc = Point3::from(p - rc);
+    let mut result = T3Storage::zeros();
+    let n = c.normal.into_inner() * s;
+
+    if dof.tx {
+        result[0] = n.x;
+    }
+    if dof.ty {
+        result[1] = n.y;
+    }
+    if dof.tz {
+        result[2] = n.z;
+    }
+
+    if dof.rx {
+        result[3] = n.dot(&(rx * from_rc).coords);
+    }
+    if dof.ry {
+        result[4] = n.dot(&(ry * from_rc).coords);
+    }
+    if dof.rz {
+        result[5] = n.dot(&(rz * from_rc).coords);
+    }
+
+    result
+}
+
 /// A core function for computing the partial derivatives of the parameters for a distance function
 /// approximated by a point and its closest point on a plane (represented as a `SurfacePoint3`).
 /// The internal functionality is common between `point_plane_jacobian` and

@@ -67,19 +67,21 @@ pub fn mesh_to_mesh_iterative(
             .map(|p| p.sp.point)
             .collect::<Vec<_>>();
 
-        let result = points_to_mesh(&points, reference, initial, mode)?;
-        let avg = result.avg_residual();
-        let improvement = (last_residual - avg) / last_residual;
-        // println!("Iteration {iter}, improvement: {improvement:.6}, avg residual: {}",
-        //          result.avg_residual());
-        if improvement < 0.01 {
-            return Ok(result);
-        }
-        last_residual = avg;
-        iter += 1;
+        // let result = points_to_mesh(&points, reference, initial, mode)?;
+        // let avg = result.avg_residual();
+        // let improvement = (last_residual - avg) / last_residual;
+        // // println!("Iteration {iter}, improvement: {improvement:.6}, avg residual: {}",
+        // //          result.avg_residual());
+        // if improvement < 0.01 {
+        //     return Ok(result);
+        // }
+        // last_residual = avg;
+        // iter += 1;
+        //
+        // if iter >= max_iter {
+        //     return Err(format!("Failed to converge after {max_iter} iterations.").into());
+        // }
 
-        if iter >= max_iter {
-            return Err(format!("Failed to converge after {max_iter} iterations.").into());
-        }
+        todo!()
     }
 }

@@ -1,12 +1,15 @@
 use super::*;
 use crate::common::DistMode;
-use crate::geom3::align3::jacobian::{copy_jacobian, point_plane_jacobian, point_point_jacobian};
+use crate::geom3::align3::jacobian::{
+    copy_jacobian, point_plane_jacobian, point_plane_jacobian_full, point_point_jacobian,
+    point_point_jacobian_full,
+};
 use crate::geom3::mesh::Mesh;
 use crate::geom3::{Align3, Point3, SurfacePoint3};
-use faer::prelude::default;
 
 use crate::Result;
 use crate::common::points::{dist, mean_point};
+use crate::geom3::align3::params::AlignParams3;
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use parry3d_f64::na::{Dyn, Matrix, Owned, U1, U6, Vector};
 use rayon::prelude::*;
@@ -29,90 +32,139 @@ use rayon::prelude::*;
 ///
 /// # Arguments
 ///
-/// * `points`: a slice containing the points to be aligned
-/// * `mesh`: the reference mesh entity onto which the points are being projected
-/// * `initial`: an initial guess for the alignment transform
-/// * `mode`: using `DistMode::ToPoint` will minimize the distance between the points and their
-///   closest corresponding point on the mesh, while using `DistMode::ToPlane` will do the same
-///   except that it will ignore the component of the distance orthogonal to the surface normal.
+/// * `points`: the points to be aligned, in their own local coordinate system
+/// * `mesh`: the target mesh entity which the points will be aligned to
+/// * `working_iso`: a transform from the points' local coordinate system to a working space.  The
+///   points will be aligned as if they were starting at the working position, and the result will
+///   be such that `result.transform() * working_iso * points[...]` brings the raw points to the
+///   target
+/// * `mode`: either `DistMode::ToPoint` or `DistMode::ToPlane`
+/// * `center`: the rotation center for the alignment, if specified, otherwise the mean point of
+///   the points will be used
+/// * `constraint`: a 6-DOF constraint to be applied to the alignment
 ///
 /// returns: Result<Alignment<Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
-///
-/// # Examples
-///
-/// ```
-/// use approx::assert_relative_eq;
-/// use parry3d_f64::na::{Translation3, UnitQuaternion};
-/// use engeom::common::DistMode;
-/// use engeom::geom3::{Align3, Point3, Mesh, Iso3, Vector3};
-/// use engeom::geom3::align3::points_to_mesh;
-/// let mesh = Mesh::create_box(10.0, 5.0, 2.0, false);
-///
-/// let disturb = Iso3::from_parts(
-///     Translation3::new(1.0, 2.0, 3.0),
-///     UnitQuaternion::from_euler_angles(0.1, 0.2, 0.3)
-/// );
-///
-/// let points = mesh.sample_uniform(1000)
-///     .into_iter()
-///     .map(|p| disturb * p.point)
-///     .collect::<Vec<_>>();
-///
-/// let result = points_to_mesh(&points, &mesh, &Iso3::identity(), DistMode::ToPlane).unwrap();
-/// let expected = disturb.inverse();
-/// assert_relative_eq!(result.transform().to_matrix(), expected.to_matrix(), epsilon = 1e-6);
-/// ```
 pub fn points_to_mesh(
     points: &[Point3],
     mesh: &Mesh,
-    initial: &Iso3,
+    working_iso: &Iso3,
     mode: DistMode,
+    center: Option<Point3>,
+    constraint: Dof6,
 ) -> Result<Align3> {
-    let problem = PointsToMesh::new(points, mesh, initial, mode);
+    let problem = if let Some(c) = center {
+        PointsToMesh::new_with_center(points, mesh, working_iso, mode, c, constraint)
+    } else {
+        PointsToMesh::new_from_mean(points, mesh, working_iso, mode, constraint)
+    };
+
     let (result, report) = LevenbergMarquardt::new().minimize(problem);
     if report.termination.was_successful() {
         let residuals = result.residuals().unwrap().as_slice().to_vec();
-        Ok(Align3::new(result.current_transform(), residuals))
+        let current = result.params.current_values(working_iso);
+        Ok(Align3::new(current.transform, residuals))
     } else {
         Err("Failed to align points to mesh".into())
     }
 }
 
+/// This is the internal implementation of a point-to-mesh Levenberg-Marquardt alignment problem.
+/// It handles a transform to a local working space, an arbitrary center of rotation, the ability
+/// to apply a general 6-DOF constraint, and two different modes of computing distance.
+///
+/// This is the simplest implementation of a general R^3 alignment problem and is a reference for
+/// more complicated alignments.
 struct PointsToMesh<'a> {
     points: &'a [Point3],
     mesh: &'a Mesh,
-    params: RcParams3,
+    working_iso: &'a Iso3,
+    params: AlignParams3,
     moved: Vec<Point3>,
     closest: Vec<SurfacePoint3>,
     mode: DistMode,
+    constraint: Dof6,
 }
 
 impl<'a> PointsToMesh<'a> {
-    fn new(points: &'a [Point3], mesh: &'a Mesh, initial: &Iso3, mode: DistMode) -> Self {
-        let mean_point = mean_point(points);
-        let params = RcParams3::from_initial(initial, &mean_point);
+    /// Create a new alignment problem with a given center of rotation and a 6-DOF constraint. The
+    /// `working_iso` argument is used to transform the points into a working space, and the
+    /// result of the alignment will be a transform from `working_iso` to the target.
+    ///
+    /// # Arguments
+    ///
+    /// * `points`: the points to be aligned, in their original coordinate system
+    /// * `mesh`: the target mesh entity which the points will be aligned to
+    /// * `working_iso`: a transform from the points' local coordinate system to a working space.
+    ///   The points will be aligned as if they were starting at the working position.
+    /// * `mode`: using `DistMode::ToPoint` will minimize the distance between the points and their
+    ///   closest corresponding point on the mesh, while using `DistMode::ToPlane` will do the same
+    ///   except that it will ignore the component of the distance orthogonal to the surface normal.
+    /// * `center`: the center of rotation for the alignment
+    /// * `constraint`: a 6-DOF constraint to be applied to the alignment
+    ///
+    /// returns: PointsToMesh
+    fn new_with_center(
+        points: &'a [Point3],
+        mesh: &'a Mesh,
+        working_iso: &'a Iso3,
+        mode: DistMode,
+        center: Point3,
+        constraint: Dof6,
+    ) -> Self {
+        let params = AlignParams3::new(&center, constraint);
         let count = points.len();
 
         let mut item = Self {
             points,
             mesh,
+            working_iso,
             params,
             moved: vec![Point3::origin(); count],
-            closest: vec![default(); count],
+            closest: vec![Default::default(); count],
             mode,
+            constraint,
         };
 
         item.move_points();
         item
     }
 
+    /// Create a new alignment problem with a given center of rotation and a 6-DOF constraint. The
+    /// `working_iso` argument is used to transform the points into a working space, and the
+    /// result of the alignment will be a transform from `working_iso` to the target.  The center of
+    /// rotation is computed from the mean position of the points.
+    ///
+    /// # Arguments
+    ///
+    /// * `points`: slice containing the points to be aligned
+    /// * `mesh`: the target mesh entity which the points will be aligned to
+    /// * `working_iso`: a transform from the points' local coordinate system to a working space.
+    ///   The points will be aligned as if they were starting at the working position.
+    /// * `mode`: using `DistMode::ToPoint` will minimize the distance between the points and their
+    ///   closest corresponding point on the mesh, while using `DistMode::ToPlane` will do the same
+    ///   except that it will ignore the component of the distance orthogonal to the surface normal.
+    /// * `constraint`: a 6-DOF constraint to be applied to the alignment
+    ///
+    /// returns: PointsToMesh
+    fn new_from_mean(
+        points: &'a [Point3],
+        mesh: &'a Mesh,
+        working_iso: &'a Iso3,
+        mode: DistMode,
+        constraint: Dof6,
+    ) -> Self {
+        let mean_point = mean_point(points);
+        Self::new_with_center(points, mesh, working_iso, mode, mean_point, constraint)
+    }
+
+    /// Internally, this moves
     fn move_points(&mut self) {
-        let t = self.current_transform();
+        let current = self.params.current_values(&self.working_iso);
         let indices = (0..self.points.len()).collect::<Vec<_>>();
         let collected = indices
             .par_iter()
             .map(|&i| {
-                let m = t * self.points[i];
+                let m = current.transform * self.points[i];
                 let c = self.mesh.surf_closest_to(&m);
                 (i, m, c)
             })
@@ -122,10 +174,6 @@ impl<'a> PointsToMesh<'a> {
             self.closest[i] = c.sp;
         }
     }
-
-    fn current_transform(&self) -> Iso3 {
-        *self.params.transform()
-    }
 }
 
 impl LeastSquaresProblem<f64, Dyn, U6> for PointsToMesh<'_> {
@@ -134,12 +182,12 @@ impl LeastSquaresProblem<f64, Dyn, U6> for PointsToMesh<'_> {
     type ParameterStorage = Owned<f64, U6>;
 
     fn set_params(&mut self, x: &Vector<f64, U6, Self::ParameterStorage>) {
-        self.params.set(x);
+        self.params.set_storage(*x);
         self.move_points();
     }
 
     fn params(&self) -> Vector<f64, U6, Self::ParameterStorage> {
-        self.params.x
+        self.params.get_storage()
     }
 
     fn residuals(&self) -> Option<Vector<f64, Dyn, Self::ResidualStorage>> {
@@ -155,12 +203,25 @@ impl LeastSquaresProblem<f64, Dyn, U6> for PointsToMesh<'_> {
     }
 
     fn jacobian(&self) -> Option<Matrix<f64, Dyn, U6, Self::JacobianStorage>> {
-        let _center = self.params.transform() * self.params.rc;
+        let current = self.params.current_values(&self.working_iso);
+        let (rx, ry, rz) = current.transform.rotation.euler_angles();
         let mut jac = Matrix::<f64, Dyn, U6, Self::JacobianStorage>::zeros(self.points.len());
         for (i, (p, c)) in self.moved.iter().zip(self.closest.iter()).enumerate() {
             let values = match self.mode {
-                DistMode::ToPoint => point_point_jacobian(p, &c.point, &self.params),
-                DistMode::ToPlane => point_plane_jacobian(p, c, &self.params),
+                // DistMode::ToPoint => point_point_jacobian(p, &c.point, &self.params),
+                DistMode::ToPoint => point_point_jacobian_full(
+                    p,
+                    &c.point,
+                    &current.rc,
+                    rx,
+                    ry,
+                    rz,
+                    &self.params.dof,
+                ),
+                // DistMode::ToPlane => point_plane_jacobian(p, c, &self.params),
+                DistMode::ToPlane => {
+                    point_plane_jacobian_full(p, c, &current.rc, rx, ry, rz, &self.params.dof)
+                }
             };
             copy_jacobian(&values, &mut jac, i);
         }
@@ -172,28 +233,76 @@ impl LeastSquaresProblem<f64, Dyn, U6> for PointsToMesh<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::points::transform_points;
+    use crate::common::points::{clone_points, transform_points};
     use crate::tests::engine_blade;
     use crate::{SelectOp, Selection};
     use approx::assert_relative_eq;
     use std::f64::consts::PI;
 
-    /// This tests whether the initial transform is correctly re-expressed in the problem's frame
-    /// as rotations around the mean point.
-    #[test]
-    fn test_initial_round_trip() {
-        let box_mesh = Mesh::create_box(10.0, 5.0, 2.0, false);
-        let points = box_mesh
-            .sample_uniform(1000)
-            .into_iter()
-            .map(|p| p.point)
-            .collect::<Vec<_>>();
+    // /// This tests whether the initial transform is correctly re-expressed in the problem's frame
+    // /// as rotations around the mean point.
+    // #[test]
+    // fn initial_round_trip() {
+    //     let box_mesh = Mesh::create_box(10.0, 5.0, 2.0, false);
+    //     let points = box_mesh
+    //         .sample_uniform(1000)
+    //         .into_iter()
+    //         .map(|p| p.point)
+    //         .collect::<Vec<_>>();
+    //
+    //     let initial = iso3_from_param(&T3Storage::new(1.0, 2.0, 3.0, 0.1, 0.2, 0.3));
+    //     let problem = PointsToMesh::new(&points, &box_mesh, &initial, DistMode::ToPlane, None);
+    //     let result = problem.current_transform();
+    //     assert_relative_eq!(result.to_matrix(), initial.to_matrix(), epsilon = 1e-8);
+    // }
 
-        let initial = iso3_from_param(&T3Storage::new(1.0, 2.0, 3.0, 0.1, 0.2, 0.3));
-        let problem = PointsToMesh::new(&points, &box_mesh, &initial, DistMode::ToPlane);
-        let result = problem.current_transform();
-        assert_relative_eq!(result.to_matrix(), initial.to_matrix(), epsilon = 1e-8);
+    #[test]
+    fn simple_box_disturbed() -> Result<()> {
+        // This test is to verify that a simple test against a box that doesn't have large rotations
+        // produces a result that is roughly the inverse of the disturbance
+        let mesh = Mesh::create_box(10.0, 5.0, 2.0, false);
+        let points = clone_points(&mesh.sample_poisson(0.1, None));
+        let disturb = Iso3::from_parts(
+            Translation3::new(3.0, 2.0, 1.0),
+            UnitQuaternion::from_euler_angles(PI / 8.0, PI / 12.0, PI / 16.0),
+        );
+
+        let to_align = transform_points(&points, &disturb);
+        let result = points_to_mesh(
+            &to_align,
+            &mesh,
+            &Iso3::identity(),
+            DistMode::ToPoint,
+            None,
+            Default::default(),
+        )?;
+
+        assert_relative_eq!(disturb.inverse(), result.transform(), epsilon = 1e-8);
+        Ok(())
     }
+
+    // #[test]
+    // fn simple_box_disturbed_initial() -> Result<()> {
+    //     // This test is to verify that when using an initial transformation that it does not alter
+    //     // the final result transform.
+    //
+    //     let mesh = Mesh::create_box(10.0, 5.0, 2.0, false);
+    //     let points = clone_points(&mesh.sample_poisson(0.1, None));
+    //     let disturb = Iso3::from_parts(
+    //         Translation3::new(3.0, 2.0, 1.0),
+    //         UnitQuaternion::from_euler_angles(PI / 8.0, PI / 12.0, PI / 16.0),
+    //     );
+    //     let to_align = transform_points(&points, &disturb);
+    //
+    //     let initial = Iso3::from_parts(
+    //         Translation3::new(0.5, 0.25, 0.125),
+    //         UnitQuaternion::from_euler_angles(PI / 16.0, PI / 24.0, PI / 32.0),
+    //     );
+    //     let result = points_to_mesh(&to_align, &mesh, &initial, DistMode::ToPoint)?;
+    //
+    //     assert_relative_eq!(disturb.inverse(), result.transform(), epsilon = 1e-8);
+    //     Ok(())
+    // }
 
     #[test]
     fn blade_example() -> Result<()> {
@@ -202,11 +311,7 @@ mod tests {
             .face_select(Selection::None)
             .facing(&Vector3::y(), PI / 4.0, SelectOp::Add)
             .take_mask();
-        let expected_points = mesh
-            .sample_poisson(2.0, Some(&mask))
-            .iter()
-            .map(|mp| mp.point())
-            .collect::<Vec<_>>();
+        let expected_points = clone_points(&mesh.sample_poisson(2.0, Some(&mask)));
 
         let disturb = Iso3::from_parts(
             Translation3::new(-100.0, 150.0, 0.0),
@@ -215,7 +320,14 @@ mod tests {
 
         let to_align = transform_points(&expected_points, &disturb);
 
-        let result = points_to_mesh(&to_align, &mesh, &Iso3::identity(), DistMode::ToPoint)?;
+        let result = points_to_mesh(
+            &to_align,
+            &mesh,
+            &Iso3::identity(),
+            DistMode::ToPoint,
+            None,
+            Default::default(),
+        )?;
 
         let aligned = transform_points(&to_align, result.transform());
 
