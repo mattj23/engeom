@@ -15,11 +15,12 @@ def main():
     mesh = Mesh.create_box(10, 5, 2)
     sample_points = mesh.sample_poisson(0.5)
 
-    disturb = Iso3.from_translation(2, 5, -3) @ Iso3.from_rotation(-math.pi / 12, 1, 1, 1)
+    disturb = Iso3.from_translation(0.5, 1, 1) @ Iso3.from_rotation(-math.pi / 12, 1, 1, 1)
     to_align = disturb.transform_points(sample_points[:, :3])
 
     # Now we perform the alignment. If the result is successful, we'll get an `Iso3` back, otherwise the call to
-    result = points_to_mesh(to_align, mesh, Iso3.identity(), DeviationMode.Point)
+    dof = Dof6(tx=False, ty=True, tz=True, rx=True, ry=True, rz=True)
+    result = points_to_mesh(to_align, mesh, mode=DeviationMode.Point, dof=dof)
     aligned = result.transform_points(to_align)
 
     # Finally, we'll plot the original points, the aligned points, and the original mesh.
