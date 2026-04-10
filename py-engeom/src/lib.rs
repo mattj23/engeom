@@ -91,6 +91,7 @@ fn register_geom3(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
 
 fn register_align_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     let child = PyModule::new(parent_module.py(), "_align")?;
+    child.add_class::<alignments::Dof6>()?;
     child.add_function(wrap_pyfunction!(alignments::points_to_mesh, &child)?)?;
     child.add_function(wrap_pyfunction!(alignments::points_to_cloud, &child)?)?;
     child.add_function(wrap_pyfunction!(

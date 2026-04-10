@@ -86,6 +86,12 @@ pub enum DeviationMode {
     Plane,
 }
 
+impl Default for DeviationMode {
+    fn default() -> Self {
+        DeviationMode::Point
+    }
+}
+
 impl From<DeviationMode> for DistMode {
     fn from(val: DeviationMode) -> Self {
         match val {
