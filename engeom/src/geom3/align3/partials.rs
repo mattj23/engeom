@@ -49,7 +49,7 @@ mod tests {
 
     #[test]
     fn partials_of_translations_at_zero() {
-        let params = AlignParams3::new_local(AlignOrigin::Origin, None);
+        let params = AlignParams3::new_at_origin(None);
         let current = params.current_values();
 
         assert_relative_eq!(current.dtx, Vector3::x_axis(), epsilon = 1e-12);
@@ -59,7 +59,7 @@ mod tests {
 
     #[test]
     fn partials_of_translations_with_rotations() {
-        let params = AlignParams3::new_local(AlignOrigin::Origin,None)
+        let params = AlignParams3::new_at_origin(None)
             .with_rx(0.1)
             .with_ry(0.2)
             .with_rz(0.3);
