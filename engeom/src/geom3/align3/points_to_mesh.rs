@@ -215,22 +215,23 @@ impl<'a> PointsToMesh<'a> {
         center: Point3,
         constraint: Dof6,
     ) -> Self {
-        let params = AlignParams3::new(center, working_iso, constraint);
-        let count = points.len();
-
-        let mut item = Self {
-            points,
-            mesh,
-            params,
-            moved: vec![Point3::origin(); count],
-            closest: vec![Default::default(); count],
-            mode,
-            residuals: vec![0.0; count],
-            weights: vec![1.0; count],
-        };
-
-        item.move_points();
-        item
+        // let params = AlignParams3::new(center, working_iso, constraint);
+        // let count = points.len();
+        //
+        // let mut item = Self {
+        //     points,
+        //     mesh,
+        //     params,
+        //     moved: vec![Point3::origin(); count],
+        //     closest: vec![Default::default(); count],
+        //     mode,
+        //     residuals: vec![0.0; count],
+        //     weights: vec![1.0; count],
+        // };
+        //
+        // item.move_points();
+        // item
+        todo!()
     }
 
     /// Create a new alignment problem with a given center of rotation and a 6-DOF constraint. The

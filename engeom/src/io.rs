@@ -99,6 +99,8 @@ pub fn write_mesh_stl(path: &Path, mesh: &Mesh) -> Result<()> {
     Ok(())
 }
 
+// TODO: create a separate module for point clouds, including binary versions
+
 pub fn write_xyz(path: &Path, points: &[Point3<f64>]) -> Result<()> {
     if path.exists() {
         std::fs::remove_file(path)?;

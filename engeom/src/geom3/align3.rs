@@ -5,6 +5,7 @@ mod mesh_to_mesh;
 mod multi_mesh;
 pub mod multi_param;
 mod params;
+mod partials;
 mod point_stability;
 mod points_to_cloud;
 mod points_to_mesh;
