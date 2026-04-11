@@ -19,6 +19,7 @@ mod tests {
     use crate::geom3::align3::params::{AlignOrigin, AlignParams3};
     use crate::{Iso3, Point3, Vector3};
     use approx::assert_relative_eq;
+    use crate::geom3::tests::RandomGeometry;
     use crate::na::{Translation, Translation3, UnitQuaternion};
 
     const ANGLE_EPSILON: f64 = 1e-8;
@@ -83,27 +84,23 @@ mod tests {
     }
 
     #[test]
-    fn partials_of_translations_with_working_transform() {
-        // The working transformation is applied before the parameter transform, and its role is to
-        // effectively do the same thing as transforming the test entity by the working transform
-        // before doing the alignment. This means that the directions of X, Y, and Z may be
-        // different.
+    fn stress_translations() {
+        let mut rg = RandomGeometry::new();
+        for _ in 0..100 {
+            let local = rg.iso3(10.0);
+            let working = rg.iso3(10.0);
+            let params = AlignParams3::new(AlignOrigin::Local(local), Some(working), None)
+                .with_storage(rg.vector(PI));
 
-        // let working = Iso3::from_parts(
-        //     Translation3::new(2.0, 3.0, 4.0),
-        //     UnitQuaternion::from_euler_angles(PI / 3.0, PI / 4.0, PI / 5.0),
-        // );
-        //
-        // let params = AlignParams3::new();
-        // let test_point = Point3::new(1.0, 2.0, 3.0);
-        //
-        // let exp_x = finite_diff(&params, &test_point, 0);
-        // let exp_y = finite_diff(&params, &test_point, 1);
-        // let exp_z = finite_diff(&params, &test_point, 2);
-        // let c = params.current_values();
-        //
-        // assert_relative_eq!(exp_x, c.dtx, epsilon = 1e-8);
-        // assert_relative_eq!(exp_y, c.dty, epsilon = 1e-8);
-        // assert_relative_eq!(exp_z, c.dtz, epsilon = 1e-8);
+            let test_point = rg.point3(10.0);
+            let exp_x = finite_diff(&params, &test_point, 0);
+            let exp_y = finite_diff(&params, &test_point, 1);
+            let exp_z = finite_diff(&params, &test_point, 2);
+
+            let c = params.current_values();
+            assert_relative_eq!(exp_x, c.dtx, epsilon = 1e-6);
+            assert_relative_eq!(exp_y, c.dty, epsilon = 1e-6);
+            assert_relative_eq!(exp_z, c.dtz, epsilon = 1e-6);
+        }
     }
 }

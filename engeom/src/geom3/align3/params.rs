@@ -26,7 +26,6 @@ pub struct AlignValues3 {
 
     /// The direction vector for the partial derivative of tz
     pub dtz: Vector3,
-
     // /// The location of the rotation center point in the target entity's coordinate system.
     // rc: Point3,
     //
@@ -75,7 +74,7 @@ pub enum AlignOrigin {
     /// The local origin is defined by full transformation from the origin of the coordinate system
     /// with the test entity(s) geometry, allowing full control over the center of rotation and
     /// the directions of translation.
-    Local(Iso3)
+    Local(Iso3),
 }
 
 /// The [`AlignParams3`] struct holds the parameters being optimized in a 3D alignment problem,
@@ -133,7 +132,6 @@ pub struct AlignParams3 {
 }
 
 impl AlignParams3 {
-
     /// Creates an `AlignParams3` with full control over its properties by separately specifying
     /// the local origin, working transformation, and degrees of freedom.
     ///
@@ -211,7 +209,6 @@ impl AlignParams3 {
         Self::new(AlignOrigin::Local(local), Some(working), dof)
     }
 
-
     /// Creates an `AlignParams3` with the local and working transformations set to the identity.
     /// Use this configuration method when the test geometry is already in a good starting location
     /// and close enough to the origin that you aren't worried about the numerical stability of
@@ -251,9 +248,9 @@ impl AlignParams3 {
         // let t_rz = transform.inverse() * t_drz;
         // let rc = transform * self.rc;
 
-        let dtx = Vector3::x_axis().into_inner();
-        let dty = Vector3::y_axis().into_inner();
-        let dtz = Vector3::z_axis().into_inner();
+        let dtx = self.working * Vector3::new(1.0, 0.0, 0.0);
+        let dty = self.working * Vector3::new(0.0, 1.0, 0.0);
+        let dtz = self.working * Vector3::new(0.0, 0.0, 1.0);
 
         AlignValues3 {
             transform,
@@ -334,6 +331,12 @@ impl AlignParams3 {
         params.storage[5] = rz;
         params
     }
+    
+    pub fn with_storage(&self, storage: T3Storage) -> AlignParams3 {
+        let mut params = self.clone();
+        params.storage = storage;
+        params
+    }
 }
 
 fn numeric_perterb(x: &T3Storage, index: usize) -> Iso3 {
@@ -344,12 +347,13 @@ fn numeric_perterb(x: &T3Storage, index: usize) -> Iso3 {
 
 #[cfg(test)]
 mod tests {
+    use crate::geom3::IsoExtensions3;
     use crate::geom3::align3::params::{AlignOrigin, AlignParams3, EPSILON};
     use crate::geom3::align3::{Dof6, T3Storage};
+    use crate::na::{Translation3, UnitQuaternion};
     use crate::{Iso3, Point3, Vector3};
     use approx::assert_relative_eq;
     use std::f64::consts::PI;
-    use crate::na::{Translation3, UnitQuaternion};
 
     #[test]
     fn rotation_around_origin() {
@@ -382,52 +386,25 @@ mod tests {
         );
     }
 
+    #[test]
+    fn translations_are_in_local_origin_directions() {
+        let local = Iso3::try_from_basis_xy(
+            &Vector3::new(0.0, -1.0, 0.0),
+            &Vector3::new(0.0, 0.0, 1.0),
+            None,
+        )
+        .unwrap();
+        let params = AlignParams3::new_at_local(local, None)
+            .with_tx(1.0);
 
-    // #[test]
-    // fn working_transform_is_applied() {
-    //     // The idea of the working transformation is that it has the same effect as moving the
-    //     // entire test entity(s) to a new position before
-    //
-    //     let working = Iso3::from_parts(
-    //         Translation3::new(2.0, 3.0, 4.0),
-    //         UnitQuaternion::from_euler_angles(PI / 3.0, PI / 4.0, PI / 5.0),
-    //     );
-    //
-    // }
-    //
-    //
-    // #[test]
-    // fn numeric_matrices() {
-    //     let params = AlignParams3::new_with_values(
-    //         Point3::new(1.0, 2.0, 3.0),
-    //         Iso3::identity(),
-    //         Dof6::default(),
-    //         T3Storage::new(0.1, 0.2, 0.3, 0.1, 0.2, 0.3),
-    //     );
-    //
-    //     let p0 = Point3::new(3.3, 2.2, 1.1);
-    //
-    //     let current = params.current_values();
-    //
-    //     let moved = current.transform * p0;
-    //     let moved_dx = current.t_rx * moved;
-    //     let moved_dy = current.t_ry * moved;
-    //     let moved_dz = current.t_rz * moved;
-    //
-    //     let mut p_x = params.clone();
-    //     p_x.set_index(3, params.storage[3] + EPSILON);
-    //     let expected_x = p_x.current_values().transform * p0;
-    //
-    //     let mut p_y = params.clone();
-    //     p_y.set_index(4, params.storage[4] + EPSILON);
-    //     let expected_y = p_y.current_values().transform * p0;
-    //
-    //     let mut p_z = params.clone();
-    //     p_z.set_index(5, params.storage[5] + EPSILON);
-    //     let expected_z = p_z.current_values().transform * p0;
-    //
-    //     assert_relative_eq!(expected_x, moved_dx, epsilon = 1e-8);
-    //     assert_relative_eq!(expected_y, moved_dy, epsilon = 1e-8);
-    //     assert_relative_eq!(expected_z, moved_dz, epsilon = 1e-8);
-    // }
+        let test_point = Point3::new(1.0, 2.0, 3.0);
+        let expected = Point3::new(1.0, 1.0, 3.0);
+
+        assert_relative_eq!(
+            expected,
+            params.current_values().transform * test_point,
+            epsilon = 1e-8
+        );
+    }
+
 }

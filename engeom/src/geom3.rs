@@ -114,7 +114,7 @@ impl Default for SurfacePoint3 {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::na::{Translation3, UnitQuaternion};
+    use crate::na::{SVector, Translation3, UnitQuaternion, Vector};
     use crate::{Iso3, Point3, UnitVec3, Vector3};
     use rand::distr::{Distribution, Uniform};
     use rand::rngs::StdRng;
@@ -147,12 +147,20 @@ pub mod tests {
             }
         }
 
-        pub(crate) fn sample_f64(&mut self, lo: f64, hi: f64) -> f64 {
+        pub fn sample_f64(&mut self, lo: f64, hi: f64) -> f64 {
             let u = Uniform::new(lo, hi).unwrap();
             match &mut self.rng {
                 RngSource::Seeded(r) => u.sample(r),
                 RngSource::Thread => u.sample(&mut rand::rng()),
             }
+        }
+        
+        pub fn vector<const D: usize>(&mut self, limit: f64) -> SVector<f64, D> {
+            let mut v = SVector::zeros();
+            for i in 0..D {
+                v[i] = self.sample_f64(-limit, limit);
+            }
+            v
         }
 
         /// Returns a random `Iso3` with translation components in `[-10, 10]` and arbitrary
