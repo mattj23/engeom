@@ -8,7 +8,6 @@ pub use binary_mesh::{read_mesh_binary_file, write_mesh_binary_file};
 
 use crate::Result;
 use flate2::read::GzDecoder;
-use flate2::{Compression, write::DeflateEncoder};
 pub use lptf3::{Lptf3DsParams, Lptf3Load, load_lptf3, load_lptf3_mesh, lptf3_point_distribution};
 pub use micro_mesh::*;
 use parry3d_f64::na::{Point3, Vector3};

@@ -1,7 +1,7 @@
 use crate::common::PCoords;
 use crate::geom3::circle3::Circle3;
 use crate::geom3::plane3::Plane3;
-use crate::{Iso3, Point3, Result, SurfacePoint3, UnitVec3};
+use crate::{Iso3, Point3, SurfacePoint3, UnitVec3};
 use parry3d_f64::na::{Translation3, UnitQuaternion};
 use parry3d_f64::query::{Ray, RayCast};
 use parry3d_f64::shape::Ball;

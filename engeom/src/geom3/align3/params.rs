@@ -172,8 +172,8 @@ impl AlignParams3 {
             AlignOrigin::Local(t) => t,
         };
 
-        let working = offset.unwrap_or_else(|| Iso3::identity());
-        let dof = dof.unwrap_or_else(|| Dof6::all());
+        let working = offset.unwrap_or_else(Iso3::identity);
+        let dof = dof.unwrap_or_else(Dof6::all);
 
         Self {
             local,
@@ -203,7 +203,7 @@ impl AlignParams3 {
     /// * `dof`: Optional constraint on the degrees of freedom. If `None` is provided, all degrees
     ///   of freedom will be active.
     pub fn new_at_local(local: Iso3, dof: Option<Dof6>) -> Self {
-        let working = local.clone();
+        let working = local;
         Self::new(AlignOrigin::Local(local), Some(working), dof)
     }
 
@@ -224,7 +224,7 @@ impl AlignParams3 {
     ///   of freedom will be active.
     pub fn new_at_center(center: Point3, dof: Option<Dof6>) -> Self {
         let local = Iso3::translation(center.x, center.y, center.z);
-        let working = local.clone();
+        let working = local;
         Self::new(AlignOrigin::Local(local), Some(working), dof)
     }
 
@@ -332,37 +332,37 @@ impl AlignParams3 {
         self.enforce_constraint();
     }
 
-    pub(super) fn with_tx(&self, tx: f64) -> AlignParams3 {
+    pub fn with_tx(&self, tx: f64) -> AlignParams3 {
         let mut params = self.clone();
         params.storage[0] = tx;
         params
     }
 
-    pub(super) fn with_ty(&self, ty: f64) -> AlignParams3 {
+    pub fn with_ty(&self, ty: f64) -> AlignParams3 {
         let mut params = self.clone();
         params.storage[1] = ty;
         params
     }
 
-    pub(super) fn with_tz(&self, tz: f64) -> AlignParams3 {
+    pub fn with_tz(&self, tz: f64) -> AlignParams3 {
         let mut params = self.clone();
         params.storage[2] = tz;
         params
     }
 
-    pub(super) fn with_rx(&self, rx: f64) -> AlignParams3 {
+    pub fn with_rx(&self, rx: f64) -> AlignParams3 {
         let mut params = self.clone();
         params.storage[3] = rx;
         params
     }
 
-    pub(super) fn with_ry(&self, ry: f64) -> AlignParams3 {
+    pub fn with_ry(&self, ry: f64) -> AlignParams3 {
         let mut params = self.clone();
         params.storage[4] = ry;
         params
     }
 
-    pub(super) fn with_rz(&self, rz: f64) -> AlignParams3 {
+    pub fn with_rz(&self, rz: f64) -> AlignParams3 {
         let mut params = self.clone();
         params.storage[5] = rz;
         params

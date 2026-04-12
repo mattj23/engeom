@@ -74,11 +74,10 @@ impl Mesh {
         let mut sampled = Vec::with_capacity(self.faces().len());
 
         for (face_i, vert) in self.faces().iter().enumerate() {
-            if let Some(index_mask) = index_mask {
-                if !index_mask.get(face_i) {
+            if let Some(index_mask) = index_mask
+                && !index_mask.get(face_i) {
                     continue;
                 }
-            }
 
             let a = self.vertices()[vert[0] as usize];
             let b = self.vertices()[vert[1] as usize];

@@ -1,7 +1,7 @@
 use crate::common::DistMode;
 use crate::geom3::Align3;
 use crate::geom3::align3::mesh::generate_alignment_points;
-use crate::geom3::align3::{GAPParams, points_to_mesh};
+use crate::geom3::align3::GAPParams;
 use crate::{Iso3, Mesh, Result};
 
 /// Perform an iterative alignment of one mesh to another. Each iteration is a full
@@ -46,12 +46,12 @@ pub fn mesh_to_mesh_iterative(
     moving: &Mesh,
     reference: &Mesh,
     initial: &Iso3,
-    mode: DistMode,
-    max_iter: usize,
+    _mode: DistMode,
+    _max_iter: usize,
     params: &GAPParams,
 ) -> Result<Align3> {
-    let mut last_residual = f64::MAX;
-    let mut iter = 0;
+    let _last_residual = f64::MAX;
+    let iter = 0;
 
     loop {
         let test_points = generate_alignment_points(moving, reference, initial, params);
@@ -62,7 +62,7 @@ pub fn mesh_to_mesh_iterative(
             )
             .into());
         }
-        let points = test_points
+        let _points = test_points
             .into_iter()
             .map(|p| p.sp.point)
             .collect::<Vec<_>>();

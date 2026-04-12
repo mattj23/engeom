@@ -139,7 +139,7 @@ impl Circle3 {
         }
 
         let ratio = c / r_amp;
-        if ratio > 1.0 + 1e-10 || ratio < -1.0 - 1e-10 {
+        if !(-1.0 - 1e-10..=1.0 + 1e-10).contains(&ratio) {
             return vec![];
         }
 

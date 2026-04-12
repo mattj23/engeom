@@ -360,15 +360,14 @@ pub fn generate_alignment_points(
 
     // Lastly, we'll filter out candidates with distances more than a specified number of standard
     // deviations from the mean distance.
-    if let Some(sigma) = params.filter_distances {
-        if candidates.len() > 10 {
+    if let Some(sigma) = params.filter_distances
+        && candidates.len() > 10 {
             let distances = candidates.iter().map(|(d, _)| *d).collect::<Vec<_>>();
             if let Some((mean, st_dev)) = mean_and_stdev(&distances) {
                 let threshold = mean + sigma * st_dev;
                 candidates.retain(|(d, _)| *d < threshold);
             }
         }
-    }
 
     candidates.into_iter().map(|(_, p)| *p).collect()
 }
