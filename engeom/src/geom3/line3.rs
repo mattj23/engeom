@@ -482,7 +482,7 @@ mod tests {
     fn stress_intersect_sphere_points_on_surface() {
         let mut rg = RandomGeometry::new();
         for _ in 0..1000 {
-            let sphere = Sphere3::new(rg.point3(2.0), rg.sample_f64(0.1, 3.0));
+            let sphere = Sphere3::new(rg.point3(2.0), rg.f64(0.1, 3.0));
             let line = Line3::new(rg.point3(3.0), rg.vector3(2.0));
 
             for &t in &line.intersect_sphere(&sphere) {

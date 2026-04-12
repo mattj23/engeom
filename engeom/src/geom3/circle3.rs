@@ -340,7 +340,7 @@ mod tests {
 
     fn random_circle() -> Circle3 {
         let mut rg = RandomGeometry::new();
-        let r = rg.sample_f64(0.8, 5.0);
+        let r = rg.f64(0.8, 5.0);
         let iso = rg.iso3(10.0);
         Circle3::new(r, iso)
     }
