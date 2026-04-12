@@ -9,7 +9,6 @@ use crate::common::points::dist;
 use crate::common::ransac_tools::ransac_indices;
 use crate::geom3::align3::params::AlignParams3;
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
-use num_traits::real::Real;
 use parry3d_f64::na::{Dyn, Matrix, Owned, U1, U6, Vector};
 use rayon::prelude::*;
 
@@ -30,13 +29,7 @@ use rayon::prelude::*;
 ///
 /// * `points`: the points to be aligned, in their own local coordinate system
 /// * `mesh`: the target mesh entity which the points will be aligned to
-/// * `working_iso`: a transform from the points' local coordinate system to a working space.  The
-///   points will be aligned as if they were starting at the working position, and the result will
-///   be such that `result.transform() * working_iso * points[...]` brings the raw points to the
-///   target
-/// * `center`: the rotation center for the alignment, if specified, otherwise the mean point of
-///   the points will be used
-/// * `dof`: a 6-DOF constraint to be applied to the alignment
+/// * `params`: the alignment parameters, see [`AlignParams3`] for details
 /// * `inlier_threshold`: the maximum distance between a point and the target mesh that is still
 ///   considered an inlier
 /// * `iterations`: the number of iterations of RANSAC to perform
@@ -88,6 +81,15 @@ pub fn ransac_points_to_mesh(
     Ok(*best_transform)
 }
 
+/// Perform a Levenberg-Marquardt alignment of a set of points to a mesh.
+///
+/// # Arguments
+///
+/// * `points`: 3D points to be aligned, in their own local coordinate system
+/// * `mesh`: the target mesh entity which the points will be aligned to
+/// * `params`: the alignment parameters, see [`AlignParams3`] for details
+///
+/// returns: Result<Alignment<Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
 pub fn points_to_mesh(points: &[Point3], mesh: &Mesh, params: AlignParams3) -> Result<Alignment3> {
     let problem = PointsToMesh::new(points, mesh, params);
     let (result, report) = LevenbergMarquardt::new().minimize(problem);
