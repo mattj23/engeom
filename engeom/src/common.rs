@@ -11,6 +11,7 @@ mod interval;
 pub mod kd_tree;
 pub mod points;
 pub mod poisson_disk;
+pub mod ransac_tools;
 pub mod surface_point;
 pub mod svd_basis;
 pub mod triangulation;

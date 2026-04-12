@@ -1,20 +1,16 @@
 use super::*;
-use crate::common::DistMode;
-use crate::geom3::align3::jacobian::{
-    copy_jacobian, point_plane_jacobian_full, point_point_jacobian_full, point_surf_jacobian,
-};
+use crate::geom3::align3::jacobian::{copy_jacobian, point_surf_jacobian};
 use crate::geom3::mesh::Mesh;
-use crate::geom3::{Align3, Alignment3, Point3, SurfacePoint3};
+use crate::geom3::{Alignment3, Point3, SurfacePoint3};
 
 use crate::Result;
 use crate::common::kd_tree::{KdTree, KdTreeSearch};
-use crate::common::points::{dist, mean_point};
+use crate::common::points::dist;
+use crate::common::ransac_tools::ransac_indices;
 use crate::geom3::align3::params::AlignParams3;
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use num_traits::real::Real;
 use parry3d_f64::na::{Dyn, Matrix, Owned, U1, U6, Vector};
-use rand::rngs::StdRng;
-use rand::{RngExt, SeedableRng};
 use rayon::prelude::*;
 
 /// Performs a limited form of RANSAC on a set of points to find a rough alignment to the mesh.
@@ -49,73 +45,47 @@ use rayon::prelude::*;
 pub fn ransac_points_to_mesh(
     points: &[Point3],
     mesh: &Mesh,
-    working_iso: Iso3,
-    mode: DistMode,
-    center: Option<Point3>,
-    dof: Dof6,
+    params: &AlignParams3,
     inlier_threshold: f64,
     iterations: usize,
 ) -> Result<Iso3> {
-    // let tree = KdTree::try_new(points)?;
-    // let results = ransac_indices(iterations, points.len())
-    //     .par_iter()
-    //     .map(|(a, b, c)| {
-    //         let mut local_indices = vec![*a, *b, *c];
-    //         for (i, _) in tree.nearest(&points[*a], 3) {
-    //             local_indices.push(i);
-    //         }
-    //         for (i, _) in tree.nearest(&points[*b], 3) {
-    //             local_indices.push(i);
-    //         }
-    //         for (i, _) in tree.nearest(&points[*c], 3) {
-    //             local_indices.push(i);
-    //         }
-    //         // Sort and deduplicate
-    //         local_indices.sort();
-    //         local_indices.dedup();
-    //
-    //         let local_points = local_indices.iter().map(|&i| points[i]).collect::<Vec<_>>();
-    //
-    //         if let Ok(align) = points_to_mesh(&local_points, mesh, working_iso, mode, center, dof) {
-    //             let t = align.transform() * working_iso;
-    //             let mut inliers = 0;
-    //             for test_point in points.iter() {
-    //                 if mesh.distance_closest_to(&(t * test_point)) < inlier_threshold {
-    //                     inliers += 1;
-    //                 }
-    //             }
-    //
-    //             Some((*align.transform(), inliers))
-    //         } else {
-    //             None
-    //         }
-    //     })
-    //     .filter_map(|x| x)
-    //     .collect::<Vec<_>>();
-    // let (best_transform, _) = results.iter().max_by_key(|(_, inliers)| *inliers).unwrap();
-    // Ok(*best_transform)
-
-    todo!()
-}
-
-fn ransac_indices(iterations: usize, point_len: usize) -> Vec<(usize, usize, usize)> {
-    let mut rng = StdRng::seed_from_u64(0);
-    (0..iterations)
-        .map(|_| {
-            let a = rng.random_range(0..point_len);
-            let mut b = rng.random_range(0..point_len);
-            while b == a {
-                b = rng.random_range(0..point_len);
+    let tree = KdTree::try_new(points)?;
+    let results = ransac_indices::<3>(iterations, points.len())?
+        .par_iter()
+        .map(|i| {
+            let mut local_indices = vec![i[0], i[1], i[2]];
+            for (j, _) in tree.nearest(&points[i[0]], 3) {
+                local_indices.push(j);
             }
-
-            let mut c = rng.random_range(0..point_len);
-            while c == a || c == b {
-                c = rng.random_range(0..point_len);
+            for (j, _) in tree.nearest(&points[i[1]], 3) {
+                local_indices.push(j);
             }
+            for (j, _) in tree.nearest(&points[i[2]], 3) {
+                local_indices.push(j);
+            }
+            // Sort and deduplicate
+            local_indices.sort();
+            local_indices.dedup();
 
-            (a, b, c)
+            let local_points = local_indices.iter().map(|&i| points[i]).collect::<Vec<_>>();
+
+            if let Ok(align) = points_to_mesh(&local_points, mesh, params.clone()) {
+                let mut inliers = 0;
+                for test_point in points.iter() {
+                    if mesh.distance_closest_to(&(align.full() * test_point)) < inlier_threshold {
+                        inliers += 1;
+                    }
+                }
+
+                Some((*align.full(), inliers))
+            } else {
+                None
+            }
         })
-        .collect()
+        .filter_map(|x| x)
+        .collect::<Vec<_>>();
+    let (best_transform, _) = results.iter().max_by_key(|(_, inliers)| *inliers).unwrap();
+    Ok(*best_transform)
 }
 
 pub fn points_to_mesh(points: &[Point3], mesh: &Mesh, params: AlignParams3) -> Result<Alignment3> {
@@ -253,7 +223,7 @@ impl LeastSquaresProblem<f64, Dyn, U6> for PointsToMesh<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::points::{clone_points, transform_points};
+    use crate::common::points::{clone_points, mean_point, transform_points};
     use crate::tests::engine_blade;
     use crate::{SelectOp, Selection};
     use approx::assert_relative_eq;
@@ -287,7 +257,6 @@ mod tests {
             .take_mask();
         let expected_points = clone_points(&mesh.sample_poisson(2.0, Some(&mask)));
 
-        // TODO: figure out why this thing lost robustness
         let disturb = Iso3::from_parts(
             Translation3::new(-100.0, 150.0, 0.0),
             UnitQuaternion::new(Vector3::new(1.0, 1.0, 1.0).normalize() * PI / 6.0),

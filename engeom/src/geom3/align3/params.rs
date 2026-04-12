@@ -9,7 +9,6 @@ use crate::{Iso3, Point3, Vector3};
 const SK_X: Matrix3<f64> = Matrix3::new(0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0);
 const SK_Y: Matrix3<f64> = Matrix3::new(0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0);
 const SK_Z: Matrix3<f64> = Matrix3::new(0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0);
-const EPSILON: f64 = 1e-8;
 
 #[derive(Clone, Debug)]
 pub struct AlignValues3 {
@@ -388,24 +387,18 @@ fn euler_partials(ry: f64, rz: f64) -> (Matrix3<f64>, Matrix3<f64>, Matrix3<f64>
     (dx, dy, SK_Z)
 }
 
-fn numeric_perterb(x: &T3Storage, index: usize) -> Iso3 {
-    let mut x = x.clone();
-    x[index] += EPSILON;
-    iso3_from_param(&x)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::geom3::IsoExtensions3;
-    use crate::geom3::align3::params::{AlignOrigin, AlignParams3, EPSILON};
+    use crate::geom3::align3::params::{AlignOrigin, AlignParams3};
     use crate::geom3::tests::RandomGeometry;
     use crate::na::{Rotation, UnitQuaternion};
     use crate::{Iso3, Point3, Vector3};
     use approx::assert_relative_eq;
     use std::f64::consts::PI;
 
-    const ANGLE_EPSILON: f64 = 1e-10;
+    const ANGLE_EPSILON: f64 = 1e-8;
     const TRANS_EPSILON: f64 = 1e-8;
 
     // ============================================================================================
@@ -689,18 +682,22 @@ mod tests {
 
     fn euler_finite_diff(rx: f64, ry: f64, rz: f64, axis: Ax, point: &Point3) -> Vector3 {
         let t0 = match axis {
-            Ax::X => UnitQuaternion::from_euler_angles(rx - EPSILON, ry, rz).to_rotation_matrix(),
-            Ax::Y => UnitQuaternion::from_euler_angles(rx, ry - EPSILON, rz).to_rotation_matrix(),
-            Ax::Z => UnitQuaternion::from_euler_angles(rx, ry, rz - EPSILON).to_rotation_matrix(),
+            Ax::X => unit_quat(rx - ANGLE_EPSILON, ry, rz),
+            Ax::Y => unit_quat(rx, ry - ANGLE_EPSILON, rz),
+            Ax::Z => unit_quat(rx, ry, rz - ANGLE_EPSILON),
         };
         let t1 = match axis {
-            Ax::X => UnitQuaternion::from_euler_angles(rx + EPSILON, ry, rz).to_rotation_matrix(),
-            Ax::Y => UnitQuaternion::from_euler_angles(rx, ry + EPSILON, rz).to_rotation_matrix(),
-            Ax::Z => UnitQuaternion::from_euler_angles(rx, ry, rz + EPSILON).to_rotation_matrix(),
+            Ax::X => unit_quat(rx + ANGLE_EPSILON, ry, rz),
+            Ax::Y => unit_quat(rx, ry + ANGLE_EPSILON, rz),
+            Ax::Z => unit_quat(rx, ry, rz + ANGLE_EPSILON),
         };
         let p0 = t0 * point;
         let p1 = t1 * point;
-        (p1 - p0) / (2.0 * EPSILON)
+        (p1 - p0) / (2.0 * ANGLE_EPSILON)
+    }
+
+    fn unit_quat(rx: f64, ry: f64, rz: f64) -> Rotation3<f64> {
+        UnitQuaternion::from_euler_angles(rx, ry, rz).to_rotation_matrix()
     }
 
     /// This function computes the vector of motion of a point in the original coordinate system
