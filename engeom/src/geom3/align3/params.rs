@@ -36,20 +36,19 @@ pub struct AlignValues3 {
     m_dry: Matrix3<f64>,
     m_drz: Matrix3<f64>,
     pre_rot: Iso3,
-    post_rot: Rotation3<f64>,
 }
 
 impl AlignValues3 {
     pub fn drx(&self, point: &impl PCoords<3>) -> Vector3 {
-        self.post_rot * self.m_drx * (self.pre_rot * Point3::from(point.coords())).coords()
+        self.m_drx * (self.pre_rot * Point3::from(point.coords())).coords()
     }
 
     pub fn dry(&self, point: &impl PCoords<3>) -> Vector3 {
-        self.post_rot * self.m_dry * (self.pre_rot * Point3::from(point.coords())).coords()
+        self.m_dry * (self.pre_rot * Point3::from(point.coords())).coords()
     }
 
     pub fn drz(&self, point: &impl PCoords<3>) -> Vector3 {
-        self.post_rot * self.m_drz * (self.pre_rot * Point3::from(point.coords())).coords()
+        self.m_drz * (self.pre_rot * Point3::from(point.coords())).coords()
     }
 }
 
@@ -240,6 +239,8 @@ impl AlignParams3 {
         self.current_values().transform
     }
 
+    /// Calculate the current alignment values, including the full transform, the translation
+    /// directions, and the rotation partial derivative matrices
     pub fn current_values(&self) -> AlignValues3 {
         let align = iso3_from_param(&self.storage);
         let transform = self.working * align * self.local.inverse();
@@ -260,11 +261,10 @@ impl AlignParams3 {
             dtx,
             dty,
             dtz,
-            m_drx,
-            m_dry,
-            m_drz,
+            m_drx: post_rot * m_drx,
+            m_dry: post_rot * m_dry,
+            m_drz: post_rot * m_drz,
             pre_rot,
-            post_rot,
         }
     }
 
