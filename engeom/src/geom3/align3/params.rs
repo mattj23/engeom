@@ -2,7 +2,7 @@
 
 use crate::common::PCoords;
 use crate::geom3::align3::{Dof6, T3Storage, iso3_from_param};
-use crate::na::Matrix3;
+use crate::na::{Matrix3, UnitQuaternion};
 use crate::{Iso3, Point3, Vector3};
 
 // Skew-symmetric matrices
@@ -342,6 +342,47 @@ impl AlignParams3 {
     }
 }
 
+/// This function finds the three matrices that, when multiplied by the coordinate vector of a
+/// point in space, find the instantaneous velocity vector of that point for an infinitesimal
+/// change in the rx, ry, and rz parameters, given the current values of the y and z parameters.
+///
+/// This assumes that the center of rotation is the origin.
+///
+/// The skew symmetric matrices are the correct matrices to find the velocity vectors when the
+/// existing parameters are all at zero, as they correspond with instantaneous rotations around
+/// their respective axes. However, to account for the gimbal effect, we will need to be able to
+/// undo the effects of the later rotations for any rotation in the order.
+///
+/// Since the nalgebra library uses the Euler order X-Y-Z, the Z rotation has nothing following it
+/// and can be measured directly with the skew symmetric Z matrix. For the Y rotation, we will need
+/// to first undo Z, then apply the skew symmetric Y matrix, and then re-apply the Z rotation. For
+/// X we will need to undo then redo both Z and Y. This is why this function requires the ry and
+/// rz parameters, but not the rx parameter.
+///
+/// # Arguments
+///
+/// * `ry`: the current rotation around the Y axis
+/// * `rz`: the current rotation around the Z axis
+///
+/// returns: (Matrix<f64, Const<3>, Const<3>, ArrayStorage<f64, 3, 3>>, Matrix<f64, Const<3>, Const<3>, ArrayStorage<f64, 3, 3>>, Matrix<f64, Const<3>, Const<3>, ArrayStorage<f64, 3, 3>>)
+fn euler_partials(ry: f64, rz: f64) -> (Matrix3<f64>, Matrix3<f64>, Matrix3<f64>) {
+    let y = UnitQuaternion::from_euler_angles(0.0, ry, 0.0).to_rotation_matrix();
+    let z = UnitQuaternion::from_euler_angles(0.0, 0.0, rz).to_rotation_matrix();
+
+    // Z will always be the skew symmetric matrix, because it is the last rotation applied,
+    // so it will always produce a uniform rotation around Z
+
+    // To find the matrix for Y, we need to undo the Z rotation, apply the skew symmetric matrix,
+    // then re-rotate back to the original Z
+    let dy = z * SK_Y * z.transpose();
+
+    // To find the matrix for X, we need to undo the Z rotation, then the Y rotation, apply the
+    // skew symmetric matrix, then re-rotate the Y, and finally re-rotate the Z.
+    let dx = z * y * SK_X * y.transpose() * z.transpose();
+
+    (dx, dy, SK_Z)
+}
+
 fn numeric_perterb(x: &T3Storage, index: usize) -> Iso3 {
     let mut x = x.clone();
     x[index] += EPSILON;
@@ -507,34 +548,6 @@ mod tests {
         assert_relative_eq!(expected, actual, epsilon = 1e-12);
     }
 
-    // #[test]
-    // fn euler_partial_rotated() {
-    //     let (rx, ry, rz) = (PI / 4.0, PI / 5.0, PI / 6.0);
-    //     let euler = UnitQuaternion::from_euler_angles(rx, ry, rz);
-    //
-    //     let p_local = Point3::new(1.0, 2.0, 3.0);
-    //     let p_rot = euler * p_local;
-    //
-    //     let exp_x = euler_finite_diff(rx, ry, rz, Ax::X, &p_local);
-    //     let exp_y = euler_finite_diff(rx, ry, rz, Ax::Y, &p_local);
-    //     let exp_z = euler_finite_diff(rx, ry, rz, Ax::Z, &p_local);
-    //
-    //     let m = euler.to_rotation_matrix();
-    //     let ck = UnitQuaternion::from_euler_angles(0.0, 0.0, rz).to_rotation_matrix();
-    //
-    //     let dx = SK_X * m;
-    //     let dy = m * ck.transpose() * SK_Y;
-    //     let dz = m * SK_Z;
-    //
-    //     let rdx = dx * m.inverse();
-    //     let rdy = dy * m.inverse();
-    //     let rdz = dz * m.inverse();
-    //
-    //     assert_relative_eq!(exp_x, rdx *  p_rot.coords, epsilon = 1e-6);
-    //     assert_relative_eq!(exp_y, rdy *  p_rot.coords, epsilon = 1e-6);
-    //     assert_relative_eq!(exp_z, rdz *  p_rot.coords, epsilon = 1e-6);
-    // }
-
     #[test]
     fn euler_partial_rx() {
         let f = EulerFixture::new(PI / 4.0, 0.0, 0.0);
@@ -542,9 +555,9 @@ mod tests {
         let p_rot = f.rot * p_local;
 
         let (rdx, rdy, rdz) = euler_diff(&f);
-        assert_relative_eq!(f.exp_z(&p_local), rdz *  p_rot.coords, epsilon = 1e-6);
-        assert_relative_eq!(f.exp_y(&p_local), rdy *  p_rot.coords, epsilon = 1e-6);
-        assert_relative_eq!(f.exp_x(&p_local), rdx *  p_rot.coords, epsilon = 1e-6);
+        assert_relative_eq!(f.exp_z(&p_local), rdz * p_rot.coords, epsilon = 1e-6);
+        assert_relative_eq!(f.exp_y(&p_local), rdy * p_rot.coords, epsilon = 1e-6);
+        assert_relative_eq!(f.exp_x(&p_local), rdx * p_rot.coords, epsilon = 1e-6);
     }
 
     #[test]
@@ -554,9 +567,9 @@ mod tests {
         let p_rot = f.rot * p_local;
 
         let (rdx, rdy, rdz) = euler_diff(&f);
-        assert_relative_eq!(f.exp_z(&p_local), rdz *  p_rot.coords, epsilon = 1e-6);
-        assert_relative_eq!(f.exp_y(&p_local), rdy *  p_rot.coords, epsilon = 1e-6);
-        // assert_relative_eq!(f.exp_x(&p_local), rdx *  p_rot.coords, epsilon = 1e-6);
+        assert_relative_eq!(f.exp_z(&p_local), rdz * p_rot.coords, epsilon = 1e-6);
+        assert_relative_eq!(f.exp_y(&p_local), rdy * p_rot.coords, epsilon = 1e-6);
+        assert_relative_eq!(f.exp_x(&p_local), rdx * p_rot.coords, epsilon = 1e-6);
     }
 
     #[test]
@@ -566,9 +579,9 @@ mod tests {
         let p_rot = f.rot * p_local;
 
         let (rdx, rdy, rdz) = euler_diff(&f);
-        assert_relative_eq!(f.exp_z(&p_local), rdz *  p_rot.coords, epsilon = 1e-6);
-        assert_relative_eq!(f.exp_y(&p_local), rdy *  p_rot.coords, epsilon = 1e-6);
-        // assert_relative_eq!(f.exp_x(&p_local), rdx *  p_rot.coords, epsilon = 1e-6);
+        assert_relative_eq!(f.exp_z(&p_local), rdz * p_rot.coords, epsilon = 1e-6);
+        assert_relative_eq!(f.exp_y(&p_local), rdy * p_rot.coords, epsilon = 1e-6);
+        assert_relative_eq!(f.exp_x(&p_local), rdx * p_rot.coords, epsilon = 1e-6);
     }
 
     #[test]
@@ -580,13 +593,11 @@ mod tests {
             let p_rot = f.rot * p_local;
             let (rdx, rdy, rdz) = euler_diff(&f);
 
-            assert_relative_eq!(f.exp_z(&p_local), rdz *  p_rot.coords, epsilon = 1e-6);
-            // TODO: turn these back on
-            assert_relative_eq!(f.exp_y(&p_local), rdy *  p_rot.coords, epsilon = 1e-6);
-            // assert_relative_eq!(f.exp_x(&p_local), rdx *  p_rot.coords, epsilon = 1e-6);
+            assert_relative_eq!(f.exp_z(&p_local), rdz * p_rot.coords, epsilon = 1e-6);
+            assert_relative_eq!(f.exp_y(&p_local), rdy * p_rot.coords, epsilon = 1e-6);
+            assert_relative_eq!(f.exp_x(&p_local), rdx * p_rot.coords, epsilon = 1e-6);
         }
     }
-
 
     // ============================================================================================
     // Test support methods
@@ -596,7 +607,6 @@ mod tests {
         let y = UnitQuaternion::from_euler_angles(0.0, f.ry, 0.0).to_rotation_matrix();
         let z = UnitQuaternion::from_euler_angles(0.0, 0.0, f.rz).to_rotation_matrix();
 
-
         // Z will always be the skew symmetric matrix, because it is the last rotation applied,
         // so it will always produce a uniform rotation around Z
         let dz = SK_Z;
@@ -605,7 +615,7 @@ mod tests {
         // re-rotate Z
         let dy = z * SK_Y * z.transpose();
 
-        let dx = SK_X;
+        let dx = z * y * SK_X * y.transpose() * z.transpose();
 
         (dx, dy, dz)
     }
@@ -614,13 +624,13 @@ mod tests {
         rx: f64,
         ry: f64,
         rz: f64,
-        rot: Rotation<f64, 3>
+        rot: Rotation<f64, 3>,
     }
 
     impl EulerFixture {
         fn new(rx: f64, ry: f64, rz: f64) -> Self {
             let rot = UnitQuaternion::from_euler_angles(rx, ry, rz).to_rotation_matrix();
-            Self { rx, ry, rz, rot}
+            Self { rx, ry, rz, rot }
         }
 
         fn exp_x(&self, point: &Point3) -> Vector3 {
@@ -635,7 +645,6 @@ mod tests {
             euler_finite_diff(self.rx, self.ry, self.rz, Ax::Z, point)
         }
     }
-
 
     enum Ax {
         X,
