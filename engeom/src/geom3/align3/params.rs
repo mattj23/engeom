@@ -2,7 +2,7 @@
 
 use crate::common::PCoords;
 use crate::geom3::align3::{Dof6, T3Storage, iso3_from_param};
-use crate::na::{Matrix3, UnitQuaternion};
+use crate::na::{Matrix3, Rotation3, UnitQuaternion};
 use crate::{Iso3, Point3, Vector3};
 
 // Skew-symmetric matrices
@@ -30,37 +30,24 @@ pub struct AlignValues3 {
     /// The direction vector for the partial derivative of tz
     pub dtz: Vector3,
 
-    // m_drx: Matrix3<f64>,
-    // m_dry: Matrix3<f64>,
-    // m_drz: Matrix3<f64>,
-    // /// The location of the rotation center point in the target entity's coordinate system.
-    // rc: Point3,
-    //
-    // /// Perturbation matrix for the numerical Jacobian of Rx. Transform an already moved point by
-    // /// this matrix to get the point shifted by dRx.
-    // t_rx: Iso3,
-    //
-    // /// Perturbation matrix for the numerical Jacobian of Ry. Transform an already moved point by
-    // /// this matrix to get the point shifted by dRy.
-    // t_ry: Iso3,
-    //
-    // /// Perturbation matrix for the numerical Jacobian of Rz. Transform an already moved point by
-    // /// this matrix to get the point shifted by dRz.
-    // t_rz: Iso3,
-    working_inv: Iso3,
+    m_drx: Matrix3<f64>,
+    m_dry: Matrix3<f64>,
+    m_drz: Matrix3<f64>,
+    pre_rot: Iso3,
+    post_rot: Rotation3<f64>,
 }
 
 impl AlignValues3 {
     pub fn drx(&self, point: &impl PCoords<3>) -> Vector3 {
-        SK_X * (self.working_inv * Point3::from(point.coords())).coords()
+        self.post_rot * self.m_drx * (self.pre_rot * Point3::from(point.coords())).coords()
     }
 
     pub fn dry(&self, point: &impl PCoords<3>) -> Vector3 {
-        SK_Y * (self.working_inv * Point3::from(point.coords())).coords()
+        self.post_rot * self.m_dry * (self.pre_rot * Point3::from(point.coords())).coords()
     }
 
     pub fn drz(&self, point: &impl PCoords<3>) -> Vector3 {
-        SK_Z * (self.working_inv * Point3::from(point.coords())).coords()
+        self.post_rot * self.m_drz * (self.pre_rot * Point3::from(point.coords())).coords()
     }
 }
 
@@ -111,7 +98,7 @@ pub enum AlignOrigin {
 ///
 /// $$ W * A * L^-1 $$
 ///
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AlignParams3 {
     /// The local origin $L$, defined in the same space as the test entity's geometry. Leave this
     /// at the origin for simplicity, near the center of the test geometry to maximize numerical
@@ -226,33 +213,43 @@ impl AlignParams3 {
         Self::new(AlignOrigin::Origin, None, dof)
     }
 
+    pub fn tx(&self) -> f64 {
+        self.storage[0]
+    }
+    pub fn ty(&self) -> f64 {
+        self.storage[1]
+    }
+    pub fn tz(&self) -> f64 {
+        self.storage[2]
+    }
+    pub fn rx(&self) -> f64 {
+        self.storage[3]
+    }
+    pub fn ry(&self) -> f64 {
+        self.storage[4]
+    }
+    pub fn rz(&self) -> f64 {
+        self.storage[5]
+    }
+
     /// Get the stored isometry without the working transformation. If the problem has converged,
     /// this is the final result.
     pub fn final_result(&self) -> Iso3 {
-        let local = iso3_from_param(&self.storage);
-        // self.origin_to_center * local * self.center_to_origin
-        todo!()
+        self.current_values().transform
     }
 
     pub fn current_values(&self) -> AlignValues3 {
         let align = iso3_from_param(&self.storage);
         let transform = self.working * align * self.local.inverse();
 
-        // let local_drx = numeric_perterb(&self.storage, 3);
-        // let local_dry = numeric_perterb(&self.storage, 4);
-        // let local_drz = numeric_perterb(&self.storage, 5);
-        // let transform = self.origin_to_center * local * self.center_to_origin * self.working;
-        // let t_drx = self.origin_to_center * local_drx * self.center_to_origin * self.working;
-        // let t_dry = self.origin_to_center * local_dry * self.center_to_origin * self.working;
-        // let t_drz = self.origin_to_center * local_drz * self.center_to_origin * self.working;
-        // let t_rx = transform.inverse() * t_drx;
-        // let t_ry = transform.inverse() * t_dry;
-        // let t_rz = transform.inverse() * t_drz;
-        // let rc = transform * self.rc;
-
         let dtx = self.working * Vector3::new(1.0, 0.0, 0.0);
         let dty = self.working * Vector3::new(0.0, 1.0, 0.0);
         let dtz = self.working * Vector3::new(0.0, 0.0, 1.0);
+
+        let (m_drx, m_dry, m_drz) = euler_partials(self.ry(), self.rz());
+
+        let pre_rot = align.translation.inverse() * self.working.inverse();
+        let post_rot = self.working.rotation.to_rotation_matrix();
 
         AlignValues3 {
             transform,
@@ -260,7 +257,11 @@ impl AlignParams3 {
             dtx,
             dty,
             dtz,
-            working_inv: self.working.inverse(),
+            m_drx,
+            m_dry,
+            m_drz,
+            pre_rot,
+            post_rot,
         }
     }
 
@@ -393,15 +394,19 @@ fn numeric_perterb(x: &T3Storage, index: usize) -> Iso3 {
 mod tests {
     use super::*;
     use crate::geom3::IsoExtensions3;
-    use crate::geom3::align3::params::{AlignOrigin, AlignParams3, EPSILON, SK_X};
+    use crate::geom3::align3::params::{AlignOrigin, AlignParams3, EPSILON};
     use crate::geom3::tests::RandomGeometry;
     use crate::na::{Rotation, UnitQuaternion};
     use crate::{Iso3, Point3, Vector3};
     use approx::assert_relative_eq;
-    use std::f64::consts::{FRAC_1_SQRT_2, PI};
+    use std::f64::consts::PI;
 
-    const ANGLE_EPSILON: f64 = 1e-8;
+    const ANGLE_EPSILON: f64 = 1e-10;
     const TRANS_EPSILON: f64 = 1e-8;
+
+    // ============================================================================================
+    // These first tests are to check some simple and obvious properties of AlignParams3
+    // ============================================================================================
 
     #[test]
     fn rotation_around_origin() {
@@ -454,6 +459,11 @@ mod tests {
         );
     }
 
+    // ============================================================================================
+    // These next tests are to check that the current translation directions match the direction
+    // that they actually move entities.
+    // ============================================================================================
+
     #[test]
     fn partials_of_translations_at_zero() {
         let params = AlignParams3::new_at_origin(None);
@@ -491,8 +501,10 @@ mod tests {
 
     #[test]
     fn stress_partials_translations() {
+        // This is the main test in this section; it checks that the actual translation directions
+        // match the measured directions even with random numbers in every possible parameter.
         let mut rg = RandomGeometry::new();
-        for _ in 0..100 {
+        for _ in 0..1000 {
             let local = rg.iso3(10.0);
             let working = rg.iso3(10.0);
             let params = AlignParams3::new(AlignOrigin::Local(local), Some(working), None)
@@ -510,6 +522,12 @@ mod tests {
         }
     }
 
+    // ============================================================================================
+    // At this point we have to deal with the partials of the rotation by euler angles. I'm not
+    // good enough at linear algebra to derive the direct solution, so I'm hoping to figure it out
+    // as we go.
+    // ============================================================================================
+
     #[test]
     fn partials_of_rotation_at_zero() {
         let params = AlignParams3::new_at_origin(None);
@@ -525,12 +543,6 @@ mod tests {
         assert_relative_eq!(exp_ry, current.dry(&p), epsilon = 1e-6);
         assert_relative_eq!(exp_rz, current.drz(&p), epsilon = 1e-6);
     }
-
-    // ============================================================================================
-    // At this point we have to deal with the partials of the rotation by euler angles. I'm not
-    // good enough at linear algebra to derive the direct solution, so I'm hoping to figure it out
-    // in pieces.
-    // ============================================================================================
 
     #[test]
     fn verify_euler_order_is_x_y_z() {
@@ -554,7 +566,7 @@ mod tests {
         let p_local = Point3::new(1.0, 1.0, 1.0);
         let p_rot = f.rot * p_local;
 
-        let (rdx, rdy, rdz) = euler_diff(&f);
+        let (rdx, rdy, rdz) = euler_partials(f.ry, f.rz);
         assert_relative_eq!(f.exp_z(&p_local), rdz * p_rot.coords, epsilon = 1e-6);
         assert_relative_eq!(f.exp_y(&p_local), rdy * p_rot.coords, epsilon = 1e-6);
         assert_relative_eq!(f.exp_x(&p_local), rdx * p_rot.coords, epsilon = 1e-6);
@@ -566,7 +578,7 @@ mod tests {
         let p_local = Point3::new(1.0, 1.0, 1.0);
         let p_rot = f.rot * p_local;
 
-        let (rdx, rdy, rdz) = euler_diff(&f);
+        let (rdx, rdy, rdz) = euler_partials(f.ry, f.rz);
         assert_relative_eq!(f.exp_z(&p_local), rdz * p_rot.coords, epsilon = 1e-6);
         assert_relative_eq!(f.exp_y(&p_local), rdy * p_rot.coords, epsilon = 1e-6);
         assert_relative_eq!(f.exp_x(&p_local), rdx * p_rot.coords, epsilon = 1e-6);
@@ -578,7 +590,7 @@ mod tests {
         let p_local = Point3::new(1.0, 1.0, 1.0);
         let p_rot = f.rot * p_local;
 
-        let (rdx, rdy, rdz) = euler_diff(&f);
+        let (rdx, rdy, rdz) = euler_partials(f.ry, f.rz);
         assert_relative_eq!(f.exp_z(&p_local), rdz * p_rot.coords, epsilon = 1e-6);
         assert_relative_eq!(f.exp_y(&p_local), rdy * p_rot.coords, epsilon = 1e-6);
         assert_relative_eq!(f.exp_x(&p_local), rdx * p_rot.coords, epsilon = 1e-6);
@@ -591,7 +603,7 @@ mod tests {
             let f = EulerFixture::new(rg.f64_sym(PI), rg.f64_sym(PI), rg.f64_sym(PI));
             let p_local = rg.point3(10.0);
             let p_rot = f.rot * p_local;
-            let (rdx, rdy, rdz) = euler_diff(&f);
+            let (rdx, rdy, rdz) = euler_partials(f.ry, f.rz);
 
             assert_relative_eq!(f.exp_z(&p_local), rdz * p_rot.coords, epsilon = 1e-6);
             assert_relative_eq!(f.exp_y(&p_local), rdy * p_rot.coords, epsilon = 1e-6);
@@ -600,26 +612,45 @@ mod tests {
     }
 
     // ============================================================================================
-    // Test support methods
+    // With the rotation vectors figured out from the euler angles at the origin, we just need to
+    // figure out how to make this work in the larger context of the full alignment problem, which
+    // may have a local origin _and_ a working offset, and also which needs to receive the point
+    // being measured in the target entity's space.
     // ============================================================================================
-    fn euler_diff(f: &EulerFixture) -> (Matrix3<f64>, Matrix3<f64>, Matrix3<f64>) {
-        let x = UnitQuaternion::from_euler_angles(f.rx, 0.0, 0.0).to_rotation_matrix();
-        let y = UnitQuaternion::from_euler_angles(0.0, f.ry, 0.0).to_rotation_matrix();
-        let z = UnitQuaternion::from_euler_angles(0.0, 0.0, f.rz).to_rotation_matrix();
 
-        // Z will always be the skew symmetric matrix, because it is the last rotation applied,
-        // so it will always produce a uniform rotation around Z
-        let dz = SK_Z;
+    #[test]
+    fn stress_partials_rotation() {
+        let mut rg = RandomGeometry::new();
+        for _ in 0..1000 {
+            let local = rg.iso3(10.0);
+            let working = rg.iso3(10.0);
+            let params = AlignParams3::new(AlignOrigin::Local(local), Some(working), None)
+                .with_storage(rg.vector(PI));
+            let c = params.current_values();
 
-        // To make Y work, we need to undo the Z rotation, take the cross-section, and then
-        // re-rotate Z
-        let dy = z * SK_Y * z.transpose();
+            // The test point in the test entity's space
+            let test_point = rg.point3(10.0);
+            let exp_x = finite_diff(&params, &test_point, 3);
+            let exp_y = finite_diff(&params, &test_point, 4);
+            let exp_z = finite_diff(&params, &test_point, 5);
 
-        let dx = z * y * SK_X * y.transpose() * z.transpose();
+            // The test point in the target entity's space
+            let target_point = c.transform * test_point;
 
-        (dx, dy, dz)
+            // Because of the possible large distance between the test point and the rotation,
+            // the difference between the finite difference estimation and the actual theoretical
+            // vectors can be well into the fourth decimal place. Since this is a stress test for
+            // plausibility, that's totally fine. The theoretical values will be more accurate
+            // than the estimate, but they must be reasonably close.
+            assert_relative_eq!(exp_x, c.drx(&target_point), epsilon = 1e-3);
+            assert_relative_eq!(exp_y, c.dry(&target_point), epsilon = 1e-3);
+            assert_relative_eq!(exp_z, c.drz(&target_point), epsilon = 1e-3);
+        }
     }
 
+    // ============================================================================================
+    // Test support methods
+    // ============================================================================================
     struct EulerFixture {
         rx: f64,
         ry: f64,

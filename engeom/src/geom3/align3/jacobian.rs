@@ -164,6 +164,54 @@ pub fn point_point_jacobian_full(p: &Point3, c: &Point3, align: &AlignValues3) -
     }
 }
 
+/// This is a helper function to calculate the partial derivatives of the parameters for a residual
+/// distance between a test point and a surface point on a target entity.
+///
+/// # Arguments
+///
+/// * `p`: the test point, transformed into the target entity's coordinate system
+/// * `c`: the closest point on the target surface
+/// * `align`: the current alignment parameters, allowing for fast access of the direction vectors
+///   associated with the different partial differentials.
+///
+/// returns: Matrix<f64, Const<6>, Const<1>, ArrayStorage<f64, 6, 1>>
+pub fn point_surf_jacobian(p: &Point3, c: &SurfacePoint3, align: &AlignValues3) -> T3Storage {
+    let mut result = T3Storage::zeros();
+
+    // We'll grab the sign of the scalar projection, allowing us to know if we're outside or inside
+    // the target surface.
+    let sign = c.scalar_projection(p).signum();
+
+    // First, we want to calculate the deviation direction. If the magnitude of the deviation is
+    // close to zero, we'll use the surface normal instead, as the two will converge as the point
+    // approaches the surface.
+    let dev = p - c.point;
+    let dir = if dev.norm_squared() < 1e-16 {
+        c.normal.into_inner()
+    } else {
+        dev.normalize() * sign
+    };
+
+    // The transformations will be the dot product of the deviation direction and the partial
+    // differential translation directions. For instance, if the translation is going across the
+    // surface, there's no real penalty because we're staying equidistant.
+    result[0] = val_or_zero(align.dtx.dot(&dir), align.dof.tx);
+    result[1] = val_or_zero(align.dty.dot(&dir), align.dof.ty);
+    result[2] = val_or_zero(align.dtz.dot(&dir), align.dof.tz);
+
+    // The rotations will be the dot product of the deviation direction and the partial differential
+    // rotation directions.
+    result[3] = val_or_zero(align.drx(c).dot(&dir), align.dof.rx);
+    result[4] = val_or_zero(align.dry(c).dot(&dir), align.dof.ry);
+    result[5] = val_or_zero(align.drz(c).dot(&dir), align.dof.rz);
+
+    result
+}
+
+fn val_or_zero(value: f64, condition: bool) -> f64 {
+    if condition { value } else { 0.0 }
+}
+
 pub fn point_plane_jacobian_full(p: &Point3, c: &SurfacePoint3, align: &AlignValues3) -> T3Storage {
     let s = c.scalar_projection(p).signum();
 
