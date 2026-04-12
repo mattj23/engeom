@@ -4,7 +4,7 @@ use crate::geom3::align3::jacobian::{
     copy_jacobian, point_plane_jacobian_full, point_point_jacobian_full, point_surf_jacobian,
 };
 use crate::geom3::mesh::Mesh;
-use crate::geom3::{Align3, Point3, SurfacePoint3};
+use crate::geom3::{Align3, Alignment3, Point3, SurfacePoint3};
 
 use crate::Result;
 use crate::common::kd_tree::{KdTree, KdTreeSearch};
@@ -118,13 +118,21 @@ fn ransac_indices(iterations: usize, point_len: usize) -> Vec<(usize, usize, usi
         .collect()
 }
 
-pub fn points_to_mesh(points: &[Point3], mesh: &Mesh, params: AlignParams3) -> Result<Align3> {
+pub fn points_to_mesh(points: &[Point3], mesh: &Mesh, params: AlignParams3) -> Result<Alignment3> {
     let problem = PointsToMesh::new(points, mesh, params);
     let (result, report) = LevenbergMarquardt::new().minimize(problem);
 
     if report.termination.was_successful() {
         let residuals = result.residuals().unwrap().as_slice().to_vec();
-        Ok(Align3::new(result.params.final_result(), residuals))
+        let c = result.params.current_values();
+        let align = Alignment3::new(
+            c.transform,
+            c.align,
+            result.params.local,
+            result.params.working,
+            residuals,
+        );
+        Ok(align)
     } else {
         Err("Failed to align points to mesh".into())
     }
@@ -266,7 +274,7 @@ mod tests {
         let to_align = transform_points(&points, &disturb);
         let result = points_to_mesh(&to_align, &mesh, params)?;
 
-        assert_relative_eq!(disturb.inverse(), result.transform(), epsilon = 1e-8);
+        assert_relative_eq!(disturb.inverse(), result.full(), epsilon = 1e-8);
         Ok(())
     }
 
@@ -290,7 +298,7 @@ mod tests {
         let params = AlignParams3::new_at_center(mean_point(&to_align), None);
         let result = points_to_mesh(&to_align, &mesh, params)?;
 
-        let aligned = transform_points(&to_align, result.transform());
+        let aligned = transform_points(&to_align, result.full());
 
         let max_deviation = aligned
             .iter()

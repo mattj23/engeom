@@ -27,7 +27,7 @@ pub type SurfacePoint2 = SurfacePoint<2>;
 pub type Iso2 = parry2d_f64::na::Isometry2<f64>;
 pub type SvdBasis2 = SvdBasis<2>;
 pub type Ray2 = parry2d_f64::query::Ray;
-pub type Align2 = crate::common::align::Alignment<UnitComplex<f64>, 2>;
+pub type Align2 = crate::common::align::Align<UnitComplex<f64>, 2>;
 pub type KdTree2 = crate::common::kd_tree::KdTree<2>;
 
 pub use self::aabb2::Aabb2;

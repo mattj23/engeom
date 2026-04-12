@@ -18,6 +18,9 @@ pub struct AlignValues3 {
     /// composite of the active internal parameters and the working transformation.
     pub transform: Iso3,
 
+    /// The transformation created by the tx, ty, tz, rx, ry, and rz parameters.
+    pub align: Iso3,
+
     /// The degrees of freedom that are active
     pub dof: Dof6,
 
@@ -253,6 +256,7 @@ impl AlignParams3 {
 
         AlignValues3 {
             transform,
+            align,
             dof: self.dof,
             dtx,
             dty,
