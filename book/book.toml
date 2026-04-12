@@ -1,0 +1,7 @@
+[book]
+title = "Engeom (Engineering Geometry) Library"
+authors = ["Matt Jarvis"]
+language = "en"
+
+[output.html]
+mathjax-support = true
