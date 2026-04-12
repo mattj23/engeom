@@ -416,8 +416,8 @@ print(sp.normal)  # Vector3(0.577..., 0.577..., 0.577...)
 
 Two scalar distance measurements are defined on surface points:
 
-- `scalar_projection` — the signed distance from the surface point to a test point, measured along the normal direction. Positive means the test point is on the same side as the normal; negative means the opposite side.
-- `planar_distance` — the perpendicular distance from the test point to the line/ray defined by the surface point. This is always non-negative.
+- `scalar_projection`: the signed distance from the surface point to a test point, measured along the normal direction. Positive means the test point is on the same side as the normal; negative means the opposite side.
+- `planar_distance`: the perpendicular distance from the test point to the line/ray defined by the surface point. This is always non-negative.
 
 **Rust:**
 
@@ -447,8 +447,8 @@ lateral = sp.planar_distance(p)
 
 Two functions return new `Point` objects derived from projecting a test point onto the surface point's line:
 
-- `at_distance(d)` — returns the point that is distance `d` along the normal from the surface point's position. Equivalent to `sp.point + sp.normal * d`.
-- `projection(p)` — returns the closest point on the surface point's line to a test point. Equivalent to `sp.at_distance(sp.scalar_projection(p))`.
+- `at_distance(d)`: returns the point that is distance `d` along the normal from the surface point's position. Equivalent to `sp.point + sp.normal * d`.
+- `projection(p)`: returns the closest point on the surface point's line to a test point. Equivalent to `sp.at_distance(sp.scalar_projection(p))`.
 
 **Rust:**
 
