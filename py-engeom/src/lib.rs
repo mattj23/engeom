@@ -13,6 +13,7 @@ mod raster2;
 mod ray_casting;
 mod sensors;
 mod svd_basis;
+mod align3;
 
 use pyo3::prelude::*;
 
@@ -89,15 +90,10 @@ fn register_geom3(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     parent_module.add_submodule(&child)
 }
 
-fn register_align_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
-    let child = PyModule::new(parent_module.py(), "_align")?;
-    child.add_class::<alignments::Dof6>()?;
-    child.add_function(wrap_pyfunction!(alignments::points_to_mesh, &child)?)?;
-    child.add_function(wrap_pyfunction!(alignments::points_to_cloud, &child)?)?;
-    child.add_function(wrap_pyfunction!(
-        alignments::mesh_to_mesh_iterative,
-        &child
-    )?)?;
+fn register_align3_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
+    let child = PyModule::new(parent_module.py(), "_align3")?;
+    child.add_class::<align3::Dof6>()?;
+    child.add_function(wrap_pyfunction!(align3::points_to_mesh, &child)?)?;
     parent_module.add_submodule(&child)
 }
 
@@ -174,7 +170,7 @@ fn py_engeom(m: &Bound<'_, PyModule>) -> PyResult<()> {
     register_raster3_module(m)?;
 
     // Alignment submodule
-    register_align_module(m)?;
+    register_align3_module(m)?;
 
     // Airfoil submodule
     register_airfoil_module(m)?;
