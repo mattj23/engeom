@@ -3,6 +3,7 @@ use parry3d_f64::na::Isometry;
 
 /// A container for the results of an alignment operation, including the full transformation, the
 /// various component transformations, and the residuals of the alignment.
+#[derive(Debug, Clone)]
 pub struct Alignment<R, const D: usize> {
     full: Isometry<f64, R, D>,
     alignment: Isometry<f64, R, D>,

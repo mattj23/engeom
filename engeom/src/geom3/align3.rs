@@ -20,6 +20,7 @@ pub use self::mesh_to_mesh::mesh_to_mesh_iterative;
 pub use self::multi_mesh::{
     MMOpts, MulMeshAlignPoint, multi_mesh_adjustment, multi_mesh_adjustment_with_points,
 };
+pub use self::params::*;
 pub use self::point_stability::{StabilityResult, point_stability, point_stability_reduce};
 pub use self::points_to_cloud::points_to_cloud;
 pub use self::points_to_mesh::{points_to_mesh, ransac_points_to_mesh};

@@ -1,7 +1,7 @@
 use crate::common::DistMode;
 use crate::geom3::Align3;
-use crate::geom3::align3::mesh::generate_alignment_points;
 use crate::geom3::align3::GAPParams;
+use crate::geom3::align3::mesh::generate_alignment_points;
 use crate::{Iso3, Mesh, Result};
 
 /// Perform an iterative alignment of one mesh to another. Each iteration is a full

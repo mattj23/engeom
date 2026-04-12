@@ -1,4 +1,5 @@
 mod airfoil;
+mod align3;
 pub mod alignments;
 mod bounding;
 mod common;
@@ -13,7 +14,6 @@ mod raster2;
 mod ray_casting;
 mod sensors;
 mod svd_basis;
-mod align3;
 
 use pyo3::prelude::*;
 
@@ -93,7 +93,7 @@ fn register_geom3(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
 fn register_align3_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     let child = PyModule::new(parent_module.py(), "_align3")?;
     child.add_class::<align3::Dof6>()?;
-    child.add_function(wrap_pyfunction!(align3::points_to_mesh, &child)?)?;
+    // child.add_function(wrap_pyfunction!(align3::points_to_mesh, &child)?)?;
     parent_module.add_submodule(&child)
 }
 
