@@ -3,7 +3,7 @@ import math
 from engeom.engeom import SelectOp, DeviationMode
 from pyvista import Plotter
 from engeom.geom3 import Mesh, Iso3
-from engeom.align import points_to_mesh
+from engeom.align3 import AlignParams3, points_to_mesh
 from engeom.plot import PyvistaPlotterHelper
 
 from _common import DATA_DIR
@@ -23,14 +23,18 @@ def main():
 
     # We'll clone the points and move them away from the original mesh to have the alignment do something. In
     # reality, the points would have come from some other source, like a 3d scanner.
-    disturb = Iso3.from_translation(10, 10, 10) @ Iso3.from_rotation(-math.pi / 16, 1, 1, 1)
+    disturb = Iso3.from_translation(-100, 150, 0) @ Iso3.from_rotation(-math.pi / 6, 1, 1, 1)
     to_align = disturb.transform_points(sample_points[:, :3])
 
     # Now we perform the alignment. If the result is succesful we'll get an `Iso3` back, otherwise the call to
     # `points_to_mesh` will throw an error. We'll create a new set of points by transforming `to_align` to represent
     # where the points are with the alignment applied. The alignment itself does not mutate any objects.
-    result = points_to_mesh(to_align, mesh, Iso3.identity(), DeviationMode.Point)
-    aligned = result.transform_points(to_align)
+
+    center = to_align.mean(axis=0)
+    print(center)
+    params = AlignParams3.at_center(*center)
+    result = points_to_mesh(to_align, mesh, params)
+    aligned = result.full.transform_points(to_align)
 
     # Finally, we'll plot the original points, the aligned points, and the original mesh.
     plotter = Plotter()
@@ -39,6 +43,7 @@ def main():
     plotter.add_points(to_align, point_size=5, color="red")
     plotter.add_points(aligned, point_size=5, color="green")
     plotter.add_axes()
+    helper.coordinate_frame(Iso3.identity(), size=10)
     plotter.add_text("Original points are in red, aligned points are in green", font_size=10, font="courier")
     plotter.show()
 
