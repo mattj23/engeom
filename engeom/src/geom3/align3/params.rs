@@ -2,7 +2,7 @@
 
 use crate::common::PCoords;
 use crate::geom3::align3::{Dof6, T3Storage, iso3_from_param};
-use crate::na::{Matrix3, Rotation3, UnitQuaternion};
+use crate::na::{Matrix3, UnitQuaternion};
 use crate::{Iso3, Point3, Vector3};
 
 // Skew-symmetric matrices
@@ -10,6 +10,16 @@ const SK_X: Matrix3<f64> = Matrix3::new(0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0,
 const SK_Y: Matrix3<f64> = Matrix3::new(0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0);
 const SK_Z: Matrix3<f64> = Matrix3::new(0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0);
 
+/// This struct holds the current values of the alignment problem, including the full
+/// transformation from test entity space to target entity space, the vectors of translation
+/// associated with the partial derivatives of the translation parameters, and functions for
+/// calculating the vectors of rotation associated with the partial derivatives of the rotation
+/// parameters. It is created from an [`AlignParams3`] struct based on the current values of
+/// the alignment parameters.
+///
+/// During an alignment, the [`AlignParams3`]'s internal values will be changing as the solver
+/// modifies it. This struct is generated to pre-calculate a number of values needed for working
+/// with the alignment at that step in the alignment process.
 #[derive(Clone, Debug)]
 pub struct AlignValues3 {
     /// The transformation of the test entity(s) from their native, local coordinates to the
@@ -32,21 +42,38 @@ pub struct AlignValues3 {
     /// The direction vector for the partial derivative of tz
     pub dtz: Vector3,
 
+    /// The matrix to extract the partial derivative of rx in the euler angle coordinate system
+    /// and rotate it back to the target entity's coordinate system
     m_drx: Matrix3<f64>,
+
+    /// The matrix to extract the partial derivative of ry in the euler angle coordinate system
+    /// and rotate it back to the target entity's coordinate system
     m_dry: Matrix3<f64>,
+
+    /// The matrix to extract the partial derivative of rz in the euler angle coordinate system
+    /// and rotate it back to the target entity's coordinate system
     m_drz: Matrix3<f64>,
+
+    /// The transformation from the target entity's coordinate system to the coordinate system
+    /// where the euler angles of the alignment transformation are applied.
     pre_rot: Iso3,
 }
 
 impl AlignValues3 {
+    /// Given a point in the target entity's coordinate system, return the vector that describes
+    /// the instantaneous vector of motion corresponding with the partial derivative of rx
     pub fn drx(&self, point: &impl PCoords<3>) -> Vector3 {
         self.m_drx * (self.pre_rot * Point3::from(point.coords())).coords()
     }
 
+    /// Given a point in the target entity's coordinate system, return the vector that describes
+    /// the instantaneous vector of motion corresponding with the partial derivative of ry
     pub fn dry(&self, point: &impl PCoords<3>) -> Vector3 {
         self.m_dry * (self.pre_rot * Point3::from(point.coords())).coords()
     }
 
+    /// Given a point in the target entity's coordinate system, return the vector that describes
+    /// the instantaneous vector of motion corresponding with the partial derivative of rz
     pub fn drz(&self, point: &impl PCoords<3>) -> Vector3 {
         self.m_drz * (self.pre_rot * Point3::from(point.coords())).coords()
     }
@@ -92,12 +119,14 @@ pub enum AlignOrigin {
 /// provided as a transformation from the origin of the coordinate system that the test entity(s)
 /// geometry is defined in.
 ///
-/// Lastly, there is an optional working transformation $W$ that can be applied to the test entity
-/// TODO: describe this as it actually ends up
+/// Lastly, there is an optional offset transformation $O$ that is applied after the alignment
+/// transformation. This can be used to start the alignment process at a different position than
+/// the current position of the test entity(s), or to counteract the effects of the local origin,
+/// or a combination of the two.
 ///
 /// The combined transformation from the test entity geometry to the target entity is:
 ///
-/// $$ W * A * L^-1 $$
+/// $$ O * A * L^{-1} $$
 ///
 #[derive(Clone, Debug)]
 pub struct AlignParams3 {
@@ -113,9 +142,9 @@ pub struct AlignParams3 {
     /// entity is allowed to move during alignment.
     pub dof: Dof6,
 
-    /// The current working transformation $W$, which is the transformation of the test entity(s)
-    /// their native, local coordinates to the start position for the alignment process.
-    pub working: Iso3,
+    /// The current working offset transformation $O$, which is the transformation applied after
+    /// the alignment transformation.
+    pub offset: Iso3,
 
     /// The storage for the six parameters
     storage: T3Storage,
@@ -130,31 +159,32 @@ impl AlignParams3 {
     /// * `local`: The local origin $L$, defined in the same space as the test entity's geometry.
     ///   You can leave this as the world origin, pick a rotation center, or specify a full
     ///   transformation with origin and cardinal directions.
-    /// * `working`: An optional working transformation TODO: describe what this _means_
+    /// * `offset`: An optional working offset transformation $O$, which is the transformation
+    ///   applied after the alignment transformation.
     /// * `dof`: Optional constraint on the degrees of freedom. If `None` is provided, all degrees
     ///   of freedom will be active.
     ///
     /// returns: AlignParams3
-    pub fn new(local: AlignOrigin, working: Option<Iso3>, dof: Option<Dof6>) -> Self {
+    pub fn new(local: AlignOrigin, offset: Option<Iso3>, dof: Option<Dof6>) -> Self {
         let local = match local {
             AlignOrigin::Origin => Iso3::identity(),
             AlignOrigin::Center(p) => Iso3::translation(p.x, p.y, p.z),
             AlignOrigin::Local(t) => t,
         };
 
-        let working = working.unwrap_or_else(|| Iso3::identity());
+        let working = offset.unwrap_or_else(|| Iso3::identity());
         let dof = dof.unwrap_or_else(|| Dof6::all());
 
         Self {
             local,
             dof,
-            working,
+            offset: working,
             storage: T3Storage::default(),
         }
     }
 
     /// Creates an `AlignParams3` which applies its transformation to the test entity(s) at a given
-    /// local origin. The local origin and the working transformation will be identical.
+    /// local origin. The local origin and the working offset transformation will be identical.
     ///
     /// The physical interpretation of configuring the parameters this way is that the test
     /// geometry is transformed directly according to the local origin's position and orientation.
@@ -166,7 +196,6 @@ impl AlignParams3 {
     /// Use this configuration method when the test geometry is already in a good starting location,
     /// and you want to control exactly how the test geometry will move, such as if you want to
     /// apply DOF constraints in some arbitrary direction(s).
-    ///
     ///
     /// # Arguments
     ///
@@ -181,7 +210,7 @@ impl AlignParams3 {
     /// Creates an `AlignParams3` which applies its rotations to the test entity(s) around a given
     /// rotation center point. In this case the local origin $L$ will be created at the specified
     /// rotation center point but with the same cardinal directions as the world coordinate system.
-    /// The working transformation will be the same as the local origin.
+    /// The working offset transformation will be the same as the local origin.
     ///
     /// Use this configuration method when the test geometry is already in a good starting location,
     /// but you want to provide a rotation center point instead of allowing rotation to happen
@@ -243,16 +272,16 @@ impl AlignParams3 {
     /// directions, and the rotation partial derivative matrices
     pub fn current_values(&self) -> AlignValues3 {
         let align = iso3_from_param(&self.storage);
-        let transform = self.working * align * self.local.inverse();
+        let transform = self.offset * align * self.local.inverse();
 
-        let dtx = self.working * Vector3::new(1.0, 0.0, 0.0);
-        let dty = self.working * Vector3::new(0.0, 1.0, 0.0);
-        let dtz = self.working * Vector3::new(0.0, 0.0, 1.0);
+        let dtx = self.offset * Vector3::new(1.0, 0.0, 0.0);
+        let dty = self.offset * Vector3::new(0.0, 1.0, 0.0);
+        let dtz = self.offset * Vector3::new(0.0, 0.0, 1.0);
 
         let (m_drx, m_dry, m_drz) = euler_partials(self.ry(), self.rz());
 
-        let pre_rot = align.translation.inverse() * self.working.inverse();
-        let post_rot = self.working.rotation.to_rotation_matrix();
+        let pre_rot = align.translation.inverse() * self.offset.inverse();
+        let post_rot = self.offset.rotation.to_rotation_matrix();
 
         AlignValues3 {
             transform,
@@ -393,7 +422,7 @@ mod tests {
     use crate::geom3::IsoExtensions3;
     use crate::geom3::align3::params::{AlignOrigin, AlignParams3};
     use crate::geom3::tests::RandomGeometry;
-    use crate::na::{Rotation, UnitQuaternion};
+    use crate::na::{Rotation, Rotation3, UnitQuaternion};
     use crate::{Iso3, Point3, Vector3};
     use approx::assert_relative_eq;
     use std::f64::consts::PI;

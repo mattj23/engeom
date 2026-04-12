@@ -99,7 +99,7 @@ pub fn points_to_mesh(points: &[Point3], mesh: &Mesh, params: AlignParams3) -> R
             c.transform,
             c.align,
             result.params.local,
-            result.params.working,
+            result.params.offset,
             residuals,
         );
         Ok(align)
