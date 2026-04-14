@@ -12,6 +12,7 @@ mod nav_structure;
 mod outline;
 mod queries;
 pub mod sampling;
+mod section;
 mod uv_mapping;
 
 use crate::common::{IndexMask, PCoords};
