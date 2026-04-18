@@ -14,7 +14,7 @@ impl Mesh {
         plane: &Plane3,
         curve_tol: Option<f64>,
     ) -> Result<Vec<Curve3>> {
-        let mut products = Vec::new();
+        // let mut products = Vec::new();
 
         for face_i in candidate_faces(&self.shape, plane) {
             let ai = self.faces()[face_i as usize][0];
@@ -33,7 +33,7 @@ impl Mesh {
                 (None, Some(bc), Some(ca)) => {},
                 (Some(ab), None, Some(ca)) => {},
                 _ => Err("Something went wrong with the intersection calculation")?
-            }
+            };
 
         }
 

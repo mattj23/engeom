@@ -9,6 +9,7 @@ pub mod hull;
 mod line2;
 pub mod polyline2;
 mod segment2;
+mod spline2;
 
 use crate::AngleDir;
 use crate::AngleDir::Cw;
@@ -38,6 +39,7 @@ pub use self::circle2::Circle2;
 pub use self::curve2::{Curve2, CurveStation2};
 pub use self::line2::{Line2, intersect_lines, intersect_rays, intersection_param};
 pub use self::segment2::Segment2;
+pub use self::spline2::CubicSpline2;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ManifoldPosition2 {
