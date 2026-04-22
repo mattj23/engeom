@@ -372,7 +372,7 @@ impl Mesh {
     fn section(&self, plane: Plane3, tol: Option<f64>) -> PyResult<Vec<Curve3>> {
         let results = self
             .inner
-            .section(plane.get_inner(), tol)
+            .section_with_plane(plane.get_inner(), tol)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         Ok(results.into_iter().map(Curve3::from_inner).collect())

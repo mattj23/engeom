@@ -116,8 +116,8 @@ impl CubicSpline2 {
         let segments: Vec<SplineSegment> = (0..n_segs)
             .map(|i| {
                 let a = points[i].coords;
-                let b = points[i + 1].coords - points[i].coords
-                    - (sigma[i] * 2.0 + sigma[i + 1]) / 6.0;
+                let b =
+                    points[i + 1].coords - points[i].coords - (sigma[i] * 2.0 + sigma[i + 1]) / 6.0;
                 let c = sigma[i] / 2.0;
                 let d = (sigma[i + 1] - sigma[i]) / 6.0;
                 SplineSegment { a, b, c, d }
@@ -127,8 +127,7 @@ impl CubicSpline2 {
         // Precompute cumulative arc lengths.
         let mut cumulative_lengths = vec![0.0_f64; n_segs + 1];
         for i in 0..n_segs {
-            cumulative_lengths[i + 1] =
-                cumulative_lengths[i] + segments[i].total_arc_length();
+            cumulative_lengths[i + 1] = cumulative_lengths[i] + segments[i].total_arc_length();
         }
         let total_length = *cumulative_lengths.last().unwrap();
 
@@ -186,8 +185,7 @@ impl CubicSpline2 {
     /// Within segment `seg_idx`, find the local `τ` whose accumulated arc length from `τ = 0`
     /// equals `target` using Newton's method.
     fn tau_at_seg_length(&self, seg_idx: usize, target: f64) -> f64 {
-        let seg_len =
-            self.cumulative_lengths[seg_idx + 1] - self.cumulative_lengths[seg_idx];
+        let seg_len = self.cumulative_lengths[seg_idx + 1] - self.cumulative_lengths[seg_idx];
         if target <= 0.0 {
             return 0.0;
         }
@@ -216,12 +214,7 @@ impl CubicSpline2 {
 
     /// Refine a candidate `(seg_idx, tau)` using Newton's method on the squared-distance function.
     /// Returns the refined `(seg_idx, tau, dist_sq)`.
-    fn refine_projection(
-        &self,
-        seg_idx: usize,
-        mut tau: f64,
-        p: &Vector2,
-    ) -> (usize, f64, f64) {
+    fn refine_projection(&self, seg_idx: usize, mut tau: f64, p: &Vector2) -> (usize, f64, f64) {
         let seg = &self.segments[seg_idx];
 
         for _ in 0..20 {
@@ -265,8 +258,7 @@ fn compute_sigma(points: &[Point2]) -> Vec<Vector2> {
     let mut rhs_x = vec![0.0_f64; m];
     let mut rhs_y = vec![0.0_f64; m];
     for i in 0..m {
-        let r = 6.0
-            * (points[i].coords - 2.0 * points[i + 1].coords + points[i + 2].coords);
+        let r = 6.0 * (points[i].coords - 2.0 * points[i + 1].coords + points[i + 2].coords);
         rhs_x[i] = r.x;
         rhs_y[i] = r.y;
     }
