@@ -10,7 +10,7 @@ use crate::common::Resample::ByCount;
 use crate::common::points::{dist, mid_point};
 use crate::geom2::hull::farthest_pair_indices;
 use crate::geom2::polyline2::SpanningRay;
-use crate::geom2::{Line2, Segment2, rot90};
+use crate::geom2::{LineOps2, Segment2, rot90};
 use crate::{Curve2, UnitVec2};
 use parry2d_f64::query::Ray;
 use parry2d_f64::shape::ConvexPolygon;

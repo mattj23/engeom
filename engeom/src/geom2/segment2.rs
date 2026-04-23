@@ -1,7 +1,7 @@
 use crate::AngleDir::Cw;
 use crate::common::PCoords;
 use crate::common::points::dist;
-use crate::geom2::{Aabb2, BoundaryElement, Line2, ManifoldPosition2, rot90};
+use crate::geom2::{Aabb2, BoundaryElement, LineOps2, ManifoldPosition2, rot90};
 use crate::{Iso2, Point2, Result, TransformBy, UnitVec2, Vector2};
 use serde::{Deserialize, Serialize};
 
@@ -112,7 +112,7 @@ impl TransformBy<Iso2, Segment2> for Segment2 {
     }
 }
 
-impl Line2 for Segment2 {
+impl LineOps2 for Segment2 {
     fn origin(&self) -> Point2 {
         self.a
     }

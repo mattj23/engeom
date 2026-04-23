@@ -1,7 +1,197 @@
+use crate::AngleDir::Cw;
 use crate::common::PCoords;
-use crate::geom2::Ray2;
+use crate::geom2::{Ray2, SurfacePoint2, UnitVec2, rot90};
 use crate::{Iso2, Point2, Vector2};
 use parry2d_f64::query::Ray;
+use std::ops;
+
+/// A parameterized line in 2D space: `P(t) = origin + t * direction`.
+///
+/// The direction is not required to be normalized; use `new_normalize` for unit-speed
+/// parameterization where `t` equals unit length.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Line2 {
+    origin: Point2,
+    direction: Vector2,
+}
+
+impl Line2 {
+    pub fn x_axis() -> Self {
+        Self::new(Point2::origin(), Vector2::x())
+    }
+
+    pub fn y_axis() -> Self {
+        Self::new(Point2::origin(), Vector2::y())
+    }
+
+    /// Create a line from an origin point and a direction vector (stored as-is, not normalized).
+    pub fn new(origin: Point2, direction: Vector2) -> Self {
+        Self { origin, direction }
+    }
+
+    /// Create a line from an origin point and a direction vector, normalizing the direction so
+    /// that the parameter `t` equals arc length from the origin.
+    pub fn new_normalize(origin: Point2, direction: Vector2) -> Self {
+        Self::new(origin, direction.normalize())
+    }
+
+    /// Create a line through two points. The direction is `p2 - p1` (not normalized).
+    pub fn from_points(p1: Point2, p2: Point2) -> Self {
+        Self::new(p1, p2 - p1)
+    }
+
+    pub fn origin(&self) -> Point2 {
+        self.origin
+    }
+
+    pub fn direction(&self) -> Vector2 {
+        self.direction
+    }
+
+    /// Normalizes the direction vector in place so that `t` equals arc length from the origin.
+    pub fn normalize(&mut self) {
+        self.direction = self.direction.normalize();
+    }
+
+    /// Returns a new line with the same origin but a normalized direction, so that `t` equals arc
+    /// length from the origin.
+    pub fn normalized(&self) -> Self {
+        Self::new(self.origin, self.direction.normalize())
+    }
+
+    /// Returns the point at parameter `t`: `P(t) = origin + t * direction`.
+    pub fn at(&self, t: f64) -> Point2 {
+        self.origin + self.direction * t
+    }
+
+    /// Moves the origin of the line by a given amount along the direction of the line. A positive
+    /// `delta_t` moves the origin forward along the direction of the line, while a negative
+    /// `delta_t` moves the origin backward. The line is modified in place.
+    pub fn shift_along(&mut self, delta_t: f64) {
+        self.origin += self.direction * delta_t;
+    }
+
+    /// Returns a new line with the origin shifted by a given amount along the direction of the
+    /// line. The direction of the new line is the same as the original line. The original is left
+    /// unchanged.
+    pub fn new_shifted_along(&self, delta_t: f64) -> Self {
+        Self {
+            origin: self.origin + self.direction * delta_t,
+            direction: self.direction,
+        }
+    }
+
+    /// Returns the parameter `t` such that `P(t)` is the closest point on the line to `point`.
+    pub fn scalar_project(&self, point: &impl PCoords<2>) -> f64 {
+        (Point2::from(point.coords()) - self.origin).dot(&self.direction)
+            / self.direction.norm_squared()
+    }
+
+    /// Returns the closest point on the line to `point`.
+    pub fn closest_point(&self, point: &impl PCoords<2>) -> Point2 {
+        self.at(self.scalar_project(point))
+    }
+
+    /// Returns the perpendicular distance from `point` to the line.
+    pub fn distance_to(&self, point: &impl PCoords<2>) -> f64 {
+        let pt = Point2::from(point.coords());
+        (pt - self.closest_point(&pt)).norm()
+    }
+
+    /// Returns a new line with both origin and direction transformed by the given isometry.
+    pub fn new_transformed_by(&self, iso: &Iso2) -> Self {
+        let mut clone = self.clone();
+        clone.transform_by(iso);
+        clone
+    }
+
+    /// Transforms this line in place by the given isometry.
+    pub fn transform_by(&mut self, iso: &Iso2) {
+        self.origin = iso * self.origin;
+        self.direction = iso.rotation * self.direction;
+    }
+
+    /// Returns the unit normal to this line: the direction rotated 90 degrees clockwise.
+    /// By convention, this points to the "right" when traveling in the line's direction,
+    /// consistent with outward normals on counter-clockwise-wound 2D geometry.
+    pub fn normal(&self) -> UnitVec2 {
+        UnitVec2::new_normalize(rot90(Cw) * self.direction)
+    }
+
+    /// Returns the signed perpendicular distance from `point` to this line. Positive values
+    /// indicate the point is to the right of the direction of travel (on the normal side),
+    /// negative values indicate the point is to the left.
+    pub fn signed_distance_to(&self, point: &impl PCoords<2>) -> f64 {
+        self.normal().dot(&(point.coords() - self.origin.coords))
+    }
+
+    /// Returns the intersection point with another `Line2`, or `None` if the lines are parallel.
+    pub fn intersect(&self, other: &impl LineOps2) -> Option<Point2> {
+        let (t, _) =
+            intersection_param(&self.origin, &self.direction, &other.origin(), &other.dir())?;
+        Some(self.at(t))
+    }
+}
+
+impl From<SurfacePoint2> for Line2 {
+    fn from(sp: SurfacePoint2) -> Self {
+        Self::new(sp.point, sp.normal.into_inner())
+    }
+}
+
+impl From<Line2> for SurfacePoint2 {
+    fn from(line: Line2) -> Self {
+        SurfacePoint2::new_normalize(line.origin, line.direction)
+    }
+}
+
+impl From<Ray2> for Line2 {
+    fn from(ray: Ray2) -> Self {
+        Self::new(ray.origin, ray.dir)
+    }
+}
+
+impl LineOps2 for Line2 {
+    fn origin(&self) -> Point2 {
+        self.origin
+    }
+
+    fn dir(&self) -> Vector2 {
+        self.direction
+    }
+
+    fn at(&self, t: f64) -> Point2 {
+        self.origin + self.direction * t
+    }
+}
+
+impl ops::Mul<Line2> for Iso2 {
+    type Output = Line2;
+    fn mul(self, rhs: Line2) -> Line2 {
+        rhs.new_transformed_by(&self)
+    }
+}
+
+impl ops::Mul<&Line2> for Iso2 {
+    type Output = Line2;
+    fn mul(self, rhs: &Line2) -> Line2 {
+        rhs.new_transformed_by(&self)
+    }
+}
+
+impl ops::Mul<Line2> for &Iso2 {
+    type Output = Line2;
+    fn mul(self, rhs: Line2) -> Line2 {
+        rhs.new_transformed_by(self)
+    }
+}
+
+impl ops::Mul<&Line2> for &Iso2 {
+    type Output = Line2;
+    fn mul(self, rhs: &Line2) -> Line2 {
+        rhs.new_transformed_by(self)
+    }
+}
 
 /// Compute the intersection parameters between two parameterized lines. Will return None if
 /// the two directions are parallel to each other
@@ -22,7 +212,7 @@ pub fn intersection_param(
     Some(((dy * bd.x - dx * bd.y) / det, (dy * ad.x - dx * ad.y) / det))
 }
 
-pub fn intersect_lines(a: &impl Line2, b: &impl Line2) -> Option<(f64, f64)> {
+pub fn intersect_lines(a: &impl LineOps2, b: &impl LineOps2) -> Option<(f64, f64)> {
     intersection_param(&a.origin(), &a.dir(), &b.origin(), &b.dir())
 }
 
@@ -30,7 +220,7 @@ pub fn intersect_rays(r0: &Ray, r1: &Ray) -> Option<(f64, f64)> {
     intersection_param(&r0.origin, &r0.dir, &r1.origin, &r1.dir)
 }
 
-pub trait Line2 {
+pub trait LineOps2 {
     fn origin(&self) -> Point2;
     fn dir(&self) -> Vector2;
     fn at(&self, t: f64) -> Point2;
@@ -51,7 +241,7 @@ pub trait Line2 {
     }
 }
 
-impl Line2 for Ray2 {
+impl LineOps2 for Ray2 {
     fn origin(&self) -> Point2 {
         self.origin
     }
@@ -129,5 +319,144 @@ mod tests {
         let result = intersection_param(&a, &an, &b, &bn);
 
         assert_eq!(None, result);
+    }
+
+    // ── Line2 tests ──────────────────────────────────────────────────────────
+
+    fn x_axis_line2() -> Line2 {
+        Line2::new(Point2::origin(), Vector2::x())
+    }
+
+    #[test]
+    fn line2_at_zero_is_origin() {
+        let line = x_axis_line2();
+        assert_relative_eq!(line.at(0.0), Point2::origin(), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn line2_at_one_is_origin_plus_direction() {
+        let line = Line2::new(Point2::new(1.0, 2.0), Vector2::new(0.0, 1.0));
+        assert_relative_eq!(line.at(1.0), Point2::new(1.0, 3.0), epsilon = 1e-12);
+        assert_relative_eq!(line.at(-1.0), Point2::new(1.0, 1.0), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn line2_new_normalize_gives_unit_direction() {
+        let line = Line2::new_normalize(Point2::origin(), Vector2::new(3.0, 0.0));
+        assert_relative_eq!(line.direction().norm(), 1.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn line2_from_points_direction_is_difference() {
+        let line = Line2::from_points(Point2::new(1.0, 0.0), Point2::new(4.0, 0.0));
+        assert_relative_eq!(line.direction(), Vector2::new(3.0, 0.0), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn line2_scalar_project_on_line() {
+        let line = x_axis_line2();
+        assert_relative_eq!(line.scalar_project(&Point2::new(5.0, 0.0)), 5.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn line2_scalar_project_perpendicular_offset() {
+        let line = x_axis_line2();
+        assert_relative_eq!(line.scalar_project(&Point2::new(0.0, 3.0)), 0.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn line2_closest_point_perpendicular_drop() {
+        let line = x_axis_line2();
+        let cp = line.closest_point(&Point2::new(4.0, 3.0));
+        assert_relative_eq!(cp, Point2::new(4.0, 0.0), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn line2_distance_to_known_value() {
+        let line = x_axis_line2();
+        assert_relative_eq!(line.distance_to(&Point2::new(0.0, 3.0)), 3.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn line2_normal_is_cw_unit_perpendicular() {
+        // X-axis: direction = (1, 0), CW normal = (0, -1)
+        let line = x_axis_line2();
+        assert_relative_eq!(
+            line.normal().into_inner(),
+            Vector2::new(0.0, -1.0),
+            epsilon = 1e-12
+        );
+    }
+
+    #[test]
+    fn line2_signed_distance_right_is_positive() {
+        // X-axis, point below (right when traveling +x) → positive
+        let line = x_axis_line2();
+        assert_relative_eq!(line.signed_distance_to(&Point2::new(0.0, -3.0)), 3.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn line2_signed_distance_left_is_negative() {
+        let line = x_axis_line2();
+        assert_relative_eq!(line.signed_distance_to(&Point2::new(0.0, 3.0)), -3.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn line2_intersect_perpendicular_lines() {
+        let a = Line2::new(Point2::new(0.0, 0.0), Vector2::x());
+        let b = Line2::new(Point2::new(3.0, 0.0), Vector2::y());
+        let pt = a.intersect(&b).unwrap();
+        assert_relative_eq!(pt, Point2::new(3.0, 0.0), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn line2_intersect_parallel_returns_none() {
+        let a = Line2::new(Point2::new(0.0, 0.0), Vector2::x());
+        let b = Line2::new(Point2::new(0.0, 1.0), Vector2::x());
+        assert!(a.intersect(&b).is_none());
+    }
+
+    #[test]
+    fn line2_from_surface_point_roundtrip() {
+        use crate::geom2::SurfacePoint2;
+        let sp = SurfacePoint2::new_normalize(Point2::new(1.0, 2.0), Vector2::new(0.0, 1.0));
+        let line = Line2::from(sp);
+        assert_relative_eq!(line.origin(), sp.point, epsilon = 1e-12);
+        assert_relative_eq!(line.direction(), sp.normal.into_inner(), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn line2_to_surface_point_normal_aligns_with_direction() {
+        let line = Line2::new_normalize(Point2::new(1.0, 2.0), Vector2::new(1.0, 0.0));
+        let sp = SurfacePoint2::from(line);
+        assert_relative_eq!(sp.point, line.origin(), epsilon = 1e-12);
+        assert_relative_eq!(sp.normal.into_inner(), line.direction(), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn line2_transform_by_preserves_points_on_line() {
+        use crate::geom2::tests::Random2;
+        let mut rg = Random2::new();
+        for _ in 0..200 {
+            let line = Line2::new(rg.point(10.0), {
+                let a = rg.angle_sym_pi();
+                Vector2::new(a.cos(), a.sin())
+            });
+            let iso = Iso2::new(rg.point(10.0).coords, rg.angle_sym_pi());
+            let transformed = line.new_transformed_by(&iso);
+            for t in [-2.0, 0.0, 1.0, 3.0] {
+                assert_relative_eq!(iso * line.at(t), transformed.at(t), epsilon = 1e-10);
+            }
+        }
+    }
+
+    #[test]
+    fn line2_iso_mul_operator() {
+        let line = Line2::new(Point2::new(1.0, 0.0), Vector2::x());
+        let iso = Iso2::new(Vector2::new(0.0, 5.0), 0.0);
+        let t1 = iso * line.clone();
+        let t2 = &iso * &line;
+        assert_relative_eq!(t1.origin(), Point2::new(1.0, 5.0), epsilon = 1e-12);
+        assert_relative_eq!(t2.origin(), Point2::new(1.0, 5.0), epsilon = 1e-12);
     }
 }

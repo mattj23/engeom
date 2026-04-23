@@ -4,7 +4,7 @@ use crate::airfoil::InscribedCircle;
 use crate::common::Intersection;
 use crate::common::points::{dist, ramer_douglas_peucker};
 use crate::geom2::polyline2::SpanningRay;
-use crate::geom2::{Line2, Segment2, UnitVec2, intersection_param};
+use crate::geom2::{LineOps2, Segment2, UnitVec2, intersection_param};
 use crate::{Circle2, Curve2, Point2, Result, SurfacePoint2};
 
 /// Reverse the order of the inscribed circles in the container. This will additionally

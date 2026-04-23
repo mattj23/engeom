@@ -1,3 +1,5 @@
+mod densities;
+
 use super::polyline2::{SpanningRay, polyline_intersections, spanning_ray};
 use crate::common::points::{
     dist, max_point_in_direction, ramer_douglas_peucker, transform_points,
@@ -5,7 +7,7 @@ use crate::common::points::{
 use crate::common::{Intersection, PCoords, Resample};
 use crate::errors::InvalidGeometry;
 use crate::geom2::hull::convex_hull_2d;
-use crate::geom2::{Iso2, Line2, Point2, Segment2, SurfacePoint2, UnitVec2, intersection_param};
+use crate::geom2::{Iso2, LineOps2, Point2, Segment2, SurfacePoint2, UnitVec2, intersection_param};
 use crate::na::SVector;
 use crate::{Arc2, Circle2, Result, Series1, Vector2};
 use parry2d_f64::bounding_volume::Aabb;

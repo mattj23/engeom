@@ -1,7 +1,7 @@
 use crate::bounding::Aabb2;
 use crate::common::{AngleDir, Resample};
 use crate::conversions::{array_to_points2, array_to_vectors2, points_to_array, vectors_to_array};
-use engeom::geom2::{HasBounds2, Line2};
+use engeom::geom2::{HasBounds2, LineOps2};
 use engeom::{BestFit, To3D};
 use numpy::ndarray::{Array1, Array2};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray2};

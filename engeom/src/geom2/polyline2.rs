@@ -1,7 +1,7 @@
 use super::{Aabb2, Iso2, Point2, Vector2, signed_angle};
 use crate::common::PCoords;
 use crate::common::points::mid_point;
-use crate::geom2::line2::{Line2, intersect_rays};
+use crate::geom2::line2::{LineOps2, intersect_rays};
 use parry2d_f64::partitioning::TraversalAction;
 use parry2d_f64::query::Ray;
 use parry2d_f64::shape::Polyline;
@@ -59,7 +59,7 @@ pub fn ray_intersect_with_edge(line: &Polyline, ray: &Ray, edge_index: usize) ->
     }
 }
 
-impl Line2 for SpanningRay {
+impl LineOps2 for SpanningRay {
     fn origin(&self) -> Point2 {
         self.ray.origin
     }

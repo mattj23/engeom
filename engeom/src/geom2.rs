@@ -37,7 +37,7 @@ pub use self::arc2::Arc2;
 pub use self::boundary::BoundaryElement;
 pub use self::circle2::Circle2;
 pub use self::curve2::{Curve2, CurveStation2};
-pub use self::line2::{Line2, intersect_lines, intersect_rays, intersection_param};
+pub use self::line2::{Line2, LineOps2, intersect_lines, intersect_rays, intersection_param};
 pub use self::segment2::Segment2;
 pub use self::spline2::CubicSpline2;
 
@@ -125,7 +125,7 @@ impl SurfacePointCollection<2> for &Vec<SurfacePoint2> {
     }
 }
 
-impl Line2 for SurfacePoint2 {
+impl LineOps2 for SurfacePoint2 {
     fn origin(&self) -> Point2 {
         self.point
     }
