@@ -1,9 +1,10 @@
 //! This module has tools for partitioning curves into sub-curves.
 
+use crate::common::PCoords;
 use crate::common::points::{dist, mid_point};
 use crate::geom2::LineOps2;
 use crate::na::Unit;
-use crate::{Curve2, Point2};
+use crate::{Curve2, Line2, Point2};
 use parry3d_f64::query::SplitResult;
 
 impl Curve2 {
@@ -198,41 +199,15 @@ impl Curve2 {
         }
     }
 
-    pub fn split_across_line(&self, line: &impl LineOps2) -> SplitResult<Vec<Self>> {
-        // We'll take the intersections with the line and transform them into lengths along the
-        // curve, removing any which are at the endpoints of the curve.
-        let ts = self
-            .intersections_with_line(line)
-            .iter()
-            .filter_map(|(t, _)| {
-                let l = self.at_closest_to_point(&line.at(*t)).length_along();
-                if l > f64::EPSILON && l < self.length() - f64::EPSILON {
-                    Some(l)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
+    pub fn partition_by(&self, boundary: &impl CurvePartitioner2) -> SplitResult<Vec<Self>> {
+        // We will work our way from start to end, building the curves based on when and where they
+        // cross the partitioning boundary.
 
-        // No intersection
-        if ts.is_empty() {
-            return match line
-                .signed_projection_dist(&self.points()[0])
-                .is_sign_positive()
-            {
-                true => SplitResult::Positive,
-                false => SplitResult::Negative,
-            };
-        }
-
-        // We will work our way along the curve, adding points to a working list until we cross
-        // the line, at which point we'll end the working group and start a new one.
-        let mut last_pos = line.signed_projection_dist(&self.points()[0]).is_sign_positive();
         let mut groups = Vec::new();
         let mut working = Vec::new();
 
         for s in self.iter() {
-            // Add the current point to the working list.
+            // Add the current point to the working list
             working.push(s.point);
 
             // Check if we're at the end of the curve.
@@ -242,50 +217,65 @@ impl Curve2 {
                 break;
             }
 
-            // Now we'll check if we're about to cross the line
+            // Now we'll check if we're about to pass through the partitioning boundary.
             let ns = s.at_next_index();
-            let ns_pos = line.signed_projection_dist(&ns).is_sign_positive();
-            if ns_pos != last_pos {
-                // We are about to cross the line, so we'll end the current working group
-                // start the next working group.
-                let end = if let Some((t0, _)) = line.intersection_params(&s.direction_line()) {
-                    line.at(t0)
-                } else {
-                    mid_point(&s, &ns)
-                };
+            if dist(&s, &ns) < f64::EPSILON {
+                continue;
+            }
+
+            let mut current = Line2::new(s.point, (ns.point - s.point).normalize());
+            let mut to_next = current.scalar_project(&ns);
+            while let Some(t) = boundary.next_intersection(&current, to_next) {
+                let end = current.at(t);
                 working.push(end);
                 groups.push(working);
                 working = vec![end];
+                current.shift_along(t);
+                to_next = current.scalar_project(&ns);
             }
-
-            last_pos = ns_pos;
         }
 
-        // If we have a closed curve, we need to splice together the last and first groups
-        let finalized = if groups.len() > 1 && self.is_closed {
-            let mut last_group = groups.pop().unwrap();
-            let first_group = groups.remove(0);
-            last_group.extend(first_group);
-            groups.push(last_group);
-            groups
+        // Build them into curves
+        let mut curves = groups
+            .into_iter()
+            .filter_map(|group| Curve2::from_points(&group, self.tol, false).ok())
+            .collect::<Vec<_>>();
+
+        // If we have a closed curve, we may need to splice together the last and first groups
+        let finalized = if curves.len() > 1 && self.is_closed {
+            let last_pos = boundary.is_pos(&curves.last().unwrap().at_fraction(0.5).unwrap());
+            let first_pos = boundary.is_pos(&curves.first().unwrap().at_fraction(0.5).unwrap());
+
+            if last_pos == first_pos {
+                let last = curves.pop().unwrap();
+                let first = curves.remove(0);
+                let combined_points = [last.points(), first.points()].concat();
+                let combined = Curve2::from_points(&combined_points, self.tol, false).unwrap();
+                curves.push(combined);
+            }
+
+            curves
         } else {
-            groups
+            curves
         };
 
         let mut positives = Vec::new();
         let mut negatives = Vec::new();
-        for group in finalized {
-            if let Ok(curve) = Curve2::from_points(&group, self.tol, false) {
-                let is_pos = line.signed_projection_dist(&curve.points()[0]);
-                if is_pos.is_sign_positive() {
-                    positives.push(curve);
-                } else {
-                    negatives.push(curve);
-                }
+        for curve in finalized {
+            let is_pos = boundary.is_pos(&curve.at_fraction(0.5).unwrap());
+            if is_pos {
+                positives.push(curve);
+            } else {
+                negatives.push(curve);
             }
         }
 
-        SplitResult::Pair(negatives, positives)
+        match (negatives.len(), positives.len()) {
+            (0, 0) => panic!("No curves found, should not be possible!"),
+            (0, _) => SplitResult::Positive,
+            (_, 0) => SplitResult::Negative,
+            (_, _) => SplitResult::Pair(negatives, positives),
+        }
     }
 
     /// Trim a specified amount of length off of the curve's front, returning a new curve if the
@@ -325,29 +315,63 @@ impl Curve2 {
     }
 }
 
+pub trait CurvePartitioner2 {
+    fn is_pos(&self, point: &impl PCoords<2>) -> bool;
+
+    fn next_intersection(&self, line: &Line2, max_dist: f64) -> Option<f64>;
+}
+
+impl<T: CurvePartitioner2> CurvePartitioner2 for &T {
+    fn is_pos(&self, point: &impl PCoords<2>) -> bool {
+        (**self).is_pos(point)
+    }
+
+    fn next_intersection(&self, line: &Line2, max_dist: f64) -> Option<f64> {
+        (**self).next_intersection(line, max_dist)
+    }
+}
+
+impl CurvePartitioner2 for Line2 {
+    fn is_pos(&self, point: &impl PCoords<2>) -> bool {
+        self.signed_projection_dist(point).is_sign_positive()
+    }
+
+    fn next_intersection(&self, line: &Line2, max_dist: f64) -> Option<f64> {
+        if let Some((t0, _)) = line.intersection_params(self) {
+            if t0 > f64::EPSILON && t0 <= max_dist {
+                Some(t0)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::tests::*;
+    use super::*;
     use approx::assert_relative_eq;
 
     use test_case::test_case;
 
+    use crate::Line2;
     use rand::distr::Uniform;
     use rand::prelude::Distribution;
     use rand::rng;
-    use crate::Line2;
 
     #[test]
     fn split_on_line_open() {
         let curve = Curve2::from_points(&sample_points(&sample1()), 1e-6, false).unwrap();
         let line = Line2::new([0.5, 0.0].into(), [0.0, 1.0].into());
 
-        match curve.split_across_line(&line) {
+        match curve.partition_by(&line) {
             SplitResult::Positive => assert!(false, "Should not be positive"),
             SplitResult::Negative => assert!(false, "Should not be negative"),
             SplitResult::Pair(negatives, positives) => {
-                assert_eq!(negatives.len(), 1);
+                assert_eq!(negatives.len(), 2);
                 assert_eq!(positives.len(), 1);
             }
         }
