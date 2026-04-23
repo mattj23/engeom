@@ -5,7 +5,7 @@ use crate::errors::InvalidGeometry;
 use crate::geom2::hull::convex_hull_2d;
 use crate::geom2::{Iso2, LineOps2, Point2, Segment2, SurfacePoint2, UnitVec2, intersection_param};
 use crate::na::SVector;
-use crate::{Arc2, Circle2, Result, Series1, Vector2};
+use crate::{Arc2, Circle2, Line2, Result, Series1, Vector2};
 use parry2d_f64::bounding_volume::Aabb;
 use parry2d_f64::na::Unit;
 use parry2d_f64::query::Ray;
@@ -173,10 +173,11 @@ impl<'a> CurveStation2<'a> {
         SurfacePoint2::new(self.point, self.normal())
     }
 
-    /// Create a SurfacePoint2 from this station, where the point is the same as the station's
-    /// point and the direction is the same as the station's direction
-    pub fn direction_point(&self) -> SurfacePoint2 {
-        SurfacePoint2::new(self.point, self.direction())
+    /// Create a Line2 from this station, where the point is the same as the station's
+    /// point and the direction is the same as the station's direction. The line's direction vector
+    /// will have a unit length.
+    pub fn direction_line(&self) -> Line2 {
+        Line2::new(self.point, self.direction().into_inner())
     }
 
     /// Creates a `SurfacePoint2` from this station similar to `surface_point()`, but where the

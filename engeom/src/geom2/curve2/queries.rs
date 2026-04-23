@@ -147,7 +147,7 @@ impl Curve2 {
         }
 
         results.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        results.dedup_by(|a, b| (a.0 - b.0).abs() < 1e-8);
+        results.dedup_by(|a, b| (a.0 - b.0).abs() < 1e-8 && a.1 == b.1);
 
         results
     }
@@ -218,7 +218,7 @@ mod tests {
         // Verifies that the edge of the curve still intersects the line. If this fails, it may
         // indicate an issue with the slab method of the AABB when taking an intersection with
         // a line coincident with the bounding volume's edge.
-        let curve = Curve2::from_points(&sample_points(&sample1()), 1e-6, true).unwrap();
+        let curve = Curve2::from_points(&sample_points(&sample1()), 1e-6, false).unwrap();
 
         let line = Line2::new([0.0, 0.0].into(), [0.0, 1.0].into());
         let intersections = curve

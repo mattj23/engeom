@@ -11,8 +11,8 @@ use std::ops;
 /// parameterization where `t` equals unit length.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Line2 {
-    origin: Point2,
-    direction: Vector2,
+    pub origin: Point2,
+    pub direction: Vector2,
 }
 
 impl Line2 {
@@ -38,14 +38,6 @@ impl Line2 {
     /// Create a line through two points. The direction is `p2 - p1` (not normalized).
     pub fn from_points(p1: Point2, p2: Point2) -> Self {
         Self::new(p1, p2 - p1)
-    }
-
-    pub fn origin(&self) -> Point2 {
-        self.origin
-    }
-
-    pub fn direction(&self) -> Vector2 {
-        self.direction
     }
 
     /// Normalizes the direction vector in place so that `t` equals arc length from the origin.
@@ -239,6 +231,19 @@ pub trait LineOps2 {
     fn orthogonal(&self) -> Vector2 {
         Iso2::rotation(-std::f64::consts::PI / 2.0) * self.dir()
     }
+
+    /// Returns the signed perpendicular distance from `point` to this line. Positive values
+    /// indicate the point is to the right of the direction of travel (on the normal side),
+    /// negative values indicate the point is to the left.
+    fn signed_projection_dist(&self, point: &impl PCoords<2>) -> f64 {
+        self.orthogonal()
+            .normalize()
+            .dot(&(point.coords() - self.origin().coords))
+    }
+
+    fn intersection_params(&self, other: &impl LineOps2) -> Option<(f64, f64)> {
+        intersection_param(&self.origin(), &self.dir(), &other.origin(), &other.dir())
+    }
 }
 
 impl<T: LineOps2> LineOps2 for &T {
@@ -358,13 +363,13 @@ mod tests {
     #[test]
     fn line2_new_normalize_gives_unit_direction() {
         let line = Line2::new_normalize(Point2::origin(), Vector2::new(3.0, 0.0));
-        assert_relative_eq!(line.direction().norm(), 1.0, epsilon = 1e-12);
+        assert_relative_eq!(line.direction.norm(), 1.0, epsilon = 1e-12);
     }
 
     #[test]
     fn line2_from_points_direction_is_difference() {
         let line = Line2::from_points(Point2::new(1.0, 0.0), Point2::new(4.0, 0.0));
-        assert_relative_eq!(line.direction(), Vector2::new(3.0, 0.0), epsilon = 1e-12);
+        assert_relative_eq!(line.direction, Vector2::new(3.0, 0.0), epsilon = 1e-12);
     }
 
     #[test]
@@ -457,7 +462,7 @@ mod tests {
         let sp = SurfacePoint2::new_normalize(Point2::new(1.0, 2.0), Vector2::new(0.0, 1.0));
         let line = Line2::from(sp);
         assert_relative_eq!(line.origin(), sp.point, epsilon = 1e-12);
-        assert_relative_eq!(line.direction(), sp.normal.into_inner(), epsilon = 1e-12);
+        assert_relative_eq!(line.direction, sp.normal.into_inner(), epsilon = 1e-12);
     }
 
     #[test]
@@ -465,7 +470,7 @@ mod tests {
         let line = Line2::new_normalize(Point2::new(1.0, 2.0), Vector2::new(1.0, 0.0));
         let sp = SurfacePoint2::from(line);
         assert_relative_eq!(sp.point, line.origin(), epsilon = 1e-12);
-        assert_relative_eq!(sp.normal.into_inner(), line.direction(), epsilon = 1e-12);
+        assert_relative_eq!(sp.normal.into_inner(), line.direction, epsilon = 1e-12);
     }
 
     #[test]

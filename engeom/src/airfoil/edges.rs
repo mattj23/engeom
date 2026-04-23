@@ -265,9 +265,9 @@ impl EdgeLocate for TraceToMaxCurvature {
 
         for _i in 0..3 {
             let camber_end = working_stations.get_end_curve(last_radius)?;
-            let end_point = camber_end.at_back().direction_point();
-            let mid = mid_point(&end_point.point, &edge_point);
-            let dir = rot90(Ccw) * (edge_point - end_point.point).normalize();
+            let end_line = camber_end.at_back().direction_line();
+            let mid = mid_point(&end_line.origin, &edge_point);
+            let dir = rot90(Ccw) * (edge_point - end_line.origin).normalize();
             let test_ray = Ray::new(mid, dir);
             if let Some(spanning_ray) = edge_curve.try_create_spanning_ray(&test_ray) {
                 let circle = inscribed_from_spanning_ray(&edge_curve, &spanning_ray, af_tol * 1e-2);

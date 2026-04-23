@@ -383,7 +383,7 @@ impl OrientedCircles {
         let last = self.last().ok_or("No inscribed circles in container")?;
         let c = self.get_end_curve(last.radius())?;
 
-        let end = c.at_back().direction_point();
+        let end = c.at_back().direction_line();
         let ts = section
             .intersection(&end)
             .iter()
@@ -393,7 +393,7 @@ impl OrientedCircles {
             Err("Failed to find intersection with airfoil section".into())
         } else {
             let t = ts.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
-            Ok(end.at_distance(*t))
+            Ok(end.at(*t))
         }
     }
 
