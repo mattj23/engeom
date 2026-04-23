@@ -87,29 +87,41 @@ impl Mesh {
 
             // Backward search
             while !terminations.contains(&segments[current[0]].key_a)
-                && !is_loop(&segments, &current)
             {
                 // Find the segment which has a key_b equal to the current key_a.
                 let key_a = segments[current[0]].key_a;
+                let mut did_something = false;
                 for i in 0..work_bag.len() {
                     if segments[work_bag[i]].key_b == key_a {
                         current.insert(0, work_bag.remove(i));
+                        did_something = true;
                         break;
                     }
+                }
+
+                if !did_something {
+                    break;
                 }
             }
 
             // Forward search
             while !terminations.contains(&segments[*current.last().unwrap()].key_b)
                 && !is_loop(&segments, &current)
+                && !work_bag.is_empty()
             {
                 // Find the segment which has a key_a equal to the current key_b.
                 let key_b = segments[*current.last().unwrap()].key_b;
+                let mut did_something = false;
                 for i in 0..work_bag.len() {
                     if segments[work_bag[i]].key_a == key_b {
                         current.push(work_bag.remove(i));
+                        did_something = true;
                         break;
                     }
+                }
+
+                if !did_something {
+                    break;
                 }
             }
 
