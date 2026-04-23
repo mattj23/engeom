@@ -114,6 +114,15 @@ impl Curve2 {
         polyline_intersections(&self.shape, ray)
     }
 
+    /// Performs an intersection between the curve and any entity implementing `LineOps2`. Returns
+    /// a sorted, deduplicated list of intersections, each as a pair of values representing the
+    /// distance along the line and the index of the edge where the intersection occurs.
+    ///
+    /// # Arguments
+    ///
+    /// * `line`: The line to intersect with the curve.
+    ///
+    /// returns: Vec<(f64, usize), Global>
     pub fn intersections_with_line(&self, line: &impl LineOps2) -> Vec<(f64, usize)> {
         let mut candidates = Vec::new();
         let r_inv = Vector2::new(1.0 / line.dir().x, 1.0 / line.dir().y);
@@ -182,4 +191,44 @@ fn slab_method2(bv: &Aabb2, origin: &Point2, n_inv: &Vector2) -> bool {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::super::tests::*;
+    use super::*;
+    use crate::Line2;
+    use approx::assert_relative_eq;
+
+    #[test]
+    fn intersection_simple() {
+        let curve = Curve2::from_points(&sample_points(&sample1()), 1e-6, true).unwrap();
+
+        let line = Line2::new([0.5, 0.0].into(), [0.0, 1.0].into());
+        let intersections = curve
+            .intersections_with_line(&line)
+            .iter()
+            .map(|i| i.0)
+            .collect::<Vec<_>>();
+        assert_eq!(intersections.len(), 2);
+
+        assert_relative_eq!(intersections[0], 0.0, epsilon = 1e-6);
+        assert_relative_eq!(intersections[1], 1.0, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn intersection_edge() {
+        // Verifies that the edge of the curve still intersects the line. If this fails, it may
+        // indicate an issue with the slab method of the AABB when taking an intersection with
+        // a line coincident with the bounding volume's edge.
+        let curve = Curve2::from_points(&sample_points(&sample1()), 1e-6, true).unwrap();
+
+        let line = Line2::new([0.0, 0.0].into(), [0.0, 1.0].into());
+        let intersections = curve
+            .intersections_with_line(&line)
+            .iter()
+            .map(|i| i.0)
+            .collect::<Vec<_>>();
+        assert_eq!(intersections.len(), 2);
+
+        assert_relative_eq!(intersections[0], 0.0, epsilon = 1e-6);
+        assert_relative_eq!(intersections[1], 1.0, epsilon = 1e-6);
+    }
+}

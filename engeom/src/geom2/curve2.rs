@@ -940,30 +940,25 @@ fn vertex_between_segs(a: &Segment2, b: &Segment2) -> Result<Point2> {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use crate::geom2::Vector2;
     use approx::assert_relative_eq;
-
     use test_case::test_case;
 
-    use rand::distr::Uniform;
-    use rand::prelude::Distribution;
-    use rand::rng;
-
-    fn sample1() -> Vec<(f64, f64)> {
+    pub fn sample1() -> Vec<(f64, f64)> {
         vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
     }
 
-    fn sample2() -> Vec<(f64, f64)> {
+    pub fn sample2() -> Vec<(f64, f64)> {
         vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.0, 0.0)]
     }
 
-    fn sample_points(p: &[(f64, f64)]) -> Vec<Point2> {
+    pub fn sample_points(p: &[(f64, f64)]) -> Vec<Point2> {
         p.iter().map(|(a, b)| Point2::new(*a, *b)).collect()
     }
 
-    fn sample_points_scaled(p: &[(f64, f64)], f: f64) -> Vec<Point2> {
+    pub fn sample_points_scaled(p: &[(f64, f64)], f: f64) -> Vec<Point2> {
         p.iter().map(|(a, b)| Point2::new(*a * f, *b * f)).collect()
     }
 
