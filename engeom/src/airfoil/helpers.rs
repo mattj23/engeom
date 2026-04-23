@@ -384,7 +384,11 @@ impl OrientedCircles {
         let c = self.get_end_curve(last.radius())?;
 
         let end = c.at_back().direction_point();
-        let ts = section.intersection(&end);
+        let ts = section
+            .intersection(&end)
+            .iter()
+            .map(|(t, _)| *t)
+            .collect::<Vec<_>>();
         if ts.is_empty() {
             Err("Failed to find intersection with airfoil section".into())
         } else {

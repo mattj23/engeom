@@ -399,7 +399,10 @@ impl AirfoilGeometry {
                     .upper
                     .as_ref()
                     .ok_or("Upper surface not found")?
-                    .intersection(&sp);
+                    .intersection(&sp)
+                    .iter()
+                    .map(|(t, _)| *t)
+                    .collect::<Vec<_>>();
                 if ut.is_empty() {
                     return Err("Failed to find upper surface intersection".into());
                 }
@@ -408,7 +411,10 @@ impl AirfoilGeometry {
                     .lower
                     .as_ref()
                     .ok_or("Lower surface not found")?
-                    .intersection(&sp);
+                    .intersection(&sp)
+                    .iter()
+                    .map(|(t, _)| *t)
+                    .collect::<Vec<_>>();
                 if lt.is_empty() {
                     return Err("Failed to find lower surface intersection".into());
                 }
@@ -540,8 +546,16 @@ fn order_faces(
     b: Curve2,
     test_point: SurfacePoint2,
 ) -> Result<(Option<Curve2>, Option<Curve2>)> {
-    let a_t = a.intersection(&test_point);
-    let b_t = b.intersection(&test_point);
+    let a_t = a
+        .intersection(&test_point)
+        .iter()
+        .map(|(t, _)| *t)
+        .collect::<Vec<_>>();
+    let b_t = b
+        .intersection(&test_point)
+        .iter()
+        .map(|(t, _)| *t)
+        .collect::<Vec<_>>();
 
     // We should have intersections with both curves. If the outline is clean, we will have exactly
     // one intersection with each, but if not we might have more than one at a similar distance.

@@ -241,6 +241,21 @@ pub trait LineOps2 {
     }
 }
 
+impl<T: LineOps2> LineOps2 for &T {
+    // Blanket impl for all types that implement LineOps2
+    fn origin(&self) -> Point2 {
+        (**self).origin()
+    }
+
+    fn dir(&self) -> Vector2 {
+        (**self).dir()
+    }
+
+    fn at(&self, t: f64) -> Point2 {
+        (**self).at(t)
+    }
+}
+
 impl LineOps2 for Ray2 {
     fn origin(&self) -> Point2 {
         self.origin
@@ -355,13 +370,21 @@ mod tests {
     #[test]
     fn line2_scalar_project_on_line() {
         let line = x_axis_line2();
-        assert_relative_eq!(line.scalar_project(&Point2::new(5.0, 0.0)), 5.0, epsilon = 1e-12);
+        assert_relative_eq!(
+            line.scalar_project(&Point2::new(5.0, 0.0)),
+            5.0,
+            epsilon = 1e-12
+        );
     }
 
     #[test]
     fn line2_scalar_project_perpendicular_offset() {
         let line = x_axis_line2();
-        assert_relative_eq!(line.scalar_project(&Point2::new(0.0, 3.0)), 0.0, epsilon = 1e-12);
+        assert_relative_eq!(
+            line.scalar_project(&Point2::new(0.0, 3.0)),
+            0.0,
+            epsilon = 1e-12
+        );
     }
 
     #[test]
@@ -374,7 +397,11 @@ mod tests {
     #[test]
     fn line2_distance_to_known_value() {
         let line = x_axis_line2();
-        assert_relative_eq!(line.distance_to(&Point2::new(0.0, 3.0)), 3.0, epsilon = 1e-12);
+        assert_relative_eq!(
+            line.distance_to(&Point2::new(0.0, 3.0)),
+            3.0,
+            epsilon = 1e-12
+        );
     }
 
     #[test]
@@ -392,13 +419,21 @@ mod tests {
     fn line2_signed_distance_right_is_positive() {
         // X-axis, point below (right when traveling +x) → positive
         let line = x_axis_line2();
-        assert_relative_eq!(line.signed_distance_to(&Point2::new(0.0, -3.0)), 3.0, epsilon = 1e-12);
+        assert_relative_eq!(
+            line.signed_distance_to(&Point2::new(0.0, -3.0)),
+            3.0,
+            epsilon = 1e-12
+        );
     }
 
     #[test]
     fn line2_signed_distance_left_is_negative() {
         let line = x_axis_line2();
-        assert_relative_eq!(line.signed_distance_to(&Point2::new(0.0, 3.0)), -3.0, epsilon = 1e-12);
+        assert_relative_eq!(
+            line.signed_distance_to(&Point2::new(0.0, 3.0)),
+            -3.0,
+            epsilon = 1e-12
+        );
     }
 
     #[test]

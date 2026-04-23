@@ -1,6 +1,6 @@
 //! This module has some special density-like functions for 2D curves.
 
-use crate::{Result, Curve2, Iso2, Series1};
+use crate::{Curve2, Iso2, Result, Series1};
 
 impl Curve2 {
     /// Creates a series of the length density of the curve with respect to a given direction. This
@@ -28,8 +28,6 @@ impl Curve2 {
     ///
     /// ```
     pub fn directional_density(&self, facing: &Iso2, bin_width: f64) -> Result<Series1> {
-
         todo!()
     }
-
 }

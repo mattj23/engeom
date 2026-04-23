@@ -86,8 +86,7 @@ impl Mesh {
             let mut current = vec![work_bag.pop().unwrap()];
 
             // Backward search
-            while !terminations.contains(&segments[current[0]].key_a)
-            {
+            while !terminations.contains(&segments[current[0]].key_a) {
                 // Find the segment which has a key_b equal to the current key_a.
                 let key_a = segments[current[0]].key_a;
                 let mut did_something = false;
