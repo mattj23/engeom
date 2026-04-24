@@ -1,10 +1,10 @@
 use crate::AngleDir::Cw;
+use crate::common::vec_f64::sort_and_dedup;
 use crate::common::{Intersection, PCoords};
-use crate::geom2::{Ray2, SurfacePoint2, UnitVec2, rot90, Aabb2};
+use crate::geom2::{Aabb2, Ray2, SurfacePoint2, UnitVec2, rot90, signed_angle};
 use crate::{Iso2, Point2, Vector2};
 use parry2d_f64::query::Ray;
 use std::ops;
-use crate::common::vec_f64::sort_and_dedup;
 
 /// A parameterized line in 2D space: `P(t) = origin + t * direction`.
 ///
@@ -25,6 +25,33 @@ impl Line2 {
         Self::new(Point2::origin(), Vector2::y())
     }
 
+    /// Create a new parallel line with a given offset along the normal direction. A positive
+    /// `delta_n` moves the origin to the right of the line, while a negative `delta_n` moves the
+    /// origin to the left.
+    ///
+    /// # Arguments
+    ///
+    /// * `delta_n`: The offset along the normal direction.
+    ///
+    /// returns: Line2
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::Line2;
+    /// use approx::assert_relative_eq;
+    ///
+    /// let l0 = Line2::new(Point2::new(0.0, 0.0), Vector2::new(0.0, 1.0));
+    /// let l1 = l0.new_parallel(1.0);
+    ///
+    /// assert_relative_eq!(l1.origin, Point2::new(0.0, 1.0), epsilon = 1e-6);
+    /// assert_relative_eq!(l1.direction, Vector2::new(0.0, 1.0), epsilon = 1e-6);
+    /// ```
+    pub fn new_parallel(&self, delta_n: f64) -> Self {
+        let n = self.normal().into_inner();
+        Self::new(self.origin + n * delta_n, self.direction)
+    }
+
     /// Create a line from an origin point and a direction vector (stored as-is, not normalized).
     pub fn new(origin: Point2, direction: Vector2) -> Self {
         Self { origin, direction }
@@ -37,7 +64,9 @@ impl Line2 {
     }
 
     /// Create a line through two points. The direction is `p2 - p1` (not normalized).
-    pub fn from_points(p1: Point2, p2: Point2) -> Self {
+    pub fn from_points(p1: &impl PCoords<2>, p2: &impl PCoords<2>) -> Self {
+        let p1 = Point2::from(p1.coords());
+        let p2 = Point2::from(p2.coords());
         Self::new(p1, p2 - p1)
     }
 
@@ -126,21 +155,15 @@ impl Line2 {
     }
 }
 
-impl From<SurfacePoint2> for Line2 {
-    fn from(sp: SurfacePoint2) -> Self {
-        Self::new(sp.point, sp.normal.into_inner())
-    }
-}
-
 impl From<Line2> for SurfacePoint2 {
     fn from(line: Line2) -> Self {
         SurfacePoint2::new_normalize(line.origin, line.direction)
     }
 }
 
-impl From<Ray2> for Line2 {
-    fn from(ray: Ray2) -> Self {
-        Self::new(ray.origin, ray.dir)
+impl<T: LineOps2> From<&T> for Line2 {
+    fn from(line: &T) -> Self {
+        Self::new(line.origin(), line.dir())
     }
 }
 
@@ -245,6 +268,28 @@ pub trait LineOps2 {
     fn intersection_params(&self, other: &impl LineOps2) -> Option<(f64, f64)> {
         intersection_param(&self.origin(), &self.dir(), &other.origin(), &other.dir())
     }
+
+    /// Creates an isometry where the origin is the same as the line's origin and the X direction
+    /// is the same as the line's direction. Transforming an entity at the origin by this isometry
+    /// will move it to the same position and orientation as the line. Transforming an entity by
+    /// the inverse of this isometry will transfer its relationship with the line to the origin.
+    fn to_iso_from_x(&self) -> Iso2 {
+        let r = Iso2::rotation(signed_angle(&Vector2::x(), &self.dir()));
+        let t = Iso2::translation(self.origin().x, self.origin().y);
+
+        t * r
+    }
+
+    /// Creates an isometry where the origin is the same as the line's origin and the Y direction
+    /// is the same as the line's direction. Transforming an entity at the origin by this isometry
+    /// will move it to the same position and orientation as the line. Transforming an entity by
+    /// the inverse of this isometry will transfer its relationship with the line to the origin.
+    fn to_iso_from_y(&self) -> Iso2 {
+        let r = Iso2::rotation(signed_angle(&Vector2::y(), &self.dir()));
+        let t = Iso2::translation(self.origin().x, self.origin().y);
+
+        t * r
+    }
 }
 
 impl<T: LineOps2> LineOps2 for &T {
@@ -322,12 +367,27 @@ pub fn slab_method2(bv: &Aabb2, origin: &Point2, n_inv: &Vector2) -> bool {
     tmax >= tmin
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
     use test_case::test_case;
+
+    #[test]
+    fn line2_basis_x() {
+        let line = Line2::new([1.0, 1.0].into(), [0.0, 1.0].into());
+        let p = line.at(1.0);
+        let t = line.to_iso_from_x().inverse() * p;
+        assert_relative_eq!(Point2::new(1.0, 0.0), t, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn line2_basis_y() {
+        let line = Line2::new([1.0, 1.0].into(), [1.0, 0.0].into());
+        let p = line.at(1.0);
+        let t = line.to_iso_from_y().inverse() * p;
+        assert_relative_eq!(Point2::new(0.0, 1.0), t, epsilon = 1e-12);
+    }
 
     /// These tests check that the intersection parameter calculation between two parameterized
     /// lines works as expected. The test cases were generated by starting with a random
@@ -416,7 +476,7 @@ mod tests {
 
     #[test]
     fn line2_from_points_direction_is_difference() {
-        let line = Line2::from_points(Point2::new(1.0, 0.0), Point2::new(4.0, 0.0));
+        let line = Line2::from_points(&Point2::new(1.0, 0.0), &Point2::new(4.0, 0.0));
         assert_relative_eq!(line.direction, Vector2::new(3.0, 0.0), epsilon = 1e-12);
     }
 
@@ -508,7 +568,7 @@ mod tests {
     fn line2_from_surface_point_roundtrip() {
         use crate::geom2::SurfacePoint2;
         let sp = SurfacePoint2::new_normalize(Point2::new(1.0, 2.0), Vector2::new(0.0, 1.0));
-        let line = Line2::from(sp);
+        let line = Line2::from(&sp);
         assert_relative_eq!(line.origin(), sp.point, epsilon = 1e-12);
         assert_relative_eq!(line.direction, sp.normal.into_inner(), epsilon = 1e-12);
     }
@@ -598,5 +658,4 @@ mod tests {
 
         assert!(ts.is_empty());
     }
-
 }

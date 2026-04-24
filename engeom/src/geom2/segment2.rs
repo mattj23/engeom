@@ -111,7 +111,7 @@ impl Segment2 {
     }
 
     pub fn to_line(&self) -> Line2 {
-        Line2::from_points(self.a, self.b)
+        Line2::from_points(&self.a, &self.b)
     }
 
     pub fn at(&self, t: f64) -> Point2 {

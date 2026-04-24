@@ -4,7 +4,6 @@ use super::helpers::{
     OrientedCircles, inscribed_from_spanning_ray, refine_stations, reverse_inscribed_circles,
 };
 use crate::AngleDir::{Ccw, Cw};
-use crate::{Line2, Result};
 use crate::airfoil::inscribed_circle::InscribedCircle;
 use crate::common::Resample::ByCount;
 use crate::common::points::{dist, mid_point};
@@ -12,6 +11,7 @@ use crate::geom2::hull::farthest_pair_indices;
 use crate::geom2::polyline2::SpanningRay;
 use crate::geom2::{LineOps2, Segment2, rot90};
 use crate::{Curve2, UnitVec2};
+use crate::{Line2, Result};
 use parry2d_f64::query::Ray;
 use parry2d_f64::shape::ConvexPolygon;
 
@@ -23,7 +23,10 @@ use parry2d_f64::shape::ConvexPolygon;
 ///
 /// returns: Result<Unit<Matrix<f64, Const<2>, Const<1>, ArrayStorage<f64, 2, 1>>>, Box<dyn Error, Global>>
 pub fn camber_detect_upper_dir(camber_line: &Curve2) -> Result<UnitVec2> {
-    let check = Line2::from_points(camber_line.at_front().point(), camber_line.at_back().point());
+    let check = Line2::from_points(
+        &camber_line.at_front().point(),
+        &camber_line.at_back().point(),
+    );
 
     let resampled = camber_line.resample(ByCount(50))?;
 

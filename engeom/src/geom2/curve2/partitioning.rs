@@ -1,11 +1,11 @@
 //! This module has tools for partitioning curves into sub-curves.
 
-use parry2d_f64::bounding_volume::BoundingVolume;
-use crate::common::{Intersection, PCoords};
 use crate::common::points::{dist, mid_point};
+use crate::common::{Intersection, PCoords};
 use crate::geom2::{Aabb2, LineOps2};
 use crate::na::Unit;
 use crate::{Circle2, Curve2, Line2, Point2};
+use parry2d_f64::bounding_volume::BoundingVolume;
 use parry3d_f64::query::SplitResult;
 
 impl Curve2 {
@@ -200,6 +200,53 @@ impl Curve2 {
         }
     }
 
+    /// Partitions this curve into sub-curves by a [`CurvePartitioner2`] boundary, returning a
+    /// [`SplitResult`] that classifies the resulting pieces.
+    ///
+    /// The boundary divides 2D space into a *positive* half and a *negative* half via
+    /// [`CurvePartitioner2::is_pos`].  Each segment of the curve that lies entirely on one side
+    /// becomes one sub-curve.  Wherever the curve crosses the boundary, a precise intersection
+    /// point is computed and inserted as the shared endpoint of the two adjacent sub-curves.
+    ///
+    /// If the curve is closed and the first and last sub-curves end up on the same side of
+    /// the boundary, they are spliced together into a single sub-curve so that the topology of
+    /// the closed curve is preserved.
+    ///
+    /// The return value is a [`SplitResult`]:
+    /// - `SplitResult::Positive`: the entire curve lies on the positive side (no crossings).
+    /// - `SplitResult::Negative`: the entire curve lies on the negative side (no crossings).
+    /// - `SplitResult::Pair(negatives, positives)`: the curve crosses the boundary at least
+    ///   once; `negatives` holds the sub-curves on the negative side and `positives` holds those
+    ///   on the positive side.
+    ///
+    /// # Built-in partitioners
+    ///
+    /// [`Line2`], [`Aabb2`], and [`Circle2`] all implement [`CurvePartitioner2`] out of the box.
+    /// For `Line2` the positive side is to the right of the line's direction of travel; for
+    /// `Aabb2` and `Circle2` the positive side is the exterior of the shape.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::geom2::{Curve2, Point2};
+    /// use engeom::Line2;
+    /// use parry3d_f64::query::SplitResult;
+    ///
+    /// let pts = vec![
+    ///     Point2::new(0.0, 0.0), Point2::new(0.3, 0.5),
+    ///     Point2::new(0.7, 0.5), Point2::new(1.0, 0.0),
+    /// ];
+    /// let curve = Curve2::from_points(&pts, 1e-6, false).unwrap();
+    /// let divider = Line2::new([0.5, 0.0].into(), [0.0, 1.0].into());
+    ///
+    /// match curve.partition_by(&divider) {
+    ///     SplitResult::Pair(neg, pos) => {
+    ///         assert_eq!(neg.len(), 1); // x < 0.5 portion
+    ///         assert_eq!(pos.len(), 1); // x > 0.5 portion
+    ///     }
+    ///     _ => panic!("expected a split"),
+    /// }
+    /// ```
     pub fn partition_by(&self, boundary: &impl CurvePartitioner2) -> SplitResult<Vec<Self>> {
         // We will work our way from start to end, building the curves based on when and where they
         // cross the partitioning boundary.
@@ -435,7 +482,6 @@ mod tests {
             }
         }
     }
-
 
     #[test]
     fn split_on_box_open_end() {
