@@ -5,8 +5,9 @@ use crate::common::{
 };
 use crate::geom2::aabb2::arc_aabb2;
 use crate::geom2::{Aabb2, BoundaryElement, HasBounds2, ManifoldPosition2, directed_angle, rot90};
-use crate::{AngleInterval, Circle2, Point2, UnitVec2};
+use crate::{AngleInterval, Circle2, Point2, Result, UnitVec2};
 use serde::{Deserialize, Serialize};
+use std::f64::consts::PI;
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct Arc2 {
@@ -27,6 +28,38 @@ impl Arc2 {
             angle,
             aabb,
         }
+    }
+
+    pub fn try_new_ends(
+        start: &impl PCoords<2>,
+        end: &impl PCoords<2>,
+        center: &impl PCoords<2>,
+        clockwise: bool,
+    ) -> Result<Self> {
+        let r = dist(start, center);
+        let mismatch = r - dist(start, center);
+        if mismatch.abs() > 1e-8 {
+            return Err(format!("Arc start and end points do not coincide: {}", mismatch).into());
+        };
+
+        let c = Circle2::new(center.coords().x, center.coords().y, r);
+        let t0 = c.angle_of_point(start);
+        let v0 = start.coords() - c.center.coords();
+        let v1 = end.coords() - c.center.coords();
+        let t = if clockwise {
+            -directed_angle(&v0, &v1, Cw)
+        } else {
+            directed_angle(&v0, &v1, Ccw)
+        };
+
+        // Special case for full circle
+        let t = if dist(start, end) < 1e-8 {
+            if clockwise { -PI * 2.0 } else { PI * 2.0 }
+        } else {
+            t
+        };
+
+        Ok(Arc2::new(c, t0, t))
     }
 
     /// Create an arc from a center point, a radius, starting at `angle0` and extending for
@@ -269,13 +302,14 @@ impl BoundaryElement for Arc2 {
         ManifoldPosition2::new(length, point, direction, normal)
     }
 
-    fn closest_to_point(&self, point: &impl PCoords<2>) -> ManifoldPosition2 {
-        let theta = self.circle().angle_of_point(point);
+    fn closest_to_point(&self, point: &dyn PCoords<2>) -> ManifoldPosition2 {
+        let point = Point2::from(point.coords());
+        let theta = self.circle().angle_of_point(&point);
         let t = if self.is_theta_on_arc(theta) {
             self.theta_to_fraction(theta) * self.length()
         } else {
-            let d0 = dist(&self.at_start(), point);
-            let d1 = dist(&self.at_end(), point);
+            let d0 = dist(&self.at_start(), &point);
+            let d1 = dist(&self.at_end(), &point);
             if d0 < d1 { 0.0 } else { self.length() }
         };
 

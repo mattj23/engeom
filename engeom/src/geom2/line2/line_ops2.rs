@@ -1,7 +1,7 @@
-use crate::{Iso2, Line2, Point2, Vector2};
-use crate::common::{Intersection, PCoords};
 use crate::common::vec_f64::sort_and_dedup;
-use crate::geom2::{intersection_param, signed_angle, Aabb2, Ray2};
+use crate::common::{Intersection, PCoords};
+use crate::geom2::{Aabb2, Ray2, intersection_param, signed_angle};
+use crate::{Iso2, Line2, Point2, Vector2};
 
 pub trait LineOps2 {
     fn origin(&self) -> Point2;

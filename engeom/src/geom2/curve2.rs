@@ -438,6 +438,7 @@ impl Curve2 {
                 .lengths
                 .binary_search_by(|a| a.partial_cmp(&length).unwrap());
             match search {
+                // TODO: I think this might be a bug, the first index is 0, it should be index - 1
                 Ok(index) => Some(self.at_vertex(index)),
                 Err(next_index) => {
                     // next_index will be the index of the first element greater than the value we

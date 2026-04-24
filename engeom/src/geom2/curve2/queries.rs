@@ -3,9 +3,9 @@ use crate::common::{Intersection, PCoords};
 use crate::geom2::line2::slab_method2;
 use crate::geom2::polyline2::polyline_intersections;
 use crate::geom2::{Aabb2, LineOps2, intersection_param};
-use crate::{Curve2, CurveStation2, Iso2, Point2, SurfacePoint2, Vector2, Result};
+use crate::{Curve2, CurveStation2, Iso2, Point2, Result, SurfacePoint2, Vector2};
 use parry2d_f64::partitioning::TraversalAction;
-use parry2d_f64::query::{closest_points, ClosestPoints, PointQueryWithLocation, Ray};
+use parry2d_f64::query::{ClosestPoints, PointQueryWithLocation, Ray, closest_points};
 
 impl Curve2 {
     /// Returns the `CurveStation2` whose point is closest to `test_point`.
@@ -159,7 +159,7 @@ impl Curve2 {
         match pair {
             ClosestPoints::Disjoint => Ok(f64::MAX),
             ClosestPoints::Intersecting => Ok(0.0),
-            ClosestPoints::WithinMargin(a, b)  => Ok(dist(&a, &b)),
+            ClosestPoints::WithinMargin(a, b) => Ok(dist(&a, &b)),
         }
     }
 }

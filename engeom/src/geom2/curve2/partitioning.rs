@@ -379,12 +379,18 @@ impl Curve2 {
 
 /// Given a curve and a line, find the next crossing, where the is_pos value changes. The value
 /// will lie between 0.0 and 1.0. The provided line should not be normalized.
-fn find_next_crossing(bnd: &impl CurvePartitioner2, line: &Line2, max_dist: f64, current_pos: bool) -> Option<f64> {
+fn find_next_crossing(
+    bnd: &impl CurvePartitioner2,
+    line: &Line2,
+    max_dist: f64,
+    current_pos: bool,
+) -> Option<f64> {
     // The reason that this function exists is that the concept of an intersection does not
     // necessarily correspond with a crossing of the boundary. Rather, crossings occur next to the
     // intersection, but the intersection itself is usually contained within the boundary. This
     // becomes a problem when endpoints are at the boundary.
-    let mut candidates = bnd.all_intersections(line)
+    let mut candidates = bnd
+        .all_intersections(line)
         .into_iter()
         .filter(|t| *t >= 0.0 && *t <= max_dist)
         .collect::<Vec<_>>();

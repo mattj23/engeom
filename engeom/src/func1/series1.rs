@@ -1,3 +1,4 @@
+use crate::common::vec_f64::sort_and_dedup;
 use crate::common::{DiscreteDomain, Interval};
 use crate::func1::{Func1, Line1};
 use crate::{Point2, Result};
@@ -5,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use std::iter::Zip;
 use std::ops;
 use std::slice::Iter;
-use crate::common::vec_f64::sort_and_dedup;
 
 /// Represents a contiguous series of data points in a 2d plane where the x values go from
 /// smallest to largest and the y values are associated with the x value at the same index.
@@ -766,11 +766,7 @@ impl Series1 {
 
 fn f_or_zero(f: &impl Func1, x: f64) -> f64 {
     let y = f.f(x);
-    if y.is_nan() {
-        0.0
-    } else {
-        y
-    }
+    if y.is_nan() { 0.0 } else { y }
 }
 
 impl Func1 for &Series1 {

@@ -139,8 +139,9 @@ impl BoundaryElement for Segment2 {
         self.at_t(t)
     }
 
-    fn closest_to_point(&self, point: &impl PCoords<2>) -> ManifoldPosition2 {
-        let t = self.scalar_projection(point).clamp(0.0, 1.0);
+    fn closest_to_point(&self, point: &dyn PCoords<2>) -> ManifoldPosition2 {
+        let p = Point2::from(point.coords());
+        let t = self.scalar_projection(&p).clamp(0.0, 1.0);
         self.at_t(t)
     }
 

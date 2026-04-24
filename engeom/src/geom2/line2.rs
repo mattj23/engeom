@@ -1,14 +1,14 @@
 mod line_ops2;
 mod ransac;
 
-use crate::common::{Intersection, PCoords};
-use crate::geom2::{rot90, Aabb2, SurfacePoint2, UnitVec2};
 use crate::AngleDir::Cw;
+use crate::common::{Intersection, PCoords};
+use crate::geom2::{Aabb2, SurfacePoint2, UnitVec2, rot90};
 use crate::{Iso2, Point2, Vector2};
-use parry2d_f64::query::Ray;
-use std::ops;
-use serde::{Deserialize, Serialize};
 pub use line_ops2::*;
+use parry2d_f64::query::Ray;
+use serde::{Deserialize, Serialize};
+use std::ops;
 
 /// A parameterized line in 2D space: `P(t) = origin + t * direction`.
 ///
@@ -239,7 +239,6 @@ pub fn intersect_lines(a: &impl LineOps2, b: &impl LineOps2) -> Option<(f64, f64
 pub fn intersect_rays(r0: &Ray, r1: &Ray) -> Option<(f64, f64)> {
     intersection_param(&r0.origin, &r0.dir, &r1.origin, &r1.dir)
 }
-
 
 pub fn slab_method2(bv: &Aabb2, origin: &Point2, n_inv: &Vector2) -> bool {
     let mut t1 = (bv.mins.x - origin.x) * n_inv.x;

@@ -9,7 +9,6 @@ pub mod hull;
 mod line2;
 pub mod polyline2;
 mod segment2;
-mod spline2;
 
 use crate::AngleDir;
 use crate::AngleDir::Cw;
@@ -34,12 +33,11 @@ pub type KdTree2 = crate::common::kd_tree::KdTree<2>;
 pub use self::aabb2::Aabb2;
 pub use self::angles2::{directed_angle, rot90, rot270, signed_angle};
 pub use self::arc2::Arc2;
-pub use self::boundary::BoundaryElement;
+pub use self::boundary::{Boundary2, BoundaryData2, BoundaryElement};
 pub use self::circle2::Circle2;
-pub use self::curve2::{Curve2, CurveStation2, CurvePartitioner2};
+pub use self::curve2::{Curve2, CurvePartitioner2, CurveStation2};
 pub use self::line2::{Line2, LineOps2, intersect_lines, intersect_rays, intersection_param};
 pub use self::segment2::Segment2;
-pub use self::spline2::CubicSpline2;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ManifoldPosition2 {
