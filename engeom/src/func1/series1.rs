@@ -734,62 +734,52 @@ impl Series1 {
 
         results
     }
+
+    pub fn add(&self, rhs: &impl Func1) -> Self {
+        self.add_sign(rhs, true)
+    }
+
+    pub fn sub(&self, rhs: &impl Func1) -> Self {
+        self.add_sign(rhs, false)
+    }
+
+    fn add_sign(&self, rhs: &impl Func1, add: bool) -> Self {
+        let mut ys = Vec::new();
+        let signum = if add { 1.0 } else { -1.0 };
+
+        if let Some(rhs_xs) = rhs.xs() {
+            let mut all_xs = [self.x.to_vec(), rhs_xs.to_vec()].concat();
+            sort_and_dedup(&mut all_xs, Some(1e-10));
+            let new_xs = DiscreteDomain::try_from(all_xs).unwrap();
+            for x in new_xs.values() {
+                ys.push(f_or_zero(&self, *x) + signum * f_or_zero(rhs, *x));
+            }
+            Self::new(new_xs, ys)
+        } else {
+            for (x, y) in self.x.iter().zip(self.y.iter()) {
+                ys.push(y + signum * f_or_zero(rhs, *x));
+            }
+            Self::new(self.x.clone(), ys)
+        }
+    }
 }
 
+fn f_or_zero(f: &impl Func1, x: f64) -> f64 {
+    let y = f.f(x);
+    if y.is_nan() {
+        0.0
+    } else {
+        y
+    }
+}
 
-impl Func1 for Series1 {
+impl Func1 for &Series1 {
     fn f(&self, x: f64) -> f64 {
         self.interpolate(x)
     }
 
     fn xs(&self) -> Option<&DiscreteDomain> {
         Some(&self.x)
-    }
-}
-
-impl ops::Add<&dyn Func1> for &Series1 {
-    type Output = Series1;
-
-    fn add(self, rhs: &dyn Func1) -> Self::Output {
-        let mut ys = Vec::new();
-
-        if let Some(rhs_xs) = rhs.xs() {
-            let mut all_xs = [self.x.to_vec(), rhs_xs.to_vec()].concat();
-            sort_and_dedup(&mut all_xs, Some(1e-10));
-            let new_xs = DiscreteDomain::try_from(all_xs).unwrap();
-            for x in new_xs.values() {
-                ys.push(self.f(*x) + rhs.f(*x));
-            }
-            Self::Output::new(new_xs, ys)
-        } else {
-            for (x, y) in self.x.iter().zip(self.y.iter()) {
-                ys.push(y + rhs.f(*x));
-            }
-            Self::Output::new(self.x.clone(), ys)
-        }
-    }
-}
-
-impl ops::Sub<&dyn Func1> for &Series1 {
-    type Output = Series1;
-
-    fn sub(self, rhs: &dyn Func1) -> Self::Output {
-        let mut ys = Vec::new();
-
-        if let Some(rhs_xs) = rhs.xs() {
-            let mut all_xs = [self.x.to_vec(), rhs_xs.to_vec()].concat();
-            sort_and_dedup(&mut all_xs, Some(1e-10));
-            let new_xs = DiscreteDomain::try_from(all_xs).unwrap();
-            for x in new_xs.values() {
-                ys.push(self.f(*x) - rhs.f(*x));
-            }
-            Self::Output::new(new_xs, ys)
-        } else {
-            for (x, y) in self.x.iter().zip(self.y.iter()) {
-                ys.push(y - rhs.f(*x));
-            }
-            Self::Output::new(self.x.clone(), ys)
-        }
     }
 }
 

@@ -323,28 +323,39 @@ impl LineOps2 for Ray2 {
 
 impl<T: LineOps2> Intersection<Aabb2, Vec<f64>> for T {
     fn intersection(&self, other: Aabb2) -> Vec<f64> {
-        let x_inv = 1.0 / self.dir().x;
-        let y_inv = 1.0 / self.dir().y;
+        let a = other.mins.clone();
+        let b = Point2::new(other.maxs.x, other.mins.y);
+        let c = other.maxs.clone();
+        let d = Point2::new(other.mins.x, other.maxs.y);
 
-        let t1x = (other.mins.x - self.origin().x) * x_inv;
-        let t2x = (other.maxs.x - self.origin().x) * x_inv;
-        let t1y = (other.mins.y - self.origin().y) * y_inv;
-        let t2y = (other.maxs.y - self.origin().y) * y_inv;
+        let x_min = Line2::from_points(&a, &d);
+        let x_max = Line2::from_points(&b, &c);
+        let y_min = Line2::from_points(&a, &b);
+        let y_max = Line2::from_points(&c, &d);
 
         let mut result = Vec::with_capacity(2);
 
-        if t1x.is_finite() && other.contains_local_point(&self.at(t1x)) {
-            result.push(t1x);
+        if let Some((t0, t1)) = self.intersection_params(&x_min) {
+            if 0.0 <= t1 && t1 <= 1.0 {
+                result.push(t0);
+            }
         }
-        if t2x.is_finite() && other.contains_local_point(&self.at(t2x)) {
-            result.push(t2x);
+        if let Some((t0, t1)) = self.intersection_params(&x_max) {
+            if 0.0 <= t1 && t1 <= 1.0 {
+                result.push(t0);
+            }
         }
-        if t1y.is_finite() && other.contains_local_point(&self.at(t1y)) {
-            result.push(t1y);
+        if let Some((t0, t1)) = self.intersection_params(&y_min) {
+            if 0.0 <= t1 && t1 <= 1.0 {
+                result.push(t0);
+            }
         }
-        if t2y.is_finite() && other.contains_local_point(&self.at(t2y)) {
-            result.push(t2y);
+        if let Some((t0, t1)) = self.intersection_params(&y_max) {
+            if 0.0 <= t1 && t1 <= 1.0 {
+                result.push(t0);
+            }
         }
+
         sort_and_dedup(&mut result, Some(1e-12));
 
         result

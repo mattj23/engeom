@@ -16,6 +16,8 @@ mod densities;
 mod partitioning;
 mod queries;
 
+pub use partitioning::CurvePartitioner2;
+
 /// A `CurveStation2` is a convenience struct which represents a location on the manifold defined
 /// by the curve. It has a point, a direction, and a normal. It has an index and a fraction which
 /// represent where the location is in the underlying data structure, and it maintains a

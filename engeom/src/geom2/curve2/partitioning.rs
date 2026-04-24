@@ -253,6 +253,7 @@ impl Curve2 {
 
         let mut groups = Vec::new();
         let mut working = Vec::new();
+        let mut is_pos = boundary.is_pos(&self.points()[0]);
 
         for s in self.iter() {
             // Add the current point to the working list
@@ -273,10 +274,23 @@ impl Curve2 {
 
             let mut current = Line2::new(s.point, (ns.point - s.point).normalize());
             let mut to_next = current.scalar_project(&ns);
-            while let Some(t) = boundary.next_intersection(&current, to_next) {
+
+            // Sanity check
+            // let s_pos = boundary.is_pos(&s);
+            // let ns_pos = boundary.is_pos(&ns);
+            // if s_pos != ns_pos {
+            //     if !boundary.next_intersection(&current, to_next).is_some() {
+            //         println!("Inconsistency: Boundary sign change without intersection")
+            //     }
+            // }
+
+            while let Some(t) = find_next_crossing(boundary, &current, to_next, is_pos) {
                 let end = current.at(t);
                 working.push(end);
                 groups.push(working);
+
+                is_pos = !is_pos;
+
                 working = vec![end];
                 current.shift_along(t);
                 to_next = current.scalar_project(&ns);
@@ -363,10 +377,69 @@ impl Curve2 {
     }
 }
 
+/// Given a curve and a line, find the next crossing, where the is_pos value changes. The value
+/// will lie between 0.0 and 1.0. The provided line should not be normalized.
+fn find_next_crossing(bnd: &impl CurvePartitioner2, line: &Line2, max_dist: f64, current_pos: bool) -> Option<f64> {
+    // The reason that this function exists is that the concept of an intersection does not
+    // necessarily correspond with a crossing of the boundary. Rather, crossings occur next to the
+    // intersection, but the intersection itself is usually contained within the boundary. This
+    // becomes a problem when endpoints are at the boundary.
+    let mut candidates = bnd.all_intersections(line)
+        .into_iter()
+        .filter(|t| *t >= 0.0 && *t <= max_dist)
+        .collect::<Vec<_>>();
+
+    if candidates.is_empty() {
+        return None;
+    }
+
+    candidates.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+    // Now we want to find the first intersection that ends on the opposite side of the boundary.
+    for t in candidates.iter() {
+        let (_, end_pos) = find_crossing_info(bnd, line, *t);
+        if end_pos != current_pos {
+            return Some(*t);
+        }
+    }
+
+    // If we didn't find one, there is no crossing
+    None
+}
+
+fn find_crossing_info(bnd: &impl CurvePartitioner2, line: &Line2, t: f64) -> (bool, bool) {
+    let at_t = bnd.is_pos(&line.at(t));
+    let mut delta = 1e-10;
+
+    let mut at_t_plus = bnd.is_pos(&line.at(t + delta));
+    let mut at_t_minus = bnd.is_pos(&line.at(t - delta));
+
+    // One of these should be different from at_t
+    while at_t == at_t_plus && at_t == at_t_minus {
+        delta *= 2.0;
+        at_t_plus = bnd.is_pos(&line.at(t + delta));
+        at_t_minus = bnd.is_pos(&line.at(t - delta));
+    }
+
+    if at_t != at_t_plus {
+        (at_t, at_t_plus)
+    } else {
+        (at_t_minus, at_t_plus)
+    }
+}
+
 pub trait CurvePartitioner2 {
     fn is_pos(&self, point: &impl PCoords<2>) -> bool;
 
-    fn next_intersection(&self, line: &Line2, max_dist: f64) -> Option<f64>;
+    /// Provide all intersections between the entity and the line. The results should be presented
+    /// as a vector of t-values for the intersection points along `line`.
+    ///
+    /// # Arguments
+    ///
+    /// * `line`: The line, provided by the caller.
+    ///
+    /// returns: Vec<f64, Global>
+    fn all_intersections(&self, line: &Line2) -> Vec<f64>;
 }
 
 impl<T: CurvePartitioner2> CurvePartitioner2 for &T {
@@ -374,8 +447,8 @@ impl<T: CurvePartitioner2> CurvePartitioner2 for &T {
         (**self).is_pos(point)
     }
 
-    fn next_intersection(&self, line: &Line2, max_dist: f64) -> Option<f64> {
-        (**self).next_intersection(line, max_dist)
+    fn all_intersections(&self, line: &Line2) -> Vec<f64> {
+        (**self).all_intersections(line)
     }
 }
 
@@ -384,12 +457,8 @@ impl CurvePartitioner2 for Aabb2 {
         !self.contains_local_point(&point.coords().into())
     }
 
-    fn next_intersection(&self, line: &Line2, max_dist: f64) -> Option<f64> {
+    fn all_intersections(&self, line: &Line2) -> Vec<f64> {
         line.intersection(*self)
-            .iter()
-            .filter(|&t| *t > f64::EPSILON && *t <= max_dist)
-            .min_by(|a, b| a.partial_cmp(b).unwrap())
-            .map(|t| *t)
     }
 }
 
@@ -398,15 +467,11 @@ impl CurvePartitioner2 for Line2 {
         self.signed_projection_dist(point).is_sign_positive()
     }
 
-    fn next_intersection(&self, line: &Line2, max_dist: f64) -> Option<f64> {
-        if let Some((t0, _)) = line.intersection_params(self) {
-            if t0 > f64::EPSILON && t0 <= max_dist {
-                Some(t0)
-            } else {
-                None
-            }
+    fn all_intersections(&self, line: &Line2) -> Vec<f64> {
+        if let Some((t0, t1)) = line.intersection_params(self) {
+            vec![t0]
         } else {
-            None
+            Vec::new()
         }
     }
 }
@@ -416,12 +481,8 @@ impl CurvePartitioner2 for Circle2 {
         !self.contains_point(point)
     }
 
-    fn next_intersection(&self, line: &Line2, max_dist: f64) -> Option<f64> {
+    fn all_intersections(&self, line: &Line2) -> Vec<f64> {
         self.intersection(line)
-            .iter()
-            .filter(|&t| *t > f64::EPSILON && *t <= max_dist)
-            .min_by(|a, b| a.partial_cmp(b).unwrap())
-            .map(|t| *t)
     }
 }
 
