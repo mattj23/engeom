@@ -38,13 +38,13 @@ impl Line2 {
     /// # Examples
     ///
     /// ```
-    /// use engeom::Line2;
+    /// use engeom::{Line2, Vector2, Point2};
     /// use approx::assert_relative_eq;
     ///
     /// let l0 = Line2::new(Point2::new(0.0, 0.0), Vector2::new(0.0, 1.0));
     /// let l1 = l0.new_parallel(1.0);
     ///
-    /// assert_relative_eq!(l1.origin, Point2::new(0.0, 1.0), epsilon = 1e-6);
+    /// assert_relative_eq!(l1.origin, Point2::new(1.0, 0.0), epsilon = 1e-6);
     /// assert_relative_eq!(l1.direction, Vector2::new(0.0, 1.0), epsilon = 1e-6);
     /// ```
     pub fn new_parallel(&self, delta_n: f64) -> Self {

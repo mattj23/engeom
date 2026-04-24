@@ -34,4 +34,8 @@ pub trait Func1 {
     fn fs(&self, xs: &DiscreteDomain) -> Vec<f64> {
         xs.iter().map(|x| self.f(*x)).collect()
     }
+
+    fn xs(&self) -> Option<&DiscreteDomain> {
+        None
+    }
 }

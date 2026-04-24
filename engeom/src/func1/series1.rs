@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::iter::Zip;
 use std::ops;
 use std::slice::Iter;
+use crate::common::vec_f64::sort_and_dedup;
 
 /// Represents a contiguous series of data points in a 2d plane where the x values go from
 /// smallest to largest and the y values are associated with the x value at the same index.
@@ -394,7 +395,7 @@ impl Series1 {
             }
         }
 
-        sort_and_dedup(&mut crossings);
+        sort_and_dedup(&mut crossings, Some(1e-10));
         crossings
     }
 
@@ -569,7 +570,7 @@ impl Series1 {
     /// domain of the series.
     pub fn bounds_at_y0(&self) -> Vec<Interval> {
         let mut x_bounds = [self.y_crossings(0.0), vec![self.x_min(), self.x_max()]].concat();
-        sort_and_dedup(&mut x_bounds);
+        sort_and_dedup(&mut x_bounds, Some(1e-10));
 
         let mut bounds = Vec::new();
         for w in x_bounds.windows(2) {
@@ -735,9 +736,14 @@ impl Series1 {
     }
 }
 
+
 impl Func1 for Series1 {
     fn f(&self, x: f64) -> f64 {
         self.interpolate(x)
+    }
+
+    fn xs(&self) -> Option<&DiscreteDomain> {
+        Some(&self.x)
     }
 }
 
@@ -746,10 +752,21 @@ impl ops::Add<&dyn Func1> for &Series1 {
 
     fn add(self, rhs: &dyn Func1) -> Self::Output {
         let mut ys = Vec::new();
-        for (x, y) in self.x.iter().zip(self.y.iter()) {
-            ys.push(y + rhs.f(*x));
+
+        if let Some(rhs_xs) = rhs.xs() {
+            let mut all_xs = [self.x.to_vec(), rhs_xs.to_vec()].concat();
+            sort_and_dedup(&mut all_xs, Some(1e-10));
+            let new_xs = DiscreteDomain::try_from(all_xs).unwrap();
+            for x in new_xs.values() {
+                ys.push(self.f(*x) + rhs.f(*x));
+            }
+            Self::Output::new(new_xs, ys)
+        } else {
+            for (x, y) in self.x.iter().zip(self.y.iter()) {
+                ys.push(y + rhs.f(*x));
+            }
+            Self::Output::new(self.x.clone(), ys)
         }
-        Self::Output::new(self.x.clone(), ys)
     }
 }
 
@@ -758,16 +775,22 @@ impl ops::Sub<&dyn Func1> for &Series1 {
 
     fn sub(self, rhs: &dyn Func1) -> Self::Output {
         let mut ys = Vec::new();
-        for (x, y) in self.x.iter().zip(self.y.iter()) {
-            ys.push(y - rhs.f(*x));
-        }
-        Self::Output::new(self.x.clone(), ys)
-    }
-}
 
-fn sort_and_dedup(xs: &mut Vec<f64>) {
-    xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    xs.dedup_by(|a, b| (*a - *b).abs() < 1e-10);
+        if let Some(rhs_xs) = rhs.xs() {
+            let mut all_xs = [self.x.to_vec(), rhs_xs.to_vec()].concat();
+            sort_and_dedup(&mut all_xs, Some(1e-10));
+            let new_xs = DiscreteDomain::try_from(all_xs).unwrap();
+            for x in new_xs.values() {
+                ys.push(self.f(*x) - rhs.f(*x));
+            }
+            Self::Output::new(new_xs, ys)
+        } else {
+            for (x, y) in self.x.iter().zip(self.y.iter()) {
+                ys.push(y - rhs.f(*x));
+            }
+            Self::Output::new(self.x.clone(), ys)
+        }
+    }
 }
 
 fn savitzky_golay_5(series: &Series1) -> Series1 {
