@@ -4,7 +4,7 @@ use super::helpers::{
     OrientedCircles, inscribed_from_spanning_ray, refine_stations, reverse_inscribed_circles,
 };
 use crate::AngleDir::{Ccw, Cw};
-use crate::Result;
+use crate::{Line2, Result};
 use crate::airfoil::inscribed_circle::InscribedCircle;
 use crate::common::Resample::ByCount;
 use crate::common::points::{dist, mid_point};
@@ -23,9 +23,7 @@ use parry2d_f64::shape::ConvexPolygon;
 ///
 /// returns: Result<Unit<Matrix<f64, Const<2>, Const<1>, ArrayStorage<f64, 2, 1>>>, Box<dyn Error, Global>>
 pub fn camber_detect_upper_dir(camber_line: &Curve2) -> Result<UnitVec2> {
-    let check = Segment2::try_new(&camber_line.at_front(), &camber_line.at_back()).map_err(
-        |_| "Failed to create segment from camber line while detecting face orientation",
-    )?;
+    let check = Line2::from_points(camber_line.at_front().point(), camber_line.at_back().point());
 
     let resampled = camber_line.resample(ByCount(50))?;
 

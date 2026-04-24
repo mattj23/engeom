@@ -125,6 +125,12 @@ pub trait Intersection<TOther, TResult> {
     fn intersection(&self, other: TOther) -> TResult;
 }
 
+// impl<T: Intersection<TOther, TResult>, TOther, TResult> Intersection<TOther, TResult> for &T {
+//     fn intersection(&self, other: TOther) -> TResult {
+//         (**self).intersection(other)
+//     }
+// }
+
 /// A trait for transforming an entity by another entity
 pub trait TransformBy<T, TOut> {
     fn transform_by(&self, transform: &T) -> TOut;

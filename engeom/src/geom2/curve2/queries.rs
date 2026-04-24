@@ -5,6 +5,7 @@ use crate::geom2::{Aabb2, LineOps2, intersection_param};
 use crate::{Curve2, CurveStation2, Point2, SurfacePoint2, Vector2};
 use parry2d_f64::partitioning::TraversalAction;
 use parry2d_f64::query::{PointQueryWithLocation, Ray};
+use crate::geom2::line2::slab_method2;
 
 impl Curve2 {
     /// Returns the `CurveStation2` whose point is closest to `test_point`.
@@ -172,22 +173,6 @@ fn intersect_with_edge(curve: &Curve2, line: &impl LineOps2, edge_index: usize) 
     } else {
         None
     }
-}
-
-fn slab_method2(bv: &Aabb2, origin: &Point2, n_inv: &Vector2) -> bool {
-    let mut t1 = (bv.mins.x - origin.x) * n_inv.x;
-    let mut t2 = (bv.maxs.x - origin.x) * n_inv.x;
-
-    let tmin = t1.min(t2);
-    let tmax = t1.max(t2);
-
-    t1 = (bv.mins.y - origin.y) * n_inv.y;
-    t2 = (bv.maxs.y - origin.y) * n_inv.y;
-
-    let tmin = tmin.max(t1.min(t2).min(tmax));
-    let tmax = tmax.min(t1.max(t2).max(tmin));
-
-    tmax >= tmin
 }
 
 #[cfg(test)]

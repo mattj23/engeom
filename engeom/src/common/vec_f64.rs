@@ -1,5 +1,7 @@
 //! This module contains a set of common functions for working with vectors and slices of f64 values
 
+use itertools::Itertools;
+
 /// Compute the arithmetic mean of a slice of f64 values.
 ///
 /// Returns `f64::NAN` if the slice is empty.
@@ -195,6 +197,31 @@ pub fn sort_with_nan(values: &mut [f64]) {
 /// ```
 pub fn sort_nan_panics(values: &mut [f64]) {
     values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+}
+
+/// A general-purpose sort and deduplicate function for mutable vectors of f64 values.
+///
+/// # Arguments
+///
+/// * `values`: a mutable vector of f64 values to sort and deduplicate
+/// * `tol`: tolerance for considering two values as equal, defaults to f64::EPSILON
+///
+/// returns: ()
+///
+/// # Examples
+///
+/// ```
+/// use engeom::common::vec_f64::sort_and_dedup;
+///
+/// let mut values = vec![3.0, 1.0, 2.0, 2.0, 1.0 + 1e-12];
+/// sort_and_dedup(&mut values, Some(1e-10));
+///
+/// assert_eq!(values, vec![1.0, 2.0, 3.0]);
+/// ```
+pub fn sort_and_dedup(values: &mut Vec<f64>, tol: Option<f64>) {
+    let tol = tol.unwrap_or(f64::EPSILON);
+    values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    values.dedup_by(|a, b| (*a - *b).abs() < tol);
 }
 
 #[cfg(test)]

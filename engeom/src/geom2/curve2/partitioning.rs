@@ -1,10 +1,11 @@
 //! This module has tools for partitioning curves into sub-curves.
 
-use crate::common::PCoords;
+use parry2d_f64::bounding_volume::BoundingVolume;
+use crate::common::{Intersection, PCoords};
 use crate::common::points::{dist, mid_point};
-use crate::geom2::LineOps2;
+use crate::geom2::{Aabb2, LineOps2};
 use crate::na::Unit;
-use crate::{Curve2, Line2, Point2};
+use crate::{Circle2, Curve2, Line2, Point2};
 use parry3d_f64::query::SplitResult;
 
 impl Curve2 {
@@ -331,6 +332,20 @@ impl<T: CurvePartitioner2> CurvePartitioner2 for &T {
     }
 }
 
+impl CurvePartitioner2 for Aabb2 {
+    fn is_pos(&self, point: &impl PCoords<2>) -> bool {
+        !self.contains_local_point(&point.coords().into())
+    }
+
+    fn next_intersection(&self, line: &Line2, max_dist: f64) -> Option<f64> {
+        line.intersection(*self)
+            .iter()
+            .filter(|&t| *t > f64::EPSILON && *t <= max_dist)
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .map(|t| *t)
+    }
+}
+
 impl CurvePartitioner2 for Line2 {
     fn is_pos(&self, point: &impl PCoords<2>) -> bool {
         self.signed_projection_dist(point).is_sign_positive()
@@ -349,6 +364,20 @@ impl CurvePartitioner2 for Line2 {
     }
 }
 
+impl CurvePartitioner2 for Circle2 {
+    fn is_pos(&self, point: &impl PCoords<2>) -> bool {
+        !self.contains_point(point)
+    }
+
+    fn next_intersection(&self, line: &Line2, max_dist: f64) -> Option<f64> {
+        self.intersection(line)
+            .iter()
+            .filter(|&t| *t > f64::EPSILON && *t <= max_dist)
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .map(|t| *t)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::tests::*;
@@ -363,6 +392,21 @@ mod tests {
     use rand::rng;
 
     #[test]
+    fn split_on_circle() {
+        let curve = Curve2::from_points(&sample_points(&sample1()), 1e-6, false).unwrap();
+        let circle = Circle2::new(0.5, 0.5, 0.6);
+
+        match curve.partition_by(&circle) {
+            SplitResult::Positive => assert!(false, "Should not be positive"),
+            SplitResult::Negative => assert!(false, "Should not be negative"),
+            SplitResult::Pair(negatives, positives) => {
+                assert_eq!(negatives.len(), 3);
+                assert_eq!(positives.len(), 4);
+            }
+        }
+    }
+
+    #[test]
     fn split_on_line_open() {
         let curve = Curve2::from_points(&sample_points(&sample1()), 1e-6, false).unwrap();
         let line = Line2::new([0.5, 0.0].into(), [0.0, 1.0].into());
@@ -373,6 +417,67 @@ mod tests {
             SplitResult::Pair(negatives, positives) => {
                 assert_eq!(negatives.len(), 2);
                 assert_eq!(positives.len(), 1);
+            }
+        }
+    }
+
+    #[test]
+    fn split_on_line_closed() {
+        let curve = Curve2::from_points(&sample_points(&sample1()), 1e-6, true).unwrap();
+        let line = Line2::new([0.5, 0.0].into(), [0.0, 1.0].into());
+
+        match curve.partition_by(&line) {
+            SplitResult::Positive => assert!(false, "Should not be positive"),
+            SplitResult::Negative => assert!(false, "Should not be negative"),
+            SplitResult::Pair(negatives, positives) => {
+                assert_eq!(negatives.len(), 1);
+                assert_eq!(positives.len(), 1);
+            }
+        }
+    }
+
+
+    #[test]
+    fn split_on_box_open_end() {
+        let curve = Curve2::from_points(&sample_points(&sample1()), 1e-6, false).unwrap();
+        let aabb = Aabb2::new([-0.5, 0.5].into(), [0.5, 1.5].into());
+
+        match curve.partition_by(&aabb) {
+            SplitResult::Positive => assert!(false, "Should not be positive"),
+            SplitResult::Negative => assert!(false, "Should not be negative"),
+            SplitResult::Pair(negatives, positives) => {
+                assert_eq!(negatives.len(), 1);
+                assert_eq!(positives.len(), 1);
+            }
+        }
+    }
+
+    #[test]
+    fn split_on_box_open_center() {
+        let curve = Curve2::from_points(&sample_points(&sample1()), 1e-6, false).unwrap();
+        let aabb = Aabb2::new([0.25, -1.0].into(), [0.75, 1.5].into());
+
+        match curve.partition_by(&aabb) {
+            SplitResult::Positive => assert!(false, "Should not be positive"),
+            SplitResult::Negative => assert!(false, "Should not be negative"),
+            SplitResult::Pair(negatives, positives) => {
+                assert_eq!(negatives.len(), 2);
+                assert_eq!(positives.len(), 3);
+            }
+        }
+    }
+
+    #[test]
+    fn split_on_box_closed_center() {
+        let curve = Curve2::from_points(&sample_points(&sample1()), 1e-6, true).unwrap();
+        let aabb = Aabb2::new([0.25, -1.0].into(), [0.75, 1.5].into());
+
+        match curve.partition_by(&aabb) {
+            SplitResult::Positive => assert!(false, "Should not be positive"),
+            SplitResult::Negative => assert!(false, "Should not be negative"),
+            SplitResult::Pair(negatives, positives) => {
+                assert_eq!(negatives.len(), 2);
+                assert_eq!(positives.len(), 2);
             }
         }
     }

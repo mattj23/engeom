@@ -693,13 +693,20 @@ pub fn intersection_line_circle(line: &impl LineOps2, circle: &Circle2) -> Vec<f
     }
 }
 
-impl Intersection<&Segment2, Vec<Point2>> for Circle2 {
+impl<T: LineOps2> Intersection<T, Vec<f64>> for &Circle2 {
+    fn intersection(&self, other: T) -> Vec<f64> {
+        intersection_line_circle(&other, self)
+    }
+}
+
+impl Intersection<&Segment2, Vec<Point2>> for &Circle2 {
     fn intersection(&self, other: &Segment2) -> Vec<Point2> {
-        let ts = intersection_line_circle(other, self);
+        let line = other.to_line();
+        let ts = intersection_line_circle(&line, self);
         ts.iter()
             .filter_map(|&t| {
                 if (-1.0e-10..=1.0 + 1.0e-10).contains(&t) {
-                    Some(other.at(t))
+                    Some(line.at(t))
                 } else {
                     None
                 }

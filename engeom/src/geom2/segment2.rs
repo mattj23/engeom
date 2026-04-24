@@ -2,7 +2,7 @@ use crate::AngleDir::Cw;
 use crate::common::PCoords;
 use crate::common::points::dist;
 use crate::geom2::{Aabb2, BoundaryElement, LineOps2, ManifoldPosition2, rot90};
-use crate::{Iso2, Point2, Result, TransformBy, UnitVec2, Vector2};
+use crate::{Iso2, Line2, Point2, Result, TransformBy, UnitVec2, Vector2};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -71,7 +71,7 @@ impl Segment2 {
     /// assert_relative_eq!(s1.b, Point2::new(1.0, -1.0), epsilon = 1.0e-6);
     /// ```
     pub fn with_offset(&self, d: f64) -> Self {
-        let n = UnitVec2::new_normalize(self.orthogonal());
+        let n = self.normal();
         Self {
             a: self.a + n.into_inner() * d,
             b: self.b + n.into_inner() * d,
@@ -100,6 +100,23 @@ impl Segment2 {
         let normal = rot90(Cw) * direction;
         ManifoldPosition2::new(t * self.length, point, direction, normal)
     }
+
+    pub fn normal(&self) -> UnitVec2 {
+        let direction = UnitVec2::new_normalize(self.b - self.a);
+        rot90(Cw) * direction
+    }
+
+    pub fn dir(&self) -> Vector2 {
+        self.b - self.a
+    }
+
+    pub fn to_line(&self) -> Line2 {
+        Line2::from_points(self.a, self.b)
+    }
+
+    pub fn at(&self, t: f64) -> Point2 {
+        self.a + (self.b - self.a) * t
+    }
 }
 
 impl TransformBy<Iso2, Segment2> for Segment2 {
@@ -109,20 +126,6 @@ impl TransformBy<Iso2, Segment2> for Segment2 {
             b: t.transform_point(&self.b),
             length: self.length,
         }
-    }
-}
-
-impl LineOps2 for Segment2 {
-    fn origin(&self) -> Point2 {
-        self.a
-    }
-
-    fn dir(&self) -> Vector2 {
-        self.b - self.a
-    }
-
-    fn at(&self, t: f64) -> Point2 {
-        self.a + self.dir() * t
     }
 }
 

@@ -1,9 +1,10 @@
 use crate::AngleDir::Cw;
-use crate::common::PCoords;
-use crate::geom2::{Ray2, SurfacePoint2, UnitVec2, rot90};
+use crate::common::{Intersection, PCoords};
+use crate::geom2::{Ray2, SurfacePoint2, UnitVec2, rot90, Aabb2};
 use crate::{Iso2, Point2, Vector2};
 use parry2d_f64::query::Ray;
 use std::ops;
+use crate::common::vec_f64::sort_and_dedup;
 
 /// A parameterized line in 2D space: `P(t) = origin + t * direction`.
 ///
@@ -275,6 +276,53 @@ impl LineOps2 for Ray2 {
     }
 }
 
+impl<T: LineOps2> Intersection<Aabb2, Vec<f64>> for T {
+    fn intersection(&self, other: Aabb2) -> Vec<f64> {
+        let x_inv = 1.0 / self.dir().x;
+        let y_inv = 1.0 / self.dir().y;
+
+        let t1x = (other.mins.x - self.origin().x) * x_inv;
+        let t2x = (other.maxs.x - self.origin().x) * x_inv;
+        let t1y = (other.mins.y - self.origin().y) * y_inv;
+        let t2y = (other.maxs.y - self.origin().y) * y_inv;
+
+        let mut result = Vec::with_capacity(2);
+
+        if t1x.is_finite() && other.contains_local_point(&self.at(t1x)) {
+            result.push(t1x);
+        }
+        if t2x.is_finite() && other.contains_local_point(&self.at(t2x)) {
+            result.push(t2x);
+        }
+        if t1y.is_finite() && other.contains_local_point(&self.at(t1y)) {
+            result.push(t1y);
+        }
+        if t2y.is_finite() && other.contains_local_point(&self.at(t2y)) {
+            result.push(t2y);
+        }
+        sort_and_dedup(&mut result, Some(1e-12));
+
+        result
+    }
+}
+
+pub fn slab_method2(bv: &Aabb2, origin: &Point2, n_inv: &Vector2) -> bool {
+    let mut t1 = (bv.mins.x - origin.x) * n_inv.x;
+    let mut t2 = (bv.maxs.x - origin.x) * n_inv.x;
+
+    let tmin = t1.min(t2);
+    let tmax = t1.max(t2);
+
+    t1 = (bv.mins.y - origin.y) * n_inv.y;
+    t2 = (bv.maxs.y - origin.y) * n_inv.y;
+
+    let tmin = tmin.max(t1.min(t2).min(tmax));
+    let tmax = tmax.min(t1.max(t2).max(tmin));
+
+    tmax >= tmin
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -499,4 +547,56 @@ mod tests {
         assert_relative_eq!(t1.origin(), Point2::new(1.0, 5.0), epsilon = 1e-12);
         assert_relative_eq!(t2.origin(), Point2::new(1.0, 5.0), epsilon = 1e-12);
     }
+
+    #[test]
+    fn line2_aabb_intersection_horizontal_line_through_box() {
+        let line = Line2::new(Point2::new(-2.0, 0.0), Vector2::x());
+        let aabb = Aabb2::new(Point2::new(-1.0, -1.0), Point2::new(1.0, 1.0));
+
+        let mut ts = line.intersection(aabb);
+        ts.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+        assert_eq!(ts.len(), 2);
+        assert_relative_eq!(ts[0], 1.0, epsilon = 1e-12);
+        assert_relative_eq!(ts[1], 3.0, epsilon = 1e-12);
+        assert_relative_eq!(line.at(ts[0]), Point2::new(-1.0, 0.0), epsilon = 1e-12);
+        assert_relative_eq!(line.at(ts[1]), Point2::new(1.0, 0.0), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn line2_aabb_intersection_vertical_line_through_box() {
+        let line = Line2::new(Point2::new(0.0, -2.0), Vector2::y());
+        let aabb = Aabb2::new(Point2::new(-1.0, -1.0), Point2::new(1.0, 1.0));
+
+        let ts = line.intersection(aabb);
+
+        assert_eq!(ts.len(), 2);
+        assert_relative_eq!(ts[0], 1.0, epsilon = 1e-12);
+        assert_relative_eq!(ts[1], 3.0, epsilon = 1e-12);
+        assert_relative_eq!(line.at(ts[0]), Point2::new(0.0, -1.0), epsilon = 1e-12);
+        assert_relative_eq!(line.at(ts[1]), Point2::new(0.0, 1.0), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn line2_aabb_intersection_corner_returns_single_parameter() {
+        let line = Line2::new(Point2::new(-1.0, 1.0), Vector2::new(1.0, 1.0));
+        let aabb = Aabb2::new(Point2::new(-1.0, -1.0), Point2::new(1.0, 1.0));
+
+        let ts = line.intersection(aabb);
+
+        assert_eq!(ts.len(), 1);
+        assert_relative_eq!(ts[0], 0.0, epsilon = 1e-12);
+        assert_relative_eq!(line.at(ts[0]), Point2::new(-1.0, 1.0), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn line2_aabb_intersection_miss_returns_empty() {
+        let line = Line2::new(Point2::new(-2.0, 2.0), Vector2::x());
+        let aabb = Aabb2::new(Point2::new(-1.0, -1.0), Point2::new(1.0, 1.0));
+
+        let ts = line.intersection(aabb);
+
+        assert!(ts.is_empty());
+    }
+
 }
