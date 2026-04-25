@@ -28,11 +28,19 @@ use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector};
 /// assert_relative_eq!(points[1], Point2::new(3.0, 4.0));
 /// ```
 pub fn to_points<const D: usize>(items: &[[f64; D]]) -> Vec<Point<f64, D>> {
-    items.iter()
-        .map(|arr| Point::from(*arr))
-    .collect()
+    items.iter().map(|arr| Point::from(*arr)).collect()
 }
 
+/// Takes any slice of entities that implement `PCoords` and produces a new vec of points by
+/// cloning the coordinates of each.
+///
+/// # Arguments
+///
+/// * `collection`: a slice of entities that implement `PCoords` to clone the coordinates of
+///
+/// returns: Vec<OPoint<f64, Const<{ D }>>, Global>
+///
+/// # Examples
 pub fn clone_points<const D: usize>(collection: &[impl PCoords<D>]) -> Vec<Point<f64, D>> {
     collection
         .iter()

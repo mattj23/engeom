@@ -1,3 +1,35 @@
+//! In `engeom`, 2D boundaries are a concept that represents a continuous manifold in 2D space,
+//! with a positive and a negative side. Boundaries may be open or closed (currently, closed
+//! boundaries are not implemented, but many of their features can be achieved with an open boundary
+//! that returns to its starting point).
+//!
+//! A boundary is very similar to a [`Curve2`] element, except that while a `Curve2` is composed
+//! entirely of line segments, a boundary may consist of different types of elements, all of which
+//! must implement the [`BoundaryElement`] trait. Currently, only [`Segment2`] and [`Arc2`] are
+//! implemented.
+//!
+//! In comparison to a `Curve2`, a boundary can represent curved geometry with near-theoretical
+//! precision, and without the use of approximation through large amounts of points.  When
+//! representing geometry with curved regions, boundaries will generally be more efficient and
+//! capable.
+//!
+//! Boundaries are defined through the [`BoundaryData2`] struct, which provides a convenient and
+//! efficient way to define their geometry while ensuring that the continuity constraint isn't
+//! violated.  There are helper methods on `BoundaryData2` which allow for constructing complicated
+//! geometry, alongside simple methods for full control over segments and arcs.
+//!
+//! Actual queryable geometry is represented by the [`Boundary2`] struct, which contains a vector
+//! of boxed dynamic `BoundaryElement` instances. The `Boundary2` is most easily built from the
+//! [`BoundaryData2::try_to_boundary`] method.  Once created, spatial queries and measurements can
+//! be performed.
+//!
+//! Another important and useful feature of the boundary concept is the ability to perform
+//! fitting of boundary geometry to measured/observed geometry, like points. A common use for this
+//! ability is to try to extract semantic or design meaning from observed data. For example,
+//! fitting a slot or square hole to a cross-section in order to determine which points should be
+//! used to measure width. A generalized implementation of fitting to points is provided in
+//! [`fit_boundary_to_points`].
+
 mod construction;
 mod fitting;
 
@@ -8,7 +40,7 @@ use crate::geom2::{Arc2, Segment2};
 use crate::{Point2, Result};
 use parry2d_f64::bounding_volume::BoundingVolume;
 
-pub use fitting::{BuildFn, fit_boundary_to_points};
+pub use fitting::{BndBuildFn, fit_boundary_to_points};
 
 pub trait BoundaryElement {
     /// The total length of the element's manifold domain. For example, for a line segment this
