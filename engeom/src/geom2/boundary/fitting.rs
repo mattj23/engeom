@@ -34,14 +34,20 @@ struct BoundaryFit<'a> {
 
 impl<'a> BoundaryFit<'a> {
     fn try_new(points: &'a [Point2], builder: &'a BuildFn, initial: DVector<f64>) -> Result<Self> {
-        let current = builder(&initial)?;
-        Ok(BoundaryFit {
+        // Check to make sure that the initial value doesn't fail
+        let _ = builder(&initial)?;
+
+        let mut problem = BoundaryFit {
             points,
-            params: initial,
+            params: DVector::zeros(initial.len()),
             builder,
-            current: Some(current),
+            current: None,
             residuals: None,
-        })
+        };
+
+        problem.set_params(&initial);
+
+        Ok(problem)
     }
 }
 
@@ -81,8 +87,7 @@ impl LeastSquaresProblem<f64, Dyn, Dyn> for BoundaryFit<'_> {
         };
 
         let mut jac = Matrix::<f64, Dyn, Dyn, Self::JacobianStorage>::zeros(
-            residuals.len(),
-            self.params.len(),
+            residuals.len(), self.params.len(),
         );
 
         for k in 0..self.params.len() {
@@ -107,6 +112,7 @@ impl LeastSquaresProblem<f64, Dyn, Dyn> for BoundaryFit<'_> {
 mod tests {
     use crate::common::points::{fill_gaps, to_points};
     use crate::geom2::BoundaryData2;
+    use approx::assert_relative_eq;
     use super::*;
 
     #[test]
@@ -114,7 +120,7 @@ mod tests {
         let corners = to_points(&[[1.0, 1.0], [3.0, 2.0], [2.0, 4.0], [1.0, 1.0]]);
         let points = fill_gaps(&corners, 0.1);
 
-        let builder = Box::new(|params: &DVector<f64>| {
+        let builder: BuildFn = Box::new(|params: &DVector<f64>| {
             let mut bdata = BoundaryData2::new(Point2::new(params[0], params[1]));
             bdata.add_seg_xy(params[2], params[3]);
             bdata.add_seg_xy(params[4], params[5]);
@@ -124,7 +130,8 @@ mod tests {
 
         let initial = DVector::from(vec![0.0, 0.0, 4.0, 0.0, 1.0, 7.0]);
         let result = fit_boundary_to_points(&points, &builder, initial).unwrap();
-
+        let expected = DVector::from(vec![1.0, 1.0, 3.0, 2.0, 2.0, 4.0]);
+        assert_relative_eq!(result, expected, epsilon = 1.0e-6);
     }
 
 }
