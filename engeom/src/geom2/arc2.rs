@@ -1,6 +1,8 @@
 use crate::AngleDir::{Ccw, Cw};
 use crate::common::points::dist;
-use crate::common::{ANGLE_TOL, PCoords, angle_in_direction, angle_signed_pi, shortest_angle_between, linear_space};
+use crate::common::{
+    ANGLE_TOL, PCoords, angle_in_direction, angle_signed_pi, linear_space, shortest_angle_between,
+};
 use crate::geom2::aabb2::arc_aabb2;
 use crate::geom2::{Aabb2, BoundaryElement, HasBounds2, ManifoldPosition2, directed_angle, rot90};
 use crate::{AngleInterval, Circle2, Point2, Result, UnitVec2};

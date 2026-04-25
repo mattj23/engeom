@@ -1,4 +1,5 @@
 mod construction;
+mod fitting;
 
 use crate::common::PCoords;
 use crate::common::points::dist;
@@ -6,6 +7,8 @@ use crate::geom2::{Aabb2, ManifoldPosition2};
 use crate::geom2::{Arc2, Segment2};
 use crate::{Point2, Result};
 use parry2d_f64::bounding_volume::BoundingVolume;
+
+pub use fitting::{BuildFn, fit_boundary_to_points};
 
 pub trait BoundaryElement {
     /// The total length of the element's manifold domain. For example, for a line segment this
@@ -90,7 +93,6 @@ impl BoundaryData2 {
 
         Ok(Boundary2::new(elements))
     }
-
 }
 
 /// Contains the geometry of a boundary, which is a collection of elements that can be queried for

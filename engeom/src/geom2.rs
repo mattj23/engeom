@@ -33,7 +33,7 @@ pub type KdTree2 = crate::common::kd_tree::KdTree<2>;
 pub use self::aabb2::Aabb2;
 pub use self::angles2::{directed_angle, rot90, rot270, signed_angle};
 pub use self::arc2::Arc2;
-pub use self::boundary::{Boundary2, BoundaryData2, BoundaryElement};
+pub use self::boundary::*;
 pub use self::circle2::Circle2;
 pub use self::curve2::{Curve2, CurvePartitioner2, CurveStation2};
 pub use self::line2::{Line2, LineOps2, intersect_lines, intersect_rays, intersection_param};

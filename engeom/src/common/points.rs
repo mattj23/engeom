@@ -6,6 +6,33 @@ use crate::common::surface_point::SurfacePoint;
 use crate::common::{IndexMask, PCoords};
 use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector};
 
+/// This is a simple helper function to help write a compact version of points that uses small
+/// fixed sized arrays. Useful in unit tests or hard coded point definitions.
+///
+/// # Arguments
+///
+/// * `items`: a slice of fixed sized arrays to convert to points
+///
+/// returns: Vec<OPoint<f64, Const<{ D }>>, Global>
+///
+/// # Examples
+///
+/// ```
+/// use engeom::Point2;
+/// use engeom::common::points::to_points;
+/// use approx::assert_relative_eq;
+///
+/// let points = to_points(&[[1.0, 2.0], [3.0, 4.0]]);
+/// assert_eq!(points.len(), 2);
+/// assert_relative_eq!(points[0], Point2::new(1.0, 2.0));
+/// assert_relative_eq!(points[1], Point2::new(3.0, 4.0));
+/// ```
+pub fn to_points<const D: usize>(items: &[[f64; D]]) -> Vec<Point<f64, D>> {
+    items.iter()
+        .map(|arr| Point::from(*arr))
+    .collect()
+}
+
 pub fn clone_points<const D: usize>(collection: &[impl PCoords<D>]) -> Vec<Point<f64, D>> {
     collection
         .iter()
