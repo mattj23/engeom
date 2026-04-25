@@ -1,3 +1,5 @@
+mod construction;
+
 use crate::common::PCoords;
 use crate::common::points::dist;
 use crate::geom2::{Aabb2, ManifoldPosition2};
@@ -37,10 +39,12 @@ pub trait BoundaryElement {
     fn at_end(&self) -> ManifoldPosition2 {
         self.at_length(self.length())
     }
+
+    fn to_points(&self, tol: f64) -> Vec<Point2>;
 }
 
 #[derive(Debug, Clone)]
-enum BKind {
+enum BData {
     /// A line segment, containing the end point
     Seg((f64, f64)),
 
@@ -51,7 +55,7 @@ enum BKind {
 #[derive(Debug, Clone)]
 pub struct BoundaryData2 {
     pub start: Point2,
-    elements: Vec<BKind>,
+    elements: Vec<BData>,
 }
 
 impl BoundaryData2 {
@@ -62,49 +66,19 @@ impl BoundaryData2 {
         }
     }
 
-    pub fn add_seg_xy(&mut self, x: f64, y: f64) {
-        self.elements.push(BKind::Seg((x, y)));
-    }
-
-    pub fn add_seg(&mut self, p: &impl PCoords<2>) {
-        self.add_seg_xy(p.coords().x, p.coords().y);
-    }
-
-    pub fn add_arc_xy(
-        &mut self,
-        center_x: f64,
-        center_y: f64,
-        end_x: f64,
-        end_y: f64,
-        clockwise: bool,
-    ) {
-        self.elements
-            .push(BKind::Arc((center_x, center_y, end_x, end_y, clockwise)));
-    }
-
-    pub fn add_arc(&mut self, center: &impl PCoords<2>, end: &impl PCoords<2>, clockwise: bool) {
-        self.add_arc_xy(
-            center.coords().x,
-            center.coords().y,
-            end.coords().x,
-            end.coords().y,
-            clockwise,
-        );
-    }
-
     pub fn try_to_boundary(&self) -> Result<Boundary2> {
         let mut elements: Vec<Box<dyn BoundaryElement>> = Vec::new();
         let mut last_point = self.start;
 
         for e in self.elements.iter() {
             match e {
-                BKind::Seg((x, y)) => {
+                BData::Seg((x, y)) => {
                     let end = Point2::new(*x, *y);
                     let seg = Segment2::try_new(&last_point, &end)?;
                     last_point = end;
                     elements.push(Box::new(seg));
                 }
-                BKind::Arc((cx, cy, ex, ey, cw)) => {
+                BData::Arc((cx, cy, ex, ey, cw)) => {
                     let end = Point2::new(*ex, *ey);
                     let center = Point2::new(*cx, *cy);
                     let arc = Arc2::try_new_ends(&last_point, &end, &center, *cw)?;
@@ -116,6 +90,7 @@ impl BoundaryData2 {
 
         Ok(Boundary2::new(elements))
     }
+
 }
 
 /// Contains the geometry of a boundary, which is a collection of elements that can be queried for
@@ -135,6 +110,16 @@ impl Boundary2 {
         }
 
         Self { elements, lengths }
+    }
+
+    pub fn to_points(&self, tol: f64) -> Result<Vec<Point2>> {
+        let mut points = vec![self.elements[0].at_start().point];
+        for e in self.elements.iter() {
+            let e_points = e.to_points(tol);
+            points.extend(e_points.into_iter().skip(1));
+        }
+
+        Ok(points)
     }
 
     pub fn at_closest_to_point(&self, point: &dyn PCoords<2>) -> ManifoldPosition2 {

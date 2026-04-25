@@ -1,8 +1,6 @@
 use crate::AngleDir::{Ccw, Cw};
 use crate::common::points::dist;
-use crate::common::{
-    ANGLE_TOL, PCoords, angle_in_direction, angle_signed_pi, shortest_angle_between,
-};
+use crate::common::{ANGLE_TOL, PCoords, angle_in_direction, angle_signed_pi, shortest_angle_between, linear_space};
 use crate::geom2::aabb2::arc_aabb2;
 use crate::geom2::{Aabb2, BoundaryElement, HasBounds2, ManifoldPosition2, directed_angle, rot90};
 use crate::{AngleInterval, Circle2, Point2, Result, UnitVec2};
@@ -318,6 +316,17 @@ impl BoundaryElement for Arc2 {
 
     fn aabb(&self) -> Aabb2 {
         self.aabb
+    }
+
+    fn to_points(&self, tol: f64) -> Vec<Point2> {
+        let theta = 2.0 * ((self.radius - tol) / self.radius).acos();
+        let n = (self.angle.abs() / theta).ceil() as usize + 1;
+        let mut points = Vec::with_capacity(n);
+        for x in linear_space(0.0, 1.0, n).iter() {
+            points.push(self.point_at_fraction(*x));
+        }
+
+        points
     }
 }
 

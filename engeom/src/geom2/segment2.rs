@@ -152,6 +152,10 @@ impl BoundaryElement for Segment2 {
     fn at_end(&self) -> ManifoldPosition2 {
         self.at_t(1.0)
     }
+
+    fn to_points(&self, _tol: f64) -> Vec<Point2> {
+        vec![self.a, self.b]
+    }
 }
 
 #[cfg(test)]
