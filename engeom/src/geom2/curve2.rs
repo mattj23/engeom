@@ -904,8 +904,9 @@ fn resample_by_spacing(curve: &Curve2, spacing: f64) -> Result<Curve2> {
 
 fn resample_by_count(curve: &Curve2, count: usize) -> Result<Curve2> {
     let mut positions = Vec::new();
+    let l = curve.length();
     for i in 0..count {
-        positions.push(i as f64 / (count - 1) as f64);
+        positions.push((l * i as f64 / (count - 1) as f64).clamp(0.0, l));
     }
     resample_at_positions(curve, &positions)
 }
