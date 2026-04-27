@@ -32,6 +32,7 @@
 
 mod construction;
 mod fitting;
+mod data;
 
 use crate::common::PCoords;
 use crate::common::points::dist;
@@ -40,6 +41,7 @@ use crate::geom2::{Arc2, Segment2};
 use crate::{Point2, Result};
 use parry2d_f64::bounding_volume::BoundingVolume;
 
+pub use data::BoundaryData2;
 pub use fitting::{BndBuildFn, fit_boundary_to_points};
 
 pub trait BoundaryElement {
@@ -76,55 +78,6 @@ pub trait BoundaryElement {
     }
 
     fn to_points(&self, tol: f64) -> Vec<Point2>;
-}
-
-#[derive(Debug, Clone)]
-enum BData {
-    /// A line segment, containing the end point
-    Seg((f64, f64)),
-
-    /// An arc, containing the center point, end point, and whether the arc is clockwise
-    Arc((f64, f64, f64, f64, bool)),
-}
-
-#[derive(Debug, Clone)]
-pub struct BoundaryData2 {
-    pub start: Point2,
-    elements: Vec<BData>,
-}
-
-impl BoundaryData2 {
-    pub fn new(start: Point2) -> Self {
-        Self {
-            start,
-            elements: Vec::new(),
-        }
-    }
-
-    pub fn try_to_boundary(&self) -> Result<Boundary2> {
-        let mut elements: Vec<Box<dyn BoundaryElement>> = Vec::new();
-        let mut last_point = self.start;
-
-        for e in self.elements.iter() {
-            match e {
-                BData::Seg((x, y)) => {
-                    let end = Point2::new(*x, *y);
-                    let seg = Segment2::try_new(&last_point, &end)?;
-                    last_point = end;
-                    elements.push(Box::new(seg));
-                }
-                BData::Arc((cx, cy, ex, ey, cw)) => {
-                    let end = Point2::new(*ex, *ey);
-                    let center = Point2::new(*cx, *cy);
-                    let arc = Arc2::try_new_ends(&last_point, &end, &center, *cw)?;
-                    last_point = end;
-                    elements.push(Box::new(arc));
-                }
-            }
-        }
-
-        Ok(Boundary2::new(elements))
-    }
 }
 
 /// Contains the geometry of a boundary, which is a collection of elements that can be queried for
@@ -221,7 +174,7 @@ mod tests {
     use std::f64::consts::PI;
 
     fn simple_data() -> BoundaryData2 {
-        let mut data = BoundaryData2::new(Point2::new(0.0, 0.0));
+        let mut data = BoundaryData2::new_open(Point2::new(0.0, 0.0));
         data.add_seg_xy(1.0, 0.0);
         data.add_arc_xy(1.0, 0.5, 1.0, 1.0, false);
         data.add_seg_xy(0.0, 1.0);

@@ -100,7 +100,7 @@ mod tests {
 
     #[test]
     fn corner_fillet_single() -> Result<()> {
-        let mut data = BoundaryData2::new(Point2::new(0.0, 0.0));
+        let mut data = BoundaryData2::new_open(Point2::new(0.0, 0.0));
         data.add_corner_fillets(&[Point2::new(1.0, 0.0), Point2::new(1.0, 1.0)], 0.25)?;
 
         let geom = data.try_to_boundary()?;
@@ -112,7 +112,7 @@ mod tests {
 
     #[test]
     fn corner_fillet_single_inverted() -> Result<()> {
-        let mut data = BoundaryData2::new(Point2::new(0.0, 0.0));
+        let mut data = BoundaryData2::new_open(Point2::new(0.0, 0.0));
         data.add_corner_fillets(&[Point2::new(1.0, 0.0), Point2::new(1.0, -1.0)], 0.25)?;
 
         let geom = data.try_to_boundary()?;
@@ -124,7 +124,7 @@ mod tests {
 
     #[test]
     fn corner_fillet_double() -> Result<()> {
-        let mut data = BoundaryData2::new(Point2::new(0.0, 0.0));
+        let mut data = BoundaryData2::new_open(Point2::new(0.0, 0.0));
         let points = vec![[1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
             .iter()
             .map(|p| Point2::from(*p))

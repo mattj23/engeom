@@ -65,7 +65,7 @@ const DELTA: f64 = 1e-6;
 /// // Here we define the function which creates the boundary from six parameters. This is an
 /// // extremely simple parameterization that just encodes the three corners as x,y pairs
 /// let builder: BndBuildFn = Box::new(|params: &DVector<f64>| {
-///    let mut bdata = BoundaryData2::new(Point2::new(params[0], params[1]));
+///    let mut bdata = BoundaryData2::new_open(Point2::new(params[0], params[1]));
 ///    bdata.add_seg_xy(params[2], params[3]);
 ///    bdata.add_seg_xy(params[4], params[5]);
 ///    bdata.add_seg_xy(params[0], params[1]);
@@ -200,7 +200,7 @@ mod tests {
         let points = fill_gaps(&corners, 0.1);
 
         let builder: BndBuildFn = Box::new(|params: &DVector<f64>| {
-            let mut bdata = BoundaryData2::new(Point2::new(params[0], params[1]));
+            let mut bdata = BoundaryData2::new_open(Point2::new(params[0], params[1]));
             bdata.add_seg_xy(params[2], params[3]);
             bdata.add_seg_xy(params[4], params[5]);
             bdata.add_seg_xy(params[0], params[1]);
