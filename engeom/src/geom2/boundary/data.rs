@@ -12,16 +12,25 @@ pub(super) enum BData {
     Arc((f64, f64, f64, f64, bool)),
 }
 
+impl BData {
+    pub fn end_point(&self) -> Point2 {
+        match self {
+            BData::Seg((x, y)) => Point2::new(*x, *y),
+            BData::Arc((_, _, ex, ey, _)) => Point2::new(*ex, *ey),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
-struct BNode {
-    id: u32,
-    next_id: Option<u32>,
-    prev_id: Option<u32>,
-    data: BData
+pub(super) struct BNode {
+    pub(super) id: u32,
+    pub(super) next_id: Option<u32>,
+    pub(super) prev_id: Option<u32>,
+    pub(super) data: BData
 }
 
 impl BNode {
-    pub fn new(id: u32, next_id: Option<u32>, prev_id: Option<u32>, data: BData) -> BNode {
+    pub(super) fn new(id: u32, next_id: Option<u32>, prev_id: Option<u32>, data: BData) -> BNode {
         Self {
             id, next_id, prev_id, data
         }
@@ -163,6 +172,10 @@ impl BoundaryData2 {
         Ok(new_id)
     }
 
+    pub(super) fn get_node(&self, id: u32) -> Option<&BNode> {
+        self.nodes.get(&id)
+    }
+
     pub(super) fn try_remove(&mut self, id: u32) -> Result<()> {
         if !self.nodes.contains_key(&id) {
             return Err("Node not found".into());
@@ -235,11 +248,7 @@ impl BoundaryData2 {
         }
 
         let prev_id = self.nodes[&id].prev_id.ok_or("Invalid node id: no previous node")?;
-        let prev_data = &self.nodes[&prev_id].data;
-        match prev_data {
-            BData::Seg((x, y)) => Ok(Point2::new(*x, *y)),
-            BData::Arc((_, _, ex, ey, _)) => Ok(Point2::new(*ex, *ey)),
-        }
+        Ok(self.nodes[&prev_id].data.end_point())
     }
 
     pub fn try_to_boundary(&self) -> Result<Boundary2> {

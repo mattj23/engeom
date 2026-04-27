@@ -201,9 +201,10 @@ mod tests {
 
         let builder: BndBuildFn = Box::new(|params: &DVector<f64>| {
             let mut bdata = BoundaryData2::new_open(Point2::new(params[0], params[1]));
-            bdata.add_seg_xy(params[2], params[3]);
-            bdata.add_seg_xy(params[4], params[5]);
-            bdata.add_seg_xy(params[0], params[1]);
+            let mut cursor = bdata.get_cursor(None);
+            cursor.add_seg_xy(params[2], params[3]);
+            cursor.add_seg_xy(params[4], params[5]);
+            cursor.add_seg_xy(params[0], params[1]);
             bdata.try_to_boundary()
         });
 

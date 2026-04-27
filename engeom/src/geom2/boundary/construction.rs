@@ -15,6 +15,15 @@ impl<'a> BCursor<'a> {
         Self { data, node_id }
     }
 
+    pub fn move_to(&mut self, id: u32) -> Result<()> {
+        if self.data.get_node(id).is_none() {
+            Err("Invalid cursor position".into())
+        } else {
+            self.node_id = id;
+            Ok(())
+        }
+    }
+
     fn add_data(&mut self, data: BData) -> u32 {
         let next_id = if self.data.len() == 0 {
             self.data.insert_first(data).unwrap()
@@ -34,16 +43,6 @@ impl<'a> BCursor<'a> {
     pub fn add_seg(&mut self, p: &impl PCoords<2>) {
         self.add_seg_xy(p.coords().x, p.coords().y);
     }
-}
-
-impl BoundaryData2 {
-    pub fn add_seg_xy(&mut self, x: f64, y: f64) {
-        self.push_data(BData::Seg((x, y))).unwrap();
-    }
-
-    pub fn add_seg(&mut self, p: &impl PCoords<2>) {
-        self.add_seg_xy(p.coords().x, p.coords().y);
-    }
 
     pub fn add_arc_xy(
         &mut self,
@@ -52,18 +51,41 @@ impl BoundaryData2 {
         end_x: f64,
         end_y: f64,
         clockwise: bool,
-    ) {
-        self.push_data(BData::Arc((center_x, center_y, end_x, end_y, clockwise))).unwrap();
+    ) -> u32 {
+        let arc = BData::Arc((center_x, center_y, end_x, end_y, clockwise));
+        self.add_data(arc)
     }
 
-    pub fn add_arc(&mut self, center: &impl PCoords<2>, end: &impl PCoords<2>, clockwise: bool) {
+    pub fn add_arc(
+        &mut self,
+        center: &impl PCoords<2>,
+        end: &impl PCoords<2>,
+        clockwise: bool,
+    ) -> u32 {
         self.add_arc_xy(
             center.coords().x,
             center.coords().y,
             end.coords().x,
             end.coords().y,
             clockwise,
-        );
+        )
+    }
+
+    /// Finds the endpoint of the element at the cursor's current position. If the data is an
+    /// empty open boundary, it will return the start point. If it's an empty closed boundary, it
+    /// will throw an error. Otherwise, it will find the endpoint of current element, which will
+    /// also serve as the startpoint for the next element to get inserted at this position.
+    pub fn point_after(&self) -> Result<Point2> {
+        if self.data.len() == 0 {
+            if self.data.is_closed() {
+                Err("Cannot get point after for empty closed boundary".into())
+            } else {
+                Ok(self.data.start.expect("open boundary must have a start point"))
+            }
+        } else {
+            let node = self.data.get_node(self.node_id).ok_or("Invalid cursor position")?;
+            Ok(node.data.end_point())
+        }
     }
 
     pub fn add_corner_fillets(&mut self, corners: &[impl PCoords<2>], radius: f64) -> Result<()> {
@@ -76,12 +98,12 @@ impl BoundaryData2 {
             let c1 = &corners[i + 1];
 
             // First we'll find the circle at the tangent of the corner
-            let v0 = self.last_point().coords() - c0.coords();
+            let v0 = self.point_after()?.coords() - c0.coords();
             let v1 = c1.coords() - c0.coords();
             let c = Circle2::tangent_to_corner(c0, &v0, &v1, radius)?;
 
             // Now we need to find the two tangent endpoints
-            let l0 = Line2::from_points(&self.last_point(), c0).normalized();
+            let l0 = Line2::from_points(&self.point_after()?, c0).normalized();
             let (e0, e1) = c.tangent_points_to(c0).unwrap();
             let (e0, e1) = if l0.distance_to(&e0) < l0.distance_to(&e1) {
                 (e0, e1)
@@ -102,13 +124,16 @@ impl BoundaryData2 {
         let cf1 = &corners[corners.len() - 1];
         let cf0 = &corners[corners.len() - 2];
         let lf = Line2::from_points(cf0, cf1).normalized();
-        if lf.scalar_project(&self.last_point()) < 0.0 {
+        if lf.scalar_project(&self.point_after()?) < 0.0 {
             return Err("Invalid fillet radius, too large for corner".into());
         }
         self.add_seg(cf1);
 
         Ok(())
     }
+}
+
+impl BoundaryData2 {
 
     pub fn last_point(&self) -> Point2 {
         match self.last_data() {
@@ -124,11 +149,14 @@ mod tests {
     use super::*;
     use approx::assert_relative_eq;
     use std::f64::consts::PI;
+    use crate::common::points::to_points;
 
     #[test]
     fn corner_fillet_single() -> Result<()> {
         let mut data = BoundaryData2::new_open(Point2::new(0.0, 0.0));
-        data.add_corner_fillets(&[Point2::new(1.0, 0.0), Point2::new(1.0, 1.0)], 0.25)?;
+        let mut cursor = data.get_cursor(None);
+        // cursor.add_corner_fillets(&[Point2::new(1.0, 0.0), Point2::new(1.0, 1.0)], 0.25)?;
+        cursor.add_corner_fillets(&to_points(&[[1.0, 0.0], [1.0, 1.0]]), 0.25)?;
 
         let geom = data.try_to_boundary()?;
         let expected_len = 0.75 * 2.0 + 0.25 * PI / 2.0;
@@ -140,7 +168,10 @@ mod tests {
     #[test]
     fn corner_fillet_single_inverted() -> Result<()> {
         let mut data = BoundaryData2::new_open(Point2::new(0.0, 0.0));
-        data.add_corner_fillets(&[Point2::new(1.0, 0.0), Point2::new(1.0, -1.0)], 0.25)?;
+        let mut cursor = data.get_cursor(None);
+        cursor.add_corner_fillets(&to_points(&[[1.0, 0.0], [1.0, -1.0]]), 0.25)?;
+
+        // data.add_corner_fillets(&[Point2::new(1.0, 0.0), Point2::new(1.0, -1.0)], 0.25)?;
 
         let geom = data.try_to_boundary()?;
         let expected_len = 0.75 * 2.0 + 0.25 * PI / 2.0;
@@ -152,11 +183,9 @@ mod tests {
     #[test]
     fn corner_fillet_double() -> Result<()> {
         let mut data = BoundaryData2::new_open(Point2::new(0.0, 0.0));
-        let points = vec![[1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
-            .iter()
-            .map(|p| Point2::from(*p))
-            .collect::<Vec<_>>();
-        data.add_corner_fillets(&points, 0.25)?;
+        let mut cursor = data.get_cursor(None);
+        let points = to_points(&[[1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]);
+        cursor.add_corner_fillets(&points, 0.25)?;
 
         let geom = data.try_to_boundary()?;
         let expected_len = 0.75 + 0.5 + 0.75 + 2.0 * 0.25 * PI / 2.0;
@@ -180,7 +209,11 @@ mod tests {
         assert_relative_eq!(aabb.mins, [0.0, 0.0].into(), epsilon = 1e-12);
         assert_relative_eq!(aabb.maxs, [1.0, 1.0].into(), epsilon = 1e-12);
 
-        assert_relative_eq!(boundary.at_start().point, [0.0, 0.0].into(), epsilon = 1e-12);
+        assert_relative_eq!(
+            boundary.at_start().point,
+            [0.0, 0.0].into(),
+            epsilon = 1e-12
+        );
         assert_relative_eq!(boundary.at_end().point, [0.0, 0.0].into(), epsilon = 1e-12);
 
         Ok(())

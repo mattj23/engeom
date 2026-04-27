@@ -93,7 +93,7 @@ impl Boundary2 {
         if elements.is_empty() {
             return Err("Boundary must have at least one element".into());
         }
-        
+
         let mut lengths = vec![0.0];
         let mut total_length = 0.0;
         for element in elements.iter() {
@@ -155,11 +155,11 @@ impl Boundary2 {
 
         pre_mod.map(|pr| ManifoldPosition2 { l: length, ..pr })
     }
-    
+
     pub fn at_start(&self) -> ManifoldPosition2 {
         self.elements[0].at_start()
     }
-    
+
     pub fn at_end(&self) -> ManifoldPosition2 {
         let mut result = self.elements[self.elements.len() - 1].at_end();
         result.l = self.length();
@@ -190,9 +190,10 @@ mod tests {
 
     fn simple_data() -> BoundaryData2 {
         let mut data = BoundaryData2::new_open(Point2::new(0.0, 0.0));
-        data.add_seg_xy(1.0, 0.0);
-        data.add_arc_xy(1.0, 0.5, 1.0, 1.0, false);
-        data.add_seg_xy(0.0, 1.0);
+        let mut cursor = data.get_cursor(None);
+        cursor.add_seg_xy(1.0, 0.0);
+        cursor.add_arc_xy(1.0, 0.5, 1.0, 1.0, false);
+        cursor.add_seg_xy(0.0, 1.0);
         data
     }
 
