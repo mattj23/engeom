@@ -89,7 +89,11 @@ pub struct Boundary2 {
 }
 
 impl Boundary2 {
-    pub fn new(elements: Vec<Box<dyn BoundaryElement>>) -> Self {
+    pub fn try_new(elements: Vec<Box<dyn BoundaryElement>>) -> Result<Self> {
+        if elements.is_empty() {
+            return Err("Boundary must have at least one element".into());
+        }
+        
         let mut lengths = vec![0.0];
         let mut total_length = 0.0;
         for element in elements.iter() {
@@ -97,7 +101,7 @@ impl Boundary2 {
             lengths.push(total_length);
         }
 
-        Self { elements, lengths }
+        Ok(Self { elements, lengths })
     }
 
     pub fn to_points(&self, tol: f64) -> Result<Vec<Point2>> {
@@ -150,6 +154,16 @@ impl Boundary2 {
         };
 
         pre_mod.map(|pr| ManifoldPosition2 { l: length, ..pr })
+    }
+    
+    pub fn at_start(&self) -> ManifoldPosition2 {
+        self.elements[0].at_start()
+    }
+    
+    pub fn at_end(&self) -> ManifoldPosition2 {
+        let mut result = self.elements[self.elements.len() - 1].at_end();
+        result.l = self.length();
+        result
     }
 
     pub fn length(&self) -> f64 {

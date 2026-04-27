@@ -173,6 +173,16 @@ mod tests {
         cursor.add_seg_xy(0.0, 1.0);
         cursor.add_seg_xy(0.0, 0.0);
 
+        let boundary = data.try_to_boundary()?;
+        assert_relative_eq!(boundary.length(), 4.0, epsilon = 1e-12);
+
+        let aabb = boundary.aabb();
+        assert_relative_eq!(aabb.mins, [0.0, 0.0].into(), epsilon = 1e-12);
+        assert_relative_eq!(aabb.maxs, [1.0, 1.0].into(), epsilon = 1e-12);
+
+        assert_relative_eq!(boundary.at_start().point, [0.0, 0.0].into(), epsilon = 1e-12);
+        assert_relative_eq!(boundary.at_end().point, [0.0, 0.0].into(), epsilon = 1e-12);
+
         Ok(())
     }
 }

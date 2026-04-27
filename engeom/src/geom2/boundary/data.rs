@@ -29,6 +29,32 @@ impl BNode {
 
 }
 
+pub(super) struct BIter<'a> {
+    data: &'a BoundaryData2,
+    current: Option<u32>,
+    head: u32,
+    done: bool,
+}
+
+impl<'a> Iterator for BIter<'a> {
+    type Item = (u32, &'a BData);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.done { return None; }
+        let id = self.current?;
+        let node = &self.data.nodes[&id];
+        let item = (id, &node.data);
+
+        match node.next_id {
+            None => self.done = true,
+            Some(next) if next == self.head => self.done = true,
+            Some(next) => self.current = Some(next),
+        }
+
+        Some(item)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct BoundaryData2 {
     pub start: Option<Point2>,
@@ -190,30 +216,51 @@ impl BoundaryData2 {
         self.tail_id().map(|id| &self.nodes[&id].data)
     }
 
-    pub fn try_to_boundary(&self) -> crate::Result<Boundary2> {
-        // let mut elements: Vec<Box<dyn BoundaryElement>> = Vec::new();
-        // let mut last_point = self.start;
-        //
-        // for e in self.elements.iter() {
-        //     match e {
-        //         BData::Seg((x, y)) => {
-        //             let end = Point2::new(*x, *y);
-        //             let seg = Segment2::try_new(&last_point, &end)?;
-        //             last_point = end;
-        //             elements.push(Box::new(seg));
-        //         }
-        //         BData::Arc((cx, cy, ex, ey, cw)) => {
-        //             let end = Point2::new(*ex, *ey);
-        //             let center = Point2::new(*cx, *cy);
-        //             let arc = Arc2::try_new_ends(&last_point, &end, &center, *cw)?;
-        //             last_point = end;
-        //             elements.push(Box::new(arc));
-        //         }
-        //     }
-        // }
-        //
-        // Ok(Boundary2::new(elements))
-        todo!()
+    pub(super) fn iter(&self) -> BIter<'_> {
+        BIter {
+            data: self,
+            current: if self.len() == 0 { None } else { Some(self.head_id) },
+            head: self.head_id,
+            done: self.len() == 0,
+        }
+    }
+
+    pub fn start_point_of(&self, id: u32) -> Result<Point2> {
+        if self.len() == 0 {
+            return Err("Boundary has no elements".into());
+        };
+
+        if !self.is_closed() && id == self.head_id {
+            return Ok(self.start.unwrap());
+        }
+
+        let prev_id = self.nodes[&id].prev_id.ok_or("Invalid node id: no previous node")?;
+        let prev_data = &self.nodes[&prev_id].data;
+        match prev_data {
+            BData::Seg((x, y)) => Ok(Point2::new(*x, *y)),
+            BData::Arc((_, _, ex, ey, _)) => Ok(Point2::new(*ex, *ey)),
+        }
+    }
+
+    pub fn try_to_boundary(&self) -> Result<Boundary2> {
+        let mut elements: Vec<Box<dyn BoundaryElement>> = Vec::new();
+        for (id, e) in self.iter() {
+            let start = self.start_point_of(id)?;
+                match e {
+                    BData::Seg((x, y)) => {
+                        let end = Point2::new(*x, *y);
+                        let seg = Segment2::try_new(&start, &end)?;
+                        elements.push(Box::new(seg));
+                    }
+                    BData::Arc((cx, cy, ex, ey, cw)) => {
+                        let end = Point2::new(*ex, *ey);
+                        let center = Point2::new(*cx, *cy);
+                        let arc = Arc2::try_new_ends(&start, &end, &center, *cw)?;
+                        elements.push(Box::new(arc));
+                    }
+                }
+        }
+        Boundary2::try_new(elements)
     }
 }
 
