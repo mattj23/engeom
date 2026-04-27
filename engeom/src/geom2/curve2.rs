@@ -883,7 +883,7 @@ impl<'a> Iterator for Curve2Iterator<'a> {
 
 fn resample_by_max_spacing(curve: &Curve2, max_spacing: f64) -> Result<Curve2> {
     let n = (curve.length() / max_spacing).ceil() as usize;
-    resample_by_count(curve, n)
+    resample_by_count(curve, n.max(2))
 }
 
 fn resample_by_spacing(curve: &Curve2, spacing: f64) -> Result<Curve2> {
@@ -903,6 +903,9 @@ fn resample_by_spacing(curve: &Curve2, spacing: f64) -> Result<Curve2> {
 }
 
 fn resample_by_count(curve: &Curve2, count: usize) -> Result<Curve2> {
+    if count < 2 {
+        return Err("Must have a count of at least 2".into());
+    }
     let mut positions = Vec::new();
     let l = curve.length();
     for i in 0..count {
