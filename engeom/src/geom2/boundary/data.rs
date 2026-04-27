@@ -252,20 +252,20 @@ impl BoundaryData2 {
     }
 
     pub fn try_to_boundary(&self) -> Result<Boundary2> {
-        let mut elements: Vec<Box<dyn BoundaryElement>> = Vec::new();
+        let mut elements: Vec<(u32, Box<dyn BoundaryElement>)> = Vec::new();
         for (id, e) in self.iter() {
             let start = self.start_point_of(id)?;
                 match e {
                     BData::Seg((x, y)) => {
                         let end = Point2::new(*x, *y);
                         let seg = Segment2::try_new(&start, &end)?;
-                        elements.push(Box::new(seg));
+                        elements.push((id, Box::new(seg)));
                     }
                     BData::Arc((cx, cy, ex, ey, cw)) => {
                         let end = Point2::new(*ex, *ey);
                         let center = Point2::new(*cx, *cy);
                         let arc = Arc2::try_new_ends(&start, &end, &center, *cw)?;
-                        elements.push(Box::new(arc));
+                        elements.push((id, Box::new(arc)));
                     }
                 }
         }

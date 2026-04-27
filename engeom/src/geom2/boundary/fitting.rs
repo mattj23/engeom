@@ -151,7 +151,7 @@ impl LeastSquaresProblem<f64, Dyn, Dyn> for BoundaryFit<'_> {
 
             let mut res = DVector::zeros(self.points.len());
             for i in 0..self.points.len() {
-                let m = boundary.at_closest_to_point(&self.points[i]);
+                let (_, m) = boundary.at_closest_to_point(&self.points[i]);
 
                 if self.ignore_ends {
                     self.weights[i] = if bounds.contains(&m.l) { 1.0 } else { 0.0 };
@@ -195,7 +195,8 @@ impl LeastSquaresProblem<f64, Dyn, Dyn> for BoundaryFit<'_> {
 
             for i in 0..self.points.len() {
                 let p = &self.points[i];
-                let d = dist(p, &disturbed.at_closest_to_point(p).point);
+                let (_, m) = disturbed.at_closest_to_point(p);
+                let d = dist(p, &m);
                 jac[(i, k)] = self.weights[i] * (d - residuals[i]) / DELTA;
             }
         }

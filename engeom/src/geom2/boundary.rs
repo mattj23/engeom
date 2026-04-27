@@ -1,7 +1,6 @@
 //! In `engeom`, 2D boundaries are a concept that represents a continuous manifold in 2D space,
-//! with a positive and a negative side. Boundaries may be open or closed (currently, closed
-//! boundaries are not implemented, but many of their features can be achieved with an open boundary
-//! that returns to its starting point).
+//! with a positive and a negative side. Boundaries may be open or closed, which indicates whether
+//! the manifold is a closed loop that wraps back onto itself.
 //!
 //! A boundary is very similar to a [`Curve2`] element, except that while a `Curve2` is composed
 //! entirely of line segments, a boundary may consist of different types of elements, all of which
@@ -13,10 +12,10 @@
 //! representing geometry with curved regions, boundaries will generally be more efficient and
 //! capable.
 //!
-//! Boundaries are defined through the [`BoundaryData2`] struct, which provides a convenient and
-//! efficient way to define their geometry while ensuring that the continuity constraint isn't
-//! violated.  There are helper methods on `BoundaryData2` which allow for constructing complicated
-//! geometry, alongside simple methods for full control over segments and arcs.
+//! Boundaries are defined through the [`BoundaryData2`] struct and its companion editing handle,
+//! the [`BCursor`], which is an efficient way to define geometry while ensuring that the continuity
+//! constraint isn't violated.  There are helper methods on `BCursor` which allow for constructing
+//! complicated geometry, alongside simple methods for full control over segments and arcs.
 //!
 //! Actual queryable geometry is represented by the [`Boundary2`] struct, which contains a vector
 //! of boxed dynamic `BoundaryElement` instances. The `Boundary2` is most easily built from the
@@ -85,24 +84,30 @@ pub trait BoundaryElement {
 ///
 pub struct Boundary2 {
     elements: Vec<Box<dyn BoundaryElement>>,
+    ids: Vec<u32>,
     lengths: Vec<f64>,
     is_closed: bool,
 }
 
 impl Boundary2 {
-    pub fn try_new(elements: Vec<Box<dyn BoundaryElement>>, is_closed: bool) -> Result<Self> {
+    pub fn try_new(elements: Vec<(u32, Box<dyn BoundaryElement>)>, is_closed: bool) -> Result<Self> {
         if elements.is_empty() {
             return Err("Boundary must have at least one element".into());
         }
 
+        let mut items = Vec::new();
+        let mut ids = Vec::new();
+
         let mut lengths = vec![0.0];
         let mut total_length = 0.0;
-        for element in elements.iter() {
+        for (id, element) in elements {
             total_length += element.length();
             lengths.push(total_length);
+            items.push(element);
+            ids.push(id);
         }
 
-        Ok(Self { elements, lengths, is_closed })
+        Ok(Self { elements: items, ids, lengths, is_closed })
     }
 
     pub fn is_closed(&self) -> bool {
@@ -119,7 +124,7 @@ impl Boundary2 {
         Ok(points)
     }
 
-    pub fn at_closest_to_point(&self, point: &dyn PCoords<2>) -> ManifoldPosition2 {
+    pub fn at_closest_to_point(&self, point: &dyn PCoords<2>) -> (u32, ManifoldPosition2) {
         let point = Point2::from(point.coords());
         let (k, _, m) = (0..self.elements.len())
             .map(|i| {
@@ -132,7 +137,8 @@ impl Boundary2 {
             .unwrap();
 
         let length = self.lengths[k] + m.l;
-        ManifoldPosition2::new(length, m.point, m.direction, m.normal)
+        let id = self.ids[k];
+        (id, ManifoldPosition2::new(length, m.point, m.direction, m.normal))
     }
 
     pub fn at_length(&self, length: f64) -> Option<ManifoldPosition2> {
@@ -203,6 +209,20 @@ mod tests {
     }
 
     #[test]
+    fn at_closest_has_correct_id() {
+        let mut data = BoundaryData2::new_open(Point2::new(0.0, 0.0));
+        let mut cursor = data.get_cursor(None);
+        let e0 = cursor.add_seg_xy(1.0, 0.0);
+        let e1 = cursor.add_arc_xy(1.0, 0.5, 1.0, 1.0, false);
+        let e2 = cursor.add_seg_xy(0.0, 1.0);
+        let boundary = data.try_to_boundary().unwrap();
+
+        assert_eq!(e0, boundary.at_closest_to_point(&Point2::new(0.5, 0.0)).0);
+        assert_eq!(e1, boundary.at_closest_to_point(&Point2::new(1.5, 0.5)).0);
+        assert_eq!(e2, boundary.at_closest_to_point(&Point2::new(0.5, 1.0)).0);
+    }
+
+    #[test]
     fn simple_boundary_builds() {
         let data = simple_data();
         let boundary = data.try_to_boundary().unwrap();
@@ -269,7 +289,7 @@ mod tests {
         for _ in 0..1000 {
             let l = rng.random_range(0.0..boundary.length());
             let m = boundary.at_length(l).unwrap();
-            let l2 = boundary.at_closest_to_point(&m.point).l;
+            let l2 = boundary.at_closest_to_point(&m.point).1.l;
             assert_relative_eq!(l, l2, epsilon = 1e-6);
         }
     }
