@@ -42,6 +42,7 @@ use crate::{Point2, Result};
 use parry2d_f64::bounding_volume::BoundingVolume;
 
 pub use data::BoundaryData2;
+pub use construction::BCursor;
 pub use fitting::{BndBuildFn, fit_boundary_to_points};
 
 pub trait BoundaryElement {

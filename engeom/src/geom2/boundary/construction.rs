@@ -2,12 +2,18 @@
 
 use crate::common::PCoords;
 use crate::geom2::BoundaryData2;
-use crate::geom2::boundary::BData;
+use crate::geom2::boundary::data::BData;
 use crate::{Circle2, Line2, Point2, Result};
+
+pub struct BCursor<'a> {
+    data: &'a mut BoundaryData2,
+    node_id: u32,
+}
+
 
 impl BoundaryData2 {
     pub fn add_seg_xy(&mut self, x: f64, y: f64) {
-        self.elements.push(BData::Seg((x, y)));
+        self.push_data(BData::Seg((x, y))).unwrap();
     }
 
     pub fn add_seg(&mut self, p: &impl PCoords<2>) {
@@ -22,8 +28,7 @@ impl BoundaryData2 {
         end_y: f64,
         clockwise: bool,
     ) {
-        self.elements
-            .push(BData::Arc((center_x, center_y, end_x, end_y, clockwise)));
+        self.push_data(BData::Arc((center_x, center_y, end_x, end_y, clockwise))).unwrap();
     }
 
     pub fn add_arc(&mut self, center: &impl PCoords<2>, end: &impl PCoords<2>, clockwise: bool) {
@@ -81,13 +86,10 @@ impl BoundaryData2 {
     }
 
     pub fn last_point(&self) -> Point2 {
-        if self.elements.is_empty() {
-            self.start
-        } else {
-            match self.elements.last().unwrap() {
-                BData::Seg((x, y)) => Point2::new(*x, *y),
-                BData::Arc((cx, cy, ex, ey, _)) => Point2::new(*ex, *ey),
-            }
+        match self.last_data() {
+            None => self.start.expect("open boundary must have a start point"),
+            Some(BData::Seg((x, y))) => Point2::new(*x, *y),
+            Some(BData::Arc((_cx, _cy, ex, ey, _))) => Point2::new(*ex, *ey),
         }
     }
 }
