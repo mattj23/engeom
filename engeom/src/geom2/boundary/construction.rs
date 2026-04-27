@@ -10,6 +10,31 @@ pub struct BCursor<'a> {
     node_id: u32,
 }
 
+impl<'a> BCursor<'a> {
+    pub fn new(data: &'a mut BoundaryData2, node_id: u32) -> Self {
+        Self { data, node_id }
+    }
+
+    fn add_data(&mut self, data: BData) -> u32 {
+        let next_id = if self.data.len() == 0 {
+            self.data.insert_first(data).unwrap()
+        } else {
+            self.data.insert_after(self.node_id, data).unwrap()
+        };
+
+        self.node_id = next_id;
+        next_id
+    }
+
+    pub fn add_seg_xy(&mut self, x: f64, y: f64) -> u32 {
+        let seg = BData::Seg((x, y));
+        self.add_data(seg)
+    }
+
+    pub fn add_seg(&mut self, p: &impl PCoords<2>) {
+        self.add_seg_xy(p.coords().x, p.coords().y);
+    }
+}
 
 impl BoundaryData2 {
     pub fn add_seg_xy(&mut self, x: f64, y: f64) {
@@ -136,6 +161,18 @@ mod tests {
         let geom = data.try_to_boundary()?;
         let expected_len = 0.75 + 0.5 + 0.75 + 2.0 * 0.25 * PI / 2.0;
         assert_relative_eq!(geom.length(), expected_len);
+        Ok(())
+    }
+
+    #[test]
+    fn create_simple_rectangle() -> Result<()> {
+        let mut data = BoundaryData2::new_closed();
+        let mut cursor = data.get_cursor(None);
+        cursor.add_seg_xy(1.0, 0.0);
+        cursor.add_seg_xy(1.0, 1.0);
+        cursor.add_seg_xy(0.0, 1.0);
+        cursor.add_seg_xy(0.0, 0.0);
+
         Ok(())
     }
 }

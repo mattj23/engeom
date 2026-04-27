@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::geom2::{Boundary2, BoundaryElement, Segment2};
+use crate::geom2::{BCursor, Boundary2, BoundaryElement, Segment2};
 use crate::{Arc2, Point2, Result};
 
 
@@ -54,6 +54,14 @@ impl BoundaryData2 {
             next_unique_id: 0,
             head_id: u32::MAX,
         }
+    }
+
+    pub fn get_cursor(&mut self, at_id: Option<u32>) -> BCursor<'_> {
+        let node_id = match at_id {
+            Some(id) => id,
+            None => self.tail_id().unwrap_or(u32::MAX),
+        };
+        BCursor::new(self, node_id)
     }
 
     pub fn is_closed(&self) -> bool {
