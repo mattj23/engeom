@@ -86,10 +86,11 @@ pub trait BoundaryElement {
 pub struct Boundary2 {
     elements: Vec<Box<dyn BoundaryElement>>,
     lengths: Vec<f64>,
+    is_closed: bool,
 }
 
 impl Boundary2 {
-    pub fn try_new(elements: Vec<Box<dyn BoundaryElement>>) -> Result<Self> {
+    pub fn try_new(elements: Vec<Box<dyn BoundaryElement>>, is_closed: bool) -> Result<Self> {
         if elements.is_empty() {
             return Err("Boundary must have at least one element".into());
         }
@@ -101,7 +102,11 @@ impl Boundary2 {
             lengths.push(total_length);
         }
 
-        Ok(Self { elements, lengths })
+        Ok(Self { elements, lengths, is_closed })
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.is_closed
     }
 
     pub fn to_points(&self, tol: f64) -> Result<Vec<Point2>> {

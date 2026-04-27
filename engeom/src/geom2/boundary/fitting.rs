@@ -42,6 +42,8 @@ const DELTA: f64 = 1e-6;
 ///   `Ok(Boundary2)` with this input for the fitting algorithm to initialize. The algorithm will
 ///   use the size of the initial guess to determine the number of parameters, so make sure it
 ///   matches what the `builder` function is expecting.
+/// * `ignore_ends`: if `true`, points that project onto the ends of an open boundary will have
+///   residuals of zero
 ///
 /// returns: Result<Matrix<f64, Dyn, Const<1>, VecStorage<f64, Dyn, Const<1>>>, Box<dyn Error, Global>>
 ///
@@ -66,9 +68,10 @@ const DELTA: f64 = 1e-6;
 /// // extremely simple parameterization that just encodes the three corners as x,y pairs
 /// let builder: BndBuildFn = Box::new(|params: &DVector<f64>| {
 ///    let mut bdata = BoundaryData2::new_open(Point2::new(params[0], params[1]));
-///    bdata.add_seg_xy(params[2], params[3]);
-///    bdata.add_seg_xy(params[4], params[5]);
-///    bdata.add_seg_xy(params[0], params[1]);
+///    let mut cursor = bdata.get_cursor(None);
+///    cursor.add_seg_xy(params[2], params[3]);
+///    cursor.add_seg_xy(params[4], params[5]);
+///    cursor.add_seg_xy(params[0], params[1]);
 ///    bdata.try_to_boundary()
 /// });
 ///
@@ -76,7 +79,7 @@ const DELTA: f64 = 1e-6;
 /// // too large for the actual data and not aligned with the edges. Then we'll run the fitting
 /// // algorithm.
 /// let initial = DVector::from(vec![0.0, 0.0, 4.0, 0.0, 1.0, 7.0]);
-/// let result = fit_boundary_to_points(&points, &builder, initial).unwrap();
+/// let result = fit_boundary_to_points(&points, &builder, initial, false).unwrap();
 ///
 /// // Finally we'll verify that the corners match the ones we originally provided.
 /// let expected = DVector::from(vec![1.0, 1.0, 3.0, 2.0, 2.0, 4.0]);
@@ -87,8 +90,9 @@ pub fn fit_boundary_to_points(
     points: &[Point2],
     builder: &BndBuildFn,
     initial: DVector<f64>,
+    ignore_ends: bool,
 ) -> Result<DVector<f64>> {
-    let problem = BoundaryFit::try_new(points, builder, initial)?;
+    let problem = BoundaryFit::try_new(points, builder, initial, ignore_ends)?;
     let (result, report) = LevenbergMarquardt::new().minimize(problem);
 
     if report.termination.was_successful() {
@@ -104,6 +108,8 @@ struct BoundaryFit<'a> {
     builder: &'a BndBuildFn,
     current: Option<Boundary2>,
     residuals: Option<DVector<f64>>,
+    ignore_ends: bool,
+    weights: Vec<f64>,
 }
 
 impl<'a> BoundaryFit<'a> {
@@ -111,6 +117,7 @@ impl<'a> BoundaryFit<'a> {
         points: &'a [Point2],
         builder: &'a BndBuildFn,
         initial: DVector<f64>,
+        ignore_ends: bool,
     ) -> Result<Self> {
         // Check to make sure that the initial value doesn't fail
         let _ = builder(&initial)?;
@@ -121,6 +128,8 @@ impl<'a> BoundaryFit<'a> {
             builder,
             current: None,
             residuals: None,
+            ignore_ends,
+            weights: vec![1.0; points.len()],
         };
 
         problem.set_params(&initial);
@@ -138,10 +147,18 @@ impl LeastSquaresProblem<f64, Dyn, Dyn> for BoundaryFit<'_> {
         self.params = x.clone();
 
         if let Ok(boundary) = (self.builder)(&self.params) {
+            let bounds = f64::EPSILON..(boundary.length() - f64::EPSILON);
+
             let mut res = DVector::zeros(self.points.len());
             for i in 0..self.points.len() {
-                let p = boundary.at_closest_to_point(&self.points[i]).point;
-                res[i] = dist(&p, &self.points[i]);
+                let m = boundary.at_closest_to_point(&self.points[i]);
+
+                if self.ignore_ends {
+                    self.weights[i] = if bounds.contains(&m.l) { 1.0 } else { 0.0 };
+                }
+
+                let d = dist(&m.point, &self.points[i]);
+                res[i] = d * self.weights[i];
             }
             self.residuals = Some(res);
             self.current = Some(boundary);
@@ -179,7 +196,7 @@ impl LeastSquaresProblem<f64, Dyn, Dyn> for BoundaryFit<'_> {
             for i in 0..self.points.len() {
                 let p = &self.points[i];
                 let d = dist(p, &disturbed.at_closest_to_point(p).point);
-                jac[(i, k)] = (d - residuals[i]) / DELTA;
+                jac[(i, k)] = self.weights[i] * (d - residuals[i]) / DELTA;
             }
         }
 
@@ -209,7 +226,7 @@ mod tests {
         });
 
         let initial = DVector::from(vec![0.0, 0.0, 4.0, 0.0, 1.0, 7.0]);
-        let result = fit_boundary_to_points(&points, &builder, initial).unwrap();
+        let result = fit_boundary_to_points(&points, &builder, initial, false).unwrap();
         let expected = DVector::from(vec![1.0, 1.0, 3.0, 2.0, 2.0, 4.0]);
         assert_relative_eq!(result, expected, epsilon = 1.0e-6);
     }

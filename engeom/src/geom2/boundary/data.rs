@@ -269,7 +269,7 @@ impl BoundaryData2 {
                     }
                 }
         }
-        Boundary2::try_new(elements)
+        Boundary2::try_new(elements, self.is_closed())
     }
 }
 
