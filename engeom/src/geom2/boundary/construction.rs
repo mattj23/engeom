@@ -40,8 +40,8 @@ impl<'a> BCursor<'a> {
         self.add_data(seg)
     }
 
-    pub fn add_seg(&mut self, p: &impl PCoords<2>) {
-        self.add_seg_xy(p.coords().x, p.coords().y);
+    pub fn add_seg(&mut self, p: &impl PCoords<2>) -> u32 {
+        self.add_seg_xy(p.coords().x, p.coords().y)
     }
 
     pub fn add_arc_xy(
@@ -80,18 +80,48 @@ impl<'a> BCursor<'a> {
             if self.data.is_closed() {
                 Err("Cannot get point after for empty closed boundary".into())
             } else {
-                Ok(self.data.start.expect("open boundary must have a start point"))
+                Ok(self
+                    .data
+                    .start
+                    .expect("open boundary must have a start point"))
             }
         } else {
-            let node = self.data.get_node(self.node_id).ok_or("Invalid cursor position")?;
+            let node = self
+                .data
+                .get_node(self.node_id)
+                .ok_or("Invalid cursor position")?;
             Ok(node.data.end_point())
         }
     }
 
-    pub fn add_corner_fillets(&mut self, corners: &[impl PCoords<2>], radius: f64) -> Result<()> {
+    /// This method will create a sequence of line segments which meet at corner fillets to the
+    /// boundary at the current cursor position.
+    ///
+    /// The geometry will be defined through a sequence of points and a common fillet radius. For
+    /// `n` points, there will be `n` line segments and `n-1` fillets created. You must provide at
+    /// least two points in the `corners` argument.
+    ///
+    /// # Arguments
+    ///
+    /// * `corners`: the endpoints of the line segments
+    /// * `radius`: the radius of the fillets joining the line segments
+    ///
+    /// returns: Result<Vec<u32, Global>, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    pub fn add_corner_fillets(
+        &mut self,
+        corners: &[impl PCoords<2>],
+        radius: f64,
+    ) -> Result<Vec<u32>> {
         if corners.len() < 2 {
             return Err("Must have at least 2 corners to fillet".into());
         }
+        let mut ids = Vec::new();
 
         for i in 0..corners.len() - 1 {
             let c0 = &corners[i];
@@ -117,8 +147,8 @@ impl<'a> BCursor<'a> {
             }
             let clockwise = l0.signed_distance_to(&e1).is_sign_positive();
 
-            self.add_seg(&e0);
-            self.add_arc(&c.center, &e1, clockwise);
+            ids.push(self.add_seg(&e0));
+            ids.push(self.add_arc(&c.center, &e1, clockwise));
         }
 
         let cf1 = &corners[corners.len() - 1];
@@ -127,14 +157,13 @@ impl<'a> BCursor<'a> {
         if lf.scalar_project(&self.point_after()?) < 0.0 {
             return Err("Invalid fillet radius, too large for corner".into());
         }
-        self.add_seg(cf1);
+        ids.push(self.add_seg(cf1));
 
-        Ok(())
+        Ok(ids)
     }
 }
 
 impl BoundaryData2 {
-
     pub fn last_point(&self) -> Point2 {
         match self.last_data() {
             None => self.start.expect("open boundary must have a start point"),
@@ -147,9 +176,9 @@ impl BoundaryData2 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::points::to_points;
     use approx::assert_relative_eq;
     use std::f64::consts::PI;
-    use crate::common::points::to_points;
 
     #[test]
     fn corner_fillet_single() -> Result<()> {

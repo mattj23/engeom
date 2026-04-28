@@ -1,8 +1,10 @@
 //! This module has representations of different types of dimensions
 
+use crate::Vector2;
 use crate::common::points::mid_point;
 use crate::common::surface_point::SurfacePoint;
 use parry3d_f64::na::{Point, SVector, Unit};
+use serde::{Deserialize, Serialize};
 
 pub trait Measurement {
     fn value(&self) -> f64;
@@ -12,6 +14,7 @@ pub trait Measurement {
 /// of the measurement will be the vector from `a` to `b` projected onto the direction vector,
 /// meaning that the value will be positive if `b` is in the direction of the vector and negative
 /// if `b` is in the opposite direction.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Distance<const D: usize> {
     /// The starting point of the distance measurement
     pub a: Point<f64, D>,
@@ -87,6 +90,18 @@ impl<const D: usize> Distance<D> {
     /// vector is the direction of the distance measurement.
     pub fn center(&self) -> SurfacePoint<D> {
         SurfacePoint::new(mid_point(&self.a, &self.b), self.direction)
+    }
+}
+
+impl<const D: usize> Default for Distance<D> {
+    fn default() -> Self {
+        let a = Point::origin();
+        let b = Point::origin();
+        let mut d = SVector::<f64, D>::zeros();
+        d[0] = 1.0;
+        let d = Unit::new_normalize(d);
+
+        Self::new(a, b, Some(d))
     }
 }
 

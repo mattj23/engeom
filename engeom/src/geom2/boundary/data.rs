@@ -1,7 +1,6 @@
-use std::collections::HashMap;
 use crate::geom2::{BCursor, Boundary2, BoundaryElement, Segment2};
 use crate::{Arc2, Point2, Result};
-
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub(super) enum BData {
@@ -26,16 +25,18 @@ pub(super) struct BNode {
     pub(super) id: u32,
     pub(super) next_id: Option<u32>,
     pub(super) prev_id: Option<u32>,
-    pub(super) data: BData
+    pub(super) data: BData,
 }
 
 impl BNode {
     pub(super) fn new(id: u32, next_id: Option<u32>, prev_id: Option<u32>, data: BData) -> BNode {
         Self {
-            id, next_id, prev_id, data
+            id,
+            next_id,
+            prev_id,
+            data,
         }
     }
-
 }
 
 pub(super) struct BIter<'a> {
@@ -49,7 +50,9 @@ impl<'a> Iterator for BIter<'a> {
     type Item = (u32, &'a BData);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.done { return None; }
+        if self.done {
+            return None;
+        }
         let id = self.current?;
         let node = &self.data.nodes[&id];
         let item = (id, &node.data);
@@ -137,7 +140,10 @@ impl BoundaryData2 {
         let new_id = self.next_unique_id;
         self.next_unique_id = self.next_unique_id.wrapping_add(1);
 
-        self.nodes.insert(new_id, BNode::new(new_id, old_next_id, Some(after_this_id), data));
+        self.nodes.insert(
+            new_id,
+            BNode::new(new_id, old_next_id, Some(after_this_id), data),
+        );
         self.nodes.get_mut(&after_this_id).unwrap().next_id = Some(new_id);
 
         if let Some(next_id) = old_next_id {
@@ -157,7 +163,10 @@ impl BoundaryData2 {
         let new_id = self.next_unique_id;
         self.next_unique_id = self.next_unique_id.wrapping_add(1);
 
-        self.nodes.insert(new_id, BNode::new(new_id, Some(before_this_id), old_prev_id, data));
+        self.nodes.insert(
+            new_id,
+            BNode::new(new_id, Some(before_this_id), old_prev_id, data),
+        );
         self.nodes.get_mut(&before_this_id).unwrap().prev_id = Some(new_id);
 
         if let Some(prev_id) = old_prev_id {
@@ -219,8 +228,12 @@ impl BoundaryData2 {
 
     pub(super) fn push_data(&mut self, data: BData) -> Result<()> {
         match self.tail_id() {
-            None => { self.insert_first(data)?; }
-            Some(tail) => { self.insert_after(tail, data)?; }
+            None => {
+                self.insert_first(data)?;
+            }
+            Some(tail) => {
+                self.insert_after(tail, data)?;
+            }
         }
         Ok(())
     }
@@ -232,7 +245,11 @@ impl BoundaryData2 {
     pub(super) fn iter(&self) -> BIter<'_> {
         BIter {
             data: self,
-            current: if self.len() == 0 { None } else { Some(self.head_id) },
+            current: if self.len() == 0 {
+                None
+            } else {
+                Some(self.head_id)
+            },
             head: self.head_id,
             done: self.len() == 0,
         }
@@ -247,7 +264,9 @@ impl BoundaryData2 {
             return Ok(self.start.unwrap());
         }
 
-        let prev_id = self.nodes[&id].prev_id.ok_or("Invalid node id: no previous node")?;
+        let prev_id = self.nodes[&id]
+            .prev_id
+            .ok_or("Invalid node id: no previous node")?;
         Ok(self.nodes[&prev_id].data.end_point())
     }
 
@@ -255,19 +274,19 @@ impl BoundaryData2 {
         let mut elements: Vec<(u32, Box<dyn BoundaryElement>)> = Vec::new();
         for (id, e) in self.iter() {
             let start = self.start_point_of(id)?;
-                match e {
-                    BData::Seg((x, y)) => {
-                        let end = Point2::new(*x, *y);
-                        let seg = Segment2::try_new(&start, &end)?;
-                        elements.push((id, Box::new(seg)));
-                    }
-                    BData::Arc((cx, cy, ex, ey, cw)) => {
-                        let end = Point2::new(*ex, *ey);
-                        let center = Point2::new(*cx, *cy);
-                        let arc = Arc2::try_new_ends(&start, &end, &center, *cw)?;
-                        elements.push((id, Box::new(arc)));
-                    }
+            match e {
+                BData::Seg((x, y)) => {
+                    let end = Point2::new(*x, *y);
+                    let seg = Segment2::try_new(&start, &end)?;
+                    elements.push((id, Box::new(seg)));
                 }
+                BData::Arc((cx, cy, ex, ey, cw)) => {
+                    let end = Point2::new(*ex, *ey);
+                    let center = Point2::new(*cx, *cy);
+                    let arc = Arc2::try_new_ends(&start, &end, &center, *cw)?;
+                    elements.push((id, Box::new(arc)));
+                }
+            }
         }
         Boundary2::try_new(elements, self.is_closed())
     }
@@ -277,11 +296,15 @@ impl BoundaryData2 {
 mod tests {
     use super::*;
 
-    fn seg(x: f64, y: f64) -> BData { BData::Seg((x, y)) }
+    fn seg(x: f64, y: f64) -> BData {
+        BData::Seg((x, y))
+    }
 
     /// Walk an open boundary from head to tail, returning node ids in order.
     fn walk_open(bd: &BoundaryData2) -> Vec<u32> {
-        if bd.len() == 0 { return vec![]; }
+        if bd.len() == 0 {
+            return vec![];
+        }
         let mut ids = Vec::new();
         let mut cur = bd.head_id;
         loop {
@@ -296,14 +319,18 @@ mod tests {
 
     /// Walk a closed boundary one full revolution from head, returning node ids in order.
     fn walk_closed(bd: &BoundaryData2) -> Vec<u32> {
-        if bd.len() == 0 { return vec![]; }
+        if bd.len() == 0 {
+            return vec![];
+        }
         let mut ids = Vec::new();
         let start = bd.head_id;
         let mut cur = start;
         loop {
             ids.push(cur);
             let next = bd.nodes[&cur].next_id.expect("closed node must have next");
-            if next == start { break; }
+            if next == start {
+                break;
+            }
             cur = next;
         }
         ids
@@ -539,4 +566,3 @@ mod tests {
         assert!(bd.try_remove(99).is_err());
     }
 }
-

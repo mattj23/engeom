@@ -30,8 +30,8 @@
 //! [`fit_boundary_to_points`].
 
 mod construction;
-mod fitting;
 mod data;
+mod fitting;
 
 use crate::common::PCoords;
 use crate::common::points::dist;
@@ -39,9 +39,10 @@ use crate::geom2::{Aabb2, ManifoldPosition2};
 use crate::geom2::{Arc2, Segment2};
 use crate::{Point2, Result};
 use parry2d_f64::bounding_volume::BoundingVolume;
+use std::ops::Deref;
 
-pub use data::BoundaryData2;
 pub use construction::BCursor;
+pub use data::BoundaryData2;
 pub use fitting::{BndBuildFn, fit_boundary_to_points};
 
 pub trait BoundaryElement {
@@ -90,7 +91,10 @@ pub struct Boundary2 {
 }
 
 impl Boundary2 {
-    pub fn try_new(elements: Vec<(u32, Box<dyn BoundaryElement>)>, is_closed: bool) -> Result<Self> {
+    pub fn try_new(
+        elements: Vec<(u32, Box<dyn BoundaryElement>)>,
+        is_closed: bool,
+    ) -> Result<Self> {
         if elements.is_empty() {
             return Err("Boundary must have at least one element".into());
         }
@@ -107,7 +111,19 @@ impl Boundary2 {
             ids.push(id);
         }
 
-        Ok(Self { elements: items, ids, lengths, is_closed })
+        Ok(Self {
+            elements: items,
+            ids,
+            lengths,
+            is_closed,
+        })
+    }
+
+    pub fn get_element(&self, id: u32) -> Option<&dyn BoundaryElement> {
+        self.ids
+            .iter()
+            .position(|&x| x == id)
+            .map(|index| self.elements[index].deref())
     }
 
     pub fn is_closed(&self) -> bool {
@@ -138,7 +154,10 @@ impl Boundary2 {
 
         let length = self.lengths[k] + m.l;
         let id = self.ids[k];
-        (id, ManifoldPosition2::new(length, m.point, m.direction, m.normal))
+        (
+            id,
+            ManifoldPosition2::new(length, m.point, m.direction, m.normal),
+        )
     }
 
     pub fn at_length(&self, length: f64) -> Option<ManifoldPosition2> {
