@@ -2,7 +2,7 @@
 
 use crate::common::points::dist;
 use crate::geom2::Boundary2;
-use crate::na::{DVector, Dyn, Matrix, Owned, U1, Vector};
+use crate::na::{DVector, Dyn, Matrix, Owned, Vector, U1};
 use crate::{Point2, Result};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 
@@ -92,7 +92,8 @@ pub fn fit_boundary_to_points(
     initial: DVector<f64>,
     ignore_ends: bool,
 ) -> Result<DVector<f64>> {
-    let problem = BoundaryFit::try_new(points, builder, initial, ignore_ends)?;
+    let fitting = BoundaryToPoints::new(points, ignore_ends);
+    let problem = BoundaryFit::try_new(&fitting, builder, initial)?;
     let (result, report) = LevenbergMarquardt::new().minimize(problem);
 
     if report.termination.was_successful() {
@@ -102,34 +103,87 @@ pub fn fit_boundary_to_points(
     }
 }
 
-struct BoundaryFit<'a> {
+struct BoundaryToPoints<'a> {
     points: &'a [Point2],
+    ignore_ends: bool,
+}
+
+impl<'a> BoundaryToPoints<'a> {
+    fn new(points: &'a [Point2], ignore_ends: bool) -> Self {
+        BoundaryToPoints { points, ignore_ends }
+    }
+}
+
+impl BoundaryFittable for BoundaryToPoints<'_> {
+    fn residuals_and_weights(&self, boundary: &Boundary2) -> (DVector<f64>, DVector<f64>) {
+        let bounds = f64::EPSILON..(boundary.length() - f64::EPSILON);
+        let mut res = DVector::zeros(self.points.len());
+        let mut weights = DVector::zeros(self.points.len());
+        weights.fill(1.0);
+
+        for i in 0..self.points.len() {
+            let (_, m) = boundary.at_closest_to_point(&self.points[i]);
+            if self.ignore_ends {
+                weights[i] = if bounds.contains(&m.l) { 1.0 } else { 0.0 };
+            }
+            res[i] = dist(&m, &self.points[i]);
+        }
+
+        (res, weights)
+    }
+
+    fn residual_only(&self, sample_i: usize, boundary: &Boundary2) -> f64 {
+        let (_, m) = boundary.at_closest_to_point(&self.points[sample_i]);
+        dist(&m, &self.points[sample_i])
+    }
+}
+
+// =============================================================================================
+// `BoundaryFit` and `BoundaryFittable` together offer a generic mechanism for performing the
+// fitting of boundaries to a set of samples of a finite count.
+// =============================================================================================
+
+pub trait BoundaryFittable {
+    /// Given a boundary, this should return two equally sized `DVector`s of the residuals and
+    /// the weights. The weights are not calculated independently during the jabcobian, but simply
+    /// are reused from this step. Return the _un-weighted_ residuals, and the weights that will
+    /// be used to scale them. For any element `i` in the residual vector, the value of
+    /// `residual_only(i, ...)` should be identical.
+    ///
+    /// Return in the order: `(residuals, weights)`
+    fn residuals_and_weights(&self, boundary: &Boundary2) -> (DVector<f64>, DVector<f64>);
+
+    /// Given a boundary, this should return the residual for sample `sample_i`. This step is used
+    /// for the numerical jacobians. It should produce values identical to the ones from
+    /// `residuals_and_weights`
+    fn residual_only(&self, sample_i: usize, boundary: &Boundary2) -> f64;
+}
+
+struct BoundaryFit<'a> {
+    fitting: &'a dyn BoundaryFittable,
     params: DVector<f64>,
     builder: &'a BndBuildFn,
     current: Option<Boundary2>,
     residuals: Option<DVector<f64>>,
-    ignore_ends: bool,
-    weights: Vec<f64>,
+    weights: Option<DVector<f64>>,
 }
 
 impl<'a> BoundaryFit<'a> {
     fn try_new(
-        points: &'a [Point2],
+        fitting: &'a dyn BoundaryFittable,
         builder: &'a BndBuildFn,
         initial: DVector<f64>,
-        ignore_ends: bool,
     ) -> Result<Self> {
         // Check to make sure that the initial value doesn't fail
         let _ = builder(&initial)?;
 
         let mut problem = BoundaryFit {
-            points,
+            fitting,
             params: DVector::zeros(initial.len()),
             builder,
             current: None,
             residuals: None,
-            ignore_ends,
-            weights: vec![1.0; points.len()],
+            weights: None,
         };
 
         problem.set_params(&initial);
@@ -147,20 +201,9 @@ impl LeastSquaresProblem<f64, Dyn, Dyn> for BoundaryFit<'_> {
         self.params = x.clone();
 
         if let Ok(boundary) = (self.builder)(&self.params) {
-            let bounds = f64::EPSILON..(boundary.length() - f64::EPSILON);
-
-            let mut res = DVector::zeros(self.points.len());
-            for i in 0..self.points.len() {
-                let (_, m) = boundary.at_closest_to_point(&self.points[i]);
-
-                if self.ignore_ends {
-                    self.weights[i] = if bounds.contains(&m.l) { 1.0 } else { 0.0 };
-                }
-
-                let d = dist(&m.point, &self.points[i]);
-                res[i] = d * self.weights[i];
-            }
-            self.residuals = Some(res);
+            let (residuals, weights) = self.fitting.residuals_and_weights(&boundary);
+            self.residuals = Some(residuals);
+            self.weights = Some(weights);
             self.current = Some(boundary);
         } else {
             self.residuals = None;
@@ -180,6 +223,9 @@ impl LeastSquaresProblem<f64, Dyn, Dyn> for BoundaryFit<'_> {
         let Some(residuals) = &self.residuals else {
             return None;
         };
+        let Some(weights) = &self.weights else {
+            return None;
+        };
 
         let mut jac = Matrix::<f64, Dyn, Dyn, Self::JacobianStorage>::zeros(
             residuals.len(),
@@ -193,11 +239,9 @@ impl LeastSquaresProblem<f64, Dyn, Dyn> for BoundaryFit<'_> {
                 continue;
             };
 
-            for i in 0..self.points.len() {
-                let p = &self.points[i];
-                let (_, m) = disturbed.at_closest_to_point(p);
-                let d = dist(p, &m);
-                jac[(i, k)] = self.weights[i] * (d - residuals[i]) / DELTA;
+            for i in 0..residuals.len() {
+                let d = self.fitting.residual_only(i, &disturbed);
+                jac[(i, k)] = weights[i] * (d - residuals[i]) / DELTA;
             }
         }
 
