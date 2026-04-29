@@ -43,7 +43,7 @@ use std::ops::Deref;
 
 pub use construction::BCursor;
 pub use data::BoundaryData2;
-pub use fitting::{BndBuildFn, fit_boundary_to_points};
+pub use fitting::*;
 
 pub trait BoundaryElement {
     /// The total length of the element's manifold domain. For example, for a line segment this

@@ -38,6 +38,20 @@ pub type PointNI<const D: usize> = Point<i32, D>;
 /// D-dimensional raster spaces.
 pub type VectorNI<const D: usize> = SVector<i32, D>;
 
+/// General purpose option for how to handle the result of a dot product between directional
+/// vectors.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum VecDot {
+    /// Use the dot product as is, allowing it to range from any negative to any positive number
+    AsIs,
+
+    /// Use the absolute value of the dot product
+    Abs,
+
+    /// Clamp the dot product to a positive value. Values below 0 are raised to zero.
+    ClampPos,
+}
+
 /// General purpose option for starting the selection of a set of items, either from everything,
 /// nothing, a specific set of indices, or a bitmask.
 #[derive(Debug, Clone)]

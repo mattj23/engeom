@@ -3,11 +3,16 @@
 use crate::common::points::dist;
 use crate::geom2::Boundary2;
 use crate::na::{DVector, Dyn, Matrix, Owned, Vector, U1};
-use crate::{Point2, Result};
+use crate::{Point2, Result, SurfacePoint2};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
+use crate::common::VecDot;
 
 pub type BndBuildFn = Box<dyn Fn(&DVector<f64>) -> Result<Boundary2>>;
 const DELTA: f64 = 1e-6;
+
+// =============================================================================================
+// Fitting a boundary to discrete points
+// =============================================================================================
 
 /// Given a set of points, a function which takes a parameter vector and produces a [`Boundary2`],
 /// and an initial guess, this function will attempt to perform a Levenberg-Marquardt best fit of
@@ -126,6 +131,77 @@ impl BoundaryFittable for BoundaryToPoints<'_> {
             if self.ignore_ends {
                 weights[i] = if bounds.contains(&m.l) { 1.0 } else { 0.0 };
             }
+            res[i] = dist(&m, &self.points[i]);
+        }
+
+        (res, weights)
+    }
+
+    fn residual_only(&self, sample_i: usize, boundary: &Boundary2) -> f64 {
+        let (_, m) = boundary.at_closest_to_point(&self.points[sample_i]);
+        dist(&m, &self.points[sample_i])
+    }
+}
+
+// =============================================================================================
+// Fitting a boundary to discrete surface points
+// =============================================================================================
+
+/// Given a set of surface points, a function which takes a parameter vector and produces a
+/// [`Boundary2`], and an initial guess, this function will attempt to perform a Levenberg-Marquardt
+/// best fit of the parameters to produce a `Boundary2` that minimizes the residuals of the surface
+/// points projected onto the boundary and weighted by their dot product with the boundary normal
+/// at the projection site.
+///
+/// You will need to provide a `DVector` with a reasonable initial guess, and a [`BndBuildFn`] that
+/// accepts a `DVector` of that size and produces a boundary. The function is allowed to return a
+/// `Err(Box<dyn Error>)` if the parameters produce invalid geometry, but the initial guess values
+/// provided may not fail or this function will exit before attempting the minimization.
+///
+/// Refer to the examples for more information.
+pub fn fit_boundary_to_surface_points(
+    points: &[SurfacePoint2],
+    builder: &BndBuildFn,
+    initial: DVector<f64>,
+    weight_mode: VecDot,
+) -> Result<DVector<f64>> {
+    let fitting = BoundaryToSurfacePoints::new(points, weight_mode);
+    let problem = BoundaryFit::try_new(&fitting, builder, initial)?;
+    let (result, report) = LevenbergMarquardt::new().minimize(problem);
+
+    if report.termination.was_successful() {
+        Ok(result.params)
+    } else {
+        Err(format!("Fitting failed: {:?}", report.termination).into())
+    }
+}
+
+struct BoundaryToSurfacePoints<'a> {
+    points: &'a [SurfacePoint2],
+    weight_mode: VecDot,
+}
+
+impl<'a> BoundaryToSurfacePoints<'a> {
+    fn new(points: &'a [SurfacePoint2], weight_mode: VecDot) -> Self {
+        BoundaryToSurfacePoints { points, weight_mode }
+    }
+}
+
+impl BoundaryFittable for BoundaryToSurfacePoints<'_> {
+    fn residuals_and_weights(&self, boundary: &Boundary2) -> (DVector<f64>, DVector<f64>) {
+        let mut res = DVector::zeros(self.points.len());
+        let mut weights = DVector::zeros(self.points.len());
+        weights.fill(1.0);
+
+        for i in 0..self.points.len() {
+            let (_, m) = boundary.at_closest_to_point(&self.points[i]);
+            let dot = self.points[i].normal.dot(&m.normal);
+            weights[i] = match self.weight_mode {
+                VecDot::AsIs => dot,
+                VecDot::Abs => dot.abs(),
+                VecDot::ClampPos => dot.max(0.0),
+            };
+
             res[i] = dist(&m, &self.points[i]);
         }
 
