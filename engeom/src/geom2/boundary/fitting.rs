@@ -1,11 +1,11 @@
 //! This module generalizes fitting of boundary geometry to sample points
 
+use crate::common::VecDot;
 use crate::common::points::dist;
 use crate::geom2::Boundary2;
-use crate::na::{DVector, Dyn, Matrix, Owned, Vector, U1};
+use crate::na::{DVector, Dyn, Matrix, Owned, U1, Vector};
 use crate::{Point2, Result, SurfacePoint2};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
-use crate::common::VecDot;
 
 pub type BndBuildFn = Box<dyn Fn(&DVector<f64>) -> Result<Boundary2>>;
 const DELTA: f64 = 1e-6;
@@ -115,7 +115,10 @@ struct BoundaryToPoints<'a> {
 
 impl<'a> BoundaryToPoints<'a> {
     fn new(points: &'a [Point2], ignore_ends: bool) -> Self {
-        BoundaryToPoints { points, ignore_ends }
+        BoundaryToPoints {
+            points,
+            ignore_ends,
+        }
     }
 }
 
@@ -164,8 +167,9 @@ pub fn fit_boundary_to_surface_points(
     builder: &BndBuildFn,
     initial: DVector<f64>,
     weight_mode: VecDot,
+    ignore_ends: bool,
 ) -> Result<DVector<f64>> {
-    let fitting = BoundaryToSurfacePoints::new(points, weight_mode);
+    let fitting = BoundaryToSurfacePoints::new(points, weight_mode, ignore_ends);
     let problem = BoundaryFit::try_new(&fitting, builder, initial)?;
     let (result, report) = LevenbergMarquardt::new().minimize(problem);
 
@@ -179,16 +183,22 @@ pub fn fit_boundary_to_surface_points(
 struct BoundaryToSurfacePoints<'a> {
     points: &'a [SurfacePoint2],
     weight_mode: VecDot,
+    ignore_ends: bool,
 }
 
 impl<'a> BoundaryToSurfacePoints<'a> {
-    fn new(points: &'a [SurfacePoint2], weight_mode: VecDot) -> Self {
-        BoundaryToSurfacePoints { points, weight_mode }
+    fn new(points: &'a [SurfacePoint2], weight_mode: VecDot, ignore_ends: bool) -> Self {
+        BoundaryToSurfacePoints {
+            points,
+            weight_mode,
+            ignore_ends,
+        }
     }
 }
 
 impl BoundaryFittable for BoundaryToSurfacePoints<'_> {
     fn residuals_and_weights(&self, boundary: &Boundary2) -> (DVector<f64>, DVector<f64>) {
+        let bounds = f64::EPSILON..(boundary.length() - f64::EPSILON);
         let mut res = DVector::zeros(self.points.len());
         let mut weights = DVector::zeros(self.points.len());
         weights.fill(1.0);
@@ -201,6 +211,10 @@ impl BoundaryFittable for BoundaryToSurfacePoints<'_> {
                 VecDot::Abs => dot.abs(),
                 VecDot::ClampPos => dot.max(0.0),
             };
+
+            if self.ignore_ends && !bounds.contains(&m.l) {
+                weights[i] = 0.0;
+            }
 
             res[i] = dist(&m, &self.points[i]);
         }
@@ -292,7 +306,18 @@ impl LeastSquaresProblem<f64, Dyn, Dyn> for BoundaryFit<'_> {
     }
 
     fn residuals(&self) -> Option<Vector<f64, Dyn, Self::ResidualStorage>> {
-        self.residuals.clone()
+        let Some(residuals) = &self.residuals else {
+            return None;
+        };
+        let Some(weights) = &self.weights else {
+            return None;
+        };
+        let mut res = DVector::zeros(residuals.len());
+        for i in 0..residuals.len() {
+            res[i] = residuals[i] * weights[i];
+        }
+
+        Some(res)
     }
 
     fn jacobian(&self) -> Option<Matrix<f64, Dyn, Dyn, Self::JacobianStorage>> {
