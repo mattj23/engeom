@@ -3,7 +3,6 @@ use crate::common::points::dist;
 use crate::common::poisson_disk::sample_poisson_disk_all;
 use crate::common::{IndexMask, linear_space};
 use crate::{Point3, SurfacePoint3};
-use itertools::Itertools;
 
 fn bc_to_point(bc: [f64; 3], a: &Point3, b: &Point3, c: &Point3) -> Point3 {
     (a.coords * bc[0] + b.coords * bc[1] + c.coords * bc[2]).into()

@@ -1,8 +1,8 @@
 use crate::bounding::Aabb2;
-use crate::conversions::{array_to_points2, points_to_array};
+use crate::conversions::points_to_array;
 use crate::geom2::{Iso2, Line2, Point2, SurfacePoint2, Vector2};
 use engeom::geom2::BoundaryEditor;
-use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2};
+use numpy::{IntoPyArray, PyArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::{Bound, PyResult, Python, pyclass, pymethods};
 
@@ -118,7 +118,7 @@ impl BoundaryData2 {
         self.inner.add_arc_xy(cx, cy, ex, ey, clockwise)
     }
 
-    fn add_corner_fillets<'py>(
+    fn add_corner_fillets(
         &mut self,
         points: Vec<(f64, f64)>,
         radius: f64,
