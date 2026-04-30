@@ -1334,7 +1334,7 @@ impl Curve2 {
     fn __add__(&self, other: &Self) -> PyResult<Self> {
         let result = self
             .get_inner()
-            .extended(other.get_inner())
+            .new_appended(other.get_inner())
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(result))
     }

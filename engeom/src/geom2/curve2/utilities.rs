@@ -113,9 +113,7 @@ impl Curve2 {
             let mut working = by_original.remove(&group.pop().unwrap()).unwrap();
             while let Some(i) = group.pop() {
                 let to_join = by_original.remove(&i).unwrap();
-                let points = [working.points(), to_join.points()].concat();
-                let tol = working.tol.min(to_join.tol);
-                working = Curve2::from_points(&points, tol, false)?;
+                working = working.new_appended(&to_join)?;
             }
 
             result.push(working);

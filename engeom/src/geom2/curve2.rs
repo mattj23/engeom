@@ -526,7 +526,7 @@ impl Curve2 {
     /// ```
     ///
     /// ```
-    pub fn extended(&self, other: &Curve2) -> Result<Self> {
+    pub fn new_appended(&self, other: &Curve2) -> Result<Self> {
         if self.is_closed || other.is_closed {
             return Err("Cannot extend a closed curve".into());
         }
@@ -1155,8 +1155,8 @@ pub mod tests {
 
     #[test]
     fn curve2_macro_builds_force_closed_curve() {
-        let curve = crate::curve2!(tol: 1e-6, closed: true; (0.0, 0.0), (1.0, 0.0), (1.0, 1.0))
-            .unwrap();
+        let curve =
+            crate::curve2!(tol: 1e-6, closed: true; (0.0, 0.0), (1.0, 0.0), (1.0, 1.0)).unwrap();
         assert!(curve.is_closed());
         assert_eq!(curve.count(), 4);
     }
