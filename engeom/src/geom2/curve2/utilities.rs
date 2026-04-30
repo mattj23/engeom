@@ -1,7 +1,85 @@
-use crate::{Curve2, Result};
 use crate::common::dist;
+use crate::{Curve2, Point2, Result};
+use std::collections::HashMap;
 
 impl Curve2 {
+    /// This utility function takes a slice of `Curve2` instances and recursively determines merges
+    /// on them, end to front, until either there is only a single curve left, or there is no
+    /// merge left that doesn't exceed the optional maximum distance threshold provided. The merges
+    /// are represented as ordered sequences of indices into the original slice.
+    ///
+    /// Each index in the original list is put into its own `Vec<usize>`, and merges consist of
+    /// concatenating these `Vec<usize>`s one at a time. The algorithm checks the end-to-start
+    /// distance of every pair of curves in the collection.  If the distance of the shortest merge
+    /// is below the optional `max_dist` threshold, then the two index vectors are merged and the
+    /// process repeats.
+    ///
+    /// The result of this function can be used to merge curve geometry from the original list.
+    ///
+    /// Note:
+    ///  - **Closed curves are ignored in this process!**
+    ///  - Merges only occur with the end of one curve joined to the front of the next, meaning that
+    ///    the order of the points in both curves will stay the same. There are no front-to-front or
+    ///    end-to-end merges.
+    ///
+    /// # Arguments
+    ///
+    /// * `curves`: a vector of `Curve2` instances to perform the chain merge on
+    /// * `max_dist`: an optional maximum merge distance between the end of one curve and the front
+    ///   of the candidate merge.
+    ///
+    /// returns: Vec<Vec<usize, Global>, Global>
+    pub fn chain_merge_indices(items: &[Curve2], max_dist: Option<f64>) -> Vec<Vec<usize>> {
+        let mut no_op = false;
+        let max_dist = max_dist.unwrap_or(f64::MAX);
+        let mut working = (0..items.len())
+            .map(|i| MergeGroup::new_single(items, i))
+            .collect::<Vec<_>>();
+
+        while !no_op {
+            no_op = true;
+            let mut distances = Vec::new();
+            for i in 0..working.len() {
+                // Check that the front candidate isn't closed
+                let front_candidate = &working[i];
+                if front_candidate.is_closed() {
+                    continue;
+                }
+
+                for k in 0..working.len() {
+                    if i == k {
+                        continue;
+                    }
+                    let back_candidate = &working[k];
+                    if back_candidate.is_closed() {
+                        continue;
+                    }
+
+                    let d = dist(&front_candidate.back(), &back_candidate.front());
+                    distances.push((d, i, k));
+                }
+            }
+
+            if distances.is_empty() {
+                continue;
+            }
+
+            let (d, i, k) = distances
+                .iter()
+                .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
+                .unwrap();
+
+            if *d <= max_dist {
+                no_op = false;
+                let merged = (&working[*i]).concat_with(&working[*k], items);
+                working.remove(*i.max(k));
+                working.remove(*i.min(k));
+                working.push(merged);
+            }
+        }
+
+        working.into_iter().map(|g| g.take_indices()).collect()
+    }
 
     /// This utility function takes ownership of a vector of `Curve2` instances and recursively
     /// merges them, end to front, until either there is only a single curve left, or there is no
@@ -25,73 +103,74 @@ impl Curve2 {
     ///   of the candidate merge.
     ///
     /// returns: Result<Vec<Curve2, Global>, Box<dyn Error, Global>>
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
-    pub fn chain_merge(mut curves: Vec<Curve2>, max_dist: Option<f64>) -> Result<Vec<Curve2>> {
-        let mut no_op = false;
-        let max_dist = max_dist.unwrap_or(f64::MAX);
+    pub fn chain_merge(curves: Vec<Curve2>, max_dist: Option<f64>) -> Result<Vec<Curve2>> {
+        let groups = Curve2::chain_merge_indices(&curves, max_dist);
+        let mut by_original: HashMap<usize, Curve2> = curves.into_iter().enumerate().collect();
+        let mut result = Vec::new();
 
-        while !no_op {
-            no_op = true;
-            let mut distances = Vec::new();
-            for i in 0..curves.len() {
-                // Check that the front candidate isn't closed
-                let front_candidate = &curves[i];
-                if front_candidate.is_closed {
-                    continue;
-                }
-
-                for k in 0..curves.len() {
-                    if i == k {
-                        continue;
-                    }
-                    let back_candidate = &curves[k];
-                    if back_candidate.is_closed {
-                        continue;
-                    }
-
-                    let d = dist(&front_candidate.at_back(), &back_candidate.at_front());
-                    distances.push((d, i, k));
-                }
+        for mut group in groups {
+            group.reverse();
+            let mut working = by_original.remove(&group.pop().unwrap()).unwrap();
+            while let Some(i) = group.pop() {
+                let to_join = by_original.remove(&i).unwrap();
+                let points = [working.points(), to_join.points()].concat();
+                let tol = working.tol.min(to_join.tol);
+                working = Curve2::from_points(&points, tol, false)?;
             }
 
-            if distances.is_empty() {
-                continue;
-            }
-
-            let (d, i, k) = distances
-                .iter()
-                .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
-                .unwrap();
-
-            if *d <= max_dist {
-                no_op = false;
-                let points = [curves[*i].points(), curves[*k].points()].concat();
-                let tol = curves[*i].tol.min(curves[*k].tol);
-                let merged = Curve2::from_points(&points, tol, false)?;
-
-                curves.remove(*i.max(k));
-                curves.remove(*i.min(k));
-                curves.push(merged);
-            }
+            result.push(working);
         }
 
-        Ok(curves)
+        Ok(result)
     }
 }
 
+struct MergeGroup<'a> {
+    curves: &'a [Curve2],
+    indices: Vec<usize>,
+}
+
+impl<'a> MergeGroup<'a> {
+    fn new_single(curves: &'a [Curve2], item: usize) -> Self {
+        Self {
+            curves,
+            indices: vec![item],
+        }
+    }
+
+    fn is_closed(&self) -> bool {
+        self.curves[self.indices[0]].is_closed()
+    }
+
+    fn back(&self) -> Point2 {
+        self.curves[self.indices[self.indices.len() - 1]]
+            .at_back()
+            .point
+    }
+
+    fn front(&self) -> Point2 {
+        self.curves[self.indices[0]].at_front().point
+    }
+
+    fn concat_with<'b>(&self, other: &MergeGroup, curves: &'b [Curve2]) -> MergeGroup<'b> {
+        MergeGroup {
+            curves,
+            indices: [self.indices.clone(), other.indices.clone()].concat(),
+        }
+    }
+
+    fn take_indices(self) -> Vec<usize> {
+        self.indices
+    }
+}
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::curve2;
     use approx::assert_relative_eq;
     use rand::prelude::SliceRandom;
     use rand::rng;
-    use crate::curve2;
-    use super::*;
 
     fn curve0() -> Curve2 {
         // Open curve 9 long
@@ -134,7 +213,9 @@ mod tests {
     }
 
     fn find_curve(items: &[Curve2], len: f64, closed: bool) -> Option<&Curve2> {
-        items.iter().find(|c| (c.length() - len).abs() < 1e-6 && c.is_closed == closed)
+        items
+            .iter()
+            .find(|c| (c.length() - len).abs() < 1e-6 && c.is_closed == closed)
     }
 
     #[test]
@@ -148,9 +229,18 @@ mod tests {
             let result = Curve2::chain_merge(shuffled, None).unwrap();
             assert_eq!(result.len(), 3);
 
-            assert!(find_curve(&result, 30.0, false).is_some(), "Didn't find single merged curve");
-            assert!(find_curve(&result, 10.0, true).is_some(), "Didn't find first closed curve");
-            assert!(find_curve(&result, 12.0, true).is_some(), "Didn't find second closed curve");
+            assert!(
+                find_curve(&result, 30.0, false).is_some(),
+                "Didn't find single merged curve"
+            );
+            assert!(
+                find_curve(&result, 10.0, true).is_some(),
+                "Didn't find first closed curve"
+            );
+            assert!(
+                find_curve(&result, 12.0, true).is_some(),
+                "Didn't find second closed curve"
+            );
 
             let merged = find_curve(&result, 30.0, false).unwrap();
             assert_relative_eq!(merged.tol, 1e-6, epsilon = 1e-10);
@@ -168,15 +258,25 @@ mod tests {
             let result = Curve2::chain_merge(shuffled, Some(2.0)).unwrap();
             assert_eq!(result.len(), 4);
 
-            assert!(find_curve(&result, 18.0, false).is_some(), "Didn't find single merged curve");
-            assert!(find_curve(&result, 6.0, false).is_some(), "Didn't find single un-merged curve");
-            assert!(find_curve(&result, 10.0, true).is_some(), "Didn't find first closed curve");
-            assert!(find_curve(&result, 12.0, true).is_some(), "Didn't find second closed curve");
+            assert!(
+                find_curve(&result, 18.0, false).is_some(),
+                "Didn't find single merged curve"
+            );
+            assert!(
+                find_curve(&result, 6.0, false).is_some(),
+                "Didn't find single un-merged curve"
+            );
+            assert!(
+                find_curve(&result, 10.0, true).is_some(),
+                "Didn't find first closed curve"
+            );
+            assert!(
+                find_curve(&result, 12.0, true).is_some(),
+                "Didn't find second closed curve"
+            );
 
             let merged = find_curve(&result, 18.0, false).unwrap();
             assert_relative_eq!(merged.tol, 1e-6, epsilon = 1e-10);
         }
     }
-
-
 }
