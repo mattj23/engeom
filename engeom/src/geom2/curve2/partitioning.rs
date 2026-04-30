@@ -1,11 +1,9 @@
 //! This module has tools for partitioning curves into sub-curves.
 
-use crate::common::points::{dist, mid_point};
+use crate::common::points::dist;
 use crate::common::{Intersection, PCoords};
 use crate::geom2::{Aabb2, LineOps2};
-use crate::na::Unit;
-use crate::{Circle2, Curve2, Line2, Point2};
-use parry2d_f64::bounding_volume::BoundingVolume;
+use crate::{Circle2, Curve2, Line2};
 use parry3d_f64::query::SplitResult;
 
 impl Curve2 {
@@ -474,7 +472,7 @@ impl CurvePartitioner2 for Line2 {
     }
 
     fn all_intersections(&self, line: &Line2) -> Vec<f64> {
-        if let Some((t0, t1)) = line.intersection_params(self) {
+        if let Some((t0, _t1)) = line.intersection_params(self) {
             vec![t0]
         } else {
             Vec::new()
@@ -500,7 +498,7 @@ mod tests {
 
     use test_case::test_case;
 
-    use crate::Line2;
+    use crate::{Line2, Point2};
     use rand::distr::Uniform;
     use rand::prelude::Distribution;
     use rand::rng;

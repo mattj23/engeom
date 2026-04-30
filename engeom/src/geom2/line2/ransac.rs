@@ -4,7 +4,6 @@ use crate::Line2;
 use crate::Result;
 use crate::common::PCoords;
 use crate::common::ransac_tools::ransac_indices;
-use itertools::Itertools;
 
 impl Line2 {
     pub fn try_new_ransac(

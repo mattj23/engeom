@@ -73,7 +73,7 @@ impl From<Dof6> for InnerDof6 {
 // AlignParams3
 // ================================================================================================
 #[derive(FromPyObject)]
-enum AlignOrigin3 {
+pub enum AlignOrigin3 {
     Point(Point3),
     Origin(Iso3),
 }

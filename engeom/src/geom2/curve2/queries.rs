@@ -2,7 +2,7 @@ use crate::common::points::{dist, max_point_in_direction};
 use crate::common::{Intersection, PCoords};
 use crate::geom2::line2::slab_method2;
 use crate::geom2::polyline2::polyline_intersections;
-use crate::geom2::{Aabb2, LineOps2, intersection_param};
+use crate::geom2::{LineOps2, intersection_param};
 use crate::{Curve2, CurveStation2, Iso2, Point2, Result, SurfacePoint2, Vector2};
 use parry2d_f64::partitioning::TraversalAction;
 use parry2d_f64::query::{ClosestPoints, PointQueryWithLocation, Ray, closest_points};

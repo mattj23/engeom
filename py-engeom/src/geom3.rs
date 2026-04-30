@@ -871,7 +871,7 @@ impl Sphere3 {
 // Manifold1Pos3
 // ================================================================================================
 
-#[pyclass(module = "engeom.geom3")]
+#[pyclass(from_py_object, module = "engeom.geom3")]
 #[derive(Clone, Debug)]
 pub struct Manifold1Pos3 {
     inner: engeom::geom3::Manifold1Pos3,

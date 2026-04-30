@@ -36,7 +36,6 @@ mod fitting;
 use crate::common::PCoords;
 use crate::common::points::dist;
 use crate::geom2::{Aabb2, ManifoldPosition2};
-use crate::geom2::{Arc2, Segment2};
 use crate::{Point2, Result};
 use parry2d_f64::bounding_volume::BoundingVolume;
 use std::ops::Deref;
@@ -201,7 +200,7 @@ impl Boundary2 {
     }
 
     pub fn aabb(&self) -> Aabb2 {
-        let mut aabb = self.elements[0].aabb().clone();
+        let mut aabb = self.elements[0].aabb();
         for element in self.elements.iter().skip(1) {
             aabb.merge(&element.aabb())
         }

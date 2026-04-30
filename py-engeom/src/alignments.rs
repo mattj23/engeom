@@ -1,6 +1,6 @@
 use crate::common::DeviationMode;
 use crate::conversions::array_to_points3;
-use crate::geom3::{Iso3, Point3};
+use crate::geom3::Iso3;
 use crate::mesh::Mesh;
 use crate::point_cloud::PointCloud;
 use engeom::geom3::align3::GAPParams;

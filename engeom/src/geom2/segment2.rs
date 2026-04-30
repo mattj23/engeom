@@ -1,7 +1,7 @@
 use crate::AngleDir::Cw;
 use crate::common::PCoords;
 use crate::common::points::dist;
-use crate::geom2::{Aabb2, BoundaryElement, LineOps2, ManifoldPosition2, rot90};
+use crate::geom2::{Aabb2, BoundaryElement, ManifoldPosition2, rot90};
 use crate::{Iso2, Line2, Point2, Result, TransformBy, UnitVec2, Vector2};
 use serde::{Deserialize, Serialize};
 

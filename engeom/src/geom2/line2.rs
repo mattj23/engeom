@@ -2,7 +2,7 @@ mod line_ops2;
 mod ransac;
 
 use crate::AngleDir::Cw;
-use crate::common::{Intersection, PCoords};
+use crate::common::PCoords;
 use crate::geom2::{Aabb2, SurfacePoint2, UnitVec2, rot90};
 use crate::{Iso2, Point2, Vector2};
 pub use line_ops2::*;
@@ -126,7 +126,7 @@ impl Line2 {
 
     /// Returns a new line with both origin and direction transformed by the given isometry.
     pub fn new_transformed_by(&self, iso: &Iso2) -> Self {
-        let mut clone = self.clone();
+        let mut clone = *self;
         clone.transform_by(iso);
         clone
     }
@@ -261,6 +261,7 @@ mod tests {
     use super::*;
     use approx::assert_relative_eq;
     use test_case::test_case;
+    use crate::common::Intersection;
 
     #[test]
     fn line2_basis_x() {

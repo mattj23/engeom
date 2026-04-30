@@ -4,7 +4,6 @@ use crate::func1::{Func1, Line1};
 use crate::{Point2, Result};
 use serde::{Deserialize, Serialize};
 use std::iter::Zip;
-use std::ops;
 use std::slice::Iter;
 
 /// Represents a contiguous series of data points in a 2d plane where the x values go from

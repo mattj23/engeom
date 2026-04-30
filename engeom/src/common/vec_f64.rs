@@ -1,7 +1,5 @@
 //! This module contains a set of common functions for working with vectors and slices of f64 values
 
-use itertools::Itertools;
-
 /// Compute the arithmetic mean of a slice of f64 values.
 ///
 /// Returns `f64::NAN` if the slice is empty.

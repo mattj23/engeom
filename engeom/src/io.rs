@@ -1,16 +1,15 @@
 mod binary_mesh;
-pub mod lptf3;
 mod micro_mesh;
+mod lptf3;
 mod ply;
 mod point_cloud;
 
-pub use binary_mesh::{read_mesh_binary_file, write_mesh_binary_file};
 
-use crate::Result;
+use crate::{Point3, Result, Vector3};
 use flate2::read::GzDecoder;
-pub use lptf3::{Lptf3DsParams, Lptf3Load, load_lptf3, load_lptf3_mesh, lptf3_point_distribution};
+pub use lptf3::*;
 pub use micro_mesh::*;
-use parry3d_f64::na::{Point3, Vector3};
+pub use binary_mesh::*;
 pub use point_cloud::*;
 use serde::Serialize;
 use std::fs::{File, OpenOptions};
@@ -100,7 +99,7 @@ pub fn write_mesh_stl(path: &Path, mesh: &Mesh) -> Result<()> {
 
 // TODO: create a separate module for point clouds, including binary versions
 
-pub fn write_xyz(path: &Path, points: &[Point3<f64>]) -> Result<()> {
+pub fn write_xyz(path: &Path, points: &[Point3]) -> Result<()> {
     if path.exists() {
         std::fs::remove_file(path)?;
     }
@@ -114,7 +113,7 @@ pub fn write_xyz(path: &Path, points: &[Point3<f64>]) -> Result<()> {
     Ok(())
 }
 
-pub fn write_xyzn(path: &Path, points: &[Point3<f64>], normals: &[Vector3<f64>]) -> Result<()> {
+pub fn write_xyzn(path: &Path, points: &[Point3], normals: &[Vector3]) -> Result<()> {
     if path.exists() {
         std::fs::remove_file(path)?;
     }

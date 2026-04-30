@@ -90,9 +90,9 @@ impl LineOps2 for Ray2 {
 
 impl<T: LineOps2> Intersection<Aabb2, Vec<f64>> for T {
     fn intersection(&self, other: Aabb2) -> Vec<f64> {
-        let a = other.mins.clone();
+        let a = other.mins;
         let b = Point2::new(other.maxs.x, other.mins.y);
-        let c = other.maxs.clone();
+        let c = other.maxs;
         let d = Point2::new(other.mins.x, other.maxs.y);
 
         let x_min = Line2::from_points(&a, &d);
@@ -102,25 +102,25 @@ impl<T: LineOps2> Intersection<Aabb2, Vec<f64>> for T {
 
         let mut result = Vec::with_capacity(2);
 
-        if let Some((t0, t1)) = self.intersection_params(&x_min) {
-            if 0.0 <= t1 && t1 <= 1.0 {
-                result.push(t0);
-            }
+        if let Some((t0, t1)) = self.intersection_params(&x_min)
+            && (0.0..=1.0).contains(&t1)
+        {
+            result.push(t0);
         }
-        if let Some((t0, t1)) = self.intersection_params(&x_max) {
-            if 0.0 <= t1 && t1 <= 1.0 {
-                result.push(t0);
-            }
+        if let Some((t0, t1)) = self.intersection_params(&x_max)
+            && (0.0..=1.0).contains(&t1)
+        {
+            result.push(t0);
         }
-        if let Some((t0, t1)) = self.intersection_params(&y_min) {
-            if 0.0 <= t1 && t1 <= 1.0 {
-                result.push(t0);
-            }
+        if let Some((t0, t1)) = self.intersection_params(&y_min)
+            && (0.0..=1.0).contains(&t1)
+        {
+            result.push(t0);
         }
-        if let Some((t0, t1)) = self.intersection_params(&y_max) {
-            if 0.0 <= t1 && t1 <= 1.0 {
-                result.push(t0);
-            }
+        if let Some((t0, t1)) = self.intersection_params(&y_max)
+            && (0.0..=1.0).contains(&t1)
+        {
+            result.push(t0);
         }
 
         sort_and_dedup(&mut result, Some(1e-12));

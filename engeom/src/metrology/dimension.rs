@@ -1,6 +1,5 @@
 //! This module has representations of different types of dimensions
 
-use crate::Vector2;
 use crate::common::points::mid_point;
 use crate::common::surface_point::SurfacePoint;
 use parry3d_f64::na::{Point, SVector, Unit};

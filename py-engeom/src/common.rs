@@ -80,16 +80,11 @@ impl From<SelectOp> for engeom::SelectOp {
 }
 
 #[pyclass(eq, eq_int, from_py_object, module = "engeom.common")]
-#[derive(PartialEq, Copy, Clone, Debug)]
+#[derive(PartialEq, Copy, Clone, Debug, Default)]
 pub enum DeviationMode {
+    #[default]
     Point,
     Plane,
-}
-
-impl Default for DeviationMode {
-    fn default() -> Self {
-        DeviationMode::Point
-    }
 }
 
 impl From<DeviationMode> for DistMode {

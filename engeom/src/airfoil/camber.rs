@@ -9,7 +9,7 @@ use crate::airfoil::inscribed_circle::InscribedCircle;
 use crate::common::points::{dist, mid_point};
 use crate::geom2::hull::farthest_pair_indices;
 use crate::geom2::polyline2::SpanningRay;
-use crate::geom2::{LineOps2, Segment2, rot90};
+use crate::geom2::{LineOps2, rot90};
 use crate::{Curve2, UnitVec2};
 use crate::{Line2, Result};
 use parry2d_f64::query::Ray;

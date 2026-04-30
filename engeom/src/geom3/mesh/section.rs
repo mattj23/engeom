@@ -185,14 +185,13 @@ fn candidate_faces(shape: &TriMesh, plane: &Plane3) -> Vec<u32> {
 
         if let Some(index) = node.leaf_data() {
             let t = shape.triangle(index);
-            if let Some(n) = t.normal() {
-                if n.cross(&plane.normal).norm_squared() > 1e-10
-                    && (intersects_edge(&t.a, &t.b, plane)
-                        || intersects_edge(&t.b, &t.c, plane)
-                        || intersects_edge(&t.c, &t.a, plane))
-                {
-                    candidates.push(index);
-                }
+            if let Some(n) = t.normal()
+                && n.cross(&plane.normal).norm_squared() > 1e-10
+                && (intersects_edge(&t.a, &t.b, plane)
+                    || intersects_edge(&t.b, &t.c, plane)
+                    || intersects_edge(&t.c, &t.a, plane))
+            {
+                candidates.push(index);
             };
         }
 
