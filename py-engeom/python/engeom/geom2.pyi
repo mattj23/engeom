@@ -1179,6 +1179,198 @@ class Circle2:
         ...
 
 
+class Line2:
+    """
+    A parameterized line in 2D space: ``P(t) = origin + t * direction``.
+
+    The direction is not required to be normalized. Use ``Line2.new_normalize`` or ``normalized()``
+    for a unit-speed parameterization where the parameter ``t`` equals arc length from the origin.
+    """
+
+    def __init__(self, ox: float, oy: float, dx: float, dy: float):
+        """
+        Create a line from an origin point ``(ox, oy)`` and a direction vector ``(dx, dy)``.
+        The direction is stored as-is and is **not** normalized automatically.
+
+        :param ox: x-coordinate of the origin.
+        :param oy: y-coordinate of the origin.
+        :param dx: x-component of the direction vector.
+        :param dy: y-component of the direction vector.
+        """
+        ...
+
+    @staticmethod
+    def x_axis() -> Line2:
+        """Return the X axis: origin at (0, 0), direction (1, 0)."""
+        ...
+
+    @staticmethod
+    def y_axis() -> Line2:
+        """Return the Y axis: origin at (0, 0), direction (0, 1)."""
+        ...
+
+    @staticmethod
+    def from_points(p1: Point2, p2: Point2) -> Line2:
+        """
+        Create a line through two points. The direction is ``p2 - p1`` (not normalized).
+
+        :param p1: the origin point of the line.
+        :param p2: a second point the line passes through.
+        :return: a new ``Line2``.
+        """
+        ...
+
+    @staticmethod
+    def new_normalize(ox: float, oy: float, dx: float, dy: float) -> Line2:
+        """
+        Create a line from an origin and direction, normalizing the direction so that the
+        parameter ``t`` equals arc length from the origin.
+
+        :param ox: x-coordinate of the origin.
+        :param oy: y-coordinate of the origin.
+        :param dx: x-component of the direction vector (will be normalized).
+        :param dy: y-component of the direction vector (will be normalized).
+        :return: a new ``Line2`` with a unit-length direction.
+        """
+        ...
+
+    @property
+    def origin(self) -> Point2:
+        """The origin point of the line."""
+        ...
+
+    @property
+    def direction(self) -> Vector2:
+        """
+        The direction vector of the line. May not be unit-length unless the line was created
+        with ``new_normalize`` or ``normalized()``.
+        """
+        ...
+
+    @property
+    def normal(self) -> Vector2:
+        """
+        The unit normal to the line: the direction rotated 90 degrees clockwise. By convention
+        this points to the right of the direction of travel, consistent with the outward normal
+        on counter-clockwise-wound 2D geometry.
+        """
+        ...
+
+    def at(self, t: float) -> Point2:
+        """
+        Evaluate the line at parameter ``t``: returns ``origin + t * direction``.
+
+        :param t: the parameter value.
+        :return: the point on the line at ``t``.
+        """
+        ...
+
+    def scalar_project(self, point: Point2) -> float:
+        """
+        Return the parameter ``t`` such that ``at(t)`` is the closest point on the line to
+        ``point``.  Equivalent to the scalar projection of ``(point - origin)`` onto the
+        direction vector.
+
+        :param point: the point to project.
+        :return: the parameter value of the closest point on the line.
+        """
+        ...
+
+    def closest_point(self, point: Point2) -> Point2:
+        """
+        Return the point on the line closest to ``point``.
+
+        :param point: the query point.
+        :return: the nearest point on the line.
+        """
+        ...
+
+    def distance_to(self, point: Point2) -> float:
+        """
+        Return the perpendicular (unsigned) distance from ``point`` to the line.
+
+        :param point: the query point.
+        :return: the non-negative distance.
+        """
+        ...
+
+    def signed_distance_to(self, point: Point2) -> float:
+        """
+        Return the signed perpendicular distance from ``point`` to the line. Positive means the
+        point is to the right of the direction of travel (on the normal side); negative means it
+        is to the left.
+
+        :param point: the query point.
+        :return: the signed distance.
+        """
+        ...
+
+    def intersect(self, other: Line2) -> Point2 | None:
+        """
+        Return the intersection point with another line, or ``None`` if the lines are parallel.
+
+        :param other: the other line to intersect with.
+        :return: the intersection point, or ``None``.
+        """
+        ...
+
+    def normalized(self) -> Line2:
+        """
+        Return a new line with the same origin but a normalized direction, so that the parameter
+        ``t`` equals arc length from the origin.
+        """
+        ...
+
+    def new_parallel(self, delta_n: float) -> Line2:
+        """
+        Return a new line parallel to this one, with the origin shifted by ``delta_n`` along the
+        normal direction. A positive ``delta_n`` moves the line to the right of the direction of
+        travel.
+
+        :param delta_n: the offset distance along the normal.
+        :return: a new parallel ``Line2``.
+        """
+        ...
+
+    def new_shifted_along(self, delta_t: float) -> Line2:
+        """
+        Return a new line with the origin shifted by ``delta_t`` along the direction vector.
+
+        :param delta_t: the distance to shift the origin along the direction.
+        :return: a new ``Line2`` with the shifted origin.
+        """
+        ...
+
+    def new_transformed_by(self, iso: Iso2) -> Line2:
+        """
+        Return a new line with both origin and direction transformed by the given isometry.
+
+        :param iso: the isometry to apply.
+        :return: a new transformed ``Line2``.
+        """
+        ...
+
+    def to_iso_from_x(self) -> Iso2:
+        """
+        Return an isometry whose origin matches the line's origin and whose X direction matches
+        the line's direction. Transforming an entity by the *inverse* of this isometry maps its
+        relationship with the line back to the origin along the X axis.
+
+        :return: the alignment isometry.
+        """
+        ...
+
+    def to_iso_from_y(self) -> Iso2:
+        """
+        Return an isometry whose origin matches the line's origin and whose Y direction matches
+        the line's direction. Transforming an entity by the *inverse* of this isometry maps its
+        relationship with the line back to the origin along the Y axis.
+
+        :return: the alignment isometry.
+        """
+        ...
+
+
 class Segment2:
     """
     A class representing a line segment in 2D space. The segment is defined by two endpoints.

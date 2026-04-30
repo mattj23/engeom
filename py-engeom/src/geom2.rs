@@ -648,6 +648,167 @@ impl Circle2 {
 }
 
 // ================================================================================================
+// Line2
+// ================================================================================================
+
+#[pyclass(from_py_object, module = "engeom.geom2")]
+#[derive(Clone, Debug)]
+pub struct Line2 {
+    inner: engeom::geom2::Line2,
+}
+
+impl Line2 {
+    pub fn get_inner(&self) -> &engeom::geom2::Line2 {
+        &self.inner
+    }
+
+    pub fn from_inner(inner: engeom::geom2::Line2) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl Line2 {
+    #[new]
+    fn new(ox: f64, oy: f64, dx: f64, dy: f64) -> Self {
+        Self::from_inner(engeom::geom2::Line2::new(
+            engeom::Point2::new(ox, oy),
+            engeom::Vector2::new(dx, dy),
+        ))
+    }
+
+    fn __getstate__(&self) -> (f64, f64, f64, f64) {
+        (
+            self.inner.origin.x,
+            self.inner.origin.y,
+            self.inner.direction.x,
+            self.inner.direction.y,
+        )
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64, f64, f64) {
+        (
+            self.inner.origin.x,
+            self.inner.origin.y,
+            self.inner.direction.x,
+            self.inner.direction.y,
+        )
+    }
+
+    fn __setstate__(&mut self, state: (f64, f64, f64, f64)) {
+        self.inner = engeom::geom2::Line2::new(
+            engeom::Point2::new(state.0, state.1),
+            engeom::Vector2::new(state.2, state.3),
+        );
+    }
+
+    fn __eq__(&self, other: &Self) -> bool {
+        self.inner.origin == other.inner.origin && self.inner.direction == other.inner.direction
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Line2({}, {}, {}, {})",
+            self.inner.origin.x,
+            self.inner.origin.y,
+            self.inner.direction.x,
+            self.inner.direction.y,
+        )
+    }
+
+    #[staticmethod]
+    fn x_axis() -> Self {
+        Self::from_inner(engeom::geom2::Line2::x_axis())
+    }
+
+    #[staticmethod]
+    fn y_axis() -> Self {
+        Self::from_inner(engeom::geom2::Line2::y_axis())
+    }
+
+    #[staticmethod]
+    fn from_points(p1: &Point2, p2: &Point2) -> Self {
+        Self::from_inner(engeom::geom2::Line2::from_points(
+            p1.get_inner(),
+            p2.get_inner(),
+        ))
+    }
+
+    #[staticmethod]
+    fn new_normalize(ox: f64, oy: f64, dx: f64, dy: f64) -> Self {
+        Self::from_inner(engeom::geom2::Line2::new_normalize(
+            engeom::Point2::new(ox, oy),
+            engeom::Vector2::new(dx, dy),
+        ))
+    }
+
+    #[getter]
+    fn origin(&self) -> Point2 {
+        Point2::from_inner(self.inner.origin)
+    }
+
+    #[getter]
+    fn direction(&self) -> Vector2 {
+        Vector2::from_inner(self.inner.direction)
+    }
+
+    #[getter]
+    fn normal(&self) -> Vector2 {
+        Vector2::from_inner(self.inner.normal().into_inner())
+    }
+
+    fn at(&self, t: f64) -> Point2 {
+        Point2::from_inner(self.inner.at(t))
+    }
+
+    fn scalar_project(&self, point: &Point2) -> f64 {
+        self.inner.scalar_project(point.get_inner())
+    }
+
+    fn closest_point(&self, point: &Point2) -> Point2 {
+        Point2::from_inner(self.inner.closest_point(point.get_inner()))
+    }
+
+    fn distance_to(&self, point: &Point2) -> f64 {
+        self.inner.distance_to(point.get_inner())
+    }
+
+    fn signed_distance_to(&self, point: &Point2) -> f64 {
+        self.inner.signed_distance_to(point.get_inner())
+    }
+
+    fn intersect(&self, other: &Line2) -> Option<Point2> {
+        self.inner.intersect(&other.inner).map(Point2::from_inner)
+    }
+
+    fn normalized(&self) -> Self {
+        Self::from_inner(self.inner.normalized())
+    }
+
+    fn new_parallel(&self, delta_n: f64) -> Self {
+        Self::from_inner(self.inner.new_parallel(delta_n))
+    }
+
+    fn new_shifted_along(&self, delta_t: f64) -> Self {
+        Self::from_inner(self.inner.new_shifted_along(delta_t))
+    }
+
+    fn new_transformed_by(&self, iso: &Iso2) -> Self {
+        Self::from_inner(self.inner.new_transformed_by(iso.get_inner()))
+    }
+
+    fn to_iso_from_x(&self) -> Iso2 {
+        use engeom::geom2::LineOps2;
+        Iso2::from_inner(self.inner.to_iso_from_x())
+    }
+
+    fn to_iso_from_y(&self) -> Iso2 {
+        use engeom::geom2::LineOps2;
+        Iso2::from_inner(self.inner.to_iso_from_y())
+    }
+}
+
+// ================================================================================================
 // Segment
 // ================================================================================================
 

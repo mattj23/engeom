@@ -35,7 +35,7 @@ mod fitting;
 
 use crate::common::PCoords;
 use crate::common::points::dist;
-use crate::geom2::{Aabb2, ManifoldPosition2};
+use crate::geom2::{Aabb2, Manifold1Pos2};
 use crate::{Point2, Result};
 use parry2d_f64::bounding_volume::BoundingVolume;
 use std::ops::Deref;
@@ -73,7 +73,7 @@ pub trait BoundaryElement2 {
     ///   between 0 and the `.length()` of the element.
     ///
     /// returns: ManifoldPosition2
-    fn at_length(&self, length: f64) -> ManifoldPosition2;
+    fn at_length(&self, length: f64) -> Manifold1Pos2;
 
     /// Retrieve the manifold position that is closest to a test position in 2D space.
     ///
@@ -82,18 +82,18 @@ pub trait BoundaryElement2 {
     /// * `point`: The test point to find the position on the manifold closest to
     ///
     /// returns: ManifoldPosition2
-    fn closest_to_point(&self, point: &dyn PCoords<2>) -> ManifoldPosition2;
+    fn closest_to_point(&self, point: &dyn PCoords<2>) -> Manifold1Pos2;
 
     /// Gets the axis-aligned bounding box of the element
     fn aabb(&self) -> Aabb2;
 
     /// Return the position at the start of the element's manifold
-    fn at_start(&self) -> ManifoldPosition2 {
+    fn at_start(&self) -> Manifold1Pos2 {
         self.at_length(0.0)
     }
 
     /// Return the position at the end of the element's manifold
-    fn at_end(&self) -> ManifoldPosition2 {
+    fn at_end(&self) -> Manifold1Pos2 {
         self.at_length(self.length())
     }
 
@@ -117,7 +117,7 @@ pub trait BoundaryElement2 {
 /// Contains the geometry of a boundary, which is a collection of elements that can be queried for
 /// distances, intersections, and so on.
 pub struct Boundary2 {
-    elements: Vec<Box<dyn BoundaryElement2>>,
+    elements: Vec<Box<dyn BoundaryElement2 + Send + Sync>>,
     ids: Vec<u32>,
     lengths: Vec<f64>,
     is_closed: bool,
@@ -125,7 +125,7 @@ pub struct Boundary2 {
 
 impl Boundary2 {
     pub fn try_new(
-        elements: Vec<(u32, Box<dyn BoundaryElement2>)>,
+        elements: Vec<(u32, Box<dyn BoundaryElement2 + Send + Sync>)>,
         is_closed: bool,
     ) -> Result<Self> {
         if elements.is_empty() {
@@ -152,7 +152,7 @@ impl Boundary2 {
         })
     }
 
-    pub fn get_element(&self, id: u32) -> Option<&dyn BoundaryElement2> {
+    pub fn get_element(&self, id: u32) -> Option<&(dyn BoundaryElement2 + Send + Sync)> {
         self.ids
             .iter()
             .position(|&x| x == id)
@@ -173,7 +173,7 @@ impl Boundary2 {
         Ok(points)
     }
 
-    pub fn at_closest_to_point(&self, point: &dyn PCoords<2>) -> (u32, ManifoldPosition2) {
+    pub fn at_closest_to_point(&self, point: &dyn PCoords<2>) -> (u32, Manifold1Pos2) {
         let point = Point2::from(point.coords());
         let (k, _, m) = (0..self.elements.len())
             .map(|i| {
@@ -189,11 +189,11 @@ impl Boundary2 {
         let id = self.ids[k];
         (
             id,
-            ManifoldPosition2::new(length, m.point, m.direction, m.normal),
+            Manifold1Pos2::new(length, m.point, m.direction, m.normal),
         )
     }
 
-    pub fn at_length(&self, length: f64) -> Option<ManifoldPosition2> {
+    pub fn at_length(&self, length: f64) -> Option<Manifold1Pos2> {
         let pre_mod = if length < 0.0 || length > self.length() {
             None
         } else {
@@ -216,14 +216,14 @@ impl Boundary2 {
             }
         };
 
-        pre_mod.map(|pr| ManifoldPosition2 { l: length, ..pr })
+        pre_mod.map(|pr| Manifold1Pos2 { l: length, ..pr })
     }
 
-    pub fn at_start(&self) -> ManifoldPosition2 {
+    pub fn at_start(&self) -> Manifold1Pos2 {
         self.elements[0].at_start()
     }
 
-    pub fn at_end(&self) -> ManifoldPosition2 {
+    pub fn at_end(&self) -> Manifold1Pos2 {
         let mut result = self.elements[self.elements.len() - 1].at_end();
         result.l = self.length();
         result

@@ -39,8 +39,18 @@ pub use self::curve2::{Curve2, CurvePartitioner2, CurveStation2};
 pub use self::line2::{Line2, LineOps2, intersect_lines, intersect_rays, intersection_param};
 pub use self::segment2::Segment2;
 
+/// This struct represents a position along a 1-manifold embedded in 2D space. Examples of such
+/// manifolds are lines, line segments, circles, arcs, splines, etc...anything consisting of a
+/// contiguous set of 2D points along a single linear dimension.
+///
+/// In 2D space, a 1-manifold that is infinitely long (such as a line) or is closed (such as a
+/// circle) can divide space into two separate regions, and a single position on a 1-manifold
+/// divides the local space in half. As a result, there is an additional feature of the
+/// `Manifold1Pos2` to have a surface normal direction, indicating the direction of this
+/// separation.  In conformance with the counterclockwise winding convention, the surface normal
+/// direction of a manifold is to the right of its direction.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ManifoldPosition2 {
+pub struct Manifold1Pos2 {
     /// The position of the point along the manifold length
     pub l: f64,
 
@@ -58,26 +68,59 @@ pub struct ManifoldPosition2 {
     pub normal: UnitVec2,
 }
 
-impl ManifoldPosition2 {
-    pub fn new(t: f64, point: Point2, direction: UnitVec2, normal: UnitVec2) -> Self {
+impl Manifold1Pos2 {
+    pub fn new(l: f64, point: Point2, direction: UnitVec2, normal: UnitVec2) -> Self {
         Self {
-            l: t,
+            l,
             point,
             direction,
             normal,
         }
     }
 
+    /// Returns a surface point representing the position and surface normal of the manifold at
+    /// this position. The surface point normal will be pointing to the right (clockwise) of the
+    /// manifold direction.
+    pub fn surface_point(&self) -> SurfacePoint2 {
+        SurfacePoint2::new(self.point, self.direction)
+    }
+
+    /// Returns a line representing the tangent direction of the manifold at this position. The
+    /// line direction has been normalized to unit length.
+    pub fn direction_line(&self) -> Line2 {
+        Line2::new(self.point, self.direction.into_inner())
+    }
+
+    /// Get the scalar projection of a position in 2D space onto the surface normal of the manifold
+    /// at this position. A positive value means that the projection is to the outside of the
+    /// manifold, a negative value means that it is to the inside. The surface normal is of unit
+    /// length, so the scalar projection corresponds to a physical distance.
+    ///
+    /// # Arguments
+    ///
+    /// * `other`: A position to take the scalar projection of
+    ///
+    /// returns: f64
     pub fn normal_scalar_projection(&self, other: &impl PCoords<2>) -> f64 {
         self.normal.dot(&(other.coords() - self.point.coords))
     }
 
+    /// Get the scalar projection of a position in 2D space onto the direction vector of the
+    /// manifold at this position. A positive value means that the projection is in front of the
+    /// position, a negative value means that it is behind. The direction vector is of unit length
+    /// so the scalar projection corresponds to a physical distance.
+    ///
+    /// # Arguments
+    ///
+    /// * `other`: A position to take the scalar projection of
+    ///
+    /// returns: f64
     pub fn direction_scalar_project(&self, other: &impl PCoords<2>) -> f64 {
         self.direction.dot(&(other.coords() - self.point.coords))
     }
 }
 
-impl PCoords<2> for ManifoldPosition2 {
+impl PCoords<2> for Manifold1Pos2 {
     fn coords(&self) -> SVector<f64, 2> {
         self.point.coords
     }

@@ -4,7 +4,7 @@ use crate::common::{
     ANGLE_TOL, PCoords, angle_in_direction, angle_signed_pi, linear_space, shortest_angle_between,
 };
 use crate::geom2::aabb2::arc_aabb2;
-use crate::geom2::{Aabb2, BoundaryElement2, HasBounds2, ManifoldPosition2, directed_angle, rot90};
+use crate::geom2::{Aabb2, BoundaryElement2, HasBounds2, Manifold1Pos2, directed_angle, rot90};
 use crate::{AngleInterval, Circle2, Point2, Result, UnitVec2};
 use serde::{Deserialize, Serialize};
 use std::f64::consts::PI;
@@ -288,7 +288,7 @@ impl BoundaryElement2 for Arc2 {
         Arc2::length(self)
     }
 
-    fn at_length(&self, length: f64) -> ManifoldPosition2 {
+    fn at_length(&self, length: f64) -> Manifold1Pos2 {
         // Get the point at the specified length along the arc
         let point = self.point_at_length(length);
 
@@ -299,10 +299,10 @@ impl BoundaryElement2 for Arc2 {
         // The manifold direction will be the normal direction rotated 90 degrees counter-clockwise
         let direction = rot90(Ccw) * normal;
 
-        ManifoldPosition2::new(length, point, direction, normal)
+        Manifold1Pos2::new(length, point, direction, normal)
     }
 
-    fn closest_to_point(&self, point: &dyn PCoords<2>) -> ManifoldPosition2 {
+    fn closest_to_point(&self, point: &dyn PCoords<2>) -> Manifold1Pos2 {
         let point = Point2::from(point.coords());
         let theta = self.circle().angle_of_point(&point);
         let t = if self.is_theta_on_arc(theta) {

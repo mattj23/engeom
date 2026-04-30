@@ -278,7 +278,7 @@ impl BoundaryData2 {
     /// Attempts to create a boundary from the current data. Will return an error if something in
     /// the process fails.
     pub fn try_to_boundary(&self) -> Result<Boundary2> {
-        let mut elements: Vec<(u32, Box<dyn BoundaryElement2>)> = Vec::new();
+        let mut elements: Vec<(u32, Box<dyn BoundaryElement2 + Send + Sync>)> = Vec::new();
         for (id, e) in self.iter() {
             let start = self.start_point_of(id)?;
             match e {

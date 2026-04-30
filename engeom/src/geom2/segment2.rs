@@ -1,7 +1,7 @@
 use crate::AngleDir::Cw;
 use crate::common::PCoords;
 use crate::common::points::dist;
-use crate::geom2::{Aabb2, BoundaryElement2, ManifoldPosition2, rot90};
+use crate::geom2::{Aabb2, BoundaryElement2, Manifold1Pos2, rot90};
 use crate::{Iso2, Line2, Point2, Result, TransformBy, UnitVec2, Vector2};
 use serde::{Deserialize, Serialize};
 
@@ -94,11 +94,11 @@ impl Segment2 {
         Aabb2::new(mins, maxs)
     }
 
-    pub fn at_t(&self, t: f64) -> ManifoldPosition2 {
+    pub fn at_t(&self, t: f64) -> Manifold1Pos2 {
         let point = self.a + (self.b - self.a) * t;
         let direction = UnitVec2::new_normalize(self.b - self.a);
         let normal = rot90(Cw) * direction;
-        ManifoldPosition2::new(t * self.length, point, direction, normal)
+        Manifold1Pos2::new(t * self.length, point, direction, normal)
     }
 
     pub fn normal(&self) -> UnitVec2 {
@@ -134,12 +134,12 @@ impl BoundaryElement2 for Segment2 {
         self.length
     }
 
-    fn at_length(&self, length: f64) -> ManifoldPosition2 {
+    fn at_length(&self, length: f64) -> Manifold1Pos2 {
         let t = length / self.length;
         self.at_t(t)
     }
 
-    fn closest_to_point(&self, point: &dyn PCoords<2>) -> ManifoldPosition2 {
+    fn closest_to_point(&self, point: &dyn PCoords<2>) -> Manifold1Pos2 {
         let p = Point2::from(point.coords());
         let t = self.scalar_projection(&p).clamp(0.0, 1.0);
         self.at_t(t)
@@ -149,7 +149,7 @@ impl BoundaryElement2 for Segment2 {
         Segment2::aabb(self)
     }
 
-    fn at_end(&self) -> ManifoldPosition2 {
+    fn at_end(&self) -> Manifold1Pos2 {
         self.at_t(1.0)
     }
 

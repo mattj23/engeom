@@ -1,6 +1,7 @@
 mod airfoil;
 mod align3;
 pub mod alignments;
+mod boundary2;
 mod bounding;
 mod common;
 mod conversions;
@@ -38,6 +39,7 @@ fn register_geom2(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_class::<geom2::Circle2>()?;
     child.add_class::<geom2::Arc2>()?;
     child.add_class::<geom2::Segment2>()?;
+    child.add_class::<geom2::Line2>()?;
 
     // Angle functions
     child.add_function(wrap_pyfunction!(geom2::rot90, &child)?)?;
@@ -48,6 +50,11 @@ fn register_geom2(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     // Curves and other complex geometries
     child.add_class::<geom2::Curve2>()?;
     child.add_class::<geom2::CurveStation2>()?;
+
+    // Boundary geometry
+    child.add_class::<boundary2::Manifold1Pos2>()?;
+    child.add_class::<boundary2::BoundaryData2>()?;
+    child.add_class::<boundary2::Boundary2>()?;
 
     // Bounding and tools
     child.add_class::<bounding::Aabb2>()?;
