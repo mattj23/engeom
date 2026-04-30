@@ -2,49 +2,24 @@
 
 use crate::common::PCoords;
 use crate::geom2::BoundaryData2;
-use crate::geom2::boundary::data::BData;
+use crate::geom2::boundary::data::{BData, BoundaryAddData};
 use crate::{Circle2, Line2, Point2, Result};
 
-pub struct BCursor<'a> {
-    data: &'a mut BoundaryData2,
-    node_id: u32,
-}
+// ===============================================================================================
+//  Common boundary construction tools
+// ===============================================================================================
 
-impl<'a> BCursor<'a> {
-    pub fn new(data: &'a mut BoundaryData2, node_id: u32) -> Self {
-        Self { data, node_id }
-    }
-
-    pub fn move_to(&mut self, id: u32) -> Result<()> {
-        if self.data.get_node(id).is_none() {
-            Err("Invalid cursor position".into())
-        } else {
-            self.node_id = id;
-            Ok(())
-        }
-    }
-
-    fn add_data(&mut self, data: BData) -> u32 {
-        let next_id = if self.data.len() == 0 {
-            self.data.insert_first(data).unwrap()
-        } else {
-            self.data.insert_after(self.node_id, data).unwrap()
-        };
-
-        self.node_id = next_id;
-        next_id
-    }
-
-    pub fn add_seg_xy(&mut self, x: f64, y: f64) -> u32 {
+pub trait BoundaryEditor: BoundaryAddData {
+    fn add_seg_xy(&mut self, x: f64, y: f64) -> u32 {
         let seg = BData::Seg((x, y));
         self.add_data(seg)
     }
 
-    pub fn add_seg(&mut self, p: &impl PCoords<2>) -> u32 {
+    fn add_seg(&mut self, p: &impl PCoords<2>) -> u32 {
         self.add_seg_xy(p.coords().x, p.coords().y)
     }
 
-    pub fn add_arc_xy(
+    fn add_arc_xy(
         &mut self,
         center_x: f64,
         center_y: f64,
@@ -56,12 +31,7 @@ impl<'a> BCursor<'a> {
         self.add_data(arc)
     }
 
-    pub fn add_arc(
-        &mut self,
-        center: &impl PCoords<2>,
-        end: &impl PCoords<2>,
-        clockwise: bool,
-    ) -> u32 {
+    fn add_arc(&mut self, center: &impl PCoords<2>, end: &impl PCoords<2>, clockwise: bool) -> u32 {
         self.add_arc_xy(
             center.coords().x,
             center.coords().y,
@@ -69,29 +39,6 @@ impl<'a> BCursor<'a> {
             end.coords().y,
             clockwise,
         )
-    }
-
-    /// Finds the endpoint of the element at the cursor's current position. If the data is an
-    /// empty open boundary, it will return the start point. If it's an empty closed boundary, it
-    /// will throw an error. Otherwise, it will find the endpoint of current element, which will
-    /// also serve as the startpoint for the next element to get inserted at this position.
-    pub fn point_after(&self) -> Result<Point2> {
-        if self.data.len() == 0 {
-            if self.data.is_closed() {
-                Err("Cannot get point after for empty closed boundary".into())
-            } else {
-                Ok(self
-                    .data
-                    .start
-                    .expect("open boundary must have a start point"))
-            }
-        } else {
-            let node = self
-                .data
-                .get_node(self.node_id)
-                .ok_or("Invalid cursor position")?;
-            Ok(node.data.end_point())
-        }
     }
 
     /// This method will create a sequence of line segments which meet at corner fillets to the
@@ -113,11 +60,7 @@ impl<'a> BCursor<'a> {
     /// ```
     ///
     /// ```
-    pub fn add_corner_fillets(
-        &mut self,
-        corners: &[impl PCoords<2>],
-        radius: f64,
-    ) -> Result<Vec<u32>> {
+    fn add_corner_fillets(&mut self, corners: &[impl PCoords<2>], radius: f64) -> Result<Vec<u32>> {
         if corners.len() < 2 {
             return Err("Must have at least 2 corners to fillet".into());
         }
@@ -127,13 +70,17 @@ impl<'a> BCursor<'a> {
             let c0 = &corners[i];
             let c1 = &corners[i + 1];
 
+            let last_point = self
+                .last_point()
+                .ok_or("Cannot add corner fillet to empty boundary")?;
+
             // First we'll find the circle at the tangent of the corner
-            let v0 = self.point_after()?.coords() - c0.coords();
+            let v0 = last_point.coords() - c0.coords();
             let v1 = c1.coords() - c0.coords();
             let c = Circle2::tangent_to_corner(c0, &v0, &v1, radius)?;
 
             // Now we need to find the two tangent endpoints
-            let l0 = Line2::from_points(&self.point_after()?, c0).normalized();
+            let l0 = Line2::from_points(&last_point, c0).normalized();
             let (e0, e1) = c.tangent_points_to(c0).unwrap();
             let (e0, e1) = if l0.distance_to(&e0) < l0.distance_to(&e1) {
                 (e0, e1)
@@ -154,7 +101,10 @@ impl<'a> BCursor<'a> {
         let cf1 = &corners[corners.len() - 1];
         let cf0 = &corners[corners.len() - 2];
         let lf = Line2::from_points(cf0, cf1).normalized();
-        if lf.scalar_project(&self.point_after()?) < 0.0 {
+        let end = self
+            .last_point()
+            .ok_or("Cannot add corner to empty boundary")?;
+        if lf.scalar_project(&end) < 0.0 {
             return Err("Invalid fillet radius, too large for corner".into());
         }
         ids.push(self.add_seg(cf1));
@@ -163,15 +113,58 @@ impl<'a> BCursor<'a> {
     }
 }
 
-impl BoundaryData2 {
-    pub fn last_point(&self) -> Point2 {
-        match self.last_data() {
-            None => self.start.expect("open boundary must have a start point"),
-            Some(BData::Seg((x, y))) => Point2::new(*x, *y),
-            Some(BData::Arc((_cx, _cy, ex, ey, _))) => Point2::new(*ex, *ey),
+// ===============================================================================================
+//  Boundary cursor
+// ===============================================================================================
+
+pub struct BCursor<'a> {
+    data: &'a mut BoundaryData2,
+    node_id: u32,
+}
+
+impl<'a> BCursor<'a> {
+    pub fn new(data: &'a mut BoundaryData2, node_id: u32) -> Self {
+        Self { data, node_id }
+    }
+
+    pub fn move_to(&mut self, id: u32) -> Result<()> {
+        if self.data.get_node(id).is_none() {
+            Err("Invalid cursor position".into())
+        } else {
+            self.node_id = id;
+            Ok(())
         }
     }
 }
+
+impl BoundaryAddData for BCursor<'_> {
+    fn add_data(&mut self, data: BData) -> u32 {
+        let next_id = if self.data.len() == 0 {
+            self.data.insert_first(data).unwrap()
+        } else {
+            self.data.insert_after(self.node_id, data).unwrap()
+        };
+
+        self.node_id = next_id;
+        next_id
+    }
+
+    fn last_point(&self) -> Option<Point2> {
+        if self.data.len() == 0 {
+            if self.data.is_closed() {
+                None
+            } else {
+                self.data.start
+            }
+        } else {
+            self.data
+                .get_node(self.node_id)
+                .map(|node| node.data.end_point())
+        }
+    }
+}
+
+impl BoundaryEditor for BCursor<'_> {}
 
 #[cfg(test)]
 mod tests {

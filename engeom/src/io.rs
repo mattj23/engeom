@@ -1,15 +1,14 @@
 mod binary_mesh;
-mod micro_mesh;
 mod lptf3;
+mod micro_mesh;
 mod ply;
 mod point_cloud;
 
-
 use crate::{Point3, Result, Vector3};
+pub use binary_mesh::*;
 use flate2::read::GzDecoder;
 pub use lptf3::*;
 pub use micro_mesh::*;
-pub use binary_mesh::*;
 pub use point_cloud::*;
 use serde::Serialize;
 use std::fs::{File, OpenOptions};

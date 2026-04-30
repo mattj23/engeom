@@ -1,6 +1,10 @@
-use crate::geom2::{BCursor, Boundary2, BoundaryElement, Segment2};
-use crate::{Arc2, Point2, Result};
+use crate::geom2::{BCursor, Boundary2, BoundaryEditor, BoundaryElement, Segment2};
+use crate::{Arc2, Iso2, Point2, Result};
 use std::collections::HashMap;
+
+// ===============================================================================================
+// Boundary data container enum. This holds the information for each node in the boundary data.
+// ===============================================================================================
 
 #[derive(Debug, Clone)]
 pub(super) enum BData {
@@ -18,54 +22,29 @@ impl BData {
             BData::Arc((_, _, ex, ey, _)) => Point2::new(*ex, *ey),
         }
     }
-}
 
-#[derive(Debug, Clone)]
-pub(super) struct BNode {
-    pub(super) id: u32,
-    pub(super) next_id: Option<u32>,
-    pub(super) prev_id: Option<u32>,
-    pub(super) data: BData,
-}
-
-impl BNode {
-    pub(super) fn new(id: u32, next_id: Option<u32>, prev_id: Option<u32>, data: BData) -> BNode {
-        Self {
-            id,
-            next_id,
-            prev_id,
-            data,
+    pub fn transform_by(&self, iso: &Iso2) -> BData {
+        match self {
+            BData::Seg((x, y)) => {
+                let p = Point2::new(*x, *y);
+                let tp = iso.transform_point(&p);
+                BData::Seg((tp.x, tp.y))
+            }
+            BData::Arc((cx, cy, ex, ey, cw)) => {
+                let center = Point2::new(*cx, *cy);
+                let end = Point2::new(*ex, *ey);
+                let tcenter = iso.transform_point(&center);
+                let tend = iso.transform_point(&end);
+                // Note: this transformation may not preserve the clockwise-ness of the arc
+                BData::Arc((tcenter.x, tcenter.y, tend.x, tend.y, *cw))
+            }
         }
     }
 }
 
-pub(super) struct BIter<'a> {
-    data: &'a BoundaryData2,
-    current: Option<u32>,
-    head: u32,
-    done: bool,
-}
-
-impl<'a> Iterator for BIter<'a> {
-    type Item = (u32, &'a BData);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.done {
-            return None;
-        }
-        let id = self.current?;
-        let node = &self.data.nodes[&id];
-        let item = (id, &node.data);
-
-        match node.next_id {
-            None => self.done = true,
-            Some(next) if next == self.head => self.done = true,
-            Some(next) => self.current = Some(next),
-        }
-
-        Some(item)
-    }
-}
+// ===============================================================================================
+//  Boundary data
+// ===============================================================================================
 
 #[derive(Debug, Clone)]
 pub struct BoundaryData2 {
@@ -76,6 +55,10 @@ pub struct BoundaryData2 {
 }
 
 impl BoundaryData2 {
+    pub fn new_open_xy(x: f64, y: f64) -> Self {
+        Self::new_open(Point2::new(x, y))
+    }
+
     pub fn new_open(start: Point2) -> Self {
         Self {
             start: Some(start),
@@ -91,6 +74,15 @@ impl BoundaryData2 {
             nodes: HashMap::new(),
             next_unique_id: 0,
             head_id: u32::MAX,
+        }
+    }
+
+    pub fn transform_by(&mut self, iso: &Iso2) {
+        for node in self.nodes.values_mut() {
+            node.data = node.data.transform_by(iso);
+        }
+        if let Some(start) = self.start {
+            self.start = Some(iso.transform_point(&start));
         }
     }
 
@@ -238,10 +230,8 @@ impl BoundaryData2 {
         Ok(())
     }
 
-    pub(super) fn last_data(&self) -> Option<&BData> {
-        self.tail_id().map(|id| &self.nodes[&id].data)
-    }
-
+    /// Returns an iterator which iterates over the data elements of the array in order from the
+    /// head to the tail.
     pub(super) fn iter(&self) -> BIter<'_> {
         BIter {
             data: self,
@@ -255,6 +245,21 @@ impl BoundaryData2 {
         }
     }
 
+    /// Get the starting point of the element with the given ID. Within the boundary, individual
+    /// elements store their endpoint, and start at the endpoint of the previous element. This
+    /// method finds the previous element and returns its endpoint, which serves as the starting
+    /// point for the specified element.
+    ///
+    /// This will return an `Err` if the data has no elements yet, or if an invalid node is
+    /// provided.
+    ///
+    /// # Arguments
+    ///
+    /// * `id`: The ID of the element to find the starting point of
+    ///
+    /// returns: Result<OPoint<f64, Const<2>>, Box<dyn Error, Global>>
+    ///
+    /// # Examples
     pub fn start_point_of(&self, id: u32) -> Result<Point2> {
         if self.len() == 0 {
             return Err("Boundary has no elements".into());
@@ -270,6 +275,8 @@ impl BoundaryData2 {
         Ok(self.nodes[&prev_id].data.end_point())
     }
 
+    /// Attempts to create a boundary from the current data. Will return an error if something in
+    /// the process fails.
     pub fn try_to_boundary(&self) -> Result<Boundary2> {
         let mut elements: Vec<(u32, Box<dyn BoundaryElement>)> = Vec::new();
         for (id, e) in self.iter() {
@@ -289,6 +296,90 @@ impl BoundaryData2 {
             }
         }
         Boundary2::try_new(elements, self.is_closed())
+    }
+
+    fn last_data(&self) -> Option<&BData> {
+        self.tail_id().map(|id| &self.nodes[&id].data)
+    }
+}
+
+// ===============================================================================================
+//  Basic editing functionality
+// ===============================================================================================
+pub(super) trait BoundaryAddData {
+    fn add_data(&mut self, data: BData) -> u32;
+
+    fn last_point(&self) -> Option<Point2>;
+}
+
+impl BoundaryAddData for BoundaryData2 {
+    fn add_data(&mut self, data: BData) -> u32 {
+        if self.nodes.len() == 0 {
+            self.insert_first(data).unwrap()
+        } else {
+            self.insert_after(self.tail_id().unwrap(), data).unwrap()
+        }
+    }
+
+    fn last_point(&self) -> Option<Point2> {
+        match self.last_data() {
+            None => self.start,
+            Some(BData::Seg((x, y))) => Some(Point2::new(*x, *y)),
+            Some(BData::Arc((_cx, _cy, ex, ey, _))) => Some(Point2::new(*ex, *ey)),
+        }
+    }
+}
+
+impl BoundaryEditor for BoundaryData2 {}
+
+// ===============================================================================================
+//  Internal node and iterator structure
+// ===============================================================================================
+
+#[derive(Debug, Clone)]
+pub(super) struct BNode {
+    pub(super) id: u32,
+    pub(super) next_id: Option<u32>,
+    pub(super) prev_id: Option<u32>,
+    pub(super) data: BData,
+}
+
+impl BNode {
+    pub(super) fn new(id: u32, next_id: Option<u32>, prev_id: Option<u32>, data: BData) -> BNode {
+        Self {
+            id,
+            next_id,
+            prev_id,
+            data,
+        }
+    }
+}
+
+pub(super) struct BIter<'a> {
+    data: &'a BoundaryData2,
+    current: Option<u32>,
+    head: u32,
+    done: bool,
+}
+
+impl<'a> Iterator for BIter<'a> {
+    type Item = (u32, &'a BData);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.done {
+            return None;
+        }
+        let id = self.current?;
+        let node = &self.data.nodes[&id];
+        let item = (id, &node.data);
+
+        match node.next_id {
+            None => self.done = true,
+            Some(next) if next == self.head => self.done = true,
+            Some(next) => self.current = Some(next),
+        }
+
+        Some(item)
     }
 }
 

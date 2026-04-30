@@ -259,9 +259,9 @@ pub fn slab_method2(bv: &Aabb2, origin: &Point2, n_inv: &Vector2) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::Intersection;
     use approx::assert_relative_eq;
     use test_case::test_case;
-    use crate::common::Intersection;
 
     #[test]
     fn line2_basis_x() {

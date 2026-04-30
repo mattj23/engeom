@@ -59,7 +59,7 @@ const DELTA: f64 = 1e-6;
 /// // ------------------------------------------------------------------------------------------
 /// use engeom::{Point2, DVector};
 /// use engeom::common::{to_points, fill_gaps};
-/// use engeom::geom2::{BndBuildFn, fit_boundary_to_points, BoundaryData2};
+/// use engeom::geom2::{BndBuildFn, fit_boundary_to_points, BoundaryData2, BoundaryEditor};
 /// use approx::assert_relative_eq;
 ///
 /// // We'll create the initial corners and then use the `fill_gaps` helper to generate points
@@ -71,10 +71,9 @@ const DELTA: f64 = 1e-6;
 /// // extremely simple parameterization that just encodes the three corners as x,y pairs
 /// let builder: BndBuildFn = Box::new(|params: &DVector| {
 ///    let mut bdata = BoundaryData2::new_open(Point2::new(params[0], params[1]));
-///    let mut cursor = bdata.get_cursor(None);
-///    cursor.add_seg_xy(params[2], params[3]);
-///    cursor.add_seg_xy(params[4], params[5]);
-///    cursor.add_seg_xy(params[0], params[1]);
+///    bdata.add_seg_xy(params[2], params[3]);
+///    bdata.add_seg_xy(params[4], params[5]);
+///    bdata.add_seg_xy(params[0], params[1]);
 ///    bdata.try_to_boundary()
 /// });
 ///
@@ -189,7 +188,7 @@ impl BoundaryFittable for BoundaryToPoints<'_> {
 /// // ------------------------------------------------------------------------------------------
 /// use engeom::{VecDot, Vector2, SurfacePoint2, DVector, Point2};
 /// use engeom::common::{to_points, fill_gaps, linear_space};
-/// use engeom::geom2::{BndBuildFn, fit_boundary_to_surface_points, BoundaryData2};
+/// use engeom::geom2::{BndBuildFn, fit_boundary_to_surface_points, BoundaryData2, BoundaryEditor};
 /// use approx::assert_relative_eq;
 ///
 /// // We'll create ten points facing in +Y at Y=0
@@ -212,8 +211,7 @@ impl BoundaryFittable for BoundaryToPoints<'_> {
 /// // will be facing in -Y. If we reversed the order it would face in +Y.
 /// let builder: BndBuildFn = Box::new(|params: &DVector| {
 ///     let mut bdata = BoundaryData2::new_open([0.0, params[0]].into());
-///     let mut cursor = bdata.get_cursor(None);
-///     cursor.add_seg_xy(10.0, params[1]);
+///     bdata.add_seg_xy(10.0, params[1]);
 ///     bdata.try_to_boundary()
 /// });
 ///
@@ -425,7 +423,7 @@ mod tests {
     use crate::Vector2;
     use crate::common::linear_space;
     use crate::common::points::{fill_gaps, to_points};
-    use crate::geom2::BoundaryData2;
+    use crate::geom2::{BoundaryData2, BoundaryEditor};
     use approx::assert_relative_eq;
 
     #[test]

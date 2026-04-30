@@ -33,15 +33,15 @@ mod construction;
 mod data;
 mod fitting;
 
-use crate::common::PCoords;
 use crate::common::points::dist;
+use crate::common::PCoords;
 use crate::geom2::{Aabb2, ManifoldPosition2};
 use crate::{Point2, Result};
 use parry2d_f64::bounding_volume::BoundingVolume;
 use std::ops::Deref;
 
-pub use construction::BCursor;
-pub use data::BoundaryData2;
+pub use construction::*;
+pub use data::*;
 pub use fitting::*;
 
 pub trait BoundaryElement {
@@ -213,26 +213,23 @@ mod tests {
     use super::*;
     use crate::Vector2;
     use approx::assert_relative_eq;
-    use faer::rand::Rng;
     use rand::RngExt;
     use std::f64::consts::PI;
 
     fn simple_data() -> BoundaryData2 {
-        let mut data = BoundaryData2::new_open(Point2::new(0.0, 0.0));
-        let mut cursor = data.get_cursor(None);
-        cursor.add_seg_xy(1.0, 0.0);
-        cursor.add_arc_xy(1.0, 0.5, 1.0, 1.0, false);
-        cursor.add_seg_xy(0.0, 1.0);
+        let mut data = BoundaryData2::new_open_xy(0.0, 0.0);
+        data.add_seg_xy(1.0, 0.0);
+        data.add_arc_xy(1.0, 0.5, 1.0, 1.0, false);
+        data.add_seg_xy(0.0, 1.0);
         data
     }
 
     #[test]
     fn at_closest_has_correct_id() {
         let mut data = BoundaryData2::new_open(Point2::new(0.0, 0.0));
-        let mut cursor = data.get_cursor(None);
-        let e0 = cursor.add_seg_xy(1.0, 0.0);
-        let e1 = cursor.add_arc_xy(1.0, 0.5, 1.0, 1.0, false);
-        let e2 = cursor.add_seg_xy(0.0, 1.0);
+        let e0 = data.add_seg_xy(1.0, 0.0);
+        let e1 = data.add_arc_xy(1.0, 0.5, 1.0, 1.0, false);
+        let e2 = data.add_seg_xy(0.0, 1.0);
         let boundary = data.try_to_boundary().unwrap();
 
         assert_eq!(e0, boundary.at_closest_to_point(&Point2::new(0.5, 0.0)).0);
@@ -293,7 +290,6 @@ mod tests {
     fn simple_boundary_at_segment_end() {
         let data = simple_data();
         let boundary = data.try_to_boundary().unwrap();
-        // let m = boundary.at_length(boundary.elements[0].length()).unwrap();
         let m = boundary.at_length(1.0).unwrap();
         assert_relative_eq!(Point2::new(1.0, 0.0), m.point, epsilon = 1e-12);
         assert_relative_eq!(Vector2::x(), m.direction, epsilon = 1e-12)
