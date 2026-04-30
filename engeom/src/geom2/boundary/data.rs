@@ -1,4 +1,4 @@
-use crate::geom2::{BCursor, Boundary2, BoundaryEditor, BoundaryElement, Segment2};
+use crate::geom2::{BCursor, Boundary2, BoundaryEditor, BoundaryElement2, Segment2};
 use crate::{Arc2, Iso2, Point2, Result};
 use std::collections::HashMap;
 
@@ -278,7 +278,7 @@ impl BoundaryData2 {
     /// Attempts to create a boundary from the current data. Will return an error if something in
     /// the process fails.
     pub fn try_to_boundary(&self) -> Result<Boundary2> {
-        let mut elements: Vec<(u32, Box<dyn BoundaryElement>)> = Vec::new();
+        let mut elements: Vec<(u32, Box<dyn BoundaryElement2>)> = Vec::new();
         for (id, e) in self.iter() {
             let start = self.start_point_of(id)?;
             match e {

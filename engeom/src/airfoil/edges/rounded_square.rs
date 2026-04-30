@@ -1,6 +1,6 @@
 use crate::common::PCoords;
 use crate::common::points::{dist, mid_point};
-use crate::geom2::{BoundaryElement, Segment2};
+use crate::geom2::{BoundaryElement2, Segment2};
 use crate::na::{Dyn, Matrix, Owned, U1, U6, Vector, Vector6};
 use crate::{Arc2, Circle2, Curve2, Point2, Result};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
@@ -216,7 +216,7 @@ fn check_update(best: &mut f64, candidate: f64) {
     }
 }
 
-fn dist_to(element: &impl BoundaryElement, p: &impl PCoords<2>) -> f64 {
+fn dist_to(element: &impl BoundaryElement2, p: &impl PCoords<2>) -> f64 {
     let closest = element.closest_to_point(p);
     let d = dist(&closest, p);
     if closest.normal_scalar_projection(p) < 0.0 {

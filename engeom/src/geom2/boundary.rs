@@ -4,7 +4,7 @@
 //!
 //! A boundary is very similar to a [`Curve2`] element, except that while a `Curve2` is composed
 //! entirely of line segments, a boundary may consist of different types of elements, all of which
-//! must implement the [`BoundaryElement`] trait. Currently, only [`Segment2`] and [`Arc2`] are
+//! must implement the [`BoundaryElement2`] trait. Currently, only [`Segment2`] and [`Arc2`] are
 //! implemented.
 //!
 //! In comparison to a `Curve2`, a boundary can represent curved geometry with near-theoretical
@@ -33,8 +33,8 @@ mod construction;
 mod data;
 mod fitting;
 
-use crate::common::points::dist;
 use crate::common::PCoords;
+use crate::common::points::dist;
 use crate::geom2::{Aabb2, ManifoldPosition2};
 use crate::{Point2, Result};
 use parry2d_f64::bounding_volume::BoundingVolume;
@@ -44,46 +44,80 @@ pub use construction::*;
 pub use data::*;
 pub use fitting::*;
 
-pub trait BoundaryElement {
+/// A trait representing a single element of a boundary in R^2, which is a 1-manifold embedded in 2D
+/// space. A boundary element has its manifold length dimension, and at every point along its
+/// length it has a position in 2D space, a vector in 2D space tangent to the manifold at that
+/// position, and a normal vector in 2D space perpendicular to the tangent vector. The normal
+/// vector is oriented such that, in conformance with the counterclockwise winding order convention,
+/// it points to the right of the tangent direction vector.
+///
+/// The boundary element trait requires a few common operations on boundaries. The element must
+/// be able to provide its total length, its bounding volume, and few spatial queries, and the
+/// ability to generate the position/tangent/normal triplet at any position along its length.
+pub trait BoundaryElement2 {
     /// The total length of the element's manifold domain. For example, for a line segment this
     /// would be the distance from the start to the end point. For an arc it would be the total
     /// arc length.
     fn length(&self) -> f64;
 
-    ///
+    /// Generate a manifold position information struct at any arbitrary length along the element.
+    /// Notice that this function does not require the length to be within the valid range of the
+    /// element `[0, length()]`, it will return positions before the start or beyond the end of
+    /// the element. It is up to the caller to ensure that they are entering a valid length if
+    /// they are performing an operation that requires one.
     ///
     /// # Arguments
     ///
-    /// * `length`:
+    /// * `length`: the length along the element to generate the position. If the operation is not
+    ///   intentionally trying to retrieve a point outside the valid manifold, this number must be
+    ///   between 0 and the `.length()` of the element.
     ///
     /// returns: ManifoldPosition2
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
     fn at_length(&self, length: f64) -> ManifoldPosition2;
 
+    /// Retrieve the manifold position that is closest to a test position in 2D space.
+    ///
+    /// # Arguments
+    ///
+    /// * `point`: The test point to find the position on the manifold closest to
+    ///
+    /// returns: ManifoldPosition2
     fn closest_to_point(&self, point: &dyn PCoords<2>) -> ManifoldPosition2;
 
+    /// Gets the axis-aligned bounding box of the element
     fn aabb(&self) -> Aabb2;
 
+    /// Return the position at the start of the element's manifold
     fn at_start(&self) -> ManifoldPosition2 {
         self.at_length(0.0)
     }
 
+    /// Return the position at the end of the element's manifold
     fn at_end(&self) -> ManifoldPosition2 {
         self.at_length(self.length())
     }
 
+    /// Generate points that represent the geometry of the element. The provided `tol` is a maximum
+    /// tolerance that the theoretical manifold geometry may vary from the interpolated positions
+    /// between the points.  On a line segment, for example, the `tol` argument has no effect,
+    /// because the theoretical line segment is perfectly represented by two end points. On an
+    /// arc, however, there is a cosine error based on the radius and the spacing. The points will
+    /// be placed densely enough that the cosine error will remain below the provided tolerance.
+    ///
+    /// # Arguments
+    ///
+    /// * `tol`: The maximum deviation between the theoretical geometry of the element and the
+    ///   linear interpolation between the generated points. Lowering this value will result in
+    ///   more points being created.
+    ///
+    /// returns: Vec<OPoint<f64, Const<2>>, Global>
     fn to_points(&self, tol: f64) -> Vec<Point2>;
 }
 
 /// Contains the geometry of a boundary, which is a collection of elements that can be queried for
-///
+/// distances, intersections, and so on.
 pub struct Boundary2 {
-    elements: Vec<Box<dyn BoundaryElement>>,
+    elements: Vec<Box<dyn BoundaryElement2>>,
     ids: Vec<u32>,
     lengths: Vec<f64>,
     is_closed: bool,
@@ -91,7 +125,7 @@ pub struct Boundary2 {
 
 impl Boundary2 {
     pub fn try_new(
-        elements: Vec<(u32, Box<dyn BoundaryElement>)>,
+        elements: Vec<(u32, Box<dyn BoundaryElement2>)>,
         is_closed: bool,
     ) -> Result<Self> {
         if elements.is_empty() {
@@ -118,7 +152,7 @@ impl Boundary2 {
         })
     }
 
-    pub fn get_element(&self, id: u32) -> Option<&dyn BoundaryElement> {
+    pub fn get_element(&self, id: u32) -> Option<&dyn BoundaryElement2> {
         self.ids
             .iter()
             .position(|&x| x == id)
