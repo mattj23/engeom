@@ -118,11 +118,7 @@ impl BoundaryData2 {
         self.inner.add_arc_xy(cx, cy, ex, ey, clockwise)
     }
 
-    fn add_corner_fillets(
-        &mut self,
-        points: Vec<(f64, f64)>,
-        radius: f64,
-    ) -> PyResult<Vec<u32>> {
+    fn add_corner_fillets(&mut self, points: Vec<(f64, f64)>, radius: f64) -> PyResult<Vec<u32>> {
         let pts = points
             .iter()
             .map(|(x, y)| engeom::Point2::new(*x, *y))
@@ -144,7 +140,7 @@ impl BoundaryData2 {
         self.inner.len()
     }
 
-    fn try_to_boundary(&self) -> PyResult<Boundary2> {
+    fn to_boundary(&self) -> PyResult<Boundary2> {
         self.inner
             .try_to_boundary()
             .map(Boundary2::from_inner)

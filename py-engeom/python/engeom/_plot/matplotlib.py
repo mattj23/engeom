@@ -3,7 +3,7 @@ from typing import List, Iterable, Tuple, Union
 import numpy
 
 from .common import LabelPlace
-from engeom.geom2 import Curve2, Circle2, Aabb2, Point2, Vector2, SurfacePoint2, Arc2, Segment2
+from engeom.geom2 import Curve2, Circle2, Aabb2, Point2, Vector2, SurfacePoint2, Arc2, Segment2, Boundary2
 from engeom.geom3 import Vector3, Mesh, Point3, Iso3, Line3
 from engeom.metrology import Distance2
 
@@ -375,6 +375,20 @@ else:
             :param kwargs: keyword arguments to pass to the plot function
             """
             self.ax.plot([seg.a.x, seg.b.x], [seg.a.y, seg.b.y], **kwargs)
+
+        def boundary(self, boundary: Boundary2, tol: float | None = None, **kwargs):
+            tol = tol or boundary.aabb.extent.norm() / 1000
+            points = boundary.to_points(tol)
+            self.ax.plot(points[:, 0], points[:, 1], **kwargs)
+
+        def boundary_normals(self, boundary: Boundary2, n: int, length: float, color: str | None = None, linewidth=1.0):
+            for t in numpy.linspace(0, boundary.length(), n):
+                m = boundary.at_length(t)
+                kwargs = {"linewidth": linewidth}
+                if color:
+                    kwargs["color"] = color
+
+                self.arrow(m.point, m.surface_point.at_distance(length), **kwargs)
 
         def plot_circle(self, *circle: Circle2 | Iterable[float], fill=False, **kwargs):
             """

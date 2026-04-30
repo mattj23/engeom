@@ -1643,6 +1643,281 @@ class Aabb2:
         ...
 
 
+class Manifold1Pos2:
+    """
+    A position along a 1-manifold (boundary) embedded in 2D space.
+
+    Instances are returned by spatial query methods on ``Boundary2``, such as ``at_length``,
+    ``at_start``, ``at_end``, and ``at_closest_to_point``.  They carry the full geometric state
+    at that location: where the point is, which way the manifold is travelling, and what the
+    outward surface normal is.
+    """
+
+    @property
+    def l(self) -> float:
+        """
+        The arc-length coordinate of this position measured from the start of the boundary.
+        :return: the length along the boundary to this position.
+        """
+        ...
+
+    @property
+    def point(self) -> Point2:
+        """
+        The 2D world-space position of this manifold location.
+        :return: the point in 2D space.
+        """
+        ...
+
+    @property
+    def direction(self) -> Vector2:
+        """
+        The unit tangent vector of the manifold at this position, pointing in the direction of
+        increasing arc length.
+        :return: the tangent direction vector.
+        """
+        ...
+
+    @property
+    def normal(self) -> Vector2:
+        """
+        The unit surface normal at this position.  By the counter-clockwise winding convention
+        this is the tangent direction rotated 90 degrees clockwise (pointing to the right of
+        travel).
+        :return: the surface normal vector.
+        """
+        ...
+
+    @property
+    def surface_point(self) -> SurfacePoint2:
+        """
+        The position and surface normal combined as a ``SurfacePoint2``.
+        :return: a ``SurfacePoint2`` at this manifold position.
+        """
+        ...
+
+    @property
+    def direction_line(self) -> Line2:
+        """
+        A ``Line2`` through this position whose direction matches the manifold tangent.
+        :return: a ``Line2`` aligned with the tangent direction at this position.
+        """
+        ...
+
+
+class BoundaryData2:
+    """
+    A mutable builder for 2D boundary geometry.
+
+    ``BoundaryData2`` accumulates line segments and arcs in order, maintaining the continuity
+    constraint that each new element must begin where the previous one ended.  Once all elements
+    have been added, call ``try_to_boundary()`` to produce a queryable ``Boundary2``.
+
+    Boundaries may be *open* (a path with distinct start and end points) or *closed* (a loop
+    that wraps back onto itself).
+
+    **Open boundary** — provide a starting point::
+
+        data = BoundaryData2(x=0.0, y=0.0)
+        data.add_seg_xy(1.0, 0.0)
+
+    **Closed boundary** — no starting point needed::
+
+        data = BoundaryData2(closed=True)
+        data.add_seg_xy(1.0, 0.0)
+    """
+
+    def __init__(self, x: float | None = None, y: float | None = None, closed: bool = False):
+        """
+        Create a new boundary data builder.
+
+        For an open boundary, supply ``x`` and ``y`` as the starting point.
+        For a closed boundary, set ``closed=True`` and omit ``x``/``y``.
+
+        :param x: x-coordinate of the open boundary's start point.
+        :param y: y-coordinate of the open boundary's start point.
+        :param closed: if ``True``, create a closed boundary (``x`` and ``y`` are ignored).
+        :raises ValueError: if ``closed=False`` and ``x`` or ``y`` is not provided.
+        """
+        ...
+
+    @staticmethod
+    def new_open(x: float, y: float) -> BoundaryData2:
+        """
+        Create an open boundary starting at ``(x, y)``.
+
+        :param x: x-coordinate of the start point.
+        :param y: y-coordinate of the start point.
+        :return: a new open ``BoundaryData2``.
+        """
+        ...
+
+    @staticmethod
+    def new_closed() -> BoundaryData2:
+        """
+        Create an empty closed boundary.
+
+        :return: a new closed ``BoundaryData2``.
+        """
+        ...
+
+    def add_seg_xy(self, x: float, y: float) -> int:
+        """
+        Append a line segment whose end point is ``(x, y)``.  The segment begins at the end
+        point of the previous element (or the boundary start point if no elements have been
+        added yet).
+
+        :param x: x-coordinate of the segment end point.
+        :param y: y-coordinate of the segment end point.
+        :return: the integer element id assigned to this segment.
+        """
+        ...
+
+    def add_arc_xy(self, cx: float, cy: float, ex: float, ey: float, clockwise: bool) -> int:
+        """
+        Append an arc defined by a center point and an end point.  The arc begins at the end
+        point of the previous element and sweeps through the given angle direction to ``(ex, ey)``.
+
+        :param cx: x-coordinate of the arc center.
+        :param cy: y-coordinate of the arc center.
+        :param ex: x-coordinate of the arc end point.
+        :param ey: y-coordinate of the arc end point.
+        :param clockwise: if ``True``, the arc sweeps clockwise; otherwise counter-clockwise.
+        :return: the integer element id assigned to this arc.
+        """
+        ...
+
+    def add_corner_fillets(
+        self,
+        points: list[tuple[float, float]],
+        radius: float,
+    ) -> list[int]:
+        """
+        Append a sequence of line segments joined by circular arc fillets.
+
+        For ``n`` corner points, ``n`` segments and ``n-1`` arc fillets are created.  At least
+        two points must be provided.  The method raises ``ValueError`` if the fillet radius is
+        too large for any corner, or if the boundary is empty when called.
+
+        :param points: a list of ``(x, y)`` tuples defining the segment end-points / corners.
+        :param radius: the fillet radius at each interior corner.
+        :return: the list of element ids created (segments and arcs interleaved).
+        :raises ValueError: if fewer than two points are given or any fillet is geometrically
+            invalid.
+        """
+        ...
+
+    def transform_by(self, iso: Iso2) -> None:
+        """
+        Apply an isometry to all geometry stored in this builder in place.
+
+        :param iso: the isometry to apply.
+        """
+        ...
+
+    def is_closed(self) -> bool:
+        """
+        Return ``True`` if this is a closed boundary.
+        :return: ``True`` for closed, ``False`` for open.
+        """
+        ...
+
+    def __len__(self) -> int:
+        """Return the number of elements currently in the builder."""
+        ...
+
+    def to_boundary(self) -> Boundary2:
+        """
+        Build a queryable ``Boundary2`` from the accumulated elements.
+
+        :return: a new ``Boundary2``.
+        :raises ValueError: if the geometry is inconsistent (e.g. duplicate points).
+        """
+        ...
+
+
+class Boundary2:
+    """
+    A queryable 2D boundary composed of line segments and arcs.
+
+    ``Boundary2`` instances are produced by ``BoundaryData2.try_to_boundary()``.  Once
+    created the geometry is immutable.  The boundary may be open or closed.
+
+    Spatial queries return ``Manifold1Pos2`` objects that carry the full geometric state
+    (position, tangent direction, and surface normal) at the queried location.
+    """
+
+    def is_closed(self) -> bool:
+        """
+        Return ``True`` if this boundary forms a closed loop.
+        :return: ``True`` for closed, ``False`` for open.
+        """
+        ...
+
+    def length(self) -> float:
+        """
+        Return the total arc length of the boundary.
+        :return: the total length.
+        """
+        ...
+
+    def at_length(self, length: float) -> Manifold1Pos2:
+        """
+        Return the manifold position at a given arc-length along the boundary.
+
+        :param length: the arc length, which must be in ``[0, self.length()]``.
+        :return: the manifold position at ``length``.
+        :raises ValueError: if ``length`` is outside the valid range.
+        """
+        ...
+
+    def at_start(self) -> Manifold1Pos2:
+        """
+        Return the manifold position at the start of the boundary (``l = 0``).
+        :return: the manifold position at the start.
+        """
+        ...
+
+    def at_end(self) -> Manifold1Pos2:
+        """
+        Return the manifold position at the end of the boundary (``l = length()``).
+        :return: the manifold position at the end.
+        """
+        ...
+
+    def at_closest_to_point(self, point: Point2) -> Tuple[int, Manifold1Pos2]:
+        """
+        Find the point on the boundary closest to a query point.
+
+        :param point: the query point.
+        :return: a tuple of ``(element_id, manifold_position)`` where ``element_id`` is the
+            integer id of the element that contains the closest point.
+        """
+        ...
+
+    def to_points(self, tol: float) -> NDArray[float]:
+        """
+        Sample the boundary as an array of 2D points.
+
+        The points are placed densely enough that the chord error between adjacent points and
+        the true boundary geometry does not exceed ``tol``.  On straight segments this has no
+        effect; on arcs it controls the angular step size.
+
+        :param tol: the maximum chord deviation from the true geometry.
+        :return: a numpy array of shape ``(N, 2)`` containing the sampled points.
+        :raises ValueError: if sampling fails.
+        """
+        ...
+
+    @property
+    def aabb(self) -> Aabb2:
+        """
+        The axis-aligned bounding box of the boundary.
+        :return: the bounding box.
+        """
+        ...
+
+
 def rot90(dir: AngleDir) -> Iso2:
     """
     Returns an isometry representing a 90-degree rotation in the given direction.
