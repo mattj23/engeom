@@ -126,3 +126,24 @@ impl From<Resample> for engeom::Resample {
         }
     }
 }
+
+#[pyclass(eq, eq_int, from_py_object, module = "engeom")]
+#[derive(PartialEq, Copy, Clone, Debug)]
+pub enum VecDot {
+    /// Use the raw dot product value as-is (can be negative).
+    AsIs = 0,
+    /// Use the absolute value of the dot product.
+    Abs = 1,
+    /// Clamp the dot product to zero from below (ignore anti-parallel normals).
+    ClampPos = 2,
+}
+
+impl From<VecDot> for engeom::VecDot {
+    fn from(val: VecDot) -> Self {
+        match val {
+            VecDot::AsIs => engeom::VecDot::AsIs,
+            VecDot::Abs => engeom::VecDot::Abs,
+            VecDot::ClampPos => engeom::VecDot::ClampPos,
+        }
+    }
+}

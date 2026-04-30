@@ -1,10 +1,13 @@
 use crate::bounding::Aabb2;
-use crate::conversions::points_to_array;
+use crate::common::VecDot;
+use crate::conversions::{array_to_points2, points_to_array};
 use crate::geom2::{Iso2, Line2, Point2, SurfacePoint2, Vector2};
 use engeom::geom2::BoundaryEditor;
-use numpy::{IntoPyArray, PyArray2};
+use numpy::ndarray::{Array1, Array2};
+use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
-use pyo3::{Bound, PyResult, Python, pyclass, pymethods};
+use pyo3::prelude::PyAnyMethods;
+use pyo3::{Bound, Py, PyAny, PyRef, PyResult, Python, pyclass, pyfunction, pymethods};
 
 // ================================================================================================
 // ManifoldPosition2
@@ -80,6 +83,10 @@ pub struct BoundaryData2 {
 impl BoundaryData2 {
     pub fn from_inner(inner: engeom::geom2::BoundaryData2) -> Self {
         Self { inner }
+    }
+
+    pub fn get_inner(&self) -> &engeom::geom2::BoundaryData2 {
+        &self.inner
     }
 }
 
@@ -218,6 +225,35 @@ impl Boundary2 {
         Aabb2::from_inner(self.inner.aabb())
     }
 
+    fn at_lengths<'py>(
+        &self,
+        py: Python<'py>,
+        lengths: PyReadonlyArray1<'py, f64>,
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let lengths = lengths
+            .as_slice()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        let mut result = Array2::zeros((lengths.len(), 6));
+
+        for (i, &l) in lengths.iter().enumerate() {
+            let m = self
+                .inner
+                .at_length(l)
+                .ok_or_else(|| PyValueError::new_err(format!("length {l} is out of bounds")))?;
+            let d = m.direction.into_inner();
+            let n = m.normal.into_inner();
+            result[[i, 0]] = m.point.x;
+            result[[i, 1]] = m.point.y;
+            result[[i, 2]] = d.x;
+            result[[i, 3]] = d.y;
+            result[[i, 4]] = n.x;
+            result[[i, 5]] = n.y;
+        }
+
+        Ok(result.into_pyarray(py))
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "<Boundary2 l={} ({})>",
@@ -229,4 +265,103 @@ impl Boundary2 {
             }
         )
     }
+}
+
+// ================================================================================================
+// Fitting functions
+// ================================================================================================
+
+fn make_builder(py_builder: Py<PyAny>) -> engeom::geom2::BndBuildFn {
+    Box::new(move |params: &engeom::DVector| {
+        let arr = Array1::from_iter(params.iter().copied());
+
+        // `Python::attach` is re-entrant in PyO3 0.28 and safe to call here: the LM
+        // minimiser runs synchronously inside a #[pyfunction] that already holds the GIL.
+        Python::attach(|py| {
+            let np_arr = arr.into_pyarray(py);
+
+            let result = py_builder
+                .bind(py)
+                .call1((np_arr,))
+                .map_err(|e| e.to_string())?;
+
+            let bdata = result
+                .extract::<PyRef<BoundaryData2>>()
+                .map_err(|_| "builder must return a BoundaryData2".to_string())?;
+
+            bdata.get_inner().try_to_boundary()
+        })
+    })
+}
+
+fn dvec_from_array(arr: &PyReadonlyArray1<f64>) -> PyResult<engeom::DVector> {
+    let s = arr
+        .as_slice()
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    Ok(engeom::DVector::from_column_slice(s))
+}
+
+fn dvec_to_array<'py>(py: Python<'py>, v: engeom::DVector) -> Bound<'py, PyArray1<f64>> {
+    Array1::from_iter(v.iter().copied()).into_pyarray(py)
+}
+
+#[pyfunction]
+#[pyo3(signature = (points, builder, initial, ignore_ends = false))]
+pub fn fit_boundary_to_points<'py>(
+    py: Python<'py>,
+    points: PyReadonlyArray2<'py, f64>,
+    builder: Py<PyAny>,
+    initial: PyReadonlyArray1<'py, f64>,
+    ignore_ends: bool,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let pts = array_to_points2(&points.as_array())?;
+    let initial_vec = dvec_from_array(&initial)?;
+    let bld = make_builder(builder);
+
+    let result = engeom::geom2::fit_boundary_to_points(&pts, &bld, initial_vec, ignore_ends)
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+    Ok(dvec_to_array(py, result))
+}
+
+#[pyfunction]
+#[pyo3(signature = (points, builder, initial, weight_mode, ignore_ends = false))]
+pub fn fit_boundary_to_surface_points<'py>(
+    py: Python<'py>,
+    points: PyReadonlyArray2<'py, f64>,
+    builder: Py<PyAny>,
+    initial: PyReadonlyArray1<'py, f64>,
+    weight_mode: VecDot,
+    ignore_ends: bool,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let arr = points.as_array();
+    if arr.ncols() != 4 {
+        return Err(PyValueError::new_err(
+            "points array must have 4 columns: [x, y, nx, ny]",
+        ));
+    }
+    let sps: Vec<engeom::SurfacePoint2> = arr
+        .rows()
+        .into_iter()
+        .map(|r| {
+            engeom::SurfacePoint2::new_normalize(
+                engeom::Point2::new(r[0], r[1]),
+                engeom::Vector2::new(r[2], r[3]),
+            )
+        })
+        .collect();
+
+    let initial_vec = dvec_from_array(&initial)?;
+    let bld = make_builder(builder);
+
+    let result = engeom::geom2::fit_boundary_to_surface_points(
+        &sps,
+        &bld,
+        initial_vec,
+        weight_mode.into(),
+        ignore_ends,
+    )
+    .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+    Ok(dvec_to_array(py, result))
 }

@@ -3,6 +3,21 @@ from enum import Enum
 
 type ResampleEnum = Resample_Count | Resample_Spacing | Resample_MaxSpacing
 
+class VecDot(Enum):
+    """
+    Controls how certain algorithms use the results of a dot product between two direction vectors.
+    """
+
+    AsIs = 0
+    """ Use the raw dot product value as-is (can be negative for anti-parallel normals). """
+
+    Abs = 1
+    """ Use the absolute value of the dot product (de-weights orthogonal normals, ignores direction). """
+
+    ClampPos = 2
+    """ Clamp to zero from below (only weight samples whose normal faces the same way as the boundary). """
+
+
 class DeviationMode(Enum):
     """
     Represents the different methods of calculating deviation between a point and another geometry.

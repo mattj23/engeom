@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import Iterable, Tuple, TypeVar, Iterator, Any, List
+from typing import Callable, Iterable, Tuple, TypeVar, Iterator, Any, List
 
 from numpy.typing import NDArray
-from engeom.engeom import ResampleEnum
+from engeom.engeom import ResampleEnum, VecDot
 from engeom.common import AngleDir
 
 from engeom import geom3
@@ -1600,8 +1600,8 @@ class Aabb2:
 
     def expand(self, d: float) -> Aabb2:
         """
-        Expand the AABB by a given distance in all directions. The resulting height and
-        width will be increased by 2 * d.
+        Expand the AABB by a given distance in all directions. The resulting height and width will be increased by
+        2 * d.
 
         :param d: the distance to expand the AABB by.
         :return: a new AABB object with the expanded bounds.
@@ -1610,8 +1610,8 @@ class Aabb2:
 
     def shrink(self, d: float) -> Aabb2:
         """
-        Shrink the AABB by a given distance in all directions. The resulting height and
-        width will be decreased by 2 * d.
+        Shrink the AABB by a given distance in all directions. The resulting height and width will be decreased by
+        2 * d.
 
         :param d: the distance to shrink the AABB by.
         :return: a new AABB object with the shrunk bounds.
@@ -1647,10 +1647,9 @@ class Manifold1Pos2:
     """
     A position along a 1-manifold (boundary) embedded in 2D space.
 
-    Instances are returned by spatial query methods on ``Boundary2``, such as ``at_length``,
-    ``at_start``, ``at_end``, and ``at_closest_to_point``.  They carry the full geometric state
-    at that location: where the point is, which way the manifold is travelling, and what the
-    outward surface normal is.
+    Instances are returned by spatial query methods on ``Boundary2``, such as ``at_length``, ``at_start``, ``at_end``,
+    and ``at_closest_to_point``.  They carry the full geometric state at that location: where the point is, which way
+    the manifold is traveling, and what the outward surface normal is.
     """
 
     @property
@@ -1672,8 +1671,7 @@ class Manifold1Pos2:
     @property
     def direction(self) -> Vector2:
         """
-        The unit tangent vector of the manifold at this position, pointing in the direction of
-        increasing arc length.
+        The unit tangent vector of the manifold at this position, pointing in the direction of increasing arc length.
         :return: the tangent direction vector.
         """
         ...
@@ -1681,9 +1679,8 @@ class Manifold1Pos2:
     @property
     def normal(self) -> Vector2:
         """
-        The unit surface normal at this position.  By the counter-clockwise winding convention
-        this is the tangent direction rotated 90 degrees clockwise (pointing to the right of
-        travel).
+        The unit surface normal at this position.  By the counter-clockwise winding convention this is the tangent
+        direction rotated 90 degrees clockwise (pointing to the right of travel).
         :return: the surface normal vector.
         """
         ...
@@ -1709,30 +1706,33 @@ class BoundaryData2:
     """
     A mutable builder for 2D boundary geometry.
 
-    ``BoundaryData2`` accumulates line segments and arcs in order, maintaining the continuity
-    constraint that each new element must begin where the previous one ended.  Once all elements
-    have been added, call ``try_to_boundary()`` to produce a queryable ``Boundary2``.
+    ``BoundaryData2`` accumulates line segments and arcs in order, maintaining the continuity constraint that each
+    new element must begin where the previous one ended.  Once all elements have been added, call ``to_boundary()``
+    to produce a queryable ``Boundary2``.
 
-    Boundaries may be *open* (a path with distinct start and end points) or *closed* (a loop
-    that wraps back onto itself).
+    Boundaries may be *open* (a path with distinct start and end points) or *closed* (a loop that wraps back onto
+    itself).
 
-    **Open boundary** — provide a starting point::
+    **Open boundary**: provide a starting point::
 
         data = BoundaryData2(x=0.0, y=0.0)
         data.add_seg_xy(1.0, 0.0)
 
-    **Closed boundary** — no starting point needed::
+    **Closed boundary**: no starting point needed::
 
         data = BoundaryData2(closed=True)
         data.add_seg_xy(1.0, 0.0)
+        data.add_seg_xy(2.0, 1.0)
+        data.add_seg_xy(1.5, 2.0)
     """
 
     def __init__(self, x: float | None = None, y: float | None = None, closed: bool = False):
         """
         Create a new boundary data builder.
 
-        For an open boundary, supply ``x`` and ``y`` as the starting point.
-        For a closed boundary, set ``closed=True`` and omit ``x``/``y``.
+        For an open boundary, supply ``x`` and ``y`` as the starting point. For a closed boundary, set
+        ``closed=True`` and omit ``x``/``y``. Alternately, use the ``new_open`` or ``new_closed`` static methods for
+        more explicit construction.
 
         :param x: x-coordinate of the open boundary's start point.
         :param y: y-coordinate of the open boundary's start point.
@@ -1763,9 +1763,8 @@ class BoundaryData2:
 
     def add_seg_xy(self, x: float, y: float) -> int:
         """
-        Append a line segment whose end point is ``(x, y)``.  The segment begins at the end
-        point of the previous element (or the boundary start point if no elements have been
-        added yet).
+        Append a line segment whose end point is ``(x, y)``.  The segment begins at the end point of the previous
+        element (or the boundary start point if no elements have been added yet).
 
         :param x: x-coordinate of the segment end point.
         :param y: y-coordinate of the segment end point.
@@ -1775,8 +1774,11 @@ class BoundaryData2:
 
     def add_arc_xy(self, cx: float, cy: float, ex: float, ey: float, clockwise: bool) -> int:
         """
-        Append an arc defined by a center point and an end point.  The arc begins at the end
-        point of the previous element and sweeps through the given angle direction to ``(ex, ey)``.
+        Append an arc defined by a center point and an end point.  The arc begins at the end point of the previous
+        element and sweeps through the given angle direction to ``(ex, ey)``.
+
+        Note that the distance from the previous end point to the center must be the same as the distance from the
+        center to the end point, or an error will be thrown when the geometry is constructed.
 
         :param cx: x-coordinate of the arc center.
         :param cy: y-coordinate of the arc center.
@@ -1795,9 +1797,9 @@ class BoundaryData2:
         """
         Append a sequence of line segments joined by circular arc fillets.
 
-        For ``n`` corner points, ``n`` segments and ``n-1`` arc fillets are created.  At least
-        two points must be provided.  The method raises ``ValueError`` if the fillet radius is
-        too large for any corner, or if the boundary is empty when called.
+        For ``n`` corner points, ``n`` segments and ``n-1`` arc fillets are created.  At least two points must be
+        provided.  The method raises ``ValueError`` if the fillet radius is too large for any corner, or if the
+        boundary is empty when called.
 
         :param points: a list of ``(x, y)`` tuples defining the segment end-points / corners.
         :param radius: the fillet radius at each interior corner.
@@ -1840,11 +1842,11 @@ class Boundary2:
     """
     A queryable 2D boundary composed of line segments and arcs.
 
-    ``Boundary2`` instances are produced by ``BoundaryData2.try_to_boundary()``.  Once
-    created the geometry is immutable.  The boundary may be open or closed.
+    ``Boundary2`` instances are produced by ``BoundaryData2.to_boundary()``. Once created the geometry is immutable.
+    The boundary may be open or closed.
 
-    Spatial queries return ``Manifold1Pos2`` objects that carry the full geometric state
-    (position, tangent direction, and surface normal) at the queried location.
+    Spatial queries return ``Manifold1Pos2`` objects that carry the full geometric state (position, tangent direction,
+    and surface normal) at the queried location.
     """
 
     def is_closed(self) -> bool:
@@ -1890,8 +1892,36 @@ class Boundary2:
         Find the point on the boundary closest to a query point.
 
         :param point: the query point.
-        :return: a tuple of ``(element_id, manifold_position)`` where ``element_id`` is the
-            integer id of the element that contains the closest point.
+        :return: a tuple of ``(element_id, manifold_position)`` where ``element_id`` is the integer id of the element
+            that contains the closest point.
+        """
+        ...
+
+    def at_lengths(self, lengths: NDArray[float]) -> NDArray[float]:
+        """
+        Evaluate the boundary at multiple arc-length positions in a single call.
+
+        For each length value, the method returns the position, tangent direction, and surface normal at that location
+        on the manifold.  The result is an ``(N, 6)`` array whose columns are arranged as:
+
+        ======  ====================================
+        Col 0   x-coordinate of the point
+        Col 1   y-coordinate of the point
+        Col 2   x-component of the unit tangent
+        Col 3   y-component of the unit tangent
+        Col 4   x-component of the surface normal
+        Col 5   y-component of the surface normal
+        ======  ====================================
+
+        The tangent points in the direction of increasing arc length.  The normal is the tangent rotated 90 degrees
+        clockwise (consistent with the counter-clockwise winding convention, so it points to the *right* of travel /
+        outward from a CCW-wound closed boundary).
+
+        :param lengths: a 1-D ``float64`` numpy array of arc-length positions.  Every value must lie in
+            ``[0, self.length()]``; any out-of-range value raises ``ValueError``.
+        :return: a numpy array of shape ``(N, 6)`` where ``N = len(lengths)``.
+        :raises ValueError: if any length value is outside the valid range, or if ``lengths`` is not a contiguous
+            1-D array.
         """
         ...
 
@@ -1899,9 +1929,9 @@ class Boundary2:
         """
         Sample the boundary as an array of 2D points.
 
-        The points are placed densely enough that the chord error between adjacent points and
-        the true boundary geometry does not exceed ``tol``.  On straight segments this has no
-        effect; on arcs it controls the angular step size.
+        The points are placed densely enough that the chord error between adjacent points and the true boundary
+        geometry does not exceed ``tol``.  On straight segments this has no effect; on arcs it controls the angular
+        step size.
 
         :param tol: the maximum chord deviation from the true geometry.
         :return: a numpy array of shape ``(N, 2)`` containing the sampled points.
@@ -1916,6 +1946,67 @@ class Boundary2:
         :return: the bounding box.
         """
         ...
+
+
+def fit_boundary_to_points(
+    points: NDArray[float],
+    builder: Callable[[NDArray[float]], BoundaryData2],
+    initial: NDArray[float],
+    ignore_ends: bool = False,
+) -> NDArray[float]:
+    """
+    Fit a boundary to a set of 2D points using Levenberg-Marquardt optimization.
+
+    Residuals are the unsigned distances from each point to its nearest location on the boundary.
+
+    :param points: a numpy array of shape ``(N, 2)`` containing the sample points.
+    :param builder: a callable that accepts a 1-D ``float64`` numpy array of parameters and returns a ``BoundaryData2``.
+        Raise any exception to signal that the parameter vector produces invalid geometry; the optimizer treats that
+        step as a failed evaluation.
+    :param initial: a 1-D ``float64`` numpy array containing the initial parameter guess. The length determines the
+        number of optimization parameters.
+    :param ignore_ends: if ``True``, samples that project onto the two endpoints of an open boundary contribute zero
+        residual (useful when boundary extent is unknown).
+    :return: a 1-D ``float64`` numpy array of the optimized parameters.
+    :raises ValueError: if the initial guess causes the builder to fail, or if the optimizer does not converge.
+    """
+    ...
+
+
+def fit_boundary_to_surface_points(
+    points: NDArray[float],
+    builder: Callable[[NDArray[float]], BoundaryData2],
+    initial: NDArray[float],
+    weight_mode: VecDot,
+    ignore_ends: bool = False,
+) -> NDArray[float]:
+    """
+    Fit a boundary to a set of 2D surface points using Levenberg-Marquardt optimization.
+
+    ``points`` is an ``(N, 4)`` array whose columns are ``[x, y, nx, ny]``: the first two columns are the sample
+    positions and the last two are the outward normal vectors (normalized internally).  Residuals are the unsigned
+    distances from each sample to its nearest location on the boundary, weighted by the dot product of the sample normal
+    with the boundary normal. The ``weight_mode`` parameter controls how the dot product is applied:
+
+    * ``VecDot.AsIs``     : raw dot product (can downweight or negate antiparallel samples).
+    * ``VecDot.Abs``      : absolute value (de-weights orthogonal normals, ignores direction).
+    * ``VecDot.ClampPos`` : clamped to ``[0, 1]`` (ignores samples facing away from boundary).
+
+    I suggest that you use ``VecDot.ClampPos`` if you know that the boundary normal and the surface point normals are
+    definitely facing the correct directions and want to take advantage of the additional filtering.  Otherwise, I
+    recommend using ``VecDot.Abs`` if you aren't sure that the boundary will be facing the correct way, since it won't
+    penalize the optimizer for "flipping" the boundary normal during optimization.
+
+    :param points: a numpy array of shape ``(N, 4)`` with columns ``[x, y, nx, ny]``.
+    :param builder: a callable that accepts a 1-D ``float64`` numpy array of parameters and returns a ``BoundaryData2``.
+    :param initial: a 1-D ``float64`` numpy array containing the initial parameter guess.
+    :param weight_mode: the ``VecDot`` mode to use for normal-based weighting.
+    :param ignore_ends: if ``True``, samples projecting onto the endpoints of an open boundary contribute zero residual.
+    :return: a 1-D ``float64`` numpy array of the optimized parameters.
+    :raises ValueError: if ``points`` does not have exactly 4 columns, if the initial guess causes the builder to fail,
+        or if the optimizer does not converge.
+    """
+    ...
 
 
 def rot90(dir: AngleDir) -> Iso2:
@@ -1943,8 +2034,7 @@ def rot270(dir: AngleDir) -> Iso2:
 def signed_angle(v1: Vector2, v2: Vector2) -> float:
     """
     Returns the signed angle from `v1` to `v2`, in radians, in the range (-π, π].
-    Positive means the shortest rotation from `v1` to `v2` is counter-clockwise; negative means
-    clockwise.
+    Positive means the shortest rotation from `v1` to `v2` is counter-clockwise; negative means clockwise.
 
     :param v1: The reference vector.
     :param v2: The vector to measure the angle to.
@@ -1955,8 +2045,7 @@ def signed_angle(v1: Vector2, v2: Vector2) -> float:
 
 def directed_angle(v1: Vector2, v2: Vector2, direction: AngleDir) -> float:
     """
-    Returns the angle from `v1` to `v2` measured in the given rotational direction, in radians,
-    in the range [0, 2π].
+    Returns the angle from `v1` to `v2` measured in the given rotational direction, in radians, in the range [0, 2π].
 
     :param v1: The reference vector.
     :param v2: The vector to measure the angle to.

@@ -55,6 +55,11 @@ fn register_geom2(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_class::<boundary2::Manifold1Pos2>()?;
     child.add_class::<boundary2::BoundaryData2>()?;
     child.add_class::<boundary2::Boundary2>()?;
+    child.add_function(wrap_pyfunction!(boundary2::fit_boundary_to_points, &child)?)?;
+    child.add_function(wrap_pyfunction!(
+        boundary2::fit_boundary_to_surface_points,
+        &child
+    )?)?;
 
     // Bounding and tools
     child.add_class::<bounding::Aabb2>()?;
@@ -197,6 +202,7 @@ fn py_engeom(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<common::DeviationMode>()?;
     m.add_class::<common::Resample>()?;
     m.add_class::<common::SelectOp>()?;
+    m.add_class::<common::VecDot>()?;
 
     Ok(())
 }
