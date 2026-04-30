@@ -1,11 +1,11 @@
 use crate::common::points::dist;
-use crate::common::{BestFit, Intersection, PCoords, signed_compliment_2pi};
+use crate::common::{Intersection, PCoords, signed_compliment_2pi};
 use crate::geom2::aabb2::circle_aabb2;
 use crate::geom2::line2::intersect_lines;
 use crate::geom2::{Aabb2, HasBounds2, Iso2, LineOps2, Point2, Segment2, Vector2, signed_angle};
 use crate::geom3::Vector3;
 use crate::stats::{compute_mean, compute_st_dev};
-use crate::{AngleInterval, SurfacePoint2};
+use crate::{AngleInterval, BestFit, SurfacePoint2};
 use crate::{Arc2, Result};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use parry2d_f64::na::{Dyn, Matrix, Owned, U1, U3, Vector};
@@ -104,7 +104,7 @@ impl Circle2 {
     ///
     /// ```
     /// use engeom::{Circle2, Point2};
-    /// use engeom::common::BestFit::All;
+    /// use engeom::BestFit::All;
     /// use approx::assert_relative_eq;
     ///
     /// let points = vec![

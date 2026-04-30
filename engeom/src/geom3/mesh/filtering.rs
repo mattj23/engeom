@@ -1,8 +1,8 @@
 //! This module has implementations of different ways of filtering/reducing a mesh
 
 use crate::common::points::{dist, mean_point, triangle_area};
-use crate::common::{IndexMask, PCoords, SelectOp, Selection};
-use crate::{Mesh, Point3, SurfacePoint3, UnitVec3, Vector3};
+use crate::common::{IndexMask, PCoords};
+use crate::{Mesh, Point3, SelectOp, Selection, SurfacePoint3, UnitVec3, Vector3};
 use crate::{Plane3, Result};
 use itertools::Itertools;
 use parry3d_f64::query::PointQuery;

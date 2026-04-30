@@ -69,12 +69,12 @@ pub enum SelectOp {
     Keep = 2,
 }
 
-impl From<SelectOp> for engeom::common::SelectOp {
+impl From<SelectOp> for engeom::SelectOp {
     fn from(val: SelectOp) -> Self {
         match val {
-            SelectOp::Add => engeom::common::SelectOp::Add,
-            SelectOp::Remove => engeom::common::SelectOp::Remove,
-            SelectOp::Keep => engeom::common::SelectOp::KeepOnly,
+            SelectOp::Add => engeom::SelectOp::Add,
+            SelectOp::Remove => engeom::SelectOp::Remove,
+            SelectOp::Keep => engeom::SelectOp::KeepOnly,
         }
     }
 }
@@ -122,14 +122,12 @@ impl Resample {
     }
 }
 
-impl From<Resample> for engeom::common::Resample {
+impl From<Resample> for engeom::Resample {
     fn from(val: Resample) -> Self {
         match val {
-            Resample::Count(count) => engeom::common::Resample::ByCount(count),
-            Resample::Spacing(spacing) => engeom::common::Resample::BySpacing(spacing),
-            Resample::MaxSpacing(max_spacing) => {
-                engeom::common::Resample::ByMaxSpacing(max_spacing)
-            }
+            Resample::Count(count) => engeom::Resample::ByCount(count),
+            Resample::Spacing(spacing) => engeom::Resample::BySpacing(spacing),
+            Resample::MaxSpacing(max_spacing) => engeom::Resample::ByMaxSpacing(max_spacing),
         }
     }
 }

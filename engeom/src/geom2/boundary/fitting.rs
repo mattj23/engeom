@@ -1,10 +1,9 @@
 //! This module generalizes fitting of boundary geometry to sample points
 
-use crate::common::VecDot;
 use crate::common::points::dist;
 use crate::geom2::Boundary2;
 use crate::na::{DVector, Dyn, Matrix, Owned, U1, Vector};
-use crate::{Point2, Result, SurfacePoint2};
+use crate::{Point2, Result, SurfacePoint2, VecDot};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 
 pub type BndBuildFn = Box<dyn Fn(&DVector<f64>) -> Result<Boundary2>>;
@@ -58,9 +57,8 @@ const DELTA: f64 = 1e-6;
 /// // This example will fit a boundary consisting of three line segments to a bunch of points
 /// // arranged in a triangle.
 /// // ------------------------------------------------------------------------------------------
-/// use engeom::Point2;
-/// use engeom::na::DVector;
-/// use engeom::common::points::{to_points, fill_gaps};
+/// use engeom::{Point2, DVector};
+/// use engeom::common::{to_points, fill_gaps};
 /// use engeom::geom2::{BndBuildFn, fit_boundary_to_points, BoundaryData2};
 /// use approx::assert_relative_eq;
 ///
@@ -71,7 +69,7 @@ const DELTA: f64 = 1e-6;
 ///
 /// // Here we define the function which creates the boundary from six parameters. This is an
 /// // extremely simple parameterization that just encodes the three corners as x,y pairs
-/// let builder: BndBuildFn = Box::new(|params: &DVector<f64>| {
+/// let builder: BndBuildFn = Box::new(|params: &DVector| {
 ///    let mut bdata = BoundaryData2::new_open(Point2::new(params[0], params[1]));
 ///    let mut cursor = bdata.get_cursor(None);
 ///    cursor.add_seg_xy(params[2], params[3]);
@@ -162,6 +160,77 @@ impl BoundaryFittable for BoundaryToPoints<'_> {
 /// provided may not fail or this function will exit before attempting the minimization.
 ///
 /// Refer to the examples for more information.
+///
+/// # Arguments
+///
+/// * `points`: a slice of `SurfacePoint2` entities, representing points and their surface normals
+/// * `builder`: A function that takes a `DVector` of parameters and produces a `Boundary2`.
+/// * `initial`: An initial guess for the parameters. The `builder` function must return an
+///   `Ok(Boundary2)` with this input for the fitting algorithm to initialize. The algorithm will
+///   use the size of the initial guess to determine the number of parameters, so make sure it
+///   matches what the `builder` function is expecting.
+/// * `weight_mode`: the mode by which the surface normal dot products produce a weight. If you
+///   use `AsIs`, a point can have a negative weight if the normals face in opposite direction. If
+///   you use `Abs`, it will de-weight surfaces pointing orthogonally to each other, but won't care
+///   about the direction. If you use `ClampPos`, it will only consider points with normals facing
+///   in the same direction. I recommend using `ClampPos` if you know the boundary and sample
+///   normals should be facing the same direction, and `Abs` if you just want to de-weight
+///   orthogonal normals but aren't sure if they're facing the same way.
+/// * `ignore_ends`: if `true`, points that project onto the ends of an open boundary will have
+///   residuals of zero
+///
+/// returns: Result<Matrix<f64, Dyn, Const<1>, VecStorage<f64, Dyn, Const<1>>>, Box<dyn Error, Global>>
+///
+/// # Examples
+///
+/// ```
+/// // This example shows how a very simple boundary fitting can use the surface normals to reject
+/// // samples facing the wrong direction
+/// // ------------------------------------------------------------------------------------------
+/// use engeom::{VecDot, Vector2, SurfacePoint2, DVector, Point2};
+/// use engeom::common::{to_points, fill_gaps, linear_space};
+/// use engeom::geom2::{BndBuildFn, fit_boundary_to_surface_points, BoundaryData2};
+/// use approx::assert_relative_eq;
+///
+/// // We'll create ten points facing in +Y at Y=0
+/// let good = linear_space(0.0, 10.0, 10)
+///     .iter()
+///     .map(|x| SurfacePoint2::new(Point2::new(*x, 0.0), Vector2::y_axis()))
+///     .collect::<Vec<_>>();
+///
+/// // We'll create ten bad points facing in +x at Y=1
+/// let bad = linear_space(0.0, 10.0, 10)
+///     .iter()
+///     .map(|x| SurfacePoint2::new(Point2::new(*x, 1.0), Vector2::x_axis()))
+///     .collect::<Vec<_>>();
+///
+/// // We'll combine the good and the bad points together
+/// let samples = [good, bad].concat();
+///
+/// // Our builder function will create a single line segment from X=0 to X=10. Because `engeom`'s
+/// // boundaries follows the anti-clockwise winding order convention, the segment's surface normal
+/// // will be facing in -Y. If we reversed the order it would face in +Y.
+/// let builder: BndBuildFn = Box::new(|params: &DVector| {
+///     let mut bdata = BoundaryData2::new_open([0.0, params[0]].into());
+///     let mut cursor = bdata.get_cursor(None);
+///     cursor.add_seg_xy(10.0, params[1]);
+///     bdata.try_to_boundary()
+/// });
+///
+/// // We'll create our initial guess right near the bad points.
+/// let initial = DVector::from(vec![1.0, 1.0]);
+///
+/// // When we do the fitting, we'll use the `VecDot::Abs` mode, which will not care that the
+/// // boundary normal is facing in the opposite direction of the good points, but will de-weight
+/// // the bad points because they are orthogonal.
+/// let result =
+///     fit_boundary_to_surface_points(&samples, &builder, initial, VecDot::Abs, false)
+///     .unwrap();
+///
+/// // As we can see, the fit ended at the position of the good points.
+/// let expected = DVector::from(vec![0.0, 0.0]);
+/// assert_relative_eq!(result, expected, epsilon = 1.0e-6);
+/// ```
 pub fn fit_boundary_to_surface_points(
     points: &[SurfacePoint2],
     builder: &BndBuildFn,
@@ -353,6 +422,8 @@ impl LeastSquaresProblem<f64, Dyn, Dyn> for BoundaryFit<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Vector2;
+    use crate::common::linear_space;
     use crate::common::points::{fill_gaps, to_points};
     use crate::geom2::BoundaryData2;
     use approx::assert_relative_eq;
@@ -374,6 +445,34 @@ mod tests {
         let initial = DVector::from(vec![0.0, 0.0, 4.0, 0.0, 1.0, 7.0]);
         let result = fit_boundary_to_points(&points, &builder, initial, false).unwrap();
         let expected = DVector::from(vec![1.0, 1.0, 3.0, 2.0, 2.0, 4.0]);
+        assert_relative_eq!(result, expected, epsilon = 1.0e-6);
+    }
+
+    #[test]
+    fn surface_normal_line() {
+        let good = linear_space(0.0, 10.0, 10)
+            .iter()
+            .map(|x| SurfacePoint2::new(Point2::new(*x, 0.0), Vector2::y_axis()))
+            .collect::<Vec<_>>();
+        let bad = linear_space(0.0, 10.0, 10)
+            .iter()
+            .map(|x| SurfacePoint2::new(Point2::new(*x, 1.0), Vector2::x_axis()))
+            .collect::<Vec<_>>();
+
+        let samples = [good, bad].concat();
+
+        let builder: BndBuildFn = Box::new(|params: &DVector<f64>| {
+            let mut bdata = BoundaryData2::new_open(Point2::new(0.0, params[0]));
+            let mut cursor = bdata.get_cursor(None);
+            cursor.add_seg_xy(10.0, params[1]);
+            bdata.try_to_boundary()
+        });
+        let initial = DVector::from(vec![1.0, 1.0]);
+
+        let result =
+            fit_boundary_to_surface_points(&samples, &builder, initial, VecDot::Abs, false)
+                .unwrap();
+        let expected = DVector::from(vec![0.0, 0.0]);
         assert_relative_eq!(result, expected, epsilon = 1.0e-6);
     }
 }

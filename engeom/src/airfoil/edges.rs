@@ -9,10 +9,10 @@ use crate::airfoil::helpers::{
     inscribed_from_spanning_ray, refine_stations,
 };
 use crate::airfoil::{AirfoilEdge, EdgeGeometry, EdgeLocate, InscribedCircle};
+use crate::common::linear_space;
 use crate::common::points::{dist, mid_point};
-use crate::common::{BestFit, linear_space};
 use crate::geom2::{Ray2, Segment2, rot90};
-use crate::{Circle2, Curve2, Result};
+use crate::{BestFit, Circle2, Curve2, Result};
 use parry2d_f64::query::Ray;
 
 pub use detect::EdgeAutoDetect;

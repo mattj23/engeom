@@ -1,9 +1,8 @@
-use crate::common::Resample;
 use crate::common::domain_window::DomainWindowIter;
 use crate::common::points::{dist, ramer_douglas_peucker};
 use crate::errors::InvalidGeometry;
 use crate::geom3::{Iso3, Plane3, Point3, UnitVec3};
-use crate::{Func1, Polynomial, Result, Smoothing, SurfacePoint3, SvdBasis3};
+use crate::{Func1, Polynomial, Resample, Result, Smoothing, SurfacePoint3, SvdBasis3};
 use parry3d_f64::na::Unit;
 use parry3d_f64::query::PointQueryWithLocation;
 use parry3d_f64::shape::Polyline;

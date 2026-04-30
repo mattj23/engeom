@@ -4,8 +4,8 @@ use super::helpers::{
     OrientedCircles, inscribed_from_spanning_ray, refine_stations, reverse_inscribed_circles,
 };
 use crate::AngleDir::{Ccw, Cw};
+use crate::Resample::ByCount;
 use crate::airfoil::inscribed_circle::InscribedCircle;
-use crate::common::Resample::ByCount;
 use crate::common::points::{dist, mid_point};
 use crate::geom2::hull::farthest_pair_indices;
 use crate::geom2::polyline2::SpanningRay;

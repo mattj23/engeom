@@ -6,8 +6,9 @@ use crate::conversions::{
 use crate::geom3::{Curve3, Iso3, Plane3, Point3, SurfacePoint3, Vector3};
 use crate::metrology::Distance3;
 use crate::point_cloud::Lptf3Load;
+use engeom::Selection;
+use engeom::common::SplitResult;
 use engeom::common::points::dist;
-use engeom::common::{Selection, SplitResult};
 use engeom::geom3::align3::{GAPParams, generate_alignment_points};
 use engeom::io::{deflate_bytes, u_bytes_to_mesh};
 use numpy::ndarray::{Array1, Array2, ArrayD};
