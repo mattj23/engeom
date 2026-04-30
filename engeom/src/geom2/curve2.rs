@@ -14,8 +14,25 @@ use serde::{Deserialize, Serialize};
 mod densities;
 mod partitioning;
 mod queries;
+mod utilities;
 
 pub use partitioning::CurvePartitioner2;
+
+/// Construct a `Result<Curve2>` from any number of `(x, y)` tuples.
+///
+/// By default this uses `tol = 1e-6` and `force_closed = false`.
+/// You can also provide explicit settings with:
+/// `curve2!(tol: <f64>, closed: <bool>; (x0, y0), (x1, y1), ...)`.
+#[macro_export]
+macro_rules! curve2 {
+    (tol: $tol:expr, closed: $closed:expr; $(($x:expr, $y:expr)),* $(,)?) => {{
+        let points = vec![$($crate::Point2::new(($x) as f64, ($y) as f64)),*];
+        $crate::Curve2::from_points(&points, $tol, $closed)
+    }};
+    ($(($x:expr, $y:expr)),* $(,)?) => {{
+        $crate::curve2!(tol: 1e-6, closed: false; $(($x, $y)),*)
+    }};
+}
 
 /// A `CurveStation2` is a convenience struct which represents a location on the manifold defined
 /// by the curve. It has a point, a direction, and a normal. It has an index and a fraction which
@@ -1127,5 +1144,26 @@ pub mod tests {
         let d = curve.at_closest_to_point(&p);
 
         assert_relative_eq!(l, d.length_along(), epsilon = 1e-6);
+    }
+
+    #[test]
+    fn curve2_macro_builds_open_curve() {
+        let curve = crate::curve2!((0.0, 0.0), (1.0, 0.0), (1.0, 1.0)).unwrap();
+        assert!(!curve.is_closed());
+        assert_eq!(curve.count(), 3);
+    }
+
+    #[test]
+    fn curve2_macro_builds_force_closed_curve() {
+        let curve = crate::curve2!(tol: 1e-6, closed: true; (0.0, 0.0), (1.0, 0.0), (1.0, 1.0))
+            .unwrap();
+        assert!(curve.is_closed());
+        assert_eq!(curve.count(), 4);
+    }
+
+    #[test]
+    fn curve2_macro_returns_error_for_too_few_points() {
+        let result = crate::curve2!((0.0, 0.0));
+        assert!(result.is_err());
     }
 }
