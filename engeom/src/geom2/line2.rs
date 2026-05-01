@@ -56,6 +56,11 @@ impl Line2 {
         Self::new(self.origin + n * delta_n, self.direction)
     }
 
+    /// Returns new version of the line with the same origin, but with the direction inverted.
+    pub fn new_reversed(&self) -> Self {
+        Line2::new(self.origin, -self.direction)
+    }
+
     /// Create a line from an origin point and a direction vector (stored as-is, not normalized).
     pub fn new(origin: Point2, direction: Vector2) -> Self {
         Self { origin, direction }

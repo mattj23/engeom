@@ -17,6 +17,7 @@ mod queries;
 mod utilities;
 
 pub use partitioning::CurvePartitioner2;
+pub use utilities::*;
 
 /// Construct a `Result<Curve2>` from any number of `(x, y)` tuples.
 ///

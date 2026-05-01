@@ -163,6 +163,34 @@ impl Series1 {
     // Transformation operations
     // ===========================================================================================
 
+    pub fn add(&self, rhs: &impl Func1) -> Self {
+        self.add_sign(rhs, true)
+    }
+
+    pub fn sub(&self, rhs: &impl Func1) -> Self {
+        self.add_sign(rhs, false)
+    }
+
+    fn add_sign(&self, rhs: &impl Func1, add: bool) -> Self {
+        let mut ys = Vec::new();
+        let signum = if add { 1.0 } else { -1.0 };
+
+        if let Some(rhs_xs) = rhs.xs() {
+            let mut all_xs = [self.x.to_vec(), rhs_xs.to_vec()].concat();
+            sort_and_dedup(&mut all_xs, Some(1e-10));
+            let new_xs = DiscreteDomain::try_from(all_xs).unwrap();
+            for x in new_xs.values() {
+                ys.push(f_or_zero(&self, *x) + signum * f_or_zero(rhs, *x));
+            }
+            Self::new(new_xs, ys)
+        } else {
+            for (x, y) in self.x.iter().zip(self.y.iter()) {
+                ys.push(y + signum * f_or_zero(rhs, *x));
+            }
+            Self::new(self.x.clone(), ys)
+        }
+    }
+
     /// Returns a new series where the x values are the same as the original series, but the y
     /// values are the absolute value of the original y values
     pub fn abs(&self) -> Self {
@@ -489,6 +517,7 @@ impl Series1 {
     /// 0 will be returned.  If the given x value is after the last x value in the series, the
     /// length of the series will be returned.
     pub fn index_of_x_after(&self, x: f64) -> usize {
+        // TODO: this needs unit tests
         let search_result = self.x.binary_search_by(|v| v.partial_cmp(&x).unwrap());
         match search_result {
             Ok(actual_index) => actual_index,
@@ -496,15 +525,6 @@ impl Series1 {
         }
     }
 
-    // pub fn is_ordered(&self) -> bool {
-    //     for i in 1..self.x.len() {
-    //         if self.x[i] <= self.x[i - 1] {
-    //             return false;
-    //         }
-    //     }
-    //     true
-    // }
-    //
     // ===========================================================================================
     // Splitting and clipping
     // ===========================================================================================
@@ -734,33 +754,6 @@ impl Series1 {
         results
     }
 
-    pub fn add(&self, rhs: &impl Func1) -> Self {
-        self.add_sign(rhs, true)
-    }
-
-    pub fn sub(&self, rhs: &impl Func1) -> Self {
-        self.add_sign(rhs, false)
-    }
-
-    fn add_sign(&self, rhs: &impl Func1, add: bool) -> Self {
-        let mut ys = Vec::new();
-        let signum = if add { 1.0 } else { -1.0 };
-
-        if let Some(rhs_xs) = rhs.xs() {
-            let mut all_xs = [self.x.to_vec(), rhs_xs.to_vec()].concat();
-            sort_and_dedup(&mut all_xs, Some(1e-10));
-            let new_xs = DiscreteDomain::try_from(all_xs).unwrap();
-            for x in new_xs.values() {
-                ys.push(f_or_zero(&self, *x) + signum * f_or_zero(rhs, *x));
-            }
-            Self::new(new_xs, ys)
-        } else {
-            for (x, y) in self.x.iter().zip(self.y.iter()) {
-                ys.push(y + signum * f_or_zero(rhs, *x));
-            }
-            Self::new(self.x.clone(), ys)
-        }
-    }
 }
 
 fn f_or_zero(f: &impl Func1, x: f64) -> f64 {
