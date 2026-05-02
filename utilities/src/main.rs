@@ -1,13 +1,13 @@
 use clap::{Parser, Subcommand};
 use engeom::Result;
 use engeom::io::{
-    load_ply_mesh, read_mesh_stl, read_tc_mesh_from, u_bytes_to_mesh_data, u_mesh_data_to_bytes,
-    write_tc_mesh_to,
+    load_ply_mesh, read_mesh_stl, read_tc_mesh_file, u_bytes_to_mesh_data, u_mesh_data_to_bytes,
+    write_tc_mesh_file,
 };
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use std::fs;
-use std::io::{Cursor, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
@@ -54,10 +54,9 @@ fn cmd_to_tcmesh(input: &Path, output: &Path, tol: f64) -> Result<()> {
         _ => return Err("Input file must have a .stl or .ply extension".into()),
     };
 
-    let mut buf = Vec::new();
-    write_tc_mesh_to(&mut buf, &mesh, tol)?;
+    write_tc_mesh_file(output, &mesh, tol)?;
 
-    let recovered = read_tc_mesh_from(&mut Cursor::new(&buf))?;
+    let recovered = read_tc_mesh_file(output)?;
     if mesh.vertices().len() != recovered.vertices().len() {
         return Err("Vertex count mismatch after round-trip".into());
     }
@@ -75,10 +74,12 @@ fn cmd_to_tcmesh(input: &Path, output: &Path, tol: f64) -> Result<()> {
         .unwrap();
     let avg_dev = deviations.iter().sum::<f64>() / deviations.len() as f64;
 
-    fs::write(output, &buf)?;
-
     println!("Saved tcmesh to {}", output.to_str().unwrap());
-    println!(" > {} vertices, {} faces", mesh.vertices().len(), mesh.faces().len());
+    println!(
+        " > {} vertices, {} faces",
+        mesh.vertices().len(),
+        mesh.faces().len()
+    );
     println!(" > Tolerance: {tol}");
     println!(" > Max deviation: {max_dev}");
     println!(" > Average deviation: {avg_dev}");

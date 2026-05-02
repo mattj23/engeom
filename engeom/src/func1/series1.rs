@@ -753,7 +753,6 @@ impl Series1 {
 
         results
     }
-
 }
 
 fn f_or_zero(f: &impl Func1, x: f64) -> f64 {

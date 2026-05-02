@@ -3,8 +3,8 @@ mod lptf3;
 mod micro_mesh;
 mod ply;
 mod point_cloud;
-pub mod tol_compress;
 mod tc_mesh;
+pub mod tol_compress;
 pub use tc_mesh::*;
 
 use crate::{Point3, Result, Vector3};
