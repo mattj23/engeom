@@ -142,6 +142,18 @@ impl Mesh {
             .map_err(|e| PyIOError::new_err(e.to_string()))
     }
 
+    #[staticmethod]
+    fn load_tcmesh(path: PathBuf) -> PyResult<Self> {
+        let mesh =
+            engeom::io::read_tc_mesh_file(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(mesh))
+    }
+
+    fn write_tcmesh(&self, path: PathBuf, tol: f64) -> PyResult<()> {
+        engeom::io::write_tc_mesh_file(&path, &self.inner, tol)
+            .map_err(|e| PyIOError::new_err(e.to_string()))
+    }
+
     #[getter]
     fn vertices<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArray2<f64>> {
         if self.vertices.is_none() {

@@ -1658,6 +1658,31 @@ class Mesh:
         """
         ...
 
+    @staticmethod
+    def load_tcmesh(path: str | Path) -> Mesh:
+        """
+        Load a mesh from a tolerance-compressed mesh (.tcmesh) file. The tcmesh format stores vertex
+        positions as variable-width integers scaled within the bounding box of each partition,
+        using the minimum number of bytes needed to guarantee a round-trip accuracy at or below the
+        tolerance that was specified when the file was written.
+
+        :param path: the path to the .tcmesh file to load.
+        :return: the mesh loaded from the file.
+        """
+        ...
+
+    def write_tcmesh(self, path: str | Path, tol: float):
+        """
+        Write the mesh to a tolerance-compressed mesh (.tcmesh) file. The tolerance controls the
+        maximum allowable round-trip position error for any vertex: a smaller tolerance produces a
+        more accurate file at the cost of more bytes per vertex, while a larger tolerance allows
+        greater compression.
+
+        :param path: the path to the .tcmesh file to write.
+        :param tol: the maximum acceptable round-trip position error, in model units.
+        """
+        ...
+
     def cloned(self) -> Mesh:
         """
         Will return a copy of the mesh. This is a copy of the data, so modifying the returned mesh will not modify the
