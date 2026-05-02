@@ -24,8 +24,8 @@ enum Commands {
     ToTcmesh {
         /// Input STL or PLY file
         input: PathBuf,
-        /// Output .tcmesh file
-        output: PathBuf,
+        /// Output .tcmesh file (defaults to input path with .tcmesh extension)
+        output: Option<PathBuf>,
         /// Round-trip position tolerance in model units
         #[arg(long, default_value_t = 1e-6)]
         tol: f64,
@@ -42,7 +42,10 @@ enum Commands {
     },
 }
 
-fn cmd_to_tcmesh(input: &Path, output: &Path, tol: f64) -> Result<()> {
+fn cmd_to_tcmesh(input: &Path, output: Option<&Path>, tol: f64) -> Result<()> {
+    let output = output
+        .map(PathBuf::from)
+        .unwrap_or_else(|| input.with_extension("tcmesh"));
     let ext = input
         .extension()
         .and_then(|e| e.to_str())
@@ -54,9 +57,9 @@ fn cmd_to_tcmesh(input: &Path, output: &Path, tol: f64) -> Result<()> {
         _ => return Err("Input file must have a .stl or .ply extension".into()),
     };
 
-    write_tc_mesh_file(output, &mesh, tol)?;
+    write_tc_mesh_file(&output, &mesh, tol)?;
 
-    let recovered = read_tc_mesh_file(output)?;
+    let recovered = read_tc_mesh_file(&output)?;
     if mesh.vertices().len() != recovered.vertices().len() {
         return Err("Vertex count mismatch after round-trip".into());
     }
@@ -74,7 +77,7 @@ fn cmd_to_tcmesh(input: &Path, output: &Path, tol: f64) -> Result<()> {
         .unwrap();
     let avg_dev = deviations.iter().sum::<f64>() / deviations.len() as f64;
 
-    println!("Saved tcmesh to {}", output.to_str().unwrap());
+    println!("Saved tcmesh to {}", output.display());
     println!(
         " > {} vertices, {} faces",
         mesh.vertices().len(),
@@ -154,7 +157,7 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match &cli.command {
-        Commands::ToTcmesh { input, output, tol } => cmd_to_tcmesh(input, output, *tol),
+        Commands::ToTcmesh { input, output, tol } => cmd_to_tcmesh(input, output.as_deref(), *tol),
         Commands::ToUmesh {
             input,
             output,
