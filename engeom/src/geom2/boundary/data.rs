@@ -1,12 +1,12 @@
 use crate::geom2::{BCursor, Boundary2, BoundaryEditor, BoundaryElement2, Segment2};
 use crate::{Arc2, Iso2, Point2, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-
 // ===============================================================================================
 // Boundary data container enum. This holds the information for each node in the boundary data.
 // ===============================================================================================
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) enum BData {
     /// A line segment, containing the end point
     Seg((f64, f64)),
@@ -46,7 +46,7 @@ impl BData {
 //  Boundary data
 // ===============================================================================================
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BoundaryData2 {
     pub start: Option<Point2>,
     nodes: HashMap<u32, BNode>,
@@ -336,7 +336,7 @@ impl BoundaryEditor for BoundaryData2 {}
 //  Internal node and iterator structure
 // ===============================================================================================
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct BNode {
     pub(super) id: u32,
     pub(super) next_id: Option<u32>,
@@ -655,5 +655,136 @@ mod tests {
     fn remove_invalid_id_is_error() {
         let mut bd = BoundaryData2::new_open(Point2::new(0.0, 0.0));
         assert!(bd.try_remove(99).is_err());
+    }
+
+    fn arc(cx: f64, cy: f64, ex: f64, ey: f64, cw: bool) -> BData {
+        BData::Arc((cx, cy, ex, ey, cw))
+    }
+
+    // ===========================================================================================
+    // Serialize / Deserialize tests
+    // ===========================================================================================
+
+    #[test]
+    fn serde_empty_open_boundary() {
+        let bd = BoundaryData2::new_open(Point2::new(1.5, 2.5));
+        let json = serde_json::to_string(&bd).unwrap();
+        let bd2: BoundaryData2 = serde_json::from_str(&json).unwrap();
+        assert_eq!(bd2.len(), 0);
+        assert!(!bd2.is_closed());
+        assert_eq!(bd2.start, Some(Point2::new(1.5, 2.5)));
+        assert_eq!(bd2.head_id, u32::MAX);
+    }
+
+    #[test]
+    fn serde_empty_closed_boundary() {
+        let bd = BoundaryData2::new_closed();
+        let json = serde_json::to_string(&bd).unwrap();
+        let bd2: BoundaryData2 = serde_json::from_str(&json).unwrap();
+        assert_eq!(bd2.len(), 0);
+        assert!(bd2.is_closed());
+        assert_eq!(bd2.start, None);
+        assert_eq!(bd2.head_id, u32::MAX);
+    }
+
+    #[test]
+    fn serde_open_boundary_segments_preserves_walk_order() {
+        let mut bd = BoundaryData2::new_open(Point2::new(0.0, 0.0));
+        let a = bd.insert_first(seg(1.0, 0.0)).unwrap();
+        let b = bd.insert_after(a, seg(2.0, 0.0)).unwrap();
+        let c = bd.insert_after(b, seg(3.0, 0.0)).unwrap();
+
+        let json = serde_json::to_string(&bd).unwrap();
+        let bd2: BoundaryData2 = serde_json::from_str(&json).unwrap();
+
+        check_integrity(&bd2);
+        assert_eq!(bd2.len(), 3);
+        assert!(!bd2.is_closed());
+        assert_eq!(bd2.start, Some(Point2::new(0.0, 0.0)));
+        assert_eq!(walk_open(&bd2), vec![a, b, c]);
+    }
+
+    #[test]
+    fn serde_closed_boundary_segments_preserves_walk_order() {
+        let mut bd = BoundaryData2::new_closed();
+        let a = bd.insert_first(seg(1.0, 0.0)).unwrap();
+        let b = bd.insert_after(a, seg(2.0, 1.0)).unwrap();
+        let c = bd.insert_after(b, seg(0.0, 1.0)).unwrap();
+
+        let json = serde_json::to_string(&bd).unwrap();
+        let bd2: BoundaryData2 = serde_json::from_str(&json).unwrap();
+
+        check_integrity(&bd2);
+        assert_eq!(bd2.len(), 3);
+        assert!(bd2.is_closed());
+        assert_eq!(bd2.head_id, bd.head_id);
+        assert_eq!(walk_closed(&bd2), vec![a, b, c]);
+    }
+
+    #[test]
+    fn serde_open_boundary_with_arcs_preserves_data() {
+        let mut bd = BoundaryData2::new_open(Point2::new(0.0, 0.0));
+        let a = bd.insert_first(seg(1.0, 0.0)).unwrap();
+        let b = bd.insert_after(a, arc(1.0, 0.5, 1.0, 1.0, false)).unwrap();
+        let c = bd.insert_after(b, seg(0.0, 1.0)).unwrap();
+
+        let json = serde_json::to_string(&bd).unwrap();
+        let bd2: BoundaryData2 = serde_json::from_str(&json).unwrap();
+
+        check_integrity(&bd2);
+        assert_eq!(bd2.len(), 3);
+        assert_eq!(walk_open(&bd2), vec![a, b, c]);
+
+        // Verify arc payload survived round-trip
+        match &bd2.nodes[&b].data {
+            BData::Arc((cx, cy, ex, ey, cw)) => {
+                assert_eq!((*cx, *cy, *ex, *ey, *cw), (1.0, 0.5, 1.0, 1.0, false));
+            }
+            _ => panic!("expected arc at node b"),
+        }
+    }
+
+    #[test]
+    fn serde_preserves_next_unique_id() {
+        let mut bd = BoundaryData2::new_open(Point2::new(0.0, 0.0));
+        let a = bd.insert_first(seg(1.0, 0.0)).unwrap();
+        bd.insert_after(a, seg(2.0, 0.0)).unwrap();
+
+        let json = serde_json::to_string(&bd).unwrap();
+        let bd2: BoundaryData2 = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(bd2.next_unique_id, bd.next_unique_id);
+    }
+
+    #[test]
+    fn serde_deserialized_open_boundary_can_still_be_extended() {
+        let mut bd = BoundaryData2::new_open(Point2::new(0.0, 0.0));
+        let a = bd.insert_first(seg(1.0, 0.0)).unwrap();
+        let b = bd.insert_after(a, seg(2.0, 0.0)).unwrap();
+
+        let json = serde_json::to_string(&bd).unwrap();
+        let mut bd2: BoundaryData2 = serde_json::from_str(&json).unwrap();
+
+        // Inserting after deserialization must not collide with existing ids
+        let c = bd2.insert_after(b, seg(3.0, 0.0)).unwrap();
+        check_integrity(&bd2);
+        assert_eq!(bd2.len(), 3);
+        assert_eq!(walk_open(&bd2), vec![a, b, c]);
+    }
+
+    #[test]
+    fn serde_deserialized_boundary_builds_same_boundary2() {
+        let mut bd = BoundaryData2::new_open(Point2::new(0.0, 0.0));
+        let a = bd.insert_first(seg(1.0, 0.0)).unwrap();
+        let b = bd.insert_after(a, seg(1.0, 1.0)).unwrap();
+        bd.insert_after(b, seg(0.0, 1.0)).unwrap();
+
+        let original = bd.try_to_boundary().unwrap();
+
+        let json = serde_json::to_string(&bd).unwrap();
+        let bd2: BoundaryData2 = serde_json::from_str(&json).unwrap();
+        let restored = bd2.try_to_boundary().unwrap();
+
+        assert_eq!(original.len(), restored.len());
     }
 }
