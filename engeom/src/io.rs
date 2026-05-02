@@ -3,6 +3,7 @@ mod lptf3;
 mod micro_mesh;
 mod ply;
 mod point_cloud;
+mod tol_compress;
 
 use crate::{Point3, Result, Vector3};
 pub use binary_mesh::*;
