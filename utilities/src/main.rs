@@ -1,10 +1,13 @@
 use clap::{Parser, Subcommand};
 use engeom::Result;
-use engeom::io::{load_ply_mesh, read_mesh_stl, u_bytes_to_mesh_data, u_mesh_data_to_bytes};
+use engeom::io::{
+    load_ply_mesh, read_mesh_stl, read_tc_mesh_from, u_bytes_to_mesh_data, u_mesh_data_to_bytes,
+    write_tc_mesh_to,
+};
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use std::fs;
-use std::io::Write;
+use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
@@ -17,6 +20,16 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Convert an STL or PLY mesh file to the tcmesh format
+    ToTcmesh {
+        /// Input STL or PLY file
+        input: PathBuf,
+        /// Output .tcmesh file
+        output: PathBuf,
+        /// Round-trip position tolerance in model units
+        #[arg(long, default_value_t = 1e-6)]
+        tol: f64,
+    },
     /// Convert an STL or PLY mesh file to the micro mesh binary format
     ToUmesh {
         /// Input STL or PLY file
@@ -27,6 +40,50 @@ enum Commands {
         #[arg(long)]
         compress: bool,
     },
+}
+
+fn cmd_to_tcmesh(input: &Path, output: &Path, tol: f64) -> Result<()> {
+    let ext = input
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase());
+
+    let mesh = match ext.as_deref() {
+        Some("stl") => read_mesh_stl(input, true, true)?,
+        Some("ply") => load_ply_mesh(input)?,
+        _ => return Err("Input file must have a .stl or .ply extension".into()),
+    };
+
+    let mut buf = Vec::new();
+    write_tc_mesh_to(&mut buf, &mesh, tol)?;
+
+    let recovered = read_tc_mesh_from(&mut Cursor::new(&buf))?;
+    if mesh.vertices().len() != recovered.vertices().len() {
+        return Err("Vertex count mismatch after round-trip".into());
+    }
+
+    let deviations = mesh
+        .vertices()
+        .iter()
+        .zip(recovered.vertices().iter())
+        .map(|(a, b)| (a - b).norm())
+        .collect::<Vec<_>>();
+
+    let max_dev = deviations
+        .iter()
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let avg_dev = deviations.iter().sum::<f64>() / deviations.len() as f64;
+
+    fs::write(output, &buf)?;
+
+    println!("Saved tcmesh to {}", output.to_str().unwrap());
+    println!(" > {} vertices, {} faces", mesh.vertices().len(), mesh.faces().len());
+    println!(" > Tolerance: {tol}");
+    println!(" > Max deviation: {max_dev}");
+    println!(" > Average deviation: {avg_dev}");
+
+    Ok(())
 }
 
 fn cmd_to_umesh(input: &Path, output: &PathBuf, compress: bool) -> Result<()> {
@@ -96,6 +153,7 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match &cli.command {
+        Commands::ToTcmesh { input, output, tol } => cmd_to_tcmesh(input, output, *tol),
         Commands::ToUmesh {
             input,
             output,
