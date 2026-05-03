@@ -26,7 +26,7 @@ pub use convert_2d_3d::{To2D, To3D};
 pub use discrete_domain::{DiscreteDomain, linear_space};
 pub use domain_map::DomainMap;
 pub use index_mask::IndexMask;
-pub use interval::Interval;
+pub use interval::{Interval, IntervalMergeDomain};
 pub use parry3d_f64::query::SplitResult;
 pub use points::*;
 pub use surface_point::{SurfacePoint, SurfacePointCollection};

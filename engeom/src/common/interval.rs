@@ -1,9 +1,13 @@
 //! This module contains an abstraction which represents an interval on a continuous scalar domain,
 //! such as the interval [0, 1] on the real number line.  Intervals allow for the testing of
-//! intersections between ranges of values.
+//! intersections between ranges of values, and provide tools for gathering, merging, and separating
+//! regions.
+
+mod merge_domain;
 
 use crate::Result;
 use serde::{Deserialize, Serialize};
+pub use merge_domain::*;
 
 /// An interval on a continuous scalar domain, such as the interval [0, 10] on the real number line.
 /// Intervals can be thought of as 1d shapes, and are subject to boolean operations and tests
@@ -252,6 +256,21 @@ impl Interval {
     /// Returns the center of the interval, which is the average of the minimum and maximum values.
     pub fn center(&self) -> f64 {
         (self.min + self.max) / 2.0
+    }
+
+
+    /// Creates an interval that fully contains both parent intervals.
+    ///
+    /// # Arguments
+    ///
+    /// * `a`: the first interval to join
+    /// * `b`: the second interval to join
+    ///
+    /// returns: Interval
+    pub fn new_contains(a: &Interval, b: &Interval) -> Interval {
+        let min = a.min.min(b.min);
+        let max = a.max.max(b.max);
+        Interval::new_unchecked(min, max)
     }
 }
 
