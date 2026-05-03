@@ -22,6 +22,20 @@ impl IntervalMergeDomain {
         IntervalMergeDomain { items: vec![] }
     }
 
+    /// Build a domain from an unsorted, possibly-overlapping collection of intervals.
+    /// Intervals are sorted by min, then merged in a single pass.
+    pub fn from_intervals(mut intervals: Vec<Interval>) -> IntervalMergeDomain {
+        intervals.sort_by(|a, b| a.min.partial_cmp(&b.min).unwrap());
+        let mut items: Vec<Interval> = Vec::with_capacity(intervals.len());
+        for iv in intervals {
+            match items.last_mut() {
+                Some(last) if last.overlaps(&iv) => *last = Interval::new_contains(last, &iv),
+                _ => items.push(iv),
+            }
+        }
+        IntervalMergeDomain { items }
+    }
+
     /// Insert an interval into the merge domain. If it overlaps with one or more existing interval,
     /// they will be replaced with the merged result.
     ///
@@ -227,6 +241,63 @@ mod tests {
 
         // References point into the domain, domain is still usable after iteration.
         assert_eq!(d.items.len(), 3);
+    }
+
+    // from_intervals with an empty vec produces an empty domain.
+    #[test]
+    fn test_from_intervals_empty() {
+        let d = IntervalMergeDomain::from_intervals(vec![]);
+        assert_eq!(d.items.len(), 0);
+    }
+
+    // from_intervals sorts and keeps disjoint intervals.
+    #[test]
+    fn test_from_intervals_disjoint_unsorted() {
+        let d = IntervalMergeDomain::from_intervals(vec![
+            interval(4.0, 5.0),
+            interval(0.0, 1.0),
+            interval(2.0, 3.0),
+        ]);
+        assert_eq!(d.items.len(), 3);
+        assert!(is_sorted(&d));
+        assert!(no_overlaps(&d));
+        assert_eq!(d.items[0].min, 0.0);
+        assert_eq!(d.items[1].min, 2.0);
+        assert_eq!(d.items[2].min, 4.0);
+    }
+
+    // from_intervals merges overlapping intervals.
+    #[test]
+    fn test_from_intervals_with_overlaps() {
+        let d = IntervalMergeDomain::from_intervals(vec![
+            interval(0.0, 2.0),
+            interval(3.0, 5.0),
+            interval(1.5, 4.0), // bridges the first two
+        ]);
+        assert_eq!(d.items.len(), 1);
+        assert_eq!(d.items[0].min, 0.0);
+        assert_eq!(d.items[0].max, 5.0);
+    }
+
+    // from_intervals handles a mix: some overlap, some don't.
+    #[test]
+    fn test_from_intervals_mixed() {
+        let d = IntervalMergeDomain::from_intervals(vec![
+            interval(0.0, 1.0),
+            interval(0.5, 1.5), // overlaps first
+            interval(3.0, 4.0),
+            interval(3.5, 5.0), // overlaps previous
+            interval(7.0, 8.0), // disjoint
+        ]);
+        assert_eq!(d.items.len(), 3);
+        assert!(is_sorted(&d));
+        assert!(no_overlaps(&d));
+        assert_eq!(d.items[0].min, 0.0);
+        assert_eq!(d.items[0].max, 1.5);
+        assert_eq!(d.items[1].min, 3.0);
+        assert_eq!(d.items[1].max, 5.0);
+        assert_eq!(d.items[2].min, 7.0);
+        assert_eq!(d.items[2].max, 8.0);
     }
 
     // Stress test: many random-ish inserts; invariants must always hold.
