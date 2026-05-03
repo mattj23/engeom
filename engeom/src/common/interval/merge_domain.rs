@@ -329,6 +329,29 @@ impl IntervalMergeDomain {
         IntervalMergeDomain { items }
     }
 
+    pub fn modify_all(&mut self, modifier: &dyn Fn(&Interval) -> Option<Interval>) {
+        let mut it = self.modify_iter();
+        while let Some(mut item) = it.next_item() {
+            if let Some(r) = modifier(item.interval) {
+                if !r.is_empty() {
+                    item.set(r);
+                } else {
+                    item.remove();
+                }
+            } else {
+                item.remove()
+            }
+        }
+    }
+
+    pub fn expand_all(&mut self, half_width: f64) {
+        self.modify_all(&(|x| Some(x.new_expanded(half_width))))
+    }
+
+    pub fn dilate_all(&mut self, half_width: f64) {
+        self.modify_all(&(|x| Some(x.new_dilated(half_width))))
+    }
+
     /// Starting at `start_i`, will return a Vec of all indices which overlap with the given
     /// interval. These will inherently be arranged in ascending order.
     fn check_overlaps(&self, item: &Interval, start_i: usize) -> Vec<usize> {

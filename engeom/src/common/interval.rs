@@ -263,7 +263,7 @@ impl Interval {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.min < self.max
+        !(self.min < self.max)
     }
 
     /// Creates an interval that fully contains both parent intervals.
