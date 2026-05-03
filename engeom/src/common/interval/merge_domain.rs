@@ -211,6 +211,82 @@ impl IntervalMergeDomain {
         IntervalModIter { domain: self, index: 0, actions }
     }
 
+    /// Remove all content below `value`, clipping any straddling interval to start at `value`.
+    pub fn trim_below(&mut self, value: f64) {
+        let cut = self.items.partition_point(|iv| iv.max <= value);
+        self.items.drain(..cut);
+        if let Some(first) = self.items.first_mut() {
+            if first.min < value {
+                *first = Interval::new(value, first.max);
+            }
+        }
+    }
+
+    /// Remove all content above `value`, clipping any straddling interval to end at `value`.
+    pub fn trim_above(&mut self, value: f64) {
+        let cut = self.items.partition_point(|iv| iv.min < value);
+        self.items.truncate(cut);
+        if let Some(last) = self.items.last_mut() {
+            if last.max > value {
+                *last = Interval::new(last.min, value);
+            }
+        }
+    }
+
+    /// Remove all content outside `bounds`, clipping any straddling intervals to the boundary.
+    pub fn trim_to(&mut self, bounds: Interval) {
+        self.trim_below(bounds.min);
+        self.trim_above(bounds.max);
+    }
+
+    /// Return a new domain covering every point covered by either domain.
+    pub fn or(&self, other: &IntervalMergeDomain) -> IntervalMergeDomain {
+        let combined = self.items.iter().chain(other.items.iter()).cloned().collect();
+        IntervalMergeDomain::from_intervals(combined)
+    }
+
+    /// Return a new domain covering only the points covered by both domains.
+    pub fn and(&self, other: &IntervalMergeDomain) -> IntervalMergeDomain {
+        let mut items = Vec::new();
+        let (mut i, mut j) = (0, 0);
+        while i < self.items.len() && j < other.items.len() {
+            if let Some(iv) = self.items[i].intersection(&other.items[j]) {
+                items.push(iv);
+            }
+            if self.items[i].max < other.items[j].max {
+                i += 1;
+            } else if other.items[j].max < self.items[i].max {
+                j += 1;
+            } else {
+                i += 1;
+                j += 1;
+            }
+        }
+        IntervalMergeDomain { items }
+    }
+
+    /// Return a new domain containing the complement: every part of the real line not covered
+    /// by any interval in this domain. The result always starts with an interval whose `min`
+    /// is `NEG_INFINITY` and ends with one whose `max` is `INFINITY`, unless the domain
+    /// itself already extends to those extremes.
+    pub fn not(&self) -> IntervalMergeDomain {
+        let mut items = Vec::new();
+        let mut current = f64::NEG_INFINITY;
+
+        for iv in &self.items {
+            if current < iv.min {
+                items.push(Interval::new(current, iv.min));
+            }
+            current = iv.max;
+        }
+
+        if current < f64::INFINITY {
+            items.push(Interval::new(current, f64::INFINITY));
+        }
+
+        IntervalMergeDomain { items }
+    }
+
     /// Starting at `start_i`, will return a Vec of all indices which overlap with the given
     /// interval. These will inherently be arranged in ascending order.
     fn check_overlaps(&self, item: &Interval, start_i: usize) -> Vec<usize> {
@@ -258,7 +334,7 @@ mod tests {
 
     // Insert a single interval into an empty domain.
     #[test]
-    fn test_insert_into_empty() {
+    fn insert_into_empty() {
         let mut d = IntervalMergeDomain::empty();
         d.insert(interval(1.0, 3.0));
         assert_eq!(d.items.len(), 1);
@@ -268,7 +344,7 @@ mod tests {
 
     // Two disjoint intervals inserted in order : both should be kept, sorted.
     #[test]
-    fn test_insert_two_disjoint_in_order() {
+    fn insert_two_disjoint_in_order() {
         let mut d = IntervalMergeDomain::empty();
         d.insert(interval(0.0, 1.0));
         d.insert(interval(2.0, 3.0));
@@ -281,7 +357,7 @@ mod tests {
 
     // Two disjoint intervals inserted in reverse order : result must be sorted.
     #[test]
-    fn test_insert_two_disjoint_reverse_order() {
+    fn insert_two_disjoint_reverse_order() {
         let mut d = IntervalMergeDomain::empty();
         d.insert(interval(2.0, 3.0));
         d.insert(interval(0.0, 1.0));
@@ -294,7 +370,7 @@ mod tests {
 
     // Three disjoint intervals inserted in random order.
     #[test]
-    fn test_insert_three_disjoint_random_order() {
+    fn insert_three_disjoint_random_order() {
         let mut d = IntervalMergeDomain::empty();
         d.insert(interval(4.0, 5.0));
         d.insert(interval(0.0, 1.0));
@@ -306,7 +382,7 @@ mod tests {
 
     // Two overlapping intervals should merge into one.
     #[test]
-    fn test_insert_overlapping_merges() {
+    fn insert_overlapping_merges() {
         let mut d = IntervalMergeDomain::empty();
         d.insert(interval(0.0, 2.0));
         d.insert(interval(1.0, 3.0));
@@ -317,7 +393,7 @@ mod tests {
 
     // Inserting a fully-contained interval leaves the existing one unchanged.
     #[test]
-    fn test_insert_contained_interval() {
+    fn insert_contained_interval() {
         let mut d = IntervalMergeDomain::empty();
         d.insert(interval(0.0, 10.0));
         d.insert(interval(3.0, 7.0));
@@ -328,7 +404,7 @@ mod tests {
 
     // Inserting an interval that contains an existing one expands outward.
     #[test]
-    fn test_insert_containing_interval() {
+    fn insert_containing_interval() {
         let mut d = IntervalMergeDomain::empty();
         d.insert(interval(3.0, 7.0));
         d.insert(interval(0.0, 10.0));
@@ -339,7 +415,7 @@ mod tests {
 
     // A new interval that bridges two existing ones should merge all three.
     #[test]
-    fn test_insert_bridges_two_existing() {
+    fn insert_bridges_two_existing() {
         let mut d = IntervalMergeDomain::empty();
         d.insert(interval(0.0, 1.0));
         d.insert(interval(3.0, 4.0));
@@ -353,7 +429,7 @@ mod tests {
 
     // A new interval that bridges three existing ones should merge all four.
     #[test]
-    fn test_insert_bridges_three_existing() {
+    fn insert_bridges_three_existing() {
         let mut d = IntervalMergeDomain::empty();
         d.insert(interval(0.0, 1.0));
         d.insert(interval(2.0, 3.0));
@@ -366,7 +442,7 @@ mod tests {
 
     // Iterator yields all intervals in sorted order as shared references.
     #[test]
-    fn test_iter_yields_sorted_references() {
+    fn iter_yields_sorted_references() {
         let mut d = IntervalMergeDomain::empty();
         d.insert(interval(4.0, 5.0));
         d.insert(interval(0.0, 1.0));
@@ -384,14 +460,14 @@ mod tests {
 
     // from_intervals with an empty vec produces an empty domain.
     #[test]
-    fn test_from_intervals_empty() {
+    fn from_intervals_empty() {
         let d = IntervalMergeDomain::from_intervals(vec![]);
         assert_eq!(d.items.len(), 0);
     }
 
     // from_intervals sorts and keeps disjoint intervals.
     #[test]
-    fn test_from_intervals_disjoint_unsorted() {
+    fn from_intervals_disjoint_unsorted() {
         let d = IntervalMergeDomain::from_intervals(vec![
             interval(4.0, 5.0),
             interval(0.0, 1.0),
@@ -407,7 +483,7 @@ mod tests {
 
     // from_intervals merges overlapping intervals.
     #[test]
-    fn test_from_intervals_with_overlaps() {
+    fn from_intervals_with_overlaps() {
         let d = IntervalMergeDomain::from_intervals(vec![
             interval(0.0, 2.0),
             interval(3.0, 5.0),
@@ -420,7 +496,7 @@ mod tests {
 
     // from_intervals handles a mix: some overlap, some don't.
     #[test]
-    fn test_from_intervals_mixed() {
+    fn from_intervals_mixed() {
         let d = IntervalMergeDomain::from_intervals(vec![
             interval(0.0, 1.0),
             interval(0.5, 1.5), // overlaps first
@@ -441,7 +517,7 @@ mod tests {
 
     // modify_at: removing an interval shrinks the domain.
     #[test]
-    fn test_modify_at_remove() {
+    fn modify_at_remove() {
         let mut d = IntervalMergeDomain::empty();
         d.insert(interval(0.0, 1.0));
         d.insert(interval(2.0, 3.0));
@@ -458,7 +534,7 @@ mod tests {
 
     // modify_at: no queued action leaves the domain unchanged.
     #[test]
-    fn test_modify_at_no_action_is_noop() {
+    fn modify_at_no_action_is_noop() {
         let mut d = IntervalMergeDomain::empty();
         d.insert(interval(0.0, 1.0));
         { let _h = d.modify_at(0).unwrap(); } // dropped without queuing anything
@@ -467,7 +543,7 @@ mod tests {
 
     // modify_at: replacing an interval re-inserts and merges if needed.
     #[test]
-    fn test_modify_at_replace_merges() {
+    fn modify_at_replace_merges() {
         let mut d = IntervalMergeDomain::empty();
         d.insert(interval(0.0, 1.0));
         d.insert(interval(5.0, 6.0));
@@ -482,7 +558,7 @@ mod tests {
 
     // modify_at: set with a zero-length interval acts as remove.
     #[test]
-    fn test_modify_at_set_zero_length_removes() {
+    fn modify_at_set_zero_length_removes() {
         let mut d = IntervalMergeDomain::empty();
         d.insert(interval(0.0, 1.0));
         d.insert(interval(2.0, 3.0));
@@ -493,7 +569,7 @@ mod tests {
 
     // modify_at: out-of-bounds index returns None.
     #[test]
-    fn test_modify_at_out_of_bounds() {
+    fn modify_at_out_of_bounds() {
         let mut d = IntervalMergeDomain::empty();
         d.insert(interval(0.0, 1.0));
         assert!(d.modify_at(1).is_none());
@@ -501,7 +577,7 @@ mod tests {
 
     // modify_iter: removing items via the bulk iterator.
     #[test]
-    fn test_modify_iter_remove_some() {
+    fn modify_iter_remove_some() {
         let mut d = IntervalMergeDomain::empty();
         d.insert(interval(0.0, 1.0));
         d.insert(interval(2.0, 3.0));
@@ -520,7 +596,7 @@ mod tests {
 
     // modify_iter: replacing items via the bulk iterator; invariants hold after.
     #[test]
-    fn test_modify_iter_replace_and_invariants() {
+    fn modify_iter_replace_and_invariants() {
         let mut d = IntervalMergeDomain::empty();
         d.insert(interval(0.0, 1.0));
         d.insert(interval(3.0, 4.0));
@@ -541,7 +617,7 @@ mod tests {
 
     // modify_iter: replacements that now overlap each other are merged.
     #[test]
-    fn test_modify_iter_replacements_merge() {
+    fn modify_iter_replacements_merge() {
         let mut d = IntervalMergeDomain::empty();
         d.insert(interval(0.0, 1.0));
         d.insert(interval(2.0, 3.0));
@@ -560,7 +636,7 @@ mod tests {
 
     // modify_iter: no queued actions leaves the domain unchanged.
     #[test]
-    fn test_modify_iter_no_action_is_noop() {
+    fn modify_iter_no_action_is_noop() {
         let mut d = IntervalMergeDomain::empty();
         d.insert(interval(0.0, 1.0));
         d.insert(interval(2.0, 3.0));
@@ -568,9 +644,308 @@ mod tests {
         assert_eq!(d.items.len(), 2);
     }
 
+    // not: empty domain returns the single interval [-∞, +∞].
+    #[test]
+    fn not_empty_domain() {
+        let d = IntervalMergeDomain::empty();
+        let n = d.not();
+        assert_eq!(n.items.len(), 1);
+        assert_eq!(n.items[0].min, f64::NEG_INFINITY);
+        assert_eq!(n.items[0].max, f64::INFINITY);
+    }
+
+    // not: single finite interval produces two infinite-ended flanking gaps.
+    #[test]
+    fn not_single_interval() {
+        let mut d = IntervalMergeDomain::empty();
+        d.insert(interval(3.0, 7.0));
+        let n = d.not();
+        assert_eq!(n.items.len(), 2);
+        assert_eq!(n.items[0].min, f64::NEG_INFINITY);
+        assert_eq!(n.items[0].max, 3.0);
+        assert_eq!(n.items[1].min, 7.0);
+        assert_eq!(n.items[1].max, f64::INFINITY);
+    }
+
+    // not: multiple finite intervals produce interior gaps plus two infinite-ended edge gaps.
+    #[test]
+    fn not_multiple_intervals() {
+        let mut d = IntervalMergeDomain::empty();
+        d.insert(interval(1.0, 3.0));
+        d.insert(interval(5.0, 7.0));
+        let n = d.not();
+        assert_eq!(n.items.len(), 3);
+        assert_eq!(n.items[0].min, f64::NEG_INFINITY);  assert_eq!(n.items[0].max, 1.0);
+        assert_eq!(n.items[1].min, 3.0);                assert_eq!(n.items[1].max, 5.0);
+        assert_eq!(n.items[2].min, 7.0);                assert_eq!(n.items[2].max, f64::INFINITY);
+    }
+
+    // not: a domain interval starting at -∞ suppresses the leading gap.
+    #[test]
+    fn not_interval_at_neg_infinity() {
+        let mut d = IntervalMergeDomain::empty();
+        d.insert(Interval::new(f64::NEG_INFINITY, 5.0));
+        let n = d.not();
+        assert_eq!(n.items.len(), 1);
+        assert_eq!(n.items[0].min, 5.0);
+        assert_eq!(n.items[0].max, f64::INFINITY);
+    }
+
+    // not: a domain interval ending at +∞ suppresses the trailing gap.
+    #[test]
+    fn not_interval_at_pos_infinity() {
+        let mut d = IntervalMergeDomain::empty();
+        d.insert(Interval::new(5.0, f64::INFINITY));
+        let n = d.not();
+        assert_eq!(n.items.len(), 1);
+        assert_eq!(n.items[0].min, f64::NEG_INFINITY);
+        assert_eq!(n.items[0].max, 5.0);
+    }
+
+    // not: a domain spanning all of ℝ produces an empty complement.
+    #[test]
+    fn not_full_real_line() {
+        let mut d = IntervalMergeDomain::empty();
+        d.insert(Interval::new(f64::NEG_INFINITY, f64::INFINITY));
+        let n = d.not();
+        assert_eq!(n.items.len(), 0);
+    }
+
+    // not(not(d)) recovers the original domain exactly.
+    #[test]
+    fn not_involution() {
+        let mut d = IntervalMergeDomain::empty();
+        d.insert(interval(1.0, 3.0));
+        d.insert(interval(5.0, 7.0));
+        let recovered = d.not().not();
+        assert_eq!(recovered.items.len(), d.items.len());
+        for (a, b) in recovered.items.iter().zip(d.items.iter()) {
+            assert_eq!(a.min, b.min);
+            assert_eq!(a.max, b.max);
+        }
+    }
+
+    // trim_below: items entirely at or below the value are removed.
+    #[test]
+    fn trim_below_removes_low_items() {
+        let mut d = domain(&[(0.0, 1.0), (2.0, 3.0), (5.0, 7.0)]);
+        d.trim_below(4.0);
+        assert_eq!(mins_maxes(&d), vec![(5.0, 7.0)]);
+    }
+
+    // trim_below: a straddling item has its min raised to the clip value.
+    #[test]
+    fn trim_below_clips_straddling_item() {
+        let mut d = domain(&[(0.0, 5.0), (8.0, 10.0)]);
+        d.trim_below(3.0);
+        assert_eq!(mins_maxes(&d), vec![(3.0, 5.0), (8.0, 10.0)]);
+    }
+
+    // trim_below: value above all items empties the domain.
+    #[test]
+    fn trim_below_all_removed() {
+        let mut d = domain(&[(0.0, 1.0), (2.0, 3.0)]);
+        d.trim_below(10.0);
+        assert_eq!(d.items.len(), 0);
+    }
+
+    // trim_below: value below all items leaves the domain unchanged.
+    #[test]
+    fn trim_below_none_removed() {
+        let mut d = domain(&[(5.0, 6.0), (8.0, 9.0)]);
+        d.trim_below(1.0);
+        assert_eq!(mins_maxes(&d), vec![(5.0, 6.0), (8.0, 9.0)]);
+    }
+
+    // trim_above: items entirely at or above the value are removed.
+    #[test]
+    fn trim_above_removes_high_items() {
+        let mut d = domain(&[(0.0, 1.0), (3.0, 4.0), (6.0, 8.0)]);
+        d.trim_above(5.0);
+        assert_eq!(mins_maxes(&d), vec![(0.0, 1.0), (3.0, 4.0)]);
+    }
+
+    // trim_above: a straddling item has its max lowered to the clip value.
+    #[test]
+    fn trim_above_clips_straddling_item() {
+        let mut d = domain(&[(0.0, 2.0), (4.0, 9.0)]);
+        d.trim_above(7.0);
+        assert_eq!(mins_maxes(&d), vec![(0.0, 2.0), (4.0, 7.0)]);
+    }
+
+    // trim_above: value below all items empties the domain.
+    #[test]
+    fn trim_above_all_removed() {
+        let mut d = domain(&[(5.0, 6.0), (8.0, 9.0)]);
+        d.trim_above(1.0);
+        assert_eq!(d.items.len(), 0);
+    }
+
+    // trim_above: value above all items leaves the domain unchanged.
+    #[test]
+    fn trim_above_none_removed() {
+        let mut d = domain(&[(0.0, 1.0), (2.0, 3.0)]);
+        d.trim_above(10.0);
+        assert_eq!(mins_maxes(&d), vec![(0.0, 1.0), (2.0, 3.0)]);
+    }
+
+    // trim_to: removes items outside the interval and clips the straddling ones.
+    #[test]
+    fn trim_to_basic() {
+        let mut d = domain(&[(0.0, 2.0), (3.0, 6.0), (8.0, 10.0)]);
+        d.trim_to(interval(1.0, 9.0));
+        assert_eq!(mins_maxes(&d), vec![(1.0, 2.0), (3.0, 6.0), (8.0, 9.0)]);
+    }
+
+    // trim_to: bounds entirely outside the domain produces an empty result.
+    #[test]
+    fn trim_to_outside_bounds() {
+        let mut d = domain(&[(3.0, 5.0)]);
+        d.trim_to(interval(10.0, 20.0));
+        assert_eq!(d.items.len(), 0);
+    }
+
+    // trim_to gives the same result as and() with a single-interval domain.
+    #[test]
+    fn trim_to_matches_and() {
+        let bounds = interval(2.0, 8.0);
+        let mut d = domain(&[(0.0, 3.0), (5.0, 10.0)]);
+        let expected = mins_maxes(&d.and(&domain(&[(2.0, 8.0)])));
+        d.trim_to(bounds);
+        assert_eq!(mins_maxes(&d), expected);
+    }
+
+    // clip operations preserve sorted, non-overlapping invariants.
+    #[test]
+    fn trim_preserves_invariants() {
+        let mut d = domain(&[(0.0,2.0),(3.0,5.0),(6.0,8.0),(9.0,11.0)]);
+        d.trim_below(1.0);
+        d.trim_above(10.0);
+        assert!(is_sorted(&d));
+        assert!(no_overlaps(&d));
+    }
+
+    fn domain(pairs: &[(f64, f64)]) -> IntervalMergeDomain {
+        IntervalMergeDomain::from_intervals(pairs.iter().map(|&(a, b)| interval(a, b)).collect())
+    }
+
+    fn mins_maxes(d: &IntervalMergeDomain) -> Vec<(f64, f64)> {
+        d.items.iter().map(|iv| (iv.min, iv.max)).collect()
+    }
+
+    // or: union of two disjoint domains contains all intervals from both, sorted.
+    #[test]
+    fn or_disjoint() {
+        let a = domain(&[(0.0, 1.0), (4.0, 5.0)]);
+        let b = domain(&[(2.0, 3.0), (6.0, 7.0)]);
+        let u = a.or(&b);
+        assert_eq!(mins_maxes(&u), vec![(0.0,1.0),(2.0,3.0),(4.0,5.0),(6.0,7.0)]);
+        assert!(is_sorted(&u));
+        assert!(no_overlaps(&u));
+    }
+
+    // or: overlapping domains are merged correctly.
+    #[test]
+    fn or_overlapping() {
+        let a = domain(&[(0.0, 3.0)]);
+        let b = domain(&[(2.0, 5.0)]);
+        let u = a.or(&b);
+        assert_eq!(mins_maxes(&u), vec![(0.0, 5.0)]);
+    }
+
+    // or: one empty domain returns the other unchanged.
+    #[test]
+    fn or_with_empty() {
+        let a = domain(&[(1.0, 2.0), (3.0, 4.0)]);
+        let e = IntervalMergeDomain::empty();
+        assert_eq!(mins_maxes(&a.or(&e)), mins_maxes(&a));
+        assert_eq!(mins_maxes(&e.or(&a)), mins_maxes(&a));
+    }
+
+    // or: commutativity: a.or(b) == b.or(a).
+    #[test]
+    fn or_commutative() {
+        let a = domain(&[(0.0, 2.0), (5.0, 7.0)]);
+        let b = domain(&[(1.0, 3.0), (6.0, 8.0)]);
+        assert_eq!(mins_maxes(&a.or(&b)), mins_maxes(&b.or(&a)));
+    }
+
+    // and: intersection of two disjoint domains is empty.
+    #[test]
+    fn and_disjoint() {
+        let a = domain(&[(0.0, 1.0)]);
+        let b = domain(&[(2.0, 3.0)]);
+        assert_eq!(a.and(&b).items.len(), 0);
+    }
+
+    // and: one domain contained in the other returns the inner one.
+    #[test]
+    fn and_contained() {
+        let outer = domain(&[(0.0, 10.0)]);
+        let inner = domain(&[(2.0, 4.0), (6.0, 8.0)]);
+        assert_eq!(mins_maxes(&outer.and(&inner)), mins_maxes(&inner));
+        assert_eq!(mins_maxes(&inner.and(&outer)), mins_maxes(&inner));
+    }
+
+    // and: partial overlap returns only the shared region.
+    #[test]
+    fn and_partial_overlap() {
+        let a = domain(&[(0.0, 5.0)]);
+        let b = domain(&[(3.0, 8.0)]);
+        assert_eq!(mins_maxes(&a.and(&b)), vec![(3.0, 5.0)]);
+    }
+
+    // and: multiple intervals in each domain, mixed overlaps.
+    #[test]
+    fn and_multiple_intervals() {
+        let a = domain(&[(0.0, 4.0), (6.0, 10.0)]);
+        let b = domain(&[(1.0, 3.0), (5.0, 7.0), (9.0, 11.0)]);
+        let i = a.and(&b);
+        assert_eq!(mins_maxes(&i), vec![(1.0,3.0),(6.0,7.0),(9.0,10.0)]);
+        assert!(is_sorted(&i));
+        assert!(no_overlaps(&i));
+    }
+
+    // and: one empty domain always returns empty.
+    #[test]
+    fn and_with_empty() {
+        let a = domain(&[(1.0, 2.0)]);
+        let e = IntervalMergeDomain::empty();
+        assert_eq!(a.and(&e).items.len(), 0);
+        assert_eq!(e.and(&a).items.len(), 0);
+    }
+
+    // and: commutativity: a.and(b) == b.and(a).
+    #[test]
+    fn and_commutative() {
+        let a = domain(&[(0.0, 5.0), (8.0, 12.0)]);
+        let b = domain(&[(2.0, 9.0)]);
+        assert_eq!(mins_maxes(&a.and(&b)), mins_maxes(&b.and(&a)));
+    }
+
+    // De Morgan: not(a.or(b)) == not(a).and(not(b)).
+    #[test]
+    fn de_morgan_or() {
+        let a = domain(&[(1.0, 3.0), (7.0, 9.0)]);
+        let b = domain(&[(2.0, 5.0)]);
+        let lhs = mins_maxes(&a.or(&b).not());
+        let rhs = mins_maxes(&a.not().and(&b.not()));
+        assert_eq!(lhs, rhs);
+    }
+
+    // De Morgan: not(a.and(b)) == not(a).or(not(b)).
+    #[test]
+    fn de_morgan_and() {
+        let a = domain(&[(1.0, 6.0)]);
+        let b = domain(&[(3.0, 8.0)]);
+        let lhs = mins_maxes(&a.and(&b).not());
+        let rhs = mins_maxes(&a.not().or(&b.not()));
+        assert_eq!(lhs, rhs);
+    }
+
     // Stress test: many random-ish inserts; invariants must always hold.
     #[test]
-    fn test_invariants_hold_after_many_inserts() {
+    fn invariants_hold_after_many_inserts() {
         let mut d = IntervalMergeDomain::empty();
         let starts = [5.0, 0.0, 8.0, 3.0, 6.5, 1.0, 10.0, 2.5];
         let ends =   [6.0, 2.0, 9.0, 4.0, 7.5, 1.5, 11.0, 3.5];
