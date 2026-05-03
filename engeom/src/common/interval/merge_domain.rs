@@ -19,6 +19,9 @@ enum ModAction {
 pub trait IntervalEdit {
     fn remove(&mut self);
     fn set(&mut self, interval: Interval);
+
+    fn expand(&mut self, half_width: f64);
+    fn dilate(&mut self, half_width: f64);
 }
 
 fn set_action(action: &mut Option<ModAction>, interval: Interval) {
@@ -58,6 +61,19 @@ impl<'a> IntervalEdit for IntervalHandle<'a> {
     fn set(&mut self, interval: Interval) {
         set_action(&mut self.action, interval);
     }
+
+    fn expand(&mut self, half_width: f64) {
+        self.set(self.domain.items[self.index].new_expanded(half_width))
+    }
+
+    fn dilate(&mut self, half_width: f64) {
+        let updated = self.domain.items[self.index].new_dilated(half_width);
+        if updated.is_empty() {
+            self.remove()
+        } else {
+            self.set(updated)
+        }
+    }
 }
 
 impl<'a> Drop for IntervalHandle<'a> {
@@ -81,6 +97,19 @@ impl<'a> IntervalEdit for IntervalModItem<'a> {
 
     fn set(&mut self, interval: Interval) {
         set_action(self.action, interval);
+    }
+
+    fn expand(&mut self, half_width: f64) {
+        self.set(self.interval.new_expanded(half_width))
+    }
+
+    fn dilate(&mut self, half_width: f64) {
+        let updated = self.interval.new_dilated(half_width);
+        if updated.is_empty() {
+            self.remove()
+        } else {
+            self.set(updated)
+        }
     }
 }
 
@@ -198,7 +227,11 @@ impl IntervalMergeDomain {
     /// Return a handle to the interval at `index`. The queued modification is applied on drop.
     pub fn modify_at(&mut self, index: usize) -> Option<IntervalHandle<'_>> {
         if index < self.items.len() {
-            Some(IntervalHandle { domain: self, index, action: None })
+            Some(IntervalHandle {
+                domain: self,
+                index,
+                action: None,
+            })
         } else {
             None
         }
@@ -208,7 +241,11 @@ impl IntervalMergeDomain {
     /// All queued modifications are applied when the returned value is dropped.
     pub fn modify_iter(&mut self) -> IntervalModIter<'_> {
         let actions = self.items.iter().map(|_| None).collect();
-        IntervalModIter { domain: self, index: 0, actions }
+        IntervalModIter {
+            domain: self,
+            index: 0,
+            actions,
+        }
     }
 
     /// Remove all content below `value`, clipping any straddling interval to start at `value`.
@@ -241,7 +278,12 @@ impl IntervalMergeDomain {
 
     /// Return a new domain covering every point covered by either domain.
     pub fn or(&self, other: &IntervalMergeDomain) -> IntervalMergeDomain {
-        let combined = self.items.iter().chain(other.items.iter()).cloned().collect();
+        let combined = self
+            .items
+            .iter()
+            .chain(other.items.iter())
+            .cloned()
+            .collect();
         IntervalMergeDomain::from_intervals(combined)
     }
 
@@ -537,7 +579,9 @@ mod tests {
     fn modify_at_no_action_is_noop() {
         let mut d = IntervalMergeDomain::empty();
         d.insert(interval(0.0, 1.0));
-        { let _h = d.modify_at(0).unwrap(); } // dropped without queuing anything
+        {
+            let _h = d.modify_at(0).unwrap();
+        } // dropped without queuing anything
         assert_eq!(d.items.len(), 1);
     }
 
@@ -562,7 +606,9 @@ mod tests {
         let mut d = IntervalMergeDomain::empty();
         d.insert(interval(0.0, 1.0));
         d.insert(interval(2.0, 3.0));
-        { d.modify_at(0).unwrap().set(interval(0.5, 0.5)); }
+        {
+            d.modify_at(0).unwrap().set(interval(0.5, 0.5));
+        }
         assert_eq!(d.items.len(), 1);
         assert_eq!(d.items[0].min, 2.0);
     }
@@ -640,7 +686,9 @@ mod tests {
         let mut d = IntervalMergeDomain::empty();
         d.insert(interval(0.0, 1.0));
         d.insert(interval(2.0, 3.0));
-        { let _it = d.modify_iter(); } // iterate nothing, drop immediately
+        {
+            let _it = d.modify_iter();
+        } // iterate nothing, drop immediately
         assert_eq!(d.items.len(), 2);
     }
 
@@ -675,9 +723,12 @@ mod tests {
         d.insert(interval(5.0, 7.0));
         let n = d.not();
         assert_eq!(n.items.len(), 3);
-        assert_eq!(n.items[0].min, f64::NEG_INFINITY);  assert_eq!(n.items[0].max, 1.0);
-        assert_eq!(n.items[1].min, 3.0);                assert_eq!(n.items[1].max, 5.0);
-        assert_eq!(n.items[2].min, 7.0);                assert_eq!(n.items[2].max, f64::INFINITY);
+        assert_eq!(n.items[0].min, f64::NEG_INFINITY);
+        assert_eq!(n.items[0].max, 1.0);
+        assert_eq!(n.items[1].min, 3.0);
+        assert_eq!(n.items[1].max, 5.0);
+        assert_eq!(n.items[2].min, 7.0);
+        assert_eq!(n.items[2].max, f64::INFINITY);
     }
 
     // not: a domain interval starting at -∞ suppresses the leading gap.
@@ -818,7 +869,7 @@ mod tests {
     // clip operations preserve sorted, non-overlapping invariants.
     #[test]
     fn trim_preserves_invariants() {
-        let mut d = domain(&[(0.0,2.0),(3.0,5.0),(6.0,8.0),(9.0,11.0)]);
+        let mut d = domain(&[(0.0, 2.0), (3.0, 5.0), (6.0, 8.0), (9.0, 11.0)]);
         d.trim_below(1.0);
         d.trim_above(10.0);
         assert!(is_sorted(&d));
@@ -839,7 +890,10 @@ mod tests {
         let a = domain(&[(0.0, 1.0), (4.0, 5.0)]);
         let b = domain(&[(2.0, 3.0), (6.0, 7.0)]);
         let u = a.or(&b);
-        assert_eq!(mins_maxes(&u), vec![(0.0,1.0),(2.0,3.0),(4.0,5.0),(6.0,7.0)]);
+        assert_eq!(
+            mins_maxes(&u),
+            vec![(0.0, 1.0), (2.0, 3.0), (4.0, 5.0), (6.0, 7.0)]
+        );
         assert!(is_sorted(&u));
         assert!(no_overlaps(&u));
     }
@@ -901,7 +955,7 @@ mod tests {
         let a = domain(&[(0.0, 4.0), (6.0, 10.0)]);
         let b = domain(&[(1.0, 3.0), (5.0, 7.0), (9.0, 11.0)]);
         let i = a.and(&b);
-        assert_eq!(mins_maxes(&i), vec![(1.0,3.0),(6.0,7.0),(9.0,10.0)]);
+        assert_eq!(mins_maxes(&i), vec![(1.0, 3.0), (6.0, 7.0), (9.0, 10.0)]);
         assert!(is_sorted(&i));
         assert!(no_overlaps(&i));
     }
@@ -948,7 +1002,7 @@ mod tests {
     fn invariants_hold_after_many_inserts() {
         let mut d = IntervalMergeDomain::empty();
         let starts = [5.0, 0.0, 8.0, 3.0, 6.5, 1.0, 10.0, 2.5];
-        let ends =   [6.0, 2.0, 9.0, 4.0, 7.5, 1.5, 11.0, 3.5];
+        let ends = [6.0, 2.0, 9.0, 4.0, 7.5, 1.5, 11.0, 3.5];
         for (s, e) in starts.iter().zip(ends.iter()) {
             d.insert(interval(*s, *e));
             assert!(is_sorted(&d), "not sorted after inserting [{s}, {e}]");

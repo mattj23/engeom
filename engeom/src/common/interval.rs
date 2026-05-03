@@ -6,8 +6,8 @@
 mod merge_domain;
 
 use crate::Result;
-use serde::{Deserialize, Serialize};
 pub use merge_domain::*;
+use serde::{Deserialize, Serialize};
 
 /// An interval on a continuous scalar domain, such as the interval [0, 10] on the real number line.
 /// Intervals can be thought of as 1d shapes, and are subject to boolean operations and tests
@@ -258,6 +258,13 @@ impl Interval {
         (self.min + self.max) / 2.0
     }
 
+    pub fn width(&self) -> f64 {
+        self.max - self.min
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.min < self.max
+    }
 
     /// Creates an interval that fully contains both parent intervals.
     ///
@@ -271,6 +278,42 @@ impl Interval {
         let min = a.min.min(b.min);
         let max = a.max.max(b.max);
         Interval::new_unchecked(min, max)
+    }
+
+    /// Return a new interval which has been expanded by the half-width in each direction.
+    ///
+    /// # Arguments
+    ///
+    /// * `half_width`: The amount of distance to expand each side of the interval.
+    ///
+    /// returns: Interval
+    pub fn new_expanded(&self, half_width: f64) -> Interval {
+        Interval::new_unchecked(self.min - half_width.abs(), self.max + half_width.abs())
+    }
+
+    /// The opposite of `new_expanded`, this shrinks an interval by the half-width in each
+    /// direction. The total size, however, will not fall below zero. If the interval is shrunk by
+    /// more than its size, it will be left as a zero-width interval at the center.
+    ///
+    /// # Arguments
+    ///
+    /// * `half_width`:
+    ///
+    /// returns: Interval
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    pub fn new_dilated(&self, half_width: f64) -> Interval {
+        let min = self.min + half_width.abs();
+        let max = self.max - half_width.abs();
+        if min > max {
+            Interval::new_unchecked(self.center(), self.center())
+        } else {
+            Interval::new_unchecked(min, max)
+        }
     }
 }
 
