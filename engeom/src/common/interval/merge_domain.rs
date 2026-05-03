@@ -8,6 +8,129 @@ pub struct IntervalMergeDomain {
     items: Vec<Interval>,
 }
 
+/// A pending modification to an interval in the domain.
+enum ModAction {
+    Remove,
+    Replace(Interval),
+}
+
+/// Allows queuing a modification to an interval in the domain.
+/// Calling `set` with a zero-length interval is equivalent to `remove`.
+pub trait IntervalEdit {
+    fn remove(&mut self);
+    fn set(&mut self, interval: Interval);
+}
+
+fn set_action(action: &mut Option<ModAction>, interval: Interval) {
+    if interval.length() == 0.0 {
+        *action = Some(ModAction::Remove);
+    } else {
+        *action = Some(ModAction::Replace(interval));
+    }
+}
+
+fn apply_queued(domain: &mut IntervalMergeDomain, index: usize, action: ModAction) {
+    domain.items.remove(index);
+    if let ModAction::Replace(iv) = action {
+        domain.insert(iv);
+    }
+}
+
+/// A handle to a single interval in the domain. The queued modification is applied when
+/// the handle is dropped.
+pub struct IntervalHandle<'a> {
+    domain: &'a mut IntervalMergeDomain,
+    index: usize,
+    action: Option<ModAction>,
+}
+
+impl<'a> IntervalHandle<'a> {
+    pub fn interval(&self) -> &Interval {
+        &self.domain.items[self.index]
+    }
+}
+
+impl<'a> IntervalEdit for IntervalHandle<'a> {
+    fn remove(&mut self) {
+        self.action = Some(ModAction::Remove);
+    }
+
+    fn set(&mut self, interval: Interval) {
+        set_action(&mut self.action, interval);
+    }
+}
+
+impl<'a> Drop for IntervalHandle<'a> {
+    fn drop(&mut self) {
+        if let Some(action) = self.action.take() {
+            apply_queued(self.domain, self.index, action);
+        }
+    }
+}
+
+/// An item yielded by [`IntervalModIter`] that allows queuing a modification.
+pub struct IntervalModItem<'a> {
+    pub interval: &'a Interval,
+    action: &'a mut Option<ModAction>,
+}
+
+impl<'a> IntervalEdit for IntervalModItem<'a> {
+    fn remove(&mut self) {
+        *self.action = Some(ModAction::Remove);
+    }
+
+    fn set(&mut self, interval: Interval) {
+        set_action(self.action, interval);
+    }
+}
+
+/// An iterator-like type that yields each interval in the domain as an [`IntervalModItem`],
+/// allowing modifications to be queued. All queued modifications are applied when the
+/// iterator is dropped.
+pub struct IntervalModIter<'a> {
+    domain: &'a mut IntervalMergeDomain,
+    index: usize,
+    actions: Vec<Option<ModAction>>,
+}
+
+impl<'a> IntervalModIter<'a> {
+    /// Advance to the next interval, returning a handle that allows queuing a modification.
+    /// Works like `Iterator::next` but uses a lending lifetime so items may not outlive
+    /// the call: use `while let Some(item) = iter.next_item()` rather than `for`.
+    pub fn next_item(&mut self) -> Option<IntervalModItem<'_>> {
+        if self.index < self.domain.items.len() {
+            let i = self.index;
+            self.index += 1;
+            Some(IntervalModItem {
+                interval: &self.domain.items[i],
+                action: &mut self.actions[i],
+            })
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a> Drop for IntervalModIter<'a> {
+    fn drop(&mut self) {
+        // Collect replacement intervals before touching the domain.
+        let mut replacements: Vec<Interval> = Vec::new();
+        // Remove marked items in reverse order to keep earlier indices valid.
+        for i in (0..self.actions.len()).rev() {
+            if let Some(action) = self.actions[i].take() {
+                self.domain.items.remove(i);
+                if let ModAction::Replace(iv) = action {
+                    replacements.push(iv);
+                }
+            }
+        }
+        // Re-insert replacements; insert() handles merging with remaining items.
+        for iv in replacements {
+            self.domain.insert(iv);
+        }
+    }
+}
+
 impl<'a> IntoIterator for &'a IntervalMergeDomain {
     type Item = &'a Interval;
     type IntoIter = std::slice::Iter<'a, Interval>;
@@ -70,6 +193,22 @@ impl IntervalMergeDomain {
             // Finally, we insert the accumulated interval back into the collection.
             self.items.insert(overlaps[0], working);
         }
+    }
+
+    /// Return a handle to the interval at `index`. The queued modification is applied on drop.
+    pub fn modify_at(&mut self, index: usize) -> Option<IntervalHandle<'_>> {
+        if index < self.items.len() {
+            Some(IntervalHandle { domain: self, index, action: None })
+        } else {
+            None
+        }
+    }
+
+    /// Return an iterator-like value over all intervals that allows queuing modifications.
+    /// All queued modifications are applied when the returned value is dropped.
+    pub fn modify_iter(&mut self) -> IntervalModIter<'_> {
+        let actions = self.items.iter().map(|_| None).collect();
+        IntervalModIter { domain: self, index: 0, actions }
     }
 
     /// Starting at `start_i`, will return a Vec of all indices which overlap with the given
@@ -298,6 +437,135 @@ mod tests {
         assert_eq!(d.items[1].max, 5.0);
         assert_eq!(d.items[2].min, 7.0);
         assert_eq!(d.items[2].max, 8.0);
+    }
+
+    // modify_at: removing an interval shrinks the domain.
+    #[test]
+    fn test_modify_at_remove() {
+        let mut d = IntervalMergeDomain::empty();
+        d.insert(interval(0.0, 1.0));
+        d.insert(interval(2.0, 3.0));
+        d.insert(interval(4.0, 5.0));
+        {
+            let mut h = d.modify_at(1).unwrap();
+            assert_eq!(h.interval().min, 2.0);
+            h.remove();
+        }
+        assert_eq!(d.items.len(), 2);
+        assert_eq!(d.items[0].min, 0.0);
+        assert_eq!(d.items[1].min, 4.0);
+    }
+
+    // modify_at: no queued action leaves the domain unchanged.
+    #[test]
+    fn test_modify_at_no_action_is_noop() {
+        let mut d = IntervalMergeDomain::empty();
+        d.insert(interval(0.0, 1.0));
+        { let _h = d.modify_at(0).unwrap(); } // dropped without queuing anything
+        assert_eq!(d.items.len(), 1);
+    }
+
+    // modify_at: replacing an interval re-inserts and merges if needed.
+    #[test]
+    fn test_modify_at_replace_merges() {
+        let mut d = IntervalMergeDomain::empty();
+        d.insert(interval(0.0, 1.0));
+        d.insert(interval(5.0, 6.0));
+        {
+            let mut h = d.modify_at(0).unwrap();
+            h.set(interval(0.0, 5.5)); // now overlaps the second interval
+        }
+        assert_eq!(d.items.len(), 1);
+        assert_eq!(d.items[0].min, 0.0);
+        assert_eq!(d.items[0].max, 6.0);
+    }
+
+    // modify_at: set with a zero-length interval acts as remove.
+    #[test]
+    fn test_modify_at_set_zero_length_removes() {
+        let mut d = IntervalMergeDomain::empty();
+        d.insert(interval(0.0, 1.0));
+        d.insert(interval(2.0, 3.0));
+        { d.modify_at(0).unwrap().set(interval(0.5, 0.5)); }
+        assert_eq!(d.items.len(), 1);
+        assert_eq!(d.items[0].min, 2.0);
+    }
+
+    // modify_at: out-of-bounds index returns None.
+    #[test]
+    fn test_modify_at_out_of_bounds() {
+        let mut d = IntervalMergeDomain::empty();
+        d.insert(interval(0.0, 1.0));
+        assert!(d.modify_at(1).is_none());
+    }
+
+    // modify_iter: removing items via the bulk iterator.
+    #[test]
+    fn test_modify_iter_remove_some() {
+        let mut d = IntervalMergeDomain::empty();
+        d.insert(interval(0.0, 1.0));
+        d.insert(interval(2.0, 3.0));
+        d.insert(interval(4.0, 5.0));
+        {
+            let mut it = d.modify_iter();
+            while let Some(mut item) = it.next_item() {
+                if item.interval.min >= 2.0 {
+                    item.remove();
+                }
+            }
+        }
+        assert_eq!(d.items.len(), 1);
+        assert_eq!(d.items[0].min, 0.0);
+    }
+
+    // modify_iter: replacing items via the bulk iterator; invariants hold after.
+    #[test]
+    fn test_modify_iter_replace_and_invariants() {
+        let mut d = IntervalMergeDomain::empty();
+        d.insert(interval(0.0, 1.0));
+        d.insert(interval(3.0, 4.0));
+        d.insert(interval(7.0, 8.0));
+        {
+            let mut it = d.modify_iter();
+            while let Some(mut item) = it.next_item() {
+                // Expand every interval by 0.5 on each side.
+                let iv = item.interval;
+                item.set(interval(iv.min - 0.5, iv.max + 0.5));
+            }
+        }
+        // [−0.5, 1.5], [2.5, 4.5], [6.5, 8.5]: no overlaps.
+        assert_eq!(d.items.len(), 3);
+        assert!(is_sorted(&d));
+        assert!(no_overlaps(&d));
+    }
+
+    // modify_iter: replacements that now overlap each other are merged.
+    #[test]
+    fn test_modify_iter_replacements_merge() {
+        let mut d = IntervalMergeDomain::empty();
+        d.insert(interval(0.0, 1.0));
+        d.insert(interval(2.0, 3.0));
+        {
+            let mut it = d.modify_iter();
+            while let Some(mut item) = it.next_item() {
+                // Expand both so they overlap: [0, 2.5] and [1.5, 3].
+                let iv = item.interval;
+                item.set(interval(iv.min, iv.max + 1.5));
+            }
+        }
+        assert_eq!(d.items.len(), 1);
+        assert_eq!(d.items[0].min, 0.0);
+        assert_eq!(d.items[0].max, 4.5);
+    }
+
+    // modify_iter: no queued actions leaves the domain unchanged.
+    #[test]
+    fn test_modify_iter_no_action_is_noop() {
+        let mut d = IntervalMergeDomain::empty();
+        d.insert(interval(0.0, 1.0));
+        d.insert(interval(2.0, 3.0));
+        { let _it = d.modify_iter(); } // iterate nothing, drop immediately
+        assert_eq!(d.items.len(), 2);
     }
 
     // Stress test: many random-ish inserts; invariants must always hold.
