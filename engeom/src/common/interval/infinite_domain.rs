@@ -38,14 +38,12 @@ impl IntervalOps for Interval {
         self.contains_value(other.min) || other.contains_value(self.min)
     }
 
-    fn intersection(&self, other: Self) -> Option<Interval> {
+    fn intersection(&self, other: Self) -> (Option<Interval>, Option<Interval>) {
         if self.overlaps(&other) {
-            Some(Interval::new(
-                self.min.max(other.min),
-                self.max.min(other.max),
-            ))
+            let a = Interval::new(self.min.max(other.min), self.max.min(other.max));
+            (Some(a), None)
         } else {
-            None
+            (None, None)
         }
     }
 
