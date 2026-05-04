@@ -1,6 +1,7 @@
+use crate::common::interval::IntervalOps;
 use serde::{Deserialize, Serialize};
 
-/// An interval on a continuous scalar domain, such as the interval [0, 10] on the real number line.
+/// An interval on an infinite scalar domain, such as the interval [0, 10] on the real number line.
 /// Intervals can be thought of as 1d shapes, and are subject to boolean operations and tests
 /// such as intersections, unions, containment, and composition.
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
@@ -10,6 +11,69 @@ pub struct Interval {
 
     /// The maximum value of the interval, inclusive.
     pub max: f64,
+}
+
+impl IntervalOps for Interval {
+    fn min(&self) -> f64 {
+        self.min
+    }
+
+    fn max(&self) -> f64 {
+        self.max
+    }
+
+    fn contains_value(&self, x: f64) -> bool {
+        x >= self.min && x < self.max
+    }
+
+    fn contains_other(&self, other: Self) -> bool {
+        self.contains_value(other.min) && self.contains_value(other.max)
+    }
+
+    fn extent(&self) -> f64 {
+        self.max - self.min
+    }
+
+    fn overlaps(&self, other: Self) -> bool {
+        self.contains_value(other.min) || other.contains_value(self.min)
+    }
+
+    fn intersection(&self, other: Self) -> Option<Interval> {
+        if self.overlaps(&other) {
+            Some(Interval::new(
+                self.min.max(other.min),
+                self.max.min(other.max),
+            ))
+        } else {
+            None
+        }
+    }
+
+    fn clamp_value(&self, x: f64) -> f64 {
+        x.clamp(self.min, self.max)
+    }
+
+    fn center(&self) -> f64 {
+        (self.min + self.max) / 2.0
+    }
+
+    fn is_empty(&self) -> bool {
+        !(self.min < self.max)
+    }
+
+    fn new_containing(&self, other: &Self) -> Self {
+        let min = self.min.min(other.min);
+        let max = self.max.max(other.max);
+        Interval::new_unchecked(min, max)
+    }
+
+    fn new_full() -> Self {
+        Interval::new_unchecked(f64::NEG_INFINITY, f64::INFINITY)
+    }
+
+    fn wraps() -> bool {
+        false
+    }
 }
 
 impl Interval {

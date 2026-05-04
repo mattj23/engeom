@@ -347,5 +347,4 @@ mod tests {
             assert_relative_eq!(test0.y, v1.y, epsilon = 1.0e-10);
         }
     }
-
 }

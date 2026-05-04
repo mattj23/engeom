@@ -1,5 +1,5 @@
+use crate::common::{ANGLE_TOL, angle_to_2pi};
 use std::f64::consts::PI;
-use crate::common::{angle_to_2pi, ANGLE_TOL};
 
 /// An `AngleInterval` represents a continuous range of angles, specified by a starting angle and
 /// a positive (counter-clockwise) included length.  This is similar to an interval on a number
@@ -114,12 +114,12 @@ impl AngleInterval {
     }
 }
 
-#[cfg(test)] 
+#[cfg(test)]
 mod tests {
-    use std::f64::consts::PI;
-    use rand::RngExt;
-    use crate::common::{linear_space, signed_compliment_2pi};
     use crate::common::interval::angle_domain::AngleInterval;
+    use crate::common::{linear_space, signed_compliment_2pi};
+    use rand::RngExt;
+    use std::f64::consts::PI;
 
     #[test]
     fn test_angle_includes() {
@@ -160,5 +160,4 @@ mod tests {
             }
         }
     }
-    
 }
