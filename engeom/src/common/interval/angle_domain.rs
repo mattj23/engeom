@@ -136,7 +136,9 @@ impl IntervalOps for AngleInterval {
             // for above), or if they overlap each other's ends via wrapping. In that case they
             // have two intersection regions
             (true, true) => {
-                todo!()
+                let a = ccw_between(self.min, other.max);
+                let b = ccw_between(other.min, self.max);
+                (Some(a), Some(b))
             }
 
             // We go from other.min to self.max
@@ -388,6 +390,29 @@ pub mod tests {
     }
 
     #[test]
+    fn sweep_intersection_wrap() {
+        let a = by_deg(40, 320);
+        let b = by_deg(310, 50);
+        let e0 = by_deg(40, 50);
+        let e1 = by_deg(310, 320);
+
+        for t in linear_space(0.0, 2.0 * PI, 1000).iter() {
+            let a_t = a.offset(*t);
+            let b_t = b.offset(*t);
+            let e0_t = e0.offset(*t);
+            let e1_t = e1.offset(*t);
+
+            let (t0_0, t0_1) = a_t.intersection(b_t);
+            assert_relative_eq!(e0_t, t0_0.unwrap(), epsilon = 1e-10);
+            assert_relative_eq!(e1_t, t0_1.unwrap(), epsilon = 1e-10);
+
+            let (t1_0, t1_1) = b_t.intersection(a_t);
+            assert_relative_eq!(e1_t, t1_0.unwrap(), epsilon = 1e-10);
+            assert_relative_eq!(e0_t, t1_1.unwrap(), epsilon = 1e-10);
+        }
+    }
+
+    #[test]
     fn sweep_intersection_overlap() {
         let a = by_deg(5, 50);
         let b = by_deg(30, 80);
@@ -398,6 +423,19 @@ pub mod tests {
             r0.unwrap()
         });
     }
+
+    #[test]
+    fn sweep_intersection_no_overlap() {
+        let a = by_deg(5, 20);
+        let b = by_deg(50, 80);
+        for t in linear_space(0.0, 2.0 * PI, 1000).iter() {
+            let a_t = a.offset(*t);
+            let b_t = b.offset(*t);
+            assert_eq!(a_t.intersection(b_t), (None, None));
+            assert_eq!(b_t.intersection(a_t), (None, None));
+        }
+    }
+
 
     #[test]
     fn sweep_new_contains_overlap() {
