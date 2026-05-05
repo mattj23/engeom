@@ -1,5 +1,9 @@
 use super::IntervalOps;
 
+// ================================================================================================
+// Merge Domain
+// ================================================================================================
+
 pub struct MergeDomain<T: IntervalOps> {
     pub items: Vec<T>,
 }
@@ -95,12 +99,85 @@ impl<T: IntervalOps> MergeDomain<T> {
         }
         overlaps
     }
+
+    pub fn modify_at(&'_ mut self, index: usize) -> Option<ItemEditHandle<'_, T>> {
+        if index < self.items.len() {
+            Some(ItemEditHandle {
+                domain: self,
+                index,
+                action: None
+            })
+        } else {
+            None
+        }
+    }
 }
+
+// ================================================================================================
+// Editing Features
+// ================================================================================================
+enum ModAct<T: IntervalOps> {
+    Delete,
+    Replace(T)
+}
+
+pub trait IntervalHandleEdit<T: IntervalOps> {
+    fn delete(&mut self);
+    fn replace(&mut self, item: T);
+    fn modify(&mut self, action: &dyn Fn(&T) -> Option<T>);
+}
+
+pub struct ItemEditHandle<'a, T: IntervalOps> {
+    domain: &'a mut MergeDomain<T>,
+    index: usize,
+    action: Option<ModAct<T>>
+}
+
+impl<'a, T: IntervalOps> ItemEditHandle<'a, T> {
+    pub fn item(&self) -> &T {
+        &self.domain.items[self.index]
+    }
+}
+
+impl<'a, T: IntervalOps> IntervalHandleEdit<T> for ItemEditHandle<'a, T> {
+    fn delete(&mut self) {
+        self.action = Some(ModAct::Delete);
+    }
+
+    fn replace(&mut self, item: T) {
+        self.action = if item.is_empty() {
+            Some(ModAct::Delete)
+        } else {
+            Some(ModAct::Replace(item))
+        }
+    }
+
+    fn modify(&mut self, action: &dyn Fn(&T) -> Option<T>) {
+        if let Some(result) = action(self.item()) {
+            self.action = Some(ModAct::Replace(result));
+        } else {
+            self.action = Some(ModAct::Delete);
+        }
+    }
+}
+
+impl<'a, T: IntervalOps> Drop for ItemEditHandle<'a, T> {
+    fn drop(&mut self) {
+        if let Some(action) = self.action.take() {
+            self.domain.items.remove(self.index);
+            if let ModAct::Replace(item) = action {
+                self.domain.insert(item);
+            }
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::common::interval::{Interval, IntervalMerge};
+    use crate::common::IntervalMergeDomain;
 
     fn no_overlaps(x: &IntervalMerge) -> bool {
         for i in 0..x.items.len() {
@@ -233,4 +310,126 @@ mod tests {
         assert_eq!(d.items[0].min, 0.0);
         assert_eq!(d.items[0].max, 5.0);
     }
+
+    // from_intervals with an empty vec produces an empty domain.
+    #[test]
+    fn from_intervals_empty() {
+        let d = IntervalMerge::from_intervals(vec![]);
+        assert_eq!(d.items.len(), 0);
+    }
+
+    // from_intervals sorts and keeps disjoint intervals.
+    #[test]
+    fn from_intervals_disjoint_unsorted() {
+        let d = IntervalMerge::from_intervals(vec![
+            interval(4.0, 5.0),
+            interval(0.0, 1.0),
+            interval(2.0, 3.0),
+        ]);
+        assert_eq!(d.items.len(), 3);
+        assert!(is_sorted(&d));
+        assert!(no_overlaps(&d));
+        assert_eq!(d.items[0].min, 0.0);
+        assert_eq!(d.items[1].min, 2.0);
+        assert_eq!(d.items[2].min, 4.0);
+    }
+
+    // from_intervals merges overlapping intervals.
+    #[test]
+    fn from_intervals_with_overlaps() {
+        let d = IntervalMerge::from_intervals(vec![
+            interval(0.0, 2.0),
+            interval(3.0, 5.0),
+            interval(1.5, 4.0), // bridges the first two
+        ]);
+        assert_eq!(d.items.len(), 1);
+        assert_eq!(d.items[0].min, 0.0);
+        assert_eq!(d.items[0].max, 5.0);
+    }
+
+    // from_intervals handles a mix: some overlap, some don't.
+    #[test]
+    fn from_intervals_mixed() {
+        let d = IntervalMerge::from_intervals(vec![
+            interval(0.0, 1.0),
+            interval(0.5, 1.5), // overlaps first
+            interval(3.0, 4.0),
+            interval(3.5, 5.0), // overlaps previous
+            interval(7.0, 8.0), // disjoint
+        ]);
+        assert_eq!(d.items.len(), 3);
+        assert!(is_sorted(&d));
+        assert!(no_overlaps(&d));
+        assert_eq!(d.items[0].min, 0.0);
+        assert_eq!(d.items[0].max, 1.5);
+        assert_eq!(d.items[1].min, 3.0);
+        assert_eq!(d.items[1].max, 5.0);
+        assert_eq!(d.items[2].min, 7.0);
+        assert_eq!(d.items[2].max, 8.0);
+    }
+
+    // modify_at: removing an interval shrinks the domain.
+    #[test]
+    fn modify_at_remove() {
+        let mut d = IntervalMerge::new_empty();
+        d.insert(interval(0.0, 1.0));
+        d.insert(interval(2.0, 3.0));
+        d.insert(interval(4.0, 5.0));
+        {
+            let mut h = d.modify_at(1).unwrap();
+            assert_eq!(h.item().min, 2.0);
+            h.delete();
+        }
+        assert_eq!(d.items.len(), 2);
+        assert_eq!(d.items[0].min, 0.0);
+        assert_eq!(d.items[1].min, 4.0);
+    }
+
+    // modify_at: no queued action leaves the domain unchanged.
+    #[test]
+    fn modify_at_no_action_is_noop() {
+        let mut d = IntervalMerge::new_empty();
+        d.insert(interval(0.0, 1.0));
+        {
+            let _h = d.modify_at(0).unwrap();
+        } // dropped without queuing anything
+        assert_eq!(d.items.len(), 1);
+    }
+
+    // modify_at: replacing an interval re-inserts and merges if needed.
+    #[test]
+    fn modify_at_replace_merges() {
+        let mut d = IntervalMerge::new_empty();
+        d.insert(interval(0.0, 1.0));
+        d.insert(interval(5.0, 6.0));
+        {
+            let mut h = d.modify_at(0).unwrap();
+            h.replace(interval(0.0, 5.5)); // now overlaps the second interval
+        }
+        assert_eq!(d.items.len(), 1);
+        assert_eq!(d.items[0].min, 0.0);
+        assert_eq!(d.items[0].max, 6.0);
+    }
+
+    // modify_at: set with a zero-length interval acts as remove.
+    #[test]
+    fn modify_at_set_zero_length_removes() {
+        let mut d = IntervalMerge::new_empty();
+        d.insert(interval(0.0, 1.0));
+        d.insert(interval(2.0, 3.0));
+        {
+            d.modify_at(0).unwrap().replace(interval(0.5, 0.5));
+        }
+        assert_eq!(d.items.len(), 1);
+        assert_eq!(d.items[0].min, 2.0);
+    }
+
+    // modify_at: out-of-bounds index returns None.
+    #[test]
+    fn modify_at_out_of_bounds() {
+        let mut d = IntervalMergeDomain::empty();
+        d.insert(interval(0.0, 1.0));
+        assert!(d.modify_at(1).is_none());
+    }
+
 }
