@@ -1,6 +1,14 @@
 use crate::common::interval::IntervalOps;
-use crate::common::{Interval, angle_to_2pi};
+use crate::common::{
+    Interval, angle_ccw_to, angle_in_direction, angle_to_2pi, shortest_angle_between,
+};
 use std::f64::consts::PI;
+
+const ANGLE_TOL: f64 = f64::EPSILON * 3.0 * PI;
+
+use crate::AngleDir::Ccw;
+#[cfg(test)]
+use approx::{AbsDiffEq, RelativeEq};
 
 /// An `AngleInterval` represents a continuous range of angles, specified by a starting angle and
 /// a positive (counter-clockwise) included length.  This is similar to an interval on a number
@@ -10,7 +18,7 @@ use std::f64::consts::PI;
 /// To represent an interval with a negative length (for instance, starting at 0 and going to -π),
 /// the interval must be defined as starting at -π and having a length of π. Some of the original
 /// information is lost in this representation.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct AngleInterval {
     /// The starting angle of the interval, in radians. Will always take a value in the range
     /// [0, 2π].
@@ -37,19 +45,27 @@ impl IntervalOps for AngleInterval {
         if self.is_full {
             return true;
         }
+        // if self.is_empty() {
+        //     return false;
+        // }
 
-        let test = angle_to_2pi(x);
+        angle_in_direction(self.min, x, Ccw) < self.extent()
 
-        if self.is_wrapping() {
-            test >= self.min || test <= self.max
-        } else {
-            test <= self.max && test >= self.min
-        }
+        // let test = angle_to_2pi(x);
+        //
+        // if self.is_wrapping() {
+        //     test >= self.min || test <= self.max
+        // } else {
+        //     test <= self.max && test >= self.min
+        // }
     }
 
     fn contains_other(&self, other: Self) -> bool {
         if self.is_full {
             return true;
+        }
+        if self.is_empty() {
+            return false;
         }
 
         if other.is_full {
@@ -91,6 +107,8 @@ impl IntervalOps for AngleInterval {
     }
 
     fn extent(&self) -> f64 {
+        // This is used to determine `is_empty()`, so it cannot reference it
+
         if self.is_full {
             return 2.0 * PI;
         }
@@ -111,19 +129,60 @@ impl IntervalOps for AngleInterval {
     }
 
     fn clamp_value(&self, x: f64) -> f64 {
-        todo!()
+        self.center() + shortest_angle_between(self.center(), x).signum() * self.extent() / 2.0
     }
 
     fn center(&self) -> f64 {
-        todo!()
+        angle_to_2pi(self.min + self.extent() / 2.0)
     }
 
     fn is_empty(&self) -> bool {
-        todo!()
+        if self.is_full {
+            return false;
+        }
+
+        self.extent() < f64::EPSILON * 4.0 * PI
     }
 
     fn new_containing(&self, other: &Self) -> Self {
-        todo!()
+        if self.is_full || other.is_full {
+            return Self::new_full();
+        }
+
+        // If they're the same, return self. This is to distinguish from the case where they're
+        // not identical, but compliments
+        if (self.min - other.min).abs() < ANGLE_TOL && (self.max - other.max).abs() < ANGLE_TOL {
+            return *self;
+        }
+
+        // First we check if one contains the start of the other
+        let s_ovr = self.contains_value(other.min);
+        let o_ovr = other.contains_value(self.min);
+
+        match (s_ovr, o_ovr) {
+            // They can only contain each other's starts if they were identical (which we guarded
+            // for above), or if they overlap each other's ends via wrapping. In that case they
+            // span the whole domain.
+            (true, true) => Self::new_full(),
+
+            // We go from self.min to other.max
+            (true, false) => Self::new_start_angle(self.min, angle_ccw_to(self.min, other.max)),
+
+            // We go from other.min to self.max
+            (false, true) => Self::new_start_angle(other.min, angle_ccw_to(other.min, self.max)),
+
+            // No overlap, we need to determine which side is closest
+            (false, false) => {
+                let s_to_o = angle_ccw_to(self.max, other.min);
+                let o_to_s = angle_ccw_to(other.max, self.min);
+                match s_to_o < o_to_s {
+                    // We go from self.min to other.max
+                    true => Self::new_start_angle(self.min, angle_ccw_to(self.min, other.max)),
+                    // We go from other.min to self.max
+                    false => Self::new_start_angle(other.min, angle_ccw_to(other.min, self.max)),
+                }
+            }
+        }
     }
 
     fn offset(&self, x: f64) -> Self {
@@ -139,7 +198,7 @@ impl IntervalOps for AngleInterval {
     }
 
     fn wraps() -> bool {
-        todo!()
+        true
     }
 }
 
@@ -230,17 +289,103 @@ impl AngleInterval {
 }
 
 #[cfg(test)]
-mod tests {
+impl AbsDiffEq for AngleInterval {
+    type Epsilon = f64;
+
+    fn default_epsilon() -> Self::Epsilon {
+        1e-8
+    }
+
+    fn abs_diff_eq(&self, other: &Self, epsilon: Self::Epsilon) -> bool {
+        self.min.abs_diff_eq(&other.min, epsilon)
+            && self.max.abs_diff_eq(&other.max, epsilon)
+            && self.is_full == other.is_full
+    }
+}
+
+#[cfg(test)]
+impl RelativeEq for AngleInterval {
+    fn default_max_relative() -> Self::Epsilon {
+        1e-8
+    }
+
+    fn relative_eq(
+        &self,
+        other: &Self,
+        epsilon: Self::Epsilon,
+        max_relative: Self::Epsilon,
+    ) -> bool {
+        self.min.relative_eq(&other.min, epsilon, max_relative)
+            && self.max.relative_eq(&other.max, epsilon, max_relative)
+            && self.is_full == other.is_full
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
     use crate::common::interval::angle_domain::AngleInterval;
     use crate::common::{angle_to_2pi, linear_space, signed_compliment_2pi};
     use crate::{IntervalOps, Iso2, Vector2};
     use approx::assert_relative_eq;
     use rand::{RngExt, rng};
     use std::f64::consts::PI;
-    use num_traits::Signed;
 
     fn v_at(theta: f64) -> Vector2 {
         Iso2::rotation(theta) * Vector2::x()
+    }
+
+    fn by_deg(deg0: i32, deg1: i32) -> AngleInterval {
+        AngleInterval {
+            min: (deg0 as f64).to_radians(),
+            max: (deg1 as f64).to_radians(),
+            is_full: false,
+        }
+    }
+
+    fn new_contains_sweep_test(a: AngleInterval, b: AngleInterval, expected: AngleInterval) {
+        for t in linear_space(0.0, 2.0 * PI, 1000).iter() {
+            let a_t = a.offset(*t);
+            let b_t = b.offset(*t);
+            let expected_t = expected.offset(*t);
+
+            let test0 = a_t.new_containing(&b_t);
+            let test1 = b_t.new_containing(&a_t);
+            assert_relative_eq!(expected_t, test0, epsilon = 1e-10);
+            assert_relative_eq!(expected_t, test1, epsilon = 1e-10);
+        }
+    }
+
+    #[test]
+    fn sweep_new_contains_overlap() {
+        let a = by_deg(5, 50);
+        let b = by_deg(30, 80);
+        let expected = by_deg(5, 80);
+        new_contains_sweep_test(a, b, expected);
+    }
+
+    #[test]
+    fn sweep_new_contains_no_overlap() {
+        let a = by_deg(5, 20);
+        let b = by_deg(30, 80);
+        let expected = by_deg(5, 80);
+        new_contains_sweep_test(a, b, expected);
+    }
+
+    #[test]
+    fn sweep_new_contains_equal() {
+        let a = by_deg(5, 20);
+        let b = by_deg(5, 20);
+        let expected = by_deg(5, 20);
+        new_contains_sweep_test(a, b, expected);
+    }
+
+    #[test]
+    fn sweep_new_contains_wrap() {
+        let a = by_deg(20, 340);
+        let b = by_deg(320, 40);
+        let expected = AngleInterval::new_full();
+        new_contains_sweep_test(a, b, expected);
     }
 
     #[test]

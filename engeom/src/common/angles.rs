@@ -41,6 +41,36 @@ impl AngleDir {
     }
 }
 
+/// Get the counterclockwise angle from `radians0` to `radians1`
+///
+/// # Arguments
+///
+/// * `radians0`: the starting angle, in radians
+/// * `radians1`: the destination angle, in radians
+///
+/// returns: f64
+pub fn angle_ccw_to(radians0: f64, radians1: f64) -> f64 {
+    let t0 = angle_signed_pi(radians0);
+    let t1 = angle_signed_pi(radians1);
+    let t1 = if t1 < t0 { t1 + 2.0 * PI } else { t1 };
+    t1 - t0
+}
+
+/// Get the clockwise angle from `radians0` to `radians1`
+///
+/// # Arguments
+///
+/// * `radians0`: the starting angle, in radians
+/// * `radians1`: the destination angle, in radians
+///
+/// returns: f64
+pub fn angle_cw_to(radians0: f64, radians1: f64) -> f64 {
+    let t0 = angle_signed_pi(radians0);
+    let t1 = angle_signed_pi(radians1);
+    let t1 = if t1 > t0 { t1 - 2.0 * PI } else { t1 };
+    t0 - t1
+}
+
 /// Calculates the angle between two angles in a given rotational direction. The angle returned
 /// is the angle in the given rotational direction (clockwise or counter-clockwise) which `radians0`
 /// would need to be rotated to align with `radians1`. The result will always be positive, in the
@@ -70,17 +100,9 @@ impl AngleDir {
 /// assert_relative_eq!(cw, 3.0 * FRAC_PI_2, epsilon = 1.0e-10);
 /// ```
 pub fn angle_in_direction(radians0: f64, radians1: f64, angle_dir: AngleDir) -> f64 {
-    let t0 = angle_signed_pi(radians0);
-    let t1 = angle_signed_pi(radians1);
     match angle_dir {
-        AngleDir::Cw => {
-            let t1 = if t1 > t0 { t1 - 2.0 * PI } else { t1 };
-            t0 - t1
-        }
-        AngleDir::Ccw => {
-            let t1 = if t1 < t0 { t1 + 2.0 * PI } else { t1 };
-            t1 - t0
-        }
+        AngleDir::Cw => angle_cw_to(radians0, radians1),
+        AngleDir::Ccw => angle_ccw_to(radians0, radians1),
     }
 }
 
