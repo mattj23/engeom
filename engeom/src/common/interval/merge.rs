@@ -105,7 +105,6 @@ impl<T: IntervalOps> MergeDomain<T> {
             Some(ItemEditHandle {
                 domain: self,
                 index,
-                action: None
             })
         } else {
             None
@@ -118,19 +117,18 @@ impl<T: IntervalOps> MergeDomain<T> {
 // ================================================================================================
 enum ModAct<T: IntervalOps> {
     Delete,
-    Replace(T)
+    Replace(T),
 }
 
 pub trait IntervalHandleEdit<T: IntervalOps> {
-    fn delete(&mut self);
-    fn replace(&mut self, item: T);
-    fn modify(&mut self, action: &dyn Fn(&T) -> Option<T>);
+    fn delete(self);
+    fn replace(self, item: T);
+    fn modify(self, action: &dyn Fn(&T) -> Option<T>);
 }
 
 pub struct ItemEditHandle<'a, T: IntervalOps> {
     domain: &'a mut MergeDomain<T>,
     index: usize,
-    action: Option<ModAct<T>>
 }
 
 impl<'a, T: IntervalOps> ItemEditHandle<'a, T> {
@@ -140,44 +138,31 @@ impl<'a, T: IntervalOps> ItemEditHandle<'a, T> {
 }
 
 impl<'a, T: IntervalOps> IntervalHandleEdit<T> for ItemEditHandle<'a, T> {
-    fn delete(&mut self) {
-        self.action = Some(ModAct::Delete);
+    fn delete(self) {
+        self.domain.items.remove(self.index);
     }
 
-    fn replace(&mut self, item: T) {
-        self.action = if item.is_empty() {
-            Some(ModAct::Delete)
-        } else {
-            Some(ModAct::Replace(item))
+    fn replace(self, item: T) {
+        self.domain.items.remove(self.index);
+        if !item.is_empty() {
+            self.domain.insert(item);
         }
     }
 
-    fn modify(&mut self, action: &dyn Fn(&T) -> Option<T>) {
+    fn modify(self, action: &dyn Fn(&T) -> Option<T>) {
         if let Some(result) = action(self.item()) {
-            self.action = Some(ModAct::Replace(result));
+            self.replace(result);
         } else {
-            self.action = Some(ModAct::Delete);
+            self.delete();
         }
     }
 }
-
-impl<'a, T: IntervalOps> Drop for ItemEditHandle<'a, T> {
-    fn drop(&mut self) {
-        if let Some(action) = self.action.take() {
-            self.domain.items.remove(self.index);
-            if let ModAct::Replace(item) = action {
-                self.domain.insert(item);
-            }
-        }
-    }
-}
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::interval::{Interval, IntervalMerge};
     use crate::common::IntervalMergeDomain;
+    use crate::common::interval::{Interval, IntervalMerge};
 
     fn no_overlaps(x: &IntervalMerge) -> bool {
         for i in 0..x.items.len() {
@@ -375,11 +360,9 @@ mod tests {
         d.insert(interval(0.0, 1.0));
         d.insert(interval(2.0, 3.0));
         d.insert(interval(4.0, 5.0));
-        {
-            let mut h = d.modify_at(1).unwrap();
-            assert_eq!(h.item().min, 2.0);
-            h.delete();
-        }
+        let h = d.modify_at(1).unwrap();
+        assert_eq!(h.item().min, 2.0);
+        h.delete();
         assert_eq!(d.items.len(), 2);
         assert_eq!(d.items[0].min, 0.0);
         assert_eq!(d.items[1].min, 4.0);
@@ -390,9 +373,7 @@ mod tests {
     fn modify_at_no_action_is_noop() {
         let mut d = IntervalMerge::new_empty();
         d.insert(interval(0.0, 1.0));
-        {
-            let _h = d.modify_at(0).unwrap();
-        } // dropped without queuing anything
+        d.modify_at(0).unwrap();
         assert_eq!(d.items.len(), 1);
     }
 
@@ -402,10 +383,7 @@ mod tests {
         let mut d = IntervalMerge::new_empty();
         d.insert(interval(0.0, 1.0));
         d.insert(interval(5.0, 6.0));
-        {
-            let mut h = d.modify_at(0).unwrap();
-            h.replace(interval(0.0, 5.5)); // now overlaps the second interval
-        }
+        d.modify_at(0).unwrap().replace(interval(0.0, 5.5)); // now overlaps the second interval
         assert_eq!(d.items.len(), 1);
         assert_eq!(d.items[0].min, 0.0);
         assert_eq!(d.items[0].max, 6.0);
@@ -417,9 +395,7 @@ mod tests {
         let mut d = IntervalMerge::new_empty();
         d.insert(interval(0.0, 1.0));
         d.insert(interval(2.0, 3.0));
-        {
-            d.modify_at(0).unwrap().replace(interval(0.5, 0.5));
-        }
+        d.modify_at(0).unwrap().replace(interval(0.5, 0.5));
         assert_eq!(d.items.len(), 1);
         assert_eq!(d.items[0].min, 2.0);
     }
@@ -431,5 +407,4 @@ mod tests {
         d.insert(interval(0.0, 1.0));
         assert!(d.modify_at(1).is_none());
     }
-
 }
