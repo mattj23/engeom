@@ -1,5 +1,6 @@
 //! Tools for working with axis-aligned bounding boxes in 2D space.
 
+use crate::common::IntervalOps;
 use crate::{AngleInterval, Circle2, Point2, Vector2};
 use num_traits::FloatConst;
 
@@ -12,12 +13,12 @@ pub fn circle_aabb2(center: &Point2, radius: f64) -> Aabb2 {
 
 pub fn arc_aabb2(circle: &Circle2, angle0: f64, angle: f64) -> Aabb2 {
     let mut a = vec![angle0, angle0 + angle];
-    let check = AngleInterval::new(angle0, angle);
+    let check = AngleInterval::new_start_angle(angle0, angle);
 
     for i in 0..4 {
         // The angle in global space
         let t_g = i as f64 * f64::FRAC_PI_2();
-        if check.contains(t_g) {
+        if check.contains_value(t_g) {
             a.push(t_g);
         }
     }

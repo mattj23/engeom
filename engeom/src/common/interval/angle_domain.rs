@@ -1,7 +1,6 @@
 use crate::common::interval::IntervalOps;
-use crate::common::{ANGLE_TOL, Interval, angle_to_2pi};
+use crate::common::{Interval, angle_to_2pi};
 use std::f64::consts::PI;
-use itertools::Itertools;
 
 /// An `AngleInterval` represents a continuous range of angles, specified by a starting angle and
 /// a positive (counter-clockwise) included length.  This is similar to an interval on a number
@@ -56,7 +55,6 @@ impl IntervalOps for AngleInterval {
         if other.is_full {
             return false;
         }
-
         // In order to fully contain the other, it must contain both the min and the max, however
         // that is not sufficient, because if one of the two wraps we might be spanning the ends
         // but disjoint in the middle
@@ -105,7 +103,7 @@ impl IntervalOps for AngleInterval {
     }
 
     fn overlaps(&self, other: Self) -> bool {
-        self.contains_value(other.min) || other.contains_value(self.max)
+        self.contains_value(other.min) || other.contains_value(self.min)
     }
 
     fn intersection(&self, other: Self) -> (Option<Interval>, Option<Interval>) {
@@ -128,8 +126,16 @@ impl IntervalOps for AngleInterval {
         todo!()
     }
 
+    fn offset(&self, x: f64) -> Self {
+        Self::new_start_angle(self.min + x, self.extent())
+    }
+
     fn new_full() -> Self {
-        todo!()
+        Self {
+            min: 0.0,
+            max: 2.0 * PI,
+            is_full: true,
+        }
     }
 
     fn wraps() -> bool {
@@ -138,14 +144,28 @@ impl IntervalOps for AngleInterval {
 }
 
 impl AngleInterval {
+    /// Get whether the interval spans the wrapping line. If the interval does not wrap, then the
+    /// min is lower than the max. If the interval does wrap, it means that the interval goes from
+    /// min -> wrap-val, and from 0.0 -> max, and that max is less than min.
     fn is_wrapping(&self) -> bool {
         self.max < self.min
     }
 
+    /// If the interval is wrapping (crosses the wrapping line and re-emerges at zero), this
+    /// method will return the two sub intervals that together represent the full interval: the one
+    /// that goes from `self.min` to 2π, and the one that goes from 0.0 to `self.max`.
     fn wrapping_sub_intervals(&self) -> Option<(AngleInterval, AngleInterval)> {
         if self.is_wrapping() {
-            let a0 = AngleInterval { min: self.min, max: 2.0 * PI, is_full: false};
-            let a1 = AngleInterval { min: 0.0, max: self.max, is_full: false };
+            let a0 = AngleInterval {
+                min: self.min,
+                max: 2.0 * PI,
+                is_full: false,
+            };
+            let a1 = AngleInterval {
+                min: 0.0,
+                max: self.max,
+                is_full: false,
+            };
             Some((a0, a1))
         } else {
             None
@@ -174,7 +194,7 @@ impl AngleInterval {
     /// ```
     ///
     /// ```
-    pub fn new(start: f64, angle: f64) -> Self {
+    pub fn new_start_angle(start: f64, angle: f64) -> Self {
         match angle {
             a if a.abs() >= 2.0 * PI => {
                 // If the angle encircles more than the entire domain, we just return a full
@@ -212,44 +232,103 @@ impl AngleInterval {
 #[cfg(test)]
 mod tests {
     use crate::common::interval::angle_domain::AngleInterval;
-    use crate::common::{linear_space, signed_compliment_2pi};
-    use rand::RngExt;
+    use crate::common::{angle_to_2pi, linear_space, signed_compliment_2pi};
+    use crate::{IntervalOps, Iso2, Vector2};
+    use approx::assert_relative_eq;
+    use rand::{RngExt, rng};
     use std::f64::consts::PI;
+    use num_traits::Signed;
+
+    fn v_at(theta: f64) -> Vector2 {
+        Iso2::rotation(theta) * Vector2::x()
+    }
 
     #[test]
-    fn test_angle_includes() {
+    fn stress_creation() {
+        let mut rng = rng();
+        for _ in 0..10000 {
+            let start = rng.random_range(-PI..PI);
+            let span = rng.random_range(-(2.0 * PI)..(2.0 * PI));
+            let interval = AngleInterval::new_start_angle(start, span);
+
+            let v0 = v_at(start);
+            let v1 = v_at(start + span);
+            let (c_min, c_max) = if span.is_sign_positive() {
+                (v0, v1)
+            } else {
+                (v1, v0)
+            };
+
+            assert_relative_eq!(v_at(interval.min), c_min, epsilon = 1e-6);
+            assert_relative_eq!(v_at(interval.max), c_max, epsilon = 1e-6);
+            assert_relative_eq!(interval.extent(), span.abs(), epsilon = 1.0e-8);
+        }
+    }
+
+    #[test]
+    fn offset_full_sweep() {
+        let t0 = 0.0;
+        let t1 = PI / 4.0;
+        let original = AngleInterval::new_start_angle(t0, t1);
+        assert_relative_eq!(original.extent(), t1, epsilon = 1.0e-8);
+        assert_relative_eq!(original.min(), t0, epsilon = 1.0e-8);
+        assert_relative_eq!(original.max(), t1, epsilon = 1.0e-8);
+
+        let v0 = Vector2::x();
+        let v1 = Iso2::rotation(t1) * v0;
+
+        for t in linear_space(0.0, 2.0 * PI, 10000).iter() {
+            let v0a = Iso2::rotation(*t) * v0;
+            let v1a = Iso2::rotation(*t) * v1;
+
+            let offset = original.offset(*t);
+
+            assert_relative_eq!(original.extent(), offset.extent(), epsilon = 1.0e-8);
+            assert_relative_eq!(v_at(offset.min()), v0a, epsilon = 1.0e-8);
+            assert_relative_eq!(v_at(offset.max()), v1a, epsilon = 1.0e-8);
+        }
+    }
+
+    fn reduce(val: f64) -> f64 {
+        val - (1e-6 * val.signum())
+    }
+
+    #[test]
+    fn stress_contains_value() {
         let mut rnd = rand::rng();
         for _ in 0..1000 {
             let start = rnd.random_range(-2.0 * PI..2.0 * PI);
             let angle = rnd.random_range(-2.0 * PI..2.0 * PI);
-            let interval = AngleInterval::new(start, angle);
+            let interval = AngleInterval::new_start_angle(start, angle);
 
-            for da in linear_space(0.0, angle, 100).values() {
+            for da in linear_space(1e-6 * angle.signum(), reduce(angle), 100).values() {
                 let test = start + da;
                 assert!(
-                    interval.contains(test),
-                    "Failed Include {:?}, start={}, da={}, angle={}, test={}",
+                    interval.contains_value(test),
+                    "Failed Include {:?}, start={}, da={}, angle={}, test={} ({})",
                     interval,
                     start,
                     da,
                     angle,
-                    test
+                    test,
+                    angle_to_2pi(test)
                 );
             }
 
             let compliment = signed_compliment_2pi(angle);
             if compliment.abs() > 0.1 {
-                let to_check = linear_space(0.0, compliment, 100);
+                let to_check = linear_space(1e-6 * compliment.signum(), reduce(compliment), 100);
                 for da in to_check.values()[1..to_check.len() - 2].iter() {
                     let test = start + da;
                     assert!(
-                        !interval.contains(test),
-                        "Failed Exclude {:?}, start={}, da={}, angle={}, test={}",
+                        !interval.contains_value(test),
+                        "Failed Exclude {:?}, start={}, da={}, angle={}, test={} ({})",
                         interval,
                         start,
                         da,
                         angle,
-                        test
+                        test,
+                        angle_to_2pi(test)
                     );
                 }
             }

@@ -5,7 +5,7 @@ use crate::geom2::line2::intersect_lines;
 use crate::geom2::{Aabb2, HasBounds2, Iso2, LineOps2, Point2, Segment2, Vector2, signed_angle};
 use crate::geom3::Vector3;
 use crate::stats::{compute_mean, compute_st_dev};
-use crate::{AngleInterval, BestFit, SurfacePoint2};
+use crate::{AngleInterval, BestFit, IntervalOps, SurfacePoint2};
 use crate::{Arc2, Result};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use parry2d_f64::na::{Dyn, Matrix, Owned, U1, U3, Vector};
@@ -424,7 +424,7 @@ impl Circle2 {
         }
         if ints.len() == 1 {
             let start = self.angle_of_point(&ints[0]);
-            return Some(AngleInterval::new(start, 0.0));
+            return Some(AngleInterval::new_start_angle(start, 0.0));
         }
 
         // There are two possible intervals, one going from the first point to the second in the
@@ -437,10 +437,10 @@ impl Circle2 {
         let ac = signed_compliment_2pi(a);
         let s = self.angle_of_point(&ints[0]);
 
-        let i0 = AngleInterval::new(s, a);
-        let i1 = AngleInterval::new(s, ac);
+        let i0 = AngleInterval::new_start_angle(s, a);
+        let i1 = AngleInterval::new_start_angle(s, ac);
 
-        if i0.contains(self.angle_of_point(&other.center)) {
+        if i0.contains_value(self.angle_of_point(&other.center)) {
             Some(i0)
         } else {
             Some(i1)

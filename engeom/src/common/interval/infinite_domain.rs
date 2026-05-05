@@ -65,6 +65,10 @@ impl IntervalOps for Interval {
         Interval::new_unchecked(min, max)
     }
 
+    fn offset(&self, x: f64) -> Self {
+        Self::new_unchecked(self.min + x, self.max + x)
+    }
+
     fn new_full() -> Self {
         Interval::new_unchecked(f64::NEG_INFINITY, f64::INFINITY)
     }

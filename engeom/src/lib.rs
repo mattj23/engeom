@@ -43,7 +43,7 @@ pub use three_d;
 pub use func1::{Func1, Gaussian1, Line1, Polynomial, Series1};
 
 // Extremely common angle tools
-pub use common::{AngleDir, AngleInterval, IndexMask};
+pub use common::{AngleDir, AngleInterval, IndexMask, IntervalOps};
 
 // Nalgebra exports
 pub type DVector = na::DVector<f64>;

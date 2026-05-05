@@ -5,7 +5,7 @@ use crate::common::{
 };
 use crate::geom2::aabb2::arc_aabb2;
 use crate::geom2::{Aabb2, BoundaryElement2, HasBounds2, Manifold1Pos2, directed_angle, rot90};
-use crate::{AngleInterval, Circle2, Point2, Result, UnitVec2};
+use crate::{AngleInterval, Circle2, IntervalOps, Point2, Result, UnitVec2};
 use serde::{Deserialize, Serialize};
 use std::f64::consts::PI;
 
@@ -216,11 +216,11 @@ impl Arc2 {
     }
 
     pub fn angle_interval(&self) -> AngleInterval {
-        AngleInterval::new(self.angle0, self.angle)
+        AngleInterval::new_start_angle(self.angle0, self.angle)
     }
 
     pub fn is_theta_on_arc(&self, theta: f64) -> bool {
-        self.angle_interval().contains(theta)
+        self.angle_interval().contains_value(theta)
     }
 
     pub fn theta_to_fraction(&self, theta: f64) -> f64 {

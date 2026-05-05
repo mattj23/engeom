@@ -7,7 +7,7 @@ mod domain_map;
 pub mod domain_window;
 mod index_mask;
 pub mod indices;
-mod interval;
+pub mod interval;
 pub mod kd_tree;
 pub mod points;
 pub mod poisson_disk;
@@ -26,7 +26,7 @@ pub use convert_2d_3d::{To2D, To3D};
 pub use discrete_domain::{DiscreteDomain, linear_space};
 pub use domain_map::DomainMap;
 pub use index_mask::IndexMask;
-pub use interval::{AngleInterval, Interval, IntervalMergeDomain};
+pub use interval::{AngleInterval, Interval, IntervalMergeDomain, IntervalOps};
 pub use parry3d_f64::query::SplitResult;
 pub use points::*;
 pub use surface_point::{SurfacePoint, SurfacePointCollection};
@@ -48,12 +48,6 @@ pub trait Project<TEntity, TResult> {
 pub trait Intersection<TOther, TResult> {
     fn intersection(&self, other: TOther) -> TResult;
 }
-
-// impl<T: Intersection<TOther, TResult>, TOther, TResult> Intersection<TOther, TResult> for &T {
-//     fn intersection(&self, other: TOther) -> TResult {
-//         (**self).intersection(other)
-//     }
-// }
 
 /// A trait for transforming an entity by another entity
 pub trait TransformBy<T, TOut> {

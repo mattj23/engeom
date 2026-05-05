@@ -27,6 +27,7 @@ pub trait IntervalOps: Copy {
     fn center(&self) -> f64;
     fn is_empty(&self) -> bool;
     fn new_containing(&self, other: &Self) -> Self;
+    fn offset(&self, x: f64) -> Self;
 
     fn new_full() -> Self;
     fn wraps() -> bool;
