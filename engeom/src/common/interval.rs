@@ -22,7 +22,7 @@ pub trait IntervalOps: Copy {
     fn contains_other(&self, other: Self) -> bool;
     fn extent(&self) -> f64;
     fn overlaps(&self, other: Self) -> bool;
-    fn intersection(&self, other: Self) -> (Option<Interval>, Option<Interval>);
+    fn intersection(&self, other: Self) -> (Option<Self>, Option<Self>);
     fn clamp_value(&self, x: f64) -> f64;
     fn center(&self) -> f64;
     fn is_empty(&self) -> bool;

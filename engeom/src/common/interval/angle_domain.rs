@@ -45,19 +45,7 @@ impl IntervalOps for AngleInterval {
         if self.is_full {
             return true;
         }
-        // if self.is_empty() {
-        //     return false;
-        // }
-
         angle_in_direction(self.min, x, Ccw) < self.extent()
-
-        // let test = angle_to_2pi(x);
-        //
-        // if self.is_wrapping() {
-        //     test >= self.min || test <= self.max
-        // } else {
-        //     test <= self.max && test >= self.min
-        // }
     }
 
     fn contains_other(&self, other: Self) -> bool {
@@ -124,8 +112,42 @@ impl IntervalOps for AngleInterval {
         self.contains_value(other.min) || other.contains_value(self.min)
     }
 
-    fn intersection(&self, other: Self) -> (Option<Interval>, Option<Interval>) {
-        todo!()
+    fn intersection(&self, other: Self) -> (Option<Self>, Option<Self>) {
+        if self.is_full {
+            return (Some(other), None)
+        }
+
+        if other.is_full {
+            return (Some(*self), None)
+        }
+
+        // If they're the same, return self. This is to distinguish from the case where they're
+        // not identical, but compliments
+        if (self.min - other.min).abs() < ANGLE_TOL && (self.max - other.max).abs() < ANGLE_TOL {
+            return (Some(*self), None)
+        }
+
+        // First we check if one contains the start of the other
+        let s_ovr = self.contains_value(other.min);
+        let o_ovr = other.contains_value(self.min);
+
+        match (s_ovr, o_ovr) {
+            // They can only contain each other's starts if they were identical (which we guarded
+            // for above), or if they overlap each other's ends via wrapping. In that case they
+            // have two intersection regions
+            (true, true) => {
+                todo!()
+            }
+
+            // We go from other.min to self.max
+            (true, false) => (Some(ccw_between(other.min, self.max)), None),
+
+            // We go from self.min to other.max
+            (false, true) => (Some(ccw_between(self.min, other.max)), None),
+
+            // No overlap
+            (false, false) => (None, None)
+        }
     }
 
     fn clamp_value(&self, x: f64) -> f64 {
@@ -288,6 +310,10 @@ impl AngleInterval {
     }
 }
 
+fn ccw_between(min: f64, max: f64) -> AngleInterval {
+    AngleInterval::new_start_angle(min, angle_ccw_to(min, max))
+}
+
 #[cfg(test)]
 impl AbsDiffEq for AngleInterval {
     type Epsilon = f64;
@@ -343,17 +369,34 @@ pub mod tests {
         }
     }
 
-    fn new_contains_sweep_test(a: AngleInterval, b: AngleInterval, expected: AngleInterval) {
+    fn sweep_test(
+        a: AngleInterval,
+        b: AngleInterval,
+        expected: AngleInterval,
+        combine: &impl Fn(AngleInterval, AngleInterval) -> AngleInterval,
+    ) {
         for t in linear_space(0.0, 2.0 * PI, 1000).iter() {
             let a_t = a.offset(*t);
             let b_t = b.offset(*t);
             let expected_t = expected.offset(*t);
 
-            let test0 = a_t.new_containing(&b_t);
-            let test1 = b_t.new_containing(&a_t);
+            let test0 = combine(a_t, b_t);
+            let test1 = combine(b_t, a_t);
             assert_relative_eq!(expected_t, test0, epsilon = 1e-10);
             assert_relative_eq!(expected_t, test1, epsilon = 1e-10);
         }
+    }
+
+    #[test]
+    fn sweep_intersection_overlap() {
+        let a = by_deg(5, 50);
+        let b = by_deg(30, 80);
+        let expected = by_deg(30, 50);
+        sweep_test(a, b, expected, &|x, y| {
+            let (r0, r1) = x.intersection(y);
+            assert!(r1.is_none(), "Expected only one intersection, got two: {:?} and {:?}", r0, r1);
+            r0.unwrap()
+        });
     }
 
     #[test]
@@ -361,7 +404,7 @@ pub mod tests {
         let a = by_deg(5, 50);
         let b = by_deg(30, 80);
         let expected = by_deg(5, 80);
-        new_contains_sweep_test(a, b, expected);
+        sweep_test(a, b, expected, &|x, y| x.new_containing(&y))
     }
 
     #[test]
@@ -369,7 +412,7 @@ pub mod tests {
         let a = by_deg(5, 20);
         let b = by_deg(30, 80);
         let expected = by_deg(5, 80);
-        new_contains_sweep_test(a, b, expected);
+        sweep_test(a, b, expected, &|x, y| x.new_containing(&y))
     }
 
     #[test]
@@ -377,7 +420,7 @@ pub mod tests {
         let a = by_deg(5, 20);
         let b = by_deg(5, 20);
         let expected = by_deg(5, 20);
-        new_contains_sweep_test(a, b, expected);
+        sweep_test(a, b, expected, &|x, y| x.new_containing(&y))
     }
 
     #[test]
@@ -385,7 +428,7 @@ pub mod tests {
         let a = by_deg(20, 340);
         let b = by_deg(320, 40);
         let expected = AngleInterval::new_full();
-        new_contains_sweep_test(a, b, expected);
+        sweep_test(a, b, expected, &|x, y| x.new_containing(&y))
     }
 
     #[test]
