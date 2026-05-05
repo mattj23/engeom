@@ -1,7 +1,5 @@
 use crate::common::interval::IntervalOps;
-use crate::common::{
-    Interval, angle_ccw_to, angle_in_direction, angle_to_2pi, shortest_angle_between,
-};
+use crate::common::{angle_ccw_to, angle_in_direction, angle_to_2pi, shortest_angle_between};
 use std::f64::consts::PI;
 
 const ANGLE_TOL: f64 = f64::EPSILON * 3.0 * PI;
@@ -114,17 +112,17 @@ impl IntervalOps for AngleInterval {
 
     fn intersection(&self, other: Self) -> (Option<Self>, Option<Self>) {
         if self.is_full {
-            return (Some(other), None)
+            return (Some(other), None);
         }
 
         if other.is_full {
-            return (Some(*self), None)
+            return (Some(*self), None);
         }
 
         // If they're the same, return self. This is to distinguish from the case where they're
         // not identical, but compliments
         if (self.min - other.min).abs() < ANGLE_TOL && (self.max - other.max).abs() < ANGLE_TOL {
-            return (Some(*self), None)
+            return (Some(*self), None);
         }
 
         // First we check if one contains the start of the other
@@ -148,7 +146,7 @@ impl IntervalOps for AngleInterval {
             (false, true) => (Some(ccw_between(self.min, other.max)), None),
 
             // No overlap
-            (false, false) => (None, None)
+            (false, false) => (None, None),
         }
     }
 
@@ -211,6 +209,21 @@ impl IntervalOps for AngleInterval {
 
     fn offset(&self, x: f64) -> Self {
         Self::new_start_angle(self.min + x, self.extent())
+    }
+
+    fn expand(&self, half_width: f64) -> Self {
+        let extent = self.extent() + 2.0 * half_width.abs();
+        Self::new_start_angle(self.center() - extent / 2.0, extent)
+    }
+
+    fn dilate(&self, half_width: f64) -> Self {
+        // An infinite interval can't be dilated
+        if self.is_full {
+            return Self::new_full();
+        }
+
+        let extent = (self.extent() - 2.0 * half_width.abs()).max(0.0);
+        Self::new_start_angle(self.center() - extent / 2.0, extent)
     }
 
     fn new_full() -> Self {
@@ -389,6 +402,33 @@ pub mod tests {
         }
     }
 
+    fn sweep_single(
+        a: AngleInterval,
+        e: AngleInterval,
+        modify: &impl Fn(AngleInterval) -> AngleInterval,
+    ) {
+        for t in linear_space(0.0, 2.0 * PI, 1000).iter() {
+            let a_t = a.offset(*t);
+            let e_t = e.offset(*t);
+            let test0 = modify(a_t);
+            assert_relative_eq!(e_t, test0, epsilon = 1e-10);
+        }
+    }
+
+    #[test]
+    fn sweep_expand() {
+        let a = by_deg(10, 20);
+        let ex = by_deg(5, 25);
+        sweep_single(a, ex, &|x| x.expand(5.0f64.to_radians()));
+    }
+
+    #[test]
+    fn sweep_dilate() {
+        let ex = by_deg(10, 20);
+        let a = by_deg(0, 30);
+        sweep_single(a, ex, &|x| x.dilate(10.0f64.to_radians()));
+    }
+
     #[test]
     fn sweep_intersection_wrap() {
         let a = by_deg(40, 320);
@@ -419,7 +459,12 @@ pub mod tests {
         let expected = by_deg(30, 50);
         sweep_test(a, b, expected, &|x, y| {
             let (r0, r1) = x.intersection(y);
-            assert!(r1.is_none(), "Expected only one intersection, got two: {:?} and {:?}", r0, r1);
+            assert!(
+                r1.is_none(),
+                "Expected only one intersection, got two: {:?} and {:?}",
+                r0,
+                r1
+            );
             r0.unwrap()
         });
     }
@@ -435,7 +480,6 @@ pub mod tests {
             assert_eq!(b_t.intersection(a_t), (None, None));
         }
     }
-
 
     #[test]
     fn sweep_new_contains_overlap() {

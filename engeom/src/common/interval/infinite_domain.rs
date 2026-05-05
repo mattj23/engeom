@@ -69,6 +69,15 @@ impl IntervalOps for Interval {
         Self::new_unchecked(self.min + x, self.max + x)
     }
 
+    fn expand(&self, half_width: f64) -> Self {
+        Self::new_unchecked(self.min - half_width.abs(), self.max + half_width.abs())
+    }
+
+    fn dilate(&self, half_width: f64) -> Self {
+        let extent = (self.extent() - 2.0 * half_width).max(0.0);
+        Self::new_unchecked(self.center() - extent / 2.0, self.center() + extent / 2.0)
+    }
+
     fn new_full() -> Self {
         Interval::new_unchecked(f64::NEG_INFINITY, f64::INFINITY)
     }
