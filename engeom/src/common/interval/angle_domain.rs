@@ -211,12 +211,12 @@ impl IntervalOps for AngleInterval {
         Self::new_start_angle(self.min + x, self.extent())
     }
 
-    fn expand(&self, half_width: f64) -> Self {
+    fn expanded(&self, half_width: f64) -> Self {
         let extent = self.extent() + 2.0 * half_width.abs();
         Self::new_start_angle(self.center() - extent / 2.0, extent)
     }
 
-    fn dilate(&self, half_width: f64) -> Self {
+    fn dilated(&self, half_width: f64) -> Self {
         // An infinite interval can't be dilated
         if self.is_full {
             return Self::new_full();
@@ -419,14 +419,14 @@ pub mod tests {
     fn sweep_expand() {
         let a = by_deg(10, 20);
         let ex = by_deg(5, 25);
-        sweep_single(a, ex, &|x| x.expand(5.0f64.to_radians()));
+        sweep_single(a, ex, &|x| x.expanded(5.0f64.to_radians()));
     }
 
     #[test]
     fn sweep_dilate() {
         let ex = by_deg(10, 20);
         let a = by_deg(0, 30);
-        sweep_single(a, ex, &|x| x.dilate(10.0f64.to_radians()));
+        sweep_single(a, ex, &|x| x.dilated(10.0f64.to_radians()));
     }
 
     #[test]

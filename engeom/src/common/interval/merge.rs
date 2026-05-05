@@ -105,7 +105,7 @@ mod tests {
     fn no_overlaps(x: &IntervalMerge) -> bool {
         for i in 0..x.items.len() {
             for k in i + 1..x.items.len() {
-                if x.items[i].overlaps(&x.items[k]) {
+                if x.items[i].overlaps(x.items[k]) {
                     return false;
                 }
             }

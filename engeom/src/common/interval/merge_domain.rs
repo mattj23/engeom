@@ -1,5 +1,6 @@
 //! Experimental tools to work with merging intervals over a domain
 
+use crate::IntervalOps;
 use crate::common::Interval;
 
 /// Represents a continuous domain storing non-overlapping intervals.
@@ -25,7 +26,7 @@ pub trait IntervalEdit {
 }
 
 fn set_action(action: &mut Option<ModAction>, interval: Interval) {
-    if interval.length() == 0.0 {
+    if interval.extent() == 0.0 {
         *action = Some(ModAction::Remove);
     } else {
         *action = Some(ModAction::Replace(interval));
@@ -63,11 +64,11 @@ impl<'a> IntervalEdit for IntervalHandle<'a> {
     }
 
     fn expand(&mut self, half_width: f64) {
-        self.set(self.domain.items[self.index].new_expanded(half_width))
+        self.set(self.domain.items[self.index].expanded(half_width))
     }
 
     fn dilate(&mut self, half_width: f64) {
-        let updated = self.domain.items[self.index].new_dilated(half_width);
+        let updated = self.domain.items[self.index].dilated(half_width);
         if updated.is_empty() {
             self.remove()
         } else {
@@ -100,11 +101,11 @@ impl<'a> IntervalEdit for IntervalModItem<'a> {
     }
 
     fn expand(&mut self, half_width: f64) {
-        self.set(self.interval.new_expanded(half_width))
+        self.set(self.interval.expanded(half_width))
     }
 
     fn dilate(&mut self, half_width: f64) {
-        let updated = self.interval.new_dilated(half_width);
+        let updated = self.interval.dilated(half_width);
         if updated.is_empty() {
             self.remove()
         } else {
@@ -181,7 +182,7 @@ impl IntervalMergeDomain {
         let mut items: Vec<Interval> = Vec::with_capacity(intervals.len());
         for iv in intervals {
             match items.last_mut() {
-                Some(last) if last.overlaps(&iv) => *last = Interval::new_contains(last, &iv),
+                Some(last) if last.overlaps(iv) => *last = last.new_containing(&iv),
                 _ => items.push(iv),
             }
         }
@@ -216,7 +217,7 @@ impl IntervalMergeDomain {
             let mut working = item.clone();
             for i in overlaps.iter().rev() {
                 let popped = self.items.remove(*i);
-                working = Interval::new_contains(&working, &popped);
+                working = working.new_containing(&popped);
             }
 
             // Finally, we insert the accumulated interval back into the collection.
@@ -292,7 +293,7 @@ impl IntervalMergeDomain {
         let mut items = Vec::new();
         let (mut i, mut j) = (0, 0);
         while i < self.items.len() && j < other.items.len() {
-            if let Some(iv) = self.items[i].intersection(&other.items[j]) {
+            if let Some(iv) = self.items[i].intersection(other.items[j]).0 {
                 items.push(iv);
             }
             if self.items[i].max < other.items[j].max {
@@ -345,11 +346,11 @@ impl IntervalMergeDomain {
     }
 
     pub fn expand_all(&mut self, half_width: f64) {
-        self.modify_all(&(|x| Some(x.new_expanded(half_width))))
+        self.modify_all(&(|x| Some(x.expanded(half_width))))
     }
 
     pub fn dilate_all(&mut self, half_width: f64) {
-        self.modify_all(&(|x| Some(x.new_dilated(half_width))))
+        self.modify_all(&(|x| Some(x.dilated(half_width))))
     }
 
     /// Starting at `start_i`, will return a Vec of all indices which overlap with the given
@@ -360,7 +361,7 @@ impl IntervalMergeDomain {
             if self.items[i].min > item.max {
                 break;
             }
-            if item.overlaps(&self.items[i]) {
+            if item.overlaps(self.items[i]) {
                 overlaps.push(i);
             }
         }
@@ -376,7 +377,7 @@ mod tests {
     fn no_overlaps(x: &IntervalMergeDomain) -> bool {
         for i in 0..x.items.len() {
             for k in i + 1..x.items.len() {
-                if x.items[i].overlaps(&x.items[k]) {
+                if x.items[i].overlaps(x.items[k]) {
                     return false;
                 }
             }

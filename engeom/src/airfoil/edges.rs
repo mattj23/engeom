@@ -12,7 +12,7 @@ use crate::airfoil::{AirfoilEdge, EdgeGeometry, EdgeLocate, InscribedCircle};
 use crate::common::linear_space;
 use crate::common::points::{dist, mid_point};
 use crate::geom2::{Ray2, Segment2, rot90};
-use crate::{BestFit, Circle2, Curve2, Result};
+use crate::{BestFit, Circle2, Curve2, IntervalOps, Result};
 use parry2d_f64::query::Ray;
 
 pub use detect::EdgeAutoDetect;
@@ -255,7 +255,7 @@ impl EdgeLocate for TraceToMaxCurvature {
 
         // Now we'll find the point in the interval which is closest to length_i
         let edge_point = edge_curve
-            .at_length(max.clamp(length_i))
+            .at_length(max.clamp_value(length_i))
             .ok_or("Failed to find edge point.")?
             .point();
 

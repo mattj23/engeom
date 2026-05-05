@@ -29,8 +29,8 @@ pub trait IntervalOps: Copy {
     fn new_containing(&self, other: &Self) -> Self;
     fn offset(&self, x: f64) -> Self;
 
-    fn expand(&self, half_width: f64) -> Self;
-    fn dilate(&self, half_width: f64) -> Self;
+    fn expanded(&self, half_width: f64) -> Self;
+    fn dilated(&self, half_width: f64) -> Self;
 
     fn new_full() -> Self;
     fn wraps() -> bool;
