@@ -15,7 +15,7 @@ pub use merge_domain::*;
 
 pub type IntervalMerge = MergeDomain<Interval>;
 
-pub trait IntervalOps: Copy {
+pub trait IntervalOps: Copy + Clone {
     fn min(&self) -> f64;
     fn max(&self) -> f64;
     fn contains_value(&self, x: f64) -> bool;

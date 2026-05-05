@@ -110,12 +110,24 @@ impl<T: IntervalOps> MergeDomain<T> {
             None
         }
     }
+
+    pub fn modify_all(&'_ mut self, action: &dyn Fn(T) -> Option<T>) {
+        let modified = self
+            .items
+            .iter()
+            .filter_map(|item| action(*item))
+            .filter_map(|item| if item.is_empty() { None } else { Some(item) })
+            .collect::<Vec<_>>();
+        let surrogate = Self::from_intervals(modified);
+        self.items = surrogate.items;
+    }
 }
 
 // ================================================================================================
 // Editing Features
 // ================================================================================================
 enum ModAct<T: IntervalOps> {
+    None,
     Delete,
     Replace(T),
 }
