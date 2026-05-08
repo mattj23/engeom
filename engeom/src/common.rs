@@ -18,7 +18,7 @@ pub mod triangulation;
 pub mod vec_f64;
 mod voxel_downsample;
 
-use crate::na::{Point, SVector};
+use crate::na::{Point, SVector, Unit};
 pub use align::DistMode;
 pub use angles::*;
 pub use average::Averager;
@@ -61,6 +61,14 @@ pub trait PCoords<const D: usize> {
     fn coords(&self) -> SVector<f64, D>;
 }
 
+pub trait SPCoords<const D: usize>: PCoords<D> {
+    fn normal(&self) -> Unit<SVector<f64, D>>;
+
+    fn scalar_projection(&self, p: &impl PCoords<D>) -> f64 {
+        self.normal().dot(&(p.coords() - self.coords()))
+    }
+}
+
 impl<const D: usize> PCoords<D> for [f64; D] {
     fn coords(&self) -> SVector<f64, D> {
         SVector::from_column_slice(self)
@@ -70,6 +78,12 @@ impl<const D: usize> PCoords<D> for [f64; D] {
 impl<const D: usize> PCoords<D> for SurfacePoint<D> {
     fn coords(&self) -> SVector<f64, D> {
         self.point.coords
+    }
+}
+
+impl<const D: usize> SPCoords<D> for SurfacePoint<D> {
+    fn normal(&self) -> Unit<SVector<f64, D>> {
+        self.normal
     }
 }
 

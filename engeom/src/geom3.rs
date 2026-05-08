@@ -8,6 +8,7 @@ pub mod mesh;
 mod plane3;
 pub mod point_cloud;
 mod sphere3;
+mod swept_boundary3;
 mod unroll_transform;
 mod xyzwpr;
 

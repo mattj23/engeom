@@ -1,15 +1,12 @@
-use super::*;
-use crate::geom3::align3::jacobian::{copy_jacobian, point_surf_jacobian};
-use crate::geom3::mesh::Mesh;
-use crate::geom3::{Alignment3, Point3, SurfacePoint3};
-
-use crate::Result;
+use crate::common::dist;
 use crate::common::kd_tree::{KdTree, KdTreeSearch};
-use crate::common::points::dist;
 use crate::common::ransac_tools::ransac_indices;
-use crate::geom3::align3::params::AlignParams3;
+use crate::geom3::Alignment3;
+use crate::geom3::align3::jacobian::{copy_jacobian, point_surf_jacobian};
+use crate::geom3::align3::{AlignParams3, AlignSurfMatch3, SurfaceTarget3};
+use crate::na::{Dyn, Matrix, Owned, U1, U6, Vector};
+use crate::{Iso3, Point3, Result};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
-use parry3d_f64::na::{Dyn, Matrix, Owned, U1, U6, Vector};
 use rayon::prelude::*;
 
 /// Performs a limited form of RANSAC on a set of points to find a rough alignment to the mesh.
@@ -35,12 +32,13 @@ use rayon::prelude::*;
 /// * `iterations`: the number of iterations of RANSAC to perform
 ///
 /// returns: Result<Isometry<f64, Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
-pub fn ransac_points_to_mesh(
+pub fn ransac_points_to_surface3(
     points: &[Point3],
-    mesh: &Mesh,
+    target: &impl SurfaceTarget3,
     params: &AlignParams3,
     inlier_threshold: f64,
     iterations: usize,
+    ignore_off: bool,
 ) -> Result<Iso3> {
     let tree = KdTree::try_new(points)?;
     let results = ransac_indices::<3>(iterations, points.len())?
@@ -62,10 +60,13 @@ pub fn ransac_points_to_mesh(
 
             let local_points = local_indices.iter().map(|&i| points[i]).collect::<Vec<_>>();
 
-            if let Ok(align) = points_to_mesh(&local_points, mesh, params.clone()) {
+            if let Ok(align) =
+                points_to_surface3(&local_points, target, params.clone(), ignore_off, false)
+            {
                 let mut inliers = 0;
                 for test_point in points.iter() {
-                    if mesh.distance_closest_to(&(align.full() * test_point)) < inlier_threshold {
+                    let m = target.align_surf_closest_to(&(align.full() * test_point));
+                    if dist(&m, test_point) <= inlier_threshold {
                         inliers += 1;
                     }
                 }
@@ -81,17 +82,32 @@ pub fn ransac_points_to_mesh(
     Ok(*best_transform)
 }
 
-/// Perform a Levenberg-Marquardt alignment of a set of points to a mesh.
+///
 ///
 /// # Arguments
 ///
-/// * `points`: 3D points to be aligned, in their own local coordinate system
-/// * `mesh`: the target mesh entity which the points will be aligned to
-/// * `params`: the alignment parameters, see [`AlignParams3`] for details
+/// * `points`:
+/// * `target`:
+/// * `params`:
+/// * `ignore_off`:
+/// * `parallel`:
 ///
 /// returns: Result<Alignment<Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
-pub fn points_to_mesh(points: &[Point3], mesh: &Mesh, params: AlignParams3) -> Result<Alignment3> {
-    let problem = PointsToMesh::new(points, mesh, params);
+///
+/// # Examples
+///
+/// ```
+///
+/// ```
+pub fn points_to_surface3(
+    points: &[Point3],
+    target: &impl SurfaceTarget3,
+    params: AlignParams3,
+    ignore_off: bool,
+    parallel: bool,
+) -> Result<Alignment3> {
+    let problem = PointsToSurface::new(points, target, params, ignore_off, parallel);
+
     let (result, report) = LevenbergMarquardt::new().minimize(problem);
 
     if report.termination.was_successful() {
@@ -110,28 +126,36 @@ pub fn points_to_mesh(points: &[Point3], mesh: &Mesh, params: AlignParams3) -> R
     }
 }
 
-struct PointsToMesh<'a> {
+struct PointsToSurface<'a, T: SurfaceTarget3> {
     points: &'a [Point3],
-    mesh: &'a Mesh,
+    target: &'a T,
     params: AlignParams3,
     moved: Vec<Point3>,
-    closest: Vec<SurfacePoint3>,
+    closest: Vec<AlignSurfMatch3>,
     residuals: Vec<f64>,
     weights: Vec<f64>,
+    ignore_off: bool,
     parallel: bool,
 }
 
-impl<'a> PointsToMesh<'a> {
-    fn new(points: &'a [Point3], mesh: &'a Mesh, params: AlignParams3) -> Self {
+impl<'a, T: SurfaceTarget3> PointsToSurface<'a, T> {
+    fn new(
+        points: &'a [Point3],
+        target: &'a T,
+        params: AlignParams3,
+        ignore_off: bool,
+        parallel: bool,
+    ) -> Self {
         let mut x = Self {
             points,
-            mesh,
+            target,
             params,
             moved: vec![Point3::default(); points.len()],
-            closest: vec![SurfacePoint3::default(); points.len()],
+            closest: vec![AlignSurfMatch3::default(); points.len()],
             residuals: vec![0.0; points.len()],
             weights: vec![1.0; points.len()],
-            parallel: false,
+            ignore_off,
+            parallel,
         };
 
         x.move_points();
@@ -149,45 +173,38 @@ impl<'a> PointsToMesh<'a> {
                 .par_iter()
                 .map(|&i| {
                     let m = current.transform * self.points[i];
-                    let c = self.mesh.surf_closest_to(&m);
+                    let c = self.target.align_surf_closest_to(&m);
                     (i, m, c)
                 })
                 .collect::<Vec<_>>();
             for (i, m, c) in collected {
                 self.moved[i] = m;
-                self.closest[i] = c.sp;
+                self.closest[i] = c;
             }
         } else {
             for (i, &j) in indices.iter().enumerate() {
                 let m = current.transform * self.points[j];
-                let c = self.mesh.surf_closest_to(&m);
+                let c = self.target.align_surf_closest_to(&m);
                 self.moved[i] = m;
-                self.closest[i] = c.sp;
+                self.closest[i] = c;
             }
         }
 
         for (i, (p, c)) in self.moved.iter().zip(self.closest.iter()).enumerate() {
             // The residual is the distance between the test point and the closest point on the
             // mesh surface, adjusted for the direction of the scalar projection.
-            self.residuals[i] = dist(p, &c.point) * c.scalar_projection(p).signum();
-        }
+            self.residuals[i] = dist(p, &c.point) * c.dn(p).signum();
 
-        // Weights and thresholding are disabled for now, but this is where they would go
-        // let (mean, stdev) = mean_and_stdev(&self.residuals).unwrap();
-        // let limit = (stdev * 3.0).max(1e-6);
-        // self.weights = (0..self.points.len())
-        //     .map(|i| {
-        //         if (self.residuals[i] - mean).abs() > limit {
-        //             0.0
-        //         } else {
-        //             1.0
-        //         }
-        //     })
-        //     .collect::<Vec<_>>();
+            self.weights[i] = c.weight as f64;
+
+            if self.ignore_off {
+                self.weights[i] *= f64::from(c.is_on);
+            }
+        }
     }
 }
 
-impl LeastSquaresProblem<f64, Dyn, U6> for PointsToMesh<'_> {
+impl<'a, T: SurfaceTarget3> LeastSquaresProblem<f64, Dyn, U6> for PointsToSurface<'a, T> {
     type ResidualStorage = Owned<f64, Dyn, U1>;
     type JacobianStorage = Owned<f64, Dyn, U6>;
     type ParameterStorage = Owned<f64, U6>;
@@ -226,8 +243,9 @@ impl LeastSquaresProblem<f64, Dyn, U6> for PointsToMesh<'_> {
 mod tests {
     use super::*;
     use crate::common::points::{clone_points, mean_point, transform_points};
+    use crate::na::{Translation3, UnitQuaternion};
     use crate::tests::engine_blade;
-    use crate::{SelectOp, Selection};
+    use crate::{Mesh, SelectOp, Selection, Vector3};
     use approx::assert_relative_eq;
     use std::f64::consts::PI;
 
@@ -244,7 +262,7 @@ mod tests {
 
         let params = AlignParams3::new_at_origin(None);
         let to_align = transform_points(&points, &disturb);
-        let result = points_to_mesh(&to_align, &mesh, params)?;
+        let result = points_to_surface3(&to_align, &mesh, params, false, false)?;
 
         assert_relative_eq!(disturb.inverse(), result.full(), epsilon = 1e-8);
         Ok(())
@@ -267,7 +285,7 @@ mod tests {
         let to_align = transform_points(&expected_points, &disturb);
 
         let params = AlignParams3::new_at_center(mean_point(&to_align), None);
-        let result = points_to_mesh(&to_align, &mesh, params)?;
+        let result = points_to_surface3(&to_align, &mesh, params, false, false)?;
 
         let aligned = transform_points(&to_align, result.full());
 

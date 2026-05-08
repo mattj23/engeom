@@ -175,7 +175,11 @@ pub fn point_point_jacobian_full(p: &Point3, c: &Point3, align: &AlignValues3) -
 ///   associated with the different partial differentials.
 ///
 /// returns: Matrix<f64, Const<6>, Const<1>, ArrayStorage<f64, 6, 1>>
-pub fn point_surf_jacobian(p: &Point3, c: &SurfacePoint3, align: &AlignValues3) -> T3Storage {
+pub fn point_surf_jacobian(
+    p: &impl PCoords<3>,
+    c: &impl SPCoords<3>,
+    align: &AlignValues3,
+) -> T3Storage {
     let mut result = T3Storage::zeros();
 
     // We'll grab the sign of the scalar projection, allowing us to know if we're outside or inside
@@ -185,9 +189,9 @@ pub fn point_surf_jacobian(p: &Point3, c: &SurfacePoint3, align: &AlignValues3) 
     // First, we want to calculate the deviation direction. If the magnitude of the deviation is
     // close to zero, we'll use the surface normal instead, as the two will converge as the point
     // approaches the surface.
-    let dev = p - c.point;
+    let dev = p.coords() - c.coords();
     let dir = if dev.norm_squared() < 1e-16 {
-        c.normal.into_inner()
+        c.normal().into_inner()
     } else {
         dev.normalize() * sign
     };

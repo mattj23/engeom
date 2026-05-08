@@ -1,11 +1,14 @@
-// #![cfg(feature = "private_tests")]
+#![cfg(feature = "private_tests")]
 
 mod common;
 use crate::common::PathPair;
+use engeom::io::{
+    DiffTanModel, Lptf3DsParams, Lptf3Load, load_lptf3_mesh_uncertainty, read_mesh_stl,
+    write_tc_mesh_file,
+};
 use engeom::{Iso3, Mesh, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use engeom::io::{load_lptf3_mesh_uncertainty, read_mesh_stl, write_tc_mesh_file, DiffTanModel, Lptf3DsParams, Lptf3Load};
 
 const TEST_DATA_FOLDER: &str = "multi-align-lptf3";
 

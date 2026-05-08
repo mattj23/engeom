@@ -278,10 +278,12 @@ pub fn points_to_mesh(
 ) -> PyResult<Alignment3> {
     let points = array_to_points3(&points.as_array())?;
 
-    let result = engeom::geom3::align3::points_to_mesh(
+    let result = engeom::geom3::align3::points_to_surface3(
         &points,
         mesh.get_inner(),
         params.get_inner().clone(),
+        false,
+        true,
     );
 
     match result {

@@ -7,10 +7,13 @@ pub mod multi_param;
 mod params;
 mod point_stability;
 mod points_to_cloud;
-mod points_to_mesh;
+mod points_to_surface;
 mod rotations;
 
+use crate::UnitVec3;
+use crate::common::{PCoords, SPCoords};
 use crate::geom3::{Iso3, Point3, Vector3};
+use crate::na::{SVector, Unit};
 use parry3d_f64::na::{Translation3, UnitQuaternion, Vector6};
 
 type T3Storage = Vector6<f64>;
@@ -23,8 +26,59 @@ pub use self::multi_mesh::{
 pub use self::params::*;
 pub use self::point_stability::{StabilityResult, point_stability, point_stability_reduce};
 pub use self::points_to_cloud::points_to_cloud;
-pub use self::points_to_mesh::{points_to_mesh, ransac_points_to_mesh};
+pub use self::points_to_surface::*;
 pub use self::rotations::RotationMatrices;
+
+#[derive(Debug, Clone)]
+pub struct AlignSurfMatch3 {
+    pub point: Point3,
+    pub normal: UnitVec3,
+    pub is_on: bool,
+    pub weight: f32,
+}
+
+impl AlignSurfMatch3 {
+    pub fn new(point: Point3, normal: UnitVec3, is_on: bool, weight: f32) -> Self {
+        Self {
+            point,
+            normal,
+            is_on,
+            weight,
+        }
+    }
+
+    pub fn dn(&self, point: &impl PCoords<3>) -> f64 {
+        let v = point.coords() - self.point.coords();
+        v.dot(&self.normal.into_inner())
+    }
+}
+
+impl PCoords<3> for AlignSurfMatch3 {
+    fn coords(&self) -> SVector<f64, 3> {
+        self.point.coords()
+    }
+}
+
+impl SPCoords<3> for AlignSurfMatch3 {
+    fn normal(&self) -> Unit<SVector<f64, 3>> {
+        self.normal
+    }
+}
+
+impl Default for AlignSurfMatch3 {
+    fn default() -> Self {
+        Self {
+            point: Point3::origin(),
+            normal: Vector3::x_axis(),
+            is_on: false,
+            weight: 0.0,
+        }
+    }
+}
+
+pub trait SurfaceTarget3: Sync + Send {
+    fn align_surf_closest_to(&self, p: &impl PCoords<3>) -> AlignSurfMatch3;
+}
 
 /// A struct that handles constraints on degrees of freedom in R^3 space. Each dimension is
 /// represented by a bool which specifies if the degree of freedom is _active_.
