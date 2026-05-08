@@ -64,6 +64,13 @@ Ultimately, the goal is that this library will contain support for:
     * Projections of 1D data to 2D or 3D points, lines, or other primitives
 
 
+## Testing
+
+Private data integration tests:
+
+``` 
+cargo test -r --test '*' --features private_tests
+```
 
 
 

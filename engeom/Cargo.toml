@@ -9,6 +9,7 @@ edition.workspace = true
 stl = ["dep:stl_io"]
 three_d = ["dep:three-d"]
 ply = ["dep:serde-ply"]
+private_tests = []
 
 [dependencies]
 parry3d-f64 = { workspace = true, features = ["serde-serialize"] }

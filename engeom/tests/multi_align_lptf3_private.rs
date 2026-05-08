@@ -1,0 +1,86 @@
+// #![cfg(feature = "private_tests")]
+
+mod common;
+use crate::common::PathPair;
+use engeom::{Iso3, Mesh, Result};
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+use engeom::io::{load_lptf3_mesh_uncertainty, read_mesh_stl, write_tc_mesh_file, DiffTanModel, Lptf3DsParams, Lptf3Load};
+
+const TEST_DATA_FOLDER: &str = "multi-align-lptf3";
+
+#[test]
+fn multi_align_lptf3_private() -> Result<()> {
+    let test_dir = get_test_dir()?;
+    let cases = get_cases(&test_dir.data())?;
+
+    for case in cases {
+        let manifest_path = test_dir.data().join(case.manifest);
+        let manifest: Manifest = serde_json::from_reader(std::fs::File::open(&manifest_path)?)?;
+        let case_dir = test_dir.new_joined(
+            manifest_path
+                .parent()
+                .unwrap()
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap(),
+        )?;
+
+        run_test_case(&manifest, &case_dir)?;
+    }
+
+    Ok(())
+}
+
+fn run_test_case(manifest: &Manifest, dir: &PathPair) -> Result<()> {
+    // Load the reference mesh
+    let mesh = read_mesh_stl(&dir.data().join(&manifest.reference_file), true, false)?;
+
+    // Save the reference mesh to the result directory
+    write_tc_mesh_file(&dir.result().join("reference.tcmesh"), &mesh, 1e-5)?;
+
+    for item in manifest.items.iter() {
+        let params = Lptf3DsParams::new(8, 1.0, 1.0, 0.010 * 25.4);
+        let load = Lptf3Load::SmoothSample(params);
+        let model = DiffTanModel::new(230.0, 80.0, 0.00037716);
+
+        let file_path = dir.data().join(&item.file_name);
+        let (mesh_data, uncert) = load_lptf3_mesh_uncertainty(&file_path, load, &model)?;
+        let mesh = Mesh::try_from(&mesh_data)?;
+
+        let output_path = dir.result().join(&item.file_name).with_extension("tcmesh");
+        write_tc_mesh_file(&output_path, &mesh, 1e-5)?;
+        break;
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ManifestItem {
+    file_name: String,
+    iso: Iso3,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Manifest {
+    reference_file: String,
+    items: Vec<ManifestItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TestCase {
+    name: String,
+    manifest: String,
+}
+
+fn get_cases(test_dir: &Path) -> Result<Vec<TestCase>> {
+    let target = test_dir.join("cases.json");
+    serde_json::from_reader(std::fs::File::open(target)?).map_err(|e| e.into())
+}
+
+fn get_test_dir() -> Result<PathPair> {
+    let parent_dir = common::find_private_test_data()?;
+    parent_dir.new_joined(TEST_DATA_FOLDER)
+}
