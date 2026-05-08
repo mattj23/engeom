@@ -3,6 +3,10 @@ use crate::geom2::Boundary2;
 use crate::geom3::align3::{AlignSurfMatch3, SurfaceTarget3};
 use crate::{Iso3, Point3, To2D, To3D, UnitVec3};
 
+/// An `ExtrudedBoundary3` is a means of representing a surface in 3D space using a 2D [`Boundary2`]
+/// entity and an arbitrary 3D position, direction, and length. The surface is the set of all points
+/// which the boundary passes through in an imaginary sweep of the given length and in the
+/// specified direction.
 pub struct ExtrudedBoundary3 {
     /// A boundary in the X-Y plane which is the basis of the sweep. It does not matter if the
     /// boundary is closed or open.
@@ -20,6 +24,20 @@ pub struct ExtrudedBoundary3 {
 }
 
 impl ExtrudedBoundary3 {
+    /// Create a surface representation consisting of a boundary (defined in the 2D, X-Y plane)
+    /// transformed to a given position and orientation in 3D space, and then swept along by a
+    /// given length.
+    ///
+    /// # Arguments
+    ///
+    /// * `shape`: the 2d boundary, defined in the X-Y plane
+    /// * `start`: an isometry to transform the 2D boundary to the starting position and orientation
+    ///   in 3D space. The boundary will be swept along the positive Z direction of this starting
+    ///   isometry.
+    /// * `length`: the distance along the `start` argument's positive Z direction to sweep the
+    ///   boundary. The boundary will exist between 0.0 and `length`.
+    ///
+    /// returns: ExtrudedBoundary3
     pub fn new(shape: Boundary2, start: Iso3, length: f64) -> Self {
         let start_inv = start.inverse();
         Self {
@@ -56,7 +74,20 @@ impl SurfaceTarget3 for ExtrudedBoundary3 {
     }
 }
 
-pub struct PolarBoundary3 {}
+
+/// A `RevolvedBoundary3` is a means of representing a surface in 3D space using a 2D [`Boundary2`]
+/// entity and an arbitrary 3D position, orientation, and sweep angle.  The boundary is defined in
+/// the 2D X-Y plane, and transformed to 3D space by the `start` isometry. There it is rotated
+/// around the `start` isometry's Y axis, which is the equivalent of the Y axis in the original
+/// 2D boundary definition.  It is rotated by angle `theta`.
+pub struct RevolvedBoundary3 {
+    shape: Boundary2,
+    start: Iso3,
+    start_inv: Iso3,
+    theta: f64,
+}
+
+
 
 #[cfg(test)]
 mod tests {
