@@ -28,9 +28,9 @@ pub use plane3::Plane3;
 pub use point_cloud::{PointCloud, PointCloudFeatures, PointCloudKdTree, PointCloudOverlap};
 pub use sphere3::Sphere3;
 use std::ops;
+pub use swept_boundary3::*;
 pub use unroll_transform::UnrollTransform;
 pub use xyzwpr::XyzWpr;
-pub use swept_boundary3::*;
 
 pub type Point3 = parry3d_f64::na::Point3<f64>;
 pub type Vector3 = parry3d_f64::na::Vector3<f64>;

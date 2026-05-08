@@ -2,7 +2,11 @@
 
 use crate::na::Point;
 
+mod parallel_repeated;
 pub mod parallel_row2;
+
+pub use self::parallel_repeated::*;
+pub use self::parallel_row2::*;
 
 /// This struct is a simple helper to keep track of vertices in a triangulation. Adding a point
 /// returns the index that the point can be found in the list.  Once all points have been added,

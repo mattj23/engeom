@@ -1,9 +1,11 @@
 use std::f64::consts::TAU;
 
-use crate::common::PCoords;
+use crate::common::triangulation::ParallelBuilder;
+use crate::common::{PCoords, transform_points};
 use crate::geom2::Boundary2;
+use crate::geom3::IsoExtensions3;
 use crate::geom3::align3::{AlignSurfMatch3, SurfaceTarget3};
-use crate::{Iso3, Point2, Point3, To2D, To3D, UnitVec3, Vector3};
+use crate::{Iso3, Mesh, Point2, Point3, Result, To2D, To3D, UnitVec3, Vector3};
 
 /// An `ExtrudedBoundary3` is a means of representing a surface in 3D space using a 2D [`Boundary2`]
 /// entity and an arbitrary 3D position, direction, and length. The surface is the set of all points
@@ -49,6 +51,22 @@ impl ExtrudedBoundary3 {
             length,
         }
     }
+
+    pub fn to_mesh(&self, tol: f64) -> Result<Mesh> {
+        let points = self.shape.to_points(tol)?.to_3d();
+        let mut builder = ParallelBuilder::new(points.len(), false);
+
+        let p0 = transform_points(&points, &self.start);
+        builder.push(&p0)?;
+
+        let iso2 = self.start * Iso3::translation(0.0, 0.0, self.length);
+        let p1 = transform_points(&points, &iso2);
+        builder.push(&p1)?;
+
+        let (points, faces) = builder.take();
+
+        Ok(Mesh::new(points, faces, false))
+    }
 }
 
 impl SurfaceTarget3 for ExtrudedBoundary3 {
@@ -75,7 +93,6 @@ impl SurfaceTarget3 for ExtrudedBoundary3 {
         AlignSurfMatch3::new(self.start * lc3, self.start * ln3, !is_off, 1.0)
     }
 }
-
 
 /// A `RevolvedBoundary3` is a means of representing a surface in 3D space using a 2D [`Boundary2`]
 /// entity and an arbitrary 3D position, orientation, and sweep angle.  The boundary is defined in
@@ -107,6 +124,12 @@ impl RevolvedBoundary3 {
     ///
     /// returns: RevolvedBoundary3
     pub fn new(shape: Boundary2, start: Iso3, theta: f64) -> Self {
+        let theta = if theta.abs() > TAU {
+            TAU * theta.signum()
+        } else {
+            theta
+        };
+
         let start_inv = start.inverse();
         Self {
             shape,
@@ -114,6 +137,37 @@ impl RevolvedBoundary3 {
             start_inv,
             theta,
         }
+    }
+
+    pub fn to_mesh(&self, tol: f64) -> Result<Mesh> {
+        let points = self.shape.to_points(tol)?.to_3d();
+
+        // Find the largest radius
+        let r_max = points
+            .iter()
+            .map(|p| p.x.abs())
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .ok_or("Boundary has no points".to_string())?;
+
+        let max_theta = 2.0 * (1.0 - tol / r_max).acos();
+        let n_segments = (self.theta / max_theta).ceil().max(1.0) as usize;
+        let angle_step = self.theta / n_segments as f64;
+
+        let mut builder = ParallelBuilder::new(points.len(), false);
+
+        let p0 = transform_points(&points, &self.start);
+        builder.push(&p0)?;
+
+        for i in 0..n_segments {
+            let t = (i + 1) as f64 * angle_step;
+            let iso = self.start * Iso3::from_ry(t);
+            let pn = transform_points(&points, &iso);
+            builder.push(&pn)?;
+        }
+
+        let (points, faces) = builder.take();
+
+        Ok(Mesh::new(points, faces, false))
     }
 }
 
@@ -149,7 +203,6 @@ impl SurfaceTarget3 for RevolvedBoundary3 {
         AlignSurfMatch3::new(self.start * lc3, self.start * ln3, !is_off, 1.0)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
