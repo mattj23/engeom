@@ -9,27 +9,31 @@ use crate::{Iso3, Point3, Result};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use rayon::prelude::*;
 
-/// Performs a limited form of RANSAC on a set of points to find a rough alignment to the mesh.
+/// Performs a limited form of RANSAC on a set of points to find a rough alignment to the surface
+/// target.
 ///
 /// You provide a number of sample points. It will work best if they are roughly evenly spaced, so
 /// consider generating or filtering them with Poisson disk sampling. The RANSAC algorithm will
 /// randomly pick three of these points, then find the three nearest neighbors of each, for a total
-/// of up to nine points (duplicates are removed) in the subsample. The `points_to_mesh` algorithm
-/// is then performed on these subsample points, and if the alignment converges, it iterates
+/// of up to nine points (duplicates are removed) in the subsample. The `points_to_surface3`
+/// operation is performed on these subsample points, and if the alignment converges, it iterates
 /// through the entire set of original points, transforming them by the result, and counting the
 /// number of inliers.  Inliers are points that are less than `inlier_threshold` from the target
-/// mesh after transformation.
+/// after transformation.
 ///
 /// The transformation with the highest number of inliers is returned.
 ///
 /// # Arguments
 ///
 /// * `points`: the points to be aligned, in their own local coordinate system
-/// * `mesh`: the target mesh entity which the points will be aligned to
+/// * `target`: the target surface entity which the points will be aligned to
 /// * `params`: the alignment parameters, see [`AlignParams3`] for details
-/// * `inlier_threshold`: the maximum distance between a point and the target mesh that is still
+/// * `inlier_threshold`: the maximum distance between a point and the target that is still
 ///   considered an inlier
 /// * `iterations`: the number of iterations of RANSAC to perform
+/// * `ignore_off`: if the surface target can tell if a point does not project directly onto the
+///   surface (such as if it projects onto the ends of a boundary), this flag allows such points
+///   to be weighted 0.0 to prevent their influence on the alignment.
 ///
 /// returns: Result<Isometry<f64, Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
 pub fn ransac_points_to_surface3(
@@ -82,23 +86,20 @@ pub fn ransac_points_to_surface3(
     Ok(*best_transform)
 }
 
-///
+/// Performs a Levenberg-Marquardt minimization to align a set of points to a surface target.
 ///
 /// # Arguments
 ///
-/// * `points`:
-/// * `target`:
-/// * `params`:
-/// * `ignore_off`:
-/// * `parallel`:
+/// * `points`: the 3D points to be aligned, in their own local coordinate system
+/// * `target`: an entity that implements the [`SurfaceTarget3`] trait, which will be the target
+///   of the points.
+/// * `params`: the alignment parameters, see [`AlignParams3`] for details
+/// * `ignore_off`: if the surface target can tell if a point does not project directly onto the
+///   surface (such as if it projects onto the ends of a boundary), this flag allows such points to
+///   be weighted 0.0 to prevent their influence on the alignment.
+/// * `parallel`: if `false` the rayon parallel iteration will _not_ be used.
 ///
 /// returns: Result<Alignment<Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
-///
-/// # Examples
-///
-/// ```
-///
-/// ```
 pub fn points_to_surface3(
     points: &[Point3],
     target: &impl SurfaceTarget3,
