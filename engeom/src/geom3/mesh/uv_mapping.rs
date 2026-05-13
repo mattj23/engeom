@@ -2,10 +2,11 @@
 
 use crate::common::points::barycentric;
 use crate::raster2::RasterMapping;
-use crate::{Point2, Result, Vector2};
+use crate::{Point2, Point3, Result, Vector2};
 use parry2d_f64::partitioning::TraversalAction;
-use parry2d_f64::query::PointQuery;
+use parry2d_f64::query::{PointQuery, PointQueryWithLocation};
 use parry2d_f64::shape::TriMesh;
+use crate::common::PCoords;
 
 /// A `UvMapping` is a structure that represents a two-way mapping between a two-dimensional
 /// space (typically referred to as UV to substitute for x and y) and the surface of a 3D mesh.
@@ -51,6 +52,14 @@ impl UvMapping {
     pub fn new(vertices: Vec<Point2>, faces: Vec<[u32; 3]>) -> Result<Self> {
         let tri_map = TriMesh::new(vertices, faces)?;
         Ok(Self { tri_map })
+    }
+
+    pub fn at_closest_uv(&self, point: &impl PCoords<2>) -> (u32, Point2) {
+        // let p = Point3::new(point.coords().x, point.coords().y, 0.0);
+        let p = Point2::from(point.coords());
+        let result = self.tri_map.project_local_point_and_get_location(&p, false);
+        let (proj, (t_id, _)) = result;
+        (t_id, Point2::new(proj.point.x, proj.point.y))
     }
 
     pub fn faces(&self) -> &[[u32; 3]] {
