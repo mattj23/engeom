@@ -227,11 +227,11 @@ pub fn ball_pivot_with_centers_2d(
 
         if results.len() > completed.len() * 3 {
             if let BallPivotEnd::EndOnIndex(end_index) = end {
-                println!("Should have ended on {}", end_index);
-                println!("Total: {}", points.len());
+                // println!("Should have ended on {}", end_index);
+                // println!("Total: {}", points.len());
             }
             // json_elements_save("ball-pivot-debug.json".as_ref(), &debug_output).unwrap();
-            println!("Results: {:?}", results);
+            // println!("Results: {:?}", results);
             return Err("Loop detected".into());
         }
 
