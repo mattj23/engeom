@@ -123,7 +123,11 @@ pub fn points_to_surface3(
         );
         Ok(align)
     } else {
-        Err("Failed to align points to mesh".into())
+        Err(format!(
+            "Failed to align points to surface: {:?}",
+            report.termination
+        )
+        .into())
     }
 }
 

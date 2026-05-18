@@ -86,6 +86,12 @@ impl BoundaryData2 {
         }
     }
 
+    pub fn new_transformed_by(&self, iso: &Iso2) -> Self {
+        let mut cloned = self.clone();
+        cloned.transform_by(iso);
+        cloned
+    }
+
     pub fn get_cursor(&mut self, at_id: Option<u32>) -> BCursor<'_> {
         let node_id = match at_id {
             Some(id) => id,

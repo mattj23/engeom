@@ -423,6 +423,11 @@ fn find_crossing_info(bnd: &impl CurvePartitioner2, line: &Line2, t: f64) -> (bo
         delta *= 2.0;
         at_t_plus = bnd.is_pos(&line.at(t + delta));
         at_t_minus = bnd.is_pos(&line.at(t - delta));
+
+        if delta > 1e-6 {
+            // This intersection isn't going to result in a crossing.
+            return (at_t, at_t);
+        }
     }
 
     if at_t != at_t_plus {

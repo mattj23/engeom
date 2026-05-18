@@ -264,6 +264,10 @@ impl Mesh {
 
         Self::new(updated, self.faces().to_vec(), self.is_solid)
     }
+
+    pub fn flip_normals(&mut self) {
+        self.shape.reverse()
+    }
 }
 
 // ===============================================================================================

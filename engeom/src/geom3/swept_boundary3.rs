@@ -67,6 +67,11 @@ impl ExtrudedBoundary3 {
 
         Ok(Mesh::new(points, faces, false))
     }
+
+    pub fn transform_by(&mut self, iso: &Iso3) {
+        self.start = iso * self.start;
+        self.start_inv = self.start.inverse();
+    }
 }
 
 impl SurfaceTarget3 for ExtrudedBoundary3 {
@@ -168,6 +173,11 @@ impl RevolvedBoundary3 {
         let (points, faces) = builder.take();
 
         Ok(Mesh::new(points, faces, false))
+    }
+
+    pub fn transform_by(&mut self, iso: &Iso3) {
+        self.start = iso * self.start;
+        self.start_inv = self.start.inverse();
     }
 }
 
