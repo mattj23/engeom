@@ -760,7 +760,7 @@ fn f_or_zero(f: &impl Func1, x: f64) -> f64 {
     if y.is_nan() { 0.0 } else { y }
 }
 
-impl Func1 for &Series1 {
+impl Func1 for Series1 {
     fn f(&self, x: f64) -> f64 {
         self.interpolate(x)
     }

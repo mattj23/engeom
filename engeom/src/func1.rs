@@ -39,3 +39,13 @@ pub trait Func1 {
         None
     }
 }
+
+impl<T> Func1 for &T where T: Func1 {
+    fn f(&self, x: f64) -> f64 {
+        (*self).f(x)
+    }
+
+    fn xs(&self) -> Option<&DiscreteDomain> {
+        (*self).xs()
+    }
+}
