@@ -131,7 +131,7 @@ fn check_curvature_upper(working: &InscribedVec) -> Result<bool> {
         // If we are expecting the upper side to be on the right, the `p1` point should have a
         // positive signed distance to the surface point of the camber line. Otherwise, it should
         // be negative.
-        if upper_to_right != sp.signed_projection_dist(&c.p1).is_sign_positive() {
+        if upper_to_right != sp.scalar_projection(&c.p1).is_sign_positive() {
             vote_flip += 1;
         }
     }
