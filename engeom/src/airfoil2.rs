@@ -1,4 +1,4 @@
-mod camber;
+pub mod camber;
 
 use crate::{Curve2, Point2};
 

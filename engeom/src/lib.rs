@@ -3,6 +3,7 @@ extern crate core;
 use std::error::Error;
 
 pub mod airfoil;
+pub mod airfoil2;
 pub mod common;
 pub mod errors;
 pub mod func1;
@@ -15,7 +16,6 @@ pub mod raster3;
 pub mod sensors;
 pub mod stats;
 
-mod airfoil2;
 #[cfg(feature = "three_d")]
 pub mod td;
 pub mod utility;

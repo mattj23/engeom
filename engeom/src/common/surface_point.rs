@@ -3,11 +3,14 @@ use crate::common::PCoords;
 use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector, Unit};
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
+use approx::{AbsDiffEq, RelativeEq};
+
 /// A `SurfacePoint` is a struct that is used to represent a point on a surface (n-1 dimensional
 /// manifold) in n-dimensional space. It is defined by a point and a normal vector. Mathematically,
 /// a `SurfacePoint` is identical to a parameterized line or a ray with a unit direction. It also
 /// uniquely defines half-spaces (so a plane in 3D and a half-space line in 2D).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct SurfacePoint<const D: usize> {
     pub point: Point<f64, D>,
     pub normal: Unit<SVector<f64, D>>,
@@ -111,6 +114,56 @@ impl<const D: usize> SurfacePoint<D> {
         let new_point = self.point + self.normal.as_ref() * offset;
         Self::new(new_point, self.normal)
     }
+
+    /// Performs spherical linear interpolation from this surface point to another one.
+    ///
+    /// # Arguments
+    ///
+    /// * `other`: the surface point to interpolate towards
+    /// * `t`: the fraction of the way from this surface point to the other surface point, where
+    ///   0.0 returns this point and 1.0 returns the other
+    ///
+    /// returns: SurfacePoint<{ D }>
+    ///
+    /// # Examples
+    pub fn slerp(&self, other: &Self, t: f64) -> Self {
+        let n = self.normal.slerp(&other.normal, t);
+        let v = other.point - self.point;
+        Self::new(self.point + v * t, n)
+    }
+}
+
+#[cfg(test)]
+impl<const D: usize> AbsDiffEq<Self> for SurfacePoint<D> {
+    type Epsilon = f64;
+
+    fn default_epsilon() -> Self::Epsilon {
+        1e-8
+    }
+
+    fn abs_diff_eq(&self, other: &Self, epsilon: Self::Epsilon) -> bool {
+        self.point.abs_diff_eq(&other.point, epsilon)
+            && self.normal.abs_diff_eq(&other.normal, epsilon)
+    }
+}
+
+#[cfg(test)]
+impl<const D: usize> RelativeEq for SurfacePoint<D> {
+    fn default_max_relative() -> Self::Epsilon {
+        1e-8
+    }
+
+    fn relative_eq(
+        &self,
+        other: &Self,
+        epsilon: Self::Epsilon,
+        max_relative: Self::Epsilon,
+    ) -> bool {
+        self.point.relative_eq(&other.point, epsilon, max_relative)
+            && self
+                .normal
+                .relative_eq(&other.normal, epsilon, max_relative)
+    }
 }
 
 /// Created a vector of `SurfacePoint` instances from a vector of points and a vector of normals.
@@ -170,6 +223,7 @@ pub trait SurfacePointCollection<const D: usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::SurfacePoint2;
     use approx::assert_relative_eq;
     use parry3d_f64::na::{Point2, Point3, Vector2, Vector3};
 
@@ -346,5 +400,17 @@ mod tests {
         let points = vec![Point2::new(0.0, 0.0)];
         let normals: Vec<Vector2<f64>> = vec![];
         assert!(surface_point_vector(&points, &normals).is_err());
+    }
+
+    #[test]
+    fn slerp() {
+        let sp0 = SurfacePoint2::new_normalize(Point2::new(0.0, 0.0), Vector2::new(0.0, 1.0));
+        let sp1 = SurfacePoint2::new_normalize(Point2::new(1.0, 0.0), Vector2::new(1.0, 0.0));
+
+        assert_relative_eq!(sp0, sp0.slerp(&sp1, 0.0));
+        assert_relative_eq!(sp1, sp0.slerp(&sp1, 1.0));
+
+        let e = SurfacePoint2::new_normalize(Point2::new(0.5, 0.0), Vector2::new(1.0, 1.0));
+        assert_relative_eq!(e, sp0.slerp(&sp1, 0.5));
     }
 }
