@@ -130,6 +130,14 @@ pub trait HasBounds2 {
     fn aabb(&self) -> &Aabb2;
 }
 
+impl ops::Mul<SurfacePoint2> for Iso2 {
+    type Output = SurfacePoint2;
+
+    fn mul(self, rhs: SurfacePoint2) -> Self::Output {
+        rhs.transformed(&self)
+    }
+}
+
 impl ops::Mul<SurfacePoint2> for &Iso2 {
     type Output = SurfacePoint2;
 
@@ -143,6 +151,14 @@ impl ops::Mul<&SurfacePoint2> for &Iso2 {
 
     fn mul(self, rhs: &SurfacePoint2) -> Self::Output {
         rhs.transformed(self)
+    }
+}
+
+impl ops::Mul<&SurfacePoint2> for Iso2 {
+    type Output = SurfacePoint2;
+
+    fn mul(self, rhs: &SurfacePoint2) -> Self::Output {
+        rhs.transformed(&self)
     }
 }
 

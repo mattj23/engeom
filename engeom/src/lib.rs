@@ -15,6 +15,7 @@ pub mod raster3;
 pub mod sensors;
 pub mod stats;
 
+mod airfoil2;
 #[cfg(feature = "three_d")]
 pub mod td;
 pub mod utility;
@@ -158,9 +159,9 @@ pub enum BestFit {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::io::{deflate_bytes, u_bytes_to_mesh, u_bytes_to_mesh_data};
+    use crate::io::{deflate_bytes, read_tc_curve2_from, u_bytes_to_mesh, u_bytes_to_mesh_data};
     use crate::na::{Translation3, UnitQuaternion};
-    use crate::{Iso3, Mesh, Point3, Vector3};
+    use crate::{Curve2, Iso3, Mesh, Point3, Vector3};
     use rand::distr::Uniform;
     use std::f64::consts::PI;
 
@@ -191,6 +192,12 @@ pub mod tests {
     pub fn engine_blade() -> Mesh {
         let bytes = include_bytes!("../tests/data/engine-blade.umesh.gz");
         u_bytes_to_mesh(&deflate_bytes(bytes).unwrap()).unwrap()
+    }
+
+    pub fn airfoil_curve() -> Curve2 {
+        let bytes = include_bytes!("../tests/data/airfoil-0.tccurve2");
+        let mut working = bytes.as_slice();
+        read_tc_curve2_from(&mut working).unwrap()
     }
 
     /// Get the path to the test data directory.
