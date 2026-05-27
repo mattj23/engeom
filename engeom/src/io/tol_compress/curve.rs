@@ -18,6 +18,14 @@ use std::path::Path;
 const MAGIC2: &[u8; 8] = b"TCCURVE2";
 const MAGIC3: &[u8; 8] = b"TCCURVE3";
 
+/// Serialize a 2D curve into the tccurve2 format, writing to any [`Write`] sink.
+///
+/// The file stores the curve's reconstruction tolerance and closed/open state, followed by the
+/// vertex positions encoded as variable-width integers quantized within the point bounding box.
+/// The `tol` parameter sets the maximum acceptable round-trip position error for any vertex.
+/// Smaller values produce more accurate output at the cost of more bytes per vertex.
+///
+/// Use [`write_tc_curve2_file`] for the common case of writing directly to a file path.
 pub fn write_tc_curve2_to<W: Write>(writer: &mut W, curve: &Curve2, tol: f64) -> Result<()> {
     writer.write_all(MAGIC2)?;
     writer.write_all(&curve.tol().to_le_bytes())?;
@@ -26,6 +34,13 @@ pub fn write_tc_curve2_to<W: Write>(writer: &mut W, curve: &Curve2, tol: f64) ->
     Ok(())
 }
 
+/// Deserialize a 2D curve from a tccurve2-format byte stream.
+///
+/// Returns an error if the magic bytes do not match or the data is malformed. The recovered
+/// vertex positions are guaranteed to be within the tolerance that was supplied at write time,
+/// and the curve's closed/open state is faithfully restored.
+///
+/// Use [`read_tc_curve2_file`] for the common case of reading from a file path.
 pub fn read_tc_curve2_from<R: Read>(reader: &mut R) -> Result<Curve2> {
     let mut magic = [0u8; 8];
     reader.read_exact(&mut magic)?;
@@ -40,18 +55,28 @@ pub fn read_tc_curve2_from<R: Read>(reader: &mut R) -> Result<Curve2> {
     Curve2::from_points(&points, curve_tol, is_closed)
 }
 
+/// Write a 2D curve to a tccurve2 file at the given path. See [`write_tc_curve2_to`] for format details.
 pub fn write_tc_curve2_file(path: &Path, curve: &Curve2, tol: f64) -> Result<()> {
     let file = File::create(path)?;
     let mut writer = BufWriter::new(file);
     write_tc_curve2_to(&mut writer, curve, tol)
 }
 
+/// Read a 2D curve from a tccurve2 file at the given path. See [`read_tc_curve2_from`] for format details.
 pub fn read_tc_curve2_file(path: &Path) -> Result<Curve2> {
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
     read_tc_curve2_from(&mut reader)
 }
 
+/// Serialize a 3D curve into the tccurve3 format, writing to any [`Write`] sink.
+///
+/// The file stores the curve's reconstruction tolerance followed by the vertex positions encoded
+/// as variable-width integers quantized within the point bounding box. The `tol` parameter sets
+/// the maximum acceptable round-trip position error for any vertex. Smaller values produce more
+/// accurate output at the cost of more bytes per vertex.
+///
+/// Use [`write_tc_curve3_file`] for the common case of writing directly to a file path.
 pub fn write_tc_curve3_to<W: Write>(writer: &mut W, curve: &Curve3, tol: f64) -> Result<()> {
     writer.write_all(MAGIC3)?;
     writer.write_all(&curve.tol().to_le_bytes())?;
@@ -59,6 +84,12 @@ pub fn write_tc_curve3_to<W: Write>(writer: &mut W, curve: &Curve3, tol: f64) ->
     Ok(())
 }
 
+/// Deserialize a 3D curve from a tccurve3-format byte stream.
+///
+/// Returns an error if the magic bytes do not match or the data is malformed. The recovered
+/// vertex positions are guaranteed to be within the tolerance that was supplied at write time.
+///
+/// Use [`read_tc_curve3_file`] for the common case of reading from a file path.
 pub fn read_tc_curve3_from<R: Read>(reader: &mut R) -> Result<Curve3> {
     let mut magic = [0u8; 8];
     reader.read_exact(&mut magic)?;
@@ -70,12 +101,14 @@ pub fn read_tc_curve3_from<R: Read>(reader: &mut R) -> Result<Curve3> {
     Curve3::from_points(&points, curve_tol)
 }
 
+/// Write a 3D curve to a tccurve3 file at the given path. See [`write_tc_curve3_to`] for format details.
 pub fn write_tc_curve3_file(path: &Path, curve: &Curve3, tol: f64) -> Result<()> {
     let file = File::create(path)?;
     let mut writer = BufWriter::new(file);
     write_tc_curve3_to(&mut writer, curve, tol)
 }
 
+/// Read a 3D curve from a tccurve3 file at the given path. See [`read_tc_curve3_from`] for format details.
 pub fn read_tc_curve3_file(path: &Path) -> Result<Curve3> {
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);

@@ -14,6 +14,14 @@ use std::path::Path;
 
 const MAGIC: &[u8; 6] = b"TCMESH";
 
+/// Serialize a mesh into the tcmesh format, writing to any [`Write`] sink.
+///
+/// Vertices are stored as variable-width integers quantized within the bounding box of each
+/// partition; face indices use the minimum byte width sufficient to address all vertices. The
+/// `tol` parameter sets the maximum acceptable round-trip position error for any vertex.
+/// Smaller values produce more accurate output at the cost of more bytes per vertex.
+///
+/// Use [`write_tc_mesh_file`] for the common case of writing directly to a file path.
 pub fn write_tc_mesh_to<W: Write>(writer: &mut W, mesh: &Mesh, tol: f64) -> Result<()> {
     writer.write_all(MAGIC)?;
     write_tc_points3(writer, mesh.vertices(), tol)?;
@@ -21,6 +29,12 @@ pub fn write_tc_mesh_to<W: Write>(writer: &mut W, mesh: &Mesh, tol: f64) -> Resu
     Ok(())
 }
 
+/// Deserialize a mesh from a tcmesh-format byte stream.
+///
+/// Returns an error if the magic bytes do not match or the data is malformed. The recovered
+/// vertex positions are guaranteed to be within the tolerance that was supplied at write time.
+///
+/// Use [`read_tc_mesh_file`] for the common case of reading from a file path.
 pub fn read_tc_mesh_from<R: Read>(reader: &mut R) -> Result<Mesh> {
     let mut magic = [0u8; 6];
     reader.read_exact(&mut magic)?;
@@ -33,12 +47,14 @@ pub fn read_tc_mesh_from<R: Read>(reader: &mut R) -> Result<Mesh> {
     Ok(Mesh::new(vertices, faces, false))
 }
 
+/// Write a mesh to a tcmesh file at the given path. See [`write_tc_mesh_to`] for format details.
 pub fn write_tc_mesh_file(path: &Path, mesh: &Mesh, tol: f64) -> Result<()> {
     let file = File::create(path)?;
     let mut writer = BufWriter::new(file);
     write_tc_mesh_to(&mut writer, mesh, tol)
 }
 
+/// Read a mesh from a tcmesh file at the given path. See [`read_tc_mesh_from`] for format details.
 pub fn read_tc_mesh_file(path: &Path) -> Result<Mesh> {
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
