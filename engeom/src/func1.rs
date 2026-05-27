@@ -40,7 +40,10 @@ pub trait Func1 {
     }
 }
 
-impl<T> Func1 for &T where T: Func1 {
+impl<T> Func1 for &T
+where
+    T: Func1,
+{
     fn f(&self, x: f64) -> f64 {
         (*self).f(x)
     }

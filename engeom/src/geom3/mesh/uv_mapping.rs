@@ -1,12 +1,12 @@
 //! This module contains an abstraction for mapping triangles in a mesh to a 2D UV space.
 
+use crate::common::PCoords;
 use crate::common::points::barycentric;
 use crate::raster2::RasterMapping;
 use crate::{Point2, Point3, Result, Vector2};
 use parry2d_f64::partitioning::TraversalAction;
 use parry2d_f64::query::{PointQuery, PointQueryWithLocation};
 use parry2d_f64::shape::TriMesh;
-use crate::common::PCoords;
 
 /// A `UvMapping` is a structure that represents a two-way mapping between a two-dimensional
 /// space (typically referred to as UV to substitute for x and y) and the surface of a 3D mesh.

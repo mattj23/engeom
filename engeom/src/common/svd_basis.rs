@@ -100,7 +100,7 @@ impl<const D: usize> SvdBasis<D> {
     /// ```
     pub fn from_points(points: &[impl PCoords<D>], weights: Option<&[f64]>) -> Option<Self> {
         if points.is_empty() {
-            return None
+            return None;
         }
         if let Some(w) = weights {
             let center = mean_point_weighted(points, w);
