@@ -1,7 +1,7 @@
 //! Common tolerance compression tools for 3D geometry
 
 use crate::geom3::Aabb3;
-use crate::io::tol_compress::common::{
+use crate::io::tol_compress::core::{
     bytes_for_tol, read_f64, read_u8, read_u32, read_var_width, write_var_width,
 };
 use crate::na::{Quaternion, Translation3, UnitQuaternion};

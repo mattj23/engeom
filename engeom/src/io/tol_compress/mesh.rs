@@ -1,14 +1,14 @@
 //! Mesh serialization for the practical tol-compression mesh format. This uses the algorithms
-//! in the `engeom::io::tc_compress` module to dynamically adjust the byte width and store mesh
-//! information in an efficient binary representation.
+//! in the `engeom::io::tol_compress::core` module and its submodules to dynamically adjust the 
+//! byte width and store mesh information in an efficient binary representation.
 //!
 //! The recommended format extension is `.tcmesh`
 
-use crate::io::tol_compress::{read_indices, read_tc_points3, write_indices, write_tc_points3};
 use crate::{Mesh, Result};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
+use crate::io::tol_compress::core::{read_indices, read_tc_points3, write_indices, write_tc_points3};
 
 const MAGIC: &[u8; 6] = b"TCMESH";
 

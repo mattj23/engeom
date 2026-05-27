@@ -1,8 +1,8 @@
 //! This module has the tools for reading and writing indices used in the tolerance compression
 //! scheme.
 
-use crate::io::tol_compress::read_u32;
 use std::io::{Read, Write};
+use crate::io::tol_compress::core::read_u32;
 
 /// Detect the total number of _whole_ bytes needed to store indices up to a maximum count value of
 /// `total_items`. For example, a single byte can store up to 256 items, two bytes can store 66536,

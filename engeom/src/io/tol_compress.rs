@@ -15,13 +15,6 @@
 //! the smallest amount of bytes necessary to guarantee every position is recovered within that
 //! tolerance.
 
-mod common;
-mod common3;
-mod indices;
-mod common2;
-
-use crate::io::tol_compress::common::read_u32;
-
-pub use indices::*;
-pub use common2::*;
-pub use common3::*;
+pub mod core;
+pub mod curve;
+pub mod mesh;

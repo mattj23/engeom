@@ -1,6 +1,14 @@
 use crate::Result;
 use std::io::{Read, Write};
 
+mod indices;
+mod points2;
+mod points3;
+
+pub use indices::*;
+pub use points3::*;
+pub use points2::*;
+
 pub(crate) fn read_u8<R: Read>(reader: &mut R) -> crate::Result<u8> {
     let mut buf = [0u8; 1];
     reader.read_exact(&mut buf)?;
