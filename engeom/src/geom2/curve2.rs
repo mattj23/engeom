@@ -2,7 +2,9 @@ use super::polyline2::{SpanningRay, spanning_ray};
 use crate::common::{Intersection, PCoords, dist, ramer_douglas_peucker, transform_points};
 use crate::errors::InvalidGeometry;
 use crate::geom2::hull::convex_hull_2d;
-use crate::geom2::{Iso2, Point2, Segment2, SurfacePoint2, UnitVec2, intersection_param};
+use crate::geom2::{
+    Iso2, Point2, Segment2, SurfacePoint2, UnitVec2, intersection_param, signed_angle,
+};
 use crate::na::SVector;
 use crate::{Arc2, Circle2, Line2, Resample, Result, Series1};
 use parry2d_f64::bounding_volume::Aabb;
@@ -714,6 +716,26 @@ impl Curve2 {
         spanning_ray(&self.shape, full_ray)
     }
 
+    /// Get the total turning angle of the curve. A closed curve will return a value of either +2π
+    /// or -2π, depending on the winding direction.
+    pub fn get_turning_angle(&self) -> f64 {
+        let mut result = 0.0;
+        let n = self.points().len();
+        for i in 2..n {
+            let v0 = self.points()[i - 1] - self.points()[i - 2];
+            let v1 = self.points()[i] - self.points()[i - 1];
+            result += signed_angle(&v0, &v1);
+        }
+
+        if self.is_closed {
+            let v0 = self.points()[n - 1] - self.points()[n - 2];
+            let v1 = self.points()[1] - self.points()[0];
+            result += signed_angle(&v0, &v1);
+        }
+
+        result
+    }
+
     /// Gets the curvature of three points as turning angle per unit length, found by the reciprocal
     /// of the radius of the circle.
     pub fn get_curvature(&self, i0: usize, i1: usize, i2: usize) -> f64 {
@@ -969,6 +991,7 @@ pub mod tests {
     use super::*;
     use crate::geom2::Vector2;
     use approx::assert_relative_eq;
+    use std::f64::consts::PI;
     use test_case::test_case;
 
     pub fn sample1() -> Vec<(f64, f64)> {
@@ -985,6 +1008,18 @@ pub mod tests {
 
     pub fn sample_points_scaled(p: &[(f64, f64)], f: f64) -> Vec<Point2> {
         p.iter().map(|(a, b)| Point2::new(*a * f, *b * f)).collect()
+    }
+
+    #[test]
+    fn turning_angle_closed_forward() {
+        let c = curve2!(tol: 1e-4, closed: true; (0, 0), (1, 0), (1, 1), (0, 1)).unwrap();
+        assert_relative_eq!(2.0 * PI, c.get_turning_angle());
+    }
+
+    #[test]
+    fn turning_angle_closed_backward() {
+        let c = curve2!(tol: 1e-4, closed: true; (0, 0), (0, 1), (1, 1), (1, 0)).unwrap();
+        assert_relative_eq!(-2.0 * PI, c.get_turning_angle());
     }
 
     #[test]

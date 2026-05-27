@@ -1,12 +1,12 @@
 //! Common tools for finding and working with inscribed circles on airfoil sections.
 
-use std::ops::Index;
-use crate::airfoil2::SectionInput;
-use crate::common::dist;
-use crate::geom2::{rot90, LineOps2};
 use crate::AngleDir::Ccw;
-use crate::{AngleDir, Circle2, Line2, Point2, SurfacePoint2};
+use crate::airfoil2::SectionInput;
+use crate::common::{Averager, dist};
+use crate::geom2::{LineOps2, rot90};
+use crate::{AngleDir, Circle2, Curve2, Line2, Point2, Result, SurfacePoint2, Vector2};
 use serde::{Deserialize, Serialize};
+use std::ops::Index;
 
 /// Represents an inscribed circle inside an airfoil section. Contains the circle itself (center
 /// and radius) and the two contact point with the perimeter of the section. The circle center is
@@ -31,6 +31,11 @@ impl Inscribed {
         Self { c, p0, p1 }
     }
 
+    /// Returns the direction from the first contact point to the second
+    pub fn contact_dir(&self) -> Vector2 {
+        self.p1 - self.p0
+    }
+
     /// Create a SurfacePoint2 located at the inscribed circle center and pointing along the
     /// estimated direction of the camber line. The camber line direction is estimated by taking
     /// the unit vector from `p0` to `p1` and rotating it 90 degrees clockwise.
@@ -44,6 +49,14 @@ impl Inscribed {
     pub fn reverse_points(&mut self) {
         (self.p0, self.p1) = (self.p1, self.p0)
     }
+
+    pub fn center(&self) -> Point2 {
+        self.c.center
+    }
+
+    pub fn radius(&self) -> f64 {
+        self.c.r()
+    }
 }
 
 /// This is a convenience container for a sequence of [`Inscribed`] circle entities, providing tools
@@ -56,6 +69,14 @@ impl InscribedVec {
     /// Create an empty collection
     pub fn empty() -> Self {
         Self { items: vec![] }
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<Inscribed> {
+        self.items.iter()
+    }
+
+    pub fn len(&self) -> usize {
+        self.items.len()
     }
 
     /// Create a new collection by taking ownership of a Vec of inscribed circles. The order is
@@ -79,6 +100,12 @@ impl InscribedVec {
     pub fn reverse_order(&mut self) {
         self.items.reverse();
         self.reverse_points();
+    }
+
+    /// Reverses the order of the inscribed circles in the collection _without_ reversing the
+    /// `p0` and `p1` contact points in each circle.
+    pub fn reverse_order_only(&mut self) {
+        self.items.reverse();
     }
 
     /// Remove the last item from the collection and return it, or return `None` if the collection
@@ -139,6 +166,51 @@ impl InscribedVec {
             .map(|(i, _)| i)
             .unwrap_or(0)
     }
+
+    pub fn camber_curve(&self, curve_tol: f64) -> Result<Curve2> {
+        let centers = self.items.iter().map(|i| i.c.center).collect::<Vec<_>>();
+        Curve2::from_points(&centers, curve_tol, false)
+    }
+
+    pub fn front_and_back(&self) -> Result<(&Inscribed, &Inscribed)> {
+        let front = self
+            .first()
+            .ok_or("Cannot get front inscribed circle from empty collection.".to_string())?;
+        let back = self
+            .last()
+            .ok_or("Cannot get back inscribed circle from empty collection.".to_string())?;
+        Ok((front, back))
+    }
+
+    pub fn average_spacing(&self) -> Result<f64> {
+        if self.items.len() < 2 {
+            return Err(
+                "Cannot calculate average spacing with fewer than 2 inscribed circles.".into(),
+            );
+        }
+
+        let mut a = Averager::new();
+        for i in 1..self.items.len() {
+            a.add(dist(&self.items[i].c.center, &self.items[i - 1].c.center));
+        }
+        let v = a
+            .average()
+            .ok_or("Failed to calculate average spacing for inscribed circles.".to_string())?;
+        Ok(v)
+    }
+
+    pub fn throw_if_less_than(&self, n: usize) -> Result<()> {
+        if self.items.len() < n {
+            Err(format!(
+                "Expected at least {} inscribed circles, but found only {}.",
+                n,
+                self.items.len()
+            )
+            .into())
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl Index<usize> for InscribedVec {
@@ -149,7 +221,6 @@ impl Index<usize> for InscribedVec {
 }
 
 impl<'a> SectionInput<'a> {
-
     /// Try to find an inscribed circle using the position and orientation of a search line. This is
     /// the equivalent of first finding a crossing line using `.crossing_line(...)` and then
     /// using `.inscribed_from_crossing(...)` to get the inscribed circle. If the first step fails

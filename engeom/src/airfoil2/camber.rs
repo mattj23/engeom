@@ -1,10 +1,10 @@
+use crate::AngleDir::Ccw;
+use crate::airfoil2::SectionInput;
 use crate::airfoil2::inscribed::{Inscribed, InscribedVec};
 use crate::common::dist;
 use crate::geom2::hull::{convex_hull_2d, farthest_pair_on_hull};
-use crate::geom2::{rot90, LineOps2};
-use crate::AngleDir::Ccw;
-use crate::{Curve2, Line2, Result, SurfacePoint2};
-use crate::airfoil2::SectionInput;
+use crate::geom2::{LineOps2, rot90};
+use crate::{Curve2, Line2, Result, SurfacePoint2, Vector2};
 
 const EDGE_STOP_FRACTION: f64 = 0.375;
 
@@ -54,9 +54,11 @@ pub fn extract_inscribed_circles(input: &SectionInput) -> Result<Vec<Inscribed>>
     working.pop();
 
     // Now we gather the circles in the back half
-    let start_line = input.crossing_line(&ref_line.new_reversed()).ok_or_else(|| {
-        "Failed to find a crossing line for the reversed reference line".to_string()
-    })?;
+    let start_line = input
+        .crossing_line(&ref_line.new_reversed())
+        .ok_or_else(|| {
+            "Failed to find a crossing line for the reversed reference line".to_string()
+        })?;
     working.extend(extract_half_circles(input, &start_line)?);
 
     Ok(working.take_vec())
@@ -186,10 +188,10 @@ fn remaining(section: &Curve2, cp: &SurfacePoint2) -> f64 {
     result
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::airfoil2::{OrientFwdAft, OrientUpperLower};
     use crate::tests::airfoil_curve;
     use std::env::temp_dir;
 
@@ -199,14 +201,11 @@ mod tests {
         let section = airfoil_curve();
         let input = SectionInput::new(&section, 1e-3);
         let circles = extract_inscribed_circles(&input)?;
-
-        let cx = InscribedVec::new(circles);
-        let i = cx.index_of_tmax();
-        let circles = cx.take_vec();
+        let circles = OrientFwdAft::TmaxFwd.apply(circles)?;
+        let circles = OrientUpperLower::Curvature.apply(circles)?;
 
         let output = temp_dir().join("circles.txt");
-        let mut file = std::fs::File::create(&output).unwrap();
-        writeln!(file, "index={i}")?;
+        let mut file = std::fs::File::create(&output)?;
         for circle in &circles {
             writeln!(
                 file,

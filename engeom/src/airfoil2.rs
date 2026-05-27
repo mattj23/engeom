@@ -1,13 +1,16 @@
 pub mod camber;
-mod inscribed;
+pub mod inscribed;
+pub mod orient;
 
 use crate::{Curve2, Point2};
+
+pub use orient::{OrientFwdAft, OrientUpperLower};
 
 /// This struct is a general wrapper around an airfoil section input for common airfoil algorithms
 /// implemented in this module and its submodules. It holds a reference to the airfoil section as
 /// well as common tolerances that will be used by downstream algorithms.
 ///
-/// Also, part of the reason for making this a separate struct is to handle 
+/// Also, part of the reason for making this a separate struct is to handle
 pub struct SectionInput<'a> {
     pub section: &'a Curve2,
     pub general_tol: f64,
