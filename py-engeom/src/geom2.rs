@@ -5,12 +5,13 @@ use engeom::geom2::HasBounds2;
 use engeom::{BestFit, To3D};
 use numpy::ndarray::{Array1, Array2};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray2};
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::types::PyIterator;
 use pyo3::{
     Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyResult, Python, pyclass,
     pyfunction, pymethods,
 };
+use std::path::PathBuf;
 
 #[derive(FromPyObject)]
 enum Vector2OrPoint2 {
@@ -1337,6 +1338,18 @@ impl Curve2 {
             .new_appended(other.get_inner())
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(result))
+    }
+
+    #[staticmethod]
+    fn load_tccurve2(path: PathBuf) -> PyResult<Self> {
+        let curve = engeom::io::read_tc_curve2_file(&path)
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(curve))
+    }
+
+    fn write_tccurve2(&self, path: PathBuf, tol: f64) -> PyResult<()> {
+        engeom::io::write_tc_curve2_file(&path, &self.inner, tol)
+            .map_err(|e| PyIOError::new_err(e.to_string()))
     }
 
     fn __repr__(&self) -> String {

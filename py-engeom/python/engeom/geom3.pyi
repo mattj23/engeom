@@ -2504,6 +2504,32 @@ class Curve3:
         """
         ...
 
+    @staticmethod
+    def load_tccurve3(path: str | Path) -> Curve3:
+        """
+        Load a curve from a tolerance-compressed 3D curve (.tccurve3) file. The tccurve3 format
+        stores vertex positions as variable-width integers scaled within the bounding box of the
+        point data, using the minimum number of bytes needed to guarantee a round-trip accuracy at
+        or below the tolerance that was specified when the file was written. The curve's
+        reconstruction tolerance is also stored in the file.
+
+        :param path: the path to the .tccurve3 file to load.
+        :return: the curve loaded from the file.
+        """
+        ...
+
+    def write_tccurve3(self, path: str | Path, tol: float):
+        """
+        Write the curve to a tolerance-compressed 3D curve (.tccurve3) file. The tolerance controls
+        the maximum allowable round-trip position error for any vertex: a smaller tolerance produces
+        a more accurate file at the cost of more bytes per vertex, while a larger tolerance allows
+        greater compression.
+
+        :param path: the path to the .tccurve3 file to write.
+        :param tol: the maximum acceptable round-trip position error, in model units.
+        """
+        ...
+
 
 class Aabb3:
     """

@@ -8,12 +8,14 @@ use numpy::{
     IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods,
 };
 use parry3d_f64::na::{Quaternion, Translation3, UnitQuaternion};
+use pyo3::exceptions::PyIOError;
 use pyo3::exceptions::PyValueError;
 use pyo3::types::PyIterator;
 use pyo3::{
     Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyResult, Python, pyclass,
     pymethods,
 };
+use std::path::PathBuf;
 
 #[derive(FromPyObject)]
 enum Vector3OrPoint3 {
@@ -1239,6 +1241,18 @@ impl Curve3 {
 
     fn new_transformed_by(&self, iso: Iso3) -> Self {
         Self::from_inner(self.inner.new_transformed_by(iso.get_inner()))
+    }
+
+    #[staticmethod]
+    fn load_tccurve3(path: PathBuf) -> PyResult<Self> {
+        let curve = engeom::io::read_tc_curve3_file(&path)
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(curve))
+    }
+
+    fn write_tccurve3(&self, path: PathBuf, tol: f64) -> PyResult<()> {
+        engeom::io::write_tc_curve3_file(&path, &self.inner, tol)
+            .map_err(|e| PyIOError::new_err(e.to_string()))
     }
 }
 

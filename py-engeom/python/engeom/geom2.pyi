@@ -1020,6 +1020,32 @@ class Curve2:
         """
         ...
 
+    @staticmethod
+    def load_tccurve2(path: str | Path) -> Curve2:
+        """
+        Load a curve from a tolerance-compressed 2D curve (.tccurve2) file. The tccurve2 format
+        stores vertex positions as variable-width integers scaled within the bounding box of the
+        point data, using the minimum number of bytes needed to guarantee a round-trip accuracy at
+        or below the tolerance that was specified when the file was written. The curve's closed/open
+        state and reconstruction tolerance are also stored in the file.
+
+        :param path: the path to the .tccurve2 file to load.
+        :return: the curve loaded from the file.
+        """
+        ...
+
+    def write_tccurve2(self, path: str | Path, tol: float):
+        """
+        Write the curve to a tolerance-compressed 2D curve (.tccurve2) file. The tolerance controls
+        the maximum allowable round-trip position error for any vertex: a smaller tolerance produces
+        a more accurate file at the cost of more bytes per vertex, while a larger tolerance allows
+        greater compression.
+
+        :param path: the path to the .tccurve2 file to write.
+        :param tol: the maximum acceptable round-trip position error, in model units.
+        """
+        ...
+
 
 class Circle2:
     """

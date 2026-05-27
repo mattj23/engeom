@@ -5,10 +5,12 @@
 //! The recommended format extensions are `.tccurve2` and `.tccurve3` for 2d and 3d curves,
 //! respectively.
 
+use crate::Result;
 use crate::geom2::Curve2;
 use crate::geom3::Curve3;
-use crate::io::tol_compress::core::{read_f64, read_tc_points2, read_tc_points3, write_tc_points2, write_tc_points3};
-use crate::Result;
+use crate::io::tol_compress::core::{
+    read_f64, read_tc_points2, read_tc_points3, write_tc_points2, write_tc_points3,
+};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
@@ -84,8 +86,8 @@ pub fn read_tc_curve3_file(path: &Path) -> Result<Curve3> {
 mod tests {
     use super::*;
     use crate::geom2::Point2;
-    use crate::geom3::tests::RandomGeometry;
     use crate::geom3::Point3;
+    use crate::geom3::tests::RandomGeometry;
     use approx::assert_relative_eq;
     use std::io::Cursor;
 

@@ -4,6 +4,7 @@ mod micro_mesh;
 mod ply;
 mod point_cloud;
 pub mod tol_compress;
+pub use tol_compress::curve::*;
 pub use tol_compress::mesh::*;
 
 use crate::{Point3, Result, Vector3};
