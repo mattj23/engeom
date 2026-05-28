@@ -4,7 +4,7 @@ use crate::airfoil2::inscribed::{Inscribed, InscribedVec};
 use crate::common::dist;
 use crate::geom2::hull::{convex_hull_2d, farthest_pair_on_hull};
 use crate::geom2::{LineOps2, rot90};
-use crate::{Curve2, Line2, Result, SurfacePoint2, Vector2};
+use crate::{Curve2, Line2, Result, SurfacePoint2};
 
 const EDGE_STOP_FRACTION: f64 = 0.375;
 

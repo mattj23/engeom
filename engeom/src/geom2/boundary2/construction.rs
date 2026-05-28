@@ -1,9 +1,9 @@
 //! Construction methods for `BoundaryData2`
 
 use crate::common::PCoords;
-use crate::geom2::BoundaryData2;
-use crate::geom2::boundary::data::{BData, BoundaryAddData};
-use crate::{Circle2, Line2, Point2, Result};
+use crate::geom2::boundary2::data::{BData, BoundaryAddData};
+use crate::geom2::{BoundaryData2, Segment2};
+use crate::{Arc2, Circle2, Line2, Point2, Result};
 
 // ===============================================================================================
 //  Common boundary construction tools
@@ -110,6 +110,68 @@ pub trait BoundaryEditor: BoundaryAddData {
         ids.push(self.add_seg(cf1));
 
         Ok(ids)
+    }
+
+    /// Create a full round joining two line segments.  The first line segment starts at the last
+    /// working point and goes to the tangency of a circle located at `center` of size `radius`.
+    /// Then it adds an arc that following the perimeter of the circle until its tangency points at
+    /// `end`. Then the final arc segment goes from the tangent point at the end of the arc to
+    /// the `end` point.
+    ///
+    /// This method will pick the arc direction (clockwise/counter-clockwise) that results in
+    /// the shorter arc length. This will prevent the side which intersects from being used, but
+    /// if you need more control than this method offers, you will likely need to generate the
+    /// geometry yourself.
+    ///
+    /// # Arguments
+    ///
+    /// * `center`: the center of the arc
+    /// * `radius`: the radius of the arc
+    /// * `end`: the final end point
+    ///
+    /// returns: Result<(u32, u32, u32), Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    fn add_full_round(
+        &mut self,
+        center: &impl PCoords<2>,
+        radius: f64,
+        end: &impl PCoords<2>,
+    ) -> Result<(u32, u32, u32)> {
+        let c = Circle2::new(center.coords().x, center.coords().y, radius);
+        let start = self
+            .last_point()
+            .ok_or("Cannot add full round to empty boundary")?;
+
+        let Some((start_cw, start_ccw)) = c.tangent_points_to(&start) else {
+            return Err("Invalid full round, start point is inside the circle radius".into());
+        };
+
+        let Some((end_ccw, end_cw)) = c.tangent_points_to(end) else {
+            return Err("Invalid full round, end point is inside the circle radius".into());
+        };
+
+        // Get the clockwise arc
+        let arc_cw = Arc2::try_new_ends(&start_cw, &end_cw, center, true)?;
+        let arc_ccw = Arc2::try_new_ends(&start_ccw, &end_ccw, center, false)?;
+
+        let (i0, i1) = if arc_cw.length() < arc_ccw.length() {
+            (
+                self.add_seg(&start_cw),
+                self.add_arc(&c.center, &end_cw, true),
+            )
+        } else {
+            (
+                self.add_seg(&start_ccw),
+                self.add_arc(&c.center, &end_ccw, false),
+            )
+        };
+        let i2 = self.add_seg(end);
+        Ok((i0, i1, i2))
     }
 }
 
@@ -238,6 +300,24 @@ mod tests {
         );
         assert_relative_eq!(boundary.at_end().point, [0.0, 0.0].into(), epsilon = 1e-12);
 
+        Ok(())
+    }
+
+    #[test]
+    fn full_round_ccw() -> Result<()> {
+        let mut data = BoundaryData2::new_open_xy(0.0, 0.0);
+        data.add_full_round(&Point2::new(1.0, 1.0), 1.0, &Point2::new(0.0, 2.0))?;
+        let boundary = data.try_to_boundary()?;
+        assert_relative_eq!(boundary.length(), 2.0 + PI);
+        Ok(())
+    }
+
+    #[test]
+    fn full_round_cw() -> Result<()> {
+        let mut data = BoundaryData2::new_open_xy(0.0, 2.0);
+        data.add_full_round(&Point2::new(1.0, 1.0), 1.0, &Point2::new(0.0, 0.0))?;
+        let boundary = data.try_to_boundary()?;
+        assert_relative_eq!(boundary.length(), 2.0 + PI);
         Ok(())
     }
 }

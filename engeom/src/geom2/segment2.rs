@@ -1,7 +1,7 @@
 use crate::AngleDir::Cw;
 use crate::common::PCoords;
 use crate::common::points::dist;
-use crate::geom2::{Aabb2, BoundaryElement2, Manifold1Pos2, rot90};
+use crate::geom2::{Aabb2, BoundaryElement2, LineOps2, Manifold1Pos2, rot90};
 use crate::{Iso2, Line2, Point2, Result, TransformBy, UnitVec2, Vector2};
 use serde::{Deserialize, Serialize};
 
@@ -116,6 +116,16 @@ impl Segment2 {
 
     pub fn at(&self, t: f64) -> Point2 {
         self.a + (self.b - self.a) * t
+    }
+
+    pub fn intersects_other(&self, other: &Segment2) -> bool {
+        let l0 = self.to_line();
+        let l1 = other.to_line();
+        let Some((t0, t1)) = l0.intersection_params(&l1) else {
+            return l0.distance_to(&l1.origin) < 1e-12;
+        };
+
+        t0 >= 0.0 && t1 >= 0.0 && t0 <= 1.0 && t1 <= 1.0
     }
 }
 

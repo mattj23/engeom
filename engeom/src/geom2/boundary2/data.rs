@@ -7,7 +7,7 @@ use std::collections::HashMap;
 // ===============================================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(super) enum BData {
+pub enum BData {
     /// A line segment, containing the end point
     Seg((f64, f64)),
 
@@ -312,7 +312,7 @@ impl BoundaryData2 {
 // ===============================================================================================
 //  Basic editing functionality
 // ===============================================================================================
-pub(super) trait BoundaryAddData {
+pub trait BoundaryAddData {
     fn add_data(&mut self, data: BData) -> u32;
 
     fn last_point(&self) -> Option<Point2>;

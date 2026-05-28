@@ -1,8 +1,10 @@
 pub mod camber;
+mod edges;
 pub mod inscribed;
 pub mod orient;
 
 use crate::{Curve2, Point2};
+use serde::{Deserialize, Serialize};
 
 pub use orient::{OrientFwdAft, OrientUpperLower};
 
@@ -27,6 +29,18 @@ impl<'a> SectionInput<'a> {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum AfEdgeSearch {
+    Auto,
+    Open,
+    Sharp,
+    Square,
+    RoundedSquare,
+    FullRound,
+    BlendedRound,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum AfEdgeGeometry {
     /// The section is known to be open at this edge
     Open,
@@ -51,6 +65,5 @@ pub enum AfEdgeGeometry {
 pub struct AfGeometry {
     pub leading_edge: AfEdgeGeometry,
     pub trailing_edge: AfEdgeGeometry,
-
     pub camber: Curve2,
 }
