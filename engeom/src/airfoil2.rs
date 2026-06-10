@@ -1,3 +1,28 @@
+//! This module and its submodules have tools for performing dimensional analysis on 2D airfoil
+//! cross-sections.
+//!
+//! In the aerospace industry, common measurements taken on airfoils include:
+//!
+//! - Thickness measurements through the airfoil, especially around the leading/trailing edges and
+//!   the position of maximum thickness, usually located by position along the mean camber line or
+//!   in local directions at the edges.
+//! - Chord lengths, often specified by a variety of different methods.
+//! - Form and profile measurements, often with multiple tolerance regions, sometimes requiring
+//!   special rules for partially constrained floating zones
+//! - Section position and angle, measured from nominal references
+//! - Leading and trailing edge position and shape, such as leading edge radius and trailing edge
+//!   trim position, etc.
+//!
+//! It's important to start with the understanding that there's a huge difference between
+//! running airfoil shape analysis tools on nominal section data, such as that exported from a CAD
+//! system or a mathematical representation of design geometry, and running the same tools on
+//! measured section data that came from a system like a 3D scanner or CMM.  Actual data will have
+//! both noise from the measurement system and actual defects/roughness from the manufacturing
+//! process. This brings a whole collection of problems that range from the practical to the
+//! philosophical, all which need to be addressed at some level.
+//!
+//!
+
 pub mod camber;
 mod edges;
 pub mod inscribed;

@@ -6,3 +6,4 @@
 - [2D Entities](./chapter_4.md)
 - [3D Entities](./chapter_5.md)
 - [Alignments](./chapter_6.md)
+- [Airfoils](./chapter_7.md)
