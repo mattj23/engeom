@@ -6,9 +6,19 @@ use crate::{DVector, Point2, Result};
 
 #[derive(Clone, Debug)]
 pub struct AfEdgeFit {
-    pub result: AfEdge,
-    pub residuals: Vec<f64>,
+    pub edge: AfEdge,
+    pub residuals: DVector,
     pub circles: Vec<Inscribed>,
+}
+
+impl AfEdgeFit {
+    pub fn new(result: AfEdge, residuals: DVector, circles: Vec<Inscribed>) -> Self {
+        Self {
+            edge: result,
+            residuals,
+            circles,
+        }
+    }
 }
 
 pub fn edge_prep(
@@ -51,7 +61,7 @@ pub fn square_edge(
     input: &SectionInput,
     circles: Vec<Inscribed>,
     at_front: bool,
-) -> Result<(AfEdge, Vec<Inscribed>)> {
+) -> Result<AfEdgeFit> {
     // TODO: Can we refine the stack of inscribed circles?
     let (stack, fit_points) = edge_prep(input, circles, at_front)?;
 
@@ -79,16 +89,14 @@ pub fn square_edge(
     });
 
     let result = fit_boundary_to_points(&fit_points, &builder, initial, false)?;
-    let corner0 = Point2::new(result[0], result[1]);
-    let corner1 = Point2::new(result[2], result[3]);
+    let corner0 = Point2::new(result.params[0], result.params[1]);
+    let corner1 = Point2::new(result.params[2], result.params[3]);
     let point = mid_point(&corner0, &corner1);
 
     let c = edge_finalize(stack, at_front);
+    let edge = AfEdge::new(point, AfEdgeGeometry::Square(corner0, corner1));
 
-    Ok((
-        AfEdge::new(point, AfEdgeGeometry::Square(corner0, corner1)),
-        c,
-    ))
+    Ok(AfEdgeFit::new(edge, result.residuals, c))
 }
 
 #[cfg(test)]
@@ -119,10 +127,10 @@ mod tests {
         let points = fill_gaps(&points, 0.1);
         let curve = Curve2::from_points(&points, 1e-6, false)?;
         let input = SectionInput::new(&curve, 1e-3);
-        let (edge, _circles) = square_edge(&input, c, false)?;
+        let result = square_edge(&input, c, false)?;
 
-        assert!(matches!(edge.geometry, AfEdgeGeometry::Square(_, _)));
-        let (corner0, corner1) = match edge.geometry {
+        assert!(matches!(result.edge.geometry, AfEdgeGeometry::Square(_, _)));
+        let (corner0, corner1) = match result.edge.geometry {
             AfEdgeGeometry::Square(c0, c1) => (c0, c1),
             _ => unreachable!(),
         };

@@ -9,6 +9,18 @@ use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 pub type BndBuildFn = Box<dyn Fn(&DVector<f64>) -> Result<Boundary2>>;
 const DELTA: f64 = 1e-6;
 
+#[derive(Clone)]
+pub struct BoundaryFitResult {
+    pub params: DVector<f64>,
+    pub residuals: DVector<f64>,
+}
+
+impl BoundaryFitResult {
+    pub fn new(params: DVector<f64>, residuals: DVector<f64>) -> Self {
+        Self { params, residuals }
+    }
+}
+
 // =============================================================================================
 // Fitting a boundary to discrete points
 // =============================================================================================
@@ -49,7 +61,7 @@ const DELTA: f64 = 1e-6;
 /// * `ignore_ends`: if `true`, points that project onto the ends of an open boundary will have
 ///   residuals of zero
 ///
-/// returns: Result<Matrix<f64, Dyn, Const<1>, VecStorage<f64, Dyn, Const<1>>>, Box<dyn Error, Global>>
+/// returns: Result<BoundaryFitResult>
 ///
 /// # Examples
 ///
@@ -85,7 +97,7 @@ const DELTA: f64 = 1e-6;
 ///
 /// // Finally we'll verify that the corners match the ones we originally provided.
 /// let expected = DVector::from(vec![1.0, 1.0, 3.0, 2.0, 2.0, 4.0]);
-/// assert_relative_eq!(result, expected, epsilon = 1.0e-6);
+/// assert_relative_eq!(result.params, expected, epsilon = 1.0e-6);
 ///
 /// ```
 pub fn fit_boundary_to_points(
@@ -93,13 +105,14 @@ pub fn fit_boundary_to_points(
     builder: &BndBuildFn,
     initial: DVector<f64>,
     ignore_ends: bool,
-) -> Result<DVector<f64>> {
+) -> Result<BoundaryFitResult> {
     let fitting = BoundaryToPoints::new(points, ignore_ends);
     let problem = BoundaryFit::try_new(&fitting, builder, initial)?;
     let (result, report) = LevenbergMarquardt::new().minimize(problem);
 
     if report.termination.was_successful() {
-        Ok(result.params)
+        let residuals = result.residuals.unwrap();
+        Ok(BoundaryFitResult::new(result.params, residuals))
     } else {
         Err(format!("Fitting failed: {:?}", report.termination).into())
     }
@@ -178,7 +191,7 @@ impl BoundaryFittable for BoundaryToPoints<'_> {
 /// * `ignore_ends`: if `true`, points that project onto the ends of an open boundary will have
 ///   residuals of zero
 ///
-/// returns: Result<Matrix<f64, Dyn, Const<1>, VecStorage<f64, Dyn, Const<1>>>, Box<dyn Error, Global>>
+/// returns: Result<BoundaryFitResult>
 ///
 /// # Examples
 ///
@@ -227,7 +240,7 @@ impl BoundaryFittable for BoundaryToPoints<'_> {
 ///
 /// // As we can see, the fit ended at the position of the good points.
 /// let expected = DVector::from(vec![0.0, 0.0]);
-/// assert_relative_eq!(result, expected, epsilon = 1.0e-6);
+/// assert_relative_eq!(result.params, expected, epsilon = 1.0e-6);
 /// ```
 pub fn fit_boundary_to_surface_points(
     points: &[SurfacePoint2],
@@ -235,13 +248,14 @@ pub fn fit_boundary_to_surface_points(
     initial: DVector<f64>,
     weight_mode: VecDot,
     ignore_ends: bool,
-) -> Result<DVector<f64>> {
+) -> Result<BoundaryFitResult> {
     let fitting = BoundaryToSurfacePoints::new(points, weight_mode, ignore_ends);
     let problem = BoundaryFit::try_new(&fitting, builder, initial)?;
     let (result, report) = LevenbergMarquardt::new().minimize(problem);
 
     if report.termination.was_successful() {
-        Ok(result.params)
+        let residuals = result.residuals.unwrap();
+        Ok(BoundaryFitResult::new(result.params, residuals))
     } else {
         Err(format!("Fitting failed: {:?}", report.termination).into())
     }
@@ -443,7 +457,7 @@ mod tests {
         let initial = DVector::from(vec![0.0, 0.0, 4.0, 0.0, 1.0, 7.0]);
         let result = fit_boundary_to_points(&points, &builder, initial, false).unwrap();
         let expected = DVector::from(vec![1.0, 1.0, 3.0, 2.0, 2.0, 4.0]);
-        assert_relative_eq!(result, expected, epsilon = 1.0e-6);
+        assert_relative_eq!(result.params, expected, epsilon = 1.0e-6);
     }
 
     #[test]
@@ -471,6 +485,6 @@ mod tests {
             fit_boundary_to_surface_points(&samples, &builder, initial, VecDot::Abs, false)
                 .unwrap();
         let expected = DVector::from(vec![0.0, 0.0]);
-        assert_relative_eq!(result, expected, epsilon = 1.0e-6);
+        assert_relative_eq!(result.params, expected, epsilon = 1.0e-6);
     }
 }

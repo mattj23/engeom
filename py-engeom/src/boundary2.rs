@@ -321,7 +321,7 @@ pub fn fit_boundary_to_points<'py>(
     let result = engeom::geom2::fit_boundary_to_points(&pts, &bld, initial_vec, ignore_ends)
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
-    Ok(dvec_to_array(py, result))
+    Ok(dvec_to_array(py, result.params))
 }
 
 #[pyfunction]
@@ -363,5 +363,5 @@ pub fn fit_boundary_to_surface_points<'py>(
     )
     .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
-    Ok(dvec_to_array(py, result))
+    Ok(dvec_to_array(py, result.params))
 }
