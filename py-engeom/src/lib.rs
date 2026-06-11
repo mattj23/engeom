@@ -46,6 +46,8 @@ fn register_geom2(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_function(wrap_pyfunction!(geom2::rot270, &child)?)?;
     child.add_function(wrap_pyfunction!(geom2::signed_angle, &child)?)?;
     child.add_function(wrap_pyfunction!(geom2::directed_angle, &child)?)?;
+    child.add_function(wrap_pyfunction!(geom2::convex_hull_2d, &child)?)?;
+    child.add_function(wrap_pyfunction!(geom2::convex_hull_idx, &child)?)?;
 
     // Curves and other complex geometries
     child.add_class::<geom2::Curve2>()?;

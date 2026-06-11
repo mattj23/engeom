@@ -2079,3 +2079,31 @@ def directed_angle(v1: Vector2, v2: Vector2, direction: AngleDir) -> float:
     :return: The angle in radians.
     """
     ...
+
+
+def convex_hull_2d(points: NDArray[float]) -> NDArray[float]:
+    """
+    Compute the convex hull of a set of 2D points, returning the hull vertex coordinates.
+
+    The returned array contains the coordinates of the hull vertices in counter-clockwise order.
+    To get the indices of those vertices in the original array instead, use ``convex_hull_idx``.
+
+    :param points: a numpy array of shape (N, 2) containing the 2D points.
+    :return: a numpy array of shape (M, 2) containing the hull vertex coordinates in
+        counter-clockwise order.
+    """
+    ...
+
+
+def convex_hull_idx(points: NDArray[float]) -> NDArray[int]:
+    """
+    Compute the convex hull of a set of 2D points, returning the indices of the hull vertices.
+
+    The returned indices index into the input ``points`` array and are ordered counter-clockwise.
+    To get the coordinates of the hull vertices directly instead, use ``convex_hull_2d``.
+
+    :param points: a numpy array of shape (N, 2) containing the 2D points.
+    :return: a 1-D numpy array of indices into the input array which constitute the convex hull,
+        in counter-clockwise order.
+    """
+    ...

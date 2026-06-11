@@ -1507,3 +1507,32 @@ impl Iso2 {
         SurfacePoint2::from_inner(engeom::SurfacePoint2::new_normalize(origin, direction))
     }
 }
+
+// ================================================================================================
+// Hull functions
+// ================================================================================================
+
+/// Computes the convex hull of a set of 2D points, returning a numpy array of the hull vertex
+/// coordinates ordered counter-clockwise.
+#[pyfunction]
+pub fn convex_hull_2d<'py>(
+    py: Python<'py>,
+    points: PyReadonlyArray2<'_, f64>,
+) -> PyResult<Bound<'py, PyArray2<f64>>> {
+    let pts = array_to_points2(&points.as_array())?;
+    let indices = engeom::geom2::hull::convex_hull_2d(&pts);
+    let hull_points: Vec<engeom::Point2> = indices.iter().map(|&i| pts[i]).collect();
+    Ok(points_to_array(&hull_points).into_pyarray(py))
+}
+
+/// Computes the convex hull of a set of 2D points, returning a numpy array of indices into
+/// the input array ordered counter-clockwise.
+#[pyfunction]
+pub fn convex_hull_idx<'py>(
+    py: Python<'py>,
+    points: PyReadonlyArray2<'_, f64>,
+) -> PyResult<Bound<'py, PyArray1<usize>>> {
+    let pts = array_to_points2(&points.as_array())?;
+    let indices = engeom::geom2::hull::convex_hull_2d(&pts);
+    Ok(Array1::from_vec(indices).into_pyarray(py))
+}

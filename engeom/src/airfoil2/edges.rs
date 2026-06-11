@@ -239,7 +239,10 @@ mod tests {
         let input = SectionInput::new(&curve, 1e-3);
         let result = full_round_edge(&input, c, false)?;
 
-        assert!(matches!(result.edge.geometry, AfEdgeGeometry::FullRound(_, _)));
+        assert!(matches!(
+            result.edge.geometry,
+            AfEdgeGeometry::FullRound(_, _)
+        ));
         let (c, r) = match result.edge.geometry {
             AfEdgeGeometry::FullRound(x, y) => (x, y as f64),
             _ => unreachable!(),
