@@ -1,7 +1,15 @@
 use crate::airfoil2::inscribed::{Inscribed, InscribedVec};
 use crate::airfoil2::{AfEdge, AfEdgeGeometry, SectionInput};
+use crate::common::mid_point;
 use crate::geom2::{BndBuildFn, BoundaryData2, BoundaryEditor, fit_boundary_to_points};
 use crate::{DVector, Point2, Result};
+
+#[derive(Clone, Debug)]
+pub struct AfEdgeFit {
+    pub result: AfEdge,
+    pub residuals: Vec<f64>,
+    pub circles: Vec<Inscribed>,
+}
 
 pub fn edge_prep(
     input: &SectionInput,
@@ -43,8 +51,9 @@ pub fn square_edge(
     input: &SectionInput,
     circles: Vec<Inscribed>,
     at_front: bool,
-) -> Result<(AfEdge, AfEdgeGeometry, Vec<Inscribed>)> {
-    let (mut stack, fit_points) = edge_prep(input, circles, at_front)?;
+) -> Result<(AfEdge, Vec<Inscribed>)> {
+    // TODO: Can we refine the stack of inscribed circles?
+    let (stack, fit_points) = edge_prep(input, circles, at_front)?;
 
     let last = stack.last().unwrap();
     let p0 = last.p0.clone();
@@ -70,7 +79,55 @@ pub fn square_edge(
     });
 
     let result = fit_boundary_to_points(&fit_points, &builder, initial, false)?;
+    let corner0 = Point2::new(result[0], result[1]);
+    let corner1 = Point2::new(result[2], result[3]);
+    let point = mid_point(&corner0, &corner1);
 
     let c = edge_finalize(stack, at_front);
-    todo!()
+
+    Ok((
+        AfEdge::new(point, AfEdgeGeometry::Square(corner0, corner1)),
+        c,
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::fill_gaps;
+    use crate::{Circle2, Curve2, Line2, Result};
+    use approx::assert_relative_eq;
+
+    fn core_circle() -> Vec<Inscribed> {
+        let c0 = Circle2::new(0.0, 0.0, 1.25);
+        let c1 = Circle2::new(2.0, 0.0, 1.0);
+        let (s0, s1) = c0.outer_tangents_to(&c1).unwrap();
+        vec![
+            Inscribed::new(c0, s1.a, s0.a),
+            Inscribed::new(c1, s1.b, s0.b),
+        ]
+    }
+
+    #[test]
+    fn square_end() -> Result<()> {
+        let c = core_circle();
+        let l0 = Line2::from_points(&c[0].p0, &c[1].p0);
+        let l1 = Line2::from_points(&c[0].p1, &c[1].p1);
+        let c0 = l0.at(1.5);
+        let c1 = l1.at(1.5);
+        let points = vec![c[0].p0, c0, c1, c[0].p1];
+        let points = fill_gaps(&points, 0.1);
+        let curve = Curve2::from_points(&points, 1e-6, false)?;
+        let input = SectionInput::new(&curve, 1e-3);
+        let (edge, _circles) = square_edge(&input, c, false)?;
+
+        assert!(matches!(edge.geometry, AfEdgeGeometry::Square(_, _)));
+        let (corner0, corner1) = match edge.geometry {
+            AfEdgeGeometry::Square(c0, c1) => (c0, c1),
+            _ => unreachable!(),
+        };
+        assert_relative_eq!(corner0, c0, epsilon = 1e-6);
+        assert_relative_eq!(corner1, c1, epsilon = 1e-6);
+        Ok(())
+    }
 }

@@ -369,3 +369,91 @@ impl<'a> SectionInput<'a> {
         Inscribed::new(c, neg.p, pos.p)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use approx::assert_relative_eq;
+
+    fn make_inscribed(cx: f64, cy: f64, r: f64, p0: (f64, f64), p1: (f64, f64)) -> Inscribed {
+        Inscribed::new(
+            Circle2::new(cx, cy, r),
+            Point2::new(p0.0, p0.1),
+            Point2::new(p1.0, p1.1),
+        )
+    }
+
+    #[test]
+    fn end_clip_line_errors_on_empty() {
+        let iv = InscribedVec::empty();
+        assert!(iv.end_clip_line().is_err());
+    }
+
+    #[test]
+    fn end_clip_line_errors_on_single_item() {
+        let iv = InscribedVec::new(vec![make_inscribed(0.0, 0.0, 1.0, (-1.0, 0.0), (1.0, 0.0))]);
+        assert!(iv.end_clip_line().is_err());
+    }
+
+    #[test]
+    fn end_clip_line_zero_at_p0_and_p1() {
+        // Last circle has a vertical chord; the clip line must run along the x-axis
+        let iv = InscribedVec::new(vec![
+            make_inscribed(0.0, 0.0, 1.0, (-1.0, 0.0), (1.0, 0.0)),
+            make_inscribed(3.0, 0.0, 2.0, (3.0, -2.0), (3.0, 2.0)),
+        ]);
+        let line = iv.end_clip_line().unwrap();
+        let t0 = line.scalar_project(&iv[1].p0);
+        let t1 = line.scalar_project(&iv[1].p1);
+        assert_relative_eq!(t0, 0.0, epsilon = 1e-10);
+        assert_relative_eq!(t1, 0.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn end_clip_line_faces_outward_positive_x() {
+        // Circles traveling in +x: the clip line at the last circle should face +x
+        let iv = InscribedVec::new(vec![
+            make_inscribed(0.0, 0.0, 1.0, (-1.0, 0.0), (1.0, 0.0)),
+            make_inscribed(3.0, 0.0, 2.0, (3.0, -2.0), (3.0, 2.0)),
+        ]);
+        let line = iv.end_clip_line().unwrap();
+        assert!(
+            line.direction.x > 0.0,
+            "clip line should face +x, got {:?}",
+            line.direction
+        );
+    }
+
+    #[test]
+    fn end_clip_line_faces_outward_negative_x() {
+        // Circles traveling in -x: the clip line at the last circle should face -x
+        let iv = InscribedVec::new(vec![
+            make_inscribed(5.0, 0.0, 1.0, (4.0, 0.0), (6.0, 0.0)),
+            make_inscribed(2.0, 0.0, 2.0, (2.0, -2.0), (2.0, 2.0)),
+        ]);
+        let line = iv.end_clip_line().unwrap();
+        assert_relative_eq!(line.origin, Point2::new(2.0, 0.0), epsilon = 1e-10);
+        assert!(
+            line.direction.x < 0.0,
+            "clip line should face -x, got {:?}",
+            line.direction
+        );
+    }
+
+    #[test]
+    fn end_clip_line_direction_independent_of_p0_p1_order() {
+        // Swapping p0 and p1 on the last circle should produce the same clip line
+        let iv_a = InscribedVec::new(vec![
+            make_inscribed(0.0, 0.0, 1.0, (-1.0, 0.0), (1.0, 0.0)),
+            make_inscribed(3.0, 0.0, 2.0, (3.0, -2.0), (3.0, 2.0)),
+        ]);
+        let iv_b = InscribedVec::new(vec![
+            make_inscribed(0.0, 0.0, 1.0, (-1.0, 0.0), (1.0, 0.0)),
+            make_inscribed(3.0, 0.0, 2.0, (3.0, 2.0), (3.0, -2.0)),
+        ]);
+        let line_a = iv_a.end_clip_line().unwrap();
+        let line_b = iv_b.end_clip_line().unwrap();
+        assert_relative_eq!(line_a.origin, line_b.origin, epsilon = 1e-10);
+        assert_relative_eq!(line_a.direction, line_b.direction, epsilon = 1e-10);
+    }
+}

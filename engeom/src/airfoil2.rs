@@ -87,9 +87,16 @@ pub enum AfEdgeGeometry {
     BlendedRound(Point2, f32),
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct AfEdge {
     pub point: Point2,
     pub geometry: AfEdgeGeometry,
+}
+
+impl AfEdge {
+    pub fn new(point: Point2, geometry: AfEdgeGeometry) -> Self {
+        Self { point, geometry }
+    }
 }
 
 pub struct AfGeometry {
