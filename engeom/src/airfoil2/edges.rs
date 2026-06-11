@@ -1,8 +1,9 @@
 use crate::airfoil2::inscribed::{Inscribed, InscribedVec};
 use crate::airfoil2::{AfEdge, AfEdgeGeometry, SectionInput};
-use crate::common::mid_point;
-use crate::geom2::{BndBuildFn, BoundaryData2, BoundaryEditor, fit_boundary_to_points};
-use crate::{DVector, Line2, Point2, Result};
+use crate::common::{Intersection, dist, mid_point};
+use crate::geom2::{BndBuildFn, BoundaryData2, BoundaryEditor, LineOps2, fit_boundary_to_points};
+use crate::{Circle2, DVector, Line2, Point2, Result};
+use num_traits::real::Real;
 
 #[derive(Clone, Debug)]
 pub struct AfEdgeFit {
@@ -66,7 +67,39 @@ pub fn full_round_edge(
     let p0 = working.last()?.p0.clone();
     let p1 = working.last()?.p1.clone();
 
-    todo!()
+    let initial_r = dist(&p0, &p1) / 2.0;
+    let initial_c = working.clip.at(working.clip_max_scalar() - initial_r);
+    let initial = DVector::from(vec![initial_c.x, initial_c.y, initial_r]);
+
+    let builder: BndBuildFn = Box::new(move |params: &DVector| {
+        let mut bdata = BoundaryData2::new_open(p0);
+        let c = Point2::new(params[0], params[1]);
+        bdata.add_full_round(&c, params[2], &p1)?;
+        bdata.try_to_boundary()
+    });
+
+    let result = fit_boundary_to_points(&working.fit_points, &builder, initial, false)?;
+    let circle = Circle2::new(result.params[0], result.params[1], result.params[2]);
+
+    // Find the end point as an intersection with the circle
+    let end_line = Line2::new(circle.center, circle.center - working.last()?.center());
+    let ts = circle
+        .intersection(&end_line)
+        .iter()
+        .filter(|t| t.is_sign_positive())
+        .cloned()
+        .collect::<Vec<_>>();
+    let t = ts
+        .first()
+        .ok_or("Failed to find intersection between round and end line")?;
+    let point = end_line.at(*t);
+
+    let c = working.take_circles();
+    let edge = AfEdge::new(
+        point,
+        AfEdgeGeometry::FullRound(circle.center, circle.r() as f32),
+    );
+    Ok(AfEdgeFit::new(edge, result.residuals, c))
 }
 
 // =============================================================================================
@@ -141,6 +174,7 @@ mod tests {
     use crate::common::fill_gaps;
     use crate::{Circle2, Curve2, Line2, Result};
     use approx::assert_relative_eq;
+    use std::f64::consts::PI;
 
     fn core_circle() -> Vec<Inscribed> {
         let c0 = Circle2::new(0.0, 0.0, 1.25);
@@ -172,6 +206,46 @@ mod tests {
         };
         assert_relative_eq!(corner0, c0, epsilon = 1e-6);
         assert_relative_eq!(corner1, c1, epsilon = 1e-6);
+        Ok(())
+    }
+
+    #[test]
+    fn full_round() -> Result<()> {
+        let c = core_circle();
+        let l0 = Line2::from_points(&c[0].p0, &c[1].p0);
+        let l1 = Line2::from_points(&c[0].p1, &c[1].p1);
+
+        let corner = l0.intersect(&l1).unwrap();
+        let mut bdata = BoundaryData2::new_open(c[0].p0);
+        bdata.add_seg(&c[1].p0);
+        bdata.add_corner_fillets(&vec![corner, c[1].p1], 0.75)?;
+        bdata.add_seg(&c[0].p1);
+        let boundary = bdata.try_to_boundary()?;
+
+        let expected =
+            Circle2::tangent_to_corner(&corner, &(c[1].p0 - corner), &(c[1].p1 - corner), 0.75)?;
+
+        // Quick check that the expected circle is on the boundary
+        for a in vec![-PI / 4.0, 0.0, PI / 4.0] {
+            let test_point = expected.point_at_angle(a);
+            assert_relative_eq!(
+                dist(&boundary.at_closest_to_point(&test_point).1, &test_point),
+                0.0,
+                epsilon = 1e-6
+            );
+        }
+        let points = boundary.to_points(0.01)?;
+        let curve = Curve2::from_points(&points, 1e-6, false)?;
+        let input = SectionInput::new(&curve, 1e-3);
+        let result = full_round_edge(&input, c, false)?;
+
+        assert!(matches!(result.edge.geometry, AfEdgeGeometry::FullRound(_, _)));
+        let (c, r) = match result.edge.geometry {
+            AfEdgeGeometry::FullRound(x, y) => (x, y as f64),
+            _ => unreachable!(),
+        };
+        assert_relative_eq!(c, expected.center, epsilon = 1e-6);
+        assert_relative_eq!(r, expected.r(), epsilon = 1e-6);
         Ok(())
     }
 }

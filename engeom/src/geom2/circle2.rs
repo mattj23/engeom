@@ -693,13 +693,13 @@ pub fn intersection_line_circle(line: &impl LineOps2, circle: &Circle2) -> Vec<f
     }
 }
 
-impl<T: LineOps2> Intersection<T, Vec<f64>> for &Circle2 {
+impl<T: LineOps2> Intersection<T, Vec<f64>> for Circle2 {
     fn intersection(&self, other: T) -> Vec<f64> {
         intersection_line_circle(&other, self)
     }
 }
 
-impl Intersection<&Segment2, Vec<Point2>> for &Circle2 {
+impl Intersection<&Segment2, Vec<Point2>> for Circle2 {
     fn intersection(&self, other: &Segment2) -> Vec<Point2> {
         let line = other.to_line();
         let ts = intersection_line_circle(&line, self);
