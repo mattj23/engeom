@@ -2,10 +2,10 @@
 
 mod common;
 use crate::common::PathPair;
+use engeom::io::write_tc_curve2_file;
 use engeom::{Curve2, Point2, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use engeom::io::write_tc_curve2_file;
 
 const TEST_DATA_FOLDER: &str = "airfoil-section-measure";
 
@@ -25,7 +25,11 @@ fn run_test_case(case: &TestCase, dir: &PathPair) -> Result<()> {
     for (i, section) in case.items.iter().enumerate() {
         let output_root = format!("{}-sec{:03}", case.name, i);
         let curve = section.curve()?;
-        write_tc_curve2_file(&dir.result().join(format!("{}.curve2", output_root)), &curve, 1e-6)?;
+        write_tc_curve2_file(
+            &dir.result().join(format!("{}.curve2", output_root)),
+            &curve,
+            1e-6,
+        )?;
     }
 
     Ok(())
@@ -55,7 +59,12 @@ struct SectionItem {
 
 impl SectionItem {
     fn curve(&self) -> Result<Curve2> {
-        let points = self.xs.iter().zip(self.ys.iter()).map(|(x, y)| Point2::new(*x, *y)).collect::<Vec<_>>();
+        let points = self
+            .xs
+            .iter()
+            .zip(self.ys.iter())
+            .map(|(x, y)| Point2::new(*x, *y))
+            .collect::<Vec<_>>();
         Curve2::from_points(&points, 1e-6, false)
     }
 }

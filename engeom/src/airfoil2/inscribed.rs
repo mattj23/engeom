@@ -2,7 +2,7 @@
 
 use crate::AngleDir::Ccw;
 use crate::airfoil2::SectionInput;
-use crate::common::{Averager, dist};
+use crate::common::{Averager, dist, mid_point};
 use crate::geom2::{LineOps2, rot90};
 use crate::{AngleDir, Circle2, Curve2, Line2, Point2, Result, SurfacePoint2, Vector2};
 use serde::{Deserialize, Serialize};
@@ -210,6 +210,29 @@ impl InscribedVec {
         } else {
             Ok(())
         }
+    }
+
+    /// Creates a line located at the end of the inscribed circles, with its origin halfway between
+    /// the `p0` and `p1` points of the last circle, and with its direction oriented so that `p0`
+    /// and `p1` have a scalar projection of 0 and any point with a scalar projection above zero
+    /// is beyond the last inscribed circle.
+    pub fn end_clip_line(&self) -> Result<Line2> {
+        if self.len() < 2 {
+            return Err(
+                "Cannot calculate end clipping line with fewer than 2 inscribed circles.".into(),
+            );
+        }
+
+        let last = &self.items[self.len() - 1];
+        let facing = last.c.center - self.items[self.len() - 2].c.center;
+
+        let v = rot90(Ccw) * (last.p1 - last.p0);
+        let line = Line2::new_normalize(mid_point(&last.p1, &last.p0), v);
+        Ok(if facing.dot(&line.direction) < 0.0 {
+            line.new_reversed()
+        } else {
+            line
+        })
     }
 }
 

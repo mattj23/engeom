@@ -87,8 +87,13 @@ pub enum AfEdgeGeometry {
     BlendedRound(Point2, f32),
 }
 
+pub struct AfEdge {
+    pub point: Point2,
+    pub geometry: AfEdgeGeometry,
+}
+
 pub struct AfGeometry {
-    pub leading_edge: AfEdgeGeometry,
-    pub trailing_edge: AfEdgeGeometry,
+    pub leading: AfEdge,
+    pub trailing: AfEdge,
     pub camber: Curve2,
 }

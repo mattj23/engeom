@@ -1,8 +1,6 @@
 use crate::Resample::ByCount;
 use crate::airfoil2::inscribed::{Inscribed, InscribedVec};
-use crate::geom2::LineOps2;
 use crate::{Line2, Result, Vector2};
-use num_traits::real::Real;
 
 /// An enum that specifies a method for determining the orientation of the forward/aft direction of
 /// an airfoil after the inscribed circles are detected.
