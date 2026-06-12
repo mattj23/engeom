@@ -56,6 +56,39 @@ pub fn square_edge(
     Ok(AfEdgeFit::new(edge, result.residuals, c))
 }
 
+pub fn rounded_square_edge(
+    input: &SectionInput,
+    circles: Vec<Inscribed>,
+    at_front: bool,
+) -> Result<AfEdgeFit> {
+    // TODO: Can we refine the stack of inscribed circles?
+    let working = EdgeWork::new(input, circles, at_front)?;
+    let p0 = working.last()?.p0.clone();
+    let p1 = working.last()?.p1.clone();
+
+    // To find the initial, we'll find how far the farthest point is from the end clipping line
+    // and add that vector to p0 and p1
+    let d = working.clip.direction * working.clip_max_scalar();
+    let i0 = p0 + d;
+    let i1 = p1 + d;
+    let initial = DVector::from(vec![i0.x, i0.y, i1.x, i1.y, dist(&p0, &p1) / 8.0]);
+
+    let builder: BndBuildFn = Box::new(move |params: &DVector| {
+        let mut bdata = BoundaryData2::new_open(p0);
+        bdata.add_corner_fillets(
+            &[
+                Point2::new(params[0], params[1]),
+                Point2::new(params[2], params[3]),
+                p1,
+            ],
+            params[4],
+        )?;
+        bdata.try_to_boundary()
+    });
+
+    let result = fit_boundary_to_points(&working.fit_points, &builder, initial, false)?;
+}
+
 pub fn full_round_edge(
     input: &SectionInput,
     circles: Vec<Inscribed>,
@@ -190,14 +223,29 @@ mod tests {
         };
     }
 
-    fn core_circle() -> Vec<Inscribed> {
-        let c0 = Circle2::new(0.0, 0.0, 1.25);
-        let c1 = Circle2::new(2.0, 0.0, 1.0);
-        let (s0, s1) = c0.outer_tangents_to(&c1).unwrap();
-        vec![
-            Inscribed::new(c0, s1.a, s0.a),
-            Inscribed::new(c1, s1.b, s0.b),
-        ]
+    #[test]
+    fn rounded_square() -> Result<()> {
+        #[rustfmt::skip]
+        let circles = inscribed_vec!((2.1599430104, 0.0000000260, 0.8848039683, 2.3095192376, -0.8720694131, 2.3095192290, 0.8720694145), (2.2705435064, -0.0000000254, 0.8661069410, 2.4169589903, -0.8536414845, 2.4169589987, 0.8536414830));
+        #[rustfmt::skip]
+        let curve = curve2!((0.0400644720, -1.2493577703), (0.1994998688, -1.2339772293), (3.0398999738, -0.7467954459), (3.0711318967, -0.7396669633), (3.1011958358, -0.7286031558), (3.1295981421, -0.7137856908), (3.1558724505, -0.6954578706), (3.1795873375, -0.6739206377), (3.2003534055, -0.6495276326), (3.2178296760, -0.6226793880), (3.2317291893, -0.5938167512), (3.2418237158, -0.5634136460), (3.2479475035, -0.5319692904), (3.2500000000, -0.5000000000), (3.2500000000, 0.5000000000), (3.2479475035, 0.5319692904), (3.2418237158, 0.5634136460), (3.2317291893, 0.5938167512), (3.2178296760, 0.6226793880), (3.2003534055, 0.6495276326), (3.1795873375, 0.6739206377), (3.1558724505, 0.6954578706), (3.1295981421, 0.7137856908), (3.1011958358, 0.7286031558), (3.0711318967, 0.7396669633), (3.0398999738, 0.7467954459), (0.1994998688, 1.2339772293), (0.0400644720, 1.2493577703))?;
+
+        let input = SectionInput::new(&curve, 1e-3);
+        let result = square_edge(&input, circles, false)?;
+
+        assert!(matches!(
+            result.edge.geometry,
+            AfEdgeGeometry::RoundedSquare(_, _, _)
+        ));
+        let (c0, c1, r) = match result.edge.geometry {
+            AfEdgeGeometry::RoundedSquare(c0, c1, r) => (c0, c1, r),
+            _ => unreachable!(),
+        };
+
+        assert_relative_eq!(c0, Point2::new(3.0, -0.5), epsilon = 1e-6);
+        assert_relative_eq!(c1, Point2::new(3.0, 0.5), epsilon = 1e-6);
+        assert_relative_eq!(r, 0.25, epsilon = 1e-6);
+        Ok(())
     }
 
     #[test]
