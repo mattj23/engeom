@@ -172,6 +172,9 @@ impl<'a> EdgeWork<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::fill_gaps;
+    use crate::{Circle2, Curve2, Line2, Result, curve2};
+    use approx::assert_relative_eq;
 
     macro_rules! inscribed_vec {
         ( $(($cx:expr, $cy:expr, $r:expr, $p0x:expr, $p0y:expr, $p1x:expr, $p1y:expr)),* $(,)? ) => {
@@ -186,10 +189,6 @@ mod tests {
             ]
         };
     }
-    use crate::common::fill_gaps;
-    use crate::{Circle2, Curve2, Line2, Result, curve2};
-    use approx::assert_relative_eq;
-    use std::f64::consts::PI;
 
     fn core_circle() -> Vec<Inscribed> {
         let c0 = Circle2::new(0.0, 0.0, 1.25);
@@ -203,24 +202,22 @@ mod tests {
 
     #[test]
     fn square_end() -> Result<()> {
-        let c = core_circle();
-        let l0 = Line2::from_points(&c[0].p0, &c[1].p0);
-        let l1 = Line2::from_points(&c[0].p1, &c[1].p1);
-        let c0 = l0.at(1.5);
-        let c1 = l1.at(1.5);
-        let points = vec![c[0].p0, c0, c1, c[0].p1];
-        let points = fill_gaps(&points, 0.1);
-        let curve = Curve2::from_points(&points, 1e-6, false)?;
+        #[rustfmt::skip]
+        let circles = inscribed_vec!((1.0008511537, -0.0000000228, 0.8681375436, 1.1085303607, -0.8614337049, 1.1085303664, 0.8614337042), (1.1093683467, 0.0000000253, 0.8546776428, 1.2153780644, -0.8480777420, 1.2153780582, 0.8480777427));
+        #[rustfmt::skip]
+        let curve = curve2!((0.0000000000, -1.0000000000), (2.0000000000, -0.7500000000), (2.0000000000, 0.7500000000), (0.0000000000, 1.0000000000))?;
+        let curve = Curve2::from_points(&fill_gaps(curve.points(), 0.1), 1e-6, false)?;
+
         let input = SectionInput::new(&curve, 1e-3);
-        let result = square_edge(&input, c, false)?;
+        let result = square_edge(&input, circles, false)?;
 
         assert!(matches!(result.edge.geometry, AfEdgeGeometry::Square(_, _)));
         let (corner0, corner1) = match result.edge.geometry {
             AfEdgeGeometry::Square(c0, c1) => (c0, c1),
             _ => unreachable!(),
         };
-        assert_relative_eq!(corner0, c0, epsilon = 1e-6);
-        assert_relative_eq!(corner1, c1, epsilon = 1e-6);
+        assert_relative_eq!(corner0, Point2::new(2.0, -0.75), epsilon = 1e-6);
+        assert_relative_eq!(corner1, Point2::new(2.0, 0.75), epsilon = 1e-6);
         Ok(())
     }
 
