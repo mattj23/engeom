@@ -100,6 +100,34 @@ pub fn rounded_square_edge(
     Ok(AfEdgeFit::new(edge, result.residuals, c))
 }
 
+pub fn sharp_corner_edge(
+    input: &SectionInput,
+    circles: Vec<Inscribed>,
+    at_front: bool,
+) -> Result<AfEdgeFit> {
+    let working = EdgeWork::new(input, circles, at_front)?;
+    let p0 = working.last()?.p0.clone();
+    let p1 = working.last()?.p1.clone();
+
+    // To find the initial, we'll find how far the farthest point is from the end clipping line
+    // and add that vector to p0 and p1
+    let c = working.clip.at(working.clip_max_scalar());
+    let initial = DVector::from(vec![c.x, c.y]);
+
+    let builder: BndBuildFn = Box::new(move |params: &DVector| {
+        let mut bdata = BoundaryData2::new_open(p0);
+        bdata.add_seg_xy(params[0], params[1]);
+        bdata.add_seg(&p1);
+        bdata.try_to_boundary()
+    });
+
+    let result = fit_boundary_to_points(&working.fit_points, &builder, initial, false)?;
+    let corner = Point2::new(result.params[0], result.params[1]);
+    let c = working.take_circles();
+    let edge = AfEdge::new(corner, AfEdgeGeometry::Sharp(corner));
+    Ok(AfEdgeFit::new(edge, result.residuals, c))
+}
+
 pub fn full_round_edge(
     input: &SectionInput,
     circles: Vec<Inscribed>,
@@ -232,6 +260,27 @@ mod tests {
                 ),*
             ]
         };
+    }
+
+    #[test]
+    fn sharp_corner() -> Result<()> {
+        #[rustfmt::skip]
+        let circles = inscribed_vec!((1.9305063262, -0.0000000382, 0.3382035549, 2.0374556693, -0.3208481102, 2.0374556923, 0.3208481026), (1.9727817705, 0.0000000367, 0.3248348872, 2.0755035923, -0.3081654692, 2.0755035702, 0.3081654766));
+        #[rustfmt::skip]
+        let curve = curve2!((0.0000000000, -1.0000000000), (3.0000000000, 0.0000000000), (0.0000000000, 1.0000000000))?;
+        let expected = Point2::new(3.0, 0.0);
+
+        let input = SectionInput::new(&curve, 1e-3);
+        let result = sharp_corner_edge(&input, circles, false)?;
+
+        assert!(matches!(result.edge.geometry, AfEdgeGeometry::Sharp(_)));
+        let p = match result.edge.geometry {
+            AfEdgeGeometry::Sharp(p) => p,
+            _ => unreachable!(),
+        };
+
+        assert_relative_eq!(p, expected, epsilon = 1e-4);
+        Ok(())
     }
 
     #[test]
