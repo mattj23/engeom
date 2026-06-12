@@ -1,9 +1,11 @@
+use std::env::temp_dir;
 use crate::airfoil2::inscribed::{Inscribed, InscribedVec};
 use crate::airfoil2::{AfEdge, AfEdgeGeometry, SectionInput};
 use crate::common::{Intersection, dist, mid_point};
 use crate::geom2::{BndBuildFn, BoundaryData2, BoundaryEditor, LineOps2, fit_boundary_to_points};
-use crate::{Circle2, DVector, Line2, Point2, Result};
+use crate::{Circle2, Curve2, DVector, Line2, Point2, Result};
 use num_traits::real::Real;
+use crate::io::write_tc_curve2_file;
 
 #[derive(Clone, Debug)]
 pub struct AfEdgeFit {
@@ -68,7 +70,8 @@ pub fn full_round_edge(
     let p1 = working.last()?.p1.clone();
 
     let initial_r = dist(&p0, &p1) / 2.0;
-    let initial_c = working.clip.at(working.clip_max_scalar() - initial_r);
+    let initial_c = working.clip.at(working.clip_max_scalar() - initial_r * 1.1 );
+    // let initial_c = working.clip.origin;
     let initial = DVector::from(vec![initial_c.x, initial_c.y, initial_r]);
 
     let builder: BndBuildFn = Box::new(move |params: &DVector| {
@@ -77,6 +80,11 @@ pub fn full_round_edge(
         bdata.add_full_round(&c, params[2], &p1)?;
         bdata.try_to_boundary()
     });
+
+    let b = builder(&initial)?;
+    let p = b.to_points(1e-8)?;
+    let c = Curve2::from_points(&p, 1e-8, false)?;
+    write_tc_curve2_file(&temp_dir().join("full_round_initial.curve2"), &c, 1e-6)?;
 
     let result = fit_boundary_to_points(&working.fit_points, &builder, initial, false)?;
     let circle = Circle2::new(result.params[0], result.params[1], result.params[2]);
@@ -171,8 +179,22 @@ impl<'a> EdgeWork<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    macro_rules! inscribed_vec {
+        ( $(($cx:expr, $cy:expr, $r:expr, $p0x:expr, $p0y:expr, $p1x:expr, $p1y:expr)),* $(,)? ) => {
+            vec![
+                $(
+                    Inscribed::new(
+                        Circle2::new($cx as f64, $cy as f64, $r as f64),
+                        Point2::new($p0x as f64, $p0y as f64),
+                        Point2::new($p1x as f64, $p1y as f64),
+                    )
+                ),*
+            ]
+        };
+    }
     use crate::common::fill_gaps;
-    use crate::{Circle2, Curve2, Line2, Result};
+    use crate::{Circle2, Curve2, Line2, Result, curve2};
     use approx::assert_relative_eq;
     use std::f64::consts::PI;
 
@@ -211,33 +233,13 @@ mod tests {
 
     #[test]
     fn full_round() -> Result<()> {
-        let c = core_circle();
-        let l0 = Line2::from_points(&c[0].p0, &c[1].p0);
-        let l1 = Line2::from_points(&c[0].p1, &c[1].p1);
+        #[rustfmt::skip]
+        let circles = inscribed_vec!((1.4945495152, 0.0000000315, 1.0625288507, 1.6272841220, -1.0542054591, 1.6272841142, 1.0542054601), (1.6273656215, -0.0000000309, 1.0459370259, 1.7580275152, -1.0377436084, 1.7580275228, 1.0377436075));
+        #[rustfmt::skip]
+        let curve = curve2!((0.0400644720, -1.2493577703), (0.1994998688, -1.2339772293), (2.1595998950, -0.9871817834), (2.2845275866, -0.9586678530), (2.4047833431, -0.9144126230), (2.5183925683, -0.8551427630), (2.6234898019, -0.7818314825), (2.7183493501, -0.6956825506), (2.8014136219, -0.5981105305), (2.8713187041, -0.4907175520), (2.9269167573, -0.3752670049), (2.9672948630, -0.2536545839), (2.9917900138, -0.1278771617), (3.0000000000, 0.0000000000), (2.9917900138, 0.1278771617), (2.9672948630, 0.2536545839), (2.9269167573, 0.3752670049), (2.8713187041, 0.4907175520), (2.8014136219, 0.5981105305), (2.7183493501, 0.6956825506), (2.6234898019, 0.7818314825), (2.5183925683, 0.8551427630), (2.4047833431, 0.9144126230), (2.2845275866, 0.9586678530), (2.1595998950, 0.9871817834), (0.1994998688, 1.2339772293), (0.0400644720, 1.2493577703))?;
 
-        let corner = l0.intersect(&l1).unwrap();
-        let mut bdata = BoundaryData2::new_open(c[0].p0);
-        bdata.add_seg(&c[1].p0);
-        bdata.add_corner_fillets(&vec![corner, c[1].p1], 0.75)?;
-        bdata.add_seg(&c[0].p1);
-        let boundary = bdata.try_to_boundary()?;
-
-        let expected =
-            Circle2::tangent_to_corner(&corner, &(c[1].p0 - corner), &(c[1].p1 - corner), 0.75)?;
-
-        // Quick check that the expected circle is on the boundary
-        for a in vec![-PI / 4.0, 0.0, PI / 4.0] {
-            let test_point = expected.point_at_angle(a);
-            assert_relative_eq!(
-                dist(&boundary.at_closest_to_point(&test_point).1, &test_point),
-                0.0,
-                epsilon = 1e-6
-            );
-        }
-        let points = boundary.to_points(0.01)?;
-        let curve = Curve2::from_points(&points, 1e-6, false)?;
         let input = SectionInput::new(&curve, 1e-3);
-        let result = full_round_edge(&input, c, false)?;
+        let result = full_round_edge(&input, circles, false)?;
 
         assert!(matches!(
             result.edge.geometry,
@@ -247,8 +249,8 @@ mod tests {
             AfEdgeGeometry::FullRound(x, y) => (x, y as f64),
             _ => unreachable!(),
         };
-        assert_relative_eq!(c, expected.center, epsilon = 1e-6);
-        assert_relative_eq!(r, expected.r(), epsilon = 1e-6);
+        assert_relative_eq!(r, 1.0, epsilon = 1e-6);
+        assert_relative_eq!(c, Point2::new(2.0, 0.0), epsilon = 1e-6);
         Ok(())
     }
 }

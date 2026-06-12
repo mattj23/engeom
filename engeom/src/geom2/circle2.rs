@@ -5,7 +5,7 @@ use crate::geom2::line2::intersect_lines;
 use crate::geom2::{Aabb2, HasBounds2, Iso2, LineOps2, Point2, Segment2, Vector2, signed_angle};
 use crate::geom3::Vector3;
 use crate::stats::{compute_mean, compute_st_dev};
-use crate::{AngleInterval, BestFit, IntervalOps, SurfacePoint2};
+use crate::{AngleDir, AngleInterval, BestFit, IntervalOps, SurfacePoint2};
 use crate::{Arc2, Result};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use parry2d_f64::na::{Dyn, Matrix, Owned, U1, U3, Vector};
@@ -314,6 +314,46 @@ impl Circle2 {
             Ok(Circle2::from_point(center, radius))
         } else {
             Err("Failed to compute tangent circle from lines".into())
+        }
+    }
+
+    /// Get the angular direction that a line or line-like entity is pointing relative to the
+    /// circle center.
+    ///
+    /// The direction is determined by the sign of the 2D cross product of the vector from the
+    /// circle center to the closest point on the line and the line's direction vector. A positive
+    /// cross product (line passing to the left of the center) returns `Ccw`; negative returns `Cw`.
+    /// If the line passes through the center the cross product is zero and `Ccw` is returned.
+    ///
+    /// # Arguments
+    ///
+    /// * `line`: the line-like entity
+    ///
+    /// returns: AngleDir
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::{AngleDir, Circle2, Line2, Point2, Vector2};
+    ///
+    /// let c = Circle2::new(0.0, 0.0, 1.0);
+    ///
+    /// // A line above the center going right is travelling clockwise around it.
+    /// let above_right = Line2::new(Point2::new(0.0, 1.0), Vector2::new(1.0, 0.0));
+    /// assert_eq!(c.line_direction(&above_right), AngleDir::Cw);
+    ///
+    /// // The same line reversed (going left) is counter-clockwise.
+    /// let above_left = Line2::new(Point2::new(0.0, 1.0), Vector2::new(-1.0, 0.0));
+    /// assert_eq!(c.line_direction(&above_left), AngleDir::Ccw);
+    /// ```
+    pub fn line_direction(&self, line: &impl LineOps2) -> AngleDir {
+        let v = line.projected_point(&self.center) - self.center;
+        let d = line.dir();
+        let cross = v.x * d.y - v.y * d.x;
+        if cross >= 0.0 {
+            AngleDir::Ccw
+        } else {
+            AngleDir::Cw
         }
     }
 }
@@ -850,7 +890,7 @@ mod tests {
     use super::*;
     use rand::RngExt;
 
-    use crate::geom2::Ray2;
+    use crate::geom2::{Line2, Ray2};
     use approx::assert_relative_eq;
 
     use rand_distr::Normal;
@@ -1007,6 +1047,31 @@ mod tests {
         assert_relative_eq!(result.center, expected.center, epsilon = 3.0e-3);
         assert_relative_eq!(result.r(), expected.r(), epsilon = 3.0e-3);
         Ok(())
+    }
+
+    // o = line origin (offset from center), d = line direction, e = expected AngleDir
+    #[test_case((0.0, 1.0), (1.0, 0.0), AngleDir::Cw ; "above going right")]
+    #[test_case((0.0, 1.0), (-1.0, 0.0), AngleDir::Ccw ; "above going left")]
+    #[test_case((0.0, -1.0), (1.0, 0.0), AngleDir::Ccw ; "below going right")]
+    #[test_case((0.0, -1.0), (-1.0, 0.0), AngleDir::Cw ; "below going left")]
+    #[test_case((1.0, 0.0), (0.0, 1.0), AngleDir::Ccw ; "right of center going up")]
+    #[test_case((1.0, 0.0), (0.0, -1.0), AngleDir::Cw ; "right of center going down")]
+    #[test_case((-1.0, 0.0), (0.0, 1.0), AngleDir::Cw ; "left of center going up")]
+    #[test_case((-1.0, 0.0), (0.0, -1.0), AngleDir::Ccw ; "left of center going down")]
+    fn line_direction_unit_circle(o: (f64, f64), d: (f64, f64), expected: AngleDir) {
+        let c = Circle2::new(0.0, 0.0, 1.0);
+        let line = Line2::new(Point2::new(o.0, o.1), Vector2::new(d.0, d.1));
+        assert_eq!(c.line_direction(&line), expected);
+    }
+
+    #[test]
+    fn line_direction_offset_center() {
+        // Circle not at origin; result must be relative to actual center, not the origin
+        let c = Circle2::new(3.0, 2.0, 1.0);
+        let above = Line2::new(Point2::new(3.0, 3.0), Vector2::new(1.0, 0.0));
+        assert_eq!(c.line_direction(&above), AngleDir::Cw);
+        let below = Line2::new(Point2::new(3.0, 1.0), Vector2::new(1.0, 0.0));
+        assert_eq!(c.line_direction(&below), AngleDir::Ccw);
     }
 
     fn make_sample_circle_points(c: &Circle2, n: usize, sigma: Option<f64>) -> Vec<Point2> {
