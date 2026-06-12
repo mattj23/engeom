@@ -1,10 +1,23 @@
 //! This module and its submodules have tools for performing dimensional analysis on 2D airfoil
 //! cross-sections.
 
+/// Camber line extraction: finding the chain of inscribed circles between the leading and trailing
+/// edges of an airfoil section.
 pub mod camber;
+
+/// Edge geometry fitting: routines that take an oriented inscribed circle stack and a section
+/// curve and fit a specific edge geometry (sharp, square, rounded-square, full round, blended
+/// round) at the leading or trailing edge.
 pub mod edges;
+
 mod geometry;
+
+/// The `Inscribed` circle type and the `InscribedVec` collection used to manipulate an oriented
+/// or partially-oriented stack of inscribed circles along the camber line.
 pub mod inscribed;
+
+/// Orientation strategies for resolving the forward/aft (leading/trailing edge) direction and
+/// the upper/lower (suction/pressure) surfaces of an airfoil section.
 pub mod orient;
 
 use crate::airfoil2::geometry::geometry_only_analysis;
@@ -13,18 +26,26 @@ use crate::{Curve2, Point2, Result};
 pub use orient::{OrientFwdAft, OrientUpperLower};
 use serde::{Deserialize, Serialize};
 
-/// This struct is a general wrapper around an airfoil section input for common airfoil algorithms
-/// implemented in this module and its submodules. It holds a reference to the airfoil section as
-/// well as common tolerances that will be used by downstream algorithms.
-///
-/// Also, part of the reason for making this a separate struct is to handle
+/// General wrapper around an airfoil section input for common airfoil algorithms implemented in
+/// this module and its submodules. It bundles a reference to the section curve together with the
+/// general tolerance used by downstream algorithms and the derived sub-tolerance used when an
+/// algorithm needs to refine a result more tightly than the general tolerance.
 pub struct SectionInput<'a> {
+    /// The 2D airfoil cross-section curve being analyzed. May be open at one edge but not both.
     pub section: &'a Curve2,
+
+    /// The general fitting tolerance used as the primary control parameter throughout the
+    /// analysis (camber spacing, edge fit convergence, etc.).
     pub general_tol: f64,
+
+    /// A tighter sub-tolerance used by algorithms that need to refine internal values more
+    /// precisely than the user-facing general tolerance. Defaults to one tenth of `general_tol`.
     pub resolve_tol: f64,
 }
 
 impl<'a> SectionInput<'a> {
+    /// Build a new `SectionInput` from a section reference and a general tolerance. The
+    /// `resolve_tol` is set to one tenth of `general_tol`.
     pub fn new(section: &'a Curve2, general_tol: f64) -> Self {
         Self {
             section,
@@ -34,17 +55,35 @@ impl<'a> SectionInput<'a> {
     }
 }
 
+/// Selects which edge geometry to fit at the leading or trailing edge of an airfoil section
+/// when running a geometric analysis.
 #[derive(Debug, Clone, Copy)]
 pub enum AfEdgeSearch {
+    /// Try every fittable variant and return the one with the lowest average residual.
     Auto,
+
+    /// Treat the edge as open and skip edge fitting. (Not yet implemented.)
     Open,
+
+    /// Fit a sharp apex edge: a single point where the two surfaces meet.
     Sharp,
+
+    /// Fit a flat-faced edge with two sharp corners.
     Square,
+
+    /// Fit a flat-faced edge whose corners are blended by circular arcs of a single equal radius.
     RoundedSquare,
+
+    /// Fit a full circular round joined to the surrounding surfaces by two short straight
+    /// segments tangent to the round.
     FullRound,
+
+    /// Fit a full circular round joined to the surrounding surfaces by two tangent blending arcs.
     BlendedRound,
 }
 
+/// The geometric description of a fitted airfoil edge, returned alongside a canonical edge
+/// location in [`AfEdge`]. Each variant carries the parameters of the corresponding edge shape.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum AfEdgeGeometry {
     /// The section is known to be open at this edge
@@ -67,49 +106,71 @@ pub enum AfEdgeGeometry {
     BlendedRound(Point2, f32),
 }
 
+/// A fitted airfoil edge: a canonical edge location point together with a description of the
+/// edge geometry. The meaning of `point` depends on the geometry variant; see [`AfEdgeGeometry`].
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct AfEdge {
+    /// The canonical edge location. For a sharp edge this is the apex; for a square or
+    /// rounded-square edge it is the midpoint of the flat face; for the round variants it is the
+    /// outermost point on the camber axis of the section.
     pub point: Point2,
+
+    /// The geometric description of the edge shape.
     pub geometry: AfEdgeGeometry,
 }
 
 impl AfEdge {
+    /// Build a new `AfEdge` from a canonical edge point and its associated geometry.
     pub fn new(point: Point2, geometry: AfEdgeGeometry) -> Self {
         Self { point, geometry }
     }
 }
 
+/// The result of a geometric analysis of an airfoil section.
+///
+/// Contains the fitted leading and trailing edges, the mean camber line, the segregated upper
+/// (suction) and lower (pressure) surfaces, and the oriented stack of inscribed circles used
+/// during the analysis.
 #[derive(Clone)]
 pub struct AfGeometry {
+    /// The fitted leading edge.
     pub leading: AfEdge,
+
+    /// The fitted trailing edge.
     pub trailing: AfEdge,
+
+    /// The mean camber line, oriented so the first point is the leading edge point and the last
+    /// point is the trailing edge point.
     pub camber: Curve2,
+
+    /// The upper (suction) surface curve, split from the original section.
     pub upper: Curve2,
+
+    /// The lower (pressure) surface curve, split from the original section.
     pub lower: Curve2,
+
+    /// The inscribed circle stack used during analysis, ordered leading-to-trailing with each
+    /// circle's `p0` on the lower surface and `p1` on the upper surface.
     pub circles: Vec<Inscribed>,
 }
 
 impl AfGeometry {
-    /// Conducts a purely geometric analysis of an airfoil section, attempting to extract the main
-    /// camber line (MCL), identify the leading and trailing edge features and directions, and
-    /// orient the upper and lower surfaces.
+    /// Run a purely geometric analysis of an airfoil section, attempting to extract the mean
+    /// camber line (MCL), identify the leading and trailing edge features, and orient the upper
+    /// and lower surfaces.
     ///
     /// # Arguments
     ///
-    /// * `section`:
-    /// * `general_tol`:
-    /// * `fwd_aft`:
-    /// * `upper_lower`:
-    /// * `le_search`:
-    /// * `te_search`:
+    /// * `section`: the airfoil cross-section curve, optionally open at one edge.
+    /// * `general_tol`: general fitting tolerance used throughout the analysis (camber spacing,
+    ///   edge fit convergence, etc.).
+    /// * `fwd_aft`: strategy for deciding which end of the camber line is the leading edge.
+    /// * `upper_lower`: strategy for deciding which surface is the upper (suction) side.
+    /// * `le_search`: edge-fitting strategy to run at the leading edge.
+    /// * `te_search`: edge-fitting strategy to run at the trailing edge.
     ///
-    /// returns: Result<AfGeometry, Box<dyn Error, Global>>
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
+    /// returns: `Result<AfGeometry>`. Errors if any stage of the analysis fails (e.g. too few
+    /// inscribed circles to orient, edge fit failure, or both edges resolving as open).
     pub fn try_from_geometric_analysis(
         section: &Curve2,
         general_tol: f64,

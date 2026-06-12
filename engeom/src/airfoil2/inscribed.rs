@@ -27,6 +27,7 @@ pub struct Inscribed {
 }
 
 impl Inscribed {
+    /// Build a new `Inscribed` from a circle and its two perimeter contact points.
     pub fn new(c: Circle2, p0: Point2, p1: Point2) -> Self {
         Self { c, p0, p1 }
     }
@@ -50,10 +51,12 @@ impl Inscribed {
         (self.p0, self.p1) = (self.p1, self.p0)
     }
 
+    /// Convenience accessor for the inscribed circle's center.
     pub fn center(&self) -> Point2 {
         self.c.center
     }
 
+    /// Convenience accessor for the inscribed circle's radius.
     pub fn radius(&self) -> f64 {
         self.c.r()
     }
@@ -71,10 +74,12 @@ impl InscribedVec {
         Self { items: vec![] }
     }
 
+    /// Iterate over the inscribed circles in their stored order.
     pub fn iter(&'_ self) -> std::slice::Iter<'_, Inscribed> {
         self.items.iter()
     }
 
+    /// Number of inscribed circles in the collection.
     pub fn len(&self) -> usize {
         self.items.len()
     }
@@ -167,11 +172,16 @@ impl InscribedVec {
             .unwrap_or(0)
     }
 
+    /// Build a `Curve2` through the centers of the inscribed circles in their stored order,
+    /// approximating the mean camber line. `curve_tol` is the simplification/snap tolerance used
+    /// by the curve constructor.
     pub fn camber_curve(&self, curve_tol: f64) -> Result<Curve2> {
         let centers = self.items.iter().map(|i| i.c.center).collect::<Vec<_>>();
         Curve2::from_points(&centers, curve_tol, false)
     }
 
+    /// Returns references to the first and last inscribed circles, or an error if the collection
+    /// is empty.
     pub fn front_and_back(&self) -> Result<(&Inscribed, &Inscribed)> {
         let front = self
             .first()
@@ -182,6 +192,8 @@ impl InscribedVec {
         Ok((front, back))
     }
 
+    /// Returns the mean center-to-center distance between consecutive inscribed circles. Errors
+    /// if the collection has fewer than two circles.
     pub fn average_spacing(&self) -> Result<f64> {
         if self.items.len() < 2 {
             return Err(
@@ -199,6 +211,9 @@ impl InscribedVec {
         Ok(v)
     }
 
+    /// Returns an error if the collection contains fewer than `n` inscribed circles, otherwise
+    /// returns `Ok(())`. Used as a precondition guard by algorithms that need a minimum number
+    /// of circles to work.
     pub fn throw_if_less_than(&self, n: usize) -> Result<()> {
         if self.items.len() < n {
             Err(format!(

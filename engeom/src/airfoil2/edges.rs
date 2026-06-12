@@ -12,13 +12,23 @@ use crate::{Arc2, Circle2, DVector, Line2, Point2, Result};
 /// of inscribed circles, which may have been refined during the edge fitting.
 #[derive(Clone, Debug)]
 pub struct AfEdgeFit {
+    /// The fitted edge: a canonical edge location and its geometric description.
     pub edge: AfEdge,
+
+    /// Point-to-boundary residuals from the fitting optimization, one entry per section point
+    /// used in the fit.
     pub residuals: DVector,
+
+    /// The inscribed circle stack as it stood at the end of the fit. Some edge fitters
+    /// (e.g. blended-round) extend the stack with additional refined circles near the edge.
     pub circles: Vec<Inscribed>,
+
+    /// The mean of `residuals`, cached for cheap comparison between candidate fits.
     pub avg_residual: f64,
 }
 
 impl AfEdgeFit {
+    /// Build a new `AfEdgeFit` and compute `avg_residual` as the mean of `residuals`.
     pub fn new(result: AfEdge, residuals: DVector, circles: Vec<Inscribed>) -> Self {
         let avg_residual = residuals.mean();
         Self {
