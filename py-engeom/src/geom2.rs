@@ -646,6 +646,53 @@ impl Circle2 {
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(result))
     }
+
+    #[staticmethod]
+    fn from_point(center: &Point2, r: f64) -> Self {
+        Self::from_inner(engeom::Circle2::from_point(*center.get_inner(), r))
+    }
+
+    #[staticmethod]
+    fn from_3_points(p0: &Point2, p1: &Point2, p2: &Point2) -> PyResult<Self> {
+        engeom::Circle2::from_3_points(p0.get_inner(), p1.get_inner(), p2.get_inner())
+            .map(Self::from_inner)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[staticmethod]
+    fn tangent_to_corner(
+        corner: &Point2,
+        d0: &Vector2,
+        d1: &Vector2,
+        radius: f64,
+    ) -> PyResult<Self> {
+        engeom::Circle2::tangent_to_corner(
+            corner.get_inner(),
+            d0.get_inner(),
+            d1.get_inner(),
+            radius,
+        )
+        .map(Self::from_inner)
+        .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    fn outer_tangents_to(&self, other: &Circle2) -> Option<(Segment2, Segment2)> {
+        self.inner
+            .outer_tangents_to(other.get_inner())
+            .map(|(s0, s1)| (Segment2::from_inner(s0), Segment2::from_inner(s1)))
+    }
+
+    fn to_arc(&self) -> Arc2 {
+        Arc2::from_inner(self.inner.to_arc())
+    }
+
+    fn to_partial_arc(&self, angle0: f64, angle: f64) -> Arc2 {
+        Arc2::from_inner(self.inner.to_partial_arc(angle0, angle))
+    }
+
+    fn line_direction(&self, line: &Line2) -> AngleDir {
+        self.inner.line_direction(line.get_inner()).into()
+    }
 }
 
 // ================================================================================================
@@ -900,6 +947,10 @@ impl Segment2 {
     #[getter]
     fn aabb(&self) -> Aabb2 {
         Aabb2::from_inner(self.inner.aabb())
+    }
+
+    fn to_line(&self) -> Line2 {
+        Line2::from_inner(self.inner.to_line())
     }
 }
 

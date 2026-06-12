@@ -639,6 +639,33 @@ impl Circle2 {
             Some((s0.with_offset(-self.r()), s1.with_offset(self.r())))
         }
     }
+
+    /// Determine whether the circle center is on the clockwise or counter-clockwise side of a
+    /// line. The result is `AngleDir::Ccw` if the center is in the positive half-space of the
+    /// line (to the left of the direction of travel), and `AngleDir::Cw` if it is in the
+    /// negative half-space (to the right). If the line passes through the center, `AngleDir::Ccw`
+    /// is returned.
+    ///
+    /// # Arguments
+    ///
+    /// * `line`: the reference line
+    ///
+    /// returns: AngleDir
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::{Circle2, AngleDir};
+    /// use engeom::geom2::Line2;
+    ///
+    /// let c = Circle2::new(0.0, 1.0, 0.5);
+    /// // Line along the x-axis pointing right; circle center is above it (CCW side)
+    /// let line = Line2::new(engeom::Point2::new(0.0, 0.0), engeom::Vector2::new(1.0, 0.0));
+    /// assert_eq!(c.line_direction(&line), AngleDir::Ccw);
+    /// ```
+    pub fn line_direction(&self, line: &impl LineOps2) -> AngleDir {
+        line.winding_direction(&self.center)
+    }
 }
 
 impl HasBounds2 for Circle2 {

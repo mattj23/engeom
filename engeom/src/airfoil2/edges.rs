@@ -87,6 +87,17 @@ pub fn rounded_square_edge(
     });
 
     let result = fit_boundary_to_points(&working.fit_points, &builder, initial, false)?;
+    let corner0 = Point2::new(result.params[0], result.params[1]);
+    let corner1 = Point2::new(result.params[2], result.params[3]);
+    let radius = result.params[4] as f32;
+    let point = mid_point(&corner0, &corner1);
+
+    let c = working.take_circles();
+    let edge = AfEdge::new(
+        point,
+        AfEdgeGeometry::RoundedSquare(corner0, corner1, radius),
+    );
+    Ok(AfEdgeFit::new(edge, result.residuals, c))
 }
 
 pub fn full_round_edge(
@@ -229,9 +240,11 @@ mod tests {
         let circles = inscribed_vec!((2.1599430104, 0.0000000260, 0.8848039683, 2.3095192376, -0.8720694131, 2.3095192290, 0.8720694145), (2.2705435064, -0.0000000254, 0.8661069410, 2.4169589903, -0.8536414845, 2.4169589987, 0.8536414830));
         #[rustfmt::skip]
         let curve = curve2!((0.0400644720, -1.2493577703), (0.1994998688, -1.2339772293), (3.0398999738, -0.7467954459), (3.0711318967, -0.7396669633), (3.1011958358, -0.7286031558), (3.1295981421, -0.7137856908), (3.1558724505, -0.6954578706), (3.1795873375, -0.6739206377), (3.2003534055, -0.6495276326), (3.2178296760, -0.6226793880), (3.2317291893, -0.5938167512), (3.2418237158, -0.5634136460), (3.2479475035, -0.5319692904), (3.2500000000, -0.5000000000), (3.2500000000, 0.5000000000), (3.2479475035, 0.5319692904), (3.2418237158, 0.5634136460), (3.2317291893, 0.5938167512), (3.2178296760, 0.6226793880), (3.2003534055, 0.6495276326), (3.1795873375, 0.6739206377), (3.1558724505, 0.6954578706), (3.1295981421, 0.7137856908), (3.1011958358, 0.7286031558), (3.0711318967, 0.7396669633), (3.0398999738, 0.7467954459), (0.1994998688, 1.2339772293), (0.0400644720, 1.2493577703))?;
+        let exp0 = Point2::new(3.2500000000, -0.7107675827);
+        let exp1 = Point2::new(3.2500000000, 0.7107675827);
 
         let input = SectionInput::new(&curve, 1e-3);
-        let result = square_edge(&input, circles, false)?;
+        let result = rounded_square_edge(&input, circles, false)?;
 
         assert!(matches!(
             result.edge.geometry,
@@ -242,9 +255,9 @@ mod tests {
             _ => unreachable!(),
         };
 
-        assert_relative_eq!(c0, Point2::new(3.0, -0.5), epsilon = 1e-6);
-        assert_relative_eq!(c1, Point2::new(3.0, 0.5), epsilon = 1e-6);
-        assert_relative_eq!(r, 0.25, epsilon = 1e-6);
+        assert_relative_eq!(c0, exp0, epsilon = 1e-4);
+        assert_relative_eq!(c1, exp1, epsilon = 1e-4);
+        assert_relative_eq!(r, 0.25, epsilon = 1e-4);
         Ok(())
     }
 

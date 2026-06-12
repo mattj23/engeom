@@ -1204,6 +1204,84 @@ class Circle2:
         """
         ...
 
+    @staticmethod
+    def from_point(center: Point2, r: float) -> Circle2:
+        """
+        Create a circle from a center point and radius.
+
+        :param center: the center of the circle.
+        :param r: the radius of the circle.
+        :return: a new ``Circle2``.
+        """
+        ...
+
+    @staticmethod
+    def from_3_points(p0: Point2, p1: Point2, p2: Point2) -> Circle2:
+        """
+        Create a circle passing through three points. Raises ``ValueError`` if the points are collinear.
+
+        :param p0: the first point.
+        :param p1: the second point.
+        :param p2: the third point.
+        :return: a new ``Circle2``.
+        """
+        ...
+
+    @staticmethod
+    def tangent_to_corner(corner: Point2, d0: Vector2, d1: Vector2, radius: float) -> Circle2:
+        """
+        Create a circle tangent to the corner formed by two lines. The corner is defined by a point
+        and two direction vectors. Raises ``ValueError`` if the directions are collinear.
+
+        :param corner: the corner point where the two lines meet.
+        :param d0: direction vector of the first line.
+        :param d1: direction vector of the second line.
+        :param radius: radius of the tangent circle.
+        :return: a new ``Circle2``.
+        """
+        ...
+
+    def outer_tangents_to(self, other: Circle2) -> Tuple[Segment2, Segment2] | None:
+        """
+        Compute the two outer tangent segments between this circle and another. Returns ``None`` if
+        the circles are concentric.
+
+        The first segment lies in the negative half-space of the line from this center to the other;
+        the second lies in the positive half-space.
+
+        :param other: the other circle.
+        :return: a tuple of two ``Segment2`` objects, or ``None``.
+        """
+        ...
+
+    def to_arc(self) -> Arc2:
+        """
+        Convert the full circle to an ``Arc2`` starting at angle 0 and spanning 2π.
+
+        :return: a new ``Arc2``.
+        """
+        ...
+
+    def to_partial_arc(self, angle0: float, angle: float) -> Arc2:
+        """
+        Create a partial arc of the circle.
+
+        :param angle0: the starting angle in radians.
+        :param angle: the arc span in radians.
+        :return: a new ``Arc2``.
+        """
+        ...
+
+    def line_direction(self, line: Line2) -> AngleDir:
+        """
+        Determine whether the circle center is on the clockwise (``Cw``) or counter-clockwise
+        (``Ccw``) side of a line.
+
+        :param line: the reference line.
+        :return: ``AngleDir.Cw`` or ``AngleDir.Ccw``.
+        """
+        ...
+
 
 class Line2:
     """
@@ -1450,6 +1528,13 @@ class Segment2:
         """
         Get the axis-aligned bounding box of the segment.
         :return: the axis-aligned bounding box of the segment.
+        """
+        ...
+
+    def to_line(self) -> Line2:
+        """
+        Convert the segment to an infinite line passing through its two endpoints.
+        :return: a Line2 passing through the segment's endpoints.
         """
         ...
 
