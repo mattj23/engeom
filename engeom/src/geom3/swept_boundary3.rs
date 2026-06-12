@@ -219,7 +219,7 @@ mod tests {
     use super::*;
     use crate::Vector3;
     use crate::geom2::{BoundaryData2, BoundaryEditor};
-    use crate::geom3::tests::RandomGeometry;
+    use crate::geom3::tests::RandomGeometry3;
     use approx::assert_relative_eq;
 
     fn open_extruded() -> ExtrudedBoundary3 {
@@ -270,7 +270,7 @@ mod tests {
             ([-1.0, -1.0, 2.0], [0.0, 0.0, 2.0], None),
         ];
 
-        let mut rg = RandomGeometry::new();
+        let mut rg = RandomGeometry3::new();
 
         for _ in 0..100 {
             let iso = rg.iso3(10.0);
@@ -360,7 +360,7 @@ mod tests {
             ([2.0, 2.0, 0.0], [1.0, 1.0, 0.0], Some([1.0, 0.0, 0.0])),
         ];
 
-        let mut rg = RandomGeometry::new();
+        let mut rg = RandomGeometry3::new();
 
         for _ in 0..100 {
             let iso = rg.iso3(10.0);

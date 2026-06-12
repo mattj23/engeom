@@ -478,8 +478,8 @@ mod tests {
 
     #[test]
     fn line2_transform_by_preserves_points_on_line() {
-        use crate::geom2::tests::Random2;
-        let mut rg = Random2::new();
+        use crate::geom2::tests::RandomGeometry2;
+        let mut rg = RandomGeometry2::new();
         for _ in 0..200 {
             let line = Line2::new(rg.point(10.0), {
                 let a = rg.angle_sym_pi();

@@ -268,7 +268,7 @@ impl ops::Mul<&Line3> for &Iso3 {
 mod tests {
     use super::*;
     use crate::geom3::sphere3::Sphere3;
-    use crate::geom3::tests::RandomGeometry;
+    use crate::geom3::tests::RandomGeometry3;
     use crate::{Plane3, UnitVec3};
     use approx::assert_relative_eq;
 
@@ -374,7 +374,7 @@ mod tests {
 
     #[test]
     fn stress_closest_point_is_perpendicular() {
-        let mut rg = RandomGeometry::new();
+        let mut rg = RandomGeometry3::new();
         for _ in 0..500 {
             let iso = rg.iso3(10.0);
             let line = Line3::new(iso * Point3::origin(), iso.rotation * Vector3::x());
@@ -417,7 +417,7 @@ mod tests {
 
     #[test]
     fn stress_intersect_plane_result_on_plane() {
-        let mut rg = RandomGeometry::new();
+        let mut rg = RandomGeometry3::new();
 
         for _ in 0..500 {
             let iso = rg.iso3(10.0);
@@ -480,7 +480,7 @@ mod tests {
 
     #[test]
     fn stress_intersect_sphere_points_on_surface() {
-        let mut rg = RandomGeometry::new();
+        let mut rg = RandomGeometry3::new();
         for _ in 0..1000 {
             let sphere = Sphere3::new(rg.point3(2.0), rg.f64(0.1, 3.0));
             let line = Line3::new(rg.point3(3.0), rg.vector3(2.0));
@@ -494,7 +494,7 @@ mod tests {
 
     #[test]
     fn project_onto_plane_origin_lies_on_plane() {
-        let mut rg = RandomGeometry::new();
+        let mut rg = RandomGeometry3::new();
         for _ in 0..500 {
             let iso = rg.iso3(10.0);
             let plane = Plane3::xy().new_transformed_by(&iso);
@@ -511,7 +511,7 @@ mod tests {
 
     #[test]
     fn project_onto_plane_direction_parallel_to_plane() {
-        let mut rg = RandomGeometry::new();
+        let mut rg = RandomGeometry3::new();
         for _ in 0..500 {
             let iso = rg.iso3(10.0);
             let plane = Plane3::xy().new_transformed_by(&iso);
@@ -543,7 +543,7 @@ mod tests {
 
     #[test]
     fn new_transformed_by_isometry_preserves_point_on_line() {
-        let mut rg = RandomGeometry::new();
+        let mut rg = RandomGeometry3::new();
 
         for _ in 0..500 {
             let original = Line3::new(rg.point3(10.0), rg.vector3(1.0));

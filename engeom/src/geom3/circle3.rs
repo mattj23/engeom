@@ -249,7 +249,7 @@ mod tests {
     use super::*;
     use crate::Curve3;
     use crate::common::linear_space;
-    use crate::geom3::tests::RandomGeometry;
+    use crate::geom3::tests::RandomGeometry3;
     use approx::assert_relative_eq;
     use rand::RngExt;
     use std::f64::consts::PI;
@@ -289,7 +289,7 @@ mod tests {
     #[test]
     fn stress_closest_position() -> Result<()> {
         let n = 1000;
-        let mut rg = RandomGeometry::new();
+        let mut rg = RandomGeometry3::new();
 
         for _ in 0..n {
             let circle = random_circle();
@@ -339,7 +339,7 @@ mod tests {
     }
 
     fn random_circle() -> Circle3 {
-        let mut rg = RandomGeometry::new();
+        let mut rg = RandomGeometry3::new();
         let r = rg.f64(0.8, 5.0);
         let iso = rg.iso3(10.0);
         Circle3::new(r, iso)
@@ -553,7 +553,7 @@ mod tests {
 
     #[test]
     fn stress_transform_by() {
-        let mut rg = RandomGeometry::new();
+        let mut rg = RandomGeometry3::new();
         for _ in 0..1000 {
             let original = random_circle();
             let iso = rg.iso3(10.0);

@@ -120,18 +120,18 @@ mod tests {
     use super::*;
     use crate::geom2::Point2;
     use crate::geom3::Point3;
-    use crate::geom3::tests::RandomGeometry;
+    use crate::geom3::tests::RandomGeometry3;
     use approx::assert_relative_eq;
     use std::io::Cursor;
 
-    fn make_curve2(rg: &mut RandomGeometry, n: usize, tol: f64) -> Curve2 {
+    fn make_curve2(rg: &mut RandomGeometry3, n: usize, tol: f64) -> Curve2 {
         let points: Vec<Point2> = (0..n)
             .map(|_| Point2::new(rg.f64_sym(100.0), rg.f64_sym(100.0)))
             .collect();
         Curve2::from_points(&points, tol, false).unwrap()
     }
 
-    fn make_closed_curve2(rg: &mut RandomGeometry, n: usize, tol: f64) -> Curve2 {
+    fn make_closed_curve2(rg: &mut RandomGeometry3, n: usize, tol: f64) -> Curve2 {
         let mut points: Vec<Point2> = (0..n)
             .map(|_| Point2::new(rg.f64_sym(100.0), rg.f64_sym(100.0)))
             .collect();
@@ -139,7 +139,7 @@ mod tests {
         Curve2::from_points(&points, tol, true).unwrap()
     }
 
-    fn make_curve3(rg: &mut RandomGeometry, n: usize, tol: f64) -> Curve3 {
+    fn make_curve3(rg: &mut RandomGeometry3, n: usize, tol: f64) -> Curve3 {
         let points: Vec<Point3> = (0..n)
             .map(|_| Point3::new(rg.f64_sym(100.0), rg.f64_sym(100.0), rg.f64_sym(100.0)))
             .collect();
@@ -164,7 +164,7 @@ mod tests {
     #[test]
     fn round_trip_curve2_bytes() {
         let tol = 1e-4;
-        let mut rg = RandomGeometry::from_seed(42);
+        let mut rg = RandomGeometry3::from_seed(42);
         let curve = make_curve2(&mut rg, 1000, 1e-6);
 
         let mut buf = Vec::new();
@@ -178,7 +178,7 @@ mod tests {
     #[test]
     fn round_trip_curve2_closed_bytes() {
         let tol = 1e-4;
-        let mut rg = RandomGeometry::from_seed(7);
+        let mut rg = RandomGeometry3::from_seed(7);
         let curve = make_closed_curve2(&mut rg, 999, 1e-6);
         assert!(curve.is_closed());
 
@@ -193,7 +193,7 @@ mod tests {
     #[test]
     fn round_trip_curve2_file() {
         let tol = 1e-4;
-        let mut rg = RandomGeometry::from_seed(13);
+        let mut rg = RandomGeometry3::from_seed(13);
         let curve = make_curve2(&mut rg, 500, 1e-6);
 
         let path = std::env::temp_dir().join("test_curve2_round_trip.tccurve2");
@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn round_trip_curve3_bytes() {
         let tol = 1e-4;
-        let mut rg = RandomGeometry::from_seed(42);
+        let mut rg = RandomGeometry3::from_seed(42);
         let curve = make_curve3(&mut rg, 1000, 1e-6);
 
         let mut buf = Vec::new();
@@ -219,7 +219,7 @@ mod tests {
     #[test]
     fn round_trip_curve3_file() {
         let tol = 1e-4;
-        let mut rg = RandomGeometry::from_seed(99);
+        let mut rg = RandomGeometry3::from_seed(99);
         let curve = make_curve3(&mut rg, 500, 1e-6);
 
         let path = std::env::temp_dir().join("test_curve3_round_trip.tccurve3");

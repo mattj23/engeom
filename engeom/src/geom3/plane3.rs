@@ -277,7 +277,7 @@ impl ops::Mul<&Plane3> for &Iso3 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geom3::tests::RandomGeometry;
+    use crate::geom3::tests::RandomGeometry3;
     use approx::assert_relative_eq;
 
     #[test]
@@ -309,7 +309,7 @@ mod tests {
 
     #[test]
     fn stress_intersection_line_lies_on_both_planes() {
-        let mut rg = RandomGeometry::new();
+        let mut rg = RandomGeometry3::new();
         for _ in 0..500 {
             let iso1 = rg.iso3(10.0);
             let iso2 = rg.iso3(10.0);

@@ -106,13 +106,13 @@ fn read_aabb2<R: Read>(reader: &mut R) -> crate::Result<Aabb2> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geom3::tests::RandomGeometry;
+    use crate::geom3::tests::RandomGeometry3;
     use std::io::Cursor;
 
     #[test]
     fn round_trip_points2() {
         let tol = 1e-4;
-        let mut rg = RandomGeometry::from_seed(42);
+        let mut rg = RandomGeometry3::from_seed(42);
         let points: Vec<Point2> = (0..100000)
             .map(|_| Point2::new(rg.f64_sym(100.0), rg.f64_sym(100.0)))
             .collect();

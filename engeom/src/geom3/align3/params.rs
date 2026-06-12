@@ -421,7 +421,7 @@ mod tests {
     use super::*;
     use crate::geom3::IsoExtensions3;
     use crate::geom3::align3::params::{AlignOrigin, AlignParams3};
-    use crate::geom3::tests::RandomGeometry;
+    use crate::geom3::tests::RandomGeometry3;
     use crate::na::{Rotation, Rotation3, UnitQuaternion};
     use crate::{Iso3, Point3, Vector3};
     use approx::assert_relative_eq;
@@ -529,7 +529,7 @@ mod tests {
     fn stress_partials_translations() {
         // This is the main test in this section; it checks that the actual translation directions
         // match the measured directions even with random numbers in every possible parameter.
-        let mut rg = RandomGeometry::new();
+        let mut rg = RandomGeometry3::new();
         for _ in 0..1000 {
             let local = rg.iso3(10.0);
             let working = rg.iso3(10.0);
@@ -624,7 +624,7 @@ mod tests {
 
     #[test]
     fn stress_euler_partial_rotated() {
-        let mut rg = RandomGeometry::new();
+        let mut rg = RandomGeometry3::new();
         for _ in 0..1000 {
             let f = EulerFixture::new(rg.f64_sym(PI), rg.f64_sym(PI), rg.f64_sym(PI));
             let p_local = rg.point3(10.0);
@@ -646,7 +646,7 @@ mod tests {
 
     #[test]
     fn stress_partials_rotation() {
-        let mut rg = RandomGeometry::new();
+        let mut rg = RandomGeometry3::new();
         for _ in 0..1000 {
             let local = rg.iso3(10.0);
             let working = rg.iso3(10.0);

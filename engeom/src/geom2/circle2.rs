@@ -1,11 +1,15 @@
+use crate::AngleDir::Ccw;
 use crate::common::points::dist;
 use crate::common::{Intersection, PCoords, signed_compliment_2pi};
 use crate::geom2::aabb2::circle_aabb2;
 use crate::geom2::line2::intersect_lines;
-use crate::geom2::{Aabb2, HasBounds2, Iso2, LineOps2, Point2, Segment2, Vector2, signed_angle};
+use crate::geom2::{
+    Aabb2, HasBounds2, Iso2, LineOps2, Manifold1Pos2, Point2, Segment2, Vector2, rot90,
+    signed_angle,
+};
 use crate::geom3::Vector3;
 use crate::stats::{compute_mean, compute_st_dev};
-use crate::{AngleDir, AngleInterval, BestFit, IntervalOps, SurfacePoint2};
+use crate::{AngleDir, AngleInterval, BestFit, IntervalOps, Line2, SurfacePoint2, UnitVec2};
 use crate::{Arc2, Result};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use parry2d_f64::na::{Dyn, Matrix, Owned, U1, U3, Vector};
@@ -115,12 +119,16 @@ impl Circle2 {
     /// ];
     ///
     /// let guess = Circle2::new(-1.0, 1.0, 0.1);
-    /// let circle = Circle2::fitting_circle(&points, &guess, All).unwrap();
+    /// let circle = Circle2::new_fitting_circle(&points, &guess, All).unwrap();
     /// assert_relative_eq!(circle.x(), 0.0);
     /// assert_relative_eq!(circle.y(), 0.0);
     /// assert_relative_eq!(circle.r(), 1.0);
     /// ```
-    pub fn fitting_circle(points: &[Point2], guess: &Circle2, mode: BestFit) -> Result<Circle2> {
+    pub fn new_fitting_circle(
+        points: &[Point2],
+        guess: &Circle2,
+        mode: BestFit,
+    ) -> Result<Circle2> {
         fit_circle(points, guess, mode)
     }
 
@@ -145,7 +153,7 @@ impl Circle2 {
     /// ```
     ///
     /// ```
-    pub fn ransac(
+    pub fn new_ransac(
         points: &[Point2],
         tol: f64,
         iterations: Option<usize>,
@@ -274,12 +282,12 @@ impl Circle2 {
     /// let d1 = Vector2::new(0.0, 1.0); // Vertical line upwards
     /// let radius = 1.0;
     ///
-    /// let circle = Circle2::tangent_to_corner(&corner, &d0, &d1, radius).unwrap();
+    /// let circle = Circle2::new_tangent_to_corner(&corner, &d0, &d1, radius).unwrap();
     /// assert_relative_eq!(circle.x(), 2.0);
     /// assert_relative_eq!(circle.y(), 2.0);
     /// assert_relative_eq!(circle.r(), radius);
     /// ```
-    pub fn tangent_to_corner(
+    pub fn new_tangent_to_corner(
         corner: &impl PCoords<2>,
         d0: &Vector2,
         d1: &Vector2,
@@ -315,6 +323,29 @@ impl Circle2 {
         } else {
             Err("Failed to compute tangent circle from lines".into())
         }
+    }
+
+    /// Create a new circle at a tangent point that passes through a second point.
+    ///
+    /// # Arguments
+    ///
+    /// * `tangent`:
+    /// * `point`:
+    ///
+    /// returns: Result<Circle2, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    pub fn new_tangent_and_point(tangent: &impl LineOps2, point: &impl PCoords<2>) -> Self {
+        let iso = tangent.to_iso_from_y().inverse();
+        let p = iso * Point2::from(point.coords());
+
+        let cx = (p.x.powi(2) + p.y.powi(2)) / (2.0 * p.x);
+        let center = iso.inverse() * Point2::new(cx, 0.0);
+        Circle2::new(center.x, center.y, cx.abs())
     }
 }
 
@@ -364,6 +395,14 @@ impl Circle2 {
         let v = Vector2::new(self.ball.radius, 0.0);
         let t = Iso2::rotation(angle);
         self.center + (t * v)
+    }
+
+    pub fn at_angle(&self, angle: f64) -> Manifold1Pos2 {
+        let p = self.point_at_angle(angle);
+        let n = UnitVec2::new_normalize(p - self.center);
+        let d = rot90(Ccw) * n;
+
+        Manifold1Pos2::new(angle * self.r(), p, d, n)
     }
 
     /// Given a point, project it onto the perimeter of the circle. If the point is within 1.0e-10
@@ -689,8 +728,7 @@ impl HasBounds2 for Circle2 {
 /// # Examples
 ///
 /// ```
-///
-/// ```
+/// /// ```
 pub fn intersection_line_circle(line: &impl LineOps2, circle: &Circle2) -> Vec<f64> {
     // Get the parameter of the circle center onto the line
     let tc = line.projected_parameter(&circle.center);
@@ -880,6 +918,7 @@ mod tests {
     use crate::geom2::{Line2, Ray2};
     use approx::assert_relative_eq;
 
+    use crate::geom2::tests::RandomGeometry2;
     use rand_distr::Normal;
     use std::f64::consts::PI;
     use test_case::test_case;
@@ -889,7 +928,7 @@ mod tests {
         let corner = Point2::new(1.0, 1.0);
         let v0 = Vector2::new(-1.0, 0.0);
         let v1 = Vector2::new(0.0, -1.0);
-        let circle = Circle2::tangent_to_corner(&corner, &v0, &v1, 1.0).unwrap();
+        let circle = Circle2::new_tangent_to_corner(&corner, &v0, &v1, 1.0).unwrap();
         assert_relative_eq!(circle.center, Point2::new(0.0, 0.0), epsilon = 1.0e-8);
         assert_relative_eq!(circle.r(), 1.0, epsilon = 1.0e-8);
     }
@@ -913,7 +952,7 @@ mod tests {
             let (p0, p1) = expected.tangent_points_to(&tc).unwrap();
 
             let result =
-                Circle2::tangent_to_corner(&tc, &(p0 - tc), &(p1 - tc), expected.r()).unwrap();
+                Circle2::new_tangent_to_corner(&tc, &(p0 - tc), &(p1 - tc), expected.r()).unwrap();
 
             assert_relative_eq!(expected.center, result.center, epsilon = 1.0e-8);
             assert_relative_eq!(expected.r(), result.r(), epsilon = 1.0e-8);
@@ -1011,7 +1050,7 @@ mod tests {
         let expected = Circle2::new(2.0, 3.0, 1.0);
         let samples = make_sample_circle_points(&expected, 500, Some(0.01));
         let guess = Circle2::new(0.0, 0.0, 1.0);
-        let result = Circle2::fitting_circle(&samples, &guess, BestFit::All)?;
+        let result = Circle2::new_fitting_circle(&samples, &guess, BestFit::All)?;
 
         assert_relative_eq!(result.center, expected.center, epsilon = 3.0e-3);
         assert_relative_eq!(result.r(), expected.r(), epsilon = 3.0e-3);
@@ -1029,10 +1068,34 @@ mod tests {
         ]
         .concat();
 
-        let result = Circle2::ransac(&samples, 0.005, None, None, None)?;
+        let result = Circle2::new_ransac(&samples, 0.005, None, None, None)?;
 
         assert_relative_eq!(result.center, expected.center, epsilon = 3.0e-3);
         assert_relative_eq!(result.r(), expected.r(), epsilon = 3.0e-3);
+        Ok(())
+    }
+
+    #[test]
+    fn stress_tangent_and_point() -> Result<()> {
+        let mut random = RandomGeometry2::new();
+        for _ in 0..1000 {
+            let c = random.circle2(10.0, 0.5, 5.0);
+            let a0 = random.angle_sym_pi();
+            let a1 = random.angle_sym_pi();
+            let m = c.at_angle(a0);
+            let p = c.point_at_angle(a1);
+
+            let line = match random.bool() {
+                true => m.direction_line(),
+                false => m.direction_line().new_reversed(),
+            };
+
+            let result = Circle2::new_tangent_and_point(&line, &p);
+
+            assert_relative_eq!(result.center, c.center, epsilon = 1.0e-6);
+            assert_relative_eq!(result.r(), c.r(), epsilon = 1.0e-6);
+        }
+
         Ok(())
     }
 

@@ -283,44 +283,97 @@ impl SurfacePoint2 {
 pub mod tests {
     use super::*;
     use approx::assert_relative_eq;
-    use rand::{Rng, RngExt};
+    use rand::distr::{Distribution, Uniform};
+    use rand::rngs::StdRng;
+    use rand::{Rng, RngExt, SeedableRng};
     use std::f64::consts::PI;
 
-    pub struct Random2 {
-        rng: rand::rngs::ThreadRng,
+    enum RngSource {
+        Seeded(StdRng),
+        Thread,
     }
 
-    impl Default for Random2 {
+    pub struct RandomGeometry2 {
+        rng: RngSource,
+    }
+
+    impl Default for RandomGeometry2 {
         fn default() -> Self {
             Self::new()
         }
     }
 
-    impl Random2 {
+    impl RandomGeometry2 {
         pub fn new() -> Self {
-            Self { rng: rand::rng() }
+            Self {
+                rng: RngSource::Thread,
+            }
+        }
+
+        pub fn from_seed(seed: u64) -> Self {
+            Self {
+                rng: RngSource::Seeded(StdRng::seed_from_u64(seed)),
+            }
+        }
+
+        pub fn f64(&mut self, lo: f64, hi: f64) -> f64 {
+            let u = Uniform::new(lo, hi).unwrap();
+            match &mut self.rng {
+                RngSource::Seeded(r) => u.sample(r),
+                RngSource::Thread => u.sample(&mut rand::rng()),
+            }
+        }
+
+        pub fn bool(&mut self) -> bool {
+            match &mut self.rng {
+                RngSource::Seeded(r) => r.random_bool(0.5),
+                RngSource::Thread => rand::rng().random_bool(0.5),
+            }
+        }
+
+        pub fn f64_sym(&mut self, hi: f64) -> f64 {
+            self.f64(-hi, hi)
         }
 
         pub fn point(&mut self, limit: f64) -> Point2 {
-            Point2::new(
-                self.rng.random_range(-limit..limit),
-                self.rng.random_range(-limit..limit),
-            )
+            Point2::new(self.f64(-limit, limit), self.f64(-limit, limit))
+        }
+
+        pub fn vector2(&mut self, limit: f64) -> Vector2 {
+            Vector2::new(self.f64(-limit, limit), self.f64(-limit, limit))
+        }
+
+        pub fn unit_vec2(&mut self) -> UnitVec2 {
+            UnitVec2::new_normalize(Vector2::new(
+                self.angle_sym_pi().cos(),
+                self.angle_sym_pi().sin(),
+            ))
+        }
+
+        pub fn iso2(&mut self, t: f64) -> Iso2 {
+            Iso2::new(self.vector2(t), self.angle_sym_pi())
         }
 
         pub fn angle_sym_pi(&mut self) -> f64 {
-            self.rng.random_range(-PI..PI)
+            self.f64(-PI, PI)
         }
+
         pub fn angle_sym_2pi(&mut self) -> f64 {
-            self.rng.random_range(-2.0 * PI..2.0 * PI)
+            self.f64(-2.0 * PI, 2.0 * PI)
         }
 
         pub fn angle_pos_2pi(&mut self) -> f64 {
-            self.rng.random_range(0.0..2.0 * PI)
+            self.f64(0.0, 2.0 * PI)
         }
 
         pub fn positive(&mut self, limit: f64) -> f64 {
-            self.rng.random_range(0.0..limit)
+            self.f64(0.0, limit)
+        }
+
+        pub fn circle2(&mut self, center_limit: f64, r_min: f64, r_max: f64) -> Circle2 {
+            let c = self.point(center_limit);
+            let r = self.f64(r_min, r_max);
+            Circle2::new(c.x, c.y, r)
         }
     }
 

@@ -627,7 +627,7 @@ impl Circle2 {
             BestFit::All
         };
 
-        let circle = engeom::Circle2::fitting_circle(&points, &guess, mode)
+        let circle = engeom::Circle2::new_fitting_circle(&points, &guess, mode)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(circle))
     }
@@ -642,7 +642,7 @@ impl Circle2 {
         max_r: Option<f64>,
     ) -> PyResult<Self> {
         let points = array_to_points2(&points.as_array())?;
-        let result = engeom::Circle2::ransac(&points, tol, iterations, min_r, max_r)
+        let result = engeom::Circle2::new_ransac(&points, tol, iterations, min_r, max_r)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(result))
     }
@@ -666,7 +666,7 @@ impl Circle2 {
         d1: &Vector2,
         radius: f64,
     ) -> PyResult<Self> {
-        engeom::Circle2::tangent_to_corner(
+        engeom::Circle2::new_tangent_to_corner(
             corner.get_inner(),
             d0.get_inner(),
             d1.get_inner(),

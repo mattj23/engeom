@@ -272,7 +272,7 @@ mod tests {
     use crate::common::linear_space;
     use std::f64::consts::FRAC_PI_2;
 
-    use crate::geom3::tests::RandomGeometry;
+    use crate::geom3::tests::RandomGeometry3;
     use approx::assert_relative_eq;
 
     #[test]
@@ -351,7 +351,7 @@ mod tests {
 
     #[test]
     fn iso3_param_round_trips_stress_test() {
-        let mut rg = RandomGeometry::new();
+        let mut rg = RandomGeometry3::new();
         for _ in 0..10000 {
             let t = rg.iso3(10.0);
             let p = param_from_iso3(&t);
@@ -363,7 +363,7 @@ mod tests {
 
     #[test]
     fn iso3_param_round_trips_stress_test_rc() {
-        let mut rg = RandomGeometry::new();
+        let mut rg = RandomGeometry3::new();
         for _ in 0..10000 {
             let t = rg.iso3(10.0);
             let rc = rg.point3(10.0);

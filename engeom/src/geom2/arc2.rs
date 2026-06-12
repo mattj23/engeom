@@ -337,7 +337,7 @@ mod tests {
     use super::*;
     use crate::common::points::mid_point;
 
-    use crate::geom2::tests::Random2;
+    use crate::geom2::tests::RandomGeometry2;
     use crate::{Arc2, Curve2};
     use approx::assert_relative_eq;
 
@@ -435,7 +435,7 @@ mod tests {
 
     #[test]
     fn stress_test_closest() {
-        let mut rnd = Random2::new();
+        let mut rnd = RandomGeometry2::new();
         let tol = 0.00001;
 
         for _ in 0..100 {

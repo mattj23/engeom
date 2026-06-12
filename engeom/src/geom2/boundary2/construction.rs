@@ -77,7 +77,7 @@ pub trait BoundaryEditor: BoundaryAddData {
             // First we'll find the circle at the tangent of the corner
             let v0 = last_point.coords() - c0.coords();
             let v1 = c1.coords() - c0.coords();
-            let c = Circle2::tangent_to_corner(c0, &v0, &v1, radius)?;
+            let c = Circle2::new_tangent_to_corner(c0, &v0, &v1, radius)?;
 
             // Now we need to find the two tangent endpoints
             let l0 = Line2::from_points(&last_point, c0).normalized();

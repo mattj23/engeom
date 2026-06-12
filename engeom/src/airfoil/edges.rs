@@ -329,7 +329,7 @@ impl EdgeLocate for FitRadiusEdge {
                 .ok_or("Failed to extract edge curve on fit radius edge algorithm.")?;
 
             // Fit a circle
-            let test = Circle2::fitting_circle(
+            let test = Circle2::new_fitting_circle(
                 edge_curve.points(),
                 &station.circle,
                 BestFit::Gaussian(2.0),
@@ -640,7 +640,7 @@ impl EdgeLocate for RansacRadiusEdge {
         let edge_curve = extract_curve_beyond_station(section, station, &end_sp)
             .ok_or("Failed to extract edge curve on RANSAC radius edge algorithm.")?;
 
-        let last_circle = Circle2::ransac(
+        let last_circle = Circle2::new_ransac(
             edge_curve.points(),
             self.in_tol,
             Some(self.iterations),

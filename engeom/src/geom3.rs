@@ -131,11 +131,11 @@ pub mod tests {
 
     /// A helper for generating random geometric entities in tests. Can be constructed with either
     /// a fixed seed (for reproducible tests) or using the default thread RNG.
-    pub struct RandomGeometry {
+    pub struct RandomGeometry3 {
         rng: RngSource,
     }
 
-    impl RandomGeometry {
+    impl RandomGeometry3 {
         /// Create a `RandomGeometry` that uses the default thread RNG.
         pub fn new() -> Self {
             Self {

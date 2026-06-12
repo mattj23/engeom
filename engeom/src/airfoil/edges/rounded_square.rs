@@ -178,7 +178,7 @@ fn arc_from_circle(seg0: &Segment2, seg1: &Segment2, radius: f64) -> Result<Arc2
     let corner = &seg0.b;
     let v0 = seg0.a - corner;
     let v1 = seg1.b - corner;
-    let circle = Circle2::tangent_to_corner(corner, &v0, &v1, radius)?;
+    let circle = Circle2::new_tangent_to_corner(corner, &v0, &v1, radius)?;
 
     let m0 = seg0.closest_to_point(&circle.center);
     let m1 = seg1.closest_to_point(&circle.center);
