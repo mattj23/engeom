@@ -489,6 +489,10 @@ impl SurfacePoint2 {
     fn new_shifted(&self, distance: f64) -> Self {
         Self::from_inner(self.inner.new_shifted(distance))
     }
+
+    fn to_line(&self) -> Line2 {
+        Line2::from_inner(engeom::geom2::Line2::from(&self.inner))
+    }
 }
 
 // ================================================================================================
@@ -676,6 +680,14 @@ impl Circle2 {
         .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
+    #[staticmethod]
+    fn tangent_and_point(tangent: &Line2, point: &Point2) -> Self {
+        Self::from_inner(engeom::Circle2::new_tangent_and_point(
+            tangent.get_inner(),
+            point.get_inner(),
+        ))
+    }
+
     fn outer_tangents_to(&self, other: &Circle2) -> Option<(Segment2, Segment2)> {
         self.inner
             .outer_tangents_to(other.get_inner())
@@ -853,6 +865,10 @@ impl Line2 {
     fn to_iso_from_y(&self) -> Iso2 {
         use engeom::geom2::LineOps2;
         Iso2::from_inner(self.inner.to_iso_from_y())
+    }
+
+    fn to_surface_point(&self) -> SurfacePoint2 {
+        SurfacePoint2::from_inner(engeom::SurfacePoint2::from(self.inner))
     }
 }
 
@@ -1072,6 +1088,11 @@ impl Arc2 {
     #[getter]
     fn circle(&self) -> Circle2 {
         Circle2::from_inner(self.inner.circle())
+    }
+
+    fn make_points<'py>(&self, py: Python<'py>, tol: f64) -> Bound<'py, PyArray2<f64>> {
+        let points = self.inner.make_points(tol);
+        points_to_array(&points).into_pyarray(py)
     }
 }
 

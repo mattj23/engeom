@@ -175,6 +175,53 @@ pub fn full_round_edge(
     Ok(AfEdgeFit::new(edge, result.residuals, c))
 }
 
+pub fn blended_round_edge(
+    input: &SectionInput,
+    circles: Vec<Inscribed>,
+    at_front: bool,
+) -> Result<AfEdgeFit> {
+    // TODO: Can we refine the stack of inscribed circles?
+    let working = EdgeWork::new(input, circles, at_front)?;
+    let p0 = working.last()?.p0.clone();
+    let p1 = working.last()?.p1.clone();
+    let wind_line = Line2::new(p0, working.clip.direction);
+    let wind_dir = wind_line.winding_direction(&working.clip.origin);
+
+    let initial_r = dist(&p0, &p1) / 2.0;
+    let initial_c = working.clip.at(working.clip_max_scalar() - initial_r * 0.7);
+    let initial = DVector::from(vec![initial_c.x, initial_c.y, initial_r]);
+
+    let builder: BndBuildFn = Box::new(move |params: &DVector| {
+        let mut bdata = BoundaryData2::new_open(p0);
+        let c = Point2::new(params[0], params[1]);
+        bdata.add_full_round(&c, params[2], &p1, wind_dir)?;
+        bdata.try_to_boundary()
+    });
+
+    let result = fit_boundary_to_points(&working.fit_points, &builder, initial, false)?;
+    let circle = Circle2::new(result.params[0], result.params[1], result.params[2]);
+
+    // Find the end point as an intersection with the circle
+    let end_line = Line2::new(circle.center, circle.center - working.last()?.center());
+    let ts = circle
+        .intersection(&end_line)
+        .iter()
+        .filter(|t| t.is_sign_positive())
+        .cloned()
+        .collect::<Vec<_>>();
+    let t = ts
+        .first()
+        .ok_or("Failed to find intersection between round and end line")?;
+    let point = end_line.at(*t);
+
+    let c = working.take_circles();
+    let edge = AfEdge::new(
+        point,
+        AfEdgeGeometry::FullRound(circle.center, circle.r() as f32),
+    );
+    Ok(AfEdgeFit::new(edge, result.residuals, c))
+}
+
 // =============================================================================================
 // Common tools for the edge implementations
 // =============================================================================================
@@ -260,6 +307,31 @@ mod tests {
                 ),*
             ]
         };
+    }
+
+    #[test]
+    fn blended_round() -> Result<()> {
+        #[rustfmt::skip]
+        let circles = inscribed_vec!((2.2811413775, -0.0216920927, 0.9251595807, 2.5597579707, -0.9039013076, 2.6696158336, 0.8179553873), (2.2960721657, -0.0226447166, 0.9197547076, 2.5730610498, -0.8996999700, 2.6822771205, 0.8120974686));
+        #[rustfmt::skip]
+        let curve = curve2!((0.0400644720, -1.2493577703), (0.1994998688, -1.2339772293), (2.1250000000, -0.9921567416), (2.1595998950, -0.9871817834), (2.5077756896, -0.9203181920), (2.8791537371, -0.8030307176), (3.2023916716, -0.6572063115), (3.2337585140, -0.6419920329), (3.2591962842, -0.6275713815), (3.3117449009, -0.5909157412), (3.3591746750, -0.5478412753), (3.4007068109, -0.4990552652), (3.4356593521, -0.4453587760), (3.4634583787, -0.3876335024), (3.4836474315, -0.3268272920), (3.4958950069, -0.2639385808), (3.5000000000, -0.2000000000), (3.4958950069, -0.1360614192), (3.4836474315, -0.0731727080), (3.4634583787, -0.0123664976), (3.4567933318, 0.0033220401), (3.4356593521, 0.0453587760), (3.2843521374, 0.3034888770), (3.0543300863, 0.5621893823), (2.7763917433, 0.7685540426), (2.4622149156, 0.9139122774), (2.2845275866, 0.9586678530), (2.1595998950, 0.9871817834), (2.1250000000, 0.9921567416), (0.1994998688, 1.2339772293), (0.0400644720, 1.2493577703))?;
+        let expected = Circle2::new(3.0, -0.2, 0.5);
+
+        let input = SectionInput::new(&curve, 1e-3);
+        let result = sharp_corner_edge(&input, circles, false)?;
+
+        assert!(matches!(
+            result.edge.geometry,
+            AfEdgeGeometry::BlendedRound(_, _)
+        ));
+        let c = match result.edge.geometry {
+            AfEdgeGeometry::BlendedRound(p, r) => Circle2::new(p.x, p.y, r as f64),
+            _ => unreachable!(),
+        };
+
+        assert_relative_eq!(c.center, expected.center, epsilon = 1e-4);
+        assert_relative_eq!(c.r(), expected.r(), epsilon = 1e-4);
+        Ok(())
     }
 
     #[test]

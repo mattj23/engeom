@@ -454,6 +454,15 @@ class SurfacePoint2:
         """
         ...
 
+    def to_line(self) -> Line2:
+        """
+        Convert this surface point to a ``Line2`` whose origin is the surface point's position and
+        whose direction is the surface point's normal vector.
+
+        :return: a ``Line2`` through this surface point.
+        """
+        ...
+
 
 class Iso2:
     """
@@ -1241,6 +1250,17 @@ class Circle2:
         """
         ...
 
+    @staticmethod
+    def tangent_and_point(tangent: Line2, point: Point2) -> Circle2:
+        """
+        Create a circle tangent to a line and passing through a point.
+
+        :param tangent: the line the circle is tangent to.
+        :param point: a point on the circle.
+        :return: a new ``Circle2``.
+        """
+        ...
+
     def outer_tangents_to(self, other: Circle2) -> Tuple[Segment2, Segment2] | None:
         """
         Compute the two outer tangent segments between this circle and another. Returns ``None`` if
@@ -1474,6 +1494,15 @@ class Line2:
         """
         ...
 
+    def to_surface_point(self) -> SurfacePoint2:
+        """
+        Convert this line to a ``SurfacePoint2`` whose position is the line's origin and whose
+        normal vector is the line's (normalized) direction.
+
+        :return: a ``SurfacePoint2`` at this line's origin.
+        """
+        ...
+
 
 class Segment2:
     """
@@ -1627,6 +1656,16 @@ class Arc2:
         """
         Get the circle that has the segment as its diameter.
         :return: the circle that has the segment as its diameter.
+        """
+        ...
+
+    def make_points(self, tol: float) -> NDArray:
+        """
+        Sample the arc into a sequence of points such that the maximum deviation between any chord
+        and the true arc is at most ``tol``.
+
+        :param tol: the maximum allowable chordal deviation.
+        :return: an ``(n, 2)`` array of points along the arc, including both endpoints.
         """
         ...
 
