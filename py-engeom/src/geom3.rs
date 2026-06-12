@@ -451,7 +451,7 @@ impl SurfacePoint3 {
     }
 
     fn reversed(&self) -> Self {
-        Self::from_inner(self.inner.reversed())
+        Self::from_inner(self.inner.new_reversed())
     }
 
     fn transformed(&self, iso: Iso3) -> Self {

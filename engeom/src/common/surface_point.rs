@@ -67,7 +67,7 @@ impl<const D: usize> SurfacePoint<D> {
     }
 
     /// Returns a new surface point with the same point but with the normal reversed
-    pub fn reversed(&self) -> Self {
+    pub fn new_reversed(&self) -> Self {
         Self::new(self.point, -self.normal)
     }
 
@@ -320,7 +320,7 @@ mod tests {
     #[test]
     fn reversed_flips_normal_keeps_point() {
         let sp = sp2(1.0, 2.0, 0.0, 1.0);
-        let rev = sp.reversed();
+        let rev = sp.new_reversed();
         assert_relative_eq!(rev.point, sp.point);
         assert_relative_eq!(
             rev.normal.into_inner(),
@@ -332,7 +332,7 @@ mod tests {
     #[test]
     fn reversed_twice_is_identity() {
         let sp = sp3(1.0, 2.0, 3.0, 1.0, 1.0, 0.0);
-        let twice = sp.reversed().reversed();
+        let twice = sp.new_reversed().new_reversed();
         assert_relative_eq!(twice.point, sp.point);
         assert_relative_eq!(
             twice.normal.into_inner(),

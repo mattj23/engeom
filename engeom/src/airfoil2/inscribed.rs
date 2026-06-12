@@ -215,7 +215,7 @@ impl InscribedVec {
     /// Creates a line located at the end of the inscribed circles, with its origin halfway between
     /// the `p0` and `p1` points of the last circle, and with its direction oriented so that `p0`
     /// and `p1` have a scalar projection of 0 and any point with a scalar projection above zero
-    /// is beyond the last inscribed circle.
+    /// is beyond the last inscribed circle.  The line is normalized to unit length.
     pub fn end_clip_line(&self) -> Result<Line2> {
         if self.len() < 2 {
             return Err(

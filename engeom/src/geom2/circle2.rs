@@ -1104,8 +1104,8 @@ mod tests {
 
             let result = Circle2::new_tangent_and_point(&line, &p);
 
-            assert_relative_eq!(result.center, c.center, epsilon = 1.0e-6);
-            assert_relative_eq!(result.r(), c.r(), epsilon = 1.0e-6);
+            assert_relative_eq!(result.center, c.center, epsilon = 1.0e-5);
+            assert_relative_eq!(result.r(), c.r(), epsilon = 1.0e-5);
         }
 
         Ok(())

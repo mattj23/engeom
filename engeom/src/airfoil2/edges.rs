@@ -184,7 +184,7 @@ pub fn blended_round_edge(
     at_front: bool,
 ) -> Result<AfEdgeFit> {
     // TODO: Can we refine the stack of inscribed circles?
-    let working = EdgeWork::new(input, circles, at_front)?;
+    let mut working = EdgeWork::new(input, circles, at_front)?;
     let (p0, p1) = working.last_points()?;
 
     // Find the winding direction, which will be the same for all arcs that get built
@@ -205,16 +205,7 @@ pub fn blended_round_edge(
         // -----------------------------------------------------------
         let center = Point2::new(params[0], params[1]);
         let radius = params[2];
-
-        // We shift the tangencies in towards the center by the radius value
-        let t0s = t0.new_parallel(t0.signed_projection_dist(&clip.origin).signum() * radius);
-        let t1s = t1.new_parallel(t1.signed_projection_dist(&clip.origin).signum() * radius);
-
-        // We get the blend arcs. Arc0 goes from p0 to the leading edge circle, and arc1 goes from
-        // p1 to the leading edge circle. We need to keep the order of endpoints right when we
-        // actuallyh build the boundary
-        let arc0 = blend_arc(&t0s, &center, radius);
-        let arc1 = blend_arc(&t1s, &center, radius);
+        let (arc0, arc1) = end_arcs(&t0, &t1, &clip, &center, radius);
 
         // Now we construct the boundary
         // -----------------------------------------------------------
@@ -225,8 +216,27 @@ pub fn blended_round_edge(
         bdata.try_to_boundary()
     });
 
+    // Perform the fitting and get the best fit circle
     let result = fit_boundary_to_points(&working.fit_points, &builder, initial, false)?;
     let circle = Circle2::new(result.params[0], result.params[1], result.params[2]);
+
+    // Now let's refine the inscribed circles to get closer to the edge circle. The end circle's
+    // theoretical tangencies are at the ends of arc0 and arc1 as constructed by the method used
+    // in the fitting.
+    let (arc0, arc1) = end_arcs(&t0, &t1, &clip, &circle.center, circle.r());
+    let fake = Inscribed::new(circle.clone(), arc0.at_end().point, arc1.at_end().point);
+    let fake_camber_line = (if fake.camber_point().normal.dot(&clip.direction) < 0.0 {
+        fake.camber_point().new_reversed()
+    } else {
+        fake.camber_point()
+    })
+    .new_shifted(-circle.r() * 0.1);
+    let test_line = Line2::new(fake_camber_line.point, fake.contact_dir());
+    let inscribed = input
+        .try_inscribed(&test_line)
+        .ok_or("Failed to find crossing line for blended round edge refinement")?;
+
+    working.stack.refine_and_push(inscribed, input);
 
     // Find the end point as an intersection with the circle
     let end_line = Line2::new(circle.center, circle.center - working.last()?.center());
@@ -247,6 +257,19 @@ pub fn blended_round_edge(
         AfEdgeGeometry::BlendedRound(circle.center, circle.r() as f32),
     );
     Ok(AfEdgeFit::new(edge, result.residuals, c))
+}
+
+fn end_arcs(t0: &Line2, t1: &Line2, clip: &Line2, center: &Point2, radius: f64) -> (Arc2, Arc2) {
+    let t0s = t0.new_parallel(t0.signed_projection_dist(&clip.origin).signum() * radius);
+    let t1s = t1.new_parallel(t1.signed_projection_dist(&clip.origin).signum() * radius);
+
+    // We get the blend arcs. Arc0 goes from p0 to the leading edge circle, and arc1 goes from
+    // p1 to the leading edge circle. We need to keep the order of endpoints right when we
+    // actuallyh build the boundary
+    (
+        blend_arc(&t0s, &center, radius),
+        blend_arc(&t1s, &center, radius),
+    )
 }
 
 fn blend_arc(shifted_tangent: &Line2, le_center: &Point2, le_radius: f64) -> Arc2 {
