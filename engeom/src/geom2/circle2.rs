@@ -705,6 +705,18 @@ impl Circle2 {
     pub fn line_direction(&self, line: &impl LineOps2) -> AngleDir {
         line.winding_direction(&self.center)
     }
+
+    /// Return a surface manifold position on the circle perimeter closest to a test entity.
+    ///
+    /// # Arguments
+    ///
+    /// * `p`: a test entity with coordinates
+    ///
+    /// returns: Manifold1Pos2
+    pub fn at_closest_to_point(&self, p: &impl PCoords<2>) -> Manifold1Pos2 {
+        let theta = self.angle_of_point(p);
+        self.at_angle(theta)
+    }
 }
 
 impl HasBounds2 for Circle2 {

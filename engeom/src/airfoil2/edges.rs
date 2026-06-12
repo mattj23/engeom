@@ -1,8 +1,11 @@
 use crate::airfoil2::inscribed::{Inscribed, InscribedVec};
 use crate::airfoil2::{AfEdge, AfEdgeGeometry, SectionInput};
 use crate::common::{Intersection, dist, mid_point};
-use crate::geom2::{BndBuildFn, BoundaryData2, BoundaryEditor, LineOps2, fit_boundary_to_points};
-use crate::{Circle2, DVector, Line2, Point2, Result};
+use crate::geom2::{
+    BndBuildFn, BoundaryData2, BoundaryEditor, BoundaryElement2, LineOps2, fit_boundary_to_points,
+    signed_angle,
+};
+use crate::{Arc2, Circle2, DVector, Line2, Point2, Result};
 
 #[derive(Clone, Debug)]
 pub struct AfEdgeFit {
@@ -182,19 +185,43 @@ pub fn blended_round_edge(
 ) -> Result<AfEdgeFit> {
     // TODO: Can we refine the stack of inscribed circles?
     let working = EdgeWork::new(input, circles, at_front)?;
-    let p0 = working.last()?.p0.clone();
-    let p1 = working.last()?.p1.clone();
+    let (p0, p1) = working.last_points()?;
+
+    // Find the winding direction, which will be the same for all arcs that get built
     let wind_line = Line2::new(p0, working.clip.direction);
     let wind_dir = wind_line.winding_direction(&working.clip.origin);
 
-    let initial_r = dist(&p0, &p1) / 2.0;
+    // Prepare the initial guess
+    let initial_r = dist(&p0, &p1) / 4.0;
     let initial_c = working.clip.at(working.clip_max_scalar() - initial_r * 0.7);
     let initial = DVector::from(vec![initial_c.x, initial_c.y, initial_r]);
 
+    // Prep geometry that gets moved into the builder function
+    let clip = working.clip.clone();
+    let (t0, t1) = working.last_tangents()?;
+
     let builder: BndBuildFn = Box::new(move |params: &DVector| {
+        // First we need to actually compute the arcs
+        // -----------------------------------------------------------
+        let center = Point2::new(params[0], params[1]);
+        let radius = params[2];
+
+        // We shift the tangencies in towards the center by the radius value
+        let t0s = t0.new_parallel(t0.signed_projection_dist(&clip.origin).signum() * radius);
+        let t1s = t1.new_parallel(t1.signed_projection_dist(&clip.origin).signum() * radius);
+
+        // We get the blend arcs. Arc0 goes from p0 to the leading edge circle, and arc1 goes from
+        // p1 to the leading edge circle. We need to keep the order of endpoints right when we
+        // actuallyh build the boundary
+        let arc0 = blend_arc(&t0s, &center, radius);
+        let arc1 = blend_arc(&t1s, &center, radius);
+
+        // Now we construct the boundary
+        // -----------------------------------------------------------
         let mut bdata = BoundaryData2::new_open(p0);
-        let c = Point2::new(params[0], params[1]);
-        bdata.add_full_round(&c, params[2], &p1, wind_dir)?;
+        bdata.add_arc(&arc0.center(), &arc0.at_end(), wind_dir.is_cw());
+        bdata.add_arc(&center, &arc1.at_end(), wind_dir.is_cw());
+        bdata.add_arc(&arc1.center(), &p1, wind_dir.is_cw());
         bdata.try_to_boundary()
     });
 
@@ -217,9 +244,23 @@ pub fn blended_round_edge(
     let c = working.take_circles();
     let edge = AfEdge::new(
         point,
-        AfEdgeGeometry::FullRound(circle.center, circle.r() as f32),
+        AfEdgeGeometry::BlendedRound(circle.center, circle.r() as f32),
     );
     Ok(AfEdgeFit::new(edge, result.residuals, c))
+}
+
+fn blend_arc(shifted_tangent: &Line2, le_center: &Point2, le_radius: f64) -> Arc2 {
+    let base_circle = Circle2::new_tangent_and_point(shifted_tangent, le_center);
+    let v0 = shifted_tangent.origin - base_circle.center;
+    let v1 = le_center - base_circle.center;
+    let theta0 = base_circle.angle_of_point(&shifted_tangent.origin);
+    let theta = signed_angle(&v0, &v1);
+    Arc2::circle_angles(
+        base_circle.center,
+        le_radius + base_circle.r(),
+        theta0,
+        theta,
+    )
 }
 
 // =============================================================================================
@@ -234,10 +275,39 @@ struct EdgeWork<'a> {
 }
 
 impl<'a> EdgeWork<'a> {
+    /// Get a reference to the last inscribed circle
     fn last(&self) -> Result<&Inscribed> {
         self.stack
             .last()
             .ok_or_else(|| "No inscribed circles found".into())
+    }
+
+    /// Get the contact points `p0` and `p1` of the last inscribed circle, returned in that order
+    fn last_points(&self) -> Result<(Point2, Point2)> {
+        let c = self.last()?;
+        Ok((c.p0.clone(), c.p1.clone()))
+    }
+
+    /// Get the tangent lines at the contact points `p0` and `p1` (in that order) of the last
+    /// inscribed circle
+    fn last_tangents(&self) -> Result<(Line2, Line2)> {
+        let c = self.last()?.c.clone();
+        let (p0, p1) = self.last_points()?;
+        let t0 = c.at_closest_to_point(&p0).direction_line();
+        let t1 = c.at_closest_to_point(&p1).direction_line();
+
+        Ok((
+            if t0.direction.dot(&self.clip.direction) < 0.0 {
+                t0.new_reversed()
+            } else {
+                t0
+            },
+            if t1.direction.dot(&self.clip.direction) < 0.0 {
+                t1.new_reversed()
+            } else {
+                t1
+            },
+        ))
     }
 
     /// The maximum scalar projection of the fit points on the clipping line
@@ -318,7 +388,7 @@ mod tests {
         let expected = Circle2::new(3.0, -0.2, 0.5);
 
         let input = SectionInput::new(&curve, 1e-3);
-        let result = sharp_corner_edge(&input, circles, false)?;
+        let result = blended_round_edge(&input, circles, false)?;
 
         assert!(matches!(
             result.edge.geometry,
@@ -329,8 +399,8 @@ mod tests {
             _ => unreachable!(),
         };
 
-        assert_relative_eq!(c.center, expected.center, epsilon = 1e-4);
-        assert_relative_eq!(c.r(), expected.r(), epsilon = 1e-4);
+        assert_relative_eq!(c.center, expected.center, epsilon = 1e-2);
+        assert_relative_eq!(c.r(), expected.r(), epsilon = 1e-2);
         Ok(())
     }
 

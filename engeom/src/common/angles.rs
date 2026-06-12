@@ -39,6 +39,14 @@ impl AngleDir {
             AngleDir::Ccw => AngleDir::Cw,
         }
     }
+
+    pub fn is_cw(self) -> bool {
+        matches!(self, AngleDir::Cw)
+    }
+
+    pub fn is_ccw(self) -> bool {
+        matches!(self, AngleDir::Ccw)
+    }
 }
 
 /// Get the counterclockwise angle from `radians0` to `radians1`
