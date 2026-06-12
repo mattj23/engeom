@@ -71,7 +71,7 @@ impl InscribedVec {
         Self { items: vec![] }
     }
 
-    pub fn iter(&self) -> std::slice::Iter<Inscribed> {
+    pub fn iter(&'_ self) -> std::slice::Iter<'_, Inscribed> {
         self.items.iter()
     }
 

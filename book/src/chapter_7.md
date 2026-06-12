@@ -23,7 +23,7 @@ In the aerospace industry, common measurements taken on airfoils include:
 > process. This brings a whole collection of problems that range from the practical to the
 > philosophical, all which need to be addressed at some level.
 
-## Typical Analysis Sequence
+## Pre-Measurement Geometry Establishment
 
 Before any airfoil-specific measurements can be taken on a section, the core airfoil geometry needs to be established. 
 The mean camber line needs to be identified, the leading and/or trailing edge points need to be located, and the upper
@@ -39,9 +39,7 @@ reference geometry to serve as a starting point.
   nominal geometry to establish were features should be, and then performs more robust local searching to capture the
   actual features.
 
-## Geometry Extraction
-
-Pure geometric approach:
+### Purely Geometric Analysis
 
 1. Find the unambiguous inscribed circles
 2. Order the inscribed circles from leading edge to trailing edge
@@ -52,31 +50,6 @@ Pure geometric approach:
 6. Construct the full mean camber line through the inscribed circle centers and the leading/trailing edge geometry
 7. Partition the upper and lower surfaces using the mean camber line and the leading/trailing
 
-Hybrid approach:
-1. Best fit the actual section to the nominal reference geometry
-2. Transfer a central inscribed circle from the nominal geometry to the actual section, then align them
-3. 
-
-
-## Mean Camber Line
-
-All measurements, airfoil or otherwise, require some method of specifying _where_ the measurement should be taken. On 
-older/legacy airfoil components this was sometimes done without the need for any special understanding of airfoil 
-geometry.  Over the past few decades, however, drawings have shifted to measurements that require isolating the upper 
-and lower surfaces and identifying the leading/trailing edges in order to specify measurement locations and tolerance
-regions.
-
-The main landmark for identifying places on an airfoil is the mean camber line (MCL), which is the curve that runs from 
-the leading edge to the trailing edge and is equidistant from the upper and lower surfaces. The mean camber line is a 
-portion of the [medial axis](https://en.wikipedia.org/wiki/Medial_axis), a geometric concept with a strong mathematical
-foundation.
-
-In the `engeom` library, any airfoil-specific measurement tools first require the establishment of the MCL. Once 
-established, the rest of the airfoil can be partitioned into upper and lower surfaces, the leading and trailing edges 
-identified, and any point along the airfoil can be specified using the MCL and the side of interest.
-
-
-
-
+### Hybrid Analysis with Nominal Reference Geometry
 
 

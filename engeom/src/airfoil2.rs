@@ -1,37 +1,17 @@
 //! This module and its submodules have tools for performing dimensional analysis on 2D airfoil
 //! cross-sections.
-//!
-//! In the aerospace industry, common measurements taken on airfoils include:
-//!
-//! - Thickness measurements through the airfoil, especially around the leading/trailing edges and
-//!   the position of maximum thickness, usually located by position along the mean camber line or
-//!   in local directions at the edges.
-//! - Chord lengths, often specified by a variety of different methods.
-//! - Form and profile measurements, often with multiple tolerance regions, sometimes requiring
-//!   special rules for partially constrained floating zones
-//! - Section position and angle, measured from nominal references
-//! - Leading and trailing edge position and shape, such as leading edge radius and trailing edge
-//!   trim position, etc.
-//!
-//! It's important to start with the understanding that there's a huge difference between
-//! running airfoil shape analysis tools on nominal section data, such as that exported from a CAD
-//! system or a mathematical representation of design geometry, and running the same tools on
-//! measured section data that came from a system like a 3D scanner or CMM.  Actual data will have
-//! both noise from the measurement system and actual defects/roughness from the manufacturing
-//! process. This brings a whole collection of problems that range from the practical to the
-//! philosophical, all which need to be addressed at some level.
-//!
-//!
 
 pub mod camber;
 pub mod edges;
+mod geometry;
 pub mod inscribed;
 pub mod orient;
 
-use crate::{Curve2, Point2};
-use serde::{Deserialize, Serialize};
-
+use crate::airfoil2::geometry::geometry_only_analysis;
+use crate::airfoil2::inscribed::Inscribed;
+use crate::{Curve2, Point2, Result};
 pub use orient::{OrientFwdAft, OrientUpperLower};
+use serde::{Deserialize, Serialize};
 
 /// This struct is a general wrapper around an airfoil section input for common airfoil algorithms
 /// implemented in this module and its submodules. It holds a reference to the airfoil section as
@@ -99,8 +79,52 @@ impl AfEdge {
     }
 }
 
+#[derive(Clone)]
 pub struct AfGeometry {
     pub leading: AfEdge,
     pub trailing: AfEdge,
     pub camber: Curve2,
+    pub upper: Curve2,
+    pub lower: Curve2,
+    pub circles: Vec<Inscribed>,
+}
+
+impl AfGeometry {
+    /// Conducts a purely geometric analysis of an airfoil section, attempting to extract the main
+    /// camber line (MCL), identify the leading and trailing edge features and directions, and
+    /// orient the upper and lower surfaces.
+    ///
+    /// # Arguments
+    ///
+    /// * `section`:
+    /// * `general_tol`:
+    /// * `fwd_aft`:
+    /// * `upper_lower`:
+    /// * `le_search`:
+    /// * `te_search`:
+    ///
+    /// returns: Result<AfGeometry, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    pub fn try_from_geometric_analysis(
+        section: &Curve2,
+        general_tol: f64,
+        fwd_aft: OrientFwdAft,
+        upper_lower: OrientUpperLower,
+        le_search: AfEdgeSearch,
+        te_search: AfEdgeSearch,
+    ) -> Result<Self> {
+        geometry_only_analysis(
+            section,
+            general_tol,
+            fwd_aft,
+            upper_lower,
+            le_search,
+            te_search,
+        )
+    }
 }

@@ -1,6 +1,6 @@
 use crate::airfoil2::inscribed::{Inscribed, InscribedVec};
 use crate::airfoil2::{AfEdge, AfEdgeGeometry, SectionInput};
-use crate::common::{Intersection, dist, mid_point};
+use crate::common::{PCoords, dist, mid_point};
 use crate::geom2::{
     BndBuildFn, BoundaryData2, BoundaryEditor, BoundaryElement2, LineOps2, fit_boundary_to_points,
     signed_angle,
@@ -15,14 +15,17 @@ pub struct AfEdgeFit {
     pub edge: AfEdge,
     pub residuals: DVector,
     pub circles: Vec<Inscribed>,
+    pub avg_residual: f64,
 }
 
 impl AfEdgeFit {
     pub fn new(result: AfEdge, residuals: DVector, circles: Vec<Inscribed>) -> Self {
+        let avg_residual = residuals.mean();
         Self {
             edge: result,
             residuals,
             circles,
+            avg_residual,
         }
     }
 }
@@ -73,7 +76,7 @@ pub fn fit_square_edge(
     let result = fit_boundary_to_points(&working.fit_points, &builder, initial, false)?;
     let corner0 = Point2::new(result.params[0], result.params[1]);
     let corner1 = Point2::new(result.params[2], result.params[3]);
-    let point = mid_point(&corner0, &corner1);
+    let point = end_intersection(input, &working.last()?.c, &mid_point(&corner0, &corner1))?;
 
     let c = working.take_circles();
     let edge = AfEdge::new(point, AfEdgeGeometry::Square(corner0, corner1));
@@ -133,7 +136,7 @@ pub fn fit_rounded_square_edge(
     let corner0 = Point2::new(result.params[0], result.params[1]);
     let corner1 = Point2::new(result.params[2], result.params[3]);
     let radius = result.params[4] as f32;
-    let point = mid_point(&corner0, &corner1);
+    let point = end_intersection(input, &working.last()?.c, &mid_point(&corner0, &corner1))?;
 
     let c = working.take_circles();
     let edge = AfEdge::new(
@@ -184,8 +187,10 @@ pub fn fit_sharp_edge(
 
     let result = fit_boundary_to_points(&working.fit_points, &builder, initial, false)?;
     let corner = Point2::new(result.params[0], result.params[1]);
+    let point = end_intersection(input, &working.last()?.c, &corner)?;
+
     let c = working.take_circles();
-    let edge = AfEdge::new(corner, AfEdgeGeometry::Sharp(corner));
+    let edge = AfEdge::new(point, AfEdgeGeometry::Sharp(corner));
     Ok(AfEdgeFit::new(edge, result.residuals, c))
 }
 
@@ -193,8 +198,7 @@ pub fn fit_sharp_edge(
 ///
 /// The edge is a single circular arc spanning from `p0` to `p1`, parameterized by a free circle
 /// center and radius. The arc is constrained to wind in the correct direction relative to the
-/// airfoil interior. The reported edge point is where the fitted circle intersects the line from
-/// the circle center through the center of the last inscribed circle.
+/// airfoil interior.
 ///
 /// # Arguments
 ///
@@ -232,19 +236,7 @@ pub fn fit_full_round_edge(
 
     let result = fit_boundary_to_points(&working.fit_points, &builder, initial, false)?;
     let circle = Circle2::new(result.params[0], result.params[1], result.params[2]);
-
-    // Find the end point as an intersection with the circle
-    let end_line = Line2::new(circle.center, circle.center - working.last()?.center());
-    let ts = circle
-        .intersection(&end_line)
-        .iter()
-        .filter(|t| t.is_sign_positive())
-        .cloned()
-        .collect::<Vec<_>>();
-    let t = ts
-        .first()
-        .ok_or("Failed to find intersection between round and end line")?;
-    let point = end_line.at(*t);
+    let point = end_intersection(input, &working.last()?.c, &circle)?;
 
     let c = working.take_circles();
     let edge = AfEdge::new(
@@ -268,8 +260,7 @@ pub fn fit_full_round_edge(
 ///
 /// After fitting, the inscribed circle stack is refined by inserting an additional circle
 /// seeded from the fitted edge circle geometry and then dynamically refining to the original
-/// camber line tolerance criteria. The reported edge point is found the same way
-/// as in [`fit_full_round_edge`].
+/// camber line tolerance criteria.
 ///
 /// # Arguments
 ///
@@ -331,32 +322,7 @@ pub fn fit_blended_round_edge(
     // in the fitting.
     let (arc0, arc1) = end_arcs(&t0, &t1, &clip, &circle.center, circle.r());
     refine_from_edge_circle(&mut working, input, &circle, arc0.b(), arc1.b())?;
-    // let fake = Inscribed::new(circle.clone(), arc0.at_end().point, arc1.at_end().point);
-    // let fake_camber_line = (if fake.camber_point().normal.dot(&clip.direction) < 0.0 {
-    //     fake.camber_point().new_reversed()
-    // } else {
-    //     fake.camber_point()
-    // })
-    // .new_shifted(-circle.r() * 0.1);
-    // let test_line = Line2::new(fake_camber_line.point, fake.contact_dir());
-    // let inscribed = input
-    //     .try_inscribed(&test_line)
-    //     .ok_or("Failed to find crossing line for blended round edge refinement")?;
-    //
-    // working.stack.refine_and_push(inscribed, input);
-
-    // Find the end point as an intersection with the circle
-    let end_line = Line2::new(circle.center, circle.center - working.last()?.center());
-    let ts = circle
-        .intersection(&end_line)
-        .iter()
-        .filter(|t| t.is_sign_positive())
-        .cloned()
-        .collect::<Vec<_>>();
-    let t = ts
-        .first()
-        .ok_or("Failed to find intersection between round and end line")?;
-    let point = end_line.at(*t);
+    let point = end_intersection(input, &working.last()?.c, &circle)?;
 
     let c = working.take_circles();
     let edge = AfEdge::new(
@@ -364,6 +330,30 @@ pub fn fit_blended_round_edge(
         AfEdgeGeometry::BlendedRound(circle.center, circle.r() as f32),
     );
     Ok(AfEdgeFit::new(edge, result.residuals, c))
+}
+
+// =============================================================================================
+// Common tools for the edge implementations
+// =============================================================================================
+
+/// Convenience wrapper for finding the LE/TE point given two known points on the camberline. The
+/// first point `e0` should be the last inscribed circle center. The second point, `e1` should
+/// come from the fitting geometry and would be where the theoretical camber end would be if the
+/// fitting boundary fit exactly to the observed points.  The resulting point should be very close
+/// to `e1` but will be the result of intersecting the line `e0->e1` with the section.
+fn end_intersection(
+    input: &SectionInput,
+    e0: &impl PCoords<2>,
+    e1: &impl PCoords<2>,
+) -> Result<Point2> {
+    let line = Line2::new_normalize(Point2::from(e0.coords()), e1.coords() - e0.coords());
+    let ts = input.section.intersections_with_line(&line);
+    let t = ts
+        .iter()
+        .filter_map(|(t, _)| if t.is_sign_positive() { Some(t) } else { None })
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .ok_or("Failed to find intersection between end line and section")?;
+    Ok(line.at(*t))
 }
 
 fn refine_from_edge_circle(
@@ -416,9 +406,6 @@ fn blend_arc(shifted_tangent: &Line2, le_center: &Point2, le_radius: f64) -> Arc
     )
 }
 
-// =============================================================================================
-// Common tools for the edge implementations
-// =============================================================================================
 struct EdgeWork<'a> {
     input: &'a SectionInput<'a>,
     stack: InscribedVec,

@@ -8,6 +8,7 @@ use crate::geom2::{
     signed_angle,
 };
 use crate::geom3::Vector3;
+use crate::na::SVector;
 use crate::stats::{compute_mean, compute_st_dev};
 use crate::{AngleDir, AngleInterval, BestFit, IntervalOps, Line2, SurfacePoint2, UnitVec2};
 use crate::{Arc2, Result};
@@ -767,6 +768,12 @@ pub fn intersection_line_circle(line: &impl LineOps2, circle: &Circle2) -> Vec<f
         let th = h / line.dir().norm();
 
         vec![tc - th, tc + th]
+    }
+}
+
+impl PCoords<2> for Circle2 {
+    fn coords(&self) -> SVector<f64, 2> {
+        self.center.coords
     }
 }
 

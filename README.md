@@ -14,13 +14,12 @@ Python documentation can be found at https://mattj23.github.io/py-engeom/
 
 ## Documentation
 
-The documentation for this project is built with mkdocs-material.  To set up the documentation locally, use a virtual environment and run `mkdocs serve`.
+The documentation for this project is built with [mdBook](https://rust-lang.github.io/mdBook/index.html).
+
+To view the documentation locally while editing it, you can install the `mdbook` command line tool and run on the folder containing the `book.toml` file:
 
 ```bash
-pip install mkdocs-material
-
-# Run mkdocs serve from the folder containing the mkdocs.yml file
-mkdocs serve
+mdbook watch book/ -o
 ```
 
 ##  General Principles
