@@ -24,7 +24,7 @@
 //!
 
 pub mod camber;
-mod edges;
+pub mod edges;
 pub mod inscribed;
 pub mod orient;
 

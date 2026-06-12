@@ -302,6 +302,19 @@ impl BoundaryElement2 for Arc2 {
         Manifold1Pos2::new(length, point, direction, normal)
     }
 
+    ///
+    ///
+    /// # Arguments
+    ///
+    /// * `point`:
+    ///
+    /// returns: Manifold1Pos2
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
     fn closest_to_point(&self, point: &dyn PCoords<2>) -> Manifold1Pos2 {
         let point = Point2::from(point.coords());
         let theta = self.circle().angle_of_point(&point);

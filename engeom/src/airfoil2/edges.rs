@@ -7,6 +7,9 @@ use crate::geom2::{
 };
 use crate::{Arc2, Circle2, DVector, Line2, Point2, Result};
 
+/// This is the result of an airfoil edge fitting operation. It contains the detected edge point
+/// and geometry, any fitting point residuals left from the result geometry, and an updated stack
+/// of inscribed circles, which may have been refined during the edge fitting.
 #[derive(Clone, Debug)]
 pub struct AfEdgeFit {
     pub edge: AfEdge,
@@ -24,7 +27,25 @@ impl AfEdgeFit {
     }
 }
 
-pub fn square_edge(
+/// Fit a square (flat) trailing or leading edge to airfoil section data.
+///
+/// The edge geometry consists of two corner points connected by a straight flat face, with the
+/// edge point placed at the midpoint between them. The corners are optimized by fitting an open
+/// three-segment polyline (from `p0` through two free corner points to `p1`) to the section
+/// points that lie beyond the clipping line of the last inscribed circle.
+///
+/// # Arguments
+///
+/// * `input` - The section geometry and search tolerances.
+/// * `circles` - The inscribed circle stack produced by the camber line fitting step.
+/// * `at_front` - When `true`, process the front (leading edge) end of the airfoil; when `false`,
+///   process the rear (trailing edge) end.
+///
+/// # Returns
+///
+/// An [`AfEdgeFit`] whose edge geometry is [`AfEdgeGeometry::Square`], containing the two fitted
+/// corner points and the midpoint as the edge location.
+pub fn fit_square_edge(
     input: &SectionInput,
     circles: Vec<Inscribed>,
     at_front: bool,
@@ -59,7 +80,26 @@ pub fn square_edge(
     Ok(AfEdgeFit::new(edge, result.residuals, c))
 }
 
-pub fn rounded_square_edge(
+/// Fit a rounded-square trailing or leading edge to airfoil section data.
+///
+/// Like [`fit_square_edge`], but the two corners connecting the flat face to the airfoil surfaces
+/// are replaced by circular arc fillets of a single optimized radius. The boundary is an open
+/// path from `p0` through two filleted corners to `p1`, fit to the section points beyond the
+/// clipping line of the last inscribed circle. The edge point is the midpoint between the two
+/// unfilleted corner positions.
+///
+/// # Arguments
+///
+/// * `input` - The section geometry and search tolerances.
+/// * `circles` - The inscribed circle stack produced by the camber line fitting step.
+/// * `at_front` - When `true`, process the front (leading edge) end of the airfoil; when `false`,
+///   process the rear (trailing edge) end.
+///
+/// # Returns
+///
+/// An [`AfEdgeFit`] whose edge geometry is [`AfEdgeGeometry::RoundedSquare`], containing the two
+/// unfilleted corner positions, the fillet radius, and the midpoint as the edge location.
+pub fn fit_rounded_square_edge(
     input: &SectionInput,
     circles: Vec<Inscribed>,
     at_front: bool,
@@ -103,7 +143,25 @@ pub fn rounded_square_edge(
     Ok(AfEdgeFit::new(edge, result.residuals, c))
 }
 
-pub fn sharp_corner_edge(
+/// Fit a sharp corner trailing or leading edge to airfoil section data.
+///
+/// The edge geometry is a single apex point where the two airfoil surfaces meet. An open
+/// two-segment polyline (from `p0` through one free corner point to `p1`) is fit to the section
+/// points beyond the clipping line of the last inscribed circle. The apex is both the corner
+/// and the reported edge point.
+///
+/// # Arguments
+///
+/// * `input` - The section geometry and search tolerances.
+/// * `circles` - The inscribed circle stack produced by the camber line fitting step.
+/// * `at_front` - When `true`, process the front (leading edge) end of the airfoil; when `false`,
+///   process the rear (trailing edge) end.
+///
+/// # Returns
+///
+/// An [`AfEdgeFit`] whose edge geometry is [`AfEdgeGeometry::Sharp`], containing the fitted apex
+/// point as both the corner and the edge location.
+pub fn fit_sharp_edge(
     input: &SectionInput,
     circles: Vec<Inscribed>,
     at_front: bool,
@@ -131,7 +189,25 @@ pub fn sharp_corner_edge(
     Ok(AfEdgeFit::new(edge, result.residuals, c))
 }
 
-pub fn full_round_edge(
+/// Fit a full-round (semicircular) trailing or leading edge to airfoil section data.
+///
+/// The edge is a single circular arc spanning from `p0` to `p1`, parameterized by a free circle
+/// center and radius. The arc is constrained to wind in the correct direction relative to the
+/// airfoil interior. The reported edge point is where the fitted circle intersects the line from
+/// the circle center through the center of the last inscribed circle.
+///
+/// # Arguments
+///
+/// * `input` - The section geometry and search tolerances.
+/// * `circles` - The inscribed circle stack produced by the camber line fitting step.
+/// * `at_front` - When `true`, process the front (leading edge) end of the airfoil; when `false`,
+///   process the rear (trailing edge) end.
+///
+/// # Returns
+///
+/// An [`AfEdgeFit`] whose edge geometry is [`AfEdgeGeometry::FullRound`], containing the fitted
+/// circle center and radius, with the edge location at the outermost point on the camber axis.
+pub fn fit_full_round_edge(
     input: &SectionInput,
     circles: Vec<Inscribed>,
     at_front: bool,
@@ -178,7 +254,37 @@ pub fn full_round_edge(
     Ok(AfEdgeFit::new(edge, result.residuals, c))
 }
 
-pub fn blended_round_edge(
+/// Fit a blended-round trailing or leading edge to airfoil section data.
+///
+/// The edge is a three-arc boundary that smoothly blends the airfoil surfaces into a central
+/// leading/trailing edge circle. Starting from `p0`, the boundary consists of:
+///   1. A blend arc tangent to the suction surface and internally tangent to the edge circle.
+///   2. The central edge circle arc.
+///   3. A blend arc tangent to the pressure surface and internally tangent to the edge circle.
+///
+/// The blend arcs are derived from the surface tangents at the contact points of the last
+/// inscribed circle, shifted by the edge circle radius so that each blend arc is simultaneously
+/// tangent to its surface tangent line and internally tangent to the edge circle.
+///
+/// After fitting, the inscribed circle stack is refined by inserting an additional circle
+/// seeded from the fitted edge circle geometry and then dynamically refining to the original
+/// camber line tolerance criteria. The reported edge point is found the same way
+/// as in [`fit_full_round_edge`].
+///
+/// # Arguments
+///
+/// * `input` - The section geometry and search tolerances.
+/// * `circles` - The inscribed circle stack produced by the camber line fitting step.
+/// * `at_front` - When `true`, process the front (leading edge) end of the airfoil; when `false`,
+///   process the rear (trailing edge) end.
+///
+/// # Returns
+///
+/// An [`AfEdgeFit`] whose edge geometry is [`AfEdgeGeometry::BlendedRound`], containing the
+/// fitted edge circle center and radius, with the edge location at the outermost point on the
+/// camber axis. The returned inscribed circle stack includes one additional refined circle near
+/// the edge.
+pub fn fit_blended_round_edge(
     input: &SectionInput,
     circles: Vec<Inscribed>,
     at_front: bool,
@@ -224,19 +330,20 @@ pub fn blended_round_edge(
     // theoretical tangencies are at the ends of arc0 and arc1 as constructed by the method used
     // in the fitting.
     let (arc0, arc1) = end_arcs(&t0, &t1, &clip, &circle.center, circle.r());
-    let fake = Inscribed::new(circle.clone(), arc0.at_end().point, arc1.at_end().point);
-    let fake_camber_line = (if fake.camber_point().normal.dot(&clip.direction) < 0.0 {
-        fake.camber_point().new_reversed()
-    } else {
-        fake.camber_point()
-    })
-    .new_shifted(-circle.r() * 0.1);
-    let test_line = Line2::new(fake_camber_line.point, fake.contact_dir());
-    let inscribed = input
-        .try_inscribed(&test_line)
-        .ok_or("Failed to find crossing line for blended round edge refinement")?;
-
-    working.stack.refine_and_push(inscribed, input);
+    refine_from_edge_circle(&mut working, input, &circle, arc0.b(), arc1.b())?;
+    // let fake = Inscribed::new(circle.clone(), arc0.at_end().point, arc1.at_end().point);
+    // let fake_camber_line = (if fake.camber_point().normal.dot(&clip.direction) < 0.0 {
+    //     fake.camber_point().new_reversed()
+    // } else {
+    //     fake.camber_point()
+    // })
+    // .new_shifted(-circle.r() * 0.1);
+    // let test_line = Line2::new(fake_camber_line.point, fake.contact_dir());
+    // let inscribed = input
+    //     .try_inscribed(&test_line)
+    //     .ok_or("Failed to find crossing line for blended round edge refinement")?;
+    //
+    // working.stack.refine_and_push(inscribed, input);
 
     // Find the end point as an intersection with the circle
     let end_line = Line2::new(circle.center, circle.center - working.last()?.center());
@@ -257,6 +364,29 @@ pub fn blended_round_edge(
         AfEdgeGeometry::BlendedRound(circle.center, circle.r() as f32),
     );
     Ok(AfEdgeFit::new(edge, result.residuals, c))
+}
+
+fn refine_from_edge_circle(
+    working: &mut EdgeWork,
+    input: &SectionInput,
+    edge_circle: &Circle2,
+    p0: Point2,
+    p1: Point2,
+) -> Result<()> {
+    let fake = Inscribed::new(edge_circle.clone(), p0, p1);
+    let fake_camber_line = (if fake.camber_point().normal.dot(&working.clip.direction) < 0.0 {
+        fake.camber_point().new_reversed()
+    } else {
+        fake.camber_point()
+    })
+    .new_shifted(-edge_circle.r() * 0.1);
+    let test_line = Line2::new(fake_camber_line.point, fake.contact_dir());
+    let inscribed = input
+        .try_inscribed(&test_line)
+        .ok_or("Failed to find crossing line for blended round edge refinement")?;
+
+    working.stack.refine_and_push(inscribed, input);
+    Ok(())
 }
 
 fn end_arcs(t0: &Line2, t1: &Line2, clip: &Line2, center: &Point2, radius: f64) -> (Arc2, Arc2) {
@@ -411,7 +541,7 @@ mod tests {
         let expected = Circle2::new(3.0, -0.2, 0.5);
 
         let input = SectionInput::new(&curve, 1e-3);
-        let result = blended_round_edge(&input, circles, false)?;
+        let result = fit_blended_round_edge(&input, circles, false)?;
 
         assert!(matches!(
             result.edge.geometry,
@@ -436,7 +566,7 @@ mod tests {
         let expected = Point2::new(3.0, 0.0);
 
         let input = SectionInput::new(&curve, 1e-3);
-        let result = sharp_corner_edge(&input, circles, false)?;
+        let result = fit_sharp_edge(&input, circles, false)?;
 
         assert!(matches!(result.edge.geometry, AfEdgeGeometry::Sharp(_)));
         let p = match result.edge.geometry {
@@ -458,7 +588,7 @@ mod tests {
         let exp1 = Point2::new(3.2500000000, 0.7107675827);
 
         let input = SectionInput::new(&curve, 1e-3);
-        let result = rounded_square_edge(&input, circles, false)?;
+        let result = fit_rounded_square_edge(&input, circles, false)?;
 
         assert!(matches!(
             result.edge.geometry,
@@ -484,7 +614,7 @@ mod tests {
         let curve = Curve2::from_points(&fill_gaps(curve.points(), 0.1), 1e-6, false)?;
 
         let input = SectionInput::new(&curve, 1e-3);
-        let result = square_edge(&input, circles, false)?;
+        let result = fit_square_edge(&input, circles, false)?;
 
         assert!(matches!(result.edge.geometry, AfEdgeGeometry::Square(_, _)));
         let (corner0, corner1) = match result.edge.geometry {
@@ -504,7 +634,7 @@ mod tests {
         let curve = curve2!((0.0400644720, -1.2493577703), (0.1994998688, -1.2339772293), (2.1595998950, -0.9871817834), (2.2845275866, -0.9586678530), (2.4047833431, -0.9144126230), (2.5183925683, -0.8551427630), (2.6234898019, -0.7818314825), (2.7183493501, -0.6956825506), (2.8014136219, -0.5981105305), (2.8713187041, -0.4907175520), (2.9269167573, -0.3752670049), (2.9672948630, -0.2536545839), (2.9917900138, -0.1278771617), (3.0000000000, 0.0000000000), (2.9917900138, 0.1278771617), (2.9672948630, 0.2536545839), (2.9269167573, 0.3752670049), (2.8713187041, 0.4907175520), (2.8014136219, 0.5981105305), (2.7183493501, 0.6956825506), (2.6234898019, 0.7818314825), (2.5183925683, 0.8551427630), (2.4047833431, 0.9144126230), (2.2845275866, 0.9586678530), (2.1595998950, 0.9871817834), (0.1994998688, 1.2339772293), (0.0400644720, 1.2493577703))?;
 
         let input = SectionInput::new(&curve, 1e-3);
-        let result = full_round_edge(&input, circles, false)?;
+        let result = fit_full_round_edge(&input, circles, false)?;
 
         assert!(matches!(
             result.edge.geometry,
