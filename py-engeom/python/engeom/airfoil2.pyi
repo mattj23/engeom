@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import Enum
 from typing import List, Literal, Optional
 
 import numpy as np
@@ -164,7 +165,7 @@ def fit_rounded_square_edge(section: Curve2, tol: float, circles: List[Inscribed
     Fit a rounded-square trailing or leading edge to airfoil section data.
 
     Like ``fit_square_edge``, but the two corners are replaced by circular arc fillets of a
-    single optimised radius.
+    single optimized radius.
 
     :param section: the airfoil section curve.
     :param tol: general fitting tolerance.
@@ -251,3 +252,205 @@ def extract_inscribed_circles(section: Curve2, tol: float) -> List[Inscribed]:
         encounters an unrecoverable error during extraction.
     """
     ...
+
+
+type OrientFwdAftEnum = OrientFwdAft.TmaxFwd | OrientFwdAft.Airflow | OrientFwdAft.Fwd
+type OrientUpperLowerEnum = OrientUpperLower.Curvature | OrientUpperLower.Upper | OrientUpperLower.Lower
+
+
+class OrientFwdAft:
+    """
+    Selects the method used to identify which end of the camber line is the leading edge.
+    """
+
+    class TmaxFwd:
+        """
+        Identify the leading edge as the end nearer the largest inscribed circle (the maximum
+        thickness point). Suitable for typical subsonic airfoils.
+        """
+
+        def __init__(self): ...
+
+    class Airflow:
+        """
+        Identify the leading edge based on a supplied airflow direction. The end of the camber
+        line further upstream of the airflow becomes the leading edge.
+        """
+
+        def __init__(self, x: float, y: float):
+            """
+            :param x: x-component of the airflow direction.
+            :param y: y-component of the airflow direction.
+            """
+            ...
+
+    class Fwd:
+        """
+        Identify the leading edge using a vector that points from the trailing toward the
+        leading edge. The end of the camber line that projects further along this vector
+        becomes the leading edge.
+        """
+
+        def __init__(self, x: float, y: float):
+            """
+            :param x: x-component of the forward direction vector.
+            :param y: y-component of the forward direction vector.
+            """
+            ...
+
+
+class OrientUpperLower:
+    """
+    Selects the method used to identify the upper (suction) and lower (pressure) surfaces of
+    the airfoil after the forward/aft orientation has been resolved.
+    """
+
+    class Curvature:
+        """
+        Detect upper and lower from the curvature of the camber line. The more concave side
+        becomes the lower (pressure) surface. Will fail or give poor results if the camber
+        line is nearly straight.
+        """
+
+        def __init__(self): ...
+
+    class Upper:
+        """
+        Use a supplied direction vector to identify the upper surface. The side whose contact
+        points are further along this vector becomes the upper surface.
+        """
+
+        def __init__(self, x: float, y: float):
+            """
+            :param x: x-component of the upper-direction vector.
+            :param y: y-component of the upper-direction vector.
+            """
+            ...
+
+    class Lower:
+        """
+        Use a supplied direction vector to identify the lower surface. The side whose contact
+        points are further along this vector becomes the lower surface.
+        """
+
+        def __init__(self, x: float, y: float):
+            """
+            :param x: x-component of the lower-direction vector.
+            :param y: y-component of the lower-direction vector.
+            """
+            ...
+
+
+class AfEdgeSearch(Enum):
+    """
+    Selects which edge geometry to fit at the leading or trailing edge during a geometric
+    analysis. Use ``Auto`` to try every fittable variant and pick the one with the lowest
+    average residual.
+    """
+
+    Auto = 0
+    """ Fit every applicable variant and select the lowest-residual result. """
+
+    Open = 1
+    """ Treat the edge as open; no edge geometry is fit (not yet implemented). """
+
+    Sharp = 2
+    """ Fit a sharp apex edge. """
+
+    Square = 3
+    """ Fit a flat-faced edge with two sharp corners. """
+
+    RoundedSquare = 4
+    """ Fit a flat-faced edge with two rounded corners of equal radius. """
+
+    FullRound = 5
+    """ Fit a full-round edge joined to the surfaces by short tangent segments. """
+
+    BlendedRound = 6
+    """ Fit a full-round edge joined to the surfaces by tangent blending arcs. """
+
+
+class AfGeometry:
+    """
+    The result of a geometric analysis of an airfoil section. Provides the leading and
+    trailing edge fits, the mean camber line, the upper and lower surface curves, and the
+    inscribed circle stack used during analysis.
+
+    Construct with :meth:`from_geometric_analysis`.
+    """
+
+    @staticmethod
+    def from_geometric_analysis(
+        section: Curve2,
+        general_tol: float,
+        fwd_aft: OrientFwdAftEnum,
+        upper_lower: OrientUpperLowerEnum,
+        le_search: AfEdgeSearch,
+        te_search: AfEdgeSearch,
+    ) -> AfGeometry:
+        """
+        Run a purely geometric analysis of an airfoil section.
+
+        Internally this method:
+
+        1. Extracts the unambiguous inscribed circles of the section.
+        2. Orients the inscribed circles forward/aft using ``fwd_aft``.
+        3. Orients them upper/lower using ``upper_lower``.
+        4. Fits the leading and trailing edge geometries using ``le_search`` and ``te_search``.
+        5. Builds the mean camber line from the edges and circle centers.
+        6. Splits the section into upper and lower surface curves.
+
+        :param section: the airfoil section curve.
+        :param general_tol: general fitting tolerance used throughout the analysis.
+        :param fwd_aft: forward/aft orientation method.
+        :param upper_lower: upper/lower orientation method.
+        :param le_search: edge-search method for the leading edge.
+        :param te_search: edge-search method for the trailing edge.
+        :return: a populated :class:`AfGeometry`.
+        :raises ValueError: if any step of the analysis fails.
+        """
+        ...
+
+    @property
+    def leading(self) -> AfEdge:
+        """The fitted leading edge."""
+        ...
+
+    @property
+    def trailing(self) -> AfEdge:
+        """The fitted trailing edge."""
+        ...
+
+    @property
+    def camber(self) -> Curve2:
+        """
+        The mean camber line, oriented so the first point is the leading edge point and the
+        last point is the trailing edge point.
+        """
+        ...
+
+    @property
+    def upper(self) -> Curve2:
+        """The upper (suction) surface curve."""
+        ...
+
+    @property
+    def lower(self) -> Curve2:
+        """The lower (pressure) surface curve."""
+        ...
+
+    @property
+    def circles(self) -> List[Inscribed]:
+        """
+        The inscribed circle stack used in the analysis, oriented leading-to-trailing with
+        each circle's ``p0`` on the lower surface and ``p1`` on the upper surface.
+        """
+        ...
+
+    @property
+    def circle_array(self) -> NDArray[np.float64]:
+        """
+        The inscribed circle stack as an ``(N, 3)`` numpy array whose columns are the circle
+        center ``x``, the circle center ``y``, and the circle radius.
+        """
+        ...

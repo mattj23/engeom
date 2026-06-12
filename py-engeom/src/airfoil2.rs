@@ -2,9 +2,13 @@ use crate::geom2::{Curve2, Point2, SurfacePoint2, Vector2};
 use engeom::airfoil2::SectionInput;
 use engeom::airfoil2::edges::AfEdgeFit as InnerAfEdgeFit;
 use engeom::airfoil2::inscribed::Inscribed as InnerInscribed;
-use engeom::airfoil2::{AfEdge as InnerAfEdge, AfEdgeGeometry as InnerAfEdgeGeometry};
-use numpy::ndarray::Array1;
-use numpy::{IntoPyArray, PyArray1};
+use engeom::airfoil2::{
+    AfEdge as InnerAfEdge, AfEdgeGeometry as InnerAfEdgeGeometry,
+    AfEdgeSearch as InnerAfEdgeSearch, AfGeometry as InnerAfGeometry,
+    OrientFwdAft as InnerOrientFwdAft, OrientUpperLower as InnerOrientUpperLower,
+};
+use numpy::ndarray::{Array1, ArrayD};
+use numpy::{IntoPyArray, PyArray1, PyArrayDyn};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -268,7 +272,7 @@ impl AfEdgeFit {
         AfEdge::from_inner(self.inner.edge)
     }
 
-    /// The point-to-boundary residuals from the fitting optimisation, as a 1-D numpy array.
+    /// The point-to-boundary residuals from the fitting optimization, as a 1-D numpy array.
     #[getter]
     fn residuals<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
         Array1::from_iter(self.inner.residuals.iter().copied()).into_pyarray(py)
@@ -368,4 +372,264 @@ pub fn extract_inscribed_circles(section: &Curve2, tol: f64) -> PyResult<Vec<Ins
     engeom::airfoil2::camber::extract_inscribed_circles(&input)
         .map(|v| v.into_iter().map(Inscribed::from_inner).collect())
         .map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
+// ================================================================================================
+// OrientFwdAft
+// ================================================================================================
+
+/// Selects the method used to identify which end of the camber line is the leading edge.
+///
+/// Variants:
+///
+/// - `TmaxFwd()`: the end nearer the largest inscribed circle becomes the leading edge.
+/// - `Airflow(x, y)`: airflow direction; the end further upstream becomes the leading edge.
+/// - `Fwd(x, y)`: vector pointing toward the leading edge; the end further in this direction
+///   becomes the leading edge.
+#[pyclass(from_py_object, module = "engeom.airfoil2")]
+#[derive(Clone, Copy, Debug)]
+pub enum OrientFwdAft {
+    TmaxFwd {},
+    Airflow { x: f64, y: f64 },
+    Fwd { x: f64, y: f64 },
+}
+
+#[pymethods]
+impl OrientFwdAft {
+    fn __repr__(&self) -> String {
+        match self {
+            OrientFwdAft::TmaxFwd {} => "OrientFwdAft.TmaxFwd".to_string(),
+            OrientFwdAft::Airflow { x, y } => format!("OrientFwdAft.Airflow({}, {})", x, y),
+            OrientFwdAft::Fwd { x, y } => format!("OrientFwdAft.Fwd({}, {})", x, y),
+        }
+    }
+}
+
+impl From<OrientFwdAft> for InnerOrientFwdAft {
+    fn from(value: OrientFwdAft) -> Self {
+        match value {
+            OrientFwdAft::TmaxFwd {} => InnerOrientFwdAft::TmaxFwd,
+            OrientFwdAft::Airflow { x, y } => {
+                InnerOrientFwdAft::Airflow(engeom::Vector2::new(x, y))
+            }
+            OrientFwdAft::Fwd { x, y } => InnerOrientFwdAft::Fwd(engeom::Vector2::new(x, y)),
+        }
+    }
+}
+
+// ================================================================================================
+// OrientUpperLower
+// ================================================================================================
+
+/// Selects the method used to identify the upper (suction) and lower (pressure) surfaces.
+///
+/// Variants:
+///
+/// - `Curvature()`: detect from camber line curvature; the more concave side becomes lower.
+/// - `Upper(x, y)`: the side whose points are more positive along (x, y) becomes upper.
+/// - `Lower(x, y)`: the side whose points are more positive along (x, y) becomes lower.
+#[pyclass(from_py_object, module = "engeom.airfoil2")]
+#[derive(Clone, Copy, Debug)]
+pub enum OrientUpperLower {
+    Curvature {},
+    Upper { x: f64, y: f64 },
+    Lower { x: f64, y: f64 },
+}
+
+#[pymethods]
+impl OrientUpperLower {
+    fn __repr__(&self) -> String {
+        match self {
+            OrientUpperLower::Curvature {} => "OrientUpperLower.Curvature".to_string(),
+            OrientUpperLower::Upper { x, y } => format!("OrientUpperLower.Upper({}, {})", x, y),
+            OrientUpperLower::Lower { x, y } => format!("OrientUpperLower.Lower({}, {})", x, y),
+        }
+    }
+}
+
+impl From<OrientUpperLower> for InnerOrientUpperLower {
+    fn from(value: OrientUpperLower) -> Self {
+        match value {
+            OrientUpperLower::Curvature {} => InnerOrientUpperLower::Curvature,
+            OrientUpperLower::Upper { x, y } => {
+                InnerOrientUpperLower::Upper(engeom::Vector2::new(x, y))
+            }
+            OrientUpperLower::Lower { x, y } => {
+                InnerOrientUpperLower::Lower(engeom::Vector2::new(x, y))
+            }
+        }
+    }
+}
+
+// ================================================================================================
+// AfEdgeSearch
+// ================================================================================================
+
+/// Selects which edge geometry to fit at the leading or trailing edge.
+///
+/// `Auto` will try every fittable variant and select the one with the lowest average residual.
+#[pyclass(eq, eq_int, from_py_object, module = "engeom.airfoil2")]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum AfEdgeSearch {
+    Auto = 0,
+    Open = 1,
+    Sharp = 2,
+    Square = 3,
+    RoundedSquare = 4,
+    FullRound = 5,
+    BlendedRound = 6,
+}
+
+#[pymethods]
+impl AfEdgeSearch {
+    fn __repr__(&self) -> String {
+        match self {
+            AfEdgeSearch::Auto => "AfEdgeSearch.Auto".to_string(),
+            AfEdgeSearch::Open => "AfEdgeSearch.Open".to_string(),
+            AfEdgeSearch::Sharp => "AfEdgeSearch.Sharp".to_string(),
+            AfEdgeSearch::Square => "AfEdgeSearch.Square".to_string(),
+            AfEdgeSearch::RoundedSquare => "AfEdgeSearch.RoundedSquare".to_string(),
+            AfEdgeSearch::FullRound => "AfEdgeSearch.FullRound".to_string(),
+            AfEdgeSearch::BlendedRound => "AfEdgeSearch.BlendedRound".to_string(),
+        }
+    }
+}
+
+impl From<AfEdgeSearch> for InnerAfEdgeSearch {
+    fn from(value: AfEdgeSearch) -> Self {
+        match value {
+            AfEdgeSearch::Auto => InnerAfEdgeSearch::Auto,
+            AfEdgeSearch::Open => InnerAfEdgeSearch::Open,
+            AfEdgeSearch::Sharp => InnerAfEdgeSearch::Sharp,
+            AfEdgeSearch::Square => InnerAfEdgeSearch::Square,
+            AfEdgeSearch::RoundedSquare => InnerAfEdgeSearch::RoundedSquare,
+            AfEdgeSearch::FullRound => InnerAfEdgeSearch::FullRound,
+            AfEdgeSearch::BlendedRound => InnerAfEdgeSearch::BlendedRound,
+        }
+    }
+}
+
+// ================================================================================================
+// AfGeometry
+// ================================================================================================
+
+/// The result of a geometric analysis of an airfoil section: the leading and trailing edges,
+/// the mean camber line, the upper and lower surfaces, and the inscribed circle stack.
+#[pyclass(module = "engeom.airfoil2")]
+pub struct AfGeometry {
+    inner: InnerAfGeometry,
+    camber: Option<Py<Curve2>>,
+    upper: Option<Py<Curve2>>,
+    lower: Option<Py<Curve2>>,
+    circle_array: Option<Py<PyArrayDyn<f64>>>,
+}
+
+impl AfGeometry {
+    pub fn from_inner(inner: InnerAfGeometry) -> Self {
+        Self {
+            inner,
+            camber: None,
+            upper: None,
+            lower: None,
+            circle_array: None,
+        }
+    }
+}
+
+#[pymethods]
+impl AfGeometry {
+    /// Run a purely geometric analysis of an airfoil section.
+    ///
+    /// Extracts the mean camber line, identifies the leading and trailing edges using the
+    /// supplied edge search strategies, orients the section forward/aft and upper/lower, and
+    /// splits the section into upper and lower surfaces.
+    #[staticmethod]
+    fn from_geometric_analysis(
+        section: &Curve2,
+        general_tol: f64,
+        fwd_aft: OrientFwdAft,
+        upper_lower: OrientUpperLower,
+        le_search: AfEdgeSearch,
+        te_search: AfEdgeSearch,
+    ) -> PyResult<Self> {
+        let inner = InnerAfGeometry::try_from_geometric_analysis(
+            section.get_inner(),
+            general_tol,
+            fwd_aft.into(),
+            upper_lower.into(),
+            le_search.into(),
+            te_search.into(),
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        Ok(AfGeometry::from_inner(inner))
+    }
+
+    /// The leading edge result.
+    #[getter]
+    fn leading(&self) -> AfEdge {
+        AfEdge::from_inner(self.inner.leading)
+    }
+
+    /// The trailing edge result.
+    #[getter]
+    fn trailing(&self) -> AfEdge {
+        AfEdge::from_inner(self.inner.trailing)
+    }
+
+    /// The mean camber line, oriented from leading edge to trailing edge.
+    #[getter]
+    fn camber<'py>(&mut self, py: Python<'py>) -> &Bound<'py, Curve2> {
+        if self.camber.is_none() {
+            let c = Curve2::from_inner(self.inner.camber.clone());
+            self.camber = Some(Py::new(py, c).unwrap());
+        }
+        self.camber.as_ref().unwrap().bind(py)
+    }
+
+    /// The upper (suction) surface curve.
+    #[getter]
+    fn upper<'py>(&mut self, py: Python<'py>) -> &Bound<'py, Curve2> {
+        if self.upper.is_none() {
+            let u = Curve2::from_inner(self.inner.upper.clone());
+            self.upper = Some(Py::new(py, u).unwrap());
+        }
+        self.upper.as_ref().unwrap().bind(py)
+    }
+
+    /// The lower (pressure) surface curve.
+    #[getter]
+    fn lower<'py>(&mut self, py: Python<'py>) -> &Bound<'py, Curve2> {
+        if self.lower.is_none() {
+            let l = Curve2::from_inner(self.inner.lower.clone());
+            self.lower = Some(Py::new(py, l).unwrap());
+        }
+        self.lower.as_ref().unwrap().bind(py)
+    }
+
+    /// The inscribed circle stack, oriented leading-to-trailing with `p0` on the lower surface
+    /// and `p1` on the upper surface.
+    #[getter]
+    fn circles(&self) -> Vec<Inscribed> {
+        self.inner
+            .circles
+            .iter()
+            .map(|c| Inscribed::from_inner(c.clone()))
+            .collect()
+    }
+
+    /// The inscribed circle stack as a `(N, 3)` numpy array of `(center_x, center_y, radius)`.
+    #[getter]
+    fn circle_array<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArrayDyn<f64>> {
+        if self.circle_array.is_none() {
+            let mut result = ArrayD::zeros(vec![self.inner.circles.len(), 3]);
+            for (i, c) in self.inner.circles.iter().enumerate() {
+                result[[i, 0]] = c.c.center.x;
+                result[[i, 1]] = c.c.center.y;
+                result[[i, 2]] = c.c.r();
+            }
+            self.circle_array = Some(result.into_pyarray(py).unbind());
+        }
+        self.circle_array.as_ref().unwrap().bind(py)
+    }
 }
