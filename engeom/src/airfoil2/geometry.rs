@@ -66,7 +66,7 @@ pub fn geometry_only_analysis(
 
     // To identify the sides, we'll check an inscribed circle and see which one is closer to `p0`,
     // which would indicate the lower/pressure side.
-    let (upper, lower) =
+    let (lower, upper) =
         if side0.dist_to_point(&oriented[0].p0) < side1.dist_to_point(&oriented[0].p0) {
             (side0, side1)
         } else {
@@ -121,17 +121,25 @@ fn fit_auto_edge(
     circles: Vec<Inscribed>,
     at_front: bool,
 ) -> Result<AfEdgeFit> {
-    let sharp = fit_sharp_edge(input, circles.clone(), at_front)?;
-    let square = fit_square_edge(input, circles.clone(), at_front)?;
-    let rounded_square = fit_rounded_square_edge(input, circles.clone(), at_front)?;
-    let full_round = fit_full_round_edge(input, circles.clone(), at_front)?;
-    let blended_round = fit_blended_round_edge(input, circles.clone(), at_front)?;
+    let mut candidates = Vec::new();
 
-    let mut candidates = vec![sharp, full_round, blended_round];
-    if rounded_square.avg_residual < square.avg_residual * 0.9 {
-        candidates.push(rounded_square);
-    } else {
+    if let Ok(sharp) = fit_sharp_edge(input, circles.clone(), at_front) {
+        candidates.push(sharp);
+    }
+    if let Ok(square) = fit_square_edge(input, circles.clone(), at_front) {
         candidates.push(square);
+    }
+    if let Ok(rounded_square) = fit_rounded_square_edge(input, circles.clone(), at_front) {
+        candidates.push(rounded_square);
+    }
+    if let Ok(full_round) = fit_full_round_edge(input, circles.clone(), at_front) {
+        candidates.push(full_round);
+    }
+    if let Ok(blended_round) = fit_blended_round_edge(input, circles.clone(), at_front) {
+        candidates.push(blended_round);
+    }
+    if candidates.len() == 0 {
+        return Err("No edge fits succeeded for auto edge search".into());
     }
 
     candidates.sort_by(|a, b| {

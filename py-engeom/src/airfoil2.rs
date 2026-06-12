@@ -618,6 +618,12 @@ impl AfGeometry {
             .collect()
     }
 
+    /// The inscribed circle with the largest radius, corresponding to the maximum thickness
+    /// location along the camber line.
+    fn tmax_circle(&self) -> Inscribed {
+        Inscribed::from_inner(self.inner.tmax_circle().clone())
+    }
+
     /// The inscribed circle stack as a `(N, 3)` numpy array of `(center_x, center_y, radius)`.
     #[getter]
     fn circle_array<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArrayDyn<f64>> {

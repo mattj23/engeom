@@ -272,12 +272,20 @@ impl<'a> SectionInput<'a> {
         // Now find the measured circle
         let line = Line2::from(&cp.rot_normal_90(Ccw));
         let circle = self.try_inscribed(&line)?;
-        if (circle.c.r() - cr).abs() < self.general_tol
-            && dist(&cp, &circle.c.center) < self.general_tol
+
+        // If the circle is larger than either of its neighbors, we'll add it (we want to try to
+        // find the maximum circle). Otherwise, the interpolation error must be less than the
+        // general tolerance.
+        let e_radius = (circle.c.r() - cr).abs();
+        let e_pos = dist(&cp, &circle.c.center);
+
+        if circle.radius() > a.radius().max(b.radius())
+            || e_radius > self.general_tol
+            || e_pos > self.general_tol
         {
-            None
-        } else {
             Some(circle)
+        } else {
+            None
         }
     }
 

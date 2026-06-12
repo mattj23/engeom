@@ -447,6 +447,13 @@ class AfGeometry:
         """
         ...
 
+    def tmax_circle(self) -> Inscribed:
+        """
+        Return the inscribed circle with the largest radius. This corresponds to the maximum
+        thickness location along the camber line.
+        """
+        ...
+
     @property
     def circle_array(self) -> NDArray[np.float64]:
         """

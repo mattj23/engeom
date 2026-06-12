@@ -127,4 +127,17 @@ impl AfGeometry {
             te_search,
         )
     }
+
+    /// Returns the inscribed circle with the largest radius, which corresponds to the maximum
+    /// thickness location along the camber line.
+    pub fn tmax_circle(&self) -> &Inscribed {
+        self.circles
+            .iter()
+            .max_by(|a, b| {
+                a.c.r()
+                    .partial_cmp(&b.c.r())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .expect("AfGeometry is guaranteed to contain at least one inscribed circle")
+    }
 }
