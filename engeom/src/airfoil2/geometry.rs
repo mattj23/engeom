@@ -10,9 +10,9 @@ use crate::airfoil2::edges::{
 };
 use crate::airfoil2::inscribed::Inscribed;
 use crate::airfoil2::{
-    AfEdge, AfEdgeSearch, AfGeometry, OrientFwdAft, OrientUpperLower, SectionInput,
+    AfEdge, AfEdgeGeometry, AfEdgeSearch, AfGeometry, OrientFwdAft, OrientUpperLower, SectionInput,
 };
-use crate::{Curve2, Result};
+use crate::{Curve2, Point2, Result};
 
 pub fn geometry_only_analysis(
     section: &Curve2,
@@ -37,7 +37,64 @@ pub fn geometry_only_analysis(
     let (oriented, leading) = run_edge_fit(le_search, &input, oriented, true)?;
     let (oriented, trailing) = run_edge_fit(te_search, &input, oriented, false)?;
 
-    todo!()
+    // Now we extract the camber curve
+    let camber = make_camber_curve(leading.point, trailing.point, &oriented, general_tol * 1e-2)?;
+
+    // Now we split the two sides
+    let (side0, side1) = match (leading.geometry, trailing.geometry) {
+        (AfEdgeGeometry::Open, AfEdgeGeometry::Open) => {
+            // This shouldn't be possible
+            return Err("Both leading and trailing edges cannot be open".into());
+        }
+        (AfEdgeGeometry::Open, _) => {
+            // Leading is open, trailing is closed
+            let l = section.at_closest_to_point(&trailing.point).length_along();
+            section.split_open_at_length(l)?
+        }
+        (_, AfEdgeGeometry::Open) => {
+            // Leading is closed, trailing is open
+            let l = section.at_closest_to_point(&leading.point).length_along();
+            section.split_open_at_length(l)?
+        }
+        (_, _) => {
+            // Both sides are closed
+            let l0 = section.at_closest_to_point(&leading.point).length_along();
+            let l1 = section.at_closest_to_point(&trailing.point).length_along();
+            section.split_closed_at_lengths(l0, l1)?
+        }
+    };
+
+    // To identify the sides, we'll check an inscribed circle and see which one is closer to `p0`,
+    // which would indicate the lower/pressure side.
+    let (upper, lower) =
+        if side0.dist_to_point(&oriented[0].p0) < side1.dist_to_point(&oriented[0].p0) {
+            (side0, side1)
+        } else {
+            (side1, side0)
+        };
+
+    Ok(AfGeometry {
+        leading,
+        trailing,
+        camber,
+        upper,
+        lower,
+        circles: oriented,
+    })
+}
+
+fn make_camber_curve(
+    le_point: Point2,
+    te_point: Point2,
+    oriented_circles: &[Inscribed],
+    tol: f64,
+) -> Result<Curve2> {
+    let mut points = vec![le_point];
+    for c in oriented_circles.iter() {
+        points.push(c.center());
+    }
+    points.push(te_point);
+    Curve2::from_points(&points, tol, false)
 }
 
 fn run_edge_fit(
