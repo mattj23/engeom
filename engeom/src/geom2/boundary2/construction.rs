@@ -3,7 +3,7 @@
 use crate::common::PCoords;
 use crate::geom2::boundary2::data::{BData, BoundaryAddData};
 use crate::geom2::{BoundaryData2, Segment2};
-use crate::{Arc2, Circle2, Line2, Point2, Result};
+use crate::{AngleDir, Arc2, Circle2, Line2, Point2, Result};
 
 // ===============================================================================================
 //  Common boundary construction tools
@@ -141,6 +141,7 @@ pub trait BoundaryEditor: BoundaryAddData {
         center: &impl PCoords<2>,
         radius: f64,
         end: &impl PCoords<2>,
+        direction: AngleDir,
     ) -> Result<(u32, u32, u32)> {
         let c = Circle2::new(center.coords().x, center.coords().y, radius);
         let start = self
@@ -156,20 +157,17 @@ pub trait BoundaryEditor: BoundaryAddData {
         };
 
         // Get the clockwise arc
-        let arc_cw = Arc2::try_new_ends(&start_cw, &end_cw, center, true)?;
-        let arc_ccw = Arc2::try_new_ends(&start_ccw, &end_ccw, center, false)?;
-
-        let (i0, i1) = if arc_cw.length() < arc_ccw.length() {
-            (
-                self.add_seg(&start_cw),
-                self.add_arc(&c.center, &end_cw, true),
-            )
-        } else {
-            (
+        let (i0, i1) = match direction {
+            AngleDir::Ccw => (
                 self.add_seg(&start_ccw),
                 self.add_arc(&c.center, &end_ccw, false),
-            )
+            ),
+            AngleDir::Cw => (
+                self.add_seg(&start_cw),
+                self.add_arc(&c.center, &end_cw, true),
+            ),
         };
+
         let i2 = self.add_seg(end);
         Ok((i0, i1, i2))
     }
@@ -231,6 +229,7 @@ impl BoundaryEditor for BCursor<'_> {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::AngleDir::{Ccw, Cw};
     use crate::common::points::to_points;
     use approx::assert_relative_eq;
     use std::f64::consts::PI;
@@ -306,7 +305,7 @@ mod tests {
     #[test]
     fn full_round_ccw() -> Result<()> {
         let mut data = BoundaryData2::new_open_xy(0.0, 0.0);
-        data.add_full_round(&Point2::new(1.0, 1.0), 1.0, &Point2::new(0.0, 2.0))?;
+        data.add_full_round(&Point2::new(1.0, 1.0), 1.0, &Point2::new(0.0, 2.0), Ccw)?;
         let boundary = data.try_to_boundary()?;
         assert_relative_eq!(boundary.length(), 2.0 + PI);
         Ok(())
@@ -315,7 +314,7 @@ mod tests {
     #[test]
     fn full_round_cw() -> Result<()> {
         let mut data = BoundaryData2::new_open_xy(0.0, 2.0);
-        data.add_full_round(&Point2::new(1.0, 1.0), 1.0, &Point2::new(0.0, 0.0))?;
+        data.add_full_round(&Point2::new(1.0, 1.0), 1.0, &Point2::new(0.0, 0.0), Cw)?;
         let boundary = data.try_to_boundary()?;
         assert_relative_eq!(boundary.length(), 2.0 + PI);
         Ok(())

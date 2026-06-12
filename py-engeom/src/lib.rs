@@ -137,7 +137,10 @@ fn register_airfoil2_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()>
     let child = PyModule::new(parent_module.py(), "_airfoil2")?;
 
     child.add_class::<airfoil2::Inscribed>()?;
-    child.add_function(wrap_pyfunction!(airfoil2::extract_inscribed_circles, &child)?)?;
+    child.add_function(wrap_pyfunction!(
+        airfoil2::extract_inscribed_circles,
+        &child
+    )?)?;
 
     parent_module.add_submodule(&child)
 }

@@ -1,11 +1,8 @@
-use std::env::temp_dir;
 use crate::airfoil2::inscribed::{Inscribed, InscribedVec};
 use crate::airfoil2::{AfEdge, AfEdgeGeometry, SectionInput};
 use crate::common::{Intersection, dist, mid_point};
 use crate::geom2::{BndBuildFn, BoundaryData2, BoundaryEditor, LineOps2, fit_boundary_to_points};
-use crate::{Circle2, Curve2, DVector, Line2, Point2, Result};
-use num_traits::real::Real;
-use crate::io::write_tc_curve2_file;
+use crate::{Circle2, DVector, Line2, Point2, Result};
 
 #[derive(Clone, Debug)]
 pub struct AfEdgeFit {
@@ -68,23 +65,19 @@ pub fn full_round_edge(
     let working = EdgeWork::new(input, circles, at_front)?;
     let p0 = working.last()?.p0.clone();
     let p1 = working.last()?.p1.clone();
+    let wind_line = Line2::new(p0, working.clip.direction);
+    let wind_dir = wind_line.winding_direction(&working.clip.origin);
 
     let initial_r = dist(&p0, &p1) / 2.0;
-    let initial_c = working.clip.at(working.clip_max_scalar() - initial_r * 1.1 );
-    // let initial_c = working.clip.origin;
+    let initial_c = working.clip.at(working.clip_max_scalar() - initial_r * 0.7);
     let initial = DVector::from(vec![initial_c.x, initial_c.y, initial_r]);
 
     let builder: BndBuildFn = Box::new(move |params: &DVector| {
         let mut bdata = BoundaryData2::new_open(p0);
         let c = Point2::new(params[0], params[1]);
-        bdata.add_full_round(&c, params[2], &p1)?;
+        bdata.add_full_round(&c, params[2], &p1, wind_dir)?;
         bdata.try_to_boundary()
     });
-
-    let b = builder(&initial)?;
-    let p = b.to_points(1e-8)?;
-    let c = Curve2::from_points(&p, 1e-8, false)?;
-    write_tc_curve2_file(&temp_dir().join("full_round_initial.curve2"), &c, 1e-6)?;
 
     let result = fit_boundary_to_points(&working.fit_points, &builder, initial, false)?;
     let circle = Circle2::new(result.params[0], result.params[1], result.params[2]);

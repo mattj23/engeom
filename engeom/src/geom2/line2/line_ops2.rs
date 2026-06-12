@@ -1,7 +1,7 @@
 use crate::common::vec_f64::sort_and_dedup;
 use crate::common::{Intersection, PCoords};
 use crate::geom2::{Aabb2, Ray2, intersection_param, signed_angle};
-use crate::{Iso2, Line2, Point2, Vector2};
+use crate::{AngleDir, Iso2, Line2, Point2, Vector2};
 
 pub trait LineOps2 {
     fn origin(&self) -> Point2;
@@ -56,6 +56,26 @@ pub trait LineOps2 {
         let t = Iso2::translation(self.origin().x, self.origin().y);
 
         t * r
+    }
+
+    /// Determine the direction that the line winds around a point.
+    ///
+    /// # Arguments
+    ///
+    /// * `point`:
+    ///
+    /// returns: AngleDir
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    fn winding_direction(&self, point: &impl PCoords<2>) -> AngleDir {
+        match self.signed_projection_dist(point).is_sign_positive() {
+            true => AngleDir::Cw,
+            false => AngleDir::Ccw,
+        }
     }
 }
 
