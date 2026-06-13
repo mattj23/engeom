@@ -19,6 +19,7 @@ pub mod inscribed;
 /// Orientation strategies for resolving the forward/aft (leading/trailing edge) direction and
 /// the upper/lower (suction/pressure) surfaces of an airfoil section.
 pub mod orient;
+mod position;
 
 use crate::airfoil2::geometry::geometry_only_analysis;
 use crate::airfoil2::inscribed::Inscribed;
@@ -170,10 +171,12 @@ pub struct AfGeometry {
     /// point is the trailing edge point.
     pub camber: Curve2,
 
-    /// The upper (suction) surface curve, split from the original section.
+    /// The upper (suction) surface curve, split from the original section. The points are ordered
+    /// so that the surface normals point outward from the airfoil skin.
     pub upper: Curve2,
 
-    /// The lower (pressure) surface curve, split from the original section.
+    /// The lower (pressure) surface curve, split from the original section. The points are ordered
+    /// so that the surface normals point outward from the airfoil skin.
     pub lower: Curve2,
 
     /// The inscribed circle stack used during analysis, ordered leading-to-trailing with each
@@ -182,7 +185,30 @@ pub struct AfGeometry {
 }
 
 impl AfGeometry {
-    pub fn af_point(&self) -> Option<Point2> {
+
+    /// Get the point on the specified side of the airfoil corresponding to the given position
+    /// method and value.
+    ///
+    /// # Arguments
+    ///
+    /// * `side`:
+    /// * `method`:
+    /// * `value`:
+    ///
+    /// returns: Option<OPoint<f64, Const<2>>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    pub fn af_point(&self, side: AfSide, method: AfPos, value: f64) -> Option<Point2> {
+        let target = match side {
+            AfSide::Upper => &self.upper,
+            AfSide::Lower => &self.lower,
+        };
+
+
         todo!()
     }
 
