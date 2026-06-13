@@ -23,7 +23,8 @@ mod position;
 
 use crate::airfoil2::geometry::geometry_only_analysis;
 use crate::airfoil2::inscribed::Inscribed;
-use crate::{Curve2, Point2, Result};
+use crate::airfoil2::position::{pos_camber, pos_offset, pos_radius};
+use crate::{Curve2, CurveStation2, Point2, Result};
 pub use orient::{OrientFwdAft, OrientUpperLower};
 use serde::{Deserialize, Serialize};
 
@@ -185,7 +186,6 @@ pub struct AfGeometry {
 }
 
 impl AfGeometry {
-
     /// Get the point on the specified side of the airfoil corresponding to the given position
     /// method and value.
     ///
@@ -195,21 +195,24 @@ impl AfGeometry {
     /// * `method`:
     /// * `value`:
     ///
-    /// returns: Option<OPoint<f64, Const<2>>>
+    /// returns: Option<CurveStation2>
     ///
     /// # Examples
     ///
     /// ```
     ///
     /// ```
-    pub fn af_point(&self, side: AfSide, method: AfPos, value: f64) -> Option<Point2> {
+    pub fn af_point(&self, side: AfSide, method: AfPos, value: f64) -> Option<CurveStation2<'_>> {
         let target = match side {
             AfSide::Upper => &self.upper,
             AfSide::Lower => &self.lower,
         };
 
-
-        todo!()
+        match method {
+            AfPos::OnCamber => pos_camber(value, &self.camber, target),
+            AfPos::Radius => pos_radius(value, &self.camber, target),
+            AfPos::EdgeOffset => pos_offset(value, &self.camber, target),
+        }
     }
 
     /// Run a purely geometric analysis of an airfoil section, attempting to extract the mean
