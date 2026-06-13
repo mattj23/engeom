@@ -330,8 +330,9 @@ pub fn fit_blended_round_edge(
     // Now let's refine the inscribed circles to get closer to the edge circle. The end circle's
     // theoretical tangencies are at the ends of arc0 and arc1 as constructed by the method used
     // in the fitting.
-    let (arc0, arc1) = end_arcs(&t0, &t1, &clip, &circle.center, circle.r());
-    refine_from_edge_circle(&mut working, input, &circle, arc0.b(), arc1.b())?;
+    // let (arc0, arc1) = end_arcs(&t0, &t1, &clip, &circle.center, circle.r());
+    // refine_from_edge_circle(&mut working, input, &circle, arc0.b(), arc1.b())?;
+    refine_from_edge_circle(&mut working, input, &circle)?;
     let point = end_intersection(input, &working.last()?.c, &circle)?;
 
     let c = working.take_circles();
@@ -370,17 +371,28 @@ fn refine_from_edge_circle(
     working: &mut EdgeWork,
     input: &SectionInput,
     edge_circle: &Circle2,
-    p0: Point2,
-    p1: Point2,
 ) -> Result<()> {
-    let fake = Inscribed::new(edge_circle.clone(), p0, p1);
+    let (a, b) = working
+        .last()?
+        .c
+        .outer_tangents_to(&edge_circle)
+        .ok_or("Failed to find outer tangents between last inscribed circle and edge circle")?;
+
+    let fake = Inscribed::new(edge_circle.clone(), a.b, b.b);
     let fake_camber_line = (if fake.camber_point().normal.dot(&working.clip.direction) < 0.0 {
         fake.camber_point().new_reversed()
     } else {
         fake.camber_point()
     })
     .new_shifted(-edge_circle.r() * 0.1);
+
     let test_line = Line2::new(fake_camber_line.point, fake.contact_dir());
+    let test_line = if test_line.direction.dot(&working.last()?.contact_dir()) < 0.0 {
+        test_line.new_reversed()
+    } else {
+        test_line
+    };
+
     let inscribed = input
         .try_inscribed(&test_line)
         .ok_or("Failed to find crossing line for blended round edge refinement")?;
@@ -416,15 +428,14 @@ fn blend_arc(shifted_tangent: &Line2, le_center: &Point2, le_radius: f64) -> Arc
     )
 }
 
-struct EdgeWork<'a> {
-    input: &'a SectionInput<'a>,
+struct EdgeWork {
     stack: InscribedVec,
     fit_points: Vec<Point2>,
     clip: Line2,
     at_front: bool,
 }
 
-impl<'a> EdgeWork<'a> {
+impl EdgeWork {
     /// Get a reference to the last inscribed circle
     fn last(&self) -> Result<&Inscribed> {
         self.stack
@@ -470,7 +481,7 @@ impl<'a> EdgeWork<'a> {
         d_max
     }
 
-    fn new(input: &'a SectionInput<'a>, circles: Vec<Inscribed>, at_front: bool) -> Result<Self> {
+    fn new(input: &SectionInput, circles: Vec<Inscribed>, at_front: bool) -> Result<Self> {
         if circles.len() < 2 {
             return Err("Not enough inscribed circles to partition edge geometry".into());
         }
@@ -491,7 +502,6 @@ impl<'a> EdgeWork<'a> {
         }
 
         Ok(Self {
-            input,
             stack,
             fit_points,
             clip,

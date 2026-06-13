@@ -2,10 +2,13 @@
 
 mod common;
 use crate::common::PathPair;
+use approx::assert_relative_eq;
+use engeom::airfoil2::{AfEdgeSearch, AfGeometry, OrientFwdAft, OrientUpperLower};
+use engeom::common::dist;
 use engeom::io::write_tc_curve2_file;
 use engeom::{Curve2, Point2, Result};
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const TEST_DATA_FOLDER: &str = "airfoil-section-measure";
 
@@ -22,7 +25,10 @@ fn airfoil_section_measure_private() -> Result<()> {
 }
 
 fn run_test_case(case: &TestCase, dir: &PathPair) -> Result<()> {
+    // TODO: probably needs to have a subfolder and to clear it before starting
+
     for (i, section) in case.items.iter().enumerate() {
+        // Observability output
         let output_root = format!("{}-sec{:03}", case.name, i);
         let curve = section.curve()?;
         write_tc_curve2_file(
@@ -30,6 +36,20 @@ fn run_test_case(case: &TestCase, dir: &PathPair) -> Result<()> {
             &curve,
             1e-6,
         )?;
+
+        // Airfoil nominal analysis
+        let nominal = AfGeometry::try_from_geometric_analysis(
+            &curve,
+            1e-3,
+            OrientFwdAft::TmaxFwd,
+            OrientUpperLower::Curvature,
+            AfEdgeSearch::Auto,
+            AfEdgeSearch::Auto,
+        )?;
+
+        // Chord dimension
+        let chord_distance = dist(&nominal.camber.at_front(), &nominal.camber.at_back());
+        assert_relative_eq!(chord_distance, section.chord, epsilon = 5e-2);
     }
 
     Ok(())

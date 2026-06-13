@@ -34,8 +34,8 @@ pub fn geometry_only_analysis(
     let oriented = upper_lower.apply(fwd_oriented)?;
 
     // Now we capture the leading and trailing edges
-    let (oriented, leading) = run_edge_fit(le_search, &input, oriented, true)?;
     let (oriented, trailing) = run_edge_fit(te_search, &input, oriented, false)?;
+    let (oriented, leading) = run_edge_fit(le_search, &input, oriented, true)?;
 
     // Now we extract the camber curve
     let camber = make_camber_curve(leading.point, trailing.point, &oriented, general_tol * 1e-2)?;
