@@ -12,7 +12,8 @@ use crate::airfoil2::inscribed::Inscribed;
 use crate::airfoil2::{
     AfEdge, AfEdgeGeometry, AfEdgeSearch, AfGeometry, OrientFwdAft, OrientUpperLower, SectionInput,
 };
-use crate::{Curve2, Point2, Result};
+use crate::geom2::LineOps2;
+use crate::{AngleDir, Curve2, Point2, Result};
 
 pub fn geometry_only_analysis(
     section: &Curve2,
@@ -39,7 +40,24 @@ pub fn geometry_only_analysis(
 
     // Now we extract the camber curve
     let camber = make_camber_curve(leading.point, trailing.point, &oriented, general_tol * 1e-2)?;
+    let (lower, upper) = split_sides(leading, trailing, section, &oriented)?;
 
+    Ok(AfGeometry {
+        leading,
+        trailing,
+        camber,
+        upper,
+        lower,
+        circles: oriented,
+    })
+}
+
+fn split_sides(
+    leading: AfEdge,
+    trailing: AfEdge,
+    section: &Curve2,
+    oriented: &[Inscribed],
+) -> Result<(Curve2, Curve2)> {
     // Now we split the two sides
     let (side0, side1) = match (leading.geometry, trailing.geometry) {
         (AfEdgeGeometry::Open, AfEdgeGeometry::Open) => {
@@ -66,21 +84,31 @@ pub fn geometry_only_analysis(
 
     // To identify the sides, we'll check an inscribed circle and see which one is closer to `p0`,
     // which would indicate the lower/pressure side.
+    let test_circle = &oriented[oriented.len() / 2];
     let (lower, upper) =
-        if side0.dist_to_point(&oriented[0].p0) < side1.dist_to_point(&oriented[0].p0) {
+        if side0.dist_to_point(&test_circle.p0) < side1.dist_to_point(&test_circle.p0) {
             (side0, side1)
         } else {
             (side1, side0)
         };
 
-    Ok(AfGeometry {
-        leading,
-        trailing,
-        camber,
-        upper,
-        lower,
-        circles: oriented,
-    })
+    // Ensure that the upper and lower skins are oriented in the correct direction so that their
+    // surface normals face outward
+    let line_l = lower.at_closest_to_point(&test_circle.c).direction_line();
+    let lower = if line_l.winding_direction(&test_circle.c) == AngleDir::Cw {
+        lower.reversed()
+    } else {
+        lower
+    };
+
+    let line_u = upper.at_closest_to_point(&test_circle.c).direction_line();
+    let upper = if line_u.winding_direction(&test_circle.c) == AngleDir::Cw {
+        upper.reversed()
+    } else {
+        upper
+    };
+
+    Ok((lower, upper))
 }
 
 fn make_camber_curve(
@@ -148,4 +176,70 @@ fn fit_auto_edge(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     Ok(candidates[0].clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tests::airfoil_curve;
+
+    fn af_curve_known_ccw() -> Curve2 {
+        let donor = airfoil_curve();
+        Curve2::from_points_ccw(&donor.points(), donor.tol(), true).unwrap()
+    }
+
+    fn basic_geom(section: &Curve2) -> Result<(Vec<Inscribed>, AfEdge, AfEdge)> {
+        let input = SectionInput::new(section, 1e-3);
+        let unoriented = extract_inscribed_circles(&input)?;
+        let partial = OrientFwdAft::TmaxFwd.apply(unoriented)?;
+        let oriented = OrientUpperLower::Curvature.apply(partial)?;
+
+        // Now we capture the leading and trailing edges
+        let (oriented, trailing) = run_edge_fit(AfEdgeSearch::FullRound, &input, oriented, false)?;
+        let (oriented, leading) = run_edge_fit(AfEdgeSearch::BlendedRound, &input, oriented, true)?;
+        Ok((oriented, leading, trailing))
+    }
+
+    fn verify_upper_lower(upper: &Curve2, lower: &Curve2, expected: &Curve2) -> Result<()> {
+        for p in upper.points() {
+            let local = upper.at_closest_to_point(p);
+            let check = expected.at_closest_to_point(p);
+            assert!(
+                local.normal().dot(&check.normal()).is_sign_positive(),
+                "Upper point is not facing the right way"
+            );
+        }
+
+        for p in lower.points() {
+            let local = lower.at_closest_to_point(p);
+            let check = expected.at_closest_to_point(p);
+            assert!(
+                local.normal().dot(&check.normal()).is_sign_positive(),
+                "Lower point is not facing the right way"
+            );
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn side_orientation_ccw() -> Result<()> {
+        let expected = af_curve_known_ccw();
+        let (oriented, leading, trailing) = basic_geom(&expected)?;
+        let (lower, upper) = split_sides(leading, trailing, &expected, &oriented)?;
+        verify_upper_lower(&upper, &lower, &expected)?;
+        Ok(())
+    }
+
+    #[test]
+    fn side_orientation_cw() -> Result<()> {
+        let expected = af_curve_known_ccw();
+        let reversed = expected.reversed();
+
+        let (oriented, leading, trailing) = basic_geom(&reversed)?;
+        let (lower, upper) = split_sides(leading, trailing, &reversed, &oriented)?;
+
+        verify_upper_lower(&upper, &lower, &expected)?;
+        Ok(())
+    }
 }

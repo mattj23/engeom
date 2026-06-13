@@ -26,6 +26,34 @@ use crate::{Curve2, Point2, Result};
 pub use orient::{OrientFwdAft, OrientUpperLower};
 use serde::{Deserialize, Serialize};
 
+/// Enum to specify between the upper and lower side of the airfoil
+pub enum AfSide {
+    /// The upper/suction/convex side of the airfoil
+    Upper,
+
+    /// The lower/pressure/concave side of the airfoil
+    Lower,
+}
+
+/// Enum representing a method for specifying a location on an airfoil surface.
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
+pub enum AfPos {
+    /// A position specified by an arc distance along the mean camber line. Positive distances
+    /// are measured from the leading edge point, negative ones are from the trailing edge point.
+    OnCamber,
+
+    /// A position specified by an intersection with a circle of a specified radius centered at
+    /// the edge point. Positive radii indicate that the circle is centered at the leading edge
+    /// point, and negative ones are centered at the trailing edge point.
+    Radius,
+
+    /// A position specified along a ray at the leading or trailing edge point in the direction of
+    /// the camber-line tangency.  Positive values are measured from the leading edge point,
+    /// negative ones from the trailing edge point. At the specified distance, an intersection
+    /// is taken orthogonal to the tangent direction.
+    EdgeOffset,
+}
+
 /// General wrapper around an airfoil section input for common airfoil algorithms implemented in
 /// this module and its submodules. It bundles a reference to the section curve together with the
 /// general tolerance used by downstream algorithms and the derived sub-tolerance used when an
@@ -114,7 +142,6 @@ pub struct AfEdge {
     /// rounded-square edge it is the midpoint of the flat face; for the round variants it is the
     /// outermost point on the camber axis of the section.
     pub point: Point2,
-
     /// The geometric description of the edge shape.
     pub geometry: AfEdgeGeometry,
 }
@@ -155,6 +182,10 @@ pub struct AfGeometry {
 }
 
 impl AfGeometry {
+    pub fn af_point(&self) -> Option<Point2> {
+        todo!()
+    }
+
     /// Run a purely geometric analysis of an airfoil section, attempting to extract the mean
     /// camber line (MCL), identify the leading and trailing edge features, and orient the upper
     /// and lower surfaces.
