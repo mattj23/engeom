@@ -20,6 +20,7 @@ pub mod inscribed;
 /// the upper/lower (suction/pressure) surfaces of an airfoil section.
 pub mod orient;
 mod position;
+mod measurements;
 
 use crate::airfoil2::geometry::geometry_only_analysis;
 use crate::airfoil2::inscribed::Inscribed;
@@ -137,13 +138,15 @@ pub enum AfEdgeGeometry {
 }
 
 /// A fitted airfoil edge: a canonical edge location point together with a description of the
-/// edge geometry. The meaning of `point` depends on the geometry variant; see [`AfEdgeGeometry`].
+/// edge geometry. The point is always the intersection of the mean camber line with the
+/// cross-section perimeter, but the way that it is found depends on the geometry variant; see
+/// [`AfEdgeGeometry`].
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct AfEdge {
-    /// The canonical edge location. For a sharp edge this is the apex; for a square or
-    /// rounded-square edge it is the midpoint of the flat face; for the round variants it is the
-    /// outermost point on the camber axis of the section.
+    /// The canonical edge location. This is the intersection of the mean camber line with the
+    /// cross-section perimeter.
     pub point: Point2,
+
     /// The geometric description of the edge shape.
     pub geometry: AfEdgeGeometry,
 }
