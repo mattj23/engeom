@@ -1514,15 +1514,15 @@ class CubicSpline2:
     """
 
     def __init__(
-        self,
-        x0: float,
-        y0: float,
-        x1: float,
-        y1: float,
-        x2: float,
-        y2: float,
-        x3: float,
-        y3: float,
+            self,
+            x0: float,
+            y0: float,
+            x1: float,
+            y1: float,
+            x2: float,
+            y2: float,
+            x3: float,
+            y3: float,
     ):
         """
         Create a cubic Bezier curve from the coordinates of its four control points, ordered from
@@ -1622,57 +1622,6 @@ class CubicSpline2:
         :param tolerance: maximum allowed Euclidean deviation between the polyline and the spline.
             Must be positive. Smaller values produce more points.
         :return: an `Nx2` array of the polyline vertices.
-        """
-        ...
-
-    def make_projection_lookup(self) -> CubicSplineLookup2:
-        """
-        Build a precomputed `CubicSplineLookup2` table over this spline. The returned lookup
-        accelerates repeated point-projection queries by precomputing a fixed-size grid of
-        `(t, position)` samples.
-
-        :return: a lookup table over this spline.
-        """
-        ...
-
-
-class CubicSplineLookup2:
-    """
-    A precomputed table of `(t, position)` samples over a `CubicSpline2`, used to accelerate
-    repeated point-projection queries against the same spline. The table stores its own copy of
-    the spline (cheap, since `CubicSpline2` is a small value type) and a fixed number of uniformly
-    spaced samples in the parameter `t`.
-    """
-
-    def __init__(self, spline: CubicSpline2):
-        """
-        Build a lookup table from a `CubicSpline2`. The table samples the spline at a fixed number
-        of uniformly spaced parameter values; the count is an internal implementation detail
-        chosen to give a tight enough initial bracket for `project_point`.
-
-        :param spline: the spline to build the lookup over.
-        """
-        ...
-
-    @property
-    def spline(self) -> CubicSpline2:
-        """ The spline that this lookup was built over. """
-        ...
-
-    def project_point(self, x: float, y: float) -> float:
-        """
-        Project a point `(x, y)` onto the spline, returning the parameter `t` of the closest point
-        on the curve. The result is always in the range `[0, 1]`: if the perpendicular projection
-        would fall outside the curve, the result clamps to the nearer endpoint.
-
-        Uses the lookup table to locate the bracket containing the closest point, then refines via
-        binary-search bisection on the derivative of the squared distance to the query point. The
-        full curve point and tangent at the returned parameter can be recovered by calling the
-        spline's `position(t)`, `tangent(t)`, etc.
-
-        :param x: the x-coordinate of the query point.
-        :param y: the y-coordinate of the query point.
-        :return: the curve parameter `t` of the closest point on the spline.
         """
         ...
 
@@ -2113,9 +2062,9 @@ class BoundaryData2:
         ...
 
     def add_corner_fillets(
-        self,
-        points: list[tuple[float, float]],
-        radius: float,
+            self,
+            points: list[tuple[float, float]],
+            radius: float,
     ) -> list[int]:
         """
         Append a sequence of line segments joined by circular arc fillets.
@@ -2272,10 +2221,10 @@ class Boundary2:
 
 
 def fit_boundary_to_points(
-    points: NDArray[float],
-    builder: Callable[[NDArray[float]], BoundaryData2],
-    initial: NDArray[float],
-    ignore_ends: bool = False,
+        points: NDArray[float],
+        builder: Callable[[NDArray[float]], BoundaryData2],
+        initial: NDArray[float],
+        ignore_ends: bool = False,
 ) -> NDArray[float]:
     """
     Fit a boundary to a set of 2D points using Levenberg-Marquardt optimization.
@@ -2297,11 +2246,11 @@ def fit_boundary_to_points(
 
 
 def fit_boundary_to_surface_points(
-    points: NDArray[float],
-    builder: Callable[[NDArray[float]], BoundaryData2],
-    initial: NDArray[float],
-    weight_mode: VecDot,
-    ignore_ends: bool = False,
+        points: NDArray[float],
+        builder: Callable[[NDArray[float]], BoundaryData2],
+        initial: NDArray[float],
+        weight_mode: VecDot,
+        ignore_ends: bool = False,
 ) -> NDArray[float]:
     """
     Fit a boundary to a set of 2D surface points using Levenberg-Marquardt optimization.

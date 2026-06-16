@@ -41,7 +41,6 @@ fn register_geom2(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_class::<geom2::Segment2>()?;
     child.add_class::<geom2::Line2>()?;
     child.add_class::<geom2::CubicSpline2>()?;
-    child.add_class::<geom2::CubicSplineLookup2>()?;
 
     // Angle functions
     child.add_function(wrap_pyfunction!(geom2::rot90, &child)?)?;
@@ -93,6 +92,7 @@ fn register_geom3(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_class::<mesh::FaceFilterHandle>()?;
     child.add_class::<geom3::Curve3>()?;
     child.add_class::<geom3::CurveStation3>()?;
+    child.add_class::<geom3::CubicSpline3>()?;
     child.add_class::<point_cloud::PointCloud>()?;
     child.add_class::<point_cloud::Lptf3Load>()?;
 

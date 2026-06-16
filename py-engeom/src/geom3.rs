@@ -1649,3 +1649,146 @@ impl Iso3 {
         Ok(result.into_pyarray(py))
     }
 }
+
+// ================================================================================================
+// CubicSpline3
+// ================================================================================================
+
+#[pyclass(from_py_object, module = "engeom.geom3")]
+#[derive(Clone, Debug)]
+pub struct CubicSpline3 {
+    inner: engeom::geom3::CubicSpline3,
+}
+
+impl CubicSpline3 {
+    pub fn get_inner(&self) -> &engeom::geom3::CubicSpline3 {
+        &self.inner
+    }
+
+    pub fn from_inner(inner: engeom::geom3::CubicSpline3) -> Self {
+        Self { inner }
+    }
+}
+
+type CubicSpline3State = (f64, f64, f64, f64, f64, f64, f64, f64, f64, f64, f64, f64);
+
+#[pymethods]
+impl CubicSpline3 {
+    #[new]
+    fn new(
+        x0: f64,
+        y0: f64,
+        z0: f64,
+        x1: f64,
+        y1: f64,
+        z1: f64,
+        x2: f64,
+        y2: f64,
+        z2: f64,
+        x3: f64,
+        y3: f64,
+        z3: f64,
+    ) -> Self {
+        Self {
+            inner: engeom::geom3::CubicSpline3::new(
+                engeom::Point3::new(x0, y0, z0),
+                engeom::Point3::new(x1, y1, z1),
+                engeom::Point3::new(x2, y2, z2),
+                engeom::Point3::new(x3, y3, z3),
+            ),
+        }
+    }
+
+    fn __getstate__(&self) -> CubicSpline3State {
+        (
+            self.inner.p0.x,
+            self.inner.p0.y,
+            self.inner.p0.z,
+            self.inner.p1.x,
+            self.inner.p1.y,
+            self.inner.p1.z,
+            self.inner.p2.x,
+            self.inner.p2.y,
+            self.inner.p2.z,
+            self.inner.p3.x,
+            self.inner.p3.y,
+            self.inner.p3.z,
+        )
+    }
+
+    fn __getnewargs__(&self) -> CubicSpline3State {
+        self.__getstate__()
+    }
+
+    fn __setstate__(&mut self, state: CubicSpline3State) {
+        self.inner = engeom::geom3::CubicSpline3::new(
+            engeom::Point3::new(state.0, state.1, state.2),
+            engeom::Point3::new(state.3, state.4, state.5),
+            engeom::Point3::new(state.6, state.7, state.8),
+            engeom::Point3::new(state.9, state.10, state.11),
+        );
+    }
+
+    fn __eq__(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "CubicSpline3({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
+            self.inner.p0.x,
+            self.inner.p0.y,
+            self.inner.p0.z,
+            self.inner.p1.x,
+            self.inner.p1.y,
+            self.inner.p1.z,
+            self.inner.p2.x,
+            self.inner.p2.y,
+            self.inner.p2.z,
+            self.inner.p3.x,
+            self.inner.p3.y,
+            self.inner.p3.z,
+        )
+    }
+
+    #[getter]
+    fn p0(&self) -> Point3 {
+        Point3::from_inner(self.inner.p0)
+    }
+
+    #[getter]
+    fn p1(&self) -> Point3 {
+        Point3::from_inner(self.inner.p1)
+    }
+
+    #[getter]
+    fn p2(&self) -> Point3 {
+        Point3::from_inner(self.inner.p2)
+    }
+
+    #[getter]
+    fn p3(&self) -> Point3 {
+        Point3::from_inner(self.inner.p3)
+    }
+
+    fn position(&self, t: f64) -> Point3 {
+        Point3::from_inner(self.inner.position(t))
+    }
+
+    fn derivative(&self, t: f64) -> Vector3 {
+        Vector3::from_inner(self.inner.derivative(t))
+    }
+
+    fn tangent(&self, t: f64) -> Vector3 {
+        Vector3::from_inner(self.inner.tangent(t).into_inner())
+    }
+
+    fn curvature(&self, t: f64) -> f64 {
+        self.inner.curvature(t)
+    }
+
+    fn polyline<'py>(&self, py: Python<'py>, tolerance: f64) -> Bound<'py, PyArray2<f64>> {
+        let points = self.inner.polyline(tolerance);
+        points_to_array(&points).into_pyarray(py)
+    }
+}

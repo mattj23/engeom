@@ -2847,15 +2847,127 @@ class PointCloud:
         Find the indices of points in this point cloud that "overlap" with triangles in a mesh by looking for
         reciprocity in the closest point in each direction.
 
-        For each point in this point cloud "p_this", we will find the closest point on the surface of the mesh 
+        For each point in this point cloud "p_this", we will find the closest point on the surface of the mesh
         "p_other".  Then we will take "p_other" and find the closest point in the point cloud, "p_recip".
 
-        In an ideally overlapping point cloud, "p_this" should be the same as "p_recip".  We will use a maximum 
-        distance tolerance instead to determine if "p_recip" is close enough to "p_this" that "p_this" is 
+        In an ideally overlapping point cloud, "p_this" should be the same as "p_recip".  We will use a maximum
+        distance tolerance instead to determine if "p_recip" is close enough to "p_this" that "p_this" is
         considered to be overlapping with the mesh.
 
         :param mesh: the mesh to check for overlap.
         :param max_distance: the maximum distance to consider a point as overlapping.
         :return: a list of indices of points in this point cloud that overlap with triangles in the mesh.
+        """
+        ...
+
+
+class CubicSpline3:
+    """
+    A cubic Bezier curve in 3D space, defined by four control points `p0`, `p1`, `p2`, `p3`.
+
+    The curve is parameterized by a scalar `t`, conventionally in the range `[0, 1]`. At `t = 0`
+    the curve passes through `p0` and at `t = 1` it passes through `p3`. The two interior control
+    points influence the curve's shape but are not generally interpolated by it.
+    """
+
+    def __init__(
+            self,
+            x0: float, y0: float, z0: float,
+            x1: float, y1: float, z1: float,
+            x2: float, y2: float, z2: float,
+            x3: float, y3: float, z3: float,
+    ):
+        """
+        Create a cubic Bezier curve from the coordinates of its four control points, ordered from
+        the start of the curve to the end.
+
+        :param x0: x-coordinate of the first control point (curve start).
+        :param y0: y-coordinate of the first control point (curve start).
+        :param z0: z-coordinate of the first control point (curve start).
+        :param x1: x-coordinate of the second control point.
+        :param y1: y-coordinate of the second control point.
+        :param z1: z-coordinate of the second control point.
+        :param x2: x-coordinate of the third control point.
+        :param y2: y-coordinate of the third control point.
+        :param z2: z-coordinate of the third control point.
+        :param x3: x-coordinate of the fourth control point (curve end).
+        :param y3: y-coordinate of the fourth control point (curve end).
+        :param z3: z-coordinate of the fourth control point (curve end).
+        """
+        ...
+
+    @property
+    def p0(self) -> Point3:
+        """ The first control point (curve start). """
+        ...
+
+    @property
+    def p1(self) -> Point3:
+        """ The second control point. """
+        ...
+
+    @property
+    def p2(self) -> Point3:
+        """ The third control point. """
+        ...
+
+    @property
+    def p3(self) -> Point3:
+        """ The fourth control point (curve end). """
+        ...
+
+    def position(self, t: float) -> Point3:
+        """
+        Evaluate the curve position at parameter `t`. At `t = 0` this returns `p0`, and at
+        `t = 1` it returns `p3`. Values outside `[0, 1]` will extrapolate the underlying
+        polynomial.
+
+        :param t: the curve parameter.
+        :return: the point on the curve at parameter `t`.
+        """
+        ...
+
+    def derivative(self, t: float) -> Vector3:
+        """
+        Evaluate the derivative of the curve at parameter `t`, returning the velocity vector
+        (un-normalized). At `t = 0` this is `3 * (p1 - p0)`; at `t = 1` it is `3 * (p3 - p2)`.
+
+        :param t: the curve parameter.
+        :return: the derivative vector at parameter `t`.
+        """
+        ...
+
+    def tangent(self, t: float) -> Vector3:
+        """
+        Evaluate the unit tangent vector of the curve at parameter `t`. This is the derivative
+        normalized to unit length. The result is undefined (will contain NaN entries) at cusps
+        where the derivative vanishes.
+
+        :param t: the curve parameter.
+        :return: the unit tangent vector at parameter `t`.
+        """
+        ...
+
+    def curvature(self, t: float) -> float:
+        """
+        Evaluate the curvature magnitude at parameter `t`. The result is always non-negative;
+        its reciprocal is the radius of the osculating circle. Returns NaN at a cusp.
+
+        :param t: the curve parameter.
+        :return: the curvature magnitude at parameter `t`.
+        """
+        ...
+
+    def polyline(self, tolerance: float) -> NDArray[float]:
+        """
+        Return an adaptive polyline approximation of the curve as an `Nx3` numpy array of points.
+        The linear interpolation between consecutive returned points deviates from the underlying
+        spline by no more than `tolerance` (measured as Euclidean distance). Regions where the
+        curve is locally close to straight produce widely spaced points; regions of high curvature
+        are subdivided more finely. The returned array always starts at `p0` and ends at `p3`.
+
+        :param tolerance: maximum allowed Euclidean deviation between the polyline and the spline.
+            Must be positive. Smaller values produce more points.
+        :return: an `Nx3` array of the polyline vertices.
         """
         ...

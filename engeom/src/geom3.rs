@@ -1,5 +1,6 @@
 pub mod align3;
 mod circle3;
+mod cubic_spline3;
 mod curve3;
 mod iso3;
 mod line3;
@@ -18,6 +19,7 @@ use crate::TransformBy;
 use crate::common::surface_point::{SurfacePoint, SurfacePointCollection};
 use crate::common::svd_basis::SvdBasis;
 pub use circle3::Circle3;
+pub use cubic_spline3::CubicSpline3;
 pub use curve3::{Curve3, CurveStation3};
 pub use iso3::IsoExtensions3;
 pub use line3::Line3;

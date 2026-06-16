@@ -1094,49 +1094,6 @@ impl CubicSpline2 {
         let points = self.inner.polyline(tolerance);
         points_to_array(&points).into_pyarray(py)
     }
-
-    fn make_projection_lookup(&self) -> CubicSplineLookup2 {
-        CubicSplineLookup2::from_inner(self.inner.make_projection_lookup())
-    }
-}
-
-// ================================================================================================
-// CubicSplineLookup2
-// ================================================================================================
-
-#[pyclass(from_py_object, module = "engeom.geom2")]
-#[derive(Clone, Debug)]
-pub struct CubicSplineLookup2 {
-    inner: engeom::geom2::CubicSplineLookup2,
-}
-
-impl CubicSplineLookup2 {
-    pub fn get_inner(&self) -> &engeom::geom2::CubicSplineLookup2 {
-        &self.inner
-    }
-
-    pub fn from_inner(inner: engeom::geom2::CubicSplineLookup2) -> Self {
-        Self { inner }
-    }
-}
-
-#[pymethods]
-impl CubicSplineLookup2 {
-    #[new]
-    fn new(spline: &CubicSpline2) -> Self {
-        Self {
-            inner: engeom::geom2::CubicSplineLookup2::new(*spline.get_inner()),
-        }
-    }
-
-    #[getter]
-    fn spline(&self) -> CubicSpline2 {
-        CubicSpline2::from_inner(*self.inner.spline())
-    }
-
-    fn project_point(&self, x: f64, y: f64) -> f64 {
-        self.inner.project_point(&engeom::Point2::new(x, y))
-    }
 }
 
 // ================================================================================================
