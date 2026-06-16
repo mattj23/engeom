@@ -13,6 +13,7 @@ pub mod kd_tree;
 pub mod points;
 pub mod poisson_disk;
 pub mod ransac_tools;
+mod segment;
 pub mod surface_point;
 pub mod svd_basis;
 pub mod triangulation;
@@ -30,6 +31,7 @@ pub use index_mask::IndexMask;
 pub use interval::{AngleInterval, Interval, IntervalMergeDomain, IntervalOps};
 pub use parry3d_f64::query::SplitResult;
 pub use points::*;
+pub use segment::Segment;
 pub use surface_point::{SurfacePoint, SurfacePointCollection};
 pub use voxel_downsample::voxel_downsample;
 

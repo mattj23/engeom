@@ -228,14 +228,9 @@ impl<const D: usize> CubicSpline<D> {
     /// right sub-curves as new `CubicSpline` instances. Concatenating the left and right curves
     /// reproduces the original.
     ///
-    /// # Panics
-    ///
-    /// Panics if `t` is not in `[0, 1]`.
+    /// It is the client code's responsibility to either ensure that the parameter `t` is in the
+    /// range `[0, 1]` or to correctly handle the result of not doing so.
     pub fn split(&self, t: f64) -> (Self, Self) {
-        assert!(
-            (0.0..=1.0).contains(&t),
-            "split parameter t={t} is outside [0, 1]"
-        );
         let u = 1.0 - t;
         let p01 = self.p0.coords * u + self.p1.coords * t;
         let p12 = self.p1.coords * u + self.p2.coords * t;

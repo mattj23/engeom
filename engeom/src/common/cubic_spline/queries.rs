@@ -44,3 +44,57 @@
 //! - Under any(?) circumstances, a local minima _or_ maxima will be at one of these:
 //!     - A point where the derivative is orthogonal to the query direction
 //!     - One of the interval endpoints
+//!
+//! Ok, how about this. We create bounding capsules, recursively breaking up the spline until we
+//! reach a fixed number of divisions. We know that a cubic spline can only change directions
+//! twice, so the priority for splitting should be (I think):
+//! - Split on a cusp if one exists
+//! - Find any inflection points (there will be 0, 1, or 2) and split between them
+//! - Split at the maximum distance from the base leg
+//!
+//! After the first split, there should be no cusps or inflection points, so from there it should
+//! just be splitting at max distance
+
+use super::*;
+use crate::common::{Segment, dist};
+
+pub(crate) struct CubicSplineBaseDist<'a, const D: usize> {
+    spline: &'a CubicSpline<D>,
+    seg: Option<Segment<D>>,
+}
+
+impl<'a, const D: usize> CubicSplineBaseDist<'a, D> {
+    pub fn new(spline: &'a CubicSpline<D>) -> Self {
+        Self {
+            spline,
+            seg: if dist(&spline.p0, &spline.p3) < 1e-12 {
+                None
+            } else {
+                Some(Segment::new_unchecked(spline.p0, spline.p3))
+            },
+        }
+    }
+
+    pub fn e(&self, t: f64) -> f64 {
+        let p = self.spline.position(t);
+        let cp = if let Some(seg) = self.seg {
+            seg.closest_point(&p)
+        } else {
+            self.spline.p0
+        };
+
+        dist(&cp, &p)
+    }
+
+    pub fn dedt(&self, t: f64) -> f64 {
+        let p = self.spline.position(t);
+        let cp = if let Some(seg) = self.seg {
+            seg.closest_point(&p)
+        } else {
+            self.spline.p0
+        };
+
+        let n = (p - cp).normalize();
+        n.dot(&self.spline.derivative(t))
+    }
+}
