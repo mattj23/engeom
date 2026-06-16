@@ -2,6 +2,7 @@ pub mod align;
 mod angles;
 pub mod average;
 mod convert_2d_3d;
+pub mod cubic_spline;
 mod discrete_domain;
 mod domain_map;
 pub mod domain_window;
