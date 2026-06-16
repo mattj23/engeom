@@ -1,4 +1,4 @@
-// #![cfg(feature = "private_tests")]
+#![cfg(feature = "private_tests")]
 
 mod common;
 use crate::common::PathPair;

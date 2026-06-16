@@ -2,7 +2,6 @@ extern crate core;
 
 use std::error::Error;
 
-pub mod airfoil;
 pub mod airfoil2;
 pub mod common;
 pub mod errors;

@@ -1,4 +1,3 @@
-mod airfoil;
 mod airfoil2;
 mod align3;
 pub mod alignments;
@@ -114,25 +113,6 @@ fn register_align3_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     parent_module.add_submodule(&child)
 }
 
-fn register_airfoil_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
-    let child = PyModule::new(parent_module.py(), "_airfoil")?;
-
-    child.add_class::<airfoil::MclOrient>()?;
-    child.add_class::<airfoil::FaceOrient>()?;
-    child.add_class::<airfoil::EdgeFind>()?;
-    child.add_class::<airfoil::AfGage>()?;
-
-    child.add_class::<airfoil::InscribedCircle>()?;
-    child.add_class::<airfoil::AirfoilGeometry>()?;
-
-    child.add_function(wrap_pyfunction!(
-        airfoil::compute_inscribed_circles,
-        &child
-    )?)?;
-
-    parent_module.add_submodule(&child)
-}
-
 fn register_airfoil2_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     let child = PyModule::new(parent_module.py(), "_airfoil2")?;
 
@@ -213,9 +193,6 @@ fn py_engeom(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Alignment submodule
     register_align3_module(m)?;
-
-    // Airfoil submodule
-    register_airfoil_module(m)?;
 
     // Airfoil2 submodule
     register_airfoil2_module(m)?;

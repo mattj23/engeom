@@ -16,11 +16,11 @@ mod geometry;
 /// or partially-oriented stack of inscribed circles along the camber line.
 pub mod inscribed;
 
+mod measurements;
 /// Orientation strategies for resolving the forward/aft (leading/trailing edge) direction and
 /// the upper/lower (suction/pressure) surfaces of an airfoil section.
 pub mod orient;
 mod position;
-mod measurements;
 
 use crate::airfoil2::geometry::geometry_only_analysis;
 use crate::airfoil2::inscribed::Inscribed;
