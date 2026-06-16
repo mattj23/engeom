@@ -971,6 +971,175 @@ impl Segment2 {
 }
 
 // ================================================================================================
+// CubicSpline2
+// ================================================================================================
+
+#[pyclass(from_py_object, module = "engeom.geom2")]
+#[derive(Clone, Debug)]
+pub struct CubicSpline2 {
+    inner: engeom::geom2::CubicSpline2,
+}
+
+impl CubicSpline2 {
+    pub fn get_inner(&self) -> &engeom::geom2::CubicSpline2 {
+        &self.inner
+    }
+
+    pub fn from_inner(inner: engeom::geom2::CubicSpline2) -> Self {
+        Self { inner }
+    }
+}
+
+type CubicSpline2State = (f64, f64, f64, f64, f64, f64, f64, f64);
+
+#[pymethods]
+impl CubicSpline2 {
+    #[new]
+    fn new(x0: f64, y0: f64, x1: f64, y1: f64, x2: f64, y2: f64, x3: f64, y3: f64) -> Self {
+        Self {
+            inner: engeom::geom2::CubicSpline2::new(
+                engeom::Point2::new(x0, y0),
+                engeom::Point2::new(x1, y1),
+                engeom::Point2::new(x2, y2),
+                engeom::Point2::new(x3, y3),
+            ),
+        }
+    }
+
+    fn __getstate__(&self) -> CubicSpline2State {
+        (
+            self.inner.p0.x,
+            self.inner.p0.y,
+            self.inner.p1.x,
+            self.inner.p1.y,
+            self.inner.p2.x,
+            self.inner.p2.y,
+            self.inner.p3.x,
+            self.inner.p3.y,
+        )
+    }
+
+    fn __getnewargs__(&self) -> CubicSpline2State {
+        self.__getstate__()
+    }
+
+    fn __setstate__(&mut self, state: CubicSpline2State) {
+        self.inner = engeom::geom2::CubicSpline2::new(
+            engeom::Point2::new(state.0, state.1),
+            engeom::Point2::new(state.2, state.3),
+            engeom::Point2::new(state.4, state.5),
+            engeom::Point2::new(state.6, state.7),
+        );
+    }
+
+    fn __eq__(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "CubicSpline2({}, {}, {}, {}, {}, {}, {}, {})",
+            self.inner.p0.x,
+            self.inner.p0.y,
+            self.inner.p1.x,
+            self.inner.p1.y,
+            self.inner.p2.x,
+            self.inner.p2.y,
+            self.inner.p3.x,
+            self.inner.p3.y,
+        )
+    }
+
+    #[getter]
+    fn p0(&self) -> Point2 {
+        Point2::from_inner(self.inner.p0)
+    }
+
+    #[getter]
+    fn p1(&self) -> Point2 {
+        Point2::from_inner(self.inner.p1)
+    }
+
+    #[getter]
+    fn p2(&self) -> Point2 {
+        Point2::from_inner(self.inner.p2)
+    }
+
+    #[getter]
+    fn p3(&self) -> Point2 {
+        Point2::from_inner(self.inner.p3)
+    }
+
+    fn position(&self, t: f64) -> Point2 {
+        Point2::from_inner(self.inner.position(t))
+    }
+
+    fn derivative(&self, t: f64) -> Vector2 {
+        Vector2::from_inner(self.inner.derivative(t))
+    }
+
+    fn tangent(&self, t: f64) -> Vector2 {
+        Vector2::from_inner(self.inner.tangent(t).into_inner())
+    }
+
+    fn normal(&self, t: f64) -> Vector2 {
+        Vector2::from_inner(self.inner.normal(t).into_inner())
+    }
+
+    fn curvature(&self, t: f64) -> f64 {
+        self.inner.curvature(t)
+    }
+
+    fn polyline<'py>(&self, py: Python<'py>, tolerance: f64) -> Bound<'py, PyArray2<f64>> {
+        let points = self.inner.polyline(tolerance);
+        points_to_array(&points).into_pyarray(py)
+    }
+
+    fn make_projection_lookup(&self) -> CubicSplineLookup2 {
+        CubicSplineLookup2::from_inner(self.inner.make_projection_lookup())
+    }
+}
+
+// ================================================================================================
+// CubicSplineLookup2
+// ================================================================================================
+
+#[pyclass(from_py_object, module = "engeom.geom2")]
+#[derive(Clone, Debug)]
+pub struct CubicSplineLookup2 {
+    inner: engeom::geom2::CubicSplineLookup2,
+}
+
+impl CubicSplineLookup2 {
+    pub fn get_inner(&self) -> &engeom::geom2::CubicSplineLookup2 {
+        &self.inner
+    }
+
+    pub fn from_inner(inner: engeom::geom2::CubicSplineLookup2) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl CubicSplineLookup2 {
+    #[new]
+    fn new(spline: &CubicSpline2) -> Self {
+        Self {
+            inner: engeom::geom2::CubicSplineLookup2::new(*spline.get_inner()),
+        }
+    }
+
+    #[getter]
+    fn spline(&self) -> CubicSpline2 {
+        CubicSpline2::from_inner(*self.inner.spline())
+    }
+
+    fn project_point(&self, x: f64, y: f64) -> f64 {
+        self.inner.project_point(&engeom::Point2::new(x, y))
+    }
+}
+
+// ================================================================================================
 // Arc
 // ================================================================================================
 #[pyclass(from_py_object, module = "engeom.geom2")]

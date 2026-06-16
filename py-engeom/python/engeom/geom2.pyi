@@ -1504,6 +1504,179 @@ class Line2:
         ...
 
 
+class CubicSpline2:
+    """
+    A cubic Bezier curve in 2D space, defined by four control points `p0`, `p1`, `p2`, `p3`.
+
+    The curve is parameterized by a scalar `t`, conventionally in the range `[0, 1]`. At `t = 0`
+    the curve passes through `p0` and at `t = 1` it passes through `p3`. The two interior control
+    points influence the curve's shape but are not generally interpolated by it.
+    """
+
+    def __init__(
+        self,
+        x0: float,
+        y0: float,
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+        x3: float,
+        y3: float,
+    ):
+        """
+        Create a cubic Bezier curve from the coordinates of its four control points, ordered from
+        the start of the curve to the end.
+
+        :param x0: x-coordinate of the first control point (curve start).
+        :param y0: y-coordinate of the first control point (curve start).
+        :param x1: x-coordinate of the second control point.
+        :param y1: y-coordinate of the second control point.
+        :param x2: x-coordinate of the third control point.
+        :param y2: y-coordinate of the third control point.
+        :param x3: x-coordinate of the fourth control point (curve end).
+        :param y3: y-coordinate of the fourth control point (curve end).
+        """
+        ...
+
+    @property
+    def p0(self) -> Point2:
+        """ The first control point (curve start). """
+        ...
+
+    @property
+    def p1(self) -> Point2:
+        """ The second control point. """
+        ...
+
+    @property
+    def p2(self) -> Point2:
+        """ The third control point. """
+        ...
+
+    @property
+    def p3(self) -> Point2:
+        """ The fourth control point (curve end). """
+        ...
+
+    def position(self, t: float) -> Point2:
+        """
+        Evaluate the curve position at parameter `t`. At `t = 0` this returns `p0`, and at
+        `t = 1` it returns `p3`. Values outside `[0, 1]` will extrapolate the underlying
+        polynomial.
+
+        :param t: the curve parameter.
+        :return: the point on the curve at parameter `t`.
+        """
+        ...
+
+    def derivative(self, t: float) -> Vector2:
+        """
+        Evaluate the derivative of the curve at parameter `t`, returning the velocity vector
+        (un-normalized). At `t = 0` this is `3 * (p1 - p0)`; at `t = 1` it is `3 * (p3 - p2)`.
+
+        :param t: the curve parameter.
+        :return: the derivative vector at parameter `t`.
+        """
+        ...
+
+    def tangent(self, t: float) -> Vector2:
+        """
+        Evaluate the unit tangent vector of the curve at parameter `t`. This is the derivative
+        normalized to unit length. The result is undefined (will contain NaN entries) at cusps
+        where the derivative vanishes.
+
+        :param t: the curve parameter.
+        :return: the unit tangent vector at parameter `t`.
+        """
+        ...
+
+    def normal(self, t: float) -> Vector2:
+        """
+        Evaluate the unit normal vector of the curve at parameter `t`. The normal is the unit
+        tangent rotated 90 degrees clockwise.
+
+        :param t: the curve parameter.
+        :return: the unit normal vector at parameter `t`.
+        """
+        ...
+
+    def curvature(self, t: float) -> float:
+        """
+        Evaluate the curvature magnitude at parameter `t`. The result is always non-negative;
+        its reciprocal is the radius of the osculating circle. Returns NaN at a cusp.
+
+        :param t: the curve parameter.
+        :return: the curvature magnitude at parameter `t`.
+        """
+        ...
+
+    def polyline(self, tolerance: float) -> NDArray[float]:
+        """
+        Return an adaptive polyline approximation of the curve as an `Nx2` numpy array of points.
+        The linear interpolation between consecutive returned points deviates from the underlying
+        spline by no more than `tolerance` (measured as Euclidean distance). Regions where the
+        curve is locally close to straight produce widely spaced points; regions of high curvature
+        are subdivided more finely. The returned array always starts at `p0` and ends at `p3`.
+
+        :param tolerance: maximum allowed Euclidean deviation between the polyline and the spline.
+            Must be positive. Smaller values produce more points.
+        :return: an `Nx2` array of the polyline vertices.
+        """
+        ...
+
+    def make_projection_lookup(self) -> CubicSplineLookup2:
+        """
+        Build a precomputed `CubicSplineLookup2` table over this spline. The returned lookup
+        accelerates repeated point-projection queries by precomputing a fixed-size grid of
+        `(t, position)` samples.
+
+        :return: a lookup table over this spline.
+        """
+        ...
+
+
+class CubicSplineLookup2:
+    """
+    A precomputed table of `(t, position)` samples over a `CubicSpline2`, used to accelerate
+    repeated point-projection queries against the same spline. The table stores its own copy of
+    the spline (cheap, since `CubicSpline2` is a small value type) and a fixed number of uniformly
+    spaced samples in the parameter `t`.
+    """
+
+    def __init__(self, spline: CubicSpline2):
+        """
+        Build a lookup table from a `CubicSpline2`. The table samples the spline at a fixed number
+        of uniformly spaced parameter values; the count is an internal implementation detail
+        chosen to give a tight enough initial bracket for `project_point`.
+
+        :param spline: the spline to build the lookup over.
+        """
+        ...
+
+    @property
+    def spline(self) -> CubicSpline2:
+        """ The spline that this lookup was built over. """
+        ...
+
+    def project_point(self, x: float, y: float) -> float:
+        """
+        Project a point `(x, y)` onto the spline, returning the parameter `t` of the closest point
+        on the curve. The result is always in the range `[0, 1]`: if the perpendicular projection
+        would fall outside the curve, the result clamps to the nearer endpoint.
+
+        Uses the lookup table to locate the bracket containing the closest point, then refines via
+        binary-search bisection on the derivative of the squared distance to the query point. The
+        full curve point and tangent at the returned parameter can be recovered by calling the
+        spline's `position(t)`, `tangent(t)`, etc.
+
+        :param x: the x-coordinate of the query point.
+        :param y: the y-coordinate of the query point.
+        :return: the curve parameter `t` of the closest point on the spline.
+        """
+        ...
+
+
 class Segment2:
     """
     A class representing a line segment in 2D space. The segment is defined by two endpoints.

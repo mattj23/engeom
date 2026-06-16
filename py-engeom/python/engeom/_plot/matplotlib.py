@@ -3,7 +3,8 @@ from typing import List, Iterable, Tuple, Union
 import numpy
 
 from .common import LabelPlace
-from engeom.geom2 import Curve2, Circle2, Aabb2, Point2, Vector2, SurfacePoint2, Arc2, Segment2, Boundary2
+from engeom.geom2 import Curve2, Circle2, Aabb2, Point2, Vector2, SurfacePoint2, Arc2, Segment2, Boundary2, \
+    CubicSpline2
 from engeom.geom3 import Vector3, Mesh, Point3, Iso3, Line3
 from engeom.metrology import Distance2
 
@@ -413,6 +414,19 @@ else:
             :param kwargs: keyword arguments to pass to the plot function
             """
             self.ax.plot(curve.points[:, 0], curve.points[:, 1], **kwargs)
+
+        def cubic_spline(self, spline: CubicSpline2, tol: float, **kwargs):
+            """
+            Plot a cubic Bezier spline by flattening it into an adaptive polyline whose linear
+            segments deviate from the underlying curve by no more than `tol`.
+
+            :param spline: a CubicSpline2 object
+            :param tol: maximum Euclidean deviation between the drawn polyline and the spline.
+                Smaller values produce a smoother-looking curve at the cost of more line segments.
+            :param kwargs: keyword arguments to pass to `Axes.plot`
+            """
+            points = spline.polyline(tol)
+            self.ax.plot(points[:, 0], points[:, 1], **kwargs)
 
         def fill_curve(self, curve: Curve2, **kwargs):
             """

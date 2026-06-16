@@ -40,6 +40,8 @@ fn register_geom2(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_class::<geom2::Arc2>()?;
     child.add_class::<geom2::Segment2>()?;
     child.add_class::<geom2::Line2>()?;
+    child.add_class::<geom2::CubicSpline2>()?;
+    child.add_class::<geom2::CubicSplineLookup2>()?;
 
     // Angle functions
     child.add_function(wrap_pyfunction!(geom2::rot90, &child)?)?;
