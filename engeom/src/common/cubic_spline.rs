@@ -1,6 +1,7 @@
 mod fitting;
 mod queries;
 
+use crate::common::solve_quadratic_real_roots;
 use parry3d_f64::na::{Point, SVector, Unit};
 
 /// A cubic Bézier curve in D-dimensional space, defined by four control points.
@@ -253,6 +254,159 @@ impl<const D: usize> CubicSpline<D> {
         })
     }
 
+    /// Returns the parameter `t` of a cusp if one exists in `[0, 1]`, otherwise `None`.
+    ///
+    /// A cusp on a parametric curve is a point where the velocity vector vanishes, i.e.
+    /// `B'(t) = 0`. Every component of `B'` must be zero simultaneously, so any cusp `t`
+    /// is necessarily a root of *every* component's derivative quadratic.
+    ///
+    /// Candidates are drawn from [`derivative_roots`](Self::derivative_roots) restricted to
+    /// `[0, 1]`, and each is verified by checking that the full derivative magnitude at that
+    /// `t` is within a tolerance scaled to the control-point spacing. If multiple cusps exist,
+    /// the smallest `t` is returned.
+    ///
+    /// Returns `None` for the fully degenerate curve in which all four control points
+    /// coincide; that case is best detected explicitly by the caller.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::Point2;
+    /// use engeom::common::cubic_spline::CubicSpline;
+    /// use approx::assert_relative_eq;
+    ///
+    /// // A regular cubic with no cusp.
+    /// let smooth = CubicSpline::new(
+    ///     Point2::new(0.0, 0.0),
+    ///     Point2::new(1.0, 1.0),
+    ///     Point2::new(2.0, 1.0),
+    ///     Point2::new(3.0, 0.0),
+    /// );
+    /// assert!(smooth.find_cusp().is_none());
+    ///
+    /// // p1 == p2 with mirrored start/end arms gives a cusp at t = 0.5.
+    /// let cusped = CubicSpline::new(
+    ///     Point2::new(0.0, 0.0),
+    ///     Point2::new(1.0, 1.0),
+    ///     Point2::new(1.0, 1.0),
+    ///     Point2::new(0.0, 0.0),
+    /// );
+    /// let t = cusped.find_cusp().expect("expected a cusp");
+    /// assert_relative_eq!(t, 0.5);
+    /// ```
+    pub fn find_cusp(&self) -> Option<f64> {
+        let scale_sq = (self.p1.coords - self.p0.coords)
+            .norm_squared()
+            .max((self.p2.coords - self.p1.coords).norm_squared())
+            .max((self.p3.coords - self.p2.coords).norm_squared());
+        if scale_sq == 0.0 {
+            return None;
+        }
+        let eps_sq = scale_sq * 1e-20;
+
+        let roots = self.derivative_roots();
+        let mut best: Option<f64> = None;
+        for dim_roots in &roots {
+            for &t in dim_roots {
+                if !(0.0..=1.0).contains(&t) {
+                    continue;
+                }
+                if self.derivative(t).norm_squared() <= eps_sq && best.map_or(true, |b| t < b) {
+                    best = Some(t);
+                }
+            }
+        }
+        best
+    }
+
+    /// Returns parameter values in `[0, 1]` where the curve's curvature is zero.
+    ///
+    /// This is the dimension-generic analog of the 2D-specific
+    /// [`find_inflections`](CubicSpline::<2>::find_inflections). Instead of locating sign
+    /// changes of the signed curvature (which only exists in 2D), this method finds parameters
+    /// where `B'(t)` and `B''(t)` are linearly dependent, i.e. where the
+    /// Lagrange-identity squared cross product
+    ///
+    /// `|B'(t)|² |B''(t)|² − (B'(t) · B''(t))²`
+    ///
+    /// equals zero. In 2D this gives the same in-range parameter values as
+    /// `find_inflections`. In higher dimensions, true zero-curvature points are rare and
+    /// require the curve to be locally straight or planar.
+    ///
+    /// Candidates are enumerated from the per-axis-pair "cross" quadratics. For each pair
+    /// `(i, j)` with `i < j`, the polynomial `B'_i B''_j − B'_j B''_i` is a quadratic in `t`,
+    /// and its roots are necessary but not sufficient conditions for zero curvature. Each
+    /// candidate is then verified by checking the Lagrange identity against a tolerance scaled
+    /// to the control-polygon edge lengths.
+    ///
+    /// Returns up to two distinct in-range values, with unused slots filled with `f64::NAN`
+    /// and the smaller value in slot 0. A curve that is everywhere straight (control points
+    /// collinear) returns `[NaN, NaN]`, because no isolated zero exists.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::Point3;
+    /// use engeom::common::cubic_spline::CubicSpline;
+    /// use approx::assert_relative_eq;
+    ///
+    /// // A 2D S-shape embedded in the z = 0 plane: one inflection at t = 0.5.
+    /// let s = CubicSpline::new(
+    ///     Point3::new(0.0, 0.0, 0.0),
+    ///     Point3::new(1.0, 1.0, 0.0),
+    ///     Point3::new(2.0, -1.0, 0.0),
+    ///     Point3::new(3.0, 0.0, 0.0),
+    /// );
+    /// let zeros = s.find_curvature_zeros();
+    /// assert_relative_eq!(zeros[0], 0.5);
+    /// assert!(zeros[1].is_nan());
+    /// ```
+    pub fn find_curvature_zeros(&self) -> [f64; 2] {
+        let r = self.p1.coords - self.p0.coords;
+        let bv = self.p2.coords - self.p1.coords;
+        let cv = self.p3.coords - self.p2.coords;
+        let s = 2.0 * (bv - r);
+        let w = r - 2.0 * bv + cv;
+
+        let mut candidates: Vec<f64> = Vec::new();
+        for i in 0..D {
+            for j in (i + 1)..D {
+                let alpha = s[i] * w[j] - s[j] * w[i];
+                let beta = 2.0 * (r[i] * w[j] - r[j] * w[i]);
+                let gamma = r[i] * s[j] - r[j] * s[i];
+                for &t in &solve_quadratic_real_roots(alpha, beta, gamma) {
+                    if (0.0..=1.0).contains(&t) {
+                        candidates.push(t);
+                    }
+                }
+            }
+        }
+        candidates.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        candidates.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
+
+        let scale_sq = r.norm_squared().max(s.norm_squared()).max(w.norm_squared());
+        if scale_sq == 0.0 {
+            return [f64::NAN; 2];
+        }
+        let eps_sq = scale_sq * scale_sq * 1e-12;
+
+        let mut result = [f64::NAN; 2];
+        let mut idx = 0;
+        for t in candidates {
+            if idx >= 2 {
+                break;
+            }
+            let d1 = self.derivative(t);
+            let d2 = self.second_derivative(t);
+            let lagrange = d1.norm_squared() * d2.norm_squared() - d1.dot(&d2).powi(2);
+            if lagrange.max(0.0) <= eps_sq {
+                result[idx] = t;
+                idx += 1;
+            }
+        }
+        result
+    }
+
     /// Returns an adaptive polyline approximation of the curve such that the linear interpolation
     /// between any two consecutive points deviates from the underlying spline by no more than the
     /// specified `tolerance` (measured as Euclidean distance).
@@ -425,33 +579,6 @@ impl<const D: usize> CubicSpline<D> {
         let perp1 = v1 - chord * (chord.dot(&v1) / chord_len_sq);
         let perp2 = v2 - chord * (chord.dot(&v2) / chord_len_sq);
         perp1.norm().max(perp2.norm())
-    }
-}
-
-/// Returns the real roots of `a t² + b t + c` via the quadratic formula, handling the linear
-/// (`a == 0`) and identically-zero (`a == b == 0`) degenerate cases.
-///
-/// Unused slots are filled with `f64::NAN`. When two real roots exist the smaller one is in
-/// slot 0.
-fn solve_quadratic_real_roots(a: f64, b: f64, c: f64) -> [f64; 2] {
-    let nan = f64::NAN;
-    if a == 0.0 {
-        if b == 0.0 {
-            return [nan, nan];
-        }
-        return [-c / b, nan];
-    }
-    let disc = b * b - 4.0 * a * c;
-    if disc < 0.0 {
-        [nan, nan]
-    } else if disc == 0.0 {
-        [-b / (2.0 * a), nan]
-    } else {
-        let sqrt_disc = disc.sqrt();
-        let inv = 1.0 / (2.0 * a);
-        let r1 = (-b - sqrt_disc) * inv;
-        let r2 = (-b + sqrt_disc) * inv;
-        if r1 <= r2 { [r1, r2] } else { [r2, r1] }
     }
 }
 
@@ -722,6 +849,194 @@ mod tests {
     }
 
     #[test]
+    fn find_cusp_smooth_curve_returns_none() {
+        assert!(sample_2d().find_cusp().is_none());
+    }
+
+    #[test]
+    fn find_cusp_p1_eq_p2_loop_at_half() {
+        // p0 == p3 and p1 == p2 with mirrored arms: B'(0.5) = 0 exactly.
+        let c = CubicSpline::new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 1.0),
+            Point2::new(1.0, 1.0),
+            Point2::new(0.0, 0.0),
+        );
+        let t = c.find_cusp().expect("expected a cusp at 0.5");
+        assert_relative_eq!(t, 0.5, epsilon = 1e-12);
+        // Sanity: derivative at the reported cusp parameter is (numerically) zero.
+        assert_relative_eq!(c.derivative(t).norm(), 0.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn find_cusp_at_start_when_p0_eq_p1() {
+        // p0 == p1 forces B'(0) = 0 and so a cusp at t = 0.
+        let c = CubicSpline::new(
+            Point2::new(0.0, 0.0),
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 1.0),
+            Point2::new(2.0, 0.0),
+        );
+        let t = c.find_cusp().expect("expected a cusp at 0");
+        assert_relative_eq!(t, 0.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn find_cusp_at_end_when_p2_eq_p3() {
+        // p2 == p3 forces B'(1) = 0 and so a cusp at t = 1.
+        let c = CubicSpline::new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 1.0),
+            Point2::new(2.0, 0.0),
+            Point2::new(2.0, 0.0),
+        );
+        let t = c.find_cusp().expect("expected a cusp at 1");
+        assert_relative_eq!(t, 1.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn find_inflections_symmetric_s_curve() {
+        // Anti-symmetric in y about t = 0.5: a single inflection right at the midpoint.
+        let c = CubicSpline::new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 1.0),
+            Point2::new(2.0, -1.0),
+            Point2::new(3.0, 0.0),
+        );
+        let infl = c.find_inflections();
+        assert_relative_eq!(infl[0], 0.5, epsilon = 1e-12);
+        assert!(infl[1].is_nan());
+    }
+
+    #[test]
+    fn find_inflections_sample_2d_has_none() {
+        // sample_2d bulges in a single direction across t in [0, 1]: no inflections.
+        let c = sample_2d();
+        let infl = c.find_inflections();
+        assert!(infl[0].is_nan());
+        assert!(infl[1].is_nan());
+    }
+
+    #[test]
+    fn find_inflections_straight_line_returns_nan() {
+        // Collinear control points: cross product is identically zero.
+        let c = CubicSpline::new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(2.0, 0.0),
+            Point2::new(3.0, 0.0),
+        );
+        let infl = c.find_inflections();
+        assert!(infl[0].is_nan());
+        assert!(infl[1].is_nan());
+    }
+
+    #[test]
+    fn find_inflections_signed_curvature_changes_sign() {
+        // Build a curve with one inflection in (0, 1) and verify that the signed curvature
+        // (B' × B'') flips sign across the reported parameter.
+        let c = CubicSpline::new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 2.0),
+            Point2::new(2.0, -1.0),
+            Point2::new(3.0, 1.0),
+        );
+        let infl = c.find_inflections();
+        let signed = |t: f64| {
+            let d1 = c.derivative(t);
+            let d2 = c.second_derivative(t);
+            d1.x * d2.y - d1.y * d2.x
+        };
+        let mut found_in_range = false;
+        for &t in &infl {
+            if (0.0..=1.0).contains(&t) {
+                found_in_range = true;
+                assert_relative_eq!(signed(t), 0.0, epsilon = 1e-10);
+                let h = 1e-3;
+                assert!(
+                    signed(t - h) * signed(t + h) < 0.0,
+                    "no sign change around t = {}",
+                    t
+                );
+            }
+        }
+        assert!(found_in_range, "expected an inflection in [0, 1]");
+    }
+
+    #[test]
+    fn find_cusp_all_coincident_returns_none() {
+        let p = Point2::new(1.5, 2.5);
+        let c = CubicSpline::new(p, p, p, p);
+        assert!(c.find_cusp().is_none());
+    }
+
+    #[test]
+    fn find_curvature_zeros_3d_planar_s_curve() {
+        // 2D S-shape lifted into the xy-plane of 3D: inflection at t = 0.5.
+        let c = CubicSpline::new(
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 1.0, 0.0),
+            Point3::new(2.0, -1.0, 0.0),
+            Point3::new(3.0, 0.0, 0.0),
+        );
+        let zeros = c.find_curvature_zeros();
+        assert_relative_eq!(zeros[0], 0.5, epsilon = 1e-12);
+        assert!(zeros[1].is_nan());
+    }
+
+    #[test]
+    fn find_curvature_zeros_3d_straight_line_returns_nan() {
+        // Curvature is identically zero, so there is no isolated zero to report.
+        let c = CubicSpline::new(
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(3.0, 0.0, 0.0),
+        );
+        let zeros = c.find_curvature_zeros();
+        assert!(zeros[0].is_nan());
+        assert!(zeros[1].is_nan());
+    }
+
+    #[test]
+    fn find_curvature_zeros_2d_matches_find_inflections_in_range() {
+        // For 2D curves, find_curvature_zeros must agree with find_inflections on any roots
+        // that lie inside [0, 1].
+        let c = CubicSpline::new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 1.0),
+            Point2::new(2.0, -1.0),
+            Point2::new(3.0, 0.0),
+        );
+        let generic = c.find_curvature_zeros();
+        let specific = c.find_inflections();
+        assert_relative_eq!(generic[0], specific[0], epsilon = 1e-12);
+        assert!(generic[1].is_nan() && specific[1].is_nan());
+    }
+
+    #[test]
+    fn find_curvature_zeros_generic_3d_curve_has_none() {
+        // A non-planar 3D curve whose per-pair candidate roots disagree across pairs: the
+        // verification step must reject them all.
+        let c = CubicSpline::new(
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 1.0, 0.5),
+            Point3::new(2.0, 2.0, 1.5),
+            Point3::new(3.0, 0.0, 2.0),
+        );
+        let zeros = c.find_curvature_zeros();
+        assert!(zeros[0].is_nan());
+        assert!(zeros[1].is_nan());
+    }
+
+    #[test]
+    fn find_curvature_zeros_sample_2d_has_none() {
+        let zeros = sample_2d().find_curvature_zeros();
+        assert!(zeros[0].is_nan());
+        assert!(zeros[1].is_nan());
+    }
+
+    #[test]
     fn compute_bounds_sample_2d() {
         // sample_2d: x is monotonic 0→3, y peaks at t=0.5 with value 0.75.
         let c = sample_2d();
@@ -823,7 +1138,7 @@ mod tests {
 
     #[test]
     fn polyline_works_with_coincident_endpoints() {
-        // A loop where p0 == p3 — the degenerate-chord branch of chord_perp_distance must trigger
+        // A loop where p0 == p3: the degenerate-chord branch of chord_perp_distance must trigger
         // subdivision, and the resulting polyline must still bound the spline within tolerance.
         let c = CubicSpline::new(
             Point2::new(0.0, 0.0),

@@ -101,3 +101,30 @@ impl<const D: usize> PCoords<D> for SVector<f64, D> {
         *self
     }
 }
+
+/// Returns the real roots of `a t² + b t + c` via the quadratic formula, handling the linear
+/// (`a == 0`) and identically-zero (`a == b == 0`) degenerate cases.
+///
+/// Unused slots are filled with `f64::NAN`. When two real roots exist the smaller one is in
+/// slot 0.
+pub fn solve_quadratic_real_roots(a: f64, b: f64, c: f64) -> [f64; 2] {
+    let nan = f64::NAN;
+    if a == 0.0 {
+        if b == 0.0 {
+            return [nan, nan];
+        }
+        return [-c / b, nan];
+    }
+    let disc = b * b - 4.0 * a * c;
+    if disc < 0.0 {
+        [nan, nan]
+    } else if disc == 0.0 {
+        [-b / (2.0 * a), nan]
+    } else {
+        let sqrt_disc = disc.sqrt();
+        let inv = 1.0 / (2.0 * a);
+        let r1 = (-b - sqrt_disc) * inv;
+        let r2 = (-b + sqrt_disc) * inv;
+        if r1 <= r2 { [r1, r2] } else { [r2, r1] }
+    }
+}
