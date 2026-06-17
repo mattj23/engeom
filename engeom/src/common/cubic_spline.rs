@@ -1,3 +1,4 @@
+mod fitting;
 mod queries;
 
 use parry3d_f64::na::{Point, SVector, Unit};
@@ -201,6 +202,57 @@ impl<const D: usize> CubicSpline<D> {
         cross_sq.sqrt() / (d1_sq * d1_sq.sqrt())
     }
 
+    /// Returns the real roots of the derivative of each component of the curve, found via the
+    /// quadratic formula.
+    ///
+    /// For each dimension `d`, the d-th component of `B'(t)` is a quadratic polynomial in `t`
+    /// whose roots are the parameter values where that component has a local extremum. The
+    /// method returns those roots as a fixed-size `[[f64; 2]; D]`: row `d` holds up to two
+    /// roots for dimension `d`, with unused slots filled with `f64::NAN`. When two roots exist
+    /// the smaller one is in slot 0.
+    ///
+    /// Per dimension, with `a = P1 - P0`, `b = P2 - P1`, `c = P3 - P2`, the component derivative
+    /// (up to the constant factor of 3) is
+    ///
+    /// `(a - 2 b + c) t² + 2 (b - a) t + a`.
+    ///
+    /// Roots are not filtered to `[0, 1]`. Callers interested only in extrema along the curve as
+    /// drawn should discard roots outside that range.
+    ///
+    /// When a component is everywhere stationary (all four control points share the same value
+    /// in that dimension) the derivative is identically zero and every `t` is technically a
+    /// root; in this case both slots are `NaN` for that dimension.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::Point2;
+    /// use engeom::common::cubic_spline::CubicSpline;
+    /// use approx::assert_relative_eq;
+    ///
+    /// let curve = CubicSpline::new(
+    ///     Point2::new(0.0, 0.0),
+    ///     Point2::new(1.0, 1.0),
+    ///     Point2::new(2.0, 1.0),
+    ///     Point2::new(3.0, 0.0),
+    /// );
+    ///
+    /// let roots = curve.derivative_roots();
+    /// // x is monotonic in t, no roots.
+    /// assert!(roots[0][0].is_nan() && roots[0][1].is_nan());
+    /// // y peaks at the midpoint.
+    /// assert_relative_eq!(roots[1][0], 0.5);
+    /// assert!(roots[1][1].is_nan());
+    /// ```
+    pub fn derivative_roots(&self) -> [[f64; 2]; D] {
+        std::array::from_fn(|d| {
+            let a = self.p1.coords[d] - self.p0.coords[d];
+            let b = self.p2.coords[d] - self.p1.coords[d];
+            let c = self.p3.coords[d] - self.p2.coords[d];
+            solve_quadratic_real_roots(a - 2.0 * b + c, 2.0 * (b - a), a)
+        })
+    }
+
     /// Returns an adaptive polyline approximation of the curve such that the linear interpolation
     /// between any two consecutive points deviates from the underlying spline by no more than the
     /// specified `tolerance` (measured as Euclidean distance).
@@ -243,6 +295,65 @@ impl<const D: usize> CubicSpline<D> {
         out.push(self.p0);
         self.flatten_into(tolerance, MAX_DEPTH, &mut out);
         out
+    }
+
+    /// Returns the corners (min, max) of the tight axis-aligned bounding box of the curve over
+    /// the parameter range `[0, 1]`.
+    ///
+    /// Per-dimension extrema of a cubic Bezier occur either at the endpoints `t = 0` and
+    /// `t = 1` or at interior points where the corresponding component of `B'(t)` vanishes.
+    /// Those interior candidates come from [`derivative_roots`](Self::derivative_roots); roots
+    /// outside `[0, 1]` and `NaN` slots are ignored.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::Point2;
+    /// use engeom::common::cubic_spline::CubicSpline;
+    /// use approx::assert_relative_eq;
+    ///
+    /// let curve = CubicSpline::new(
+    ///     Point2::new(0.0, 0.0),
+    ///     Point2::new(1.0, 1.0),
+    ///     Point2::new(2.0, 1.0),
+    ///     Point2::new(3.0, 0.0),
+    /// );
+    ///
+    /// let (lo, hi) = curve.compute_bounds();
+    /// assert_relative_eq!(lo, Point2::new(0.0, 0.0));
+    /// assert_relative_eq!(hi, Point2::new(3.0, 0.75));
+    /// ```
+    pub fn compute_bounds(&self) -> (Point<f64, D>, Point<f64, D>) {
+        let mut lo = SVector::<f64, D>::zeros();
+        let mut hi = SVector::<f64, D>::zeros();
+        for d in 0..D {
+            let a = self.p0.coords[d];
+            let b = self.p3.coords[d];
+            lo[d] = a.min(b);
+            hi[d] = a.max(b);
+        }
+
+        let roots = self.derivative_roots();
+        for d in 0..D {
+            for &t in &roots[d] {
+                if !(0.0..=1.0).contains(&t) {
+                    continue;
+                }
+                let u = 1.0 - t;
+                let v = u * u * u * self.p0.coords[d]
+                    + 3.0 * u * u * t * self.p1.coords[d]
+                    + 3.0 * u * t * t * self.p2.coords[d]
+                    + t * t * t * self.p3.coords[d];
+                if v < lo[d] {
+                    lo[d] = v;
+                }
+                if v > hi[d] {
+                    hi[d] = v;
+                }
+            }
+        }
+
+        (Point::from(lo), Point::from(hi))
     }
 
     fn flatten_into(&self, tolerance: f64, depth_remaining: u32, out: &mut Vec<Point<f64, D>>) {
@@ -314,6 +425,33 @@ impl<const D: usize> CubicSpline<D> {
         let perp1 = v1 - chord * (chord.dot(&v1) / chord_len_sq);
         let perp2 = v2 - chord * (chord.dot(&v2) / chord_len_sq);
         perp1.norm().max(perp2.norm())
+    }
+}
+
+/// Returns the real roots of `a t² + b t + c` via the quadratic formula, handling the linear
+/// (`a == 0`) and identically-zero (`a == b == 0`) degenerate cases.
+///
+/// Unused slots are filled with `f64::NAN`. When two real roots exist the smaller one is in
+/// slot 0.
+fn solve_quadratic_real_roots(a: f64, b: f64, c: f64) -> [f64; 2] {
+    let nan = f64::NAN;
+    if a == 0.0 {
+        if b == 0.0 {
+            return [nan, nan];
+        }
+        return [-c / b, nan];
+    }
+    let disc = b * b - 4.0 * a * c;
+    if disc < 0.0 {
+        [nan, nan]
+    } else if disc == 0.0 {
+        [-b / (2.0 * a), nan]
+    } else {
+        let sqrt_disc = disc.sqrt();
+        let inv = 1.0 / (2.0 * a);
+        let r1 = (-b - sqrt_disc) * inv;
+        let r2 = (-b + sqrt_disc) * inv;
+        if r1 <= r2 { [r1, r2] } else { [r2, r1] }
     }
 }
 
@@ -454,9 +592,17 @@ mod tests {
     fn second_derivative_at_endpoints() {
         let c = sample_2d();
         // B''(0) = 6*(P0 - 2 P1 + P2) = 6*((0,0) - (2,2) + (2,1)) = 6*(0,-1) = (0,-6)
-        assert_relative_eq!(c.second_derivative(0.0), Vector2::new(0.0, -6.0), epsilon = 1e-12);
+        assert_relative_eq!(
+            c.second_derivative(0.0),
+            Vector2::new(0.0, -6.0),
+            epsilon = 1e-12
+        );
         // B''(1) = 6*(P1 - 2 P2 + P3) = 6*((1,1) - (4,2) + (3,0)) = 6*(0,-1) = (0,-6)
-        assert_relative_eq!(c.second_derivative(1.0), Vector2::new(0.0, -6.0), epsilon = 1e-12);
+        assert_relative_eq!(
+            c.second_derivative(1.0),
+            Vector2::new(0.0, -6.0),
+            epsilon = 1e-12
+        );
     }
 
     #[test]
@@ -514,6 +660,120 @@ mod tests {
             let numerical = ((d1_sq * d2_sq - dot * dot).max(0.0)).sqrt() / (d1_sq * d1_sq.sqrt());
             assert_relative_eq!(c.curvature(t), numerical, epsilon = 1e-5);
         }
+    }
+
+    #[test]
+    fn derivative_roots_sample_2d() {
+        let c = sample_2d();
+        let roots = c.derivative_roots();
+        // x component is linear in t (constant derivative), no roots.
+        assert!(roots[0][0].is_nan());
+        assert!(roots[0][1].is_nan());
+        // y component peaks at t = 0.5.
+        assert_relative_eq!(roots[1][0], 0.5, epsilon = 1e-12);
+        assert!(roots[1][1].is_nan());
+    }
+
+    #[test]
+    fn derivative_roots_straight_line_has_none() {
+        let c = CubicSpline::new(
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(3.0, 0.0, 0.0),
+        );
+        let roots = c.derivative_roots();
+        for dim in 0..3 {
+            assert!(roots[dim][0].is_nan(), "dim {} slot 0", dim);
+            assert!(roots[dim][1].is_nan(), "dim {} slot 1", dim);
+        }
+    }
+
+    #[test]
+    fn derivative_roots_constant_component_returns_nan() {
+        // y is identically zero in all control points: A = B = C = 0 in that component.
+        let c = CubicSpline::new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(2.0, 0.0),
+            Point2::new(3.0, 0.0),
+        );
+        let roots = c.derivative_roots();
+        assert!(roots[1][0].is_nan());
+        assert!(roots[1][1].is_nan());
+    }
+
+    #[test]
+    fn derivative_roots_zero_the_component_derivative() {
+        // Pick a curve with a genuine quadratic-with-two-roots component and check that the
+        // returned roots really do zero that component of B', and are returned sorted.
+        let c = CubicSpline::new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 3.0),
+            Point2::new(2.0, -3.0),
+            Point2::new(3.0, 0.0),
+        );
+        let roots = c.derivative_roots();
+        assert!(roots[1][0].is_finite() && roots[1][1].is_finite());
+        assert!(roots[1][0] <= roots[1][1]);
+        for &t in &roots[1] {
+            assert_relative_eq!(c.derivative(t)[1], 0.0, epsilon = 1e-12);
+        }
+    }
+
+    #[test]
+    fn compute_bounds_sample_2d() {
+        // sample_2d: x is monotonic 0→3, y peaks at t=0.5 with value 0.75.
+        let c = sample_2d();
+        let (lo, hi) = c.compute_bounds();
+        assert_relative_eq!(lo, Point2::new(0.0, 0.0), epsilon = 1e-12);
+        assert_relative_eq!(hi, Point2::new(3.0, 0.75), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn compute_bounds_straight_line() {
+        let c = CubicSpline::new(
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(3.0, 0.0, 0.0),
+        );
+        let (lo, hi) = c.compute_bounds();
+        assert_relative_eq!(lo, Point3::new(0.0, 0.0, 0.0), epsilon = 1e-12);
+        assert_relative_eq!(hi, Point3::new(3.0, 0.0, 0.0), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn compute_bounds_loop_with_coincident_endpoints() {
+        // p0 == p3 at origin; the curve bulges into the upper half-plane between the inner
+        // control points. The bounding box must capture that bulge, not just the endpoints.
+        let c = CubicSpline::new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 2.0),
+            Point2::new(-1.0, 2.0),
+            Point2::new(0.0, 0.0),
+        );
+        let (lo, hi) = c.compute_bounds();
+
+        // Independently approximate the bounds with a fine polyline and compare. The polyline
+        // tolerance gives an upper bound on how far each polyline vertex can fall short of the
+        // true extremum along the curve, so we compare with that as the slack.
+        let tol = 1e-6;
+        let pts = c.polyline(tol);
+        let mut sample_lo = Point2::new(f64::INFINITY, f64::INFINITY);
+        let mut sample_hi = Point2::new(f64::NEG_INFINITY, f64::NEG_INFINITY);
+        for p in &pts {
+            for d in 0..2 {
+                if p.coords[d] < sample_lo.coords[d] {
+                    sample_lo.coords[d] = p.coords[d];
+                }
+                if p.coords[d] > sample_hi.coords[d] {
+                    sample_hi.coords[d] = p.coords[d];
+                }
+            }
+        }
+        assert_relative_eq!(lo, sample_lo, epsilon = tol);
+        assert_relative_eq!(hi, sample_hi, epsilon = tol);
     }
 
     #[test]

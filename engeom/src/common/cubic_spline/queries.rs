@@ -58,6 +58,9 @@
 use super::*;
 use crate::common::{Segment, dist};
 
+/// This struct is a helper to find the distance between a cubic spline of arbitrary dimension D
+/// and the straight line segment running between its endpoints.  This is used for finding the
+/// maximum distances for partitioning.
 pub(crate) struct CubicSplineBaseDist<'a, const D: usize> {
     spline: &'a CubicSpline<D>,
     seg: Option<Segment<D>>,
@@ -75,6 +78,8 @@ impl<'a, const D: usize> CubicSplineBaseDist<'a, D> {
         }
     }
 
+    /// Get the error distance from the spline at parameter `t` to the nearest point on the base
+    /// segment running between `p0` and `p3`
     pub fn e(&self, t: f64) -> f64 {
         let p = self.spline.position(t);
         let cp = if let Some(seg) = self.seg {
@@ -86,6 +91,7 @@ impl<'a, const D: usize> CubicSplineBaseDist<'a, D> {
         dist(&cp, &p)
     }
 
+    /// Get the first derivative of the error distance `e` at the parameter `t`
     pub fn dedt(&self, t: f64) -> f64 {
         let p = self.spline.position(t);
         let cp = if let Some(seg) = self.seg {
