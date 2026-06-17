@@ -97,6 +97,39 @@ impl<const D: usize> CubicSpline<D> {
             + (self.p3.coords - self.p2.coords) * (3.0 * t * t)
     }
 
+    /// Returns the second derivative of the curve at parameter `t` as a vector (the acceleration
+    /// at `t` if the curve is interpreted as a parametric trajectory).
+    ///
+    /// The second derivative of a cubic Bezier is a linear function of `t`:
+    ///
+    /// `B''(t) = 6 (1 - t) (P0 - 2 P1 + P2) + 6 t (P1 - 2 P2 + P3)`
+    ///
+    /// At `t = 0` this evaluates to `6 (P0 - 2 P1 + P2)`. At `t = 1` it evaluates to
+    /// `6 (P1 - 2 P2 + P3)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::{Point2, Vector2};
+    /// use engeom::common::cubic_spline::CubicSpline;
+    /// use approx::assert_relative_eq;
+    ///
+    /// let curve = CubicSpline::new(
+    ///     Point2::new(0.0, 0.0),
+    ///     Point2::new(1.0, 1.0),
+    ///     Point2::new(2.0, 1.0),
+    ///     Point2::new(3.0, 0.0),
+    /// );
+    ///
+    /// assert_relative_eq!(curve.second_derivative(0.0), Vector2::new(0.0, -6.0));
+    /// assert_relative_eq!(curve.second_derivative(1.0), Vector2::new(0.0, -6.0));
+    /// ```
+    pub fn second_derivative(&self, t: f64) -> SVector<f64, D> {
+        let u = 1.0 - t;
+        (self.p0.coords - self.p1.coords * 2.0 + self.p2.coords) * (6.0 * u)
+            + (self.p1.coords - self.p2.coords * 2.0 + self.p3.coords) * (6.0 * t)
+    }
+
     /// Returns the unit tangent vector of the curve at parameter `t`, i.e. the derivative
     /// normalized to unit length.
     ///
@@ -157,10 +190,8 @@ impl<const D: usize> CubicSpline<D> {
     /// assert_relative_eq!(line.curvature(0.3), 0.0, epsilon = 1e-12);
     /// ```
     pub fn curvature(&self, t: f64) -> f64 {
-        let u = 1.0 - t;
         let d1 = self.derivative(t);
-        let d2 = (self.p0.coords - self.p1.coords * 2.0 + self.p2.coords) * (6.0 * u)
-            + (self.p1.coords - self.p2.coords * 2.0 + self.p3.coords) * (6.0 * t);
+        let d2 = self.second_derivative(t);
         let d1_sq = d1.norm_squared();
         let d2_sq = d2.norm_squared();
         let dot = d1.dot(&d2);
@@ -289,7 +320,7 @@ impl<const D: usize> CubicSpline<D> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Point2, Point3};
+    use crate::{Point2, Point3, Vector2};
     use approx::assert_relative_eq;
 
     fn sample_2d() -> CubicSpline<2> {
@@ -417,6 +448,26 @@ mod tests {
         // At t=1, the tangent is parallel to P3 - P2.
         let arm_end = (c.p3.coords - c.p2.coords).normalize();
         assert_relative_eq!(c.tangent(1.0).into_inner(), arm_end, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn second_derivative_at_endpoints() {
+        let c = sample_2d();
+        // B''(0) = 6*(P0 - 2 P1 + P2) = 6*((0,0) - (2,2) + (2,1)) = 6*(0,-1) = (0,-6)
+        assert_relative_eq!(c.second_derivative(0.0), Vector2::new(0.0, -6.0), epsilon = 1e-12);
+        // B''(1) = 6*(P1 - 2 P2 + P3) = 6*((1,1) - (4,2) + (3,0)) = 6*(0,-1) = (0,-6)
+        assert_relative_eq!(c.second_derivative(1.0), Vector2::new(0.0, -6.0), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn second_derivative_matches_finite_difference() {
+        let c = sample_2d();
+        let h = 1e-4;
+        for i in 1..10 {
+            let t = i as f64 / 10.0;
+            let approx = (c.derivative(t + h) - c.derivative(t - h)) / (2.0 * h);
+            assert_relative_eq!(approx, c.second_derivative(t), epsilon = 1e-6);
+        }
     }
 
     #[test]

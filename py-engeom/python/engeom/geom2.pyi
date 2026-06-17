@@ -1611,6 +1611,17 @@ class CubicSpline2:
         """
         ...
 
+    def second_derivative(self, t: float) -> Vector2:
+        """
+        Evaluate the second derivative of the curve at parameter `t`, returning the acceleration
+        vector (un-normalized). At `t = 0` this is `6 * (p0 - 2*p1 + p2)`; at `t = 1` it is
+        `6 * (p1 - 2*p2 + p3)`.
+
+        :param t: the curve parameter.
+        :return: the second derivative vector at parameter `t`.
+        """
+        ...
+
     def polyline(self, tolerance: float) -> NDArray[float]:
         """
         Return an adaptive polyline approximation of the curve as an `Nx2` numpy array of points.

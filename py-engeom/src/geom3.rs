@@ -1787,6 +1787,10 @@ impl CubicSpline3 {
         self.inner.curvature(t)
     }
 
+    fn second_derivative(&self, t: f64) -> Vector3 {
+        Vector3::from_inner(self.inner.second_derivative(t))
+    }
+
     fn polyline<'py>(&self, py: Python<'py>, tolerance: f64) -> Bound<'py, PyArray2<f64>> {
         let points = self.inner.polyline(tolerance);
         points_to_array(&points).into_pyarray(py)
