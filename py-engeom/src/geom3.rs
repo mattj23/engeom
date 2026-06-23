@@ -705,12 +705,12 @@ impl Line3 {
 
     #[staticmethod]
     fn from_points(p1: Point3, p2: Point3) -> Self {
-        Self::from_inner(engeom::Line3::from_points(*p1.get_inner(), *p2.get_inner()))
+        Self::from_inner(engeom::Line3::from_points(p1.get_inner(), p2.get_inner()))
     }
 
     fn __repr__(&self) -> String {
-        let o = self.inner.origin();
-        let d = self.inner.direction();
+        let o = self.inner.origin;
+        let d = self.inner.direction;
         format!(
             "Line3(origin=({}, {}, {}), direction=({}, {}, {}))",
             o.x, o.y, o.z, d.x, d.y, d.z
@@ -718,14 +718,14 @@ impl Line3 {
     }
 
     fn __getnewargs__(&self) -> (f64, f64, f64, f64, f64, f64) {
-        let o = self.inner.origin();
-        let d = self.inner.direction();
+        let o = self.inner.origin;
+        let d = self.inner.direction;
         (o.x, o.y, o.z, d.x, d.y, d.z)
     }
 
     fn __getstate__(&self) -> (f64, f64, f64, f64, f64, f64) {
-        let o = self.inner.origin();
-        let d = self.inner.direction();
+        let o = self.inner.origin;
+        let d = self.inner.direction;
         (o.x, o.y, o.z, d.x, d.y, d.z)
     }
 
@@ -742,12 +742,12 @@ impl Line3 {
 
     #[getter]
     fn origin(&self) -> Point3 {
-        Point3::from_inner(self.inner.origin())
+        Point3::from_inner(self.inner.origin)
     }
 
     #[getter]
     fn direction(&self) -> Vector3 {
-        Vector3::from_inner(self.inner.direction())
+        Vector3::from_inner(self.inner.direction)
     }
 
     fn at(&self, t: f64) -> Point3 {

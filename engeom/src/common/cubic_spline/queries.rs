@@ -185,7 +185,12 @@ struct WorkingInterval {
 impl WorkingInterval {
     fn new<const D: usize>(spline: &CubicSpline<D>, t0: f64, t1: f64) -> Self {
         let (t_max, e_max) = interval_max_error(spline, t0, t1);
-        Self { t0, t1, t_max, e_max }
+        Self {
+            t0,
+            t1,
+            t_max,
+            e_max,
+        }
     }
 }
 

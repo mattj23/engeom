@@ -2,23 +2,23 @@ mod line_ops2;
 mod ransac;
 
 use crate::AngleDir::Cw;
-use crate::common::PCoords;
+use crate::common::{Line, PCoords};
 use crate::geom2::{Aabb2, SurfacePoint2, UnitVec2, rot90};
 use crate::{Iso2, Point2, Vector2};
 pub use line_ops2::*;
 use parry2d_f64::query::Ray;
-use serde::{Deserialize, Serialize};
 use std::ops;
 
 /// A parameterized line in 2D space: `P(t) = origin + t * direction`.
 ///
+/// This is the two-dimensional specialization of the dimension-generic
+/// [`Line`](crate::common::Line); see that type for the shared constructors and queries (`new`,
+/// `new_normalize`, `from_points`, `at`, `closest_point`, `distance_to`, `transform_by`, and so
+/// on). The methods defined directly on `Line2` here are the ones that only make sense in 2D.
+///
 /// The direction is not required to be normalized; use `new_normalize` for unit-speed
 /// parameterization where `t` equals unit length.
-#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Line2 {
-    pub origin: Point2,
-    pub direction: Vector2,
-}
+pub type Line2 = Line<2>;
 
 impl Line2 {
     pub fn x_axis() -> Self {
@@ -54,92 +54,6 @@ impl Line2 {
     pub fn new_parallel(&self, delta_n: f64) -> Self {
         let n = self.normal().into_inner();
         Self::new(self.origin + n * delta_n, self.direction)
-    }
-
-    /// Returns new version of the line with the same origin, but with the direction inverted.
-    pub fn new_reversed(&self) -> Self {
-        Line2::new(self.origin, -self.direction)
-    }
-
-    /// Create a line from an origin point and a direction vector (stored as-is, not normalized).
-    pub fn new(origin: Point2, direction: Vector2) -> Self {
-        Self { origin, direction }
-    }
-
-    /// Create a line from an origin point and a direction vector, normalizing the direction so
-    /// that the parameter `t` equals arc length from the origin.
-    pub fn new_normalize(origin: Point2, direction: Vector2) -> Self {
-        Self::new(origin, direction.normalize())
-    }
-
-    /// Create a line through two points. The direction is `p2 - p1` (not normalized).
-    pub fn from_points(p1: &impl PCoords<2>, p2: &impl PCoords<2>) -> Self {
-        let p1 = Point2::from(p1.coords());
-        let p2 = Point2::from(p2.coords());
-        Self::new(p1, p2 - p1)
-    }
-
-    /// Normalizes the direction vector in place so that `t` equals arc length from the origin.
-    pub fn normalize(&mut self) {
-        self.direction = self.direction.normalize();
-    }
-
-    /// Returns a new line with the same origin but a normalized direction, so that `t` equals arc
-    /// length from the origin.
-    pub fn normalized(&self) -> Self {
-        Self::new(self.origin, self.direction.normalize())
-    }
-
-    /// Returns the point at parameter `t`: `P(t) = origin + t * direction`.
-    pub fn at(&self, t: f64) -> Point2 {
-        self.origin + self.direction * t
-    }
-
-    /// Moves the origin of the line by a given amount along the direction of the line. A positive
-    /// `delta_t` moves the origin forward along the direction of the line, while a negative
-    /// `delta_t` moves the origin backward. The line is modified in place.
-    pub fn shift_along(&mut self, delta_t: f64) {
-        self.origin += self.direction * delta_t;
-    }
-
-    /// Returns a new line with the origin shifted by a given amount along the direction of the
-    /// line. The direction of the new line is the same as the original line. The original is left
-    /// unchanged.
-    pub fn new_shifted_along(&self, delta_t: f64) -> Self {
-        Self {
-            origin: self.origin + self.direction * delta_t,
-            direction: self.direction,
-        }
-    }
-
-    /// Returns the parameter `t` such that `P(t)` is the closest point on the line to `point`.
-    pub fn scalar_project(&self, point: &impl PCoords<2>) -> f64 {
-        (Point2::from(point.coords()) - self.origin).dot(&self.direction)
-            / self.direction.norm_squared()
-    }
-
-    /// Returns the closest point on the line to `point`.
-    pub fn closest_point(&self, point: &impl PCoords<2>) -> Point2 {
-        self.at(self.scalar_project(point))
-    }
-
-    /// Returns the perpendicular distance from `point` to the line.
-    pub fn distance_to(&self, point: &impl PCoords<2>) -> f64 {
-        let pt = Point2::from(point.coords());
-        (pt - self.closest_point(&pt)).norm()
-    }
-
-    /// Returns a new line with both origin and direction transformed by the given isometry.
-    pub fn new_transformed_by(&self, iso: &Iso2) -> Self {
-        let mut clone = *self;
-        clone.transform_by(iso);
-        clone
-    }
-
-    /// Transforms this line in place by the given isometry.
-    pub fn transform_by(&mut self, iso: &Iso2) {
-        self.origin = iso * self.origin;
-        self.direction = iso.rotation * self.direction;
     }
 
     /// Returns the unit normal to this line: the direction rotated 90 degrees clockwise.

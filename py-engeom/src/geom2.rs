@@ -850,7 +850,7 @@ impl Line2 {
     }
 
     fn new_shifted_along(&self, delta_t: f64) -> Self {
-        Self::from_inner(self.inner.new_shifted_along(delta_t))
+        Self::from_inner(self.inner.new_shifted_origin(delta_t))
     }
 
     fn new_transformed_by(&self, iso: &Iso2) -> Self {

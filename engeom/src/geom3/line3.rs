@@ -1,4 +1,4 @@
-use crate::common::PCoords;
+use crate::common::Line;
 use crate::common::points::dist;
 use crate::geom3::circle3::Circle3;
 use crate::geom3::plane3::Plane3;
@@ -8,13 +8,14 @@ use std::ops;
 
 /// A parameterized line in 3D space: `P(t) = origin + t * direction`.
 ///
+/// This is the three-dimensional specialization of the dimension-generic
+/// [`Line`](crate::common::Line); see that type for the shared constructors and queries (`new`,
+/// `new_normalize`, `from_points`, `at`, `closest_point`, `distance_to`, `transform_by`, and so
+/// on). The methods defined directly on `Line3` here are the ones that only make sense in 3D.
+///
 /// The direction is not required to be normalized; use `new_normalize` for unit-speed
 /// parameterization where `t` equals unit length.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Line3 {
-    origin: Point3,
-    direction: Vector3,
-}
+pub type Line3 = Line<3>;
 
 impl Line3 {
     pub fn x_axis() -> Self {
@@ -25,124 +26,6 @@ impl Line3 {
     }
     pub fn z_axis() -> Self {
         Self::new(Point3::origin(), Vector3::z())
-    }
-
-    /// Create a line from an origin point and a direction vector (stored as-is, not normalized).
-    pub fn new(origin: Point3, direction: Vector3) -> Self {
-        Self { origin, direction }
-    }
-
-    /// Moves the origin of the line by a given amount along the direction of the line. A positive
-    /// `delta_t` moves the origin forward along the direction of the line, while a negative
-    /// `delta_t` moves the origin backward along the direction of the line. The line is modified
-    /// in place.
-    ///
-    /// # Arguments
-    ///
-    /// * `delta_t`: the amount to move the origin along the direction of the line. If the direction
-    ///   is not of unit length, keep in mind this shift will be proportional to the length of the
-    ///   direction vector.
-    ///
-    /// returns: ()
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
-    pub fn shift_origin(&mut self, delta_t: f64) {
-        self.origin += self.direction * delta_t;
-    }
-
-    /// Creates a new line with the origin shifted by a given amount along the direction of the
-    /// line. The direction of the new line is the same as the original line. The original is left
-    /// unchanged.
-    ///
-    /// # Arguments
-    ///
-    /// * `delta_t`: the amount to move the origin along the direction of the line. If the direction
-    ///   is not of unit length, keep in mind this shift will be proportional to the length of the
-    ///   direction vector.
-    ///
-    /// returns: Line3
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
-    pub fn new_shifted_origin(&self, delta_t: f64) -> Self {
-        Self {
-            origin: self.origin + self.direction * delta_t,
-            direction: self.direction,
-        }
-    }
-
-    /// Create a line from an origin point and a direction vector, normalizing the direction so
-    /// that the parameter `t` equals arc length from the origin.
-    pub fn new_normalize(origin: Point3, direction: Vector3) -> Self {
-        Self::new(origin, direction.normalize())
-    }
-
-    /// Create a line through two points. The direction is `p2 - p1` (not normalized).
-    pub fn from_points(p1: Point3, p2: Point3) -> Self {
-        Self::new(p1, p2 - p1)
-    }
-
-    pub fn origin(&self) -> Point3 {
-        self.origin
-    }
-
-    pub fn direction(&self) -> Vector3 {
-        self.direction
-    }
-
-    /// Normalizes the direction vector in place so that `t` equals arc length from the origin.
-    pub fn normalize(&mut self) {
-        self.direction = self.direction.normalize();
-    }
-
-    /// Returns a new line with the same origin but a normalized direction, so that `t` equals arc
-    /// length from the origin.
-    pub fn normalized(&self) -> Self {
-        Self::new(self.origin, self.direction.normalize())
-    }
-
-    /// Returns the point at parameter `t`: `P(t) = origin + t * direction`.
-    pub fn at(&self, t: f64) -> Point3 {
-        self.origin + self.direction * t
-    }
-
-    /// Returns the parameter `t` such that `P(t)` is the closest point on the line to `point`.
-    /// Equivalent to the scalar projection of `(point - origin)` onto `direction`, divided by
-    /// `|direction|²`.
-    pub fn scalar_project(&self, point: &impl PCoords<3>) -> f64 {
-        (Point3::from(point.coords()) - self.origin).dot(&self.direction)
-            / self.direction.norm_squared()
-    }
-
-    /// Returns the closest point on the line to `point`.
-    pub fn closest_point(&self, point: &impl PCoords<3>) -> Point3 {
-        self.at(self.scalar_project(point))
-    }
-
-    /// Returns the perpendicular distance from `point` to the line.
-    pub fn distance_to(&self, point: &impl PCoords<3>) -> f64 {
-        let pt = Point3::from(point.coords());
-        (pt - self.closest_point(&pt)).norm()
-    }
-
-    /// Returns a new line with both origin and direction transformed by the given isometry.
-    pub fn new_transformed_by(&self, iso: &Iso3) -> Self {
-        let mut clone = self.clone();
-        clone.transform_by(iso);
-        clone
-    }
-
-    /// Transforms this line in place by the given isometry.
-    pub fn transform_by(&mut self, iso: &Iso3) {
-        self.origin = iso * self.origin;
-        self.direction = iso.rotation * self.direction;
     }
 
     /// Intersects the line with a plane, returning the parameter `t` at the intersection, or
@@ -292,19 +175,15 @@ mod tests {
     #[test]
     fn new_normalize_gives_unit_direction() {
         let line = Line3::new_normalize(Point3::origin(), Vector3::new(3.0, 0.0, 0.0));
-        assert_relative_eq!(line.direction().norm(), 1.0, epsilon = 1e-12);
+        assert_relative_eq!(line.direction.norm(), 1.0, epsilon = 1e-12);
     }
 
     #[test]
     fn from_points_direction_is_difference() {
         let p1 = Point3::new(1.0, 0.0, 0.0);
         let p2 = Point3::new(4.0, 0.0, 0.0);
-        let line = Line3::from_points(p1, p2);
-        assert_relative_eq!(
-            line.direction(),
-            Vector3::new(3.0, 0.0, 0.0),
-            epsilon = 1e-12
-        );
+        let line = Line3::from_points(&p1, &p2);
+        assert_relative_eq!(line.direction, Vector3::new(3.0, 0.0, 0.0), epsilon = 1e-12);
     }
 
     #[test]
@@ -381,7 +260,7 @@ mod tests {
             let pt = rg.point3(10.0);
             let cp = line.closest_point(&pt);
             // Vector from closest point to test point must be perpendicular to direction
-            assert_relative_eq!((pt - cp).dot(&line.direction()), 0.0, epsilon = 1e-10);
+            assert_relative_eq!((pt - cp).dot(&line.direction), 0.0, epsilon = 1e-10);
         }
     }
 
@@ -501,7 +380,7 @@ mod tests {
             let line = Line3::new(rg.point3(10.0), rg.vector3(1.0));
             if let Some(proj) = line.project_onto_plane(&plane) {
                 assert_relative_eq!(
-                    plane.signed_distance_to_point(&proj.origin()).abs(),
+                    plane.signed_distance_to_point(&proj.origin).abs(),
                     0.0,
                     epsilon = 1e-10
                 );
@@ -518,7 +397,7 @@ mod tests {
             let line = Line3::new(rg.point3(10.0), rg.vector3(1.0));
             if let Some(proj) = line.project_onto_plane(&plane) {
                 // projected direction must be perpendicular to the plane normal
-                assert_relative_eq!(plane.normal.dot(&proj.direction()), 0.0, epsilon = 1e-10);
+                assert_relative_eq!(plane.normal.dot(&proj.direction), 0.0, epsilon = 1e-10);
             }
         }
     }
@@ -537,8 +416,8 @@ mod tests {
         let plane = Plane3::xy();
         let line = Line3::new(Point3::new(1.0, 2.0, 0.0), Vector3::x());
         let proj = line.project_onto_plane(&plane).unwrap();
-        assert_relative_eq!(proj.origin(), line.origin(), epsilon = 1e-12);
-        assert_relative_eq!(proj.direction(), line.direction(), epsilon = 1e-12);
+        assert_relative_eq!(proj.origin, line.origin, epsilon = 1e-12);
+        assert_relative_eq!(proj.direction, line.direction, epsilon = 1e-12);
     }
 
     #[test]

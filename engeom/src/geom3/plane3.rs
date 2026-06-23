@@ -285,13 +285,13 @@ mod tests {
         // xy-plane (z=0) ∩ xz-plane (y=0) should be the X axis
         let line = Plane3::xy().intersect_plane(&Plane3::xz()).unwrap();
         // direction must be parallel to X
-        let dir = line.direction().normalize();
+        let dir = line.direction.normalize();
         assert_relative_eq!(dir.x.abs(), 1.0, epsilon = 1e-12);
         assert_relative_eq!(dir.y, 0.0, epsilon = 1e-12);
         assert_relative_eq!(dir.z, 0.0, epsilon = 1e-12);
         // origin must lie on both planes
-        assert_relative_eq!(line.origin().y, 0.0, epsilon = 1e-12);
-        assert_relative_eq!(line.origin().z, 0.0, epsilon = 1e-12);
+        assert_relative_eq!(line.origin.y, 0.0, epsilon = 1e-12);
+        assert_relative_eq!(line.origin.z, 0.0, epsilon = 1e-12);
     }
 
     #[test]
