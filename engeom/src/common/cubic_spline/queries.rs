@@ -56,7 +56,7 @@
 //! just be splitting at max distance
 
 use super::*;
-use crate::common::{Segment, SurfacePoint, dist, linear_space};
+use crate::common::{Line, PCoords, Segment, dist, linear_space};
 
 const N_INTR: usize = 6;
 
@@ -66,10 +66,81 @@ struct IntervalData<const D: usize> {
     t0: f64,
 
     /// Point and direction at the beginning of the interval,
-    sp0: SurfacePoint<D>,
+    line0: Line<D>,
 
     /// Maximum error between the spline and the base leg for the interval
     e_max: f64,
+}
+
+/// This function finds the closest and farthest possible distances between a test point and the
+/// capsule shape formed by the line segment of an interval and the radius of its maximum known
+/// error. Returns the closest distance as the first element in the tuple, and the farthest distance
+/// as the second.
+fn dist_min_max<const D: usize>(
+    test: &impl PCoords<D>,
+    data: &IntervalData<D>,
+    end: &Point<f64, D>,
+) -> (f64, f64) {
+    let dir = end - data.line0.origin;
+
+    // First, we find the shortest distance to the line segment, which is the distance to the
+    // projection of the test point onto the segment clamped to its bounds.
+    let t =
+        ((test.coords() - data.line0.origin.coords).dot(&dir) / dir.norm_squared()).clamp(0.0, 1.0);
+    let shortest = (test.coords() - (data.line0.origin + dir * t).coords).norm();
+
+    // Now we find the largest distance to the line segment, which is the larger of the distances
+    // to the end points.
+    let da = test.coords() - data.line0.origin.coords;
+    let db = test.coords() - end.coords;
+    let longest = da.norm_squared().max(db.norm_squared()).sqrt();
+
+    // Finally, we return the closest possible distance from the test point to the capsule and
+    // the farthest possible distance from the test point to the capsule
+    ((shortest - data.e_max).max(0.0), longest + data.e_max)
+}
+
+/// This function finds the closest distance between a test point and the region of the spline
+/// bounded by `t0` and `t1`. This should only be used on sections of the spline that have no
+/// cusps or inflections, and are convex and flat*
+fn closest_to_point<const D: usize>(
+    test: &impl PCoords<D>,
+    spline: &CubicSpline<D>,
+    t0: f64,
+    t1: f64,
+    l0: &Line<D>,
+    l1: &Line<D>,
+) -> (f64, f64) {
+    // First we can check the point to figure out what Voronoi region it's in using the
+    // direction of the interval ends
+    let before_front = l0.scalar_project(test) < 0.0;
+    let after_back = l1.scalar_project(test) > 0.0;
+    match (before_front, after_back) {
+        // The test point lies unambiguously before the front of the interval, so the closest point
+        // is the very front
+        (true, false) => { (t0, dist(test, &l0.origin))},
+
+        // The test point lies unambiguously after the end of the interval, so the closest point
+        // is the very back
+        (false, true) => { (t1, dist(test, &l1.origin))},
+
+        // The test point is both before the front _and_ after the back, which is possible when
+        // it is on the concave side beyond the focus of the concavity. The closest point is either
+        // the front or back.
+        (true, true) => {
+            let d0 = dist(test, &l0.origin);
+            let d1 = dist(test, &l1.origin);
+            if d0 < d1 {
+                (t0, d0)
+            } else {
+                (t1, d1)
+            }
+        },
+
+        (false, false) => {
+            
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -78,13 +149,67 @@ pub struct CubicSplineQueries<const D: usize> {
     spline: CubicSpline<D>,
 
     /// The point and direction at the end of the spline
-    // sp1: SurfacePoint<D>,
+    line1: Line<D>,
 
     /// The intervals
     intervals: [IntervalData<D>; N_INTR],
 }
 
 impl<const D: usize> CubicSplineQueries<D> {
+    pub fn project_point(&self, point: &impl PCoords<D>) -> f64 {
+        // To do the initial pruning, we're going to use the closest/farthest method. Each interval
+        // has a capsule shaped bounding volume formed by its two endpoints and the known maximum
+        // error value of the curve to the segment between the endpoints. For any test point, we
+        // can compute the distance to the nearest point in the volume (minimum of 0.0) and the
+        // distance to the farthest point in the volume.
+        //
+        // Of the bounding volumes, one of them will have the smallest value of the farthest
+        // possible distance.  Any volume who does not have a _closest_ distance less than that
+        // value cannot possibly contain the projection of the test point.
+        let mut prune = [(f64::INFINITY, f64::INFINITY); N_INTR];
+        for i in 0..N_INTR {
+            let end = if i < N_INTR - 1 {
+                self.intervals[i + 1].line0.origin
+            } else {
+                self.line1.origin
+            };
+            prune[i] = dist_min_max(point, &self.intervals[i], &end);
+        }
+        let min_farthest = prune
+            .iter()
+            .map(|(_, far)| *far)
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
+
+        // Once the bounds have been found, we'll find the closest projection for each interval
+        // that has a closest distance less than the minimum farthest
+        let mut closest = [(f64::NAN, f64::INFINITY); N_INTR];
+        for i in 0..N_INTR {
+            if prune[i].0 < min_farthest {
+                let (t1, line1) = if i < N_INTR - 1 {
+                    (self.intervals[i + 1].t0, self.intervals[i + 1].line0)
+                } else {
+                    (1.0, self.line1)
+                };
+                closest[i] = closest_to_point(
+                    point,
+                    &self.spline,
+                    self.intervals[i].t0,
+                    t1,
+                    &self.intervals[i].line0,
+                    &line1,
+                )
+            }
+        }
+
+        // Finally, we return the t value of the smallest distance
+        closest
+            .iter()
+            .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .map(|(t, _)| *t)
+            .unwrap()
+    }
+
     /// Builds the fixed acceleration structure for `spline` by partitioning its domain into
     /// `N_INTR` intervals.
     ///
@@ -96,6 +221,7 @@ impl<const D: usize> CubicSplineQueries<D> {
     /// greatest, until all `N_INTR` slots are used.
     pub fn new(spline: CubicSpline<D>) -> Self {
         let mut working = vec![WorkingInterval::new(&spline, 0.0, 1.0)];
+        let line1 = spline.line_at(1.0);
 
         if let Some(tc) = spline.find_cusp() {
             Self::try_split_at(&spline, &mut working, tc);
@@ -122,14 +248,18 @@ impl<const D: usize> CubicSplineQueries<D> {
             .into_iter()
             .map(|w| IntervalData {
                 t0: w.t0,
-                sp0: SurfacePoint::new(spline.position(w.t0), spline.tangent(w.t0)),
+                line0: spline.line_at(w.t0),
                 e_max: w.e_max,
             })
             .collect::<Vec<_>>()
             .try_into()
             .unwrap_or_else(|_| panic!("working did not have exactly N_INTR intervals"));
 
-        Self { spline, intervals }
+        Self {
+            spline,
+            line1,
+            intervals,
+        }
     }
 
     /// If `t` falls strictly inside one of the `working` intervals (and there is still room left

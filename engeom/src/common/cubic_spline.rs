@@ -1,7 +1,7 @@
 mod fitting;
 mod queries;
 
-use crate::common::solve_quadratic_real_roots;
+use crate::common::{solve_quadratic_real_roots, Line};
 use parry3d_f64::na::{Point, SVector, Unit};
 
 /// A cubic Bézier curve in D-dimensional space, defined by four control points.
@@ -97,6 +97,12 @@ impl<const D: usize> CubicSpline<D> {
         (self.p1.coords - self.p0.coords) * (3.0 * u * u)
             + (self.p2.coords - self.p1.coords) * (6.0 * u * t)
             + (self.p3.coords - self.p2.coords) * (3.0 * t * t)
+    }
+
+    /// Return the position and derivative direction of the curve at parameter `t` in the form of
+    /// a parameterized line.
+    pub fn line_at(&self, t: f64) -> Line<D> {
+        Line::new(self.position(t), self.derivative(t))
     }
 
     /// Returns the second derivative of the curve at parameter `t` as a vector (the acceleration

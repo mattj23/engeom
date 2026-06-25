@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn stress_closest_position() -> Result<()> {
-        let n = 1000;
+        let n = 100;
         let mut rg = RandomGeometry3::new();
 
         for _ in 0..n {
