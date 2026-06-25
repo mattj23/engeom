@@ -60,6 +60,22 @@ use crate::common::{Line, PCoords, Segment, dist, linear_space};
 
 const N_INTR: usize = 6;
 
+/// This is a simple helper struct to explicitly name the values at a query check position.
+#[derive(Debug, Copy, Clone)]
+struct QPos {
+    /// The parameter value at the position
+    t: f64,
+
+    /// The distance value (from whatever is being queried) at the position
+    d: f64,
+}
+
+impl QPos {
+    fn new(t: f64, d: f64) -> QPos {
+        QPos { t, d }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct IntervalData<const D: usize> {
     /// Parameter at the beginning of the interval
@@ -110,7 +126,7 @@ fn closest_to_point<const D: usize>(
     t1: f64,
     l0: &Line<D>,
     l1: &Line<D>,
-) -> (f64, f64) {
+) -> QPos {
     // First we can check the point to figure out what Voronoi region it's in using the
     // direction of the interval ends
     let before_front = l0.scalar_project(test) < 0.0;
@@ -118,29 +134,38 @@ fn closest_to_point<const D: usize>(
     match (before_front, after_back) {
         // The test point lies unambiguously before the front of the interval, so the closest point
         // is the very front
-        (true, false) => { (t0, dist(test, &l0.origin))},
+        (true, false) => QPos::new(t0, dist(test, &l0.origin)),
 
         // The test point lies unambiguously after the end of the interval, so the closest point
         // is the very back
-        (false, true) => { (t1, dist(test, &l1.origin))},
+        (false, true) => QPos::new(t1, dist(test, &l1.origin)),
 
         // The test point is both before the front _and_ after the back, which is possible when
         // it is on the concave side beyond the focus of the concavity. The closest point is either
         // the front or back.
         (true, true) => {
-            let d0 = dist(test, &l0.origin);
-            let d1 = dist(test, &l1.origin);
-            if d0 < d1 {
-                (t0, d0)
-            } else {
-                (t1, d1)
-            }
-        },
+            let q0 = QPos::new(t0, dist(test, &l0.origin));
+            let q1 = QPos::new(t1, dist(test, &l1.origin));
+            if q0.d < q1.d { q0 } else { q1 }
+        }
 
+        // The test point is within the Voronoi region between the endpoints. If we're on the
+        // concave side of the curvature, there may be up to two local distance minima, so we need
+        // to identify both and then find the one which is closer to the test point.
         (false, false) => {
-            
+            let q0 = iterate_to_closest(test, spline, t0);
+            let q1 = iterate_to_closest(test, spline, t1);
+            if q0.d < q1.d { q0 } else { q1 }
         }
     }
+}
+
+/// Iterate to the local distance minima from a starting parameter
+fn iterate_to_closest<const D: usize>(
+    test: &impl PCoords<D>,
+    spline: &CubicSpline<D>,
+    t_start: f64,
+) -> QPos {
 }
 
 #[derive(Debug, Clone)]
