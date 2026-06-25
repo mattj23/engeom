@@ -25,6 +25,7 @@ mod queries;
 use crate::common::{Line, solve_quadratic_real_roots};
 use parry3d_f64::na::{Point, SVector, Unit};
 
+pub use fitting::{SplineBuildFn, SplineFitResult, fit_spline_to_points};
 pub use queries::{CubicSplineQueries, SplineProjection};
 
 /// A cubic Bézier curve in D-dimensional space, defined by four control points.

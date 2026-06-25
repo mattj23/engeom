@@ -6,7 +6,8 @@ from typing import Tuple, Iterable, List, TypeVar, Iterator, Any
 import numpy
 from numpy.typing import NDArray
 import engeom
-from engeom.geom2 import Vector2, Point2, SurfacePoint2
+from typing import Callable
+from engeom.geom2 import Vector2, Point2, SurfacePoint2, SplineProjection
 
 import metrology
 
@@ -2982,3 +2983,85 @@ class CubicSpline3:
         :return: an `Nx3` array of the polyline vertices.
         """
         ...
+
+    def query(self) -> CubicSplineQueries3:
+        """
+        Build a reusable acceleration structure for closest-point queries against this spline.
+        Build the structure once and reuse it across many queries rather than rebuilding it per
+        query.
+
+        :return: a `CubicSplineQueries3` built from this spline.
+        """
+        ...
+
+    def project_point(self, point: Point3) -> SplineProjection:
+        """
+        Find the closest point on the spline to the given point. This builds a temporary query
+        structure on each call; for repeated queries against the same spline, build a `query()`
+        once and reuse it.
+
+        :param point: the point to project onto the spline.
+        :return: a `SplineProjection` holding the closest-point parameter and distance.
+        """
+        ...
+
+
+class CubicSplineQueries3:
+    """
+    A prebuilt acceleration structure for running repeated closest-point queries against a
+    `CubicSpline3`. Build it once and reuse it across many queries.
+    """
+
+    def __init__(self, spline: CubicSpline3):
+        """
+        Build the query acceleration structure for the given spline.
+
+        :param spline: the `CubicSpline3` to build queries against.
+        """
+        ...
+
+    def project_point(self, point: Point3) -> SplineProjection:
+        """
+        Find the closest point on the spline to the given point.
+
+        :param point: the point to project onto the spline.
+        :return: a `SplineProjection` holding the closest-point parameter and distance.
+        """
+        ...
+
+    def project_points(self, points: NDArray[float]) -> NDArray[float]:
+        """
+        Project an `Nx3` array of points onto the spline.
+
+        :param points: an `Nx3` numpy array of points to project.
+        :return: an `Nx2` array whose columns are the closest-point parameter `t` and the distance
+            to the curve, one row per input point.
+        """
+        ...
+
+
+def fit_spline_to_points(
+        points: NDArray[float],
+        builder: Callable[[NDArray[float]], CubicSpline3],
+        initial: NDArray[float],
+) -> NDArray[float]:
+    """
+    Fit a `CubicSpline3` to a set of 3D points using Levenberg-Marquardt optimization and a
+    user-supplied builder function.
+
+    Residuals are the unsigned distances from each point to its nearest location on the spline.
+    There is no inherent pressure keeping the curve from sliding or growing past the points unless
+    the parameterization forbids it, so write the builder so that the desired constraints are
+    inherently contained within it.
+
+    :param points: a numpy array of shape ``(N, 3)`` containing the sample points.
+    :param builder: a callable that accepts a 1-D ``float64`` numpy array of parameters and returns
+        a ``CubicSpline3``. Raise any exception to signal that the parameter vector produces invalid
+        geometry; the optimizer treats that step as a failed evaluation.
+    :param initial: a 1-D ``float64`` numpy array containing the initial parameter guess. The length
+        determines the number of optimization parameters, and the builder must succeed on it.
+    :return: a 1-D ``float64`` numpy array of the optimized parameters.
+    :raises ValueError: if the initial guess causes the builder to fail, or if the optimizer does
+        not converge.
+    """
+    ...

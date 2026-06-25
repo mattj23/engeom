@@ -1,6 +1,9 @@
 use crate::common::Resample;
-use crate::conversions::{array_to_points3, array_to_vectors3, points_to_array, vectors_to_array};
-use crate::geom2::{Point2, SurfacePoint2, Vector2};
+use crate::conversions::{
+    array_to_points3, array_to_vectors3, dvec_from_array, dvec_to_array, points_to_array,
+    vectors_to_array,
+};
+use crate::geom2::{Point2, SplineProjection, SurfacePoint2, Vector2};
 use engeom::common::To2D;
 use engeom::geom3::IsoExtensions3;
 use numpy::ndarray::{Array1, Array2};
@@ -10,10 +13,11 @@ use numpy::{
 use parry3d_f64::na::{Quaternion, Translation3, UnitQuaternion};
 use pyo3::exceptions::PyIOError;
 use pyo3::exceptions::PyValueError;
+use pyo3::prelude::PyAnyMethods;
 use pyo3::types::PyIterator;
 use pyo3::{
-    Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyResult, Python, pyclass,
-    pymethods,
+    Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyRef, PyResult, Python, pyclass,
+    pyfunction, pymethods,
 };
 use std::path::PathBuf;
 
@@ -1795,4 +1799,118 @@ impl CubicSpline3 {
         let points = self.inner.polyline(tolerance);
         points_to_array(&points).into_pyarray(py)
     }
+
+    /// Build a reusable acceleration structure for closest-point queries against this spline.
+    fn query(&self) -> CubicSplineQueries3 {
+        CubicSplineQueries3::from_inner(
+            engeom::common::cubic_spline::CubicSplineQueries::from(&self.inner),
+        )
+    }
+
+    /// Find the closest point on the spline to the given point. This builds a temporary query
+    /// structure each call; for repeated queries against the same spline build a `query()` once
+    /// and reuse it.
+    fn project_point(&self, point: Point3) -> SplineProjection {
+        let queries = engeom::common::cubic_spline::CubicSplineQueries::from(&self.inner);
+        SplineProjection::from_inner(queries.project_point(point.get_inner()))
+    }
+}
+
+// ================================================================================================
+// CubicSplineQueries3
+// ================================================================================================
+
+/// A prebuilt acceleration structure for running repeated closest-point queries against a
+/// `CubicSpline3`. Build it once with `spline.query()` (or the constructor) and reuse it across
+/// many queries.
+#[pyclass(from_py_object, module = "engeom.geom3")]
+#[derive(Clone)]
+pub struct CubicSplineQueries3 {
+    inner: engeom::common::cubic_spline::CubicSplineQueries<3>,
+}
+
+impl CubicSplineQueries3 {
+    pub fn from_inner(inner: engeom::common::cubic_spline::CubicSplineQueries<3>) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl CubicSplineQueries3 {
+    #[new]
+    fn new(spline: &CubicSpline3) -> Self {
+        Self::from_inner(engeom::common::cubic_spline::CubicSplineQueries::from(
+            spline.get_inner(),
+        ))
+    }
+
+    /// Find the closest point on the spline to the given point, returned as a `SplineProjection`.
+    fn project_point(&self, point: Point3) -> SplineProjection {
+        SplineProjection::from_inner(self.inner.project_point(point.get_inner()))
+    }
+
+    /// Project an `Nx3` array of points onto the spline, returning an `Nx2` array whose columns are
+    /// the closest-point parameter `t` and the distance to the curve, one row per input point.
+    fn project_points<'py>(
+        &self,
+        py: Python<'py>,
+        points: PyReadonlyArray2<'py, f64>,
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let pts = array_to_points3(&points.as_array())?;
+        let mut out = Array2::zeros((pts.len(), 2));
+        for (i, p) in pts.iter().enumerate() {
+            let proj = self.inner.project_point(p);
+            out[[i, 0]] = proj.t;
+            out[[i, 1]] = proj.distance;
+        }
+        Ok(out.into_pyarray(py))
+    }
+}
+
+// ================================================================================================
+// Cubic spline fitting
+// ================================================================================================
+
+fn make_spline_builder3(py_builder: Py<PyAny>) -> engeom::common::cubic_spline::SplineBuildFn<3> {
+    Box::new(move |params: &engeom::DVector| {
+        let arr = Array1::from_iter(params.iter().copied());
+
+        // `Python::attach` is re-entrant in PyO3 0.28 and safe to call here: the LM minimiser runs
+        // synchronously inside a #[pyfunction] that already holds the GIL.
+        Python::attach(|py| {
+            let np_arr = arr.into_pyarray(py);
+
+            let result = py_builder
+                .bind(py)
+                .call1((np_arr,))
+                .map_err(|e| e.to_string())?;
+
+            let spline = result
+                .extract::<PyRef<CubicSpline3>>()
+                .map_err(|_| "builder must return a CubicSpline3".to_string())?;
+
+            Ok(spline.get_inner().clone())
+        })
+    })
+}
+
+/// Fit a `CubicSpline3` to a set of points using a Levenberg-Marquardt minimization and a
+/// user-supplied builder function that maps a parameter vector to a `CubicSpline3`. Returns the
+/// optimized parameter vector.
+#[pyfunction]
+#[pyo3(signature = (points, builder, initial))]
+pub fn fit_spline_to_points<'py>(
+    py: Python<'py>,
+    points: PyReadonlyArray2<'py, f64>,
+    builder: Py<PyAny>,
+    initial: PyReadonlyArray1<'py, f64>,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let pts = array_to_points3(&points.as_array())?;
+    let initial_vec = dvec_from_array(&initial)?;
+    let bld = make_spline_builder3(builder);
+
+    let result = engeom::common::cubic_spline::fit_spline_to_points(&pts, &bld, initial_vec)
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+    Ok(dvec_to_array(py, result.params))
 }

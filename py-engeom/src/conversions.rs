@@ -2,9 +2,24 @@
 
 use engeom::na::{Point, SVector};
 use engeom::{Point2, Point3, Vector2, Vector3};
-use numpy::ndarray::{Array2, ArrayView2};
-use pyo3::PyResult;
+use numpy::ndarray::{Array1, Array2, ArrayView2};
+use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};
 use pyo3::exceptions::PyValueError;
+use pyo3::{Bound, PyResult, Python};
+
+/// Build an engeom `DVector` (the dynamically sized column vector used for fitting parameters)
+/// from a 1D numpy array.
+pub fn dvec_from_array(arr: &PyReadonlyArray1<f64>) -> PyResult<engeom::DVector> {
+    let s = arr
+        .as_slice()
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    Ok(engeom::DVector::from_column_slice(s))
+}
+
+/// Convert an engeom `DVector` into a 1D numpy array.
+pub fn dvec_to_array<'py>(py: Python<'py>, v: engeom::DVector) -> Bound<'py, PyArray1<f64>> {
+    Array1::from_iter(v.iter().copied()).into_pyarray(py)
+}
 
 pub fn write_v<const D: usize>(a: &mut Array2<f64>, i: usize, v: &SVector<f64, D>) {
     for j in 0..D {
