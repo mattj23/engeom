@@ -60,19 +60,28 @@ use crate::common::{Line, PCoords, Segment, dist, linear_space};
 
 const N_INTR: usize = 6;
 
-/// This is a simple helper struct to explicitly name the values at a query check position.
+/// The result of a closest-point query against a [`CubicSpline`]: where on the curve the closest
+/// point lies and how far it is from the queried geometry.
 #[derive(Debug, Copy, Clone)]
-struct QPos {
-    /// The parameter value at the position
-    t: f64,
+pub struct SplineProjection {
+    /// The parameter `t` of the closest point on the spline. Recover the point itself with
+    /// [`CubicSpline::position`].
+    pub t: f64,
 
-    /// The distance value (from whatever is being queried) at the position
-    d: f64,
+    /// The distance from the queried geometry (for example the test point) to the closest point
+    /// on the spline.
+    pub distance: f64,
 }
 
-impl QPos {
-    fn new(t: f64, d: f64) -> QPos {
-        QPos { t, d }
+impl SplineProjection {
+    fn new(t: f64, distance: f64) -> SplineProjection {
+        SplineProjection { t, distance }
+    }
+}
+
+impl Default for SplineProjection {
+    fn default() -> Self {
+        SplineProjection::new(f64::NAN, f64::INFINITY)
     }
 }
 
@@ -84,7 +93,10 @@ struct IntervalData<const D: usize> {
     /// Point and direction at the beginning of the interval,
     line0: Line<D>,
 
-    /// Maximum error between the spline and the base leg for the interval
+    /// A guaranteed upper bound on the deviation of the spline from the base leg over the interval.
+    /// This is the radius of the capsule bounding volume, so it must never under-estimate the true
+    /// deviation or the branch-and-bound pruning could discard the interval that actually holds the
+    /// closest point. See [`interval_error_bound`].
     e_max: f64,
 }
 
@@ -126,7 +138,7 @@ fn closest_to_point<const D: usize>(
     t1: f64,
     l0: &Line<D>,
     l1: &Line<D>,
-) -> QPos {
+) -> SplineProjection {
     // First we can check the point to figure out what Voronoi region it's in using the
     // direction of the interval ends
     let before_front = l0.scalar_project(test) < 0.0;
@@ -134,40 +146,116 @@ fn closest_to_point<const D: usize>(
     match (before_front, after_back) {
         // The test point lies unambiguously before the front of the interval, so the closest point
         // is the very front
-        (true, false) => QPos::new(t0, dist(test, &l0.origin)),
+        (true, false) => SplineProjection::new(t0, dist(test, &l0.origin)),
 
         // The test point lies unambiguously after the end of the interval, so the closest point
         // is the very back
-        (false, true) => QPos::new(t1, dist(test, &l1.origin)),
+        (false, true) => SplineProjection::new(t1, dist(test, &l1.origin)),
 
         // The test point is both before the front _and_ after the back, which is possible when
         // it is on the concave side beyond the focus of the concavity. The closest point is either
         // the front or back.
         (true, true) => {
-            let q0 = QPos::new(t0, dist(test, &l0.origin));
-            let q1 = QPos::new(t1, dist(test, &l1.origin));
-            if q0.d < q1.d { q0 } else { q1 }
+            let q0 = SplineProjection::new(t0, dist(test, &l0.origin));
+            let q1 = SplineProjection::new(t1, dist(test, &l1.origin));
+            if q0.distance < q1.distance { q0 } else { q1 }
         }
 
         // The test point is within the Voronoi region between the endpoints. If we're on the
         // concave side of the curvature, there may be up to two local distance minima, so we need
         // to identify both and then find the one which is closer to the test point.
+        //
+        // Seeding the iteration from each end biases it toward the minimum in that end's basin, so
+        // when two minima are present (one near each endpoint) both get found and the closer is
+        // returned. When there is only one, both seeds converge to it.
         (false, false) => {
-            let q0 = iterate_to_closest(test, spline, t0);
-            let q1 = iterate_to_closest(test, spline, t1);
-            if q0.d < q1.d { q0 } else { q1 }
+            let q0 = iterate_to_closest(test, spline, t0, t0, t1);
+            let q1 = iterate_to_closest(test, spline, t1, t0, t1);
+            if q0.distance < q1.distance { q0 } else { q1 }
         }
     }
 }
 
-/// Iterate to the local distance minima from a starting parameter
+/// Iterates to a local distance minimum, starting from `t_start` and confined to `[lo, hi]`.
+///
+/// The minimum of the distance to the spline is a root of the footpoint function
+/// `g(t) = (p(t) - test) · p'(t)`, whose own derivative is
+/// `g'(t) = |p'(t)|² + (p(t) - test) · p''(t)`. Both are available analytically from the spline,
+/// so the root is refined with Newton's method. Each step is clamped to `[lo, hi]`; if a step
+/// would leave the bracket or the curvature `g'` is too small to trust, the step is replaced by a
+/// bisection of the current sign bracket so the iteration cannot diverge.
 fn iterate_to_closest<const D: usize>(
     test: &impl PCoords<D>,
     spline: &CubicSpline<D>,
     t_start: f64,
-) -> QPos {
+    lo: f64,
+    hi: f64,
+) -> SplineProjection {
+    const MAX_ITER: usize = 32;
+
+    let tc = test.coords();
+    let g = |t: f64| -> f64 { (spline.position(t).coords - tc).dot(&spline.derivative(t)) };
+
+    // Maintain a sign bracket `[a, b]` with `g(a) <= 0 <= g(b)` as a fallback for Newton steps
+    // that misbehave. It is only usable once we actually observe opposite signs at the ends.
+    let mut a = lo;
+    let mut b = hi;
+    let have_bracket = g(lo) <= 0.0 && g(hi) >= 0.0;
+
+    let mut t = t_start.clamp(lo, hi);
+    for _ in 0..MAX_ITER {
+        let r = spline.position(t).coords - tc;
+        let d1 = spline.derivative(t);
+        let gt = r.dot(&d1);
+        if gt.abs() < 1e-12 {
+            break;
+        }
+
+        // Tighten the fallback bracket using the sign of g at the current estimate, preserving
+        // the `g(a) <= 0 <= g(b)` invariant.
+        if have_bracket {
+            if gt < 0.0 {
+                a = t;
+            } else {
+                b = t;
+            }
+        }
+
+        let gpt = d1.norm_squared() + r.dot(&spline.second_derivative(t));
+        let newton = t - gt / gpt;
+        let next = if gpt.abs() > 1e-14 && newton > lo && newton < hi {
+            newton
+        } else if have_bracket {
+            0.5 * (a + b)
+        } else {
+            // No usable curvature and no bracket to fall back on; the estimate is as good as it
+            // gets without more structure, so stop here.
+            break;
+        };
+
+        let converged = (next - t).abs() < 1e-12;
+        t = next;
+        if converged {
+            break;
+        }
+    }
+
+    SplineProjection::new(t, dist(test, &spline.position(t)))
 }
 
+/// A prebuilt acceleration structure for running repeated spatial queries against a
+/// [`CubicSpline`].
+///
+/// Construction partitions the curve's parameter domain into a fixed number of intervals, each
+/// wrapped in a capsule-shaped bounding volume (the chord between the interval's endpoints, plus a
+/// guaranteed-conservative radius bounding the curve's deviation from that chord). Splits are
+/// placed at structural features first (a cusp, then curvature zeros), so every interval is a
+/// simple convex, inflection-free arc; the remaining budget is spent halving whichever interval
+/// deviates most from its chord. Queries then use branch-and-bound over the capsules to discard
+/// intervals that cannot contain the answer before solving the survivors exactly.
+///
+/// Build the structure once and reuse it across many queries. Construct it with
+/// [`CubicSpline::into_query`] or the [`From`] impls (`CubicSplineQueries::from(spline)`).
 #[derive(Debug, Clone)]
 pub struct CubicSplineQueries<const D: usize> {
     /// The underlying spline that gets queried
@@ -181,7 +269,16 @@ pub struct CubicSplineQueries<const D: usize> {
 }
 
 impl<const D: usize> CubicSplineQueries<D> {
-    pub fn project_point(&self, point: &impl PCoords<D>) -> f64 {
+    /// Returns the closest point on the curve to `point` as a [`SplineProjection`], holding the
+    /// parameter `t` in `[0, 1]` and the distance from `point` to that location. Recover the point
+    /// itself with [`CubicSpline::position`] on the spline the structure was built from.
+    ///
+    /// This is a true global closest point over the whole curve: branch-and-bound over the interval
+    /// bounding volumes guarantees no interval that could contain the minimum is discarded, so the
+    /// result is correct even where the curve loops or crosses itself and a naive nearest-sample
+    /// search would be fooled. When two points on the curve are equidistant from `point`, which of
+    /// the tied projections is returned is unspecified.
+    pub fn project_point(&self, point: &impl PCoords<D>) -> SplineProjection {
         // To do the initial pruning, we're going to use the closest/farthest method. Each interval
         // has a capsule shaped bounding volume formed by its two endpoints and the known maximum
         // error value of the curve to the segment between the endpoints. For any test point, we
@@ -208,9 +305,12 @@ impl<const D: usize> CubicSplineQueries<D> {
 
         // Once the bounds have been found, we'll find the closest projection for each interval
         // that has a closest distance less than the minimum farthest
-        let mut closest = [(f64::NAN, f64::INFINITY); N_INTR];
+        let mut closest = [SplineProjection::default(); N_INTR];
         for i in 0..N_INTR {
-            if prune[i].0 < min_farthest {
+            // `<=` (not `<`) so the interval that attains `min_farthest` is never pruned: its
+            // closest bound can equal `min_farthest` in degenerate cases, and pruning every
+            // interval would leave nothing to return.
+            if prune[i].0 <= min_farthest {
                 let (t1, line1) = if i < N_INTR - 1 {
                     (self.intervals[i + 1].t0, self.intervals[i + 1].line0)
                 } else {
@@ -223,15 +323,14 @@ impl<const D: usize> CubicSplineQueries<D> {
                     t1,
                     &self.intervals[i].line0,
                     &line1,
-                )
+                );
             }
         }
 
-        // Finally, we return the t value of the smallest distance
-        closest
+        // Finally, we return the projection with the smallest distance
+        *closest
             .iter()
-            .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-            .map(|(t, _)| *t)
+            .min_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap())
             .unwrap()
     }
 
@@ -244,7 +343,7 @@ impl<const D: usize> CubicSplineQueries<D> {
     /// interval array is filled by repeatedly splitting whichever interval currently has the
     /// largest deviation from its own local base leg, at the parameter where that deviation is
     /// greatest, until all `N_INTR` slots are used.
-    pub fn new(spline: CubicSpline<D>) -> Self {
+    pub(crate) fn new(spline: CubicSpline<D>) -> Self {
         let mut working = vec![WorkingInterval::new(&spline, 0.0, 1.0)];
         let line1 = spline.line_at(1.0);
 
@@ -274,7 +373,7 @@ impl<const D: usize> CubicSplineQueries<D> {
             .map(|w| IntervalData {
                 t0: w.t0,
                 line0: spline.line_at(w.t0),
-                e_max: w.e_max,
+                e_max: interval_error_bound(&spline, w.t0, w.t1),
             })
             .collect::<Vec<_>>()
             .try_into()
@@ -315,6 +414,22 @@ impl<const D: usize> CubicSplineQueries<D> {
         let right = WorkingInterval::new(spline, t, old.t1);
         working.insert(index, right);
         working.insert(index, left);
+    }
+}
+
+/// Builds the acceleration structure from a borrowed spline, cloning it internally. Use the
+/// owning [`From<CubicSpline>`] impl to avoid the clone when the spline is no longer needed.
+impl<const D: usize> From<&CubicSpline<D>> for CubicSplineQueries<D> {
+    fn from(value: &CubicSpline<D>) -> Self {
+        CubicSplineQueries::new(value.clone())
+    }
+}
+
+/// Builds the acceleration structure from an owned spline, taking ownership of it. Equivalent to
+/// [`CubicSpline::into_query`].
+impl<const D: usize> From<CubicSpline<D>> for CubicSplineQueries<D> {
+    fn from(value: CubicSpline<D>) -> Self {
+        CubicSplineQueries::new(value)
     }
 }
 
@@ -379,6 +494,33 @@ fn interval_max_error<const D: usize>(spline: &CubicSpline<D>, t0: f64, t1: f64)
     let local_t = helper.find_max_t(0.0, 1.0);
     let e_max = helper.e(local_t);
     (t0 + local_t * (t1 - t0), e_max)
+}
+
+/// Returns a guaranteed upper bound on the deviation of the sub-curve over `[t0, t1]` from its base
+/// leg (the chord between the sub-curve's endpoints).
+///
+/// Unlike [`interval_max_error`], which uses a sampling-plus-Newton search that can under-estimate
+/// the true peak, this is provably conservative and so is what the capsule bounding volume must use
+/// as its radius. A Bézier curve lies inside the convex hull of its control points, and the
+/// distance to the (convex) base segment is itself a convex function of position, so it attains its
+/// maximum over the hull at a control point. The endpoints `P0` and `P3` lie on the base leg, so
+/// only the inner control points `P1` and `P2` can contribute, and their larger distance to the leg
+/// is an upper bound on the deviation of every point of the sub-curve.
+fn interval_error_bound<const D: usize>(spline: &CubicSpline<D>, t0: f64, t1: f64) -> f64 {
+    if t1 - t0 < 1e-12 {
+        return 0.0;
+    }
+
+    let sub = sub_curve(spline, t0, t1);
+    if dist(&sub.p0, &sub.p3) < 1e-12 {
+        // The base leg has collapsed to a point, so measure the inner control points from it.
+        return dist(&sub.p1, &sub.p0).max(dist(&sub.p2, &sub.p0));
+    }
+
+    let seg = Segment::new_unchecked(sub.p0, sub.p3);
+    let d1 = dist(&seg.closest_point(&sub.p1), &sub.p1);
+    let d2 = dist(&seg.closest_point(&sub.p2), &sub.p2);
+    d1.max(d2)
 }
 
 /// This struct is a helper to find the distance between a cubic spline of arbitrary dimension D
@@ -669,5 +811,128 @@ mod tests {
         );
         let q = CubicSplineQueries::new(c);
         assert_well_formed(&q);
+    }
+
+    /// Brute-force closest parameter over a dense scan, used to cross-check `project_point`.
+    fn brute_closest<const D: usize>(spline: &CubicSpline<D>, p: &Point<f64, D>) -> f64 {
+        let mut best_t = 0.0;
+        let mut best_d = f64::INFINITY;
+        for i in 0..=20_000 {
+            let t = i as f64 / 20_000.0;
+            let d = dist(p, &spline.position(t));
+            if d < best_d {
+                best_d = d;
+                best_t = t;
+            }
+        }
+        best_t
+    }
+
+    fn assert_projects_like_brute(spline: &CubicSpline<2>, p: Point<f64, 2>) {
+        let q = CubicSplineQueries::new(spline.clone());
+        let proj = q.project_point(&p);
+        let t_ref = brute_closest(spline, &p);
+        // Compare on distance rather than parameter, since near-flat regions can have very
+        // different parameters at nearly identical distances.
+        let d = dist(&p, &spline.position(proj.t));
+        let d_ref = dist(&p, &spline.position(t_ref));
+        // The returned distance must match the distance to the returned parameter.
+        assert_relative_eq!(proj.distance, d, epsilon = 1e-9);
+        assert!(
+            d <= d_ref + 1e-6,
+            "project_point distance {} worse than brute-force {} (t={}, t_ref={})",
+            d,
+            d_ref,
+            proj.t,
+            t_ref
+        );
+    }
+
+    #[test]
+    fn interval_e_max_is_a_true_upper_bound() {
+        // The capsule radius must never under-estimate the curve's deviation from its base leg,
+        // or pruning could discard the interval holding the closest point. Check it against a
+        // dense scan of the actual deviation for several shapes, including a high-deflection curve.
+        let curves = [
+            sample_2d(),
+            CubicSpline::new(
+                Point2::new(0.0, 0.0),
+                Point2::new(0.5, 3.0),
+                Point2::new(2.5, -3.0),
+                Point2::new(3.0, 0.0),
+            ),
+            CubicSpline::new(
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 2.0),
+                Point2::new(2.0, -2.0),
+                Point2::new(3.0, 0.0),
+            ),
+        ];
+
+        for c in &curves {
+            let q = CubicSplineQueries::new(c.clone());
+            for (i, iv) in q.intervals.iter().enumerate() {
+                let t0 = iv.t0;
+                let t1 = if i < N_INTR - 1 {
+                    q.intervals[i + 1].t0
+                } else {
+                    1.0
+                };
+                let p0 = c.position(t0);
+                let p1 = c.position(t1);
+                let leg = Segment::new_unchecked(p0, p1);
+                let mut worst = 0.0_f64;
+                for k in 0..=2000 {
+                    let t = t0 + (t1 - t0) * (k as f64 / 2000.0);
+                    let p = c.position(t);
+                    worst = worst.max(dist(&leg.closest_point(&p), &p));
+                }
+                assert!(
+                    iv.e_max >= worst - 1e-9,
+                    "interval {} radius {} under-bounds observed deviation {}",
+                    i,
+                    iv.e_max,
+                    worst
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn project_point_matches_brute_force_arch() {
+        let c = sample_2d();
+        // A spread of query points: above, below, off each end, and near the curve.
+        for &p in &[
+            Point2::new(1.5, 5.0),
+            Point2::new(1.5, -3.0),
+            Point2::new(-2.0, 0.0),
+            Point2::new(5.0, 0.0),
+            Point2::new(1.5, 0.75),
+            Point2::new(0.5, 0.5),
+        ] {
+            assert_projects_like_brute(&c, p);
+        }
+    }
+
+    #[test]
+    fn project_point_matches_brute_force_s_curve() {
+        // An S-curve exercises the inflection split and concave-side queries.
+        let c = CubicSpline::new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 2.0),
+            Point2::new(2.0, -2.0),
+            Point2::new(3.0, 0.0),
+        );
+        for &p in &[
+            Point2::new(0.5, 2.0),
+            Point2::new(2.5, -2.0),
+            Point2::new(1.5, 0.0),
+            Point2::new(1.5, 3.0),
+            Point2::new(1.5, -3.0),
+            Point2::new(-1.0, 1.0),
+            Point2::new(4.0, -1.0),
+        ] {
+            assert_projects_like_brute(&c, p);
+        }
     }
 }

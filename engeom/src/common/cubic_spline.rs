@@ -1,8 +1,31 @@
+//! A dimension-generic cubic Bézier curve and the operations built on top of it.
+//!
+//! The core type is [`CubicSpline`], a single cubic Bézier segment in `D`-dimensional space
+//! defined by four control points. Beyond evaluation ([`position`](CubicSpline::position),
+//! [`derivative`](CubicSpline::derivative), [`tangent`](CubicSpline::tangent),
+//! [`curvature`](CubicSpline::curvature)), it provides structural analysis
+//! ([`find_cusp`](CubicSpline::find_cusp), [`find_curvature_zeros`](CubicSpline::find_curvature_zeros)),
+//! de Casteljau [`split`](CubicSpline::split)ting, an adaptive [`polyline`](CubicSpline::polyline)
+//! approximation, and a tight axis-aligned [`compute_bounds`](CubicSpline::compute_bounds).
+//!
+//! The type's surface is split across a few places:
+//!
+//! - The dimension-generic curve and its operations live in this module.
+//! - Spatial queries (closest-point projection and the acceleration structure backing it) are
+//!   exposed as [`CubicSplineQueries`].
+//! - Curve fitting lives in the `fitting` submodule.
+//! - Operations that only make sense in 2D (signed-curvature inflections, the left/right normal)
+//!   are implemented on `CubicSpline2` (`CubicSpline<2>`) in the `geom2` module, not here. In
+//!   particular, the 2D `find_inflections` is the signed-curvature analog of the generic
+//!   [`find_curvature_zeros`](CubicSpline::find_curvature_zeros).
+
 mod fitting;
 mod queries;
 
-use crate::common::{solve_quadratic_real_roots, Line};
+use crate::common::{Line, solve_quadratic_real_roots};
 use parry3d_f64::na::{Point, SVector, Unit};
+
+pub use queries::{CubicSplineQueries, SplineProjection};
 
 /// A cubic Bézier curve in D-dimensional space, defined by four control points.
 ///
@@ -585,6 +608,17 @@ impl<const D: usize> CubicSpline<D> {
         let perp1 = v1 - chord * (chord.dot(&v1) / chord_len_sq);
         let perp2 = v2 - chord * (chord.dot(&v2) / chord_len_sq);
         perp1.norm().max(perp2.norm())
+    }
+
+    /// Consumes the curve and builds its [`CubicSplineQueries`] acceleration structure, ready for
+    /// repeated spatial queries such as closest-point projection.
+    ///
+    /// This is a convenience equivalent to `CubicSplineQueries::from(self)`; prefer whichever reads
+    /// better at the call site. Building the structure is a one-time cost paid up front so that
+    /// individual queries are cheap, so reuse the returned value across many queries rather than
+    /// rebuilding it per query.
+    pub fn into_query(self) -> CubicSplineQueries<D> {
+        CubicSplineQueries::new(self)
     }
 }
 
