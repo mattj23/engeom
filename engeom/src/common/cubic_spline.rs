@@ -26,7 +26,27 @@ use crate::common::{Line, solve_quadratic_real_roots};
 use parry3d_f64::na::{Point, SVector, Unit};
 
 pub use fitting::{SplineBuildFn, SplineFitResult, fit_spline_to_points};
-pub use queries::{CubicSplineQueries, SplineProjection};
+pub use queries::CubicSplineQueries;
+
+/// A value of some generic type `T` associated with a parameter value `t` along a spline.
+///
+/// This pairs a sample of any per-parameter quantity (a position, a derivative, a curvature, etc.)
+/// with the parameter `t` at which it was taken.
+#[derive(Debug, Clone, Copy)]
+pub struct SplineValue<T> {
+    /// The parameter value along the spline at which `value` was evaluated.
+    pub t: f64,
+
+    /// The value of type `T` at parameter `t`.
+    pub value: T,
+}
+
+impl<T> SplineValue<T> {
+    /// Creates a new [`SplineValue`] pairing a parameter `t` with its associated `value`.
+    pub fn new(t: f64, value: T) -> Self {
+        Self { t, value }
+    }
+}
 
 /// A cubic Bézier curve in D-dimensional space, defined by four control points.
 ///
@@ -435,6 +455,115 @@ impl<const D: usize> CubicSpline<D> {
             }
         }
         result
+    }
+
+    /// Finds the point of maximum curvature on the curve over the parameter range `[0, 1]` and
+    /// returns it as a [`SplineValue<f64>`]: the parameter `t` at which the maximum occurs paired
+    /// with the curvature magnitude there as its `value`. Recover the position on the curve with
+    /// [`position`](Self::position) if needed.
+    ///
+    /// Unlike the per-component extrema in [`derivative_roots`](Self::derivative_roots) or the
+    /// curvature *zeros* in [`find_curvature_zeros`](Self::find_curvature_zeros), the maximum of
+    /// the curvature function `κ(t)` has no clean closed form: `κ(t)` is a rational function whose
+    /// stationary points are the roots of a high-degree polynomial. This method instead brackets
+    /// the global maximum with a dense uniform scan and then refines it locally with a
+    /// golden-section search, which converges to the parameter to near machine precision provided
+    /// the scan is fine enough to isolate the peak.
+    ///
+    /// Parameters where the curvature is undefined (cusps, where `B'(t) = 0` and
+    /// [`curvature`](Self::curvature) returns `NaN`) are treated as having no curvature for the
+    /// purposes of the search, so the result is the largest *finite* curvature found. As the
+    /// curvature grows without bound approaching a cusp, the reported maximum for a cusped curve
+    /// will sit just to one side of the cusp rather than exactly on it.
+    ///
+    /// For a fully degenerate curve whose curvature is `NaN` everywhere (e.g. all four control
+    /// points coincident), the returned `t` is `0.0` and the curvature value is `NaN`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::Point2;
+    /// use engeom::common::cubic_spline::CubicSpline;
+    /// use approx::assert_relative_eq;
+    ///
+    /// // A symmetric arch: curvature peaks at the apex, t = 0.5.
+    /// let curve = CubicSpline::new(
+    ///     Point2::new(0.0, 0.0),
+    ///     Point2::new(1.0, 1.0),
+    ///     Point2::new(2.0, 1.0),
+    ///     Point2::new(3.0, 0.0),
+    /// );
+    /// let max = curve.find_max_curvature();
+    /// // The parameter localizes to about sqrt(machine epsilon) at a flat peak; the curvature
+    /// // value itself is far more accurate.
+    /// assert_relative_eq!(max.t, 0.5, epsilon = 1e-6);
+    /// assert_relative_eq!(max.value, 2.0 / 3.0, epsilon = 1e-9);
+    /// ```
+    pub fn find_max_curvature(&self) -> SplineValue<f64> {
+        // Curvature undefined (cusp) is treated as "no curvature" so the scan ignores it and
+        // converges to the largest finite value instead of chasing the NaN.
+        let kappa = |t: f64| {
+            let k = self.curvature(t);
+            if k.is_finite() { k } else { f64::NEG_INFINITY }
+        };
+
+        // TODO: I think this approach is conservative and probably a candidate for improvement
+
+        // Coarse uniform scan to bracket the global maximum. The resolution must be fine enough
+        // to land inside the basin of the tallest peak; a cubic has at most a handful of
+        // curvature maxima, so a few hundred samples is comfortably sufficient.
+        const SAMPLES: usize = 256;
+        let step = 1.0 / SAMPLES as f64;
+        let mut best_t = 0.0;
+        let mut best_k = kappa(0.0);
+        for i in 1..=SAMPLES {
+            let t = i as f64 / SAMPLES as f64;
+            let k = kappa(t);
+            if k > best_k {
+                best_k = k;
+                best_t = t;
+            }
+        }
+
+        // No finite curvature anywhere (e.g. fully coincident control points): nothing to refine.
+        if !best_k.is_finite() {
+            return SplineValue::new(0.0, self.curvature(0.0));
+        }
+
+        // Golden-section refinement on the bracket spanning the samples on either side of the
+        // best one. This assumes a single maximum within the bracket, which the dense scan above
+        // is responsible for guaranteeing.
+        const INV_PHI: f64 = 0.618_033_988_749_894_8;
+        let mut a = (best_t - step).max(0.0);
+        let mut b = (best_t + step).min(1.0);
+        let mut c = b - (b - a) * INV_PHI;
+        let mut d = a + (b - a) * INV_PHI;
+        let mut fc = kappa(c);
+        let mut fd = kappa(d);
+        for _ in 0..100 {
+            if (b - a) <= 1e-15 {
+                break;
+            }
+            if fc >= fd {
+                b = d;
+                d = c;
+                fd = fc;
+                c = b - (b - a) * INV_PHI;
+                fc = kappa(c);
+            } else {
+                a = c;
+                c = d;
+                fc = fd;
+                d = a + (b - a) * INV_PHI;
+                fd = kappa(d);
+            }
+        }
+        let t = 0.5 * (a + b);
+
+        // The refined interior point can, in degenerate cases, score below the bracketing scan
+        // sample; keep whichever parameter actually yields the larger curvature.
+        let t = if kappa(t) >= best_k { t } else { best_t };
+        SplineValue::new(t, self.curvature(t))
     }
 
     /// Returns an adaptive polyline approximation of the curve such that the linear interpolation
@@ -1075,6 +1204,68 @@ mod tests {
         let zeros = sample_2d().find_curvature_zeros();
         assert!(zeros[0].is_nan());
         assert!(zeros[1].is_nan());
+    }
+
+    #[test]
+    fn find_max_curvature_symmetric_arch() {
+        // sample_2d is symmetric about t = 0.5 and bulges in one direction; curvature peaks at
+        // the apex. By hand at t = 0.5: B' = (3, 0), B'' = (0, -6), κ = 18 / 27 = 2/3.
+        let c = sample_2d();
+        let max = c.find_max_curvature();
+        assert_relative_eq!(max.t, 0.5, epsilon = 1e-6);
+        assert_relative_eq!(c.position(max.t), Point2::new(1.5, 0.75), epsilon = 1e-6);
+        assert_relative_eq!(max.value, 2.0 / 3.0, epsilon = 1e-9);
+    }
+
+    #[test]
+    fn find_max_curvature_agrees_with_dense_sampling() {
+        // Cross-check the analytic refinement against a brute-force scan on an asymmetric curve.
+        let c = CubicSpline::new(
+            Point2::new(0.0, 0.0),
+            Point2::new(0.5, 2.0),
+            Point2::new(2.5, 1.5),
+            Point2::new(3.0, 0.0),
+        );
+        let max = c.find_max_curvature();
+
+        let mut brute_t = 0.0;
+        let mut brute_k = f64::NEG_INFINITY;
+        for i in 0..=100_000 {
+            let s = i as f64 / 100_000.0;
+            let ks = c.curvature(s);
+            if ks.is_finite() && ks > brute_k {
+                brute_k = ks;
+                brute_t = s;
+            }
+        }
+        assert_relative_eq!(max.t, brute_t, epsilon = 1e-4);
+        assert!(
+            max.value >= brute_k - 1e-9,
+            "refined {} < brute {}",
+            max.value,
+            brute_k
+        );
+    }
+
+    #[test]
+    fn find_max_curvature_straight_line_is_zero() {
+        let c = CubicSpline::new(
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(3.0, 0.0, 0.0),
+        );
+        let max = c.find_max_curvature();
+        assert_relative_eq!(max.value, 0.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn find_max_curvature_all_coincident_is_nan() {
+        let p = Point2::new(1.5, 2.5);
+        let c = CubicSpline::new(p, p, p, p);
+        let max = c.find_max_curvature();
+        assert_eq!(max.t, 0.0);
+        assert!(max.value.is_nan());
     }
 
     #[test]

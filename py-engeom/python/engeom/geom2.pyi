@@ -1611,6 +1611,21 @@ class CubicSpline2:
         """
         ...
 
+    def curvature_circle(self, t: float) -> Circle2 | None:
+        """
+        Return the circle of curvature (osculating circle) tangent to the spline at parameter `t`:
+        the circle matching the curve's position, tangent direction, and curvature there. Its
+        radius is the reciprocal of the curvature and its center is the center of curvature, on the
+        concave side of the curve.
+
+        Returns `None` where no finite circle exists: a locally straight section (zero curvature,
+        infinite radius) or a cusp where the curvature is undefined.
+
+        :param t: the curve parameter.
+        :return: the osculating circle at parameter `t`, or `None`.
+        """
+        ...
+
     def second_derivative(self, t: float) -> Vector2:
         """
         Evaluate the second derivative of the curve at parameter `t`, returning the acceleration

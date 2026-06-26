@@ -156,7 +156,7 @@ impl<'a, const D: usize> SplineFit<'a, D> {
     fn distances(&self, queries: &CubicSplineQueries<D>) -> DVector<f64> {
         let mut res = DVector::zeros(self.points.len());
         for i in 0..self.points.len() {
-            res[i] = queries.project_point(&self.points[i]).distance;
+            res[i] = queries.project_point(&self.points[i]).value;
         }
         res
     }
@@ -199,7 +199,7 @@ impl<const D: usize> LeastSquaresProblem<f64, Dyn, Dyn> for SplineFit<'_, D> {
             let queries = disturbed.into_query();
 
             for i in 0..residuals.len() {
-                let d = queries.project_point(&self.points[i]).distance;
+                let d = queries.project_point(&self.points[i]).value;
                 jac[(i, k)] = (d - residuals[i]) / DELTA;
             }
         }

@@ -12,8 +12,8 @@ use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::PyAnyMethods;
 use pyo3::types::PyIterator;
 use pyo3::{
-    Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyRef, PyResult, Python, pyclass,
-    pyfunction, pymethods,
+    Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyRef, PyResult, Python,
+    pyclass, pyfunction, pymethods,
 };
 use std::path::PathBuf;
 
@@ -1094,6 +1094,13 @@ impl CubicSpline2 {
         self.inner.curvature(t)
     }
 
+    /// Return the circle of curvature (osculating circle) tangent to the spline at parameter `t`,
+    /// or `None` where no finite circle exists (a locally straight section, or a cusp where the
+    /// curvature is undefined).
+    fn curvature_circle(&self, t: f64) -> Option<Circle2> {
+        self.inner.curvature_circle(t).map(Circle2::from_inner)
+    }
+
     fn second_derivative(&self, t: f64) -> Vector2 {
         Vector2::from_inner(self.inner.second_derivative(t))
     }
@@ -1105,9 +1112,9 @@ impl CubicSpline2 {
 
     /// Build a reusable acceleration structure for closest-point queries against this spline.
     fn query(&self) -> CubicSplineQueries2 {
-        CubicSplineQueries2::from_inner(
-            engeom::common::cubic_spline::CubicSplineQueries::from(&self.inner),
-        )
+        CubicSplineQueries2::from_inner(engeom::common::cubic_spline::CubicSplineQueries::from(
+            &self.inner,
+        ))
     }
 
     /// Find the closest point on the spline to the given point. This builds a temporary query
@@ -1129,11 +1136,11 @@ impl CubicSpline2 {
 #[pyclass(from_py_object, module = "engeom.geom2")]
 #[derive(Clone, Debug)]
 pub struct SplineProjection {
-    inner: engeom::common::cubic_spline::SplineProjection,
+    inner: engeom::common::cubic_spline::SplineValue<f64>,
 }
 
 impl SplineProjection {
-    pub fn from_inner(inner: engeom::common::cubic_spline::SplineProjection) -> Self {
+    pub fn from_inner(inner: engeom::common::cubic_spline::SplineValue<f64>) -> Self {
         Self { inner }
     }
 }
@@ -1150,13 +1157,13 @@ impl SplineProjection {
     /// The distance from the queried point to the closest point on the spline.
     #[getter]
     fn distance(&self) -> f64 {
-        self.inner.distance
+        self.inner.value
     }
 
     fn __repr__(&self) -> String {
         format!(
             "SplineProjection(t={}, distance={})",
-            self.inner.t, self.inner.distance
+            self.inner.t, self.inner.value
         )
     }
 }
@@ -1206,7 +1213,7 @@ impl CubicSplineQueries2 {
         for (i, p) in pts.iter().enumerate() {
             let proj = self.inner.project_point(p);
             out[[i, 0]] = proj.t;
-            out[[i, 1]] = proj.distance;
+            out[[i, 1]] = proj.value;
         }
         Ok(out.into_pyarray(py))
     }

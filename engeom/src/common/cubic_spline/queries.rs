@@ -60,31 +60,6 @@ use crate::common::{Line, PCoords, Segment, dist, linear_space};
 
 const N_INTR: usize = 6;
 
-/// The result of a closest-point query against a [`CubicSpline`]: where on the curve the closest
-/// point lies and how far it is from the queried geometry.
-#[derive(Debug, Copy, Clone)]
-pub struct SplineProjection {
-    /// The parameter `t` of the closest point on the spline. Recover the point itself with
-    /// [`CubicSpline::position`].
-    pub t: f64,
-
-    /// The distance from the queried geometry (for example the test point) to the closest point
-    /// on the spline.
-    pub distance: f64,
-}
-
-impl SplineProjection {
-    fn new(t: f64, distance: f64) -> SplineProjection {
-        SplineProjection { t, distance }
-    }
-}
-
-impl Default for SplineProjection {
-    fn default() -> Self {
-        SplineProjection::new(f64::NAN, f64::INFINITY)
-    }
-}
-
 #[derive(Debug, Clone)]
 struct IntervalData<const D: usize> {
     /// Parameter at the beginning of the interval
@@ -138,7 +113,7 @@ fn closest_to_point<const D: usize>(
     t1: f64,
     l0: &Line<D>,
     l1: &Line<D>,
-) -> SplineProjection {
+) -> SplineValue<f64> {
     // First we can check the point to figure out what Voronoi region it's in using the
     // direction of the interval ends
     let before_front = l0.scalar_project(test) < 0.0;
@@ -146,19 +121,19 @@ fn closest_to_point<const D: usize>(
     match (before_front, after_back) {
         // The test point lies unambiguously before the front of the interval, so the closest point
         // is the very front
-        (true, false) => SplineProjection::new(t0, dist(test, &l0.origin)),
+        (true, false) => SplineValue::new(t0, dist(test, &l0.origin)),
 
         // The test point lies unambiguously after the end of the interval, so the closest point
         // is the very back
-        (false, true) => SplineProjection::new(t1, dist(test, &l1.origin)),
+        (false, true) => SplineValue::new(t1, dist(test, &l1.origin)),
 
         // The test point is both before the front _and_ after the back, which is possible when
         // it is on the concave side beyond the focus of the concavity. The closest point is either
         // the front or back.
         (true, true) => {
-            let q0 = SplineProjection::new(t0, dist(test, &l0.origin));
-            let q1 = SplineProjection::new(t1, dist(test, &l1.origin));
-            if q0.distance < q1.distance { q0 } else { q1 }
+            let q0 = SplineValue::new(t0, dist(test, &l0.origin));
+            let q1 = SplineValue::new(t1, dist(test, &l1.origin));
+            if q0.value < q1.value { q0 } else { q1 }
         }
 
         // The test point is within the Voronoi region between the endpoints. If we're on the
@@ -171,7 +146,7 @@ fn closest_to_point<const D: usize>(
         (false, false) => {
             let q0 = iterate_to_closest(test, spline, t0, t0, t1);
             let q1 = iterate_to_closest(test, spline, t1, t0, t1);
-            if q0.distance < q1.distance { q0 } else { q1 }
+            if q0.value < q1.value { q0 } else { q1 }
         }
     }
 }
@@ -190,7 +165,7 @@ fn iterate_to_closest<const D: usize>(
     t_start: f64,
     lo: f64,
     hi: f64,
-) -> SplineProjection {
+) -> SplineValue<f64> {
     const MAX_ITER: usize = 32;
 
     let tc = test.coords();
@@ -240,7 +215,7 @@ fn iterate_to_closest<const D: usize>(
         }
     }
 
-    SplineProjection::new(t, dist(test, &spline.position(t)))
+    SplineValue::new(t, dist(test, &spline.position(t)))
 }
 
 /// A prebuilt acceleration structure for running repeated spatial queries against a
@@ -269,16 +244,17 @@ pub struct CubicSplineQueries<const D: usize> {
 }
 
 impl<const D: usize> CubicSplineQueries<D> {
-    /// Returns the closest point on the curve to `point` as a [`SplineProjection`], holding the
-    /// parameter `t` in `[0, 1]` and the distance from `point` to that location. Recover the point
-    /// itself with [`CubicSpline::position`] on the spline the structure was built from.
+    /// Returns the closest point on the curve to `point` as a [`SplineValue<f64>`], holding the
+    /// parameter `t` in `[0, 1]` and, as its value, the distance from `point` to that location.
+    /// Recover the point itself with [`CubicSpline::position`] on the spline the structure was
+    /// built from.
     ///
     /// This is a true global closest point over the whole curve: branch-and-bound over the interval
     /// bounding volumes guarantees no interval that could contain the minimum is discarded, so the
     /// result is correct even where the curve loops or crosses itself and a naive nearest-sample
     /// search would be fooled. When two points on the curve are equidistant from `point`, which of
     /// the tied projections is returned is unspecified.
-    pub fn project_point(&self, point: &impl PCoords<D>) -> SplineProjection {
+    pub fn project_point(&self, point: &impl PCoords<D>) -> SplineValue<f64> {
         // To do the initial pruning, we're going to use the closest/farthest method. Each interval
         // has a capsule shaped bounding volume formed by its two endpoints and the known maximum
         // error value of the curve to the segment between the endpoints. For any test point, we
@@ -305,7 +281,7 @@ impl<const D: usize> CubicSplineQueries<D> {
 
         // Once the bounds have been found, we'll find the closest projection for each interval
         // that has a closest distance less than the minimum farthest
-        let mut closest = [SplineProjection::default(); N_INTR];
+        let mut closest = [SplineValue::new(f64::NAN, f64::INFINITY); N_INTR];
         for i in 0..N_INTR {
             // `<=` (not `<`) so the interval that attains `min_farthest` is never pruned: its
             // closest bound can equal `min_farthest` in degenerate cases, and pruning every
@@ -330,7 +306,7 @@ impl<const D: usize> CubicSplineQueries<D> {
         // Finally, we return the projection with the smallest distance
         *closest
             .iter()
-            .min_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap())
+            .min_by(|a, b| a.value.partial_cmp(&b.value).unwrap())
             .unwrap()
     }
 
@@ -837,7 +813,7 @@ mod tests {
         let d = dist(&p, &spline.position(proj.t));
         let d_ref = dist(&p, &spline.position(t_ref));
         // The returned distance must match the distance to the returned parameter.
-        assert_relative_eq!(proj.distance, d, epsilon = 1e-9);
+        assert_relative_eq!(proj.value, d, epsilon = 1e-9);
         assert!(
             d <= d_ref + 1e-6,
             "project_point distance {} worse than brute-force {} (t={}, t_ref={})",

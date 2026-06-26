@@ -16,8 +16,8 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::PyAnyMethods;
 use pyo3::types::PyIterator;
 use pyo3::{
-    Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyRef, PyResult, Python, pyclass,
-    pyfunction, pymethods,
+    Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyRef, PyResult, Python,
+    pyclass, pyfunction, pymethods,
 };
 use std::path::PathBuf;
 
@@ -1802,9 +1802,9 @@ impl CubicSpline3 {
 
     /// Build a reusable acceleration structure for closest-point queries against this spline.
     fn query(&self) -> CubicSplineQueries3 {
-        CubicSplineQueries3::from_inner(
-            engeom::common::cubic_spline::CubicSplineQueries::from(&self.inner),
-        )
+        CubicSplineQueries3::from_inner(engeom::common::cubic_spline::CubicSplineQueries::from(
+            &self.inner,
+        ))
     }
 
     /// Find the closest point on the spline to the given point. This builds a temporary query
@@ -1861,7 +1861,7 @@ impl CubicSplineQueries3 {
         for (i, p) in pts.iter().enumerate() {
             let proj = self.inner.project_point(p);
             out[[i, 0]] = proj.t;
-            out[[i, 1]] = proj.distance;
+            out[[i, 1]] = proj.value;
         }
         Ok(out.into_pyarray(py))
     }
