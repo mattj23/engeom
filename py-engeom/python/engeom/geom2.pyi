@@ -1626,6 +1626,17 @@ class CubicSpline2:
         """
         ...
 
+    def find_max_curvature(self) -> Tuple[float, float]:
+        """
+        Find the point of maximum curvature on the curve over the parameter range `[0, 1]`,
+        returned as a `(t, curvature)` tuple: the parameter `t` at which the maximum occurs and the
+        curvature magnitude there. For a fully degenerate curve whose curvature is undefined
+        everywhere, `t` is `0.0` and the curvature is NaN.
+
+        :return: a `(t, curvature)` tuple at the point of maximum curvature.
+        """
+        ...
+
     def second_derivative(self, t: float) -> Vector2:
         """
         Evaluate the second derivative of the curve at parameter `t`, returning the acceleration

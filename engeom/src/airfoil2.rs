@@ -111,6 +111,9 @@ pub enum AfEdgeSearch {
 
     /// Fit a full circular round joined to the surrounding surfaces by two tangent blending arcs.
     BlendedRound,
+
+    /// Fit a cubic spline to the edge and extract the edge as the point of maximum curvature.
+    SplineMaxK,
 }
 
 /// The geometric description of a fitted airfoil edge, returned alongside a canonical edge
@@ -135,6 +138,9 @@ pub enum AfEdgeGeometry {
 
     /// The edge is a full round joined to the rest of the airfoil by two tangent arcs
     BlendedRound(Point2, f32),
+
+    /// The edge is a smooth spline curve with a maximum curvature at the edge point
+    SplineMaxK(Point2, f32),
 }
 
 /// A fitted airfoil edge: a canonical edge location point together with a description of the

@@ -121,6 +121,7 @@ impl AfEdgeGeometry {
             InnerAfEdgeGeometry::RoundedSquare(_, _, _) => "rounded_square",
             InnerAfEdgeGeometry::FullRound(_, _) => "full_round",
             InnerAfEdgeGeometry::BlendedRound(_, _) => "blended_round",
+            InnerAfEdgeGeometry::SplineMaxK(_, _) => "spline_max_k",
         }
     }
 
@@ -199,6 +200,12 @@ impl AfEdgeGeometry {
             InnerAfEdgeGeometry::BlendedRound(p, r) => {
                 format!(
                     "AfEdgeGeometry(blended_round, center=({}, {}), r={})",
+                    p.x, p.y, r
+                )
+            }
+            InnerAfEdgeGeometry::SplineMaxK(p, r) => {
+                format!(
+                    "AfEdgeGeometry(spline_max_k, center=({}, {}), r={})",
                     p.x, p.y, r
                 )
             }

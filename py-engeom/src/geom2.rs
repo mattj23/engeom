@@ -1101,6 +1101,15 @@ impl CubicSpline2 {
         self.inner.curvature_circle(t).map(Circle2::from_inner)
     }
 
+    /// Find the point of maximum curvature on the curve over the parameter range `[0, 1]`,
+    /// returned as a `(t, curvature)` tuple: the parameter `t` at which the maximum occurs and the
+    /// curvature magnitude there. For a fully degenerate curve whose curvature is undefined
+    /// everywhere, `t` is `0.0` and the curvature is NaN.
+    fn find_max_curvature(&self) -> (f64, f64) {
+        let result = self.inner.find_max_curvature();
+        (result.t, result.value)
+    }
+
     fn second_derivative(&self, t: f64) -> Vector2 {
         Vector2::from_inner(self.inner.second_derivative(t))
     }

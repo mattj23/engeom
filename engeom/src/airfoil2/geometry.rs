@@ -139,6 +139,7 @@ fn run_edge_fit(
         AfEdgeSearch::RoundedSquare => fit_rounded_square_edge(input, circles, at_front),
         AfEdgeSearch::FullRound => fit_full_round_edge(input, circles, at_front),
         AfEdgeSearch::BlendedRound => fit_blended_round_edge(input, circles, at_front),
+        AfEdgeSearch::SplineMaxK => todo!(),
     }?;
 
     Ok((result.circles, result.edge))
