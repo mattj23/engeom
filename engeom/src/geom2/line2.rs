@@ -56,6 +56,37 @@ impl Line2 {
         Self::new(self.origin + n * delta_n, self.direction)
     }
 
+    /// Returns a copy of this line rotated about its own origin by `angle` radians. The origin is
+    /// unchanged and the direction is rotated counter-clockwise (a positive `angle` rotates from
+    /// the +x axis toward the +y axis); the direction's magnitude is preserved.
+    ///
+    /// # Arguments
+    ///
+    /// * `angle`: the rotation angle in radians, counter-clockwise positive.
+    ///
+    /// returns: Line2
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::{Line2, Vector2, Point2};
+    /// use approx::assert_relative_eq;
+    /// use std::f64::consts::FRAC_PI_2;
+    ///
+    /// let l0 = Line2::new(Point2::new(1.0, 2.0), Vector2::new(3.0, 0.0));
+    /// let l1 = l0.new_rotated(FRAC_PI_2);
+    ///
+    /// // The origin is fixed and the direction rotates 90 degrees CCW, keeping its length.
+    /// assert_relative_eq!(l1.origin, Point2::new(1.0, 2.0), epsilon = 1e-12);
+    /// assert_relative_eq!(l1.direction, Vector2::new(0.0, 3.0), epsilon = 1e-12);
+    /// ```
+    pub fn new_rotated(&self, angle: f64) -> Self {
+        let (s, c) = angle.sin_cos();
+        let d = self.direction;
+        let rotated = Vector2::new(c * d.x - s * d.y, s * d.x + c * d.y);
+        Self::new(self.origin, rotated)
+    }
+
     /// Returns the unit normal to this line: the direction rotated 90 degrees clockwise.
     /// By convention, this points to the "right" when traveling in the line's direction,
     /// consistent with outward normals on counter-clockwise-wound 2D geometry.
@@ -356,6 +387,27 @@ mod tests {
             -3.0,
             epsilon = 1e-12
         );
+    }
+
+    #[test]
+    fn line2_rotated_keeps_origin_and_rotates_direction() {
+        use std::f64::consts::FRAC_PI_2;
+        let line = Line2::new(Point2::new(1.0, 2.0), Vector2::new(3.0, 0.0));
+        let rotated = line.new_rotated(FRAC_PI_2);
+        // Origin is unchanged.
+        assert_relative_eq!(rotated.origin, Point2::new(1.0, 2.0), epsilon = 1e-12);
+        // Direction rotates 90 degrees CCW, preserving magnitude.
+        assert_relative_eq!(rotated.direction, Vector2::new(0.0, 3.0), epsilon = 1e-12);
+        assert_relative_eq!(rotated.direction.norm(), 3.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn line2_rotated_full_turn_is_identity() {
+        use std::f64::consts::TAU;
+        let line = Line2::new(Point2::new(-2.0, 1.5), Vector2::new(1.0, -2.0));
+        let rotated = line.new_rotated(TAU);
+        assert_relative_eq!(rotated.origin, line.origin, epsilon = 1e-12);
+        assert_relative_eq!(rotated.direction, line.direction, epsilon = 1e-12);
     }
 
     #[test]

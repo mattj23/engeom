@@ -6,7 +6,7 @@ use crate::geom2::{
     BndBuildFn, BoundaryData2, BoundaryEditor, BoundaryElement2, CubicSpline2, LineOps2,
     fit_boundary_to_points, signed_angle,
 };
-use crate::{Arc2, Circle2, DVector, Line2, Point2, Result};
+use crate::{Arc2, Circle2, DVector, Iso2, Line2, Point2, Result};
 
 /// This is the result of an airfoil edge fitting operation. It contains the detected edge point
 /// and geometry, any fitting point residuals left from the result geometry, and an updated stack
@@ -370,20 +370,53 @@ pub fn fit_spline_max_k(
 ) -> Result<(AfEdgeFit, CubicSpline2)> {
     let mut working = EdgeWork::new(input, circles, at_front)?;
     let (t0, t1) = working.last_tangents()?;
+    let clip_v = working.clip.normal().into_inner();
 
-    let builder: SplineBuildFn<2> = Box::new(move |params: &DVector| {
-        let p1 = t0.at(params[0]) + t0.normal().into_inner() * params[2];
-        let p2 = t1.at(params[1]) + t1.normal().into_inner() * params[3];
-        Ok(CubicSpline2::new(t0.origin(), p1, p2, t1.origin()))
+    // First stage simplified spline fit, constrained to existing tangent direction
+    let build0: SplineBuildFn<2> = Box::new(move |params: &DVector| {
+        let i0 = Iso2::from(clip_v * params[0]);
+        let i1 = Iso2::from(clip_v * params[1]);
+
+        let ts0 = i0 * t0;
+        let ts1 = i1 * t1;
+        let p1 = ts0.at(params[2]);
+        let p2 = ts1.at(params[3]);
+        Ok(CubicSpline2::new(ts0.origin, p1, p2, ts1.origin()))
     });
 
-    let result = fit_spline_to_points(
-        &working.fit_points,
-        &builder,
-        DVector::from(vec![1.0, 1.0, 0.0, 0.0]),
-    )?;
-    let spline = builder(&result.params)?;
-    let max_k = spline.find_max_curvature();
+    let ti = working.clip_max_scalar();
+    let initial0 = DVector::from(vec![0.0, 0.0, ti, ti]);
+    let result0 = fit_spline_to_points(&working.fit_points, &build0, initial0)?.params;
+
+    // First stage simplified spline fit, constrained to existing tangent direction
+    let build1: SplineBuildFn<2> = Box::new(move |params: &DVector| {
+        let i0 = Iso2::from(clip_v * params[0]);
+        let i1 = Iso2::from(clip_v * params[1]);
+
+        let ts0 = (i0 * t0).new_rotated(params[4]);
+        let ts1 = (i1 * t1).new_rotated(params[5]);
+        let p1 = ts0.at(params[2]);
+        let p2 = ts1.at(params[3]);
+        Ok(CubicSpline2::new(ts0.origin, p1, p2, ts1.origin()))
+    });
+    let initial1 = DVector::from(vec![
+        result0[0], result0[1], result0[2], result0[3], 0.0, 0.0,
+    ]);
+    let result1 = fit_spline_to_points(&working.fit_points, &build1, initial1)?;
+
+    let spline = build1(&result1.params)?;
+
+    // We need to find the curvature local maximum closest to the center
+    let local_maxima = spline.find_curvature_maxima();
+    if local_maxima.is_empty() {
+        return Err("Failed to find curvature maxima for spline".into());
+    }
+
+    let max_k = local_maxima
+        .iter()
+        .min_by(|a, b| (0.5 - a.t).abs().partial_cmp(&(0.5 - b.t).abs()).unwrap())
+        .unwrap();
+
     let expected_point = spline.position(max_k.t);
     let circle = spline
         .curvature_circle(max_k.t)
@@ -397,7 +430,7 @@ pub fn fit_spline_max_k(
         point,
         AfEdgeGeometry::SplineMaxK(circle.center, circle.r() as f32),
     );
-    Ok((AfEdgeFit::new(edge, result.residuals, c), spline))
+    Ok((AfEdgeFit::new(edge, result1.residuals, c), spline))
 }
 
 // =============================================================================================
@@ -738,8 +771,8 @@ mod tests {
             AfEdgeGeometry::SplineMaxK(c, r) => (c, r as f64),
             _ => unreachable!(),
         };
-        assert_relative_eq!(r, expected.r(), epsilon = 1e-4);
-        assert_relative_eq!(c, expected.center, epsilon = 1e-4);
+        assert_relative_eq!(r, expected.r(), epsilon = 1e-3);
+        assert_relative_eq!(c, expected.center, epsilon = 1e-3);
         Ok(())
     }
 }

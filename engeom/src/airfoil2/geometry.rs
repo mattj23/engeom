@@ -6,7 +6,7 @@
 use crate::airfoil2::camber::extract_inscribed_circles;
 use crate::airfoil2::edges::{
     AfEdgeFit, fit_blended_round_edge, fit_full_round_edge, fit_rounded_square_edge,
-    fit_sharp_edge, fit_square_edge,
+    fit_sharp_edge, fit_spline_max_k, fit_square_edge,
 };
 use crate::airfoil2::inscribed::Inscribed;
 use crate::airfoil2::{
@@ -139,7 +139,7 @@ fn run_edge_fit(
         AfEdgeSearch::RoundedSquare => fit_rounded_square_edge(input, circles, at_front),
         AfEdgeSearch::FullRound => fit_full_round_edge(input, circles, at_front),
         AfEdgeSearch::BlendedRound => fit_blended_round_edge(input, circles, at_front),
-        AfEdgeSearch::SplineMaxK => todo!(),
+        AfEdgeSearch::SplineMaxK => fit_spline_max_k(input, circles, at_front).map(|r| r.0),
     }?;
 
     Ok((result.circles, result.edge))
@@ -151,6 +151,7 @@ fn fit_auto_edge(
     at_front: bool,
 ) -> Result<AfEdgeFit> {
     let mut candidates = Vec::new();
+    // TODO: there should be occam's razor based rules here for certain groupings
 
     if let Ok(sharp) = fit_sharp_edge(input, circles.clone(), at_front) {
         candidates.push(sharp);
@@ -167,6 +168,10 @@ fn fit_auto_edge(
     if let Ok(blended_round) = fit_blended_round_edge(input, circles.clone(), at_front) {
         candidates.push(blended_round);
     }
+    if let Ok(spline_max) = fit_spline_max_k(input, circles.clone(), at_front) {
+        candidates.push(spline_max.0);
+    }
+
     if candidates.len() == 0 {
         return Err("No edge fits succeeded for auto edge search".into());
     }
@@ -241,6 +246,21 @@ mod tests {
         let (lower, upper) = split_sides(leading, trailing, &reversed, &oriented)?;
 
         verify_upper_lower(&upper, &lower, &expected)?;
+        Ok(())
+    }
+
+    #[test]
+    fn auto_edges() -> Result<()> {
+        let curve = airfoil_curve();
+        let input = SectionInput::new(&curve, 1e-3);
+
+        let circles = extract_inscribed_circles(&input)?;
+        let circles = OrientFwdAft::TmaxFwd.apply(circles)?;
+        let circles = OrientUpperLower::Curvature.apply(circles)?;
+
+        let result = fit_auto_edge(&input, circles, true)?;
+        let result = fit_auto_edge(&input, result.circles, false)?;
+
         Ok(())
     }
 }
