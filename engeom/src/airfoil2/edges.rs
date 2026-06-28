@@ -397,6 +397,13 @@ pub fn fit_spline_max_k(
         let Ok(fit) = spline_fit(&working.fit_points, &clip, &t0, &t1, &stack) else {
             break;
         };
+
+        // In order for this to be valid, the arc length of the spline must be at least 1/3 of the
+        // arc length of the minimum circle
+        if fit.spline.arc_length() < 2.0 * PI * fit.circle.r() / 3.0 {
+            break;
+        }
+
         let this_circle = fit.circle.clone();
         let last_circle = last_fit.circle.clone();
         fittings.push(fit);

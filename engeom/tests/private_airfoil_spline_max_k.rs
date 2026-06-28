@@ -1,7 +1,8 @@
-// #![cfg(feature = "private_tests")]
+#![cfg(feature = "private_tests")]
 
 mod common;
 use crate::common::PathPair;
+use approx::assert_relative_eq;
 use engeom::airfoil2::camber::extract_inscribed_circles;
 use engeom::airfoil2::edges::fit_spline_max_k;
 use engeom::airfoil2::{AfEdgeGeometry, OrientFwdAft, OrientUpperLower, SectionInput};
@@ -26,14 +27,19 @@ fn private_airfoil_spline_max_k() -> Result<()> {
 }
 
 fn run_test_case(case: &TestCase, dir: &PathPair) -> Result<()> {
-    // TODO: probably needs to have a subfolder and to clear it before starting
+    // Delete the subfolder if it exists
+    let sub_folder = dir.result().join(&case.name);
+    if sub_folder.exists() {
+        std::fs::remove_dir_all(&sub_folder)?;
+    }
+    std::fs::create_dir_all(&sub_folder)?;
 
     for (i, section) in case.items.iter().enumerate() {
         // Observability output
-        let output_root = format!("{}-sec{:03}", case.name, i);
+        let output_root = format!("sec-{:03}", i);
         let curve = section.curve()?;
         write_tc_curve2_file(
-            &dir.result().join(format!("{}.curve2", output_root)),
+            &sub_folder.join(format!("{}.tccurve2", output_root)),
             &curve,
             1e-10,
         )?;
@@ -52,15 +58,28 @@ fn run_test_case(case: &TestCase, dir: &PathPair) -> Result<()> {
             _ => panic!("Unexpected edge geometry"),
         };
 
+        // TODO: Figure out how to defer these checks until later
+        // if let Some(exp_r) = section.le_r {
+        //     assert_relative_eq!(radius, exp_r, epsilon = 1e-3);
+        // }
+        // if let Some(exp_x) = section.le_x {
+        //     assert_relative_eq!(fit_result.edge.point.x, exp_x, epsilon = 1e-3);
+        // }
+        // if let Some(exp_y) = section.le_y {
+        //     assert_relative_eq!(fit_result.edge.point.y, exp_y, epsilon = 1e-3);
+        // }
+
         let output = Output {
             spline,
             center,
             radius,
-            expected_r: section.le_r.unwrap(),
-            expected_x: section.le_x.unwrap(),
+            edge_point: fit_result.edge.point,
+            exp_r: section.le_r,
+            exp_x: section.le_x,
+            exp_y: section.le_y,
         };
 
-        let output_file = &dir.result().join(format!("{}.json", output_root));
+        let output_file = &sub_folder.join(format!("{}.json", output_root));
         serde_json::to_writer_pretty(std::fs::File::create(output_file)?, &output)?;
     }
 
@@ -72,8 +91,10 @@ struct Output {
     spline: CubicSpline2,
     center: Point2,
     radius: f64,
-    expected_r: f64,
-    expected_x: f64,
+    edge_point: Point2,
+    exp_r: Option<f64>,
+    exp_x: Option<f64>,
+    exp_y: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

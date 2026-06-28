@@ -702,6 +702,7 @@ impl<const D: usize> CubicSpline<D> {
     /// assert_relative_eq!(hi, Point2::new(3.0, 0.75));
     /// ```
     pub fn compute_bounds(&self) -> (Point<f64, D>, Point<f64, D>) {
+        // TODO: unify this with whatever ends up happening with AABBs
         let mut lo = SVector::<f64, D>::zeros();
         let mut hi = SVector::<f64, D>::zeros();
         for d in 0..D {
@@ -732,6 +733,83 @@ impl<const D: usize> CubicSpline<D> {
         }
 
         (Point::from(lo), Point::from(hi))
+    }
+
+    /// Returns the arc length of the curve over the parameter range `[t0, t1]`, computed by
+    /// numerical integration of the speed `|B'(t)|` with composite Gauss-Legendre quadrature.
+    ///
+    /// The arc length of a parametric curve is the integral of its speed:
+    ///
+    /// `L = ∫ |B'(t)| dt`
+    ///
+    /// For a cubic Bezier the speed is the square root of a quartic polynomial in `t`, which has
+    /// no elementary antiderivative, so the integral is evaluated numerically rather than in
+    /// closed form. The interval `[t0, t1]` is split into [`ARC_LENGTH_PANELS`] equal panels and
+    /// each panel is integrated with the fixed 10-point Gauss-Legendre rule in
+    /// [`GAUSS_LEGENDRE_10`]. A 10-point rule is exact for polynomials up to degree 19, so for the
+    /// smooth speed function of a single cubic segment the per-panel error is negligible and the
+    /// result is accurate to near machine precision.
+    ///
+    /// The parameters are not restricted to `[0, 1]`; a wider range integrates over the
+    /// extrapolated polynomial. The integral is signed by direction, so when `t1 < t0` the result
+    /// is the negative of the length traversed; pass the parameters in increasing order for a
+    /// conventional non-negative length.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::Point2;
+    /// use engeom::common::cubic_spline::CubicSpline;
+    /// use approx::assert_relative_eq;
+    ///
+    /// // A straight cubic spanning (0,0) to (3,0): its arc length is just the chord length.
+    /// let line = CubicSpline::new(
+    ///     Point2::new(0.0, 0.0),
+    ///     Point2::new(1.0, 0.0),
+    ///     Point2::new(2.0, 0.0),
+    ///     Point2::new(3.0, 0.0),
+    /// );
+    /// assert_relative_eq!(line.arc_length_between(0.0, 1.0), 3.0, epsilon = 1e-9);
+    /// ```
+    pub fn arc_length_between(&self, t0: f64, t1: f64) -> f64 {
+        let h = (t1 - t0) / ARC_LENGTH_PANELS as f64;
+        let mut total = 0.0;
+        for i in 0..ARC_LENGTH_PANELS {
+            let a = t0 + i as f64 * h;
+            let mid = a + 0.5 * h;
+            let half = 0.5 * h;
+            let mut panel = 0.0;
+            for &(x, w) in &GAUSS_LEGENDRE_10 {
+                let t = mid + half * x;
+                panel += w * self.derivative(t).norm();
+            }
+            total += panel * half;
+        }
+        total
+    }
+
+    /// Returns the total arc length of the curve over the parameter range `[0, 1]`.
+    ///
+    /// This is a convenience wrapper over [`arc_length_between`](Self::arc_length_between) for the
+    /// full curve; see that method for the integration details.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::Point2;
+    /// use engeom::common::cubic_spline::CubicSpline;
+    /// use approx::assert_relative_eq;
+    ///
+    /// let line = CubicSpline::new(
+    ///     Point2::new(0.0, 0.0),
+    ///     Point2::new(1.0, 0.0),
+    ///     Point2::new(2.0, 0.0),
+    ///     Point2::new(3.0, 0.0),
+    /// );
+    /// assert_relative_eq!(line.arc_length(), 3.0, epsilon = 1e-9);
+    /// ```
+    pub fn arc_length(&self) -> f64 {
+        self.arc_length_between(0.0, 1.0)
     }
 
     fn flatten_into(&self, tolerance: f64, depth_remaining: u32, out: &mut Vec<Point<f64, D>>) {
@@ -816,6 +894,27 @@ impl<const D: usize> CubicSpline<D> {
         CubicSplineQueries::new(self)
     }
 }
+
+/// Number of equal panels the arc-length integral is split into before the Gauss-Legendre rule is
+/// applied to each. Composing several panels keeps the per-panel error of the fixed-order rule
+/// negligible even for the curviest single cubic segments.
+const ARC_LENGTH_PANELS: usize = 16;
+
+/// Nodes and weights of the 10-point Gauss-Legendre quadrature rule on the reference interval
+/// `[-1, 1]`, stored as `(node, weight)` pairs. The rule integrates polynomials up to degree 19
+/// exactly; used by [`CubicSpline::arc_length_between`] to integrate the curve's speed.
+const GAUSS_LEGENDRE_10: [(f64, f64); 10] = [
+    (-0.973_906_528_517_171_7, 0.066_671_344_308_688_1),
+    (-0.865_063_366_688_984_5, 0.149_451_349_150_580_6),
+    (-0.679_409_568_299_024_4, 0.219_086_362_515_982_0),
+    (-0.433_395_394_129_247_2, 0.269_266_719_309_996_3),
+    (-0.148_874_338_981_631_2, 0.295_524_224_714_752_9),
+    (0.148_874_338_981_631_2, 0.295_524_224_714_752_9),
+    (0.433_395_394_129_247_2, 0.269_266_719_309_996_3),
+    (0.679_409_568_299_024_4, 0.219_086_362_515_982_0),
+    (0.865_063_366_688_984_5, 0.149_451_349_150_580_6),
+    (0.973_906_528_517_171_7, 0.066_671_344_308_688_1),
+];
 
 /// Golden-section search for the location of the maximum of `f` over the bracket `[a, b]`,
 /// assuming a single maximum within it. Returns the parameter at which the maximum is attained.
@@ -1611,6 +1710,74 @@ mod tests {
         assert!(c.try_split(1.1).is_none());
         assert!(c.try_split(f64::NAN).is_none());
         assert!(c.try_split(0.5).is_some());
+    }
+
+    /// Reference arc length via a dense composite midpoint integration of the speed, used to
+    /// cross-check the Gauss-Legendre quadrature.
+    fn arc_length_reference<const D: usize>(c: &CubicSpline<D>, t0: f64, t1: f64) -> f64 {
+        const N: usize = 2_000_000;
+        let h = (t1 - t0) / N as f64;
+        let mut total = 0.0;
+        for i in 0..N {
+            let t = t0 + (i as f64 + 0.5) * h;
+            total += c.derivative(t).norm();
+        }
+        total * h
+    }
+
+    #[test]
+    fn arc_length_straight_line_is_chord_length() {
+        let c = CubicSpline::new(
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(3.0, 0.0, 0.0),
+        );
+        assert_relative_eq!(c.arc_length(), 3.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn arc_length_matches_dense_integration() {
+        let c = sample_2d();
+        let reference = arc_length_reference(&c, 0.0, 1.0);
+        assert_relative_eq!(c.arc_length(), reference, epsilon = 1e-9);
+    }
+
+    #[test]
+    fn arc_length_between_is_additive() {
+        let c = sample_2d();
+        let whole = c.arc_length();
+        let split = c.arc_length_between(0.0, 0.37) + c.arc_length_between(0.37, 1.0);
+        assert_relative_eq!(whole, split, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn arc_length_between_subrange_matches_reference() {
+        let c = sample_2d();
+        let reference = arc_length_reference(&c, 0.2, 0.8);
+        assert_relative_eq!(c.arc_length_between(0.2, 0.8), reference, epsilon = 1e-9);
+    }
+
+    #[test]
+    fn arc_length_between_reversed_is_negated() {
+        let c = sample_2d();
+        assert_relative_eq!(
+            c.arc_length_between(0.8, 0.2),
+            -c.arc_length_between(0.2, 0.8),
+            epsilon = 1e-12
+        );
+    }
+
+    #[test]
+    fn arc_length_matches_fine_polyline() {
+        // The arc length must agree with the length of a finely subdivided polyline approximation.
+        let c = sample_2d();
+        let pts = c.polyline(1e-7);
+        let poly_len: f64 = pts
+            .windows(2)
+            .map(|w| (w[1].coords - w[0].coords).norm())
+            .sum();
+        assert_relative_eq!(c.arc_length(), poly_len, epsilon = 1e-5);
     }
 
     #[test]
