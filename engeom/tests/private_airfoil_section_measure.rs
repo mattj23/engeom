@@ -1,4 +1,4 @@
-// #![cfg(feature = "private_tests")]
+#![cfg(feature = "private_tests")]
 
 mod common;
 use crate::common::PathPair;
@@ -10,10 +10,10 @@ use engeom::{Curve2, Point2, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-const TEST_DATA_FOLDER: &str = "airfoil-section-measure";
+const TEST_DATA_FOLDER: &str = "private-airfoil-section-measure";
 
 #[test]
-fn airfoil_section_measure_private() -> Result<()> {
+fn private_airfoil_section_measure() -> Result<()> {
     let test_dir = get_test_dir()?;
     let cases = get_cases(&test_dir.data())?;
 
@@ -25,16 +25,23 @@ fn airfoil_section_measure_private() -> Result<()> {
 }
 
 fn run_test_case(case: &TestCase, dir: &PathPair) -> Result<()> {
-    // TODO: probably needs to have a subfolder and to clear it before starting
+    // TODO: This needs some thought about how to unify the measurements and tolerances
+
+    // Delete the subfolder if it exists
+    let sub_folder = dir.result().join(&case.name);
+    if sub_folder.exists() {
+        std::fs::remove_dir_all(&sub_folder)?;
+    }
+    std::fs::create_dir_all(&sub_folder)?;
 
     for (i, section) in case.items.iter().enumerate() {
         // Observability output
-        let output_root = format!("{}-sec{:03}", case.name, i);
+        let output_root = format!("sec-{:03}", i);
         let curve = section.curve()?;
         write_tc_curve2_file(
-            &dir.result().join(format!("{}.curve2", output_root)),
+            &sub_folder.join(format!("{}.tccurve2", output_root)),
             &curve,
-            1e-6,
+            1e-10,
         )?;
 
         // Airfoil nominal analysis
@@ -54,6 +61,9 @@ fn run_test_case(case: &TestCase, dir: &PathPair) -> Result<()> {
 
     Ok(())
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Output {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ThicknessGage {

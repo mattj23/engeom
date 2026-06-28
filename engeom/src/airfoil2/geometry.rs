@@ -190,18 +190,44 @@ fn fit_auto_edge(
         candidates.push(FitCandidate::new(2, spline_max.0));
     }
 
-    if candidates.len() == 0 {
-        return Err("No edge fits succeeded for auto edge search".into());
+    // Drop any fit whose quality metric is not finite (e.g. an empty residual set yields a NaN
+    // mean), since it can neither be ranked nor meaningfully compared against other tiers.
+    candidates.retain(|c| c.fit.avg_residual.is_finite());
+    if candidates.is_empty() {
+        return Err("No edge fits with a valid residual for auto edge search".into());
     }
 
-    candidates.sort_by(|a, b| {
-        a.fit
-            .avg_residual
-            .partial_cmp(&b.fit.avg_residual)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    // Walk the complexity tiers from lowest to highest. A higher-complexity tier is only adopted
+    // when its best residual improves on the best residual achieved by *any* lower-complexity tier
+    // by at least `COMPLEXITY_TOL` (a relative fraction), so that added complexity has to pay for
+    // itself. `best_lower` accumulates the best residual seen strictly below the current tier and
+    // is independent of which tier ended up selected.
+    let max_complexity = candidates.iter().map(|c| c.complexity).max().unwrap();
 
-    todo!("Implement the complexity based selection")
+    let mut selected: Option<&FitCandidate> = None;
+    let mut best_lower = f64::INFINITY;
+    for tier in 0..=max_complexity {
+        let best_in_tier = candidates
+            .iter()
+            .filter(|c| c.complexity == tier)
+            .min_by(|a, b| a.fit.avg_residual.total_cmp(&b.fit.avg_residual));
+
+        if let Some(best) = best_in_tier {
+            // The first (lowest) tier present is always taken as the baseline; later tiers must
+            // beat the best lower residual by the tolerance. Note that a lower tier achieving a
+            // residual of exactly zero locks the selection, since nothing can beat zero by a
+            // relative margin.
+            if selected.is_none() || best.fit.avg_residual < best_lower * (1.0 - COMPLEXITY_TOL) {
+                selected = Some(best);
+            }
+            best_lower = best_lower.min(best.fit.avg_residual);
+        }
+    }
+
+    Ok(selected
+        .expect("non-empty candidates guarantees a selection")
+        .fit
+        .clone())
 }
 
 #[cfg(test)]
