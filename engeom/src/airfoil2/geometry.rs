@@ -145,31 +145,49 @@ fn run_edge_fit(
     Ok((result.circles, result.edge))
 }
 
+struct FitCandidate {
+    complexity: usize,
+    fit: AfEdgeFit,
+}
+
+impl FitCandidate {
+    fn new(complexity: usize, fit: AfEdgeFit) -> Self {
+        Self { complexity, fit }
+    }
+}
+
 fn fit_auto_edge(
     input: &SectionInput,
     circles: Vec<Inscribed>,
     at_front: bool,
 ) -> Result<AfEdgeFit> {
-    let mut candidates = Vec::new();
-    // TODO: there should be occam's razor based rules here for certain groupings
+    // Candidates have a complexity score based on the type of edge fit, with the goal being to
+    // use the lowest complexity method which adequately captures the geometry. For a method to be
+    // selected, it must have an average residual at least some tolerance better than the best
+    // method with a lower complexity score.
+    const COMPLEXITY_TOL: f64 = 0.05; // Starting with 5%
 
+    let mut candidates = Vec::new();
     if let Ok(sharp) = fit_sharp_edge(input, circles.clone(), at_front) {
-        candidates.push(sharp);
+        candidates.push(FitCandidate::new(0, sharp));
     }
     if let Ok(square) = fit_square_edge(input, circles.clone(), at_front) {
-        candidates.push(square);
-    }
-    if let Ok(rounded_square) = fit_rounded_square_edge(input, circles.clone(), at_front) {
-        candidates.push(rounded_square);
+        candidates.push(FitCandidate::new(0, square));
     }
     if let Ok(full_round) = fit_full_round_edge(input, circles.clone(), at_front) {
-        candidates.push(full_round);
+        candidates.push(FitCandidate::new(0, full_round));
     }
+
+    if let Ok(rounded_square) = fit_rounded_square_edge(input, circles.clone(), at_front) {
+        candidates.push(FitCandidate::new(1, rounded_square));
+    }
+
     if let Ok(blended_round) = fit_blended_round_edge(input, circles.clone(), at_front) {
-        candidates.push(blended_round);
+        candidates.push(FitCandidate::new(1, blended_round));
     }
+
     if let Ok(spline_max) = fit_spline_max_k(input, circles.clone(), at_front) {
-        candidates.push(spline_max.0);
+        candidates.push(FitCandidate::new(2, spline_max.0));
     }
 
     if candidates.len() == 0 {
@@ -177,11 +195,13 @@ fn fit_auto_edge(
     }
 
     candidates.sort_by(|a, b| {
-        a.avg_residual
-            .partial_cmp(&b.avg_residual)
+        a.fit
+            .avg_residual
+            .partial_cmp(&b.fit.avg_residual)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
-    Ok(candidates[0].clone())
+
+    todo!("Implement the complexity based selection")
 }
 
 #[cfg(test)]

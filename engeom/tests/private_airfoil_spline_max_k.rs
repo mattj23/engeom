@@ -2,18 +2,19 @@
 
 mod common;
 use crate::common::PathPair;
-use approx::assert_relative_eq;
-use engeom::airfoil2::{AfEdgeSearch, AfGeometry, OrientFwdAft, OrientUpperLower};
-use engeom::common::dist;
+use engeom::airfoil2::camber::extract_inscribed_circles;
+use engeom::airfoil2::edges::fit_spline_max_k;
+use engeom::airfoil2::{AfEdgeGeometry, OrientFwdAft, OrientUpperLower, SectionInput};
+use engeom::geom2::CubicSpline2;
 use engeom::io::write_tc_curve2_file;
-use engeom::{Curve2, Point2, Result};
+use engeom::{Curve2, Point2, Result, Vector2};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-const TEST_DATA_FOLDER: &str = "airfoil-section-measure";
+const TEST_DATA_FOLDER: &str = "private-airfoil-spline-max-k";
 
 #[test]
-fn airfoil_section_measure_private() -> Result<()> {
+fn private_airfoil_spline_max_k() -> Result<()> {
     let test_dir = get_test_dir()?;
     let cases = get_cases(&test_dir.data())?;
 
@@ -34,47 +35,56 @@ fn run_test_case(case: &TestCase, dir: &PathPair) -> Result<()> {
         write_tc_curve2_file(
             &dir.result().join(format!("{}.curve2", output_root)),
             &curve,
-            1e-6,
+            1e-10,
         )?;
 
-        // Airfoil nominal analysis
-        let nominal = AfGeometry::try_from_geometric_analysis(
-            &curve,
-            1e-3,
-            OrientFwdAft::TmaxFwd,
-            OrientUpperLower::Curvature,
-            AfEdgeSearch::Auto,
-            AfEdgeSearch::Auto,
-        )?;
+        let input = SectionInput::new(&curve, 1e-3);
+        let unoriented = extract_inscribed_circles(&input)?;
 
-        // Chord dimension
-        let chord_distance = dist(&nominal.camber.at_front(), &nominal.camber.at_back());
-        assert_relative_eq!(chord_distance, section.chord, epsilon = 5e-2);
+        // Do a forced orientation
+        let fwd_oriented = OrientFwdAft::Fwd(-Vector2::x()).apply(unoriented)?;
+        let oriented = OrientUpperLower::Upper(Vector2::y()).apply(fwd_oriented)?;
+
+        // Fit the spline max k
+        let (fit_result, spline) = fit_spline_max_k(&input, oriented, true)?;
+        let (center, radius) = match fit_result.edge.geometry {
+            AfEdgeGeometry::SplineMaxK(c, r) => (c, r as f64),
+            _ => panic!("Unexpected edge geometry"),
+        };
+
+        let output = Output {
+            spline,
+            center,
+            radius,
+            expected_r: section.le_r.unwrap(),
+            expected_x: section.le_x.unwrap(),
+        };
+
+        let output_file = &dir.result().join(format!("{}.json", output_root));
+        serde_json::to_writer_pretty(std::fs::File::create(output_file)?, &output)?;
+        todo!()
     }
 
     Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct ThicknessGage {
-    x: f64,
-    t: f64,
+struct Output {
+    spline: CubicSpline2,
+    center: Point2,
+    radius: f64,
+    expected_r: f64,
+    expected_x: f64,
 }
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct SectionItem {
     xs: Vec<f64>,
     ys: Vec<f64>,
-    chord: f64,
-    chord_angle: f64,
-    t_max: f64,
-    t_gages: Vec<ThicknessGage>,
     le_r: Option<f64>,
-    te_r: Option<f64>,
     le_x: Option<f64>,
     le_y: Option<f64>,
-    te_x: Option<f64>,
-    te_y: Option<f64>,
 }
 
 impl SectionItem {

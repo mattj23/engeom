@@ -96,6 +96,12 @@ impl<const D: usize> Line<D> {
         (pt - self.closest_point(&pt)).norm()
     }
 
+    pub fn new_slerp_to(&self, other: &Line<D>, t: f64) -> Self {
+        let new_direction = self.direction.lerp(&other.direction, t);
+        let shift = other.origin - self.origin;
+        Self::new(self.origin + shift * t, new_direction)
+    }
+
     /// Returns a new line with both origin and direction transformed by the given isometry.
     pub fn new_transformed_by<R>(&self, iso: &Isometry<f64, R, D>) -> Self
     where

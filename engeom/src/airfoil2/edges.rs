@@ -1,3 +1,4 @@
+use std::f64::consts::PI;
 use crate::airfoil2::inscribed::{Inscribed, InscribedVec};
 use crate::airfoil2::{AfEdge, AfEdgeGeometry, SectionInput};
 use crate::common::cubic_spline::{SplineBuildFn, fit_spline_to_points};
@@ -6,7 +7,7 @@ use crate::geom2::{
     BndBuildFn, BoundaryData2, BoundaryEditor, BoundaryElement2, CubicSpline2, LineOps2,
     fit_boundary_to_points, signed_angle,
 };
-use crate::{Arc2, Circle2, DVector, Iso2, Line2, Point2, Result};
+use crate::{Arc2, Circle2, DVector, Iso2, Line2, Point2, Result, Vector2};
 
 /// This is the result of an airfoil edge fitting operation. It contains the detected edge point
 /// and geometry, any fitting point residuals left from the result geometry, and an updated stack
@@ -368,9 +369,75 @@ pub fn fit_spline_max_k(
     circles: Vec<Inscribed>,
     at_front: bool,
 ) -> Result<(AfEdgeFit, CubicSpline2)> {
-    let mut working = EdgeWork::new(input, circles, at_front)?;
+    let working = EdgeWork::new(input, circles, at_front)?;
     let (t0, t1) = working.last_tangents()?;
-    let clip_v = working.clip.normal().into_inner();
+    let clip = working.clip.clone();
+
+    let mut stack = InscribedVec::new(vec![working.last()?.clone()]);
+
+    // Get the first attempt at a split
+    let fit0 = spline_fit(&working.fit_points, &clip, &t0, &t1)?;
+
+    // Find the halfway point and get a new inscribed circle
+    let l = half_line(&stack.last().unwrap(), &clip.direction, &fit0);
+    stack.refine_and_push(input.try_inscribed(&l).unwrap(), input);
+
+    let clip = stack.end_clip_line()?;
+    let (t0, t1) = stack.last_tangents()?;
+    let fit1 = spline_fit(&working.fit_points, &clip, &t0, &t1)?;
+
+    // refine_from_edge_circle(&mut working, input, &circle)?;
+
+    let expected_point = fit1.spline.position(fit1.t_max_k);
+    let point = end_intersection(input, &fit1.circle.center, &expected_point)?;
+
+    let c = working.take_circles();
+    let edge = AfEdge::new(
+        point,
+        AfEdgeGeometry::SplineMaxK(fit1.circle.center, fit1.circle.r() as f32),
+    );
+    Ok((AfEdgeFit::new(edge, fit1.residuals, c), fit1.spline))
+}
+
+fn half_line(inscribed: &Inscribed, clip_dir: &Vector2, last_result: &SfResult) -> Line2 {
+    let l0 = Line2::new(inscribed.center(), *clip_dir);
+    let l1 = last_result.end_line();
+    let l = l0.new_slerp_to(&l1, 0.5).new_rotated(PI / 2.0);
+    if l.direction.dot(&inscribed.contact_dir()) < 0.0 {
+        l.new_reversed()
+    } else {
+        l
+    }
+}
+
+struct SfResult {
+    spline: CubicSpline2,
+    t_max_k: f64,
+    circle: Circle2,
+    residuals: DVector,
+}
+
+impl SfResult {
+    fn end_line(&self) -> Line2 {
+        Line2::new_normalize(self.circle.center, self.spline.position(self.t_max_k) - self.circle.center)
+    }
+}
+
+fn spline_fit(all_points: &[Point2], clip: &Line2, t0: &Line2, t1: &Line2) -> Result<SfResult> {
+    let clip_v = clip.normal().into_inner();
+    let fit_points = all_points
+        .iter()
+        .filter_map(|p| {
+            if clip.scalar_project(p) > 0.0 {
+                Some(*p)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let t0 = t0.clone();
+    let t1 = t1.clone();
 
     // First stage simplified spline fit, constrained to existing tangent direction
     let build0: SplineBuildFn<2> = Box::new(move |params: &DVector| {
@@ -384,9 +451,13 @@ pub fn fit_spline_max_k(
         Ok(CubicSpline2::new(ts0.origin, p1, p2, ts1.origin()))
     });
 
-    let ti = working.clip_max_scalar();
+    let ti = fit_points
+        .iter()
+        .map(|p| clip.scalar_project(p))
+        .fold(0.0f64, |a, b| a.max(b));
+
     let initial0 = DVector::from(vec![0.0, 0.0, ti, ti]);
-    let result0 = fit_spline_to_points(&working.fit_points, &build0, initial0)?.params;
+    let result0 = fit_spline_to_points(&fit_points, &build0, initial0)?.params;
 
     // First stage simplified spline fit, constrained to existing tangent direction
     let build1: SplineBuildFn<2> = Box::new(move |params: &DVector| {
@@ -402,7 +473,7 @@ pub fn fit_spline_max_k(
     let initial1 = DVector::from(vec![
         result0[0], result0[1], result0[2], result0[3], 0.0, 0.0,
     ]);
-    let result1 = fit_spline_to_points(&working.fit_points, &build1, initial1)?;
+    let result1 = fit_spline_to_points(&fit_points, &build1, initial1)?;
 
     let spline = build1(&result1.params)?;
 
@@ -417,20 +488,16 @@ pub fn fit_spline_max_k(
         .min_by(|a, b| (0.5 - a.t).abs().partial_cmp(&(0.5 - b.t).abs()).unwrap())
         .unwrap();
 
-    let expected_point = spline.position(max_k.t);
     let circle = spline
         .curvature_circle(max_k.t)
         .ok_or("Failed to find curvature circle at maximum curvature")?;
 
-    refine_from_edge_circle(&mut working, input, &circle)?;
-    let point = end_intersection(input, &circle.center, &expected_point)?;
-
-    let c = working.take_circles();
-    let edge = AfEdge::new(
-        point,
-        AfEdgeGeometry::SplineMaxK(circle.center, circle.r() as f32),
-    );
-    Ok((AfEdgeFit::new(edge, result1.residuals, c), spline))
+    Ok(SfResult {
+        spline,
+        t_max_k: max_k.t,
+        circle,
+        residuals: result1.residuals,
+    })
 }
 
 // =============================================================================================
@@ -474,7 +541,7 @@ fn refine_from_edge_circle(
     } else {
         fake.camber_point()
     })
-    .new_shifted(-edge_circle.r() * 0.1);
+        .new_shifted(-edge_circle.r() * 0.1);
 
     let test_line = Line2::new(fake_camber_line.point, fake.contact_dir());
     let test_line = if test_line.direction.dot(&working.last()?.contact_dir()) < 0.0 {
@@ -542,23 +609,7 @@ impl EdgeWork {
     /// Get the tangent lines at the contact points `p0` and `p1` (in that order) of the last
     /// inscribed circle
     fn last_tangents(&self) -> Result<(Line2, Line2)> {
-        let c = self.last()?.c.clone();
-        let (p0, p1) = self.last_points()?;
-        let t0 = c.at_closest_to_point(&p0).direction_line();
-        let t1 = c.at_closest_to_point(&p1).direction_line();
-
-        Ok((
-            if t0.direction.dot(&self.clip.direction) < 0.0 {
-                t0.new_reversed()
-            } else {
-                t0
-            },
-            if t1.direction.dot(&self.clip.direction) < 0.0 {
-                t1.new_reversed()
-            } else {
-                t1
-            },
-        ))
+        self.stack.last_tangents()
     }
 
     /// The maximum scalar projection of the fit points on the clipping line

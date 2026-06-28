@@ -149,6 +149,8 @@ impl InscribedVec {
         if self.items.is_empty() {
             self.items.push(item);
         } else {
+            // Do we need to orient here?
+
             let mut stack = vec![item];
             while let Some(top) = stack.pop() {
                 let last = self.items.last().unwrap().clone();
@@ -248,6 +250,31 @@ impl InscribedVec {
         } else {
             line
         })
+    }
+
+    /// Get the tangent lines at the contact points `p0` and `p1` (in that order) of the last
+    /// inscribed circle
+    pub fn last_tangents(&self) -> Result<(Line2, Line2)> {
+        let last = self
+            .last()
+            .ok_or("Cannot get last inscribed circle from empty collection.".to_string())?;
+        let c = last.c;
+        let t0 = c.at_closest_to_point(&last.p0).direction_line();
+        let t1 = c.at_closest_to_point(&last.p1).direction_line();
+        let clip = self.end_clip_line()?;
+
+        Ok((
+            if t0.direction.dot(&clip.direction) < 0.0 {
+                t0.new_reversed()
+            } else {
+                t0
+            },
+            if t1.direction.dot(&clip.direction) < 0.0 {
+                t1.new_reversed()
+            } else {
+                t1
+            },
+        ))
     }
 }
 

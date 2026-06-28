@@ -24,7 +24,7 @@ mod queries;
 
 use crate::common::{Line, solve_quadratic_real_roots};
 use parry3d_f64::na::{Point, SVector, Unit};
-
+use serde::{Deserialize, Serialize};
 pub use fitting::{SplineBuildFn, SplineFitResult, fit_spline_to_points};
 pub use queries::CubicSplineQueries;
 
@@ -59,7 +59,7 @@ impl<T> SplineValue<T> {
 /// four control points:
 ///
 /// `B(t) = (1 - t)^3 P0 + 3 (1 - t)^2 t P1 + 3 (1 - t) t^2 P2 + t^3 P3`
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CubicSpline<const D: usize> {
     pub p0: Point<f64, D>,
     pub p1: Point<f64, D>,
