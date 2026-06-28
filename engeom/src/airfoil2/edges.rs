@@ -1,4 +1,3 @@
-use std::f64::consts::PI;
 use crate::airfoil2::inscribed::{Inscribed, InscribedVec};
 use crate::airfoil2::{AfEdge, AfEdgeGeometry, SectionInput};
 use crate::common::cubic_spline::{SplineBuildFn, fit_spline_to_points};
@@ -7,7 +6,8 @@ use crate::geom2::{
     BndBuildFn, BoundaryData2, BoundaryEditor, BoundaryElement2, CubicSpline2, LineOps2,
     fit_boundary_to_points, signed_angle,
 };
-use crate::{Arc2, Circle2, DVector, Iso2, Line2, Point2, Result, Vector2};
+use crate::{Arc2, Circle2, Curve2, DVector, Iso2, Line2, Point2, Result, Vector2};
+use std::f64::consts::PI;
 
 /// This is the result of an airfoil edge fitting operation. It contains the detected edge point
 /// and geometry, any fitting point residuals left from the result geometry, and an updated stack
@@ -369,34 +369,60 @@ pub fn fit_spline_max_k(
     circles: Vec<Inscribed>,
     at_front: bool,
 ) -> Result<(AfEdgeFit, CubicSpline2)> {
-    let working = EdgeWork::new(input, circles, at_front)?;
+    let mut working = EdgeWork::new(input, circles, at_front)?;
     let (t0, t1) = working.last_tangents()?;
     let clip = working.clip.clone();
 
     let mut stack = InscribedVec::new(vec![working.last()?.clone()]);
 
     // Get the first attempt at a split
-    let fit0 = spline_fit(&working.fit_points, &clip, &t0, &t1)?;
+    let mut fittings = vec![spline_fit(&working.fit_points, &clip, &t0, &t1, &stack)?];
 
-    // Find the halfway point and get a new inscribed circle
-    let l = half_line(&stack.last().unwrap(), &clip.direction, &fit0);
-    stack.refine_and_push(input.try_inscribed(&l).unwrap(), input);
+    for _ in 0..8 {
+        // If the distance between the last circle and the current one is less than 5% of the
+        // circle radius, we can stop now
+        let last_circle = stack.last().unwrap();
+        let last_fit = &fittings.last().unwrap();
+        let inscribed_dist = dist(&last_circle.center(), &last_fit.circle.center);
+        if inscribed_dist < 0.05 * last_fit.circle.r() {
+            break;
+        }
 
-    let clip = stack.end_clip_line()?;
-    let (t0, t1) = stack.last_tangents()?;
-    let fit1 = spline_fit(&working.fit_points, &clip, &t0, &t1)?;
+        // Find the halfway point and get a new inscribed circle
+        let l = half_line(&last_circle, &clip.direction, &fittings.last().unwrap());
+        stack.refine_and_push(input.try_inscribed(&l).unwrap(), input);
 
-    // refine_from_edge_circle(&mut working, input, &circle)?;
+        let clip = stack.end_clip_line()?;
+        let (t0, t1) = stack.last_tangents()?;
+        let Ok(fit) = spline_fit(&working.fit_points, &clip, &t0, &t1, &stack) else {
+            break;
+        };
+        let this_circle = fit.circle.clone();
+        let last_circle = last_fit.circle.clone();
+        fittings.push(fit);
 
-    let expected_point = fit1.spline.position(fit1.t_max_k);
-    let point = end_intersection(input, &fit1.circle.center, &expected_point)?;
+        let circle_error = dist(&this_circle, &last_circle);
+        let radius_error = (this_circle.r() - last_circle.r()).abs();
+        if circle_error < 0.01 * this_circle.r() && radius_error < 0.01 * this_circle.r() {
+            break;
+        }
+    }
+
+    let fit = fittings.last().unwrap();
+    refine_from_edge_circle(&mut working, input, &fit.circle)?;
+
+    let expected_point = fit.spline.position(fit.t_max_k);
+    let point = end_intersection(input, &fit.circle.center, &expected_point)?;
 
     let c = working.take_circles();
     let edge = AfEdge::new(
         point,
-        AfEdgeGeometry::SplineMaxK(fit1.circle.center, fit1.circle.r() as f32),
+        AfEdgeGeometry::SplineMaxK(fit.circle.center, fit.circle.r() as f32),
     );
-    Ok((AfEdgeFit::new(edge, fit1.residuals, c), fit1.spline))
+    Ok((
+        AfEdgeFit::new(edge, fit.residuals.clone(), c),
+        fit.spline.clone(),
+    ))
 }
 
 fn half_line(inscribed: &Inscribed, clip_dir: &Vector2, last_result: &SfResult) -> Line2 {
@@ -415,15 +441,25 @@ struct SfResult {
     t_max_k: f64,
     circle: Circle2,
     residuals: DVector,
+    avg_residual: f64,
 }
 
 impl SfResult {
     fn end_line(&self) -> Line2 {
-        Line2::new_normalize(self.circle.center, self.spline.position(self.t_max_k) - self.circle.center)
+        Line2::new_normalize(
+            self.circle.center,
+            self.spline.position(self.t_max_k) - self.circle.center,
+        )
     }
 }
 
-fn spline_fit(all_points: &[Point2], clip: &Line2, t0: &Line2, t1: &Line2) -> Result<SfResult> {
+fn spline_fit(
+    all_points: &[Point2],
+    clip: &Line2,
+    t0: &Line2,
+    t1: &Line2,
+    stack: &InscribedVec,
+) -> Result<SfResult> {
     let clip_v = clip.normal().into_inner();
     let fit_points = all_points
         .iter()
@@ -478,25 +514,56 @@ fn spline_fit(all_points: &[Point2], clip: &Line2, t0: &Line2, t1: &Line2) -> Re
     let spline = build1(&result1.params)?;
 
     // We need to find the curvature local maximum closest to the center
-    let local_maxima = spline.find_curvature_maxima();
-    if local_maxima.is_empty() {
-        return Err("Failed to find curvature maxima for spline".into());
+    let local_maxima = spline
+        .find_curvature_maxima()
+        .into_iter()
+        .filter(|k| k.t > f64::EPSILON && k.t < 1.0 - f64::EPSILON)
+        .collect::<Vec<_>>();
+    if local_maxima.len() != 1 {
+        return Err(format!(
+            "Expected one curvature maximum, found {}",
+            local_maxima.len()
+        )
+        .into());
     }
-
-    let max_k = local_maxima
-        .iter()
-        .min_by(|a, b| (0.5 - a.t).abs().partial_cmp(&(0.5 - b.t).abs()).unwrap())
-        .unwrap();
-
+    let max_k = local_maxima[0];
     let circle = spline
         .curvature_circle(max_k.t)
         .ok_or("Failed to find curvature circle at maximum curvature")?;
 
+    // Now we have to compute the residuals
+    let query = spline.into_query();
+    let back_ref = if stack.len() > 1 {
+        let p0s = stack.iter().map(|c| c.p0.clone()).collect::<Vec<_>>();
+        let p1s = stack.iter().map(|c| c.p1.clone()).collect::<Vec<_>>();
+        Some((
+            Curve2::from_points(&p0s, 1e-12, false)?,
+            Curve2::from_points(&p1s, 1e-12, false)?,
+        ))
+    } else {
+        None
+    };
+    let mut residuals = Vec::new();
+    for p in all_points.iter() {
+        if clip.scalar_project(p) > 0.0 {
+            residuals.push(query.project_point(p).value)
+        } else {
+            if let Some((c0, c1)) = &back_ref {
+                residuals.push(c0.dist_to_point(p).min(c1.dist_to_point(p)))
+            } else {
+                residuals.push(query.project_point(p).value)
+            }
+        }
+    }
+    let residuals = DVector::from_vec(residuals);
+    let avg_residual = residuals.mean();
+
     Ok(SfResult {
-        spline,
+        spline: query.into_spline(),
         t_max_k: max_k.t,
         circle,
-        residuals: result1.residuals,
+        residuals,
+        avg_residual,
     })
 }
 
@@ -541,7 +608,7 @@ fn refine_from_edge_circle(
     } else {
         fake.camber_point()
     })
-        .new_shifted(-edge_circle.r() * 0.1);
+    .new_shifted(-edge_circle.r() * 0.1);
 
     let test_line = Line2::new(fake_camber_line.point, fake.contact_dir());
     let test_line = if test_line.direction.dot(&working.last()?.contact_dir()) < 0.0 {

@@ -62,7 +62,6 @@ fn run_test_case(case: &TestCase, dir: &PathPair) -> Result<()> {
 
         let output_file = &dir.result().join(format!("{}.json", output_root));
         serde_json::to_writer_pretty(std::fs::File::create(output_file)?, &output)?;
-        todo!()
     }
 
     Ok(())
@@ -76,7 +75,6 @@ struct Output {
     expected_r: f64,
     expected_x: f64,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct SectionItem {

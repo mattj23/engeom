@@ -391,6 +391,10 @@ impl<const D: usize> CubicSplineQueries<D> {
         working.insert(index, right);
         working.insert(index, left);
     }
+
+    pub fn into_spline(self) -> CubicSpline<D> {
+        self.spline
+    }
 }
 
 /// Builds the acceleration structure from a borrowed spline, cloning it internally. Use the

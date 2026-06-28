@@ -23,10 +23,10 @@ mod fitting;
 mod queries;
 
 use crate::common::{Line, solve_quadratic_real_roots};
-use parry3d_f64::na::{Point, SVector, Unit};
-use serde::{Deserialize, Serialize};
 pub use fitting::{SplineBuildFn, SplineFitResult, fit_spline_to_points};
+use parry3d_f64::na::{Point, SVector, Unit};
 pub use queries::CubicSplineQueries;
+use serde::{Deserialize, Serialize};
 
 /// A value of some generic type `T` associated with a parameter value `t` along a spline.
 ///
