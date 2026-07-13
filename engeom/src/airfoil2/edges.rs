@@ -42,6 +42,33 @@ impl AfEdgeFit {
     }
 }
 
+/// Fit an open trailing or leading edge on the airfoil section data.  An open edge is one where
+/// the airfoil shape is incomplete, which can happen for a number of different reasons. Most
+/// commonly, this will be when either the measurement system does not capture all the way around
+/// the airfoil (such as when only part of the airfoil is of interest) or when the nominal geometry
+/// is not a full airfoil (sometimes occurring near the root or tip where the airfoil is blending
+/// into other geometry).
+///
+///
+/// # Arguments
+///
+/// * `input` - The section geometry and search tolerances.
+/// * `circles` - The inscribed circle stack produced by the camber line fitting step.
+/// * `at_front` - When `true`, process the front (leading edge) end of the airfoil; when `false`,
+///   process the rear (trailing edge) end.
+///
+/// # Returns
+///
+/// An [`AfEdgeFit`] whose edge geometry is [`AfEdgeGeometry::Open`]
+pub fn fit_open_edge(
+    input: &SectionInput,
+    circles: Vec<Inscribed>,
+    at_front: bool,
+) -> Result<AfEdgeFit> {
+
+    todo!()
+}
+
 /// Fit a square (flat) trailing or leading edge to airfoil section data.
 ///
 /// The edge geometry consists of two corner points connected by a straight flat face, with the
@@ -777,6 +804,12 @@ mod tests {
         assert_relative_eq!(c.center, expected.center, epsilon = 1e-2);
         assert_relative_eq!(c.r(), expected.r(), epsilon = 1e-2);
         Ok(())
+    }
+
+    #[test]
+    fn open_edge() -> Result<()> {
+
+        todo!()
     }
 
     #[test]
