@@ -20,6 +20,7 @@ pub mod svd_basis;
 pub mod triangulation;
 pub mod vec_f64;
 mod voxel_downsample;
+mod consensus;
 
 use crate::na::{Point, SVector, Unit};
 pub use align::DistMode;
