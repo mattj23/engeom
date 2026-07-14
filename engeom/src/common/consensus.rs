@@ -48,3 +48,25 @@
 //! That said, the `σ_max` requirement in MAGSAC++ is no worse than the threshold requirement for
 //! RANSAC, and it seems promising that the quality of the models produced by it will be superior
 //! to RANSAC, so it seems worth implementing.
+//!
+//! # Geometric Entities
+//!
+//! The goal of this module is to create a unified framework that can be used to implement
+//! consensus creation methods for the following geometric entities.
+//!
+//! Two-dimensional entities:
+//!   - `Line2`
+//!   - `Circle2`
+//!   - `CubicSpline2`
+//!
+//! Three-dimensional entities:
+//!   - `Line3`
+//!   - `Circle3`
+//!   - `CubicSpline3`
+//!   - `Plane3`
+//!   - `Sphere3`
+//!   - `Cylinder3`
+//!
+//! Fitting will need to be against true geometric residuals, for which we'll use the
+//! Levenberg-Marquardt solver this library already relies on.  There's some amount of
+//! generalization that can be done here.
