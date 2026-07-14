@@ -15,11 +15,10 @@ use crate::{Arc2, Result};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use parry2d_f64::na::{Dyn, Matrix, Owned, U1, U3, Vector};
 use parry2d_f64::shape::Ball;
-use rand::SeedableRng;
-use rand::distr::{Distribution, Uniform};
-use rand::prelude::StdRng;
 use serde::{Deserialize, Serialize};
 use std::f64::consts::FRAC_PI_2;
+
+mod consensus;
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct Circle2 {
@@ -131,74 +130,6 @@ impl Circle2 {
         mode: BestFit,
     ) -> Result<Circle2> {
         fit_circle(points, guess, mode)
-    }
-
-    /// Given a set of points, attempt to fit a circle to them using the RANSAC algorithm.
-    ///
-    /// # Arguments
-    ///
-    /// * `points`: a slice of points to fit the circle to
-    /// * `tol`: The tolerance to use for the RANSAC algorithm. If a point is within this distance
-    ///   of the circle's perimeter, it is considered an inlier.
-    /// * `iterations`: An optional number of iterations to run the RANSAC algorithm. If not
-    ///   provided, the default is 500.
-    /// * `min_r`: An optional minimum radius for the circle. If provided, the circle's radius must
-    ///   be greater than or equal to this value to be considered a valid candidate.
-    /// * `max_r`: An optional maximum radius for the circle. If provided, the circle's radius must
-    ///   be less than or equal to this value to be considered a valid candidate.
-    ///
-    /// returns: Result<Circle2, Box<dyn Error, Global>>
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
-    pub fn new_ransac(
-        points: &[Point2],
-        tol: f64,
-        iterations: Option<usize>,
-        min_r: Option<f64>,
-        max_r: Option<f64>,
-    ) -> Result<Circle2> {
-        let iterations = iterations.unwrap_or(500);
-        let min_r = min_r.unwrap_or(0.0);
-        let max_r = max_r.unwrap_or(f64::INFINITY);
-
-        let mut best_count = 0;
-        let mut best_circle = None;
-
-        let mut rng = StdRng::seed_from_u64(24601);
-        let u = Uniform::new(0, points.len())?;
-
-        let n = iterations.max(10);
-        for _ in 0..n {
-            let i0 = u.sample(&mut rng);
-            let i1 = u.sample(&mut rng);
-            let i2 = u.sample(&mut rng);
-
-            if let Ok(c) = Circle2::from_3_points(&points[i0], &points[i1], &points[i2]) {
-                // Check that the circle is smaller than that of the last station
-                if c.r() > max_r || c.r() < min_r {
-                    continue;
-                }
-
-                // Count the number of inliers
-                let mut count = 0;
-                for p in points {
-                    if c.distance_to(p).abs() < tol {
-                        count += 1;
-                    }
-                }
-
-                if count > best_count {
-                    best_count = count;
-                    best_circle = Some(c);
-                }
-            }
-        }
-
-        best_circle.ok_or("Failed to find a single valid RANSAC circle candidate".into())
     }
 
     /// Attempt to create a fitting circle from three points. Will return an `Err` if the points
@@ -813,12 +744,23 @@ fn fit_circle(points: &[Point2], initial: &Circle2, mode: BestFit) -> Result<Cir
     }
 }
 
+/// Controls how a [`CircleFit`] derives its per-point weights.
+enum CircleWeighting {
+    /// Recompute weights from the residuals on every parameter update, per a [`BestFit`] mode.
+    Mode(BestFit),
+
+    /// Use fixed, externally supplied weights that are held constant across the solve. This is the
+    /// mode used by the consensus refinement, where the weights come from the previous iteratively
+    /// reweighted least-squares step.
+    Fixed,
+}
+
 struct CircleFit<'a> {
     /// The points to be fit to the circle.
     points: &'a [Point2],
 
-    /// The best fitting mode
-    mode: BestFit,
+    /// How the weights are derived
+    weighting: CircleWeighting,
 
     /// The parameters being fit
     x: Vector3,
@@ -848,7 +790,28 @@ impl<'a> CircleFit<'a> {
 
         Self {
             points,
-            mode,
+            weighting: CircleWeighting::Mode(mode),
+            x,
+            circle,
+            base_residuals,
+            weights,
+        }
+    }
+
+    /// Create a circle fit with fixed, externally supplied per-point weights. `weights` must have
+    /// the same length as `points`.
+    fn with_weights(points: &'a [Point2], weights: &[f64], initial: &Circle2) -> Self {
+        let x = Vector3::new(initial.center.x, initial.center.y, initial.r());
+        let circle = *initial;
+
+        let mut base_residuals = Residuals::zeros(points.len());
+        compute_residuals_mut(points, &circle, &mut base_residuals);
+
+        let weights = Residuals::from_column_slice(weights);
+
+        Self {
+            points,
+            weighting: CircleWeighting::Fixed,
             x,
             circle,
             base_residuals,
@@ -894,7 +857,9 @@ impl LeastSquaresProblem<f64, Dyn, U3> for CircleFit<'_> {
         self.x = *x;
         self.circle = Circle2::new(x[0], x[1], x[2]);
         compute_residuals_mut(self.points, &self.circle, &mut self.base_residuals);
-        compute_weights_mut(&self.base_residuals, &mut self.weights, self.mode);
+        if let CircleWeighting::Mode(mode) = self.weighting {
+            compute_weights_mut(&self.base_residuals, &mut self.weights, mode);
+        }
     }
 
     fn params(&self) -> Vector<f64, U3, Self::ParameterStorage> {
@@ -933,6 +898,7 @@ impl LeastSquaresProblem<f64, Dyn, U3> for CircleFit<'_> {
 mod tests {
     use super::*;
     use rand::RngExt;
+    use rand::distr::Distribution;
 
     use crate::geom2::{Line2, Ray2};
     use approx::assert_relative_eq;
@@ -1087,7 +1053,7 @@ mod tests {
         ]
         .concat();
 
-        let result = Circle2::new_ransac(&samples, 0.005, None, None, None)?;
+        let result = Circle2::from_consensus(&samples, 0.005, None, None, None)?;
 
         assert_relative_eq!(result.center, expected.center, epsilon = 3.0e-3);
         assert_relative_eq!(result.r(), expected.r(), epsilon = 3.0e-3);

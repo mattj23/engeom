@@ -1,6 +1,7 @@
 pub mod align;
 mod angles;
 pub mod average;
+pub mod consensus;
 mod convert_2d_3d;
 pub mod cubic_spline;
 mod discrete_domain;
@@ -20,12 +21,12 @@ pub mod svd_basis;
 pub mod triangulation;
 pub mod vec_f64;
 mod voxel_downsample;
-mod consensus;
 
 use crate::na::{Point, SVector, Unit};
 pub use align::DistMode;
 pub use angles::*;
 pub use average::Averager;
+pub use consensus::{ConsensusFit, ConsensusModel, Magsac};
 pub use convert_2d_3d::{To2D, To3D};
 pub use discrete_domain::{DiscreteDomain, linear_space};
 pub use domain_map::DomainMap;
