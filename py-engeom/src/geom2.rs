@@ -655,8 +655,9 @@ impl Circle2 {
         }
         options.seed = seed;
 
-        let result = engeom::Circle2::from_consensus(&points, sigma_max, min_r, max_r, Some(options))
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let result =
+            engeom::Circle2::from_consensus(&points, sigma_max, min_r, max_r, Some(options))
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(result))
     }
 

@@ -5,6 +5,8 @@ use crate::{Iso3, Plane3, Point3, Result, UnitVec3, Vector3};
 use parry3d_f64::na::UnitQuaternion;
 use std::ops;
 
+mod consensus;
+
 /// A flat circle in 3D space, defined by a radius and a world isometry. The circle can be thought
 /// of as a circle of radius `r` sitting at the origin of the XY plane, then transformed by the
 /// isometry to position and orientation in 3D space.
@@ -213,6 +215,42 @@ impl Circle3 {
         };
         let iso = Iso3::try_from_basis_zy(&normal.into_inner(), &reference, Some(*center))?;
         Ok(Self::new(radius, iso))
+    }
+
+    /// Create the unique circle passing through three points in 3D space. The circle lies in the
+    /// plane defined by the three points, with its normal following the right-hand rule from `p0`
+    /// to `p1` to `p2`. Returns an error if the points are collinear (or coincident).
+    ///
+    /// # Arguments
+    ///
+    /// * `p0`: the first point
+    /// * `p1`: the second point
+    /// * `p2`: the third point
+    ///
+    /// returns: Result<Circle3, Box<dyn Error, Global>>
+    pub fn from_3_points(
+        p0: &impl PCoords<3>,
+        p1: &impl PCoords<3>,
+        p2: &impl PCoords<3>,
+    ) -> Result<Self> {
+        let a = Point3::from(p0.coords());
+        let b = Point3::from(p1.coords());
+        let c = Point3::from(p2.coords());
+
+        // Circumcenter of the triangle, using the standard vector formula relative to `c`.
+        let av = a - c;
+        let bv = b - c;
+        let axb = av.cross(&bv);
+        let denom = 2.0 * axb.norm_squared();
+        if denom < 1e-20 {
+            return Err("Points are collinear".into());
+        }
+
+        let to_center = (av.norm_squared() * bv - bv.norm_squared() * av).cross(&axb) / denom;
+        let center = c + to_center;
+        let radius = to_center.norm();
+        let normal = UnitVec3::new_normalize(axb);
+        Circle3::from_point_normal(&center, &normal, radius)
     }
 }
 

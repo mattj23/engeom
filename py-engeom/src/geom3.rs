@@ -940,6 +940,27 @@ impl Circle3 {
     }
 }
 
+/// Build a `Magsac` consensus configuration from the optional overrides exposed to Python, leaving
+/// any unset value at the library default.
+fn magsac_options(
+    sigma_max: f64,
+    max_iterations: Option<usize>,
+    refinement_steps: Option<usize>,
+    confidence: Option<f64>,
+    seed: Option<u64>,
+) -> engeom::common::consensus::Magsac {
+    let mut options = engeom::common::consensus::Magsac::new(sigma_max);
+    options.max_iterations = max_iterations;
+    if let Some(steps) = refinement_steps {
+        options.refinement_steps = steps;
+    }
+    if let Some(confidence) = confidence {
+        options.confidence = confidence;
+    }
+    options.seed = seed;
+    options
+}
+
 #[pymethods]
 impl Circle3 {
     #[new]
@@ -950,6 +971,65 @@ impl Circle3 {
         engeom::geom3::Circle3::from_point_normal(&center, &normal, radius)
             .map(Circle3::from_inner)
             .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[staticmethod]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature=(points, sigma_max, min_r=None, max_r=None, max_iterations=None, refinement_steps=None, confidence=None, seed=None))]
+    fn from_consensus<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        sigma_max: f64,
+        min_r: Option<f64>,
+        max_r: Option<f64>,
+        max_iterations: Option<usize>,
+        refinement_steps: Option<usize>,
+        confidence: Option<f64>,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        let points = array_to_points3(&points.as_array())?;
+        let options = magsac_options(
+            sigma_max,
+            max_iterations,
+            refinement_steps,
+            confidence,
+            seed,
+        );
+        let result =
+            engeom::geom3::Circle3::from_consensus(&points, sigma_max, min_r, max_r, Some(options))
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(result))
+    }
+
+    #[staticmethod]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature=(points, sigma_max, min_r=None, max_r=None, max_iterations=None, refinement_steps=None, confidence=None, seed=None))]
+    fn from_consensus_planar<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        sigma_max: f64,
+        min_r: Option<f64>,
+        max_r: Option<f64>,
+        max_iterations: Option<usize>,
+        refinement_steps: Option<usize>,
+        confidence: Option<f64>,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        let points = array_to_points3(&points.as_array())?;
+        let options = magsac_options(
+            sigma_max,
+            max_iterations,
+            refinement_steps,
+            confidence,
+            seed,
+        );
+        let result = engeom::geom3::Circle3::from_consensus_planar(
+            &points,
+            sigma_max,
+            min_r,
+            max_r,
+            Some(options),
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(result))
     }
 
     fn __repr__(&self) -> String {

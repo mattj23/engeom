@@ -1414,6 +1414,55 @@ class Circle3:
         """
         ...
 
+    @staticmethod
+    def from_consensus(points: NDArray[float], sigma_max: float, min_r: float | None = None,
+                       max_r: float | None = None, max_iterations: int | None = None,
+                       refinement_steps: int | None = None, confidence: float | None = None,
+                       seed: int | None = None) -> Circle3:
+        """
+        Fit a circle to a set of 3D points robustly using the MAGSAC++ consensus algorithm in the native 3D
+        dimension. Each candidate is a full 3D circle and residuals are true point-to-circle distances, so this is
+        robust to out-of-plane outliers (unlike `from_consensus_planar`). Like the 2D consensus fit, it takes an
+        upper bound on the inlier noise (`sigma_max`) rather than a hard inlier/outlier threshold.
+
+        :param points: the 3D points to fit the circle to, as an (n, 3) array.
+        :param sigma_max: the upper bound on the expected inlier noise, in the same units as the points.
+        :param min_r: the minimum radius of the circle. If None, no minimum will be enforced.
+        :param max_r: the maximum radius of the circle. If None, no maximum will be enforced.
+        :param max_iterations: the maximum number of minimal-sample iterations. If None, a default of 500 is used.
+        :param refinement_steps: the number of iteratively reweighted refinement steps per candidate. If None, a
+            default of 4 is used.
+        :param confidence: the probability used for adaptive termination. If None, a default of 0.99 is used.
+        :param seed: an optional fixed RNG seed for reproducible sampling. If None, a random seed is used.
+        :return: a new `Circle3` object representing the fitted circle.
+        """
+        ...
+
+    @staticmethod
+    def from_consensus_planar(points: NDArray[float], sigma_max: float, min_r: float | None = None,
+                              max_r: float | None = None, max_iterations: int | None = None,
+                              refinement_steps: int | None = None, confidence: float | None = None,
+                              seed: int | None = None) -> Circle3:
+        """
+        Fit a circle to a set of 3D points using the MAGSAC++ consensus algorithm, by first projecting the points
+        onto their best-fit plane, running the 2D consensus fit there, and lifting the result back into 3D. This is
+        fast and works well when the points genuinely lie near a common plane, but because the plane is estimated
+        from all points (including outliers), gross out-of-plane outliers will degrade the result; use
+        `from_consensus` in that case.
+
+        :param points: the 3D points to fit the circle to, as an (n, 3) array.
+        :param sigma_max: the upper bound on the expected inlier noise, in the same units as the points.
+        :param min_r: the minimum radius of the circle. If None, no minimum will be enforced.
+        :param max_r: the maximum radius of the circle. If None, no maximum will be enforced.
+        :param max_iterations: the maximum number of minimal-sample iterations. If None, a default of 500 is used.
+        :param refinement_steps: the number of iteratively reweighted refinement steps per candidate. If None, a
+            default of 4 is used.
+        :param confidence: the probability used for adaptive termination. If None, a default of 0.99 is used.
+        :param seed: an optional fixed RNG seed for reproducible sampling. If None, a random seed is used.
+        :return: a new `Circle3` object representing the fitted circle.
+        """
+        ...
+
     @property
     def r(self) -> float:
         """
