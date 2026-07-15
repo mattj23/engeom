@@ -4,8 +4,8 @@ use crate::conversions::{
     array_to_points2, array_to_vectors2, dvec_from_array, dvec_to_array, points_to_array,
     vectors_to_array,
 };
+use engeom::To3D;
 use engeom::geom2::HasBounds2;
-use engeom::{BestFit, To3D};
 use numpy::ndarray::{Array1, Array2};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::{PyIOError, PyValueError};
@@ -616,12 +616,8 @@ impl Circle2 {
     }
 
     #[staticmethod]
-    #[pyo3(signature=(points, guess=None, sigma=None))]
-    fn fitting<'py>(
-        points: PyReadonlyArray2<'py, f64>,
-        guess: Option<Circle2>,
-        sigma: Option<f64>,
-    ) -> PyResult<Self> {
+    #[pyo3(signature=(points, guess=None))]
+    fn fitting<'py>(points: PyReadonlyArray2<'py, f64>, guess: Option<Circle2>) -> PyResult<Self> {
         let points = array_to_points2(&points.as_array())?;
         let guess = if let Some(c) = guess {
             *c.get_inner()
@@ -629,28 +625,37 @@ impl Circle2 {
             engeom::Circle2::new(0.0, 0.0, 1.0)
         };
 
-        let mode = if let Some(s) = sigma {
-            BestFit::Gaussian(s)
-        } else {
-            BestFit::All
-        };
-
-        let circle = engeom::Circle2::new_fitting_circle(&points, &guess, mode)
+        let circle = engeom::Circle2::new_fitting_circle(&points, &guess)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(circle))
     }
 
     #[staticmethod]
-    #[pyo3(signature=(points, tol, iterations=None, min_r=None, max_r=None))]
-    fn ransac<'py>(
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature=(points, sigma_max, min_r=None, max_r=None, max_iterations=None, refinement_steps=None, confidence=None, seed=None))]
+    fn from_consensus<'py>(
         points: PyReadonlyArray2<'py, f64>,
-        tol: f64,
-        iterations: Option<usize>,
+        sigma_max: f64,
         min_r: Option<f64>,
         max_r: Option<f64>,
+        max_iterations: Option<usize>,
+        refinement_steps: Option<usize>,
+        confidence: Option<f64>,
+        seed: Option<u64>,
     ) -> PyResult<Self> {
         let points = array_to_points2(&points.as_array())?;
-        let result = engeom::Circle2::new_ransac(&points, tol, iterations, min_r, max_r)
+
+        let mut options = engeom::common::consensus::Magsac::new(sigma_max);
+        options.max_iterations = max_iterations;
+        if let Some(steps) = refinement_steps {
+            options.refinement_steps = steps;
+        }
+        if let Some(confidence) = confidence {
+            options.confidence = confidence;
+        }
+        options.seed = seed;
+
+        let result = engeom::Circle2::from_consensus(&points, sigma_max, min_r, max_r, Some(options))
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(result))
     }

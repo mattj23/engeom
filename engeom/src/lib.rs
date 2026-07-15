@@ -146,16 +146,6 @@ pub enum Smoothing {
     Cubic(f64),
 }
 
-/// General purpose options for fitting data to a model
-#[derive(Debug, Clone, Copy)]
-pub enum BestFit {
-    /// Use all samples and perform a least-squares minimization
-    All,
-
-    /// De-weight samples based on their standard deviation from the mean
-    Gaussian(f64),
-}
-
 #[cfg(test)]
 pub mod tests {
     use crate::io::{deflate_bytes, read_tc_curve2_from, u_bytes_to_mesh, u_bytes_to_mesh_data};

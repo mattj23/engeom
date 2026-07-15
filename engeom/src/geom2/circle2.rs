@@ -9,8 +9,7 @@ use crate::geom2::{
 };
 use crate::geom3::Vector3;
 use crate::na::SVector;
-use crate::stats::{compute_mean, compute_st_dev};
-use crate::{AngleDir, AngleInterval, BestFit, IntervalOps, Line2, SurfacePoint2, UnitVec2};
+use crate::{AngleDir, AngleInterval, IntervalOps, SurfacePoint2, UnitVec2};
 use crate::{Arc2, Result};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use parry2d_f64::na::{Dyn, Matrix, Owned, U1, U3, Vector};
@@ -92,15 +91,13 @@ impl Circle2 {
     /// The initial guess is used to provide an initial estimate of the circle's center and radius,
     /// for best results this should at least be in the general vicinity of the test points.
     ///
-    /// The mode parameter controls the fitting algorithm. The `BestFit::All` mode will weight all
-    /// points equally, while the `BestFit::Gaussian(sigma)` mode will assign zero weights to
-    /// points beyond `sigma` standard deviations from the mean.
+    /// All points are weighted equally. To fit a circle robustly in the presence of outliers, use
+    /// [`Circle2::from_consensus`] instead.
     ///
     /// # Arguments
     ///
     /// * `points`: the points to be fit to the circle
     /// * `guess`: an initial guess for the circle's center and radius
-    /// * `mode`: the fitting mode to use
     ///
     /// returns: Result<Circle2, Box<dyn Error, Global>>
     ///
@@ -108,7 +105,6 @@ impl Circle2 {
     ///
     /// ```
     /// use engeom::{Circle2, Point2};
-    /// use engeom::BestFit::All;
     /// use approx::assert_relative_eq;
     ///
     /// let points = vec![
@@ -119,17 +115,13 @@ impl Circle2 {
     /// ];
     ///
     /// let guess = Circle2::new(-1.0, 1.0, 0.1);
-    /// let circle = Circle2::new_fitting_circle(&points, &guess, All).unwrap();
+    /// let circle = Circle2::new_fitting_circle(&points, &guess).unwrap();
     /// assert_relative_eq!(circle.x(), 0.0);
     /// assert_relative_eq!(circle.y(), 0.0);
     /// assert_relative_eq!(circle.r(), 1.0);
     /// ```
-    pub fn new_fitting_circle(
-        points: &[Point2],
-        guess: &Circle2,
-        mode: BestFit,
-    ) -> Result<Circle2> {
-        fit_circle(points, guess, mode)
+    pub fn new_fitting_circle(points: &[Point2], guess: &Circle2) -> Result<Circle2> {
+        fit_circle(points, guess)
     }
 
     /// Attempt to create a fitting circle from three points. Will return an `Err` if the points
@@ -732,8 +724,8 @@ impl Intersection<&Segment2, Vec<Point2>> for Circle2 {
 
 type Residuals = Matrix<f64, Dyn, U1, Owned<f64, Dyn, U1>>;
 
-fn fit_circle(points: &[Point2], initial: &Circle2, mode: BestFit) -> Result<Circle2> {
-    let problem = CircleFit::new(points, mode, initial);
+fn fit_circle(points: &[Point2], initial: &Circle2) -> Result<Circle2> {
+    let problem = CircleFit::new(points, initial);
     let (result, report) = LevenbergMarquardt::new().minimize(problem);
 
     if report.termination.was_successful() {
@@ -744,23 +736,9 @@ fn fit_circle(points: &[Point2], initial: &Circle2, mode: BestFit) -> Result<Cir
     }
 }
 
-/// Controls how a [`CircleFit`] derives its per-point weights.
-enum CircleWeighting {
-    /// Recompute weights from the residuals on every parameter update, per a [`BestFit`] mode.
-    Mode(BestFit),
-
-    /// Use fixed, externally supplied weights that are held constant across the solve. This is the
-    /// mode used by the consensus refinement, where the weights come from the previous iteratively
-    /// reweighted least-squares step.
-    Fixed,
-}
-
 struct CircleFit<'a> {
     /// The points to be fit to the circle.
     points: &'a [Point2],
-
-    /// How the weights are derived
-    weighting: CircleWeighting,
 
     /// The parameters being fit
     x: Vector3,
@@ -771,47 +749,33 @@ struct CircleFit<'a> {
     /// The active base residuals
     base_residuals: Residuals,
 
-    /// The active weights
+    /// The per-point weights, held fixed across the solve
     weights: Residuals,
 }
 
 impl<'a> CircleFit<'a> {
-    fn new(points: &'a [Point2], mode: BestFit, initial: &Circle2) -> Self {
-        let x = Vector3::new(initial.center.x, initial.center.y, initial.r());
-        let circle = *initial;
-
-        // Compute the residuals
-        let mut base_residuals = Residuals::zeros(points.len());
-        compute_residuals_mut(points, &circle, &mut base_residuals);
-
-        // Compute the weights
+    /// Create an equally-weighted circle fit (ordinary least squares).
+    fn new(points: &'a [Point2], initial: &Circle2) -> Self {
         let mut weights = Residuals::zeros(points.len());
-        compute_weights_mut(&base_residuals, &mut weights, mode);
-
-        Self {
-            points,
-            weighting: CircleWeighting::Mode(mode),
-            x,
-            circle,
-            base_residuals,
-            weights,
-        }
+        weights.fill(1.0);
+        Self::build(points, weights, initial)
     }
 
     /// Create a circle fit with fixed, externally supplied per-point weights. `weights` must have
     /// the same length as `points`.
     fn with_weights(points: &'a [Point2], weights: &[f64], initial: &Circle2) -> Self {
+        Self::build(points, Residuals::from_column_slice(weights), initial)
+    }
+
+    fn build(points: &'a [Point2], weights: Residuals, initial: &Circle2) -> Self {
         let x = Vector3::new(initial.center.x, initial.center.y, initial.r());
         let circle = *initial;
 
         let mut base_residuals = Residuals::zeros(points.len());
         compute_residuals_mut(points, &circle, &mut base_residuals);
 
-        let weights = Residuals::from_column_slice(weights);
-
         Self {
             points,
-            weighting: CircleWeighting::Fixed,
             x,
             circle,
             base_residuals,
@@ -826,28 +790,6 @@ fn compute_residuals_mut(points: &[Point2], circle: &Circle2, residuals: &mut Re
     }
 }
 
-fn compute_weights_mut(residuals: &Residuals, weights: &mut Residuals, mode: BestFit) {
-    match mode {
-        BestFit::All => {
-            weights.fill(1.0);
-        }
-        BestFit::Gaussian(sigma) => {
-            let mean = compute_mean(residuals.as_slice()).expect("Empty slice");
-            let std = compute_st_dev(residuals.as_slice()).expect("Empty slice");
-
-            for (i, r) in residuals.iter().enumerate() {
-                // How many standard deviations are we from the mean?
-                let d = (r - mean).abs() / std;
-                if d > sigma {
-                    weights[i] = 0.0;
-                } else {
-                    weights[i] = 1.0;
-                }
-            }
-        }
-    }
-}
-
 impl LeastSquaresProblem<f64, Dyn, U3> for CircleFit<'_> {
     type ResidualStorage = Owned<f64, Dyn, U1>;
     type JacobianStorage = Owned<f64, Dyn, U3>;
@@ -857,9 +799,6 @@ impl LeastSquaresProblem<f64, Dyn, U3> for CircleFit<'_> {
         self.x = *x;
         self.circle = Circle2::new(x[0], x[1], x[2]);
         compute_residuals_mut(self.points, &self.circle, &mut self.base_residuals);
-        if let CircleWeighting::Mode(mode) = self.weighting {
-            compute_weights_mut(&self.base_residuals, &mut self.weights, mode);
-        }
     }
 
     fn params(&self) -> Vector<f64, U3, Self::ParameterStorage> {
@@ -1035,7 +974,7 @@ mod tests {
         let expected = Circle2::new(2.0, 3.0, 1.0);
         let samples = make_sample_circle_points(&expected, 500, Some(0.01));
         let guess = Circle2::new(0.0, 0.0, 1.0);
-        let result = Circle2::new_fitting_circle(&samples, &guess, BestFit::All)?;
+        let result = Circle2::new_fitting_circle(&samples, &guess)?;
 
         assert_relative_eq!(result.center, expected.center, epsilon = 3.0e-3);
         assert_relative_eq!(result.r(), expected.r(), epsilon = 3.0e-3);

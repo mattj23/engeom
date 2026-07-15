@@ -1119,7 +1119,7 @@ class Circle2:
         ...
 
     @staticmethod
-    def fitting(points: NDArray[float], guess: Circle2 | None = None, sigma: float | None = None) -> Circle2:
+    def fitting(points: NDArray[float], guess: Circle2 | None = None) -> Circle2:
         """
         Fit a circle to a set of points using an unconstrained Levenberg-Marquardt minimization of the sum of
         squared errors between the points and the boundary of the circle.
@@ -1127,30 +1127,34 @@ class Circle2:
         The initial guess is used to provide a starting point for the optimization. If no guess is provided, the
         unit circle will be used.
 
-        The sigma parameter is used to weight the points in the optimization. If no sigma is provided, all points
-        will be weighted equally, otherwise points beyond `sigma` standard deviations from the mean will be
-        assigned a weight of 0.0.
+        All points are weighted equally. To fit a circle robustly in the presence of outliers, use `from_consensus`.
         :param points: the points to fit the circle to.
         :param guess: an optional initial guess for the circle. If None, the unit circle will be used.
-        :param sigma: an optional standard deviation to use for weighting the points. If None, all points will be
-        weighted equally.
         :return: a new `Circle2` object representing the fitted circle.
         """
         ...
 
     @staticmethod
-    def ransac(points: NDArray[float], tol: float, iterations: int | None = None, min_r: float | None = None,
-               max_r: float | None = None) -> Circle2:
+    def from_consensus(points: NDArray[float], sigma_max: float, min_r: float | None = None,
+                       max_r: float | None = None, max_iterations: int | None = None,
+                       refinement_steps: int | None = None, confidence: float | None = None,
+                       seed: int | None = None) -> Circle2:
         """
-        Fit a circle to a set of points using the RANSAC algorithm. The algorithm will randomly sample points from the
-        input set and fit a circle to them, then check how many points are within the given tolerance of the fitted
-        circle. The best fitting circle will be returned.
+        Fit a circle to a set of points robustly using the MAGSAC++ consensus algorithm. Unlike a fixed-threshold
+        RANSAC, this takes an upper bound on the inlier noise (`sigma_max`) rather than a hard inlier/outlier
+        threshold, and refines each candidate with noise-marginalized iteratively reweighted least squares. It is
+        substantially less sensitive to `sigma_max` than RANSAC is to its threshold, as long as `sigma_max` is not
+        chosen smaller than the actual noise.
 
         :param points: the points to fit the circle to.
-        :param tol: the tolerance for the RANSAC algorithm.
-        :param iterations: the number of iterations to run. If None, a default value of 500 will be used.
+        :param sigma_max: the upper bound on the expected inlier noise, in the same units as the points.
         :param min_r: the minimum radius of the circle. If None, no minimum will be enforced.
         :param max_r: the maximum radius of the circle. If None, no maximum will be enforced.
+        :param max_iterations: the maximum number of minimal-sample iterations. If None, a default of 500 is used.
+        :param refinement_steps: the number of iteratively reweighted refinement steps per candidate. If None, a
+            default of 4 is used.
+        :param confidence: the probability used for adaptive termination. If None, a default of 0.99 is used.
+        :param seed: an optional fixed RNG seed for reproducible sampling. If None, a random seed is used.
         :return: a new `Circle2` object representing the fitted circle.
         """
         ...
