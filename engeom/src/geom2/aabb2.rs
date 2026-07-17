@@ -2,7 +2,7 @@
 
 use crate::common::IntervalOps;
 use crate::{AngleInterval, Circle2, Point2, Vector2};
-use num_traits::FloatConst;
+use std::f64::consts::{FRAC_PI_2, PI};
 
 pub type Aabb2 = parry2d_f64::bounding_volume::Aabb;
 
@@ -12,22 +12,42 @@ pub fn circle_aabb2(center: &Point2, radius: f64) -> Aabb2 {
 }
 
 pub fn arc_aabb2(circle: &Circle2, angle0: f64, angle: f64) -> Aabb2 {
-    let mut a = vec![angle0, angle0 + angle];
+    // TODO: this can probably still be made better, ideally removing all the branching
+    // Note, the only reason this particular function warrants any further performance consideration
+    // is because when we created the rule that we weren't going to cache values in geometric
+    // primitives anymore, Arc2 was the only entity left that had a non-trivial calculation, and
+    // it was for this. The original implementation I had was extremely naive (I was in a rush),
+    // so this implementation is already a huge step up. However, if we can make the AABB
+    // creation fast enough here that we don't care about caching it, we can defer/avoid the need
+    // to address the fact that all our AABBs are generated on demand for the current entities that
+    // implement BoundaryElement.  Otherwise we probably need to add complexity in the Boundary2
+    // struct to deal with it.
+
+    let e0 = circle.point_at_angle(angle0);
+    let e1 = circle.point_at_angle(angle0 + angle);
     let check = AngleInterval::new_start_angle(angle0, angle);
 
-    for i in 0..4 {
-        // The angle in global space
-        let t_g = i as f64 * f64::FRAC_PI_2();
-        if check.contains_value(t_g) {
-            a.push(t_g);
-        }
+    let mut mins = e0;
+    let mut maxs = e0;
+    mins.x = mins.x.min(e1.x);
+    maxs.x = maxs.x.max(e1.x);
+    mins.y = mins.y.min(e1.y);
+    maxs.y = maxs.y.max(e1.y);
+
+    if check.contains_value(0.0) {
+        maxs.x = circle.center.x + circle.radius;
+    }
+    if check.contains_value(FRAC_PI_2) {
+        maxs.y = circle.center.y + circle.radius;
+    }
+    if check.contains_value(PI) {
+        mins.x = circle.center.x - circle.radius;
+    }
+    if check.contains_value(3.0 * FRAC_PI_2) {
+        mins.y = circle.center.y - circle.radius;
     }
 
-    Aabb2::from_points(
-        a.iter()
-            .map(|&t| circle.point_at_angle(t))
-            .collect::<Vec<_>>(),
-    )
+    Aabb2::new(mins, maxs)
 }
 
 #[cfg(test)]

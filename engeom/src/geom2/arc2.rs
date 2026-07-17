@@ -4,29 +4,26 @@ use crate::common::{
     ANGLE_TOL, PCoords, angle_in_direction, angle_signed_pi, linear_space, shortest_angle_between,
 };
 use crate::geom2::aabb2::arc_aabb2;
-use crate::geom2::{Aabb2, BoundaryElement2, HasBounds2, Manifold1Pos2, directed_angle, rot90};
+use crate::geom2::{Aabb2, BoundaryElement2, Manifold1Pos2, directed_angle, rot90};
 use crate::{AngleInterval, Circle2, IntervalOps, Point2, Result, UnitVec2};
 use serde::{Deserialize, Serialize};
 use std::f64::consts::PI;
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct Arc2 {
-    center: Point2,
-    radius: f64,
-    angle0: f64,
-    angle: f64,
-    aabb: Aabb2,
+    pub center: Point2,
+    pub radius: f64,
+    pub angle0: f64,
+    pub angle: f64,
 }
 
 impl Arc2 {
     pub fn new(circle: Circle2, angle0: f64, angle: f64) -> Self {
-        let aabb = arc_aabb2(&circle, angle0, angle);
         Self {
             center: circle.center,
             radius: circle.r(),
             angle0,
             angle,
-            aabb,
         }
     }
 
@@ -82,14 +79,11 @@ impl Arc2 {
     ///
     /// ```
     pub fn circle_angles(center: Point2, radius: f64, angle0: f64, angle: f64) -> Self {
-        let circle = Circle2::from_point(center, radius);
-        let aabb = arc_aabb2(&circle, angle0, angle);
         Self {
             center,
             radius,
             angle0,
             angle,
-            aabb,
         }
     }
 
@@ -116,13 +110,11 @@ impl Arc2 {
     pub fn circle_point_angle(center: Point2, radius: f64, point: Point2, angle: f64) -> Self {
         let circle = Circle2::from_point(center, radius);
         let angle0 = circle.angle_of_point(&point);
-        let aabb = arc_aabb2(&circle, angle0, angle);
         Self {
             center,
             radius,
             angle0,
             angle,
-            aabb,
         }
     }
 
@@ -157,13 +149,11 @@ impl Arc2 {
             -directed_angle(&v0, &v2, Cw)
         };
 
-        let aabb = arc_aabb2(&circle, angle0, angle);
         Self {
             center: circle.center,
             radius: circle.r(),
             angle0,
             angle,
-            aabb,
         }
     }
 
@@ -275,11 +265,10 @@ impl Arc2 {
         }
         points
     }
-}
 
-impl HasBounds2 for Arc2 {
-    fn aabb(&self) -> &Aabb2 {
-        &self.aabb
+    /// Returns the axis-aligned bounding box of the arc, computed on demand.
+    pub fn aabb(&self) -> Aabb2 {
+        arc_aabb2(&self.circle(), self.angle0, self.angle)
     }
 }
 
@@ -330,7 +319,7 @@ impl BoundaryElement2 for Arc2 {
     }
 
     fn aabb(&self) -> Aabb2 {
-        self.aabb
+        self.aabb()
     }
 
     fn to_points(&self, tol: f64) -> Vec<Point2> {

@@ -128,10 +128,6 @@ impl PCoords<2> for Manifold1Pos2 {
     }
 }
 
-pub trait HasBounds2 {
-    fn aabb(&self) -> &Aabb2;
-}
-
 impl ops::Mul<SurfacePoint2> for Iso2 {
     type Output = SurfacePoint2;
 

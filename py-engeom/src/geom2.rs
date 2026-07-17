@@ -5,7 +5,6 @@ use crate::conversions::{
     vectors_to_array,
 };
 use engeom::To3D;
-use engeom::geom2::HasBounds2;
 use numpy::ndarray::{Array1, Array2};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::{PyIOError, PyValueError};
@@ -1384,7 +1383,7 @@ impl Arc2 {
 
     #[getter]
     fn aabb(&self) -> Aabb2 {
-        Aabb2::from_inner(*self.inner.aabb())
+        Aabb2::from_inner(self.inner.aabb())
     }
 
     #[getter]
