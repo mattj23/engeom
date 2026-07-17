@@ -21,7 +21,7 @@ For now, these are the guidelines for user-facing structs that represent some co
 
 - Shorter names are better, but they should accurately represent the concept. An example of where I _failed_ at this was the `Curve2`/`Curve3` entities, which should probably have names that reference that they are polylines, not curves.
 - If it is possible that a similar concept exists in a different number of dimensions, use the suffix `2` or `3` in the entity name, _even if `engeom` does not implement a version for the other dimension_.  Only entities that are conceptually identical across dimensions _or_ are a generic implementation from which the 2D/3D versions are derived should be named without a dimension number suffix.
- 
+
 ### General Conventions for Function Names
 
 These conventions apply to the naming of all functions, including trait and struct implementations.
@@ -76,3 +76,17 @@ We're going to follow the standard Rust API guidelines:
 - `to_`: expensive conversions of borrowed to borrowed, borrowed to owned (via clone), or owned to owned.
 - `into_`: a consuming conversion to a different type
 - `as_`: a cheap reference-to-reference reinterpretation 
+
+## Implementation Conventions
+
+### Geometric Primitives
+
+The idea of a geometric primitive is to be a lightweight entity that maps to a fundamental geometric concept.  They should be composed of numeric primitives and, in some cases, other geometric primitives.
+
+- Internally, they should be implemented with the minimum viable representation; for instance, a plane should be represented by a normal and an origin offset (`f64`x4) instead of a point and a normal (`f64`x6) even though the latter is valid.  
+
+- Fields on geometric primitive structs should be publicly accessible.  Accessor methods for convenience are OK for ergonomic reasons.
+
+- Geometric primitive structs must not contain/cache any values that are derived from its own fields.  If the instance owner mutates the value of one of the public fields, it must not be allowed to leave the struct in an incoherent state.
+
+- If derived values are required, such as an `Aabb2`/`3` for some primitives, the struct should provide a method to compute the derived value, and ideally the name and/or documentation should indicate that the value is computed, especially if the computation is non-trivial and the user may want to cache the result.

@@ -2,16 +2,14 @@ use crate::common::PCoords;
 use crate::geom3::circle3::Circle3;
 use crate::geom3::plane3::Plane3;
 use crate::{Iso3, Point3, SurfacePoint3, UnitVec3};
-use parry3d_f64::na::{Translation3, UnitQuaternion};
-use parry3d_f64::query::{Ray, RayCast};
-use parry3d_f64::shape::Ball;
+use parry3d_f64::query::Ray;
 use std::ops;
 
 /// A sphere in 3D space, defined by a center point and a radius.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Sphere3 {
-    center: Point3,
-    radius: f64,
+    pub center: Point3,
+    pub radius: f64,
 }
 
 impl Sphere3 {
@@ -114,14 +112,39 @@ impl Sphere3 {
     /// Intersects a ray with the sphere. Returns the first intersection as a surface point with
     /// the outward normal, or `None` if the ray does not intersect.
     pub fn ray_intersection(&self, ray: &Ray) -> Option<SurfacePoint3> {
-        let iso = Iso3::from_parts(
-            Translation3::from(self.center.coords),
-            UnitQuaternion::identity(),
-        );
-        let hit = Ball::new(self.radius).cast_ray_and_get_normal(&iso, ray, f64::MAX, false)?;
-        let point = ray.origin + ray.dir * hit.time_of_impact;
-        let normal = UnitVec3::new_normalize(hit.normal);
+        let roots = solve_sphere_quadratic(&ray.origin, &ray.dir, &self.center, self.radius);
+        let t = roots
+            .into_iter()
+            .filter(|&t| t >= 0.0)
+            .fold(f64::MAX, f64::min);
+        if t == f64::MAX {
+            return None;
+        }
+        let point = ray.origin + ray.dir * t;
+        let normal = UnitVec3::new_normalize(point - self.center);
         Some(SurfacePoint3::new(point, normal))
+    }
+}
+
+/// Solve `|origin + t*dir - center|² = r²` for t, returning the real roots.
+pub(crate) fn solve_sphere_quadratic(
+    origin: &Point3,
+    dir: &crate::Vector3,
+    center: &Point3,
+    r: f64,
+) -> Vec<f64> {
+    let d = origin - center;
+    let a = dir.norm_squared();
+    let b = 2.0 * d.dot(dir);
+    let c = d.norm_squared() - r * r;
+    let discriminant = b * b - 4.0 * a * c;
+    if discriminant < -1e-10 {
+        vec![]
+    } else if discriminant.abs() <= 1e-10 {
+        vec![-b / (2.0 * a)]
+    } else {
+        let sq = discriminant.sqrt();
+        vec![(-b - sq) / (2.0 * a), (-b + sq) / (2.0 * a)]
     }
 }
 

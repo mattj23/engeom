@@ -2,7 +2,7 @@ use crate::common::Line;
 use crate::common::points::dist;
 use crate::geom3::circle3::Circle3;
 use crate::geom3::plane3::Plane3;
-use crate::geom3::sphere3::Sphere3;
+use crate::geom3::sphere3::{Sphere3, solve_sphere_quadratic};
 use crate::{Iso3, Point3, Vector3};
 use std::ops;
 
@@ -99,23 +99,6 @@ impl Line3 {
         } else {
             None
         }
-    }
-}
-
-/// Solve `|origin + t*dir - center|² = r²` for t, returning the real roots.
-fn solve_sphere_quadratic(origin: &Point3, dir: &Vector3, center: &Point3, r: f64) -> Vec<f64> {
-    let d = origin - center;
-    let a = dir.norm_squared();
-    let b = 2.0 * d.dot(dir);
-    let c = d.norm_squared() - r * r;
-    let discriminant = b * b - 4.0 * a * c;
-    if discriminant < -1e-10 {
-        vec![]
-    } else if discriminant.abs() <= 1e-10 {
-        vec![-b / (2.0 * a)]
-    } else {
-        let sq = discriminant.sqrt();
-        vec![(-b - sq) / (2.0 * a), (-b + sq) / (2.0 * a)]
     }
 }
 

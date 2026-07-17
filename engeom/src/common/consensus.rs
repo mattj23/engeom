@@ -66,6 +66,7 @@
 //!   - `Plane3`
 //!   - `Sphere3`
 //!   - `Cylinder3`
+//!   - `Cone3`
 //!
 //! Fitting will need to be against true geometric residuals, for which we'll use the
 //! Levenberg-Marquardt solver this library already relies on.  There's some amount of

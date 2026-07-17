@@ -4,8 +4,7 @@ use crate::common::{Intersection, PCoords, signed_compliment_2pi};
 use crate::geom2::aabb2::circle_aabb2;
 use crate::geom2::line2::intersect_lines;
 use crate::geom2::{
-    Aabb2, HasBounds2, Iso2, LineOps2, Manifold1Pos2, Point2, Segment2, Vector2, rot90,
-    signed_angle,
+    Aabb2, Iso2, LineOps2, Manifold1Pos2, Point2, Segment2, Vector2, rot90, signed_angle,
 };
 use crate::geom3::Vector3;
 use crate::na::SVector;
@@ -13,7 +12,6 @@ use crate::{AngleDir, AngleInterval, IntervalOps, SurfacePoint2, UnitVec2};
 use crate::{Arc2, Result};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use parry2d_f64::na::{Dyn, Matrix, Owned, U1, U3, Vector};
-use parry2d_f64::shape::Ball;
 use serde::{Deserialize, Serialize};
 use std::f64::consts::FRAC_PI_2;
 
@@ -22,8 +20,7 @@ mod consensus;
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct Circle2 {
     pub center: Point2,
-    pub ball: Ball,
-    aabb: Aabb2,
+    pub radius: f64,
 }
 
 //=============================================================================================
@@ -76,12 +73,7 @@ impl Circle2 {
     /// assert_eq!(circle.r(), 3.0);
     /// ```
     pub fn from_point(center: Point2, r: f64) -> Circle2 {
-        let aabb = circle_aabb2(&center, r);
-        Circle2 {
-            center,
-            ball: Ball::new(r),
-            aabb,
-        }
+        Circle2 { center, radius: r }
     }
 
     /// Attempt to create a fitting circle from the given points and an initial guess. The fitting
@@ -290,7 +282,7 @@ impl Circle2 {
 
     /// Returns the radius of the circle
     pub fn r(&self) -> f64 {
-        self.ball.radius
+        self.radius
     }
 
     /// Returns the point on the circle's perimeter at the given angle (referenced as a
@@ -316,7 +308,7 @@ impl Circle2 {
     /// assert_relative_eq!(p.y, 1.0);
     /// ```
     pub fn point_at_angle(&self, angle: f64) -> Point2 {
-        let v = Vector2::new(self.ball.radius, 0.0);
+        let v = Vector2::new(self.radius, 0.0);
         let t = Iso2::rotation(angle);
         self.center + (t * v)
     }
@@ -349,7 +341,7 @@ impl Circle2 {
             None
         } else {
             let n = v.normalize();
-            Some(self.center + (n * self.ball.radius))
+            Some(self.center + (n * self.radius))
         }
     }
 
@@ -421,14 +413,14 @@ impl Circle2 {
             return result;
         }
 
-        let r_sum = self.ball.radius + other.ball.radius;
+        let r_sum = self.radius + other.radius;
         if d > r_sum {
             // Circles are too far apart
             return result;
         }
 
         let v = (other.center - self.center).normalize();
-        let a = (self.ball.radius.powi(2) - other.ball.radius.powi(2) + d.powi(2)) / (2.0 * d);
+        let a = (self.radius.powi(2) - other.radius.powi(2) + d.powi(2)) / (2.0 * d);
         let p2 = self.center + (v * a);
 
         if (d - r_sum).abs() < TOL {
@@ -437,7 +429,7 @@ impl Circle2 {
             return result;
         }
 
-        let h = (self.ball.radius.powi(2) - a.powi(2)).sqrt();
+        let h = (self.radius.powi(2) - a.powi(2)).sqrt();
         let n = Iso2::rotation(FRAC_PI_2) * v;
         result.push(p2 + (n * h));
         result.push(p2 - (n * h));
@@ -492,7 +484,7 @@ impl Circle2 {
     /// assert_eq!(d2, 1.0);
     /// ```
     pub fn distance_to(&self, point: &impl PCoords<2>) -> f64 {
-        dist(&self.center, point) - self.ball.radius
+        dist(&self.center, point) - self.radius
     }
 
     /// Returns `true` if the point lies at or inside the boundary of the circle.
@@ -528,11 +520,11 @@ impl Circle2 {
     pub fn tangent_points_to(&self, point: &impl PCoords<2>) -> Option<(Point2, Point2)> {
         let dv = point.coords() - self.center.coords;
         let d = dv.norm();
-        if d <= self.ball.radius {
+        if d <= self.radius {
             return None;
         }
 
-        let angle = f64::asin(self.ball.radius / d);
+        let angle = f64::asin(self.radius / d);
         let d1 = self.r() * f64::sin(angle);
         let e0 = self.r() * f64::cos(angle);
 
@@ -572,15 +564,12 @@ impl Circle2 {
         if dist(&self.center, &other.center) < 1.0e-10 {
             // If the circles are concentric, there will be no outer tangents
             None
-        } else if (self.ball.radius - other.ball.radius).abs() < 1.0e-10 {
+        } else if (self.radius - other.radius).abs() < 1.0e-10 {
             // If the circles have the same radius, the outer tangent method must be computed
             // by a simpler, special case
             let s = Segment2::try_new(&self.center, &other.center).unwrap();
-            Some((
-                s.with_offset(self.ball.radius),
-                s.with_offset(-self.ball.radius),
-            ))
-        } else if self.ball.radius > other.ball.radius {
+            Some((s.with_offset(self.radius), s.with_offset(-self.radius)))
+        } else if self.radius > other.radius {
             if let Some((seg0, seg1)) = other.outer_tangents_to(self) {
                 // Swap the segments and reverse them
                 Some((seg1.reversed(), seg0.reversed()))
@@ -643,9 +632,10 @@ impl Circle2 {
     }
 }
 
-impl HasBounds2 for Circle2 {
-    fn aabb(&self) -> &Aabb2 {
-        &self.aabb
+impl Circle2 {
+    /// Returns the axis-aligned bounding box of the circle, computed on demand.
+    pub fn aabb(&self) -> Aabb2 {
+        circle_aabb2(&self.center, self.radius)
     }
 }
 
@@ -671,11 +661,11 @@ pub fn intersection_line_circle(line: &impl LineOps2, circle: &Circle2) -> Vec<f
 
     let d = dist(&circle.center, &line.projected_point(&circle.center));
 
-    if (d - circle.ball.radius).abs() < 1.0e-10 {
+    if (d - circle.radius).abs() < 1.0e-10 {
         // If the distance from the center to the line is equal to the radius, then there is one
         // single intersection point at the tangency point
         vec![tc]
-    } else if d > circle.ball.radius {
+    } else if d > circle.radius {
         // If the distance from the center to the line is greater than the radius, then there
         // are no intersection points
         Vec::new()
@@ -683,7 +673,7 @@ pub fn intersection_line_circle(line: &impl LineOps2, circle: &Circle2) -> Vec<f
         // There are two intersection points. The distance from the tangency point to the
         // intersection points is the height of a right triangle with hypotenuse `r` and base
         // `d`.
-        let h = (circle.ball.radius.powi(2) - d.powi(2)).sqrt();
+        let h = (circle.radius.powi(2) - d.powi(2)).sqrt();
 
         // We can't simply add and subtract `h` from `tc` because the line may not be
         // normalized, so we need to scale the value `h` by the norm of the line's direction

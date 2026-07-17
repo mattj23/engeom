@@ -574,7 +574,7 @@ impl Circle2 {
 
     #[getter]
     fn aabb(&self) -> Aabb2 {
-        Aabb2::from_inner(*self.inner.aabb())
+        Aabb2::from_inner(self.inner.aabb())
     }
 
     fn point_at_angle(&self, angle: f64) -> Point2 {
