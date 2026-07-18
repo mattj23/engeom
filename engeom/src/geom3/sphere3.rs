@@ -1,8 +1,8 @@
 use crate::common::PCoords;
 use crate::geom3::circle3::Circle3;
+use crate::geom3::line3::Line3;
 use crate::geom3::plane3::Plane3;
 use crate::{Iso3, Point3, SurfacePoint3, UnitVec3};
-use parry3d_f64::query::Ray;
 use std::ops;
 
 /// A sphere in 3D space, defined by a center point and a radius.
@@ -93,10 +93,13 @@ impl Sphere3 {
         Some(Circle3::new(circle_center, normal, circle_radius))
     }
 
-    /// Intersects a ray with the sphere. Returns the first intersection as a surface point with
-    /// the outward normal, or `None` if the ray does not intersect.
-    pub fn intersect_ray(&self, ray: &Ray) -> Option<SurfacePoint3> {
-        let roots = solve_sphere_quadratic(&ray.origin, &ray.dir, &self.center, self.radius);
+    /// Intersects a ray with the sphere, where the ray is expressed as a `Line3` and only
+    /// intersections in the forward (positive `direction`) half are considered. Returns the
+    /// first such intersection as a surface point with the outward normal, or `None` if the ray
+    /// does not intersect.
+    pub fn intersect_ray(&self, line: &Line3) -> Option<SurfacePoint3> {
+        let roots =
+            solve_sphere_quadratic(&line.origin, &line.direction, &self.center, self.radius);
         let t = roots
             .into_iter()
             .filter(|&t| t >= 0.0)
@@ -104,7 +107,7 @@ impl Sphere3 {
         if t == f64::MAX {
             return None;
         }
-        let point = ray.origin + ray.dir * t;
+        let point = line.at(t);
         let normal = UnitVec3::new_normalize(point - self.center);
         Some(SurfacePoint3::new(point, normal))
     }
@@ -370,11 +373,11 @@ mod tests {
     #[test]
     fn ray_hits_front_of_unit_sphere() {
         let sphere = unit_sphere();
-        let ray = Ray::new(
+        let line = Line3::new(
             Point3::new(5.0, 0.0, 0.0),
             (-crate::Vector3::x()).normalize(),
         );
-        let sp = sphere.intersect_ray(&ray).unwrap();
+        let sp = sphere.intersect_ray(&line).unwrap();
         assert_relative_eq!(sp.point, Point3::new(1.0, 0.0, 0.0), epsilon = 1e-12);
         assert_relative_eq!(sp.normal.into_inner(), crate::Vector3::x(), epsilon = 1e-12);
     }
@@ -382,11 +385,11 @@ mod tests {
     #[test]
     fn ray_misses_returns_none() {
         let sphere = unit_sphere();
-        let ray = Ray::new(
+        let line = Line3::new(
             Point3::new(5.0, 5.0, 0.0),
             (-crate::Vector3::x()).normalize(),
         );
-        assert!(sphere.intersect_ray(&ray).is_none());
+        assert!(sphere.intersect_ray(&line).is_none());
     }
 
     #[test]
@@ -394,8 +397,8 @@ mod tests {
         let sphere = offset_sphere();
         let origin = Point3::new(10.0, 2.0, 3.0);
         let dir = (sphere.center - origin).normalize();
-        let ray = Ray::new(origin, dir);
-        let sp = sphere.intersect_ray(&ray).unwrap();
+        let line = Line3::new(origin, dir);
+        let sp = sphere.intersect_ray(&line).unwrap();
         let dist = (sp.point - sphere.center).norm();
         assert_relative_eq!(dist, sphere.r(), epsilon = 1e-12);
     }
@@ -403,11 +406,11 @@ mod tests {
     #[test]
     fn intersect_ray_normal_points_outward() {
         let sphere = unit_sphere();
-        let ray = Ray::new(
+        let line = Line3::new(
             Point3::new(0.0, 5.0, 0.0),
             (-crate::Vector3::y()).normalize(),
         );
-        let sp = sphere.intersect_ray(&ray).unwrap();
+        let sp = sphere.intersect_ray(&line).unwrap();
         // normal at the top of the sphere should point in +Y
         assert_relative_eq!(sp.normal.into_inner(), crate::Vector3::y(), epsilon = 1e-12);
     }
@@ -416,8 +419,8 @@ mod tests {
     fn ray_from_inside_hits_back_surface() {
         let sphere = unit_sphere();
         // Ray starting inside, heading +X, should hit the back (+X side)
-        let ray = Ray::new(Point3::new(0.0, 0.0, 0.0), crate::Vector3::x().normalize());
-        let sp = sphere.intersect_ray(&ray).unwrap();
+        let line = Line3::new(Point3::new(0.0, 0.0, 0.0), crate::Vector3::x().normalize());
+        let sp = sphere.intersect_ray(&line).unwrap();
         assert_relative_eq!(sp.point, Point3::new(1.0, 0.0, 0.0), epsilon = 1e-12);
     }
 }
