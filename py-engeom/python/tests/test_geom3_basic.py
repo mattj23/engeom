@@ -54,9 +54,9 @@ def test_plane3_normal_property_type():
     assert isinstance(plane.normal, Vector3)
 
 
-def test_plane3_inverted_normal():
+def test_plane3_normal_reversed():
     plane = Plane3(0, 0, 1, 0)
-    inv = plane.inverted_normal()
+    inv = plane.normal_reversed()
     assert inv.c == pytest.approx(-1.0)
 
 

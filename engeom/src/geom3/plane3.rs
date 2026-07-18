@@ -30,9 +30,9 @@ impl Plane3 {
         Self { normal, d }
     }
 
-    /// Create a new plane which is in the same position as the input plane, but with the normal
-    /// direction inverted.
-    pub fn inverted_normal(&self) -> Self {
+    /// Returns a new plane in the same position as this one, but with the normal direction
+    /// reversed, without modifying the original.
+    pub fn normal_reversed(&self) -> Self {
         Self::new(-self.normal, -self.d)
     }
 
@@ -279,6 +279,25 @@ mod tests {
     use super::*;
     use crate::geom3::tests::RandomGeometry3;
     use approx::assert_relative_eq;
+
+    #[test]
+    fn normal_reversed_negates_normal_and_distance() {
+        let plane = Plane3::new(Vector3::z_axis(), 2.0);
+        let reversed = plane.normal_reversed();
+        assert_relative_eq!(reversed.normal.into_inner(), -plane.normal.into_inner());
+        assert_relative_eq!(reversed.d, -plane.d);
+
+        // The plane occupies the same position in space: signed distance is negated everywhere.
+        let mut rg = RandomGeometry3::new();
+        for _ in 0..100 {
+            let p = rg.point3(10.0);
+            assert_relative_eq!(
+                reversed.signed_distance_to_point(&p),
+                -plane.signed_distance_to_point(&p),
+                epsilon = 1e-12
+            );
+        }
+    }
 
     #[test]
     fn intersect_xy_xz_gives_x_axis() {

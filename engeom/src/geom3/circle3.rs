@@ -7,7 +7,7 @@ mod consensus;
 /// A flat circle in 3D space, defined by a center point, a unit normal, and a radius. The circle
 /// consists of every point in the plane through `center` perpendicular to `normal` at distance
 /// `radius` from `center`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Circle3 {
     pub center: Point3,
     pub normal: UnitVec3,
@@ -36,8 +36,8 @@ impl Circle3 {
     /// let normal = UnitVec3::new_normalize(Vector3::new(0.0, 0.0, 1.0));
     /// let circle = Circle3::new(center, normal, 5.0);
     ///
-    /// assert_relative_eq!(circle.center(), center, epsilon = 1e-12);
-    /// assert_relative_eq!(circle.normal().into_inner(), normal.into_inner(), epsilon = 1e-12);
+    /// assert_relative_eq!(circle.center, center, epsilon = 1e-12);
+    /// assert_relative_eq!(circle.normal.into_inner(), normal.into_inner(), epsilon = 1e-12);
     /// assert_relative_eq!(circle.r(), 5.0, epsilon = 1e-12);
     /// ```
     pub fn new(center: Point3, normal: UnitVec3, radius: f64) -> Self {
@@ -53,44 +53,26 @@ impl Circle3 {
         self.radius
     }
 
-    /// Returns the world-space center of the circle.
-    pub fn center(&self) -> Point3 {
-        self.center
-    }
-
-    /// Returns the world-space unit normal of the circle's plane.
-    pub fn normal(&self) -> UnitVec3 {
-        self.normal
-    }
-
-    /// Returns the plane that the circle lies in
+    /// Computes and returns the plane that the circle lies in.
     pub fn plane(&self) -> Plane3 {
         Plane3::new(self.normal, self.normal.dot(&self.center.coords))
     }
 
     /// Returns a new circle transformed by the given isometry, without modifying the original.
-    pub fn new_transformed_by(&self, iso: &Iso3) -> Self {
-        let mut new_circle = self.clone();
-        new_circle.transform_by(iso);
-        new_circle
+    pub fn transformed_by(&self, iso: &Iso3) -> Self {
+        Self {
+            center: iso * self.center,
+            normal: UnitVec3::new_normalize(iso.rotation * self.normal.into_inner()),
+            radius: self.radius,
+        }
     }
 
-    /// Transforms this circle in place by the given isometry.
-    pub fn transform_by(&mut self, iso: &Iso3) {
-        self.center = iso * self.center;
-        self.normal = UnitVec3::new_normalize(iso.rotation * self.normal.into_inner());
-    }
-
-    /// Flips the normal direction of the circle in place.
-    pub fn flip_normal(&mut self) {
-        self.normal = -self.normal;
-    }
-
-    /// Returns a new circle with the normal direction flipped, without modifying the original.
-    pub fn new_flipped_normal(&self) -> Self {
-        let mut flipped = self.clone();
-        flipped.flip_normal();
-        flipped
+    /// Returns a new circle with the normal direction reversed, without modifying the original.
+    pub fn normal_reversed(&self) -> Self {
+        Self {
+            normal: -self.normal,
+            ..*self
+        }
     }
 
     /// Returns the point on the circle's perimeter closest to `test_point`, paired with the
@@ -199,28 +181,28 @@ impl Circle3 {
 impl ops::Mul<Circle3> for Iso3 {
     type Output = Circle3;
     fn mul(self, rhs: Circle3) -> Circle3 {
-        rhs.new_transformed_by(&self)
+        rhs.transformed_by(&self)
     }
 }
 
 impl ops::Mul<&Circle3> for Iso3 {
     type Output = Circle3;
     fn mul(self, rhs: &Circle3) -> Circle3 {
-        rhs.new_transformed_by(&self)
+        rhs.transformed_by(&self)
     }
 }
 
 impl ops::Mul<Circle3> for &Iso3 {
     type Output = Circle3;
     fn mul(self, rhs: Circle3) -> Circle3 {
-        rhs.new_transformed_by(self)
+        rhs.transformed_by(self)
     }
 }
 
 impl ops::Mul<&Circle3> for &Iso3 {
     type Output = Circle3;
     fn mul(self, rhs: &Circle3) -> Circle3 {
-        rhs.new_transformed_by(self)
+        rhs.transformed_by(self)
     }
 }
 
@@ -298,10 +280,10 @@ mod tests {
         let circle = tilted_circle();
 
         // The center itself is on the axis through the center along the normal.
-        assert!(circle.closest_point(&circle.center()).is_none());
+        assert!(circle.closest_point(&circle.center).is_none());
 
         // So is any other point directly along the normal from the center.
-        let on_axis = circle.center() + circle.normal().into_inner() * 3.0;
+        let on_axis = circle.center + circle.normal.into_inner() * 3.0;
         assert!(circle.closest_point(&on_axis).is_none());
     }
 
@@ -317,12 +299,12 @@ mod tests {
                 continue;
             };
 
-            let radial = UnitVec3::new_normalize(sp.point - circle.center());
+            let radial = UnitVec3::new_normalize(sp.point - circle.center);
             assert_relative_eq!(sp.normal.dot(&radial), 0.0, epsilon = 1e-10);
-            assert_relative_eq!(sp.normal.dot(&circle.normal()), 0.0, epsilon = 1e-10);
+            assert_relative_eq!(sp.normal.dot(&circle.normal), 0.0, epsilon = 1e-10);
             assert_relative_eq!(
                 sp.normal.into_inner(),
-                circle.normal().cross(&radial),
+                circle.normal.cross(&radial),
                 epsilon = 1e-10
             );
         }
@@ -337,11 +319,11 @@ mod tests {
         assert_eq!(points.len(), 2);
         for &pt in &points {
             assert_relative_eq!(plane.signed_distance_to_point(&pt), 0.0, epsilon = 1e-10);
-            assert_relative_eq!((pt - circle.center()).norm(), circle.r(), epsilon = 1e-10);
+            assert_relative_eq!((pt - circle.center).norm(), circle.r(), epsilon = 1e-10);
         }
         // The two points should be antipodal
         let mid = Point3::from((points[0].coords + points[1].coords) / 2.0);
-        assert_relative_eq!(mid, circle.center(), epsilon = 1e-10);
+        assert_relative_eq!(mid, circle.center, epsilon = 1e-10);
     }
 
     #[test]
@@ -394,7 +376,7 @@ mod tests {
                     0.0,
                     epsilon = 1e-8
                 );
-                assert_relative_eq!((pt - circle.center()).norm(), circle.r(), epsilon = 1e-8);
+                assert_relative_eq!((pt - circle.center).norm(), circle.r(), epsilon = 1e-8);
             }
         }
     }
@@ -433,50 +415,47 @@ mod tests {
     // -------------------------------------------------------------------------
 
     #[test]
-    fn new_transformed_by_identity_preserves_all() {
+    fn transformed_by_identity_preserves_all() {
         let circle = tilted_circle();
-        let result = circle.new_transformed_by(&Iso3::identity());
+        let result = circle.transformed_by(&Iso3::identity());
         assert_relative_eq!(result.r(), circle.r(), epsilon = 1e-12);
-        assert_relative_eq!(result.center(), circle.center(), epsilon = 1e-12);
+        assert_relative_eq!(result.center, circle.center, epsilon = 1e-12);
         assert_relative_eq!(
-            result.normal().into_inner(),
-            circle.normal().into_inner(),
+            result.normal.into_inner(),
+            circle.normal.into_inner(),
             epsilon = 1e-12
         );
     }
 
     #[test]
-    fn transform_by_identity_preserves_all() {
-        let mut circle = tilted_circle();
-        let original_center = circle.center();
-        let original_normal = circle.normal().into_inner();
-        let original_r = circle.r();
-        circle.transform_by(&Iso3::identity());
-        assert_relative_eq!(circle.r(), original_r, epsilon = 1e-12);
-        assert_relative_eq!(circle.center(), original_center, epsilon = 1e-12);
-        assert_relative_eq!(
-            circle.normal().into_inner(),
-            original_normal,
-            epsilon = 1e-12
-        );
-    }
-
-    #[test]
-    fn stress_transform_by() {
+    fn stress_transformed_by() {
         let mut rg = RandomGeometry3::new();
         for _ in 0..1000 {
             let original = random_circle();
             let iso = rg.iso3(10.0);
 
-            let moved = original.new_transformed_by(&iso);
+            let moved = original.transformed_by(&iso);
             assert_relative_eq!(moved.r(), original.r(), epsilon = 1e-9);
-            assert_relative_eq!(moved.center(), iso * original.center(), epsilon = 1e-9);
+            assert_relative_eq!(moved.center, iso * original.center, epsilon = 1e-9);
 
             for pt in sample_circle_points(&original, 50) {
                 let moved_point = iso * pt;
-                let back_check = (moved_point - moved.center()).norm();
+                let back_check = (moved_point - moved.center).norm();
                 assert_relative_eq!(back_check, moved.r(), epsilon = 1e-9);
             }
         }
+    }
+
+    #[test]
+    fn normal_reversed_reverses_normal_preserves_center_and_radius() {
+        let circle = tilted_circle();
+        let reversed = circle.normal_reversed();
+        assert_relative_eq!(reversed.center, circle.center, epsilon = 1e-12);
+        assert_relative_eq!(reversed.r(), circle.r(), epsilon = 1e-12);
+        assert_relative_eq!(
+            reversed.normal.into_inner(),
+            -circle.normal.into_inner(),
+            epsilon = 1e-12
+        );
     }
 }

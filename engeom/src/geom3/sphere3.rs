@@ -243,9 +243,9 @@ mod tests {
         let plane = Plane3::xy(); // z=0 through origin
         let circle = sphere.intersect_plane(&plane).unwrap();
         assert_relative_eq!(circle.r(), 1.0, epsilon = 1e-12);
-        assert_relative_eq!(circle.center(), Point3::origin(), epsilon = 1e-12);
+        assert_relative_eq!(circle.center, Point3::origin(), epsilon = 1e-12);
         assert_relative_eq!(
-            circle.normal().into_inner(),
+            circle.normal.into_inner(),
             crate::Vector3::z(),
             epsilon = 1e-12
         );
@@ -258,7 +258,7 @@ mod tests {
         let plane = Plane3::new(crate::Vector3::z_axis(), 1.0);
         let circle = sphere.intersect_plane(&plane).unwrap();
         assert_relative_eq!(circle.r(), 0.0, epsilon = 1e-12);
-        assert_relative_eq!(circle.center(), Point3::new(0.0, 0.0, 1.0), epsilon = 1e-12);
+        assert_relative_eq!(circle.center, Point3::new(0.0, 0.0, 1.0), epsilon = 1e-12);
     }
 
     #[test]
@@ -284,7 +284,7 @@ mod tests {
         let plane = Plane3::new(crate::Vector3::z_axis(), 3.0); // z=3 passes through center
         let circle = sphere.intersect_plane(&plane).unwrap();
         // circle center should be the projection of sphere center onto the plane
-        assert_relative_eq!(circle.center(), Point3::new(1.0, 2.0, 3.0), epsilon = 1e-12);
+        assert_relative_eq!(circle.center, Point3::new(1.0, 2.0, 3.0), epsilon = 1e-12);
         assert_relative_eq!(circle.r(), 2.0, epsilon = 1e-12);
     }
 
@@ -295,7 +295,7 @@ mod tests {
         let plane = Plane3::new(normal, 0.0);
         let circle = sphere.intersect_plane(&plane).unwrap();
         assert_relative_eq!(
-            circle.normal().into_inner(),
+            circle.normal.into_inner(),
             normal.into_inner(),
             epsilon = 1e-12
         );
@@ -310,7 +310,7 @@ mod tests {
         // d=2 = r1+r2, tangent externally → point circle at origin
         let circle = s1.intersect_sphere(&s2).unwrap();
         assert_relative_eq!(circle.r(), 0.0, epsilon = 1e-12);
-        assert_relative_eq!(circle.center(), Point3::origin(), epsilon = 1e-12);
+        assert_relative_eq!(circle.center, Point3::origin(), epsilon = 1e-12);
     }
 
     #[test]
@@ -321,9 +321,9 @@ mod tests {
         let circle = s1.intersect_sphere(&s2).unwrap();
         assert_relative_eq!(circle.r(), 4.0, epsilon = 1e-12);
         // circle center should be at the midpoint
-        assert_relative_eq!(circle.center(), Point3::origin(), epsilon = 1e-12);
+        assert_relative_eq!(circle.center, Point3::origin(), epsilon = 1e-12);
         // normal should point along X
-        assert_relative_eq!(circle.normal().into_inner().x.abs(), 1.0, epsilon = 1e-12);
+        assert_relative_eq!(circle.normal.into_inner().x.abs(), 1.0, epsilon = 1e-12);
     }
 
     #[test]
@@ -334,7 +334,7 @@ mod tests {
         let s2 = Sphere3::new(Point3::new(5.0, 0.0, 0.0), 4.0);
         let circle = s1.intersect_sphere(&s2).unwrap();
         assert_relative_eq!(circle.r(), 2.4, epsilon = 1e-10);
-        assert_relative_eq!(circle.center(), Point3::new(1.8, 0.0, 0.0), epsilon = 1e-10);
+        assert_relative_eq!(circle.center, Point3::new(1.8, 0.0, 0.0), epsilon = 1e-10);
     }
 
     #[test]
@@ -366,7 +366,7 @@ mod tests {
         let s2 = Sphere3::new(Point3::new(4.0, 0.0, 0.0), 4.0);
         let circle = s1.intersect_sphere(&s2).unwrap();
 
-        let n = circle.normal().into_inner();
+        let n = circle.normal.into_inner();
         let reference = if n.z.abs() < 0.9 {
             crate::Vector3::z()
         } else {
@@ -377,7 +377,7 @@ mod tests {
 
         for t in [0.0_f64, 1.0, 2.0, 3.0, 4.0, 5.0] {
             let pt =
-                circle.center() + x_axis * (circle.r() * t.cos()) + y_axis * (circle.r() * t.sin());
+                circle.center + x_axis * (circle.r() * t.cos()) + y_axis * (circle.r() * t.sin());
             assert_relative_eq!((pt - s1.center()).norm(), s1.r(), epsilon = 1e-10);
             assert_relative_eq!((pt - s2.center()).norm(), s2.r(), epsilon = 1e-10);
         }

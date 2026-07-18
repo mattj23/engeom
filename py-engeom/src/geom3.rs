@@ -613,8 +613,8 @@ impl Plane3 {
         Ok(Self::from_inner(engeom::Plane3::new(normal, d)))
     }
 
-    fn inverted_normal(&self) -> Self {
-        Self::from_inner(self.inner.inverted_normal())
+    fn normal_reversed(&self) -> Self {
+        Self::from_inner(self.inner.normal_reversed())
     }
 
     fn signed_distance_to_point(&self, point: Point3) -> f64 {
@@ -1033,8 +1033,8 @@ impl Circle3 {
     }
 
     fn __repr__(&self) -> String {
-        let c = self.inner.center();
-        let n = self.inner.normal();
+        let c = self.inner.center;
+        let n = self.inner.normal;
         format!(
             "Circle3(center=({}, {}, {}), normal=({}, {}, {}), radius={})",
             c.x,
@@ -1048,14 +1048,14 @@ impl Circle3 {
     }
 
     fn __getnewargs__(&self) -> (f64, f64, f64, f64, f64, f64, f64) {
-        let c = self.inner.center();
-        let n = self.inner.normal();
+        let c = self.inner.center;
+        let n = self.inner.normal;
         (c.x, c.y, c.z, n.x, n.y, n.z, self.inner.r())
     }
 
     fn __getstate__(&self) -> (f64, f64, f64, f64, f64, f64, f64) {
-        let c = self.inner.center();
-        let n = self.inner.normal();
+        let c = self.inner.center;
+        let n = self.inner.normal;
         (c.x, c.y, c.z, n.x, n.y, n.z, self.inner.r())
     }
 
@@ -1079,12 +1079,12 @@ impl Circle3 {
 
     #[getter]
     fn center(&self) -> Point3 {
-        Point3::from_inner(self.inner.center())
+        Point3::from_inner(self.inner.center)
     }
 
     #[getter]
     fn normal(&self) -> Vector3 {
-        Vector3::from_inner(self.inner.normal().into_inner())
+        Vector3::from_inner(self.inner.normal.into_inner())
     }
 
     #[getter]
@@ -1115,11 +1115,11 @@ impl Circle3 {
     }
 
     fn flip_normal(&mut self) {
-        self.inner.flip_normal();
+        self.inner = self.inner.normal_reversed();
     }
 
-    fn new_flipped_normal(&self) -> Self {
-        Circle3::from_inner(self.inner.new_flipped_normal())
+    fn normal_reversed(&self) -> Self {
+        Circle3::from_inner(self.inner.normal_reversed())
     }
 }
 
@@ -1513,8 +1513,7 @@ impl Iso3 {
                     .into_bound_py_any(py)
             }
             Transformable3::Circle(other) => {
-                Circle3::from_inner(other.inner.new_transformed_by(&self.inner))
-                    .into_bound_py_any(py)
+                Circle3::from_inner(other.inner.transformed_by(&self.inner)).into_bound_py_any(py)
             }
         }
     }

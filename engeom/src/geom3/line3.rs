@@ -91,7 +91,7 @@ impl Line3 {
     pub fn intersect_circle(&self, circle: &Circle3) -> Option<f64> {
         if let Some(t) = self.intersect_plane(&circle.plane()) {
             let p = self.at(t);
-            if dist(&p, &circle.center()) <= circle.r() {
+            if dist(&p, &circle.center) <= circle.r() {
                 Some(t)
             } else {
                 None

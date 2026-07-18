@@ -50,7 +50,7 @@ impl ConsensusModel<3> for Circle3 {
     }
 
     fn residual(&self, point: &Point3) -> f64 {
-        point_circle_distance(&self.center(), &self.normal(), self.r(), point)
+        point_circle_distance(&self.center, &self.normal, self.r(), point)
     }
 
     fn refine_weighted(points: &[Point3], weights: &[f64], initial: &Circle3) -> Option<Circle3> {
@@ -174,15 +174,15 @@ struct Circle3Fit<'a> {
 
 impl<'a> Circle3Fit<'a> {
     fn new(points: &'a [Point3], weights: &'a [f64], base: &Circle3) -> Self {
-        let (raw_x, raw_y) = perpendicular_axes(&base.normal());
+        let (raw_x, raw_y) = perpendicular_axes(&base.normal);
         let axis_x = UnitVec3::new_normalize(raw_x);
         let axis_y = UnitVec3::new_normalize(raw_y);
 
         let mut problem = Self {
             points,
             weights,
-            base_center: base.center(),
-            base_normal: base.normal(),
+            base_center: base.center,
+            base_normal: base.normal,
             base_r: base.r(),
             axis_x,
             axis_y,
@@ -261,7 +261,7 @@ mod tests {
     /// Test-only parametrization of a circle's perimeter; `Circle3` has no angle-based API of its
     /// own, so this exists purely to generate sample points for these tests.
     fn sample_circle_point(circle: &Circle3, t: f64) -> Point3 {
-        let n = circle.normal().into_inner();
+        let n = circle.normal.into_inner();
         let reference = if n.z.abs() < 0.9 {
             Vector3::z()
         } else {
@@ -269,7 +269,7 @@ mod tests {
         };
         let x_axis = reference.cross(&n).normalize();
         let y_axis = n.cross(&x_axis);
-        circle.center() + x_axis * (circle.r() * t.cos()) + y_axis * (circle.r() * t.sin())
+        circle.center + x_axis * (circle.r() * t.cos()) + y_axis * (circle.r() * t.sin())
     }
 
     fn sample_circle(circle: &Circle3, n: usize) -> Vec<Point3> {
@@ -279,13 +279,13 @@ mod tests {
     }
 
     fn assert_matches(result: &Circle3, expected: &Circle3) {
-        assert_relative_eq!(result.center(), expected.center(), epsilon = 5.0e-3);
+        assert_relative_eq!(result.center, expected.center, epsilon = 5.0e-3);
         assert_relative_eq!(result.r(), expected.r(), epsilon = 5.0e-3);
         // The normal direction of a circle is arbitrary, so compare absolute alignment.
         let dot = result
-            .normal()
+            .normal
             .into_inner()
-            .dot(&expected.normal().into_inner())
+            .dot(&expected.normal.into_inner())
             .abs();
         assert_relative_eq!(dot, 1.0, epsilon = 1.0e-3);
     }
@@ -320,7 +320,7 @@ mod tests {
         for i in 0..40 {
             let f = i as f64;
             points.push(
-                expected.center()
+                expected.center
                     + Vector3::new(
                         5.0 + 2.0 * (1.3 * f).sin(),
                         -4.0 + 2.0 * (0.7 * f).cos(),

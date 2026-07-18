@@ -1066,10 +1066,11 @@ class Plane3:
         """
         ...
 
-    def inverted_normal(self) -> Plane3:
+    def normal_reversed(self) -> Plane3:
         """
-        Return a new plane with the normal vector inverted.
-        :return: a new plane with the inverted normal vector.
+        Return a new plane in the same position as this one, but with the normal direction
+        reversed, without modifying the original.
+        :return: a new plane with the reversed normal vector.
         """
         ...
 
@@ -1530,14 +1531,14 @@ class Circle3:
 
     def flip_normal(self) -> None:
         """
-        Flip the normal direction of the circle in place.
+        Reverse the normal direction of the circle in place.
         """
         ...
 
-    def new_flipped_normal(self) -> Circle3:
+    def normal_reversed(self) -> Circle3:
         """
-        Return a new circle with the normal direction flipped, without modifying the original.
-        :return: a new Circle3 with the flipped normal.
+        Return a new circle with the normal direction reversed, without modifying the original.
+        :return: a new Circle3 with the reversed normal.
         """
         ...
 
