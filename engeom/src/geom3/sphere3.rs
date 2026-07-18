@@ -17,36 +17,20 @@ impl Sphere3 {
         Self { center, radius }
     }
 
-    pub fn center(&self) -> Point3 {
-        self.center
-    }
-
     pub fn r(&self) -> f64 {
         self.radius
     }
 
-    /// Returns a new sphere transformed by the given isometry. Only the translation component
-    /// affects the sphere (rotation does not change a sphere).
+    /// Returns a new sphere transformed by the given isometry, without modifying the original.
+    /// Only the translation component affects the sphere (rotation does not change a sphere).
     ///
     /// # Arguments
     ///
     /// * `iso`: an isometry that will be applied to the sphere's center point
     ///
     /// returns: Sphere3
-    pub fn new_transformed_by(&self, iso: &Iso3) -> Self {
+    pub fn transformed_by(&self, iso: &Iso3) -> Self {
         Self::new(iso * self.center, self.radius)
-    }
-
-    /// Transforms this sphere in place by the given isometry. Only the translation component
-    /// affects the sphere (rotation does not change a sphere).
-    ///
-    /// # Arguments
-    ///
-    /// * `iso`: an isometry that will be applied to the sphere's center point
-    ///
-    /// returns: ()
-    pub fn transform_by(&mut self, iso: &Iso3) {
-        self.center = iso * self.center;
     }
 
     /// Returns the closest point on the sphere's surface to `test_point`, along with the outward
@@ -111,7 +95,7 @@ impl Sphere3 {
 
     /// Intersects a ray with the sphere. Returns the first intersection as a surface point with
     /// the outward normal, or `None` if the ray does not intersect.
-    pub fn ray_intersection(&self, ray: &Ray) -> Option<SurfacePoint3> {
+    pub fn intersect_ray(&self, ray: &Ray) -> Option<SurfacePoint3> {
         let roots = solve_sphere_quadratic(&ray.origin, &ray.dir, &self.center, self.radius);
         let t = roots
             .into_iter()
@@ -151,28 +135,28 @@ pub(crate) fn solve_sphere_quadratic(
 impl ops::Mul<Sphere3> for Iso3 {
     type Output = Sphere3;
     fn mul(self, rhs: Sphere3) -> Sphere3 {
-        rhs.new_transformed_by(&self)
+        rhs.transformed_by(&self)
     }
 }
 
 impl ops::Mul<&Sphere3> for Iso3 {
     type Output = Sphere3;
     fn mul(self, rhs: &Sphere3) -> Sphere3 {
-        rhs.new_transformed_by(&self)
+        rhs.transformed_by(&self)
     }
 }
 
 impl ops::Mul<Sphere3> for &Iso3 {
     type Output = Sphere3;
     fn mul(self, rhs: Sphere3) -> Sphere3 {
-        rhs.new_transformed_by(self)
+        rhs.transformed_by(self)
     }
 }
 
 impl ops::Mul<&Sphere3> for &Iso3 {
     type Output = Sphere3;
     fn mul(self, rhs: &Sphere3) -> Sphere3 {
-        rhs.new_transformed_by(self)
+        rhs.transformed_by(self)
     }
 }
 
@@ -193,8 +177,8 @@ mod tests {
     fn transform_by_moves_center() {
         let sphere = Sphere3::new(Point3::origin(), 2.0);
         let iso = Iso3::translation(1.0, 2.0, 3.0);
-        let moved = sphere.new_transformed_by(&iso);
-        assert_relative_eq!(moved.center(), Point3::new(1.0, 2.0, 3.0), epsilon = 1e-12);
+        let moved = sphere.transformed_by(&iso);
+        assert_relative_eq!(moved.center, Point3::new(1.0, 2.0, 3.0), epsilon = 1e-12);
         assert_relative_eq!(moved.r(), 2.0, epsilon = 1e-12);
     }
 
@@ -214,7 +198,7 @@ mod tests {
         let sp = sphere.closest_point(&test).unwrap();
         // should still project to the surface in the same direction
         assert_relative_eq!(
-            (sp.point - sphere.center()).norm(),
+            (sp.point - sphere.center).norm(),
             sphere.r(),
             epsilon = 1e-12
         );
@@ -378,8 +362,8 @@ mod tests {
         for t in [0.0_f64, 1.0, 2.0, 3.0, 4.0, 5.0] {
             let pt =
                 circle.center + x_axis * (circle.r() * t.cos()) + y_axis * (circle.r() * t.sin());
-            assert_relative_eq!((pt - s1.center()).norm(), s1.r(), epsilon = 1e-10);
-            assert_relative_eq!((pt - s2.center()).norm(), s2.r(), epsilon = 1e-10);
+            assert_relative_eq!((pt - s1.center).norm(), s1.r(), epsilon = 1e-10);
+            assert_relative_eq!((pt - s2.center).norm(), s2.r(), epsilon = 1e-10);
         }
     }
 
@@ -390,7 +374,7 @@ mod tests {
             Point3::new(5.0, 0.0, 0.0),
             (-crate::Vector3::x()).normalize(),
         );
-        let sp = sphere.ray_intersection(&ray).unwrap();
+        let sp = sphere.intersect_ray(&ray).unwrap();
         assert_relative_eq!(sp.point, Point3::new(1.0, 0.0, 0.0), epsilon = 1e-12);
         assert_relative_eq!(sp.normal.into_inner(), crate::Vector3::x(), epsilon = 1e-12);
     }
@@ -402,28 +386,28 @@ mod tests {
             Point3::new(5.0, 5.0, 0.0),
             (-crate::Vector3::x()).normalize(),
         );
-        assert!(sphere.ray_intersection(&ray).is_none());
+        assert!(sphere.intersect_ray(&ray).is_none());
     }
 
     #[test]
-    fn ray_intersection_point_is_on_surface() {
+    fn intersect_ray_point_is_on_surface() {
         let sphere = offset_sphere();
         let origin = Point3::new(10.0, 2.0, 3.0);
-        let dir = (sphere.center() - origin).normalize();
+        let dir = (sphere.center - origin).normalize();
         let ray = Ray::new(origin, dir);
-        let sp = sphere.ray_intersection(&ray).unwrap();
-        let dist = (sp.point - sphere.center()).norm();
+        let sp = sphere.intersect_ray(&ray).unwrap();
+        let dist = (sp.point - sphere.center).norm();
         assert_relative_eq!(dist, sphere.r(), epsilon = 1e-12);
     }
 
     #[test]
-    fn ray_intersection_normal_points_outward() {
+    fn intersect_ray_normal_points_outward() {
         let sphere = unit_sphere();
         let ray = Ray::new(
             Point3::new(0.0, 5.0, 0.0),
             (-crate::Vector3::y()).normalize(),
         );
-        let sp = sphere.ray_intersection(&ray).unwrap();
+        let sp = sphere.intersect_ray(&ray).unwrap();
         // normal at the top of the sphere should point in +Y
         assert_relative_eq!(sp.normal.into_inner(), crate::Vector3::y(), epsilon = 1e-12);
     }
@@ -433,7 +417,7 @@ mod tests {
         let sphere = unit_sphere();
         // Ray starting inside, heading +X, should hit the back (+X side)
         let ray = Ray::new(Point3::new(0.0, 0.0, 0.0), crate::Vector3::x().normalize());
-        let sp = sphere.ray_intersection(&ray).unwrap();
+        let sp = sphere.intersect_ray(&ray).unwrap();
         assert_relative_eq!(sp.point, Point3::new(1.0, 0.0, 0.0), epsilon = 1e-12);
     }
 }

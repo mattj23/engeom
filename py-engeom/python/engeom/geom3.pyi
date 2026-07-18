@@ -1118,7 +1118,7 @@ class Plane3:
         """
         ...
 
-    def new_parallel(self, shift: float) -> Plane3:
+    def offset_by(self, shift: float) -> Plane3:
         """
         Return a new plane parallel to this one, displaced along its normal by the given distance.
         A positive value moves in the normal direction; negative moves opposite.
@@ -1127,7 +1127,7 @@ class Plane3:
         """
         ...
 
-    def intersection_distance(self, sp: SurfacePoint3) -> float | None:
+    def intersect_distance(self, sp: SurfacePoint3) -> float | None:
         """
         Calculate the distance along the surface point's normal direction to the plane intersection.
         Returns None if the surface point's normal is parallel to the plane.

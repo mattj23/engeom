@@ -130,7 +130,7 @@ impl Plane3 {
         Some(Line3::new(origin, direction))
     }
 
-    pub fn intersection_distance(&self, sp: &SurfacePoint3) -> Option<f64> {
+    pub fn intersect_distance(&self, sp: &SurfacePoint3) -> Option<f64> {
         let p0 = Point3::from(self.normal.into_inner() * self.d);
 
         let denom = self.normal.dot(&sp.normal);
@@ -156,25 +156,20 @@ impl Plane3 {
     /// use engeom::geom3::{Plane3, Point3, Vector3};
     /// use approx::assert_relative_eq;
     /// let plane = Plane3::new(Vector3::x_axis(), -5.0);
-    /// let moved = plane.new_parallel(2.0);
+    /// let moved = plane.offset_by(2.0);
     ///
     /// assert_relative_eq!(moved.signed_distance_to_point(&Point3::origin()), 3.0, epsilon = 1e-6);
     /// ```
-    pub fn new_parallel(&self, shift: f64) -> Self {
+    pub fn offset_by(&self, shift: f64) -> Self {
         Self::new(self.normal, self.d + shift)
     }
 
-    /// Returns a new plane transformed by the given isometry.
-    pub fn new_transformed_by(&self, iso: &Iso3) -> Self {
+    /// Returns a new plane transformed by the given isometry, without modifying the original.
+    pub fn transformed_by(&self, iso: &Iso3) -> Self {
         let pos = self.normal.into_inner() * self.d;
         let repr = SurfacePoint3::new(pos.into(), self.normal);
         let new_repr = repr.transformed(iso);
         Self::from(&new_repr)
-    }
-
-    /// Transforms this plane in place by the given isometry.
-    pub fn transform_by(&mut self, iso: &Iso3) {
-        *self = self.new_transformed_by(iso);
     }
 }
 
@@ -249,28 +244,28 @@ impl From<&SurfacePoint3> for Plane3 {
 impl ops::Mul<Plane3> for Iso3 {
     type Output = Plane3;
     fn mul(self, rhs: Plane3) -> Plane3 {
-        rhs.new_transformed_by(&self)
+        rhs.transformed_by(&self)
     }
 }
 
 impl ops::Mul<&Plane3> for Iso3 {
     type Output = Plane3;
     fn mul(self, rhs: &Plane3) -> Plane3 {
-        rhs.new_transformed_by(&self)
+        rhs.transformed_by(&self)
     }
 }
 
 impl ops::Mul<Plane3> for &Iso3 {
     type Output = Plane3;
     fn mul(self, rhs: Plane3) -> Plane3 {
-        rhs.new_transformed_by(self)
+        rhs.transformed_by(self)
     }
 }
 
 impl ops::Mul<&Plane3> for &Iso3 {
     type Output = Plane3;
     fn mul(self, rhs: &Plane3) -> Plane3 {
-        rhs.new_transformed_by(self)
+        rhs.transformed_by(self)
     }
 }
 
@@ -332,8 +327,8 @@ mod tests {
         for _ in 0..500 {
             let iso1 = rg.iso3(10.0);
             let iso2 = rg.iso3(10.0);
-            let p1 = Plane3::xy().new_transformed_by(&iso1);
-            let p2 = Plane3::xy().new_transformed_by(&iso2);
+            let p1 = Plane3::xy().transformed_by(&iso1);
+            let p2 = Plane3::xy().transformed_by(&iso2);
 
             if let Some(line) = p1.intersect_plane(&p2) {
                 for t in [-5.0, -1.0, 0.0, 1.0, 5.0] {

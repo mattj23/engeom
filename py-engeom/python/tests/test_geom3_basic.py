@@ -96,26 +96,26 @@ def test_plane3_project_point():
 def test_plane3_shifted():
     # Shift XY plane by +3 → plane at z=3
     plane = Plane3.xy()
-    shifted = plane.new_parallel(3.0)
+    shifted = plane.offset_by(3.0)
     assert isinstance(shifted, Plane3)
     # Point at z=3 should now be on the plane (distance ~0)
     assert shifted.distance_to_point(Point3(0, 0, 3)) == pytest.approx(0.0, abs=1e-6)
 
 
-def test_plane3_intersection_distance():
+def test_plane3_intersect_distance():
     # Surface point at z=5 pointing along +Z, intersects XY plane 5 units behind it
     plane = Plane3.xy()
     sp = SurfacePoint3(0, 0, 5, 0, 0, 1)
-    dist = plane.intersection_distance(sp)
+    dist = plane.intersect_distance(sp)
     assert dist is not None
     assert dist == pytest.approx(-5.0)
 
 
-def test_plane3_intersection_distance_parallel_returns_none():
+def test_plane3_intersect_distance_parallel_returns_none():
     # Surface point normal is parallel to XY plane, no intersection
     plane = Plane3.xy()
     sp = SurfacePoint3(0, 0, 1, 1, 0, 0)
-    assert plane.intersection_distance(sp) is None
+    assert plane.intersect_distance(sp) is None
 
 
 def test_plane3_intersect_plane_returns_line3():

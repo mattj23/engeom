@@ -637,12 +637,12 @@ impl Plane3 {
         Vector3::from_inner(self.inner.project_vector(v.get_inner()))
     }
 
-    fn new_parallel(&self, shift: f64) -> Self {
-        Self::from_inner(self.inner.new_parallel(shift))
+    fn offset_by(&self, shift: f64) -> Self {
+        Self::from_inner(self.inner.offset_by(shift))
     }
 
-    fn intersection_distance(&self, sp: &SurfacePoint3) -> Option<f64> {
-        self.inner.intersection_distance(sp.get_inner())
+    fn intersect_distance(&self, sp: &SurfacePoint3) -> Option<f64> {
+        self.inner.intersect_distance(sp.get_inner())
     }
 
     #[getter]
@@ -816,7 +816,7 @@ impl Sphere3 {
     }
 
     fn __repr__(&self) -> String {
-        let c = self.inner.center();
+        let c = self.inner.center;
         format!(
             "Sphere3(center=({}, {}, {}), radius={})",
             c.x,
@@ -827,12 +827,12 @@ impl Sphere3 {
     }
 
     fn __getnewargs__(&self) -> (f64, f64, f64, f64) {
-        let c = self.inner.center();
+        let c = self.inner.center;
         (c.x, c.y, c.z, self.inner.r())
     }
 
     fn __getstate__(&self) -> (f64, f64, f64, f64) {
-        let c = self.inner.center();
+        let c = self.inner.center;
         (c.x, c.y, c.z, self.inner.r())
     }
 
@@ -846,7 +846,7 @@ impl Sphere3 {
 
     #[getter]
     fn center(&self) -> Point3 {
-        Point3::from_inner(self.inner.center())
+        Point3::from_inner(self.inner.center)
     }
 
     #[getter]
@@ -1498,8 +1498,7 @@ impl Iso3 {
                 Point3::from_inner(self.inner * other.inner).into_bound_py_any(py)
             }
             Transformable3::Plane(other) => {
-                Plane3::from_inner(other.inner.new_transformed_by(&self.inner))
-                    .into_bound_py_any(py)
+                Plane3::from_inner(other.inner.transformed_by(&self.inner)).into_bound_py_any(py)
             }
             Transformable3::Sp(other) => {
                 SurfacePoint3::from_inner(other.inner.transformed(&self.inner))
@@ -1509,8 +1508,7 @@ impl Iso3 {
                 Line3::from_inner(other.inner.new_transformed_by(&self.inner)).into_bound_py_any(py)
             }
             Transformable3::Sphere(other) => {
-                Sphere3::from_inner(other.inner.new_transformed_by(&self.inner))
-                    .into_bound_py_any(py)
+                Sphere3::from_inner(other.inner.transformed_by(&self.inner)).into_bound_py_any(py)
             }
             Transformable3::Circle(other) => {
                 Circle3::from_inner(other.inner.transformed_by(&self.inner)).into_bound_py_any(py)

@@ -13,7 +13,7 @@ def main():
 
     # We'll create a plane that is parallel to the XY plane and passes through the Z coordinate of the mesh's AABB
     # center. We'll then use the `section` method to extract the curves that intersect the plane.
-    plane = Plane3.xy().new_parallel(mesh.aabb.center.z)
+    plane = Plane3.xy().offset_by(mesh.aabb.center.z)
     curves = mesh.section(plane)
 
     # Finally, we'll plot the original points, the aligned points, and the original mesh.

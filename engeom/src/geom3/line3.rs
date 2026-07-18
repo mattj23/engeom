@@ -41,7 +41,7 @@ impl Line3 {
     /// Intersects the line with a sphere, returning 0, 1, or 2 parameters `t` at which the line
     /// meets the sphere surface.
     pub fn intersect_sphere(&self, sphere: &Sphere3) -> Vec<f64> {
-        solve_sphere_quadratic(&self.origin, &self.direction, &sphere.center(), sphere.r())
+        solve_sphere_quadratic(&self.origin, &self.direction, &sphere.center, sphere.r())
     }
 
     /// Intersect the line with the plane of a circle and check if the intersection point is within
@@ -306,7 +306,7 @@ mod tests {
         assert_eq!(ts.len(), 2);
         for &t in &ts {
             assert_relative_eq!(
-                (line.at(t) - sphere.center()).norm(),
+                (line.at(t) - sphere.center).norm(),
                 sphere.r(),
                 epsilon = 1e-10
             );
@@ -336,7 +336,7 @@ mod tests {
         let ts = line.intersect_sphere(&sphere);
         assert_eq!(ts.len(), 1);
         let pt = line.at(ts[0]);
-        assert_relative_eq!((pt - sphere.center()).norm(), sphere.r(), epsilon = 1e-10);
+        assert_relative_eq!((pt - sphere.center).norm(), sphere.r(), epsilon = 1e-10);
         assert_relative_eq!(pt.z, 0.0, epsilon = 1e-10);
     }
 
@@ -348,7 +348,7 @@ mod tests {
             let line = Line3::new(rg.point3(3.0), rg.vector3(2.0));
 
             for &t in &line.intersect_sphere(&sphere) {
-                let dist = (line.at(t) - sphere.center()).norm();
+                let dist = (line.at(t) - sphere.center).norm();
                 assert_relative_eq!(dist, sphere.r(), epsilon = 1e-8);
             }
         }
@@ -359,7 +359,7 @@ mod tests {
         let mut rg = RandomGeometry3::new();
         for _ in 0..500 {
             let iso = rg.iso3(10.0);
-            let plane = Plane3::xy().new_transformed_by(&iso);
+            let plane = Plane3::xy().transformed_by(&iso);
             let line = Line3::new(rg.point3(10.0), rg.vector3(1.0));
             if let Some(proj) = line.project_onto_plane(&plane) {
                 assert_relative_eq!(
@@ -376,7 +376,7 @@ mod tests {
         let mut rg = RandomGeometry3::new();
         for _ in 0..500 {
             let iso = rg.iso3(10.0);
-            let plane = Plane3::xy().new_transformed_by(&iso);
+            let plane = Plane3::xy().transformed_by(&iso);
             let line = Line3::new(rg.point3(10.0), rg.vector3(1.0));
             if let Some(proj) = line.project_onto_plane(&plane) {
                 // projected direction must be perpendicular to the plane normal
