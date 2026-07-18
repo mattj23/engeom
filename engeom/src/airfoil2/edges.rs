@@ -646,7 +646,7 @@ fn end_arcs(t0: &Line2, t1: &Line2, clip: &Line2, center: &Point2, radius: f64) 
 }
 
 fn blend_arc(shifted_tangent: &Line2, le_center: &Point2, le_radius: f64) -> Arc2 {
-    let base_circle = Circle2::new_tangent_and_point(shifted_tangent, le_center);
+    let base_circle = Circle2::from_tangent_and_point(shifted_tangent, le_center);
     let v0 = shifted_tangent.origin - base_circle.center;
     let v1 = le_center - base_circle.center;
     let theta0 = base_circle.angle_of_point(&shifted_tangent.origin);

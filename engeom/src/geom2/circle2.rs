@@ -107,12 +107,12 @@ impl Circle2 {
     /// ];
     ///
     /// let guess = Circle2::new(-1.0, 1.0, 0.1);
-    /// let circle = Circle2::new_fitting_circle(&points, &guess).unwrap();
+    /// let circle = Circle2::from_fit(&points, &guess).unwrap();
     /// assert_relative_eq!(circle.x(), 0.0);
     /// assert_relative_eq!(circle.y(), 0.0);
     /// assert_relative_eq!(circle.r(), 1.0);
     /// ```
-    pub fn new_fitting_circle(points: &[Point2], guess: &Circle2) -> Result<Circle2> {
+    pub fn from_fit(points: &[Point2], guess: &Circle2) -> Result<Circle2> {
         fit_circle(points, guess)
     }
 
@@ -198,12 +198,12 @@ impl Circle2 {
     /// let d1 = Vector2::new(0.0, 1.0); // Vertical line upwards
     /// let radius = 1.0;
     ///
-    /// let circle = Circle2::new_tangent_to_corner(&corner, &d0, &d1, radius).unwrap();
+    /// let circle = Circle2::from_tangent_to_corner(&corner, &d0, &d1, radius).unwrap();
     /// assert_relative_eq!(circle.x(), 2.0);
     /// assert_relative_eq!(circle.y(), 2.0);
     /// assert_relative_eq!(circle.r(), radius);
     /// ```
-    pub fn new_tangent_to_corner(
+    pub fn from_tangent_to_corner(
         corner: &impl PCoords<2>,
         d0: &Vector2,
         d1: &Vector2,
@@ -255,7 +255,7 @@ impl Circle2 {
     /// ```
     ///
     /// ```
-    pub fn new_tangent_and_point(tangent: &impl LineOps2, point: &impl PCoords<2>) -> Self {
+    pub fn from_tangent_and_point(tangent: &impl LineOps2, point: &impl PCoords<2>) -> Self {
         let iso = tangent.to_iso_from_y().inverse();
         let p = iso * Point2::from(point.coords());
 
@@ -842,7 +842,7 @@ mod tests {
         let corner = Point2::new(1.0, 1.0);
         let v0 = Vector2::new(-1.0, 0.0);
         let v1 = Vector2::new(0.0, -1.0);
-        let circle = Circle2::new_tangent_to_corner(&corner, &v0, &v1, 1.0).unwrap();
+        let circle = Circle2::from_tangent_to_corner(&corner, &v0, &v1, 1.0).unwrap();
         assert_relative_eq!(circle.center, Point2::new(0.0, 0.0), epsilon = 1.0e-8);
         assert_relative_eq!(circle.r(), 1.0, epsilon = 1.0e-8);
     }
@@ -866,7 +866,7 @@ mod tests {
             let (p0, p1) = expected.tangent_points_to(&tc).unwrap();
 
             let result =
-                Circle2::new_tangent_to_corner(&tc, &(p0 - tc), &(p1 - tc), expected.r()).unwrap();
+                Circle2::from_tangent_to_corner(&tc, &(p0 - tc), &(p1 - tc), expected.r()).unwrap();
 
             assert_relative_eq!(expected.center, result.center, epsilon = 1.0e-8);
             assert_relative_eq!(expected.r(), result.r(), epsilon = 1.0e-8);
@@ -964,7 +964,7 @@ mod tests {
         let expected = Circle2::new(2.0, 3.0, 1.0);
         let samples = make_sample_circle_points(&expected, 500, Some(0.01));
         let guess = Circle2::new(0.0, 0.0, 1.0);
-        let result = Circle2::new_fitting_circle(&samples, &guess)?;
+        let result = Circle2::from_fit(&samples, &guess)?;
 
         assert_relative_eq!(result.center, expected.center, epsilon = 3.0e-3);
         assert_relative_eq!(result.r(), expected.r(), epsilon = 3.0e-3);
@@ -1004,7 +1004,7 @@ mod tests {
                 false => m.direction_line().new_reversed(),
             };
 
-            let result = Circle2::new_tangent_and_point(&line, &p);
+            let result = Circle2::from_tangent_and_point(&line, &p);
 
             assert_relative_eq!(result.center, c.center, epsilon = 1.0e-5);
             assert_relative_eq!(result.r(), c.r(), epsilon = 1.0e-5);

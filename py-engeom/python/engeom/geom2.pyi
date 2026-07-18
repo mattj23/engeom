@@ -1119,7 +1119,7 @@ class Circle2:
         ...
 
     @staticmethod
-    def fitting(points: NDArray[float], guess: Circle2 | None = None) -> Circle2:
+    def from_fit(points: NDArray[float], guess: Circle2 | None = None) -> Circle2:
         """
         Fit a circle to a set of points using an unconstrained Levenberg-Marquardt minimization of the sum of
         squared errors between the points and the boundary of the circle.
@@ -1241,7 +1241,7 @@ class Circle2:
         ...
 
     @staticmethod
-    def tangent_to_corner(corner: Point2, d0: Vector2, d1: Vector2, radius: float) -> Circle2:
+    def from_tangent_to_corner(corner: Point2, d0: Vector2, d1: Vector2, radius: float) -> Circle2:
         """
         Create a circle tangent to the corner formed by two lines. The corner is defined by a point
         and two direction vectors. Raises ``ValueError`` if the directions are collinear.
@@ -1255,7 +1255,7 @@ class Circle2:
         ...
 
     @staticmethod
-    def tangent_and_point(tangent: Line2, point: Point2) -> Circle2:
+    def from_tangent_and_point(tangent: Line2, point: Point2) -> Circle2:
         """
         Create a circle tangent to a line and passing through a point.
 

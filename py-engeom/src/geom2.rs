@@ -616,7 +616,7 @@ impl Circle2 {
 
     #[staticmethod]
     #[pyo3(signature=(points, guess=None))]
-    fn fitting<'py>(points: PyReadonlyArray2<'py, f64>, guess: Option<Circle2>) -> PyResult<Self> {
+    fn from_fit<'py>(points: PyReadonlyArray2<'py, f64>, guess: Option<Circle2>) -> PyResult<Self> {
         let points = array_to_points2(&points.as_array())?;
         let guess = if let Some(c) = guess {
             *c.get_inner()
@@ -624,7 +624,7 @@ impl Circle2 {
             engeom::Circle2::new(0.0, 0.0, 1.0)
         };
 
-        let circle = engeom::Circle2::new_fitting_circle(&points, &guess)
+        let circle = engeom::Circle2::from_fit(&points, &guess)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(circle))
     }
@@ -673,13 +673,13 @@ impl Circle2 {
     }
 
     #[staticmethod]
-    fn tangent_to_corner(
+    fn from_tangent_to_corner(
         corner: &Point2,
         d0: &Vector2,
         d1: &Vector2,
         radius: f64,
     ) -> PyResult<Self> {
-        engeom::Circle2::new_tangent_to_corner(
+        engeom::Circle2::from_tangent_to_corner(
             corner.get_inner(),
             d0.get_inner(),
             d1.get_inner(),
@@ -690,8 +690,8 @@ impl Circle2 {
     }
 
     #[staticmethod]
-    fn tangent_and_point(tangent: &Line2, point: &Point2) -> Self {
-        Self::from_inner(engeom::Circle2::new_tangent_and_point(
+    fn from_tangent_and_point(tangent: &Line2, point: &Point2) -> Self {
+        Self::from_inner(engeom::Circle2::from_tangent_and_point(
             tangent.get_inner(),
             point.get_inner(),
         ))
