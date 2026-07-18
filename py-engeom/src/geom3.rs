@@ -968,9 +968,9 @@ impl Circle3 {
         let center = engeom::Point3::new(cx, cy, cz);
         let normal = engeom::UnitVec3::try_new(engeom::Vector3::new(nx, ny, nz), 1.0e-6)
             .ok_or_else(|| PyValueError::new_err("Invalid normal vector"))?;
-        engeom::geom3::Circle3::from_point_normal(&center, &normal, radius)
-            .map(Circle3::from_inner)
-            .map_err(|e| PyValueError::new_err(e.to_string()))
+        Ok(Circle3::from_inner(engeom::geom3::Circle3::new(
+            center, normal, radius,
+        )))
     }
 
     #[staticmethod]
@@ -1064,8 +1064,7 @@ impl Circle3 {
         let normal =
             engeom::UnitVec3::try_new(engeom::Vector3::new(state.3, state.4, state.5), 1.0e-6)
                 .ok_or_else(|| PyValueError::new_err("Invalid normal vector"))?;
-        self.inner = engeom::geom3::Circle3::from_point_normal(&center, &normal, state.6)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        self.inner = engeom::geom3::Circle3::new(center, normal, state.6);
         Ok(())
     }
 
@@ -1093,36 +1092,26 @@ impl Circle3 {
         Plane3::from_inner(self.inner.plane())
     }
 
-    #[getter]
-    fn iso(&self) -> Iso3 {
-        Iso3::from_inner(*self.inner.iso())
+    fn closest_point(&self, test_point: Point3) -> Option<SurfacePoint3> {
+        self.inner
+            .closest_point(test_point.get_inner())
+            .map(SurfacePoint3::from_inner)
     }
 
-    fn at_angle(&self, angle: f64) -> Manifold1Pos3 {
-        Manifold1Pos3::from_inner(self.inner.at_angle(angle))
+    fn intersect_plane(&self, plane: &Plane3) -> Vec<Point3> {
+        self.inner
+            .intersect_plane(&plane.inner)
+            .into_iter()
+            .map(Point3::from_inner)
+            .collect()
     }
 
-    fn closest_angle(&self, test_point: Point3) -> f64 {
-        self.inner.closest_angle(test_point.get_inner())
-    }
-
-    fn closest_position(&self, test_point: Point3) -> Manifold1Pos3 {
-        Manifold1Pos3::from_inner(self.inner.closest_position(test_point.get_inner()))
-    }
-
-    fn intersect_plane(&self, plane: &Plane3) -> Vec<f64> {
-        self.inner.intersect_plane(&plane.inner)
-    }
-
-    fn max_extent_angle(&self, dx: f64, dy: f64, dz: f64) -> PyResult<f64> {
+    fn max_extent_point(&self, dx: f64, dy: f64, dz: f64) -> PyResult<Point3> {
         let dir = engeom::Vector3::new(dx, dy, dz);
         self.inner
-            .max_extent_angle(&dir)
+            .max_extent_point(&dir)
+            .map(Point3::from_inner)
             .map_err(|e| PyValueError::new_err(e.to_string()))
-    }
-
-    fn set_zero_angle(&mut self, angle: f64) {
-        self.inner.set_zero_angle(angle);
     }
 
     fn flip_normal(&mut self) {
@@ -1131,30 +1120,6 @@ impl Circle3 {
 
     fn new_flipped_normal(&self) -> Self {
         Circle3::from_inner(self.inner.new_flipped_normal())
-    }
-
-    fn at_angles<'py>(
-        &self,
-        py: Python<'py>,
-        angles: PyReadonlyArray1<'_, f64>,
-    ) -> Bound<'py, PyArray2<f64>> {
-        let angles = angles.as_array();
-        let n = angles.len();
-        let mut result = Array2::zeros((n, 9));
-        for (i, &angle) in angles.iter().enumerate() {
-            let m = self.inner.at_angle(angle);
-            let normal = (m.point - self.inner.center()).normalize();
-            result[[i, 0]] = m.point.x;
-            result[[i, 1]] = m.point.y;
-            result[[i, 2]] = m.point.z;
-            result[[i, 3]] = normal.x;
-            result[[i, 4]] = normal.y;
-            result[[i, 5]] = normal.z;
-            result[[i, 6]] = m.direction.x;
-            result[[i, 7]] = m.direction.y;
-            result[[i, 8]] = m.direction.z;
-        }
-        result.into_pyarray(py)
     }
 }
 

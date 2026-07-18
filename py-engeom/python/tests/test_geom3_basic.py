@@ -3,7 +3,7 @@
 """
 import math
 import pytest
-from engeom.geom3 import Vector3, Point3, SurfacePoint3, Plane3, Line3, Sphere3, Circle3, Iso3, Manifold1Pos3
+from engeom.geom3 import Vector3, Point3, SurfacePoint3, Plane3, Line3, Sphere3, Circle3, Iso3
 
 
 # ==============================================================================
@@ -333,58 +333,47 @@ def test_circle3_zero_normal_raises():
         Circle3(0, 0, 0, 0, 0, 0, 3)
 
 
-def test_circle3_at_angle_returns_surface_point():
+def test_circle3_closest_point_returns_surface_point():
     c = Circle3(0, 0, 0, 0, 0, 1, 3)
-    sp = c.at_angle(0.0)
-    assert isinstance(sp, Manifold1Pos3)
+    sp = c.closest_point(Point3(3, 0, 5))
+    assert isinstance(sp, SurfacePoint3)
 
 
-def test_circle3_at_angle_point_on_circumference():
-    # Circle at origin in XY plane, radius 3; point should be on the circumference
+def test_circle3_closest_point_on_circumference():
+    # Circle at origin in XY plane, radius 3; closest point should be on the circumference
     c = Circle3(0, 0, 0, 0, 0, 1, 3)
-    sp = c.at_angle(0.0)
+    sp = c.closest_point(Point3(3, 0, 5))
     dist = math.sqrt(sp.point.x**2 + sp.point.y**2 + sp.point.z**2)
     assert dist == pytest.approx(3.0)
 
 
-def test_circle3_at_angle_full_revolution():
-    # angle=0 and angle=2π should give the same point
+def test_circle3_closest_point_none_on_axis():
+    # A point directly above the center, along the normal, is equidistant from every point on
+    # the circle.
     c = Circle3(0, 0, 0, 0, 0, 1, 3)
-    sp0 = c.at_angle(0.0)
-    sp2pi = c.at_angle(2 * math.pi)
-    assert sp0.point.x == pytest.approx(sp2pi.point.x)
-    assert sp0.point.y == pytest.approx(sp2pi.point.y)
-    assert sp0.point.z == pytest.approx(sp2pi.point.z)
-
-
-def test_circle3_closest_position():
-    c = Circle3(0, 0, 0, 0, 0, 1, 3)
-    sp = c.closest_position(Point3(3, 0, 5))
-    assert isinstance(sp, Manifold1Pos3)
-    dist = math.sqrt(sp.point.x**2 + sp.point.y**2 + sp.point.z**2)
-    assert dist == pytest.approx(3.0)
+    assert c.closest_point(Point3(0, 0, 5)) is None
 
 
 def test_circle3_intersect_plane_two_intersections():
     # Circle in XY plane at origin, radius 3; YZ plane cuts through it at two points
     c = Circle3(0, 0, 0, 0, 0, 1, 3)
-    angles = c.intersect_plane(Plane3.yz())
-    assert len(angles) == 2
+    points = c.intersect_plane(Plane3.yz())
+    assert len(points) == 2
 
 
 def test_circle3_intersect_plane_no_intersection():
     # Circle in XY plane at origin, radius 1; plane at z=5 doesn't intersect
     c = Circle3(0, 0, 0, 0, 0, 1, 1)
     plane = Plane3(0, 0, 1, -5)
-    angles = c.intersect_plane(plane)
-    assert len(angles) == 0
+    points = c.intersect_plane(plane)
+    assert len(points) == 0
 
 
-def test_circle3_intersect_plane_angles_are_floats():
+def test_circle3_intersect_plane_points_are_point3():
     c = Circle3(0, 0, 0, 0, 0, 1, 3)
-    angles = c.intersect_plane(Plane3.yz())
-    for a in angles:
-        assert isinstance(a, float)
+    points = c.intersect_plane(Plane3.yz())
+    for p in points:
+        assert isinstance(p, Point3)
 
 
 # ==============================================================================

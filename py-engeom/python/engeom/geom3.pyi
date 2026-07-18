@@ -1495,93 +1495,48 @@ class Circle3:
         """
         ...
 
-    @property
-    def iso(self) -> Iso3:
+    def closest_point(self, test_point: Point3) -> SurfacePoint3 | None:
         """
-        The isometry that defines the circle's position and orientation in world space. The circle
-        lies in the XY plane of the isometry's local frame, with the normal along its Z axis.
-        :return: the isometry as an Iso3.
-        """
-        ...
-
-    def at_angle(self, angle: float) -> Manifold1Pos3:
-        """
-        Return the manifold position on the circle at the given angle (in radians).
-        The angle is measured from the circle's local x-axis.
-        :param angle: the angle in radians.
-        :return: a Manifold1Pos3 with the arc length, position, and tangent direction.
-        """
-        ...
-
-    def closest_angle(self, test_point: Point3) -> float:
-        """
-        Return the angle (in radians) of the point on the circle closest to test_point.
-        The angle is in the range (-π, π] measured from the circle's local x-axis.
-        :param test_point: the point to find the closest angle to.
-        :return: the angle in radians.
-        """
-        ...
-
-    def closest_position(self, test_point: Point3) -> Manifold1Pos3:
-        """
-        Return the manifold position on the circle closest to test_point.
+        Return the point on the circle's perimeter closest to test_point, paired with the tangent
+        direction at that point (following the right-hand rule around the normal). Returns None if
+        test_point lies on the axis through the center along the normal, where every point on the
+        circle is equally close.
         :param test_point: the point to find the closest location to.
-        :return: a Manifold1Pos3 at the closest position on the circle.
+        :return: a SurfacePoint3 at the closest position on the circle, or None if ambiguous.
         """
         ...
 
-    def intersect_plane(self, plane: Plane3) -> list[float]:
+    def intersect_plane(self, plane: Plane3) -> list[Point3]:
         """
-        Intersect the circle with a plane, returning 0, 1, or 2 intersection angles in radians.
-        Returns an empty list if the plane does not intersect the circle, a single angle if the
-        plane is tangent to the circle, or two angles if the plane cuts through it. Angles are in
-        the range (-π, π] and can be passed directly to `at_angle`.
+        Intersect the circle with a plane, returning 0, 1, or 2 intersection points. Returns an
+        empty list if the plane does not intersect the circle, or for the degenerate case where
+        the plane is parallel to (or coincident with) the circle's own plane.
         :param plane: the plane to intersect with.
-        :return: a list of 0, 1, or 2 intersection angles in radians.
+        :return: a list of 0, 1, or 2 intersection points.
         """
         ...
 
-    def at_angles(self, angles: NDArray[float]) -> NDArray[float]:
+    def max_extent_point(self, dx: float, dy: float, dz: float) -> Point3:
         """
-        Evaluate the circle at an array of angles, returning an Nx9 array where each row contains
-        the point (columns 0-2), surface normal (columns 3-5), and tangent direction (columns 6-8)
-        at that angle.
-        :param angles: a 1D numpy array of angles in radians.
-        :return: a numpy array of shape (N, 9).
-        """
-        ...
-
-    def max_extent_angle(self, dx: float, dy: float, dz: float) -> float:
-        """
-        Return the angle (in radians) of the point on the circle that maximizes the dot product
-        with the given direction vector.
+        Return the point on the circle that maximizes the dot product with the given direction
+        vector.
         :param dx: x component of the direction vector.
         :param dy: y component of the direction vector.
         :param dz: z component of the direction vector.
-        :return: the angle in radians, in the range (-π, π].
+        :return: the point on the circle maximizing `point . direction`.
         :raises ValueError: if the direction is parallel to the circle's normal.
-        """
-        ...
-
-    def set_zero_angle(self, angle: float) -> None:
-        """
-        Rotate the circle's isometry around its normal so that the point currently at `angle`
-        becomes the new zero angle (aligned with the local x-axis).
-        :param angle: the angle in radians to align with zero.
         """
         ...
 
     def flip_normal(self) -> None:
         """
-        Flip the normal direction of the circle in place. The zero-angle point is preserved, but
-        the normal and winding direction are reversed.
+        Flip the normal direction of the circle in place.
         """
         ...
 
     def new_flipped_normal(self) -> Circle3:
         """
         Return a new circle with the normal direction flipped, without modifying the original.
-        The zero-angle point is preserved, but the normal and winding direction are reversed.
         :return: a new Circle3 with the flipped normal.
         """
         ...

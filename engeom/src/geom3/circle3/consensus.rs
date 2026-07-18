@@ -27,6 +27,21 @@ fn point_circle_distance(center: &Point3, normal: &UnitVec3, radius: f64, point:
     ((rho - radius).powi(2) + h * h).sqrt()
 }
 
+/// Returns an arbitrary orthonormal basis spanning the plane perpendicular to `normal`, used only
+/// to parameterize small rotations of the normal during the refinement below (not a stable or
+/// otherwise meaningful reference frame for the circle itself).
+fn perpendicular_axes(normal: &UnitVec3) -> (Vector3, Vector3) {
+    let n = normal.into_inner();
+    let reference = if n.z.abs() < 0.9 {
+        Vector3::z()
+    } else {
+        Vector3::x()
+    };
+    let x_axis = reference.cross(&n).normalize();
+    let y_axis = n.cross(&x_axis);
+    (x_axis, y_axis)
+}
+
 impl ConsensusModel<3> for Circle3 {
     const SAMPLE_SIZE: usize = 3;
 
@@ -43,7 +58,7 @@ impl ConsensusModel<3> for Circle3 {
         let (result, report) = LevenbergMarquardt::new().minimize(problem);
         if report.termination.was_successful() {
             let (center, normal, radius) = result.circle_params(&result.params);
-            Circle3::from_point_normal(&center, &normal, radius).ok()
+            Some(Circle3::new(center, normal, radius))
         } else {
             None
         }
@@ -96,7 +111,7 @@ impl Circle3 {
 
         let center = to_world.transform_point(&Point3::new(circle.x(), circle.y(), 0.0));
         let normal = UnitVec3::new_normalize(to_world.rotation * Vector3::z());
-        Circle3::from_point_normal(&center, &normal, circle.r())
+        Ok(Circle3::new(center, normal, circle.r()))
     }
 
     /// Fit a circle to a set of 3D points using MAGSAC++ robust consensus estimation in the native
@@ -159,8 +174,9 @@ struct Circle3Fit<'a> {
 
 impl<'a> Circle3Fit<'a> {
     fn new(points: &'a [Point3], weights: &'a [f64], base: &Circle3) -> Self {
-        let axis_x = UnitVec3::new_normalize(base.iso().rotation * Vector3::x());
-        let axis_y = UnitVec3::new_normalize(base.iso().rotation * Vector3::y());
+        let (raw_x, raw_y) = perpendicular_axes(&base.normal());
+        let axis_x = UnitVec3::new_normalize(raw_x);
+        let axis_y = UnitVec3::new_normalize(raw_y);
 
         let mut problem = Self {
             points,
@@ -239,12 +255,26 @@ mod tests {
     fn tilted() -> Circle3 {
         let center = Point3::new(1.0, 2.0, 3.0);
         let normal = UnitVec3::new_normalize(Vector3::new(0.3, -0.5, 1.0));
-        Circle3::from_point_normal(&center, &normal, 2.5).unwrap()
+        Circle3::new(center, normal, 2.5)
+    }
+
+    /// Test-only parametrization of a circle's perimeter; `Circle3` has no angle-based API of its
+    /// own, so this exists purely to generate sample points for these tests.
+    fn sample_circle_point(circle: &Circle3, t: f64) -> Point3 {
+        let n = circle.normal().into_inner();
+        let reference = if n.z.abs() < 0.9 {
+            Vector3::z()
+        } else {
+            Vector3::x()
+        };
+        let x_axis = reference.cross(&n).normalize();
+        let y_axis = n.cross(&x_axis);
+        circle.center() + x_axis * (circle.r() * t.cos()) + y_axis * (circle.r() * t.sin())
     }
 
     fn sample_circle(circle: &Circle3, n: usize) -> Vec<Point3> {
         (0..n)
-            .map(|i| circle.at_angle(TAU * i as f64 / n as f64).point)
+            .map(|i| sample_circle_point(circle, TAU * i as f64 / n as f64))
             .collect()
     }
 
@@ -263,9 +293,9 @@ mod tests {
     #[test]
     fn from_3_points_matches_known_circle() -> Result<()> {
         let expected = tilted();
-        let p0 = expected.at_angle(0.0).point;
-        let p1 = expected.at_angle(2.0).point;
-        let p2 = expected.at_angle(-1.5).point;
+        let p0 = sample_circle_point(&expected, 0.0);
+        let p1 = sample_circle_point(&expected, 2.0);
+        let p2 = sample_circle_point(&expected, -1.5);
         let circle = Circle3::from_3_points(&p0, &p1, &p2)?;
         assert_matches(&circle, &expected);
         Ok(())

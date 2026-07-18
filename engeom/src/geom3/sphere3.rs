@@ -85,7 +85,7 @@ impl Sphere3 {
         }
         let circle_radius = (self.radius * self.radius - dist * dist).sqrt();
         let circle_center = self.center - plane.normal.into_inner() * dist;
-        Circle3::from_point_normal(&circle_center, &plane.normal, circle_radius).ok()
+        Some(Circle3::new(circle_center, plane.normal, circle_radius))
     }
 
     /// Intersects this sphere with another sphere, returning the resulting `Circle3`, or `None` if
@@ -106,7 +106,7 @@ impl Sphere3 {
         let circle_radius = (self.radius * self.radius - h * h).max(0.0).sqrt();
         let normal = UnitVec3::new_normalize(axis);
         let circle_center = self.center + normal.into_inner() * h;
-        Circle3::from_point_normal(&circle_center, &normal, circle_radius).ok()
+        Some(Circle3::new(circle_center, normal, circle_radius))
     }
 
     /// Intersects a ray with the sphere. Returns the first intersection as a surface point with
@@ -360,12 +360,24 @@ mod tests {
 
     #[test]
     fn intersection_circle_lies_on_both_spheres() {
-        // Verify several points on the circle lie on both sphere surfaces
+        // Verify several points on the circle lie on both sphere surfaces. `Circle3` has no
+        // angle-based API, so points are generated here with a test-only parametrization.
         let s1 = Sphere3::new(Point3::new(0.0, 0.0, 0.0), 5.0);
         let s2 = Sphere3::new(Point3::new(4.0, 0.0, 0.0), 4.0);
         let circle = s1.intersect_sphere(&s2).unwrap();
-        for angle in [0.0_f64, 1.0, 2.0, 3.0, 4.0, 5.0] {
-            let pt = circle.at_angle(angle).point;
+
+        let n = circle.normal().into_inner();
+        let reference = if n.z.abs() < 0.9 {
+            crate::Vector3::z()
+        } else {
+            crate::Vector3::x()
+        };
+        let x_axis = reference.cross(&n).normalize();
+        let y_axis = n.cross(&x_axis);
+
+        for t in [0.0_f64, 1.0, 2.0, 3.0, 4.0, 5.0] {
+            let pt =
+                circle.center() + x_axis * (circle.r() * t.cos()) + y_axis * (circle.r() * t.sin());
             assert_relative_eq!((pt - s1.center()).norm(), s1.r(), epsilon = 1e-10);
             assert_relative_eq!((pt - s2.center()).norm(), s2.r(), epsilon = 1e-10);
         }
