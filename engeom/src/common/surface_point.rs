@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::common::PCoords;
+use crate::common::{Line, PCoords};
 use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector, Unit};
 use serde::{Deserialize, Serialize};
 
@@ -113,6 +113,25 @@ impl<const D: usize> SurfacePoint<D> {
     pub fn new_shifted(&self, offset: f64) -> Self {
         let new_point = self.point + self.normal.as_ref() * offset;
         Self::new(new_point, self.normal)
+    }
+
+    /// Returns a `Line<D>` with the same origin as this surface point and a unit direction equal
+    /// to the surface point's normal.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::{Point2, SurfacePoint2, Vector2};
+    /// use approx::assert_relative_eq;
+    ///
+    /// let sp = SurfacePoint2::new_normalize(Point2::new(1.0, 2.0), Vector2::new(0.0, 3.0));
+    /// let line = sp.as_line();
+    ///
+    /// assert_relative_eq!(line.origin, sp.point, epsilon = 1e-12);
+    /// assert_relative_eq!(line.direction, sp.normal.into_inner(), epsilon = 1e-12);
+    /// ```
+    pub fn as_line(&self) -> Line<D> {
+        Line::new(self.point, self.normal.into_inner())
     }
 
     /// Performs spherical linear interpolation from this surface point to another one.
