@@ -22,7 +22,19 @@ pub trait IsoExtensions3 {
     /// # Examples
     ///
     /// ```
+    /// use approx::assert_relative_eq;
+    /// use engeom::{Iso3, Point3};
+    /// use engeom::geom3::IsoExtensions3;
     ///
+    /// let array = [
+    ///     1.0, 0.0, 0.0, 1.0,
+    ///     0.0, 1.0, 0.0, 2.0,
+    ///     0.0, 0.0, 1.0, 3.0,
+    ///     0.0, 0.0, 0.0, 1.0,
+    /// ];
+    /// let iso = Iso3::from_array(&array).unwrap();
+    /// let moved = iso * Point3::origin();
+    /// assert_relative_eq!(moved, Point3::new(1.0, 2.0, 3.0), epsilon = 1e-10);
     /// ```
     fn from_array(array: &[f64; 16]) -> Result<Iso3>;
 
@@ -40,7 +52,16 @@ pub trait IsoExtensions3 {
     /// # Examples
     ///
     /// ```
+    /// use std::f64::consts::PI;
+    /// use approx::assert_relative_eq;
+    /// use engeom::{Iso3, Line3, Point3, Vector3};
+    /// use engeom::geom3::IsoExtensions3;
     ///
+    /// let axis = Line3::new(Point3::new(1.0, 1.0, 0.0), Vector3::z());
+    /// let iso = Iso3::from_rot_axis(&axis, PI / 2.0).unwrap();
+    ///
+    /// let result = iso * Point3::new(2.0, 1.0, 0.0);
+    /// assert_relative_eq!(result, Point3::new(1.0, 2.0, 0.0), epsilon = 1e-6);
     /// ```
     fn from_rot_axis(axis: &Line3, angle: f64) -> Result<Iso3>;
 
@@ -66,6 +87,28 @@ pub trait IsoExtensions3 {
     ///   be coincident with the origin of the world coordinate system.
     ///
     /// returns: Result<Isometry<f64, Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use approx::assert_relative_eq;
+    /// use engeom::{Iso3, Point3, Vector3};
+    /// use engeom::geom3::IsoExtensions3;
+    ///
+    /// // `e0` is tilted 45 degrees between the global x and y axes, while `e1` is already
+    /// // orthogonal to it, so the two are easy to tell apart in the result.
+    /// let e0 = Vector3::new(1.0, 1.0, 0.0);
+    /// let e1 = Vector3::new(0.0, 0.0, 1.0);
+    /// let origin = Point3::new(1.0, 2.0, 3.0);
+    /// let iso = Iso3::from_basis_xy(&e0, &e1, Some(origin)).unwrap();
+    ///
+    /// assert_relative_eq!(iso * Point3::origin(), origin, epsilon = 1e-10);
+    /// // The basis coordinate system's x-axis (1, 0, 0) lands on the normalized `e0`
+    /// assert_relative_eq!(iso * Point3::new(1.0, 0.0, 0.0), origin + e0.normalize(), epsilon = 1e-10);
+    /// // The basis coordinate system's y-axis (0, 1, 0) lands on `e1`, unchanged since it was
+    /// // already orthogonal to `e0`
+    /// assert_relative_eq!(iso * Point3::new(0.0, 1.0, 0.0), origin + e1, epsilon = 1e-10);
+    /// ```
     fn from_basis_xy(e0: &Vector3, e1: &Vector3, origin: Option<Point3>) -> Result<Iso3>;
 
     /// Try to create an isometry from two basis vectors and an optional origin. The primary basis
@@ -90,6 +133,28 @@ pub trait IsoExtensions3 {
     ///   be coincident with the origin of the world coordinate system.
     ///
     /// returns: Result<Isometry<f64, Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use approx::assert_relative_eq;
+    /// use engeom::{Iso3, Point3, Vector3};
+    /// use engeom::geom3::IsoExtensions3;
+    ///
+    /// // `e0` is tilted 45 degrees between the global x and y axes, while `e2` is already
+    /// // orthogonal to it, so the two are easy to tell apart in the result.
+    /// let e0 = Vector3::new(1.0, 1.0, 0.0);
+    /// let e2 = Vector3::new(0.0, 0.0, 1.0);
+    /// let origin = Point3::new(1.0, 2.0, 3.0);
+    /// let iso = Iso3::from_basis_xz(&e0, &e2, Some(origin)).unwrap();
+    ///
+    /// assert_relative_eq!(iso * Point3::origin(), origin, epsilon = 1e-10);
+    /// // The basis coordinate system's x-axis (1, 0, 0) lands on the normalized `e0`
+    /// assert_relative_eq!(iso * Point3::new(1.0, 0.0, 0.0), origin + e0.normalize(), epsilon = 1e-10);
+    /// // The basis coordinate system's z-axis (0, 0, 1) lands on `e2`, unchanged since it was
+    /// // already orthogonal to `e0`
+    /// assert_relative_eq!(iso * Point3::new(0.0, 0.0, 1.0), origin + e2, epsilon = 1e-10);
+    /// ```
     fn from_basis_xz(e0: &Vector3, e2: &Vector3, origin: Option<Point3>) -> Result<Iso3>;
 
     /// Try to create an isometry from two basis vectors and an optional origin. The primary basis
@@ -114,6 +179,28 @@ pub trait IsoExtensions3 {
     ///   be coincident with the origin of the world coordinate system.
     ///
     /// returns: Result<Isometry<f64, Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use approx::assert_relative_eq;
+    /// use engeom::{Iso3, Point3, Vector3};
+    /// use engeom::geom3::IsoExtensions3;
+    ///
+    /// // `e1` is tilted 45 degrees between the global x and y axes, while `e2` is already
+    /// // orthogonal to it, so the two are easy to tell apart in the result.
+    /// let e1 = Vector3::new(1.0, 1.0, 0.0);
+    /// let e2 = Vector3::new(0.0, 0.0, 1.0);
+    /// let origin = Point3::new(1.0, 2.0, 3.0);
+    /// let iso = Iso3::from_basis_yz(&e1, &e2, Some(origin)).unwrap();
+    ///
+    /// assert_relative_eq!(iso * Point3::origin(), origin, epsilon = 1e-10);
+    /// // The basis coordinate system's y-axis (0, 1, 0) lands on the normalized `e1`
+    /// assert_relative_eq!(iso * Point3::new(0.0, 1.0, 0.0), origin + e1.normalize(), epsilon = 1e-10);
+    /// // The basis coordinate system's z-axis (0, 0, 1) lands on `e2`, unchanged since it was
+    /// // already orthogonal to `e1`
+    /// assert_relative_eq!(iso * Point3::new(0.0, 0.0, 1.0), origin + e2, epsilon = 1e-10);
+    /// ```
     fn from_basis_yz(e1: &Vector3, e2: &Vector3, origin: Option<Point3>) -> Result<Iso3>;
 
     /// Try to create an isometry from two basis vectors and an optional origin. The primary basis
@@ -138,6 +225,28 @@ pub trait IsoExtensions3 {
     ///   be coincident with the origin of the world coordinate system.
     ///
     /// returns: Result<Isometry<f64, Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use approx::assert_relative_eq;
+    /// use engeom::{Iso3, Point3, Vector3};
+    /// use engeom::geom3::IsoExtensions3;
+    ///
+    /// // `e1` is tilted 45 degrees between the global x and y axes, while `e0` is already
+    /// // orthogonal to it, so the two are easy to tell apart in the result.
+    /// let e1 = Vector3::new(1.0, 1.0, 0.0);
+    /// let e0 = Vector3::new(0.0, 0.0, 1.0);
+    /// let origin = Point3::new(1.0, 2.0, 3.0);
+    /// let iso = Iso3::from_basis_yx(&e1, &e0, Some(origin)).unwrap();
+    ///
+    /// assert_relative_eq!(iso * Point3::origin(), origin, epsilon = 1e-10);
+    /// // The basis coordinate system's y-axis (0, 1, 0) lands on the normalized `e1`
+    /// assert_relative_eq!(iso * Point3::new(0.0, 1.0, 0.0), origin + e1.normalize(), epsilon = 1e-10);
+    /// // The basis coordinate system's x-axis (1, 0, 0) lands on `e0`, unchanged since it was
+    /// // already orthogonal to `e1`
+    /// assert_relative_eq!(iso * Point3::new(1.0, 0.0, 0.0), origin + e0, epsilon = 1e-10);
+    /// ```
     fn from_basis_yx(e1: &Vector3, e0: &Vector3, origin: Option<Point3>) -> Result<Iso3>;
 
     /// Try to create an isometry from two basis vectors and an optional origin. The primary basis
@@ -162,6 +271,28 @@ pub trait IsoExtensions3 {
     ///   be coincident with the origin of the world coordinate system.
     ///
     /// returns: Result<Isometry<f64, Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use approx::assert_relative_eq;
+    /// use engeom::{Iso3, Point3, Vector3};
+    /// use engeom::geom3::IsoExtensions3;
+    ///
+    /// // `e2` is tilted 45 degrees between the global x and y axes, while `e0` is already
+    /// // orthogonal to it, so the two are easy to tell apart in the result.
+    /// let e2 = Vector3::new(1.0, 1.0, 0.0);
+    /// let e0 = Vector3::new(0.0, 0.0, 1.0);
+    /// let origin = Point3::new(1.0, 2.0, 3.0);
+    /// let iso = Iso3::from_basis_zx(&e2, &e0, Some(origin)).unwrap();
+    ///
+    /// assert_relative_eq!(iso * Point3::origin(), origin, epsilon = 1e-10);
+    /// // The basis coordinate system's z-axis (0, 0, 1) lands on the normalized `e2`
+    /// assert_relative_eq!(iso * Point3::new(0.0, 0.0, 1.0), origin + e2.normalize(), epsilon = 1e-10);
+    /// // The basis coordinate system's x-axis (1, 0, 0) lands on `e0`, unchanged since it was
+    /// // already orthogonal to `e2`
+    /// assert_relative_eq!(iso * Point3::new(1.0, 0.0, 0.0), origin + e0, epsilon = 1e-10);
+    /// ```
     fn from_basis_zx(e2: &Vector3, e0: &Vector3, origin: Option<Point3>) -> Result<Iso3>;
 
     /// Try to create an isometry from two basis vectors and an optional origin. The primary basis
@@ -186,6 +317,28 @@ pub trait IsoExtensions3 {
     ///   be coincident with the origin of the world coordinate system.
     ///
     /// returns: Result<Isometry<f64, Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use approx::assert_relative_eq;
+    /// use engeom::{Iso3, Point3, Vector3};
+    /// use engeom::geom3::IsoExtensions3;
+    ///
+    /// // `e2` is tilted 45 degrees between the global x and y axes, while `e1` is already
+    /// // orthogonal to it, so the two are easy to tell apart in the result.
+    /// let e2 = Vector3::new(1.0, 1.0, 0.0);
+    /// let e1 = Vector3::new(0.0, 0.0, 1.0);
+    /// let origin = Point3::new(1.0, 2.0, 3.0);
+    /// let iso = Iso3::from_basis_zy(&e2, &e1, Some(origin)).unwrap();
+    ///
+    /// assert_relative_eq!(iso * Point3::origin(), origin, epsilon = 1e-10);
+    /// // The basis coordinate system's z-axis (0, 0, 1) lands on the normalized `e2`
+    /// assert_relative_eq!(iso * Point3::new(0.0, 0.0, 1.0), origin + e2.normalize(), epsilon = 1e-10);
+    /// // The basis coordinate system's y-axis (0, 1, 0) lands on `e1`, unchanged since it was
+    /// // already orthogonal to `e2`
+    /// assert_relative_eq!(iso * Point3::new(0.0, 1.0, 0.0), origin + e1, epsilon = 1e-10);
+    /// ```
     fn from_basis_zy(e2: &Vector3, e1: &Vector3, origin: Option<Point3>) -> Result<Iso3>;
 
     /// Create an isometry that rotates around the x-axis by a given angle. Positive angles rotate
@@ -200,7 +353,14 @@ pub trait IsoExtensions3 {
     /// # Examples
     ///
     /// ```
+    /// use std::f64::consts::PI;
+    /// use approx::assert_relative_eq;
+    /// use engeom::{Iso3, Vector3};
+    /// use engeom::geom3::IsoExtensions3;
     ///
+    /// let iso = Iso3::from_rx(PI / 2.0);
+    /// let rotated = iso * Vector3::y();
+    /// assert_relative_eq!(rotated, Vector3::z(), epsilon = 1e-10);
     /// ```
     fn from_rx(angle: f64) -> Iso3;
 
@@ -216,7 +376,14 @@ pub trait IsoExtensions3 {
     /// # Examples
     ///
     /// ```
+    /// use std::f64::consts::PI;
+    /// use approx::assert_relative_eq;
+    /// use engeom::{Iso3, Vector3};
+    /// use engeom::geom3::IsoExtensions3;
     ///
+    /// let iso = Iso3::from_ry(PI / 2.0);
+    /// let rotated = iso * Vector3::z();
+    /// assert_relative_eq!(rotated, Vector3::x(), epsilon = 1e-10);
     /// ```
     fn from_ry(angle: f64) -> Iso3;
 
@@ -232,39 +399,162 @@ pub trait IsoExtensions3 {
     /// # Examples
     ///
     /// ```
+    /// use std::f64::consts::PI;
+    /// use approx::assert_relative_eq;
+    /// use engeom::{Iso3, Vector3};
+    /// use engeom::geom3::IsoExtensions3;
     ///
+    /// let iso = Iso3::from_rz(PI / 2.0);
+    /// let rotated = iso * Vector3::x();
+    /// assert_relative_eq!(rotated, Vector3::y(), epsilon = 1e-10);
     /// ```
     fn from_rz(angle: f64) -> Iso3;
 
     /// Return a copy of the isometry rotated by 180 degrees around its own x-axis. The location of
     /// the origin and the direction of its x-axis with respect to the global coordinate system
     /// are unchanged, but its y and z directions are reversed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use approx::assert_relative_eq;
+    /// use engeom::{Iso3, Point3, Vector3};
+    /// use engeom::geom3::IsoExtensions3;
+    ///
+    /// // A tilted, off-origin isometry, so its origin and axis directions don't coincide with
+    /// // the global coordinate system and the effect of the flip is easy to see.
+    /// let iso = Iso3::from_basis_xy(
+    ///     &Vector3::new(1.0, 1.0, 1.0),
+    ///     &Vector3::new(-1.0, 1.0, 1.0),
+    ///     Some(Point3::new(1.0, 2.0, 3.0)),
+    /// )
+    /// .unwrap();
+    /// let flipped = iso.flipped_around_x();
+    ///
+    /// assert_relative_eq!(iso.origin(), flipped.origin(), epsilon = 1e-6);
+    /// assert_relative_eq!(iso.x(), flipped.x(), epsilon = 1e-6);
+    /// assert_relative_eq!(iso.y(), -flipped.y(), epsilon = 1e-6);
+    /// assert_relative_eq!(iso.z(), -flipped.z(), epsilon = 1e-6);
+    /// ```
     fn flipped_around_x(&self) -> Iso3;
 
     /// Return a copy of the isometry rotated by 180 degrees around its own y-axis. The location of
     /// the origin and the direction of its y-axis with respect to the global coordinate system are
     /// unchanged, but its x and z directions are reversed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use approx::assert_relative_eq;
+    /// use engeom::{Iso3, Point3, Vector3};
+    /// use engeom::geom3::IsoExtensions3;
+    ///
+    /// // A tilted, off-origin isometry, so its origin and axis directions don't coincide with
+    /// // the global coordinate system and the effect of the flip is easy to see.
+    /// let iso = Iso3::from_basis_xy(
+    ///     &Vector3::new(1.0, 1.0, 1.0),
+    ///     &Vector3::new(-1.0, 1.0, 1.0),
+    ///     Some(Point3::new(1.0, 2.0, 3.0)),
+    /// )
+    /// .unwrap();
+    /// let flipped = iso.flipped_around_y();
+    ///
+    /// assert_relative_eq!(iso.origin(), flipped.origin(), epsilon = 1e-6);
+    /// assert_relative_eq!(iso.x(), -flipped.x(), epsilon = 1e-6);
+    /// assert_relative_eq!(iso.y(), flipped.y(), epsilon = 1e-6);
+    /// assert_relative_eq!(iso.z(), -flipped.z(), epsilon = 1e-6);
+    /// ```
     fn flipped_around_y(&self) -> Iso3;
 
     /// Return a copy of the isometry rotated by 180 degrees around its own z-axis. The location of
     /// the origin and the direction of its z-axis with respect to the global coordinate system
     /// are unchanged, but its x and y directions are reversed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use approx::assert_relative_eq;
+    /// use engeom::{Iso3, Point3, Vector3};
+    /// use engeom::geom3::IsoExtensions3;
+    ///
+    /// // A tilted, off-origin isometry, so its origin and axis directions don't coincide with
+    /// // the global coordinate system and the effect of the flip is easy to see.
+    /// let iso = Iso3::from_basis_xy(
+    ///     &Vector3::new(1.0, 1.0, 1.0),
+    ///     &Vector3::new(-1.0, 1.0, 1.0),
+    ///     Some(Point3::new(1.0, 2.0, 3.0)),
+    /// )
+    /// .unwrap();
+    /// let flipped = iso.flipped_around_z();
+    ///
+    /// assert_relative_eq!(iso.origin(), flipped.origin(), epsilon = 1e-6);
+    /// assert_relative_eq!(iso.x(), -flipped.x(), epsilon = 1e-6);
+    /// assert_relative_eq!(iso.y(), -flipped.y(), epsilon = 1e-6);
+    /// assert_relative_eq!(iso.z(), flipped.z(), epsilon = 1e-6);
+    /// ```
     fn flipped_around_z(&self) -> Iso3;
 
     /// Return the location of the isometry's origin in the global coordinate system. This is what
     /// you get when you transform the point (0, 0, 0) by this isometry.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use approx::assert_relative_eq;
+    /// use engeom::{Iso3, Point3};
+    /// use engeom::geom3::IsoExtensions3;
+    ///
+    /// let iso = Iso3::translation(1.0, 2.0, 3.0);
+    /// assert_relative_eq!(iso.origin(), Point3::new(1.0, 2.0, 3.0), epsilon = 1e-10);
+    /// ```
     fn origin(&self) -> Point3;
 
     /// Return the direction of the isometry's x-axis in the global coordinate system. This is what
     /// you get when you transform the unit vector (1, 0, 0) by this isometry.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::f64::consts::PI;
+    /// use approx::assert_relative_eq;
+    /// use engeom::{Iso3, Vector3};
+    /// use engeom::geom3::IsoExtensions3;
+    ///
+    /// let iso = Iso3::from_rz(PI / 2.0);
+    /// assert_relative_eq!(iso.x(), Vector3::y_axis(), epsilon = 1e-10);
+    /// ```
     fn x(&self) -> UnitVec3;
 
     /// Return the direction of the isometry's y-axis in the global coordinate system. This is what
     /// you get when you transform the unit vector (0, 1, 0) by this isometry.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::f64::consts::PI;
+    /// use approx::assert_relative_eq;
+    /// use engeom::{Iso3, Vector3};
+    /// use engeom::geom3::IsoExtensions3;
+    ///
+    /// let iso = Iso3::from_rx(PI / 2.0);
+    /// assert_relative_eq!(iso.y(), Vector3::z_axis(), epsilon = 1e-10);
+    /// ```
     fn y(&self) -> UnitVec3;
 
     /// Return the direction of the isometry's z-axis in the global coordinate system. This is what
     /// you get when you transform the unit vector (0, 0, 1) by this isometry.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::f64::consts::PI;
+    /// use approx::assert_relative_eq;
+    /// use engeom::{Iso3, Vector3};
+    /// use engeom::geom3::IsoExtensions3;
+    ///
+    /// let iso = Iso3::from_ry(PI / 2.0);
+    /// assert_relative_eq!(iso.z(), Vector3::x_axis(), epsilon = 1e-10);
+    /// ```
     fn z(&self) -> UnitVec3;
 }
 
