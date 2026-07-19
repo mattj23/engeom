@@ -1,13 +1,12 @@
 //! This module has additional tools and functions for working with 3D isometries
 
-use crate::{Iso3, Point3, Result, Vector3};
+use crate::{Iso3, Point3, Result, UnitVec3, Vector3};
+use consts::PI;
 use parry3d_f64::na::{Matrix3, Translation3};
 use parry3d_f64::na::{Matrix4, UnitQuaternion, try_convert};
+use std::f64::consts;
 
 pub trait IsoExtensions3 {
-    fn flipped_around_x(&self) -> Iso3;
-    fn flipped_around_y(&self) -> Iso3;
-    fn flipped_around_z(&self) -> Iso3;
     fn from_array(array: &[f64; 16]) -> Result<Iso3>;
 
     fn from_basis_xy(e0: &Vector3, e1: &Vector3, origin: Option<Point3>) -> Result<Iso3>;
@@ -20,30 +19,18 @@ pub trait IsoExtensions3 {
     fn from_rx(angle: f64) -> Iso3;
     fn from_ry(angle: f64) -> Iso3;
     fn from_rz(angle: f64) -> Iso3;
+
+    fn flipped_around_x(&self) -> Iso3;
+    fn flipped_around_y(&self) -> Iso3;
+    fn flipped_around_z(&self) -> Iso3;
+
+    fn origin(&self) -> Point3;
+    fn x(&self) -> UnitVec3;
+    fn y(&self) -> UnitVec3;
+    fn z(&self) -> UnitVec3;
 }
 
 impl IsoExtensions3 for Iso3 {
-    /// Return a copy of the isometry rotated by 180 degrees around the x-axis. The location of
-    /// the origin is not changed, but the y and z directions are reversed.
-    fn flipped_around_x(&self) -> Self {
-        let r = Iso3::rotation(Vector3::x() * std::f64::consts::PI);
-        self.translation * r * self.rotation
-    }
-
-    /// Return a copy of the isometry rotated by 180 degrees around the y-axis. The location of
-    /// the origin is not changed, but the x and z directions are reversed.
-    fn flipped_around_y(&self) -> Self {
-        let r = Iso3::rotation(Vector3::y() * std::f64::consts::PI);
-        self.translation * r * self.rotation
-    }
-
-    /// Return a copy of the isometry rotated by 180 degrees around the z-axis. The location of
-    /// the origin is not changed, but the x and y directions are reversed.
-    fn flipped_around_z(&self) -> Self {
-        let r = Iso3::rotation(Vector3::z() * std::f64::consts::PI);
-        self.translation * r * self.rotation
-    }
-
     /// Try to convert a 16 element array into an Iso3. The array is expected to be in row-major
     /// order.
     fn from_array(array: &[f64; 16]) -> Result<Self> {
@@ -272,6 +259,51 @@ impl IsoExtensions3 for Iso3 {
     fn from_rz(angle: f64) -> Iso3 {
         Iso3::rotation(Vector3::z() * angle)
     }
+
+    /// Return a copy of the isometry rotated by 180 degrees around its own x-axis. The location of
+    /// the origin and the direction of its x-axis with respect to the global coordinate system
+    /// are unchanged, but its y and z directions are reversed.
+    fn flipped_around_x(&self) -> Self {
+        self * Iso3::rotation(Vector3::x() * PI)
+    }
+
+    /// Return a copy of the isometry rotated by 180 degrees around its own y-axis. The location of
+    /// the origin and the direction of its y-axis with respect to the global coordinate system are
+    /// unchanged, but its x and z directions are reversed.
+    fn flipped_around_y(&self) -> Self {
+        self * Iso3::rotation(Vector3::y() * PI)
+    }
+
+    /// Return a copy of the isometry rotated by 180 degrees around its own z-axis. The location of
+    /// the origin and the direction of its z-axis with respect to the global coordinate system
+    /// are unchanged, but its x and y directions are reversed.
+    fn flipped_around_z(&self) -> Self {
+        self * Iso3::rotation(Vector3::z() * PI)
+    }
+
+    /// Return the location of the isometry's origin in the global coordinate system. This is what
+    /// you get when you transform the point (0, 0, 0) by this isometry.
+    fn origin(&self) -> Point3 {
+        self * Point3::origin()
+    }
+
+    /// Return the direction of the isometry's x-axis in the global coordinate system. This is what
+    /// you get when you transform the unit vector (1, 0, 0) by this isometry.
+    fn x(&self) -> UnitVec3 {
+        self * Vector3::x_axis()
+    }
+
+    /// Return the direction of the isometry's y-axis in the global coordinate system. This is what
+    /// you get when you transform the unit vector (0, 1, 0) by this isometry.
+    fn y(&self) -> UnitVec3 {
+        self * Vector3::y_axis()
+    }
+
+    /// Return the direction of the isometry's z-axis in the global coordinate system. This is what
+    /// you get when you transform the unit vector (0, 0, 1) by this isometry.
+    fn z(&self) -> UnitVec3 {
+        self * Vector3::z_axis()
+    }
 }
 
 fn from_bases(e0: Vector3, e1: Vector3, e2: Vector3, origin: Option<Point3>) -> Result<Iso3> {
@@ -395,17 +427,44 @@ mod tests {
     }
 
     #[test]
-    fn iso3_flip_x() {
-        let iso = Iso3::new(Vector3::new(1.0, 2.0, 3.0), Vector3::new(0.0, 0.0, 0.0));
+    fn iso3_flip_x_semantics() {
+        let iso = flip_cs();
         let flipped = iso.flipped_around_x();
 
-        let p = Point3::new(0.0, 0.0, 0.0);
-        assert_relative_eq!(flipped * p, Point3::new(1.0, 2.0, 3.0));
+        assert_relative_eq!(iso.origin(), flipped.origin(), epsilon = 1e-6);
+        assert_relative_eq!(iso.x(), flipped.x(), epsilon = 1e-6);
+        assert_relative_eq!(iso.y(), -flipped.y(), epsilon = 1e-6);
+        assert_relative_eq!(iso.z(), -flipped.z(), epsilon = 1e-6);
+    }
 
-        let p1 = Point3::new(1.0, 0.0, 0.0);
-        assert_relative_eq!(flipped * p1, Point3::new(2.0, 2.0, 3.0));
+    #[test]
+    fn iso3_flip_y_semantics() {
+        let iso = flip_cs();
+        let flipped = iso.flipped_around_y();
 
-        let p2 = Point3::new(0.0, 1.0, 0.0);
-        assert_relative_eq!(flipped * p2, Point3::new(1.0, 1.0, 3.0));
+        assert_relative_eq!(iso.origin(), flipped.origin(), epsilon = 1e-6);
+        assert_relative_eq!(iso.x(), -flipped.x(), epsilon = 1e-6);
+        assert_relative_eq!(iso.y(), flipped.y(), epsilon = 1e-6);
+        assert_relative_eq!(iso.z(), -flipped.z(), epsilon = 1e-6);
+    }
+
+    #[test]
+    fn iso3_flip_z_semantics() {
+        let iso = flip_cs();
+        let flipped = iso.flipped_around_z();
+
+        assert_relative_eq!(iso.origin(), flipped.origin(), epsilon = 1e-6);
+        assert_relative_eq!(iso.x(), -flipped.x(), epsilon = 1e-6);
+        assert_relative_eq!(iso.y(), -flipped.y(), epsilon = 1e-6);
+        assert_relative_eq!(iso.z(), flipped.z(), epsilon = 1e-6);
+    }
+
+    fn flip_cs() -> Iso3 {
+        Iso3::from_basis_xy(
+            &Vector3::new(1.0, 1.0, 1.0),
+            &Vector3::new(-1.0, 1.0, 1.0),
+            Some(Point3::new(1.0, 2.0, 3.0)),
+        )
+        .unwrap()
     }
 }
