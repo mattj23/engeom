@@ -28,19 +28,19 @@ These conventions apply to the naming of all functions, including trait and stru
 
 #### Checked/Unchecked Sibling Methods: `try_` and `_unchecked`
 
-Because `Result<Self, E>` and `Option<Self>` are `#[must_use]` and already visible in the signature, there doesn't feel like much benefit in universally prefixing methods that return these types with the word `try_`. For any operation where it's obvious that a failure is a normal possible result (such as an intersection check, or a creation method that's impossible with degenerate input) the function should just return
+Because `Result<Self, E>` and `Option<Self>` are `#[must_use]` and already visible in the signature, there doesn't feel like much benefit in universally prefixing methods that return these types with the word `try_`. For any operation where it's obvious that a failure is a normal possible result (such as an intersection check, or a creation method that's impossible with degenerate input) the function should just return a `Result` or `Option` and leave `try_` out of the function name.
 
-However, if there is sibling method with the same name that doesn't return a fallible type, use `try_` to distinguish the one returning `Result` or `Option`.
+However, if there is sibling method with the same name that doesn't return a fallible type, add the prefix `try_` to the name to distinguish the one returning `Result` or `Option`.
 
 Importantly, if a method can either panic or continue in a state where invalid/unexpected behavior will result, _especially if that behavior is non-obvious and/or deferred_, the method should be suffixed with `_unchecked` to indicate that the caller is responsible for the state of the input.  For example, if a struct depends on being initialized with a sorted `Vec<f64>`, you may want to have a construction method that skips the expensive sort in case the caller already knows that the list is sorted.  This should be named something like `::new_unchecked(a: Vec<f64>)` to indicate that there's something different about this function.
 
 #### Verb prefixes in function names
 
-When there is an obviously correct, specific verb for the operation the function is doing, use that as the prefix for the function.  Examples include: `find_`, `fit_`, `solve_`, `measure_`, `estimate_`, `extract_`, and so on.
+1. When there is an obviously correct, specific verb for the operation the function is doing, use that as the prefix for the function.  Examples include: `find_`, `fit_`, `solve_`, `measure_`, `estimate_`, `extract_`, and so on.
 
-If the function is performing a non-trivial computation that is building an output, prefer the prefix `compute_` over others.
+2. _If_ there is no obviously correct verb like #1, but the function is performing a non-trivial computation that is building an output, prefer the prefix `compute_`. Examples I have been guilty of using that should be replaced with `compute_` are: `build_`, `make_`, `calc_`, and `get_`.
 
-As per the Rust API guidelines do not use the prefix `get_` unless there's one obvious thing to get, and any function named `get_` should only be a pass-through to a reference or value, it shouldn't be hiding computation inside it.
+3. As per the Rust API guidelines **do not** use the prefix `get_` unless there's one obvious thing to get, and any function named `get_` should only be a pass-through to a reference or value, it shouldn't be hiding computation inside it.
 
 ### Struct Function (Method) Names
 
@@ -58,11 +58,13 @@ Follow `from_` with what the input is (ex. `Circle2::from_3_points`, `Circle3::f
 
 If it needs further disambiguation from another method with the same type of input, put something distinguishing about the method at the end of the name.  *However*, if multiple methods can be used with the same input, consider making the method an argument instead of having a separate method.
 
+It makes sense to reverse the input vs method naming convention in certain cases when the input and method are closely related and the method is more recognizable than the input.  For example, `from_least_squares` or `from_fit` is preferable to `from_points_least_squares`.
+
 #### Methods returning a modified copy: bare past-participle, no prefix
 
 A method that takes `&self` and returns a new, modified `Self` (as opposed to mutating in place) gets a bare past-participle name: `rotated`, `reversed`, `normalized`, `transformed_by`.
 
-Where a verb doesn't have a natural participle, try to find a different name that reads correctly both grammatically and semantically.  For example, a method that creates a new plane parallel to the called instance might have a name like `offset_by` instead of trying to work with the word "parallel".
+Where a verb doesn't have a natural participle, try to find a different name that reads correctly both grammatically and semantically.
 
 Tentatively, on heavy objects which will primarily use modify-in-place operations, I'm considering using a `_copy` suffix to make expensive operations distinguishable with a quick glance.
 
