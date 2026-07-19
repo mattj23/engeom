@@ -866,7 +866,11 @@ impl Curve2 {
             }
         }
 
-        Some(Arc2::three_points(self.vtx(i0), self.vtx(i1), self.vtx(i2)))
+        Some(Arc2::from_3_points(
+            self.vtx(i0),
+            self.vtx(i1),
+            self.vtx(i2),
+        ))
     }
 }
 

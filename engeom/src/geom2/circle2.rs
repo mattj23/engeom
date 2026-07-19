@@ -438,7 +438,7 @@ impl Circle2 {
 
     /// Create a full arc of the circle, starting at zero and extending for 2π radians.
     pub fn to_arc(&self) -> Arc2 {
-        Arc2::new(*self, 0.0, 2.0 * std::f64::consts::PI)
+        Arc2::from_circle(*self, 0.0, 2.0 * std::f64::consts::PI)
     }
 
     /// Create a partial arc of the circle, starting at `angle0` and extending for `angle` radians.
@@ -456,7 +456,7 @@ impl Circle2 {
     ///
     /// ```
     pub fn to_partial_arc(&self, angle0: f64, angle: f64) -> Arc2 {
-        Arc2::new(*self, angle0, angle)
+        Arc2::from_circle(*self, angle0, angle)
     }
 
     /// Computes the distance from the test point to the outer perimeter of the circle. If the

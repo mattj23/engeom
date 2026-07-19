@@ -1,9 +1,11 @@
 """
     Tests of geometric primitives (vectors, points, etc.) in geom2 module.
 """
+import math
+
 import pytest
 import numpy
-from engeom.geom2 import Vector2, Point2, SurfacePoint2, Segment2, Iso2
+from engeom.geom2 import Vector2, Point2, SurfacePoint2, Segment2, Arc2, Iso2
 
 
 def test_vector_mul_scalar():
@@ -173,3 +175,22 @@ def test_iso2_matmul_segment2_matches_transformed_by():
     s = Segment2(0, 0, 1, 2)
     iso = Iso2(1, 2, 0.5)
     assert (iso @ s) == s.transformed_by(iso)
+
+
+def test_arc2_construction():
+    a = Arc2(0, 0, 1, 0, math.pi / 2)
+    assert a.center.x == pytest.approx(0.0)
+    assert a.center.y == pytest.approx(0.0)
+    assert a.r == pytest.approx(1.0)
+    assert a.angle0 == pytest.approx(0.0)
+    assert a.angle == pytest.approx(math.pi / 2)
+
+
+def test_arc2_to_points_includes_endpoints():
+    a = Arc2(0, 0, 1, 0, math.pi / 2)
+    points = a.to_points(0.01)
+    assert points.shape[1] == 2
+    assert points[0, 0] == pytest.approx(a.a.x)
+    assert points[0, 1] == pytest.approx(a.a.y)
+    assert points[-1, 0] == pytest.approx(a.b.x)
+    assert points[-1, 1] == pytest.approx(a.b.y)

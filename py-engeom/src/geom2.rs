@@ -1309,36 +1309,36 @@ impl Arc2 {
     fn __repr__(&self) -> String {
         format!(
             "Arc2({}, {}, {}, {}, {})",
-            self.inner.center().x,
-            self.inner.center().y,
-            self.inner.radius(),
-            self.inner.angle0(),
-            self.inner.angle(),
+            self.inner.center.x,
+            self.inner.center.y,
+            self.inner.radius,
+            self.inner.angle0,
+            self.inner.angle,
         )
     }
 
     fn __getstate__(&self) -> (f64, f64, f64, f64, f64) {
         (
-            self.inner.center().x,
-            self.inner.center().y,
-            self.inner.radius(),
-            self.inner.angle0(),
-            self.inner.angle(),
+            self.inner.center.x,
+            self.inner.center.y,
+            self.inner.radius,
+            self.inner.angle0,
+            self.inner.angle,
         )
     }
 
     fn __getnewargs__(&self) -> (f64, f64, f64, f64, f64) {
         (
-            self.inner.center().x,
-            self.inner.center().y,
-            self.inner.radius(),
-            self.inner.angle0(),
-            self.inner.angle(),
+            self.inner.center.x,
+            self.inner.center.y,
+            self.inner.radius,
+            self.inner.angle0,
+            self.inner.angle,
         )
     }
 
     fn __setstate__(&mut self, state: (f64, f64, f64, f64, f64)) {
-        self.inner = engeom::Arc2::circle_angles(
+        self.inner = engeom::Arc2::new(
             engeom::Point2::new(state.0, state.1),
             state.2,
             state.3,
@@ -1347,42 +1347,37 @@ impl Arc2 {
     }
 
     fn __eq__(&self, other: &Self) -> bool {
-        self.inner.center() == other.inner.center()
-            && self.inner.radius() == other.inner.radius()
-            && self.inner.angle0() == other.inner.angle0()
-            && self.inner.angle() == other.inner.angle()
+        self.inner.center == other.inner.center
+            && self.inner.radius == other.inner.radius
+            && self.inner.angle0 == other.inner.angle0
+            && self.inner.angle == other.inner.angle
     }
 
     #[new]
     fn new(x: f64, y: f64, r: f64, start_radians: f64, sweep_radians: f64) -> Self {
         Self {
-            inner: engeom::Arc2::circle_angles(
-                engeom::Point2::new(x, y),
-                r,
-                start_radians,
-                sweep_radians,
-            ),
+            inner: engeom::Arc2::new(engeom::Point2::new(x, y), r, start_radians, sweep_radians),
         }
     }
 
     #[getter]
     fn center(&self) -> Point2 {
-        Point2::from_inner(self.inner.center())
+        Point2::from_inner(self.inner.center)
     }
 
     #[getter]
     fn r(&self) -> f64 {
-        self.inner.radius()
+        self.inner.radius
     }
 
     #[getter]
     fn angle0(&self) -> f64 {
-        self.inner.angle0()
+        self.inner.angle0
     }
 
     #[getter]
     fn angle(&self) -> f64 {
-        self.inner.angle()
+        self.inner.angle
     }
 
     #[getter]
@@ -1405,8 +1400,9 @@ impl Arc2 {
         Circle2::from_inner(self.inner.circle())
     }
 
-    fn make_points<'py>(&self, py: Python<'py>, tol: f64) -> Bound<'py, PyArray2<f64>> {
-        let points = self.inner.make_points(tol);
+    fn to_points<'py>(&self, py: Python<'py>, tol: f64) -> Bound<'py, PyArray2<f64>> {
+        use engeom::geom2::BoundaryElement2;
+        let points = self.inner.to_points(tol);
         points_to_array(&points).into_pyarray(py)
     }
 }

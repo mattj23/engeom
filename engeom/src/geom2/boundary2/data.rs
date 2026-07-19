@@ -296,7 +296,7 @@ impl BoundaryData2 {
                 BData::Arc((cx, cy, ex, ey, cw)) => {
                     let end = Point2::new(*ex, *ey);
                     let center = Point2::new(*cx, *cy);
-                    let arc = Arc2::try_new_ends(&start, &end, &center, *cw)?;
+                    let arc = Arc2::from_ends(&start, &end, &center, *cw)?;
                     elements.push((id, Box::new(arc)));
                 }
             }

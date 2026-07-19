@@ -1931,7 +1931,7 @@ class Arc2:
         """
         ...
 
-    def make_points(self, tol: float) -> NDArray:
+    def to_points(self, tol: float) -> NDArray:
         """
         Sample the arc into a sequence of points such that the maximum deviation between any chord
         and the true arc is at most ``tol``.

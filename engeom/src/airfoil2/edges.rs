@@ -319,9 +319,9 @@ pub fn fit_blended_round_edge(
         // Now we construct the boundary
         // -----------------------------------------------------------
         let mut bdata = BoundaryData2::new_open(p0);
-        bdata.add_arc(&arc0.center(), &arc0.at_end(), wind_dir.is_cw());
+        bdata.add_arc(&arc0.center, &arc0.at_end(), wind_dir.is_cw());
         bdata.add_arc(&center, &arc1.at_end(), wind_dir.is_cw());
-        bdata.add_arc(&arc1.center(), &p1, wind_dir.is_cw());
+        bdata.add_arc(&arc1.center, &p1, wind_dir.is_cw());
         bdata.try_to_boundary()
     });
 
@@ -651,7 +651,7 @@ fn blend_arc(shifted_tangent: &Line2, le_center: &Point2, le_radius: f64) -> Arc
     let v1 = le_center - base_circle.center;
     let theta0 = base_circle.angle_of_point(&shifted_tangent.origin);
     let theta = signed_angle(&v0, &v1);
-    Arc2::circle_angles(
+    Arc2::new(
         base_circle.center,
         le_radius + base_circle.r(),
         theta0,

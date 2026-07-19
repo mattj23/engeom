@@ -18,7 +18,18 @@ pub struct Arc2 {
 }
 
 impl Arc2 {
-    pub fn new(circle: Circle2, angle0: f64, angle: f64) -> Self {
+    /// Create an arc from a circle, a start angle, and a sweep angle.
+    ///
+    /// # Arguments
+    ///
+    /// * `circle`: the circle of which the arc is a part
+    /// * `angle0`: the angle in radians (with respect to the x-axis) at which the arc starts
+    /// * `angle`: the angle in radians which the arc sweeps through, beginning at `angle0`. A
+    ///   positive value indicates a counter-clockwise sweep, while a negative value indicates a
+    ///   clockwise sweep.
+    ///
+    /// returns: Arc2
+    pub fn from_circle(circle: Circle2, angle0: f64, angle: f64) -> Self {
         Self {
             center: circle.center,
             radius: circle.r(),
@@ -27,7 +38,7 @@ impl Arc2 {
         }
     }
 
-    pub fn try_new_ends(
+    pub fn from_ends(
         start: &impl PCoords<2>,
         end: &impl PCoords<2>,
         center: &impl PCoords<2>,
@@ -56,7 +67,7 @@ impl Arc2 {
             t
         };
 
-        Ok(Arc2::new(c, t0, t))
+        Ok(Arc2::from_circle(c, t0, t))
     }
 
     /// Create an arc from a center point, a radius, starting at `angle0` and extending for
@@ -78,7 +89,7 @@ impl Arc2 {
     /// ```
     ///
     /// ```
-    pub fn circle_angles(center: Point2, radius: f64, angle0: f64, angle: f64) -> Self {
+    pub fn new(center: Point2, radius: f64, angle0: f64, angle: f64) -> Self {
         Self {
             center,
             radius,
@@ -107,7 +118,7 @@ impl Arc2 {
     /// ```
     ///
     /// ```
-    pub fn circle_point_angle(center: Point2, radius: f64, point: Point2, angle: f64) -> Self {
+    pub fn from_point_angle(center: Point2, radius: f64, point: Point2, angle: f64) -> Self {
         let circle = Circle2::from_point(center, radius);
         let angle0 = circle.angle_of_point(&point);
         Self {
@@ -134,7 +145,7 @@ impl Arc2 {
     /// ```
     ///
     /// ```
-    pub fn three_points(p0: Point2, p1: Point2, p2: Point2) -> Self {
+    pub fn from_3_points(p0: Point2, p1: Point2, p2: Point2) -> Self {
         let circle = Circle2::from_3_points(&p0, &p1, &p2).unwrap();
         let angle0 = circle.angle_of_point(&p0);
         let v0 = p0 - circle.center;
@@ -157,28 +168,12 @@ impl Arc2 {
         }
     }
 
-    pub fn angle0(&self) -> f64 {
-        self.angle0
-    }
-
-    pub fn angle(&self) -> f64 {
-        self.angle
-    }
-
     pub fn length(&self) -> f64 {
         self.radius * self.angle.abs()
     }
 
     pub fn circle(&self) -> Circle2 {
         Circle2::from_point(self.center, self.radius)
-    }
-
-    pub fn center(&self) -> Point2 {
-        self.center
-    }
-
-    pub fn radius(&self) -> f64 {
-        self.radius
     }
 
     pub fn point_at_angle(&self, angle: f64) -> Point2 {
@@ -231,39 +226,6 @@ impl Arc2 {
 
     pub fn at_fraction(&self, fraction: f64) -> Point2 {
         self.point_at_fraction(fraction)
-    }
-
-    /// Discretize the arc into a series of points such that the maximum distance between the arc
-    /// and the line segments connecting the points is less than the specified tolerance. The first
-    /// and last points will be the start and end points of the arc.
-    ///
-    /// # Arguments
-    ///
-    /// * `tol`: The maximum allowable distance between the arc and the line segments connecting
-    ///   the points.
-    ///
-    /// returns: Vec<OPoint<f64, Const<2>>, Global>
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
-    pub fn make_points(&self, tol: f64) -> Vec<Point2> {
-        // The difference between the radius and r*cos(theta/2) is the error between the apogee of
-        // each arc segment (of angle theta) and the chord connecting its endpoints. We want to
-        // calculate what the angle theta should be that would meet that tolerance, knowing that we
-        // must subdivide the total arc angle so that each segment is no larger than that angle.
-        let max_theta = 2.0 * (1.0 - tol / self.radius()).acos();
-        let n_segments = (self.angle.abs() / max_theta).ceil().max(1.0) as usize;
-        let angle_step = self.angle / n_segments as f64;
-        let mut points = Vec::with_capacity(n_segments + 1);
-
-        for i in 0..=n_segments {
-            let angle = angle_step * i as f64;
-            points.push(self.point_at_angle(angle));
-        }
-        points
     }
 
     /// Returns the axis-aligned bounding box of the arc, computed on demand.
@@ -350,10 +312,10 @@ mod tests {
         let p0 = Point2::new(1.0, 0.0);
         let p1 = Point2::new(0.0, 1.0);
         let p2 = Point2::new(0.0, -1.0);
-        let arc = Arc2::three_points(p0, p1, p2);
+        let arc = Arc2::from_3_points(p0, p1, p2);
 
-        assert_relative_eq!(Point2::origin(), arc.center());
-        assert_relative_eq!(1.0, arc.radius());
+        assert_relative_eq!(Point2::origin(), arc.center);
+        assert_relative_eq!(1.0, arc.radius);
         assert_relative_eq!(0.0, arc.angle0);
         assert_relative_eq!(3.0 * PI / 2.0, arc.angle);
     }
@@ -363,22 +325,22 @@ mod tests {
         let p2 = Point2::new(1.0, 0.0);
         let p1 = Point2::new(0.0, 1.0);
         let p0 = Point2::new(0.0, -1.0);
-        let arc = Arc2::three_points(p0, p1, p2);
+        let arc = Arc2::from_3_points(p0, p1, p2);
 
-        assert_relative_eq!(Point2::origin(), arc.center());
-        assert_relative_eq!(1.0, arc.radius());
+        assert_relative_eq!(Point2::origin(), arc.center);
+        assert_relative_eq!(1.0, arc.radius);
         assert_relative_eq!(-PI / 2.0, arc.angle0);
         assert_relative_eq!(-3.0 * PI / 2.0, arc.angle);
     }
 
     #[test]
-    fn make_points_tol() {
+    fn to_points_tol() {
         // This test generates points along a quarter-circle arc and checks that the maximum
         // distance from the arc to the line segments connecting the points is within the specified
         // tolerance.
-        let arc = Arc2::circle_angles(Point2::origin(), 1.0, 0.0, PI / 2.0);
+        let arc = Arc2::new(Point2::origin(), 1.0, 0.0, PI / 2.0);
         let tol = 0.001;
-        let points = arc.make_points(tol);
+        let points = arc.to_points(tol);
         assert!(points.len() >= 3);
 
         for i in 0..points.len() - 1 {
@@ -394,12 +356,12 @@ mod tests {
     }
 
     #[test]
-    fn make_points_ends() {
-        // This test checks that the first and last points generated by make_points are exactly
+    fn to_points_ends() {
+        // This test checks that the first and last points generated by to_points are exactly
         // the start and end points of the arc.
-        let arc = Arc2::circle_angles(Point2::origin(), 1.0, 0.0, PI / 2.0);
+        let arc = Arc2::new(Point2::origin(), 1.0, 0.0, PI / 2.0);
         let tol = 0.01;
-        let points = arc.make_points(tol);
+        let points = arc.to_points(tol);
 
         assert_relative_eq!(arc.a(), points.first().unwrap(), epsilon = 1e-8);
         assert_relative_eq!(arc.b(), points.last().unwrap(), epsilon = 1e-8);
@@ -408,7 +370,7 @@ mod tests {
     #[test]
     fn closest_simple_center() {
         // Arc starts at (1,0), ends at (-1,0), center at (0,0)
-        let arc = Arc2::circle_angles(Point2::origin(), 1.0, 0.0, PI);
+        let arc = Arc2::new(Point2::origin(), 1.0, 0.0, PI);
         let test_point = Point2::new(0.0, 2.0);
         let closest = arc.closest_to_point(&test_point);
 
@@ -418,7 +380,7 @@ mod tests {
     #[test]
     fn closest_simple_start() {
         // Arc starts at (1,0), ends at (-1,0), center at (0,0)
-        let arc = Arc2::circle_angles(Point2::origin(), 1.0, 0.0, PI);
+        let arc = Arc2::new(Point2::origin(), 1.0, 0.0, PI);
         let test_point = Point2::new(2.0, -1.0);
         let closest = arc.closest_to_point(&test_point);
 
@@ -428,7 +390,7 @@ mod tests {
     #[test]
     fn closest_simple_end() {
         // Arc starts at (1,0), ends at (-1,0), center at (0,0)
-        let arc = Arc2::circle_angles(Point2::origin(), 1.0, 0.0, PI);
+        let arc = Arc2::new(Point2::origin(), 1.0, 0.0, PI);
         let test_point = Point2::new(-2.0, -1.0);
         let closest = arc.closest_to_point(&test_point);
 
@@ -442,9 +404,9 @@ mod tests {
 
         for _ in 0..100 {
             let circle = Circle2::from_point(rnd.point(10.0), rnd.positive(5.0) + 0.5);
-            let arc = Arc2::new(circle, rnd.angle_sym_pi(), rnd.angle_sym_2pi());
+            let arc = Arc2::from_circle(circle, rnd.angle_sym_pi(), rnd.angle_sym_2pi());
 
-            let points = arc.make_points(tol);
+            let points = arc.to_points(tol);
             let curve = Curve2::from_points(&points, tol * 0.01, false).unwrap();
             let arc_len = arc.length() / (points.len() - 1) as f64;
 
