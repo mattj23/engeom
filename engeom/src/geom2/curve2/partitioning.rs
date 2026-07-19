@@ -290,7 +290,7 @@ impl Curve2 {
                 is_pos = !is_pos;
 
                 working = vec![end];
-                current.shift_origin(t);
+                current = current.shifted_origin(t);
                 to_next = current.scalar_project(&ns);
             }
         }

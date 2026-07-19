@@ -435,9 +435,9 @@ pub fn fit_spline_max_k(
 fn half_line(inscribed: &Inscribed, clip_dir: &Vector2, last_result: &SfResult) -> Line2 {
     let l0 = Line2::new(inscribed.center(), *clip_dir);
     let l1 = last_result.end_line();
-    let l = l0.new_slerp_to(&l1, 0.5).new_rotated(PI / 2.0);
+    let l = l0.slerp_to(&l1, 0.5).rotated(PI / 2.0);
     if l.direction.dot(&inscribed.contact_dir()) < 0.0 {
-        l.new_reversed()
+        l.reversed()
     } else {
         l
     }
@@ -507,8 +507,8 @@ fn spline_fit(
         let i0 = Iso2::from(clip_v * params[0]);
         let i1 = Iso2::from(clip_v * params[1]);
 
-        let ts0 = (i0 * t0).new_rotated(params[4]);
-        let ts1 = (i1 * t1).new_rotated(params[5]);
+        let ts0 = (i0 * t0).rotated(params[4]);
+        let ts1 = (i1 * t1).rotated(params[5]);
         let p1 = ts0.at(params[2]);
         let p2 = ts1.at(params[3]);
         Ok(CubicSpline2::new(ts0.origin, p1, p2, ts1.origin()))
@@ -619,7 +619,7 @@ fn refine_from_edge_circle(
 
     let test_line = Line2::new(fake_camber_line.point, fake.contact_dir());
     let test_line = if test_line.direction.dot(&working.last()?.contact_dir()) < 0.0 {
-        test_line.new_reversed()
+        test_line.reversed()
     } else {
         test_line
     };
@@ -633,8 +633,8 @@ fn refine_from_edge_circle(
 }
 
 fn end_arcs(t0: &Line2, t1: &Line2, clip: &Line2, center: &Point2, radius: f64) -> (Arc2, Arc2) {
-    let t0s = t0.new_parallel(t0.signed_projection_dist(&clip.origin).signum() * radius);
-    let t1s = t1.new_parallel(t1.signed_projection_dist(&clip.origin).signum() * radius);
+    let t0s = t0.offset_by(t0.signed_projection_dist(&clip.origin).signum() * radius);
+    let t1s = t1.offset_by(t1.signed_projection_dist(&clip.origin).signum() * radius);
 
     // We get the blend arcs. Arc0 goes from p0 to the leading edge circle, and arc1 goes from
     // p1 to the leading edge circle. We need to keep the order of endpoints right when we

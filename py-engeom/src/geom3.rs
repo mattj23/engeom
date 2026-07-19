@@ -1505,7 +1505,7 @@ impl Iso3 {
                     .into_bound_py_any(py)
             }
             Transformable3::Line(other) => {
-                Line3::from_inner(other.inner.new_transformed_by(&self.inner)).into_bound_py_any(py)
+                Line3::from_inner(other.inner.transformed_by(&self.inner)).into_bound_py_any(py)
             }
             Transformable3::Sphere(other) => {
                 Sphere3::from_inner(other.inner.transformed_by(&self.inner)).into_bound_py_any(py)

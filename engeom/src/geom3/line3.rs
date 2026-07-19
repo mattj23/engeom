@@ -10,7 +10,7 @@ use std::ops;
 ///
 /// This is the three-dimensional specialization of the dimension-generic
 /// [`Line`](crate::common::Line); see that type for the shared constructors and queries (`new`,
-/// `new_normalize`, `from_points`, `at`, `closest_point`, `distance_to`, `transform_by`, and so
+/// `new_normalize`, `from_points`, `at`, `closest_point`, `distance_to`, `transformed_by`, and so
 /// on). The methods defined directly on `Line3` here are the ones that only make sense in 3D.
 ///
 /// The direction is not required to be normalized; use `new_normalize` for unit-speed
@@ -105,28 +105,28 @@ impl Line3 {
 impl ops::Mul<Line3> for Iso3 {
     type Output = Line3;
     fn mul(self, rhs: Line3) -> Line3 {
-        rhs.new_transformed_by(&self)
+        rhs.transformed_by(&self)
     }
 }
 
 impl ops::Mul<&Line3> for Iso3 {
     type Output = Line3;
     fn mul(self, rhs: &Line3) -> Line3 {
-        rhs.new_transformed_by(&self)
+        rhs.transformed_by(&self)
     }
 }
 
 impl ops::Mul<Line3> for &Iso3 {
     type Output = Line3;
     fn mul(self, rhs: Line3) -> Line3 {
-        rhs.new_transformed_by(self)
+        rhs.transformed_by(self)
     }
 }
 
 impl ops::Mul<&Line3> for &Iso3 {
     type Output = Line3;
     fn mul(self, rhs: &Line3) -> Line3 {
-        rhs.new_transformed_by(self)
+        rhs.transformed_by(self)
     }
 }
 
@@ -404,13 +404,13 @@ mod tests {
     }
 
     #[test]
-    fn new_transformed_by_isometry_preserves_point_on_line() {
+    fn transformed_by_isometry_preserves_point_on_line() {
         let mut rg = RandomGeometry3::new();
 
         for _ in 0..500 {
             let original = Line3::new(rg.point3(10.0), rg.vector3(1.0));
             let iso = rg.iso3(10.0);
-            let transformed = original.new_transformed_by(&iso);
+            let transformed = original.transformed_by(&iso);
 
             for t in [-3.0, -1.0, -0.001, 0.0, 0.001, 1.0, 3.0] {
                 let p0 = original.at(t);

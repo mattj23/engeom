@@ -38,13 +38,8 @@ impl<const D: usize> Line<D> {
     }
 
     /// Returns a new line with the same origin, but with the direction inverted.
-    pub fn new_reversed(&self) -> Self {
+    pub fn reversed(&self) -> Self {
         Self::new(self.origin, -self.direction)
-    }
-
-    /// Normalizes the direction vector in place so that `t` equals arc length from the origin.
-    pub fn normalize(&mut self) {
-        self.direction = self.direction.normalize();
     }
 
     /// Returns a new line with the same origin but a normalized direction, so that `t` equals arc
@@ -58,23 +53,13 @@ impl<const D: usize> Line<D> {
         self.origin + self.direction * t
     }
 
-    /// Moves the origin of the line by a given amount along the direction of the line. A positive
-    /// `delta_t` moves the origin forward along the direction of the line, while a negative
-    /// `delta_t` moves it backward. The line is modified in place.
-    ///
-    /// If the direction is not of unit length, keep in mind this shift will be proportional to
-    /// the length of the direction vector.
-    pub fn shift_origin(&mut self, delta_t: f64) {
-        self.origin += self.direction * delta_t;
-    }
-
     /// Returns a new line with the origin shifted by a given amount along the direction of the
     /// line. The direction of the new line is the same as the original line. The original is left
     /// unchanged.
     ///
     /// If the direction is not of unit length, keep in mind this shift will be proportional to
     /// the length of the direction vector.
-    pub fn new_shifted_origin(&self, delta_t: f64) -> Self {
+    pub fn shifted_origin(&self, delta_t: f64) -> Self {
         Self::new(self.origin + self.direction * delta_t, self.direction)
     }
 
@@ -96,29 +81,23 @@ impl<const D: usize> Line<D> {
         (pt - self.closest_point(&pt)).norm()
     }
 
-    pub fn new_slerp_to(&self, other: &Line<D>, t: f64) -> Self {
+    /// Returns a new line whose origin and direction are spherically interpolated between this
+    /// line and `other` by parameter `t`.
+    pub fn slerp_to(&self, other: &Line<D>, t: f64) -> Self {
         let new_direction = self.direction.lerp(&other.direction, t);
         let shift = other.origin - self.origin;
         Self::new(self.origin + shift * t, new_direction)
     }
 
     /// Returns a new line with both origin and direction transformed by the given isometry.
-    pub fn new_transformed_by<R>(&self, iso: &Isometry<f64, R, D>) -> Self
+    pub fn transformed_by<R>(&self, iso: &Isometry<f64, R, D>) -> Self
     where
         R: AbstractRotation<f64, D>,
     {
-        let mut clone = *self;
-        clone.transform_by(iso);
-        clone
-    }
-
-    /// Transforms this line in place by the given isometry.
-    pub fn transform_by<R>(&mut self, iso: &Isometry<f64, R, D>)
-    where
-        R: AbstractRotation<f64, D>,
-    {
-        self.origin = iso * self.origin;
-        self.direction = iso.rotation.transform_vector(&self.direction);
+        Self::new(
+            iso * self.origin,
+            iso.rotation.transform_vector(&self.direction),
+        )
     }
 }
 
@@ -174,11 +153,11 @@ mod tests {
     }
 
     #[test]
-    fn shift_origin_moves_along_direction() {
-        let mut line = Line::<2>::new(Point2::new(0.0, 0.0), Vector2::new(2.0, 0.0));
-        line.shift_origin(1.5);
-        assert_relative_eq!(line.origin, Point2::new(3.0, 0.0), epsilon = 1e-12);
-        let shifted = line.new_shifted_origin(-1.0);
-        assert_relative_eq!(shifted.origin, Point2::new(1.0, 0.0), epsilon = 1e-12);
+    fn shifted_origin_moves_along_direction() {
+        let line = Line::<2>::new(Point2::new(0.0, 0.0), Vector2::new(2.0, 0.0));
+        let shifted = line.shifted_origin(1.5);
+        assert_relative_eq!(shifted.origin, Point2::new(3.0, 0.0), epsilon = 1e-12);
+        let shifted_again = shifted.shifted_origin(-1.0);
+        assert_relative_eq!(shifted_again.origin, Point2::new(1.0, 0.0), epsilon = 1e-12);
     }
 }

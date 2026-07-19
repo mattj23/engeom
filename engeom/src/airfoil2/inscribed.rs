@@ -246,7 +246,7 @@ impl InscribedVec {
         let v = rot90(Ccw) * (last.p1 - last.p0);
         let line = Line2::new_normalize(mid_point(&last.p1, &last.p0), v);
         Ok(if facing.dot(&line.direction) < 0.0 {
-            line.new_reversed()
+            line.reversed()
         } else {
             line
         })
@@ -265,12 +265,12 @@ impl InscribedVec {
 
         Ok((
             if t0.direction.dot(&clip.direction) < 0.0 {
-                t0.new_reversed()
+                t0.reversed()
             } else {
                 t0
             },
             if t1.direction.dot(&clip.direction) < 0.0 {
-                t1.new_reversed()
+                t1.reversed()
             } else {
                 t1
             },

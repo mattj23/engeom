@@ -1449,7 +1449,7 @@ class Line2:
         """
         ...
 
-    def new_parallel(self, delta_n: float) -> Line2:
+    def offset_by(self, delta_n: float) -> Line2:
         """
         Return a new line parallel to this one, with the origin shifted by ``delta_n`` along the
         normal direction. A positive ``delta_n`` moves the line to the right of the direction of
@@ -1460,7 +1460,7 @@ class Line2:
         """
         ...
 
-    def new_shifted_along(self, delta_t: float) -> Line2:
+    def shifted_origin(self, delta_t: float) -> Line2:
         """
         Return a new line with the origin shifted by ``delta_t`` along the direction vector.
 
@@ -1469,7 +1469,7 @@ class Line2:
         """
         ...
 
-    def new_transformed_by(self, iso: Iso2) -> Line2:
+    def transformed_by(self, iso: Iso2) -> Line2:
         """
         Return a new line with both origin and direction transformed by the given isometry.
 

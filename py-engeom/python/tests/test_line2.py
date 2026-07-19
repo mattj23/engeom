@@ -179,59 +179,59 @@ def test_intersect_coincident_returns_none():
     assert a.intersect(b) is None
 
 
-# ── new_parallel ──────────────────────────────────────────────────────────────
+# ── offset_by ─────────────────────────────────────────────────────────────────
 
-def test_new_parallel_shifts_origin_along_normal():
+def test_offset_by_shifts_origin_along_normal():
     # X-axis, CW normal = (0, -1); delta_n=1 shifts origin by (0, -1)
     line = Line2.new_normalize(0.0, 0.0, 1.0, 0.0)
-    shifted = line.new_parallel(1.0)
+    shifted = line.offset_by(1.0)
     assert point_eq(shifted.origin, 0.0, -1.0)
     assert vec_eq(shifted.direction, 1.0, 0.0)
 
 
-def test_new_parallel_preserves_direction():
+def test_offset_by_preserves_direction():
     line = Line2.new_normalize(2.0, 3.0, 0.0, 1.0)
-    shifted = line.new_parallel(2.0)
+    shifted = line.offset_by(2.0)
     assert vec_eq(shifted.direction, 0.0, 1.0)
 
 
-# ── new_shifted_along ─────────────────────────────────────────────────────────
+# ── shifted_origin ────────────────────────────────────────────────────────────
 
-def test_new_shifted_along_moves_origin():
+def test_shifted_origin_moves_origin():
     line = Line2(0.0, 0.0, 1.0, 0.0)
-    shifted = line.new_shifted_along(3.0)
+    shifted = line.shifted_origin(3.0)
     assert point_eq(shifted.origin, 3.0, 0.0)
     assert vec_eq(shifted.direction, 1.0, 0.0)
 
 
-def test_new_shifted_along_negative():
+def test_shifted_origin_negative():
     line = Line2(5.0, 0.0, 1.0, 0.0)
-    shifted = line.new_shifted_along(-2.0)
+    shifted = line.shifted_origin(-2.0)
     assert point_eq(shifted.origin, 3.0, 0.0)
 
 
-# ── new_transformed_by ───────────────────────────────────────────────────────
+# ── transformed_by ────────────────────────────────────────────────────────────
 
-def test_new_transformed_by_translation():
+def test_transformed_by_translation():
     line = Line2.x_axis()
     iso = Iso2(0.0, 5.0, 0.0)
-    t = line.new_transformed_by(iso)
+    t = line.transformed_by(iso)
     assert point_eq(t.origin, 0.0, 5.0)
     assert vec_eq(t.direction, 1.0, 0.0)
 
 
-def test_new_transformed_by_rotation():
+def test_transformed_by_rotation():
     line = Line2.x_axis()
     iso = Iso2(0.0, 0.0, math.pi / 2)
-    t = line.new_transformed_by(iso)
+    t = line.transformed_by(iso)
     assert approx_eq(t.direction.x, 0.0)
     assert approx_eq(t.direction.y, 1.0)
 
 
-def test_new_transformed_preserves_points_on_line():
+def test_transformed_by_preserves_points_on_line():
     line = Line2(1.0, 0.0, 1.0, 0.0)
     iso = Iso2(3.0, -1.0, math.pi / 4)
-    tline = line.new_transformed_by(iso)
+    tline = line.transformed_by(iso)
     for t in [-1.0, 0.0, 1.0, 2.5]:
         expected = iso @ line.at(t)
         actual = tline.at(t)

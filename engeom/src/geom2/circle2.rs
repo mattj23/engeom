@@ -568,7 +568,7 @@ impl Circle2 {
             // If the circles have the same radius, the outer tangent method must be computed
             // by a simpler, special case
             let s = Segment2::try_new(&self.center, &other.center).unwrap();
-            Some((s.with_offset(self.radius), s.with_offset(-self.radius)))
+            Some((s.offset_by(self.radius), s.offset_by(-self.radius)))
         } else if self.radius > other.radius {
             if let Some((seg0, seg1)) = other.outer_tangents_to(self) {
                 // Swap the segments and reverse them
@@ -588,7 +588,7 @@ impl Circle2 {
             let s0 = Segment2::try_new(&self.center, &p0).unwrap();
             let s1 = Segment2::try_new(&self.center, &p1).unwrap();
 
-            Some((s0.with_offset(-self.r()), s1.with_offset(self.r())))
+            Some((s0.offset_by(-self.r()), s1.offset_by(self.r())))
         }
     }
 
@@ -1001,7 +1001,7 @@ mod tests {
 
             let line = match random.bool() {
                 true => m.direction_line(),
-                false => m.direction_line().new_reversed(),
+                false => m.direction_line().reversed(),
             };
 
             let result = Circle2::from_tangent_and_point(&line, &p);

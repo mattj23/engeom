@@ -54,11 +54,9 @@ pub fn extract_inscribed_circles(input: &SectionInput) -> Result<Vec<Inscribed>>
     working.pop();
 
     // Now we gather the circles in the back half
-    let start_line = input
-        .crossing_line(&ref_line.new_reversed())
-        .ok_or_else(|| {
-            "Failed to find a crossing line for the reversed reference line".to_string()
-        })?;
+    let start_line = input.crossing_line(&ref_line.reversed()).ok_or_else(|| {
+        "Failed to find a crossing line for the reversed reference line".to_string()
+    })?;
     working.extend(extract_half_circles(input, &start_line)?);
 
     Ok(working.take_vec())

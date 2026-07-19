@@ -854,16 +854,16 @@ impl Line2 {
         Self::from_inner(self.inner.normalized())
     }
 
-    fn new_parallel(&self, delta_n: f64) -> Self {
-        Self::from_inner(self.inner.new_parallel(delta_n))
+    fn offset_by(&self, delta_n: f64) -> Self {
+        Self::from_inner(self.inner.offset_by(delta_n))
     }
 
-    fn new_shifted_along(&self, delta_t: f64) -> Self {
-        Self::from_inner(self.inner.new_shifted_origin(delta_t))
+    fn shifted_origin(&self, delta_t: f64) -> Self {
+        Self::from_inner(self.inner.shifted_origin(delta_t))
     }
 
-    fn new_transformed_by(&self, iso: &Iso2) -> Self {
-        Self::from_inner(self.inner.new_transformed_by(iso.get_inner()))
+    fn transformed_by(&self, iso: &Iso2) -> Self {
+        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
     }
 
     fn to_iso_from_x(&self) -> Iso2 {
