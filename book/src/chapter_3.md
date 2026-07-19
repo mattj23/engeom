@@ -176,6 +176,35 @@ m = np.array([[1, 0, 0, 1],
 i3 = Iso3(m)
 ```
 
+### 3D Isometries from an Arbitrary Rotation Axis
+
+`from_rx`, `from_ry`, and `from_rz` only rotate around the principal axes as they pass through the origin. To rotate
+around an arbitrary axis, such as one derived from a fitted cylinder or a measured hinge line, use `from_rot_axis`,
+which takes a `Line3` and an angle. The line's direction does not need to be normalized, and the axis does not need
+to pass through the origin.
+
+**Rust:**
+
+```rust
+use engeom::geom3::IsoExtensions3;
+use engeom::{Iso3, Line3, Point3, Vector3};
+use std::f64::consts::PI;
+
+let axis = Line3::new(Point3::new(1.0, 1.0, 0.0), Vector3::z());
+let iso = Iso3::from_rot_axis(&axis, PI / 2.0).unwrap();
+```
+
+**Python:**
+
+```python
+from math import pi
+from engeom.geom3 import Iso3, Line3
+
+# A line through (1, 1, 0) pointing along the z-axis
+axis = Line3(1, 1, 0, 0, 0, 1)
+iso = Iso3.from_rot_axis(axis, pi / 2)
+```
+
 ### 3D Isometries from Basis Vectors
 
 A common need in metrology is to construct a coordinate frame from two measured directions: for example, the normal

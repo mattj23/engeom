@@ -625,6 +625,21 @@ class Iso3:
         ...
 
     @staticmethod
+    def from_rot_axis(axis: Line3, angle: float) -> Iso3:
+        """
+        Create an isometry representing a rotation around an axis defined by a `Line3`, by a given angle. Unlike
+        `from_rotation`, the axis does not need to pass through the origin.
+
+        When looking down the axis of rotation (the axis is pointing towards the observer), the rotation will be
+        counter-clockwise.
+
+        :param axis: the axis of rotation.
+        :param angle: the angle to rotate by in radians.
+        :return: the isometry representing the rotation.
+        """
+        ...
+
+    @staticmethod
     def from_xyzwpr(x: float, y: float, z: float, w: float, p: float, r: float) -> Iso3:
         """
         Create an isometry from the specified translation and rotation angles in yaw, pitch, and roll format, following

@@ -44,7 +44,7 @@ pub trait IsoExtensions3 {
     /// # Arguments
     ///
     /// * `axis`: the axis of rotation for the isometry. When the line direction is pointed at the
-    ///   viewer, positive angles will produce rotations viewed as clockwise
+    ///   viewer, positive angles will produce rotations viewed as counter-clockwise
     /// * `angle`: the angle of rotation, specified in radians
     ///
     /// returns: Result<Isometry<f64, Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>

@@ -57,6 +57,18 @@ i2 = Iso3.from_translation(1, 2, 3)
 i3 = Iso3.from_rotation(pi / 4, 1, 0, 0)
 ```
 
+`from_rotation` (and the `from_rx`/`from_ry`/`from_rz` shortcuts) only rotate around axes that pass through the
+origin. To rotate around an arbitrary axis line instead, use `from_rot_axis`, which takes a `Line3` and an angle:
+
+```python
+from math import pi
+from engeom.geom3 import Iso3, Line3
+
+# A line through (1, 1, 0) pointing along the z-axis
+axis = Line3(1, 1, 0, 0, 0, 1)
+i4 = Iso3.from_rot_axis(axis, pi / 2)
+```
+
 ## Inverting Isometries
 
 Isometries can, by definition, be inverted. The inverse of an isometry is an isometry that, when applied to the result

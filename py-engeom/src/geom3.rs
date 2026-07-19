@@ -1554,6 +1554,14 @@ impl Iso3 {
         }
     }
 
+    #[staticmethod]
+    fn from_rot_axis(axis: &Line3, angle: f64) -> PyResult<Self> {
+        let inner = engeom::Iso3::from_rot_axis(axis.get_inner(), angle)
+            .map_err(|e| PyValueError::new_err(format!("Error creating Iso3: {}", e)))?;
+
+        Ok(Self { inner })
+    }
+
     fn inverse(&self) -> Self {
         Self {
             inner: self.inner.inverse(),
