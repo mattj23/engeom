@@ -9,19 +9,22 @@ use serde::{Deserialize, Serialize};
 pub struct Segment2 {
     pub a: Point2,
     pub b: Point2,
-    pub length: f64,
 }
 
 impl Segment2 {
-    pub fn try_new(a: &impl PCoords<2>, b: &impl PCoords<2>) -> Result<Self> {
-        let length = dist(a, b);
-        if length < 1e-12 {
+    pub fn new(a: &impl PCoords<2>, b: &impl PCoords<2>) -> Result<Self> {
+        if dist(a, b) < 1e-12 {
             Err("The two points are too close to each other".into())
         } else {
             let a = Point2::from(a.coords());
             let b = Point2::from(b.coords());
-            Ok(Self { a, b, length })
+            Ok(Self { a, b })
         }
+    }
+
+    /// Returns the length of the segment, the distance between its two endpoints `a` and `b`.
+    pub fn length(&self) -> f64 {
+        dist(&self.a, &self.b)
     }
 
     /// Calculate the scalar projection of a set of coordinates onto the line segment, in which
@@ -42,7 +45,7 @@ impl Segment2 {
     pub fn scalar_projection(&self, other: &impl PCoords<2>) -> f64 {
         let dir = self.b - self.a;
         let test = other.coords() - self.a.coords();
-        dir.dot(&test) / self.length.powi(2)
+        dir.dot(&test) / self.length().powi(2)
     }
 
     /// Create a new segment shifted by distance `d` in the direction of the segment normal vector.
@@ -63,7 +66,7 @@ impl Segment2 {
     /// use engeom::geom2::{Point2, Segment2};
     /// let a = Point2::new(0.0, 0.0);
     /// let b = Point2::new(1.0, 0.0);
-    /// let s = Segment2::try_new(&a, &b).unwrap();
+    /// let s = Segment2::new(&a, &b).unwrap();
     ///
     /// let s1 = s.offset_by(1.0);
     ///
@@ -75,7 +78,6 @@ impl Segment2 {
         Self {
             a: self.a + n.into_inner() * d,
             b: self.b + n.into_inner() * d,
-            length: self.length,
         }
     }
 
@@ -84,7 +86,6 @@ impl Segment2 {
         Self {
             a: self.b,
             b: self.a,
-            length: self.length,
         }
     }
 
@@ -98,7 +99,7 @@ impl Segment2 {
         let point = self.a + (self.b - self.a) * t;
         let direction = UnitVec2::new_normalize(self.b - self.a);
         let normal = rot90(Cw) * direction;
-        Manifold1Pos2::new(t * self.length, point, direction, normal)
+        Manifold1Pos2::new(t * self.length(), point, direction, normal)
     }
 
     pub fn normal(&self) -> UnitVec2 {
@@ -130,22 +131,21 @@ impl Segment2 {
 }
 
 impl TransformBy<Iso2, Segment2> for Segment2 {
-    fn transform_by(&self, t: &Iso2) -> Self {
+    fn transformed_by(&self, t: &Iso2) -> Self {
         Self {
             a: t.transform_point(&self.a),
             b: t.transform_point(&self.b),
-            length: self.length,
         }
     }
 }
 
 impl BoundaryElement2 for Segment2 {
     fn length(&self) -> f64 {
-        self.length
+        Segment2::length(self)
     }
 
     fn at_length(&self, length: f64) -> Manifold1Pos2 {
-        let t = length / self.length;
+        let t = length / self.length();
         self.at_t(t)
     }
 
@@ -177,7 +177,7 @@ mod tests {
     fn length_simple() {
         let a = Point2::new(1.0, 1.0);
         let b = Point2::new(5.0, 1.0);
-        let seg = Segment2::try_new(&a, &b).unwrap();
+        let seg = Segment2::new(&a, &b).unwrap();
         assert_relative_eq!(seg.length(), 4.0);
     }
 
@@ -185,7 +185,7 @@ mod tests {
     fn scalar_projection_simple() {
         let a = Point2::new(1.0, 1.0);
         let b = Point2::new(5.0, 1.0);
-        let seg = Segment2::try_new(&a, &b).unwrap();
+        let seg = Segment2::new(&a, &b).unwrap();
         let test_point = Point2::new(3.0, 2.0);
         let t = seg.scalar_projection(&test_point);
         assert_relative_eq!(0.5, t, epsilon = 1e-6);
@@ -195,7 +195,7 @@ mod tests {
     fn closest_to_simple() {
         let a = Point2::new(1.0, 1.0);
         let b = Point2::new(4.0, 1.0);
-        let seg = Segment2::try_new(&a, &b).unwrap();
+        let seg = Segment2::new(&a, &b).unwrap();
         let test_point = Point2::new(2.0, 3.0);
         let closest = seg.closest_to_point(&test_point);
         assert_relative_eq!(closest.point, Point2::new(2.0, 1.0), epsilon = 1e-6);

@@ -908,7 +908,7 @@ impl Segment2 {
         let p0 = engeom::Point2::new(x0, y0);
         let p1 = engeom::Point2::new(x1, y1);
         Ok(Self {
-            inner: engeom::geom2::Segment2::try_new(&p0, &p1)
+            inner: engeom::geom2::Segment2::new(&p0, &p1)
                 .map_err(|e| PyValueError::new_err(e.to_string()))?,
         })
     }
@@ -934,8 +934,8 @@ impl Segment2 {
     fn __setstate__(&mut self, state: (f64, f64, f64, f64)) {
         let p0 = engeom::Point2::new(state.0, state.1);
         let p1 = engeom::Point2::new(state.2, state.3);
-        self.inner = engeom::geom2::Segment2::try_new(&p0, &p1)
-            .expect("Invalid segment points in __setstate__");
+        self.inner =
+            engeom::geom2::Segment2::new(&p0, &p1).expect("Invalid segment points in __setstate__");
     }
 
     fn __eq__(&self, other: &Self) -> bool {
@@ -966,7 +966,7 @@ impl Segment2 {
 
     #[getter]
     fn length(&self) -> f64 {
-        self.inner.length
+        self.inner.length()
     }
 
     #[getter]

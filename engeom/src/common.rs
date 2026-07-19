@@ -58,7 +58,7 @@ pub trait Intersection<TOther, TResult> {
 
 /// A trait for transforming an entity by another entity
 pub trait TransformBy<T, TOut> {
-    fn transform_by(&self, transform: &T) -> TOut;
+    fn transformed_by(&self, transform: &T) -> TOut;
 }
 
 /// A generic trait for points or point-like structures in D-dimensional space which provides a

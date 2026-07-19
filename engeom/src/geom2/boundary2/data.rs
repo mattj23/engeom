@@ -290,7 +290,7 @@ impl BoundaryData2 {
             match e {
                 BData::Seg((x, y)) => {
                     let end = Point2::new(*x, *y);
-                    let seg = Segment2::try_new(&start, &end)?;
+                    let seg = Segment2::new(&start, &end)?;
                     elements.push((id, Box::new(seg)));
                 }
                 BData::Arc((cx, cy, ex, ey, cw)) => {

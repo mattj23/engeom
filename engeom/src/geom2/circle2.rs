@@ -567,7 +567,7 @@ impl Circle2 {
         } else if (self.radius - other.radius).abs() < 1.0e-10 {
             // If the circles have the same radius, the outer tangent method must be computed
             // by a simpler, special case
-            let s = Segment2::try_new(&self.center, &other.center).unwrap();
+            let s = Segment2::new(&self.center, &other.center).unwrap();
             Some((s.offset_by(self.radius), s.offset_by(-self.radius)))
         } else if self.radius > other.radius {
             if let Some((seg0, seg1)) = other.outer_tangents_to(self) {
@@ -585,8 +585,8 @@ impl Circle2 {
             let proxy = Circle2::new(other.x(), other.y(), other.r() - self.r());
             // p0 is in the negative half space and p1 is in the positive half space
             let (p0, p1) = proxy.tangent_points_to(&self.center).unwrap();
-            let s0 = Segment2::try_new(&self.center, &p0).unwrap();
-            let s1 = Segment2::try_new(&self.center, &p1).unwrap();
+            let s0 = Segment2::new(&self.center, &p0).unwrap();
+            let s1 = Segment2::new(&self.center, &p1).unwrap();
 
             Some((s0.offset_by(-self.r()), s1.offset_by(self.r())))
         }

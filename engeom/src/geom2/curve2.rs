@@ -663,7 +663,7 @@ impl Curve2 {
         let mut new_points = Vec::with_capacity(self.count());
 
         for i in 0..self.count() - 1 {
-            let seg = Segment2::try_new(&self.vtx(i), &self.vtx(i + 1))?;
+            let seg = Segment2::new(&self.vtx(i), &self.vtx(i + 1))?;
             new_segments.push(seg.offset_by(offset));
         }
 
@@ -890,7 +890,7 @@ impl Intersection<&Circle2, Vec<Point2>> for Curve2 {
 
         // TODO: We should be able to use the bvh to prune the segments we need to check
         for i in 0..self.count() - 1 {
-            if let Ok(seg) = Segment2::try_new(&self.vtx(i), &self.vtx(i + 1)) {
+            if let Ok(seg) = Segment2::new(&self.vtx(i), &self.vtx(i + 1)) {
                 for p in other.intersection(&seg) {
                     points.push(p);
                 }

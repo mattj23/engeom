@@ -94,13 +94,13 @@ impl SurfacePointCollection<3> for &[SurfacePoint3] {
 }
 
 impl TransformBy<Iso3, Vec<Point3>> for &[Point3] {
-    fn transform_by(&self, transform: &Iso3) -> Vec<Point3> {
+    fn transformed_by(&self, transform: &Iso3) -> Vec<Point3> {
         self.iter().map(|p| transform * p).collect()
     }
 }
 
 impl TransformBy<Iso3, Vec<Point3>> for &Vec<Point3> {
-    fn transform_by(&self, transform: &Iso3) -> Vec<Point3> {
+    fn transformed_by(&self, transform: &Iso3) -> Vec<Point3> {
         self.iter().map(|p| transform * p).collect()
     }
 }

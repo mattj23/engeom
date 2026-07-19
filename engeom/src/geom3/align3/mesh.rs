@@ -469,7 +469,7 @@ pub fn sac_check(
     // be the surface normal direction. The origin is the centroid of the neighbors + the
     // original check point.
     let iso = Iso3::from(&basis);
-    let points = (&points).transform_by(&iso);
+    let points = (&points).transformed_by(&iso);
 
     // Check that all the points are no more than out_of_plane_ratio * sample_spacing from the
     // x-y plane.
