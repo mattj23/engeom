@@ -4,7 +4,7 @@ use crate::conversions::{
     array_to_points2, array_to_vectors2, dvec_from_array, dvec_to_array, points_to_array,
     vectors_to_array,
 };
-use engeom::To3D;
+use engeom::{To3D, TransformBy};
 use numpy::ndarray::{Array1, Array2};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::{PyIOError, PyValueError};
@@ -977,6 +977,10 @@ impl Segment2 {
     fn to_line(&self) -> Line2 {
         Line2::from_inner(self.inner.to_line())
     }
+
+    fn transformed_by(&self, iso: &Iso2) -> Self {
+        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
+    }
 }
 
 // ================================================================================================
@@ -1759,6 +1763,7 @@ enum Transformable2 {
     Vec(Vector2),
     Pnt(Point2),
     Sp(SurfacePoint2),
+    Seg(Segment2),
 }
 
 #[pyclass(from_py_object, module = "engeom.geom2")]
@@ -1825,6 +1830,9 @@ impl Iso2 {
             Transformable2::Sp(other) => {
                 SurfacePoint2::from_inner(other.inner.transformed(&self.inner))
                     .into_bound_py_any(py)
+            }
+            Transformable2::Seg(other) => {
+                Segment2::from_inner(other.inner.transformed_by(&self.inner)).into_bound_py_any(py)
             }
         }
     }

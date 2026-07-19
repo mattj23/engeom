@@ -3,7 +3,7 @@
 """
 import pytest
 import numpy
-from engeom.geom2 import Vector2, Point2, SurfacePoint2, Iso2
+from engeom.geom2 import Vector2, Point2, SurfacePoint2, Segment2, Iso2
 
 
 def test_vector_mul_scalar():
@@ -149,3 +149,27 @@ def test_iso2_matmul_iso2():
     iso2 = Iso2(3, 4, 0.5)
     result = iso1 @ iso2
     assert isinstance(result, Iso2)
+
+
+def test_segment2_transformed_by():
+    s = Segment2(0, 0, 1, 0)
+    iso = Iso2(1, 2, 0)
+    moved = s.transformed_by(iso)
+    assert moved.a.x == pytest.approx(1.0)
+    assert moved.a.y == pytest.approx(2.0)
+    assert moved.b.x == pytest.approx(2.0)
+    assert moved.b.y == pytest.approx(2.0)
+
+
+# Test that an Iso2 matmul by a Segment2 returns a Segment2.
+def test_iso2_matmul_segment2():
+    iso = Iso2(1, 2, 0.5)
+    s = Segment2(0, 0, 1, 0)
+    result = iso @ s
+    assert isinstance(result, Segment2)
+
+
+def test_iso2_matmul_segment2_matches_transformed_by():
+    s = Segment2(0, 0, 1, 2)
+    iso = Iso2(1, 2, 0.5)
+    assert (iso @ s) == s.transformed_by(iso)

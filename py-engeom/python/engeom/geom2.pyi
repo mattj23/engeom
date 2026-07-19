@@ -8,7 +8,7 @@ from engeom.common import AngleDir
 
 from engeom import geom3
 
-Transformable2 = TypeVar("Transformable2", Vector2, Point2, Iso2, SurfacePoint2)
+Transformable2 = TypeVar("Transformable2", Vector2, Point2, Iso2, SurfacePoint2, Segment2)
 PointOrVec2 = TypeVar("PointOrVec2", Point2, Vector2)
 
 
@@ -1828,6 +1828,14 @@ class Segment2:
         """
         Convert the segment to an infinite line passing through its two endpoints.
         :return: a Line2 passing through the segment's endpoints.
+        """
+        ...
+
+    def transformed_by(self, iso: Iso2) -> Segment2:
+        """
+        Return a new segment with both endpoints transformed by the given isometry.
+        :param iso: the isometry to apply.
+        :return: a new transformed Segment2.
         """
         ...
 

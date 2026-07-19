@@ -3,7 +3,7 @@
 """
 import math
 import pytest
-from engeom.geom3 import Vector3, Point3, SurfacePoint3, Plane3, Line3, Sphere3, Circle3, Iso3
+from engeom.geom3 import Vector3, Point3, SurfacePoint3, Plane3, Line3, Segment3, Sphere3, Circle3, Iso3
 
 
 # ==============================================================================
@@ -225,6 +225,85 @@ def test_line3_normalized():
     assert isinstance(norm, Line3)
     length = math.sqrt(norm.direction.x**2 + norm.direction.y**2 + norm.direction.z**2)
     assert length == pytest.approx(1.0)
+
+
+# ==============================================================================
+# Segment3 tests
+# ==============================================================================
+
+def test_segment3_construction():
+    s = Segment3(0, 0, 0, 1, 2, 2)
+    assert s.a.x == pytest.approx(0.0)
+    assert s.a.y == pytest.approx(0.0)
+    assert s.a.z == pytest.approx(0.0)
+    assert s.b.x == pytest.approx(1.0)
+    assert s.b.y == pytest.approx(2.0)
+    assert s.b.z == pytest.approx(2.0)
+
+
+def test_segment3_construction_coincident_points_raises():
+    with pytest.raises(ValueError):
+        Segment3(1, 1, 1, 1, 1, 1)
+
+
+def test_segment3_length():
+    s = Segment3(0, 0, 0, 1, 2, 2)
+    assert s.length == pytest.approx(3.0)
+
+
+def test_segment3_direction():
+    s = Segment3(0, 0, 0, 1, 2, 2)
+    assert s.direction.x == pytest.approx(1.0)
+    assert s.direction.y == pytest.approx(2.0)
+    assert s.direction.z == pytest.approx(2.0)
+
+
+def test_segment3_aabb():
+    s = Segment3(1, -1, 3, -2, 4, 0)
+    assert s.aabb.min.x == pytest.approx(-2.0)
+    assert s.aabb.min.y == pytest.approx(-1.0)
+    assert s.aabb.min.z == pytest.approx(0.0)
+    assert s.aabb.max.x == pytest.approx(1.0)
+    assert s.aabb.max.y == pytest.approx(4.0)
+    assert s.aabb.max.z == pytest.approx(3.0)
+
+
+def test_segment3_to_line():
+    s = Segment3(1, 2, 3, 4, 5, 6)
+    line = s.to_line()
+    assert isinstance(line, Line3)
+    assert line.distance_to(s.a) == pytest.approx(0.0, abs=1e-6)
+    assert line.distance_to(s.b) == pytest.approx(0.0, abs=1e-6)
+
+
+def test_segment3_pickle_roundtrip():
+    import pickle
+    s = Segment3(1, 2, 3, 4, 5, 6)
+    s2 = pickle.loads(pickle.dumps(s))
+    assert s == s2
+
+
+def test_segment3_transformed_by():
+    s = Segment3(0, 0, 0, 1, 0, 0)
+    iso = Iso3.from_translation(1, 2, 3)
+    moved = s.transformed_by(iso)
+    assert moved.a.x == pytest.approx(1.0)
+    assert moved.a.y == pytest.approx(2.0)
+    assert moved.a.z == pytest.approx(3.0)
+    assert moved.b.x == pytest.approx(2.0)
+    assert moved.b.y == pytest.approx(2.0)
+    assert moved.b.z == pytest.approx(3.0)
+
+
+def test_iso3_matmul_segment3_returns_segment3():
+    result = Iso3.identity() @ Segment3(0, 0, 0, 1, 0, 0)
+    assert isinstance(result, Segment3)
+
+
+def test_iso3_matmul_segment3_matches_transformed_by():
+    s = Segment3(0, 0, 0, 1, 2, 3)
+    iso = Iso3.from_rz(math.pi / 2)
+    assert (iso @ s) == s.transformed_by(iso)
 
 
 # ==============================================================================

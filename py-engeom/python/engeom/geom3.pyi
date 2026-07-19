@@ -11,7 +11,7 @@ from engeom.geom2 import Vector2, Point2, SurfacePoint2, SplineProjection
 
 import metrology
 
-Transformable3 = TypeVar("Transformable3", Vector3, Point3, Plane3, Iso3, SurfacePoint3, Sphere3, Line3, Circle3)
+Transformable3 = TypeVar("Transformable3", Vector3, Point3, Plane3, Iso3, SurfacePoint3, Sphere3, Line3, Circle3, Segment3)
 PointOrVector3 = TypeVar("PointOrVector3", Vector3, Point3)
 
 type Lptf3LoadEnum = Lptf3Load.All | Lptf3Load.TakeEveryN | Lptf3Load.SmoothSample
@@ -1289,6 +1289,80 @@ class Line3:
         Return a new line with the same origin but a unit-length direction, so that t equals arc
         length from the origin.
         :return: a new Line3 with normalized direction.
+        """
+        ...
+
+
+class Segment3:
+    """
+    A class representing a line segment in 3D space. The segment is defined by two endpoints.
+    """
+
+    def __init__(self, x0: float, y0: float, z0: float, x1: float, y1: float, z1: float):
+        """
+        Create a line segment from two endpoints.
+        :param x0: the x-coordinate of the first endpoint.
+        :param y0: the y-coordinate of the first endpoint.
+        :param z0: the z-coordinate of the first endpoint.
+        :param x1: the x-coordinate of the second endpoint.
+        :param y1: the y-coordinate of the second endpoint.
+        :param z1: the z-coordinate of the second endpoint.
+        """
+        ...
+
+    @property
+    def a(self) -> Point3:
+        """
+        Get the first endpoint of the segment.
+        :return: the first endpoint of the segment.
+        """
+        ...
+
+    @property
+    def b(self) -> Point3:
+        """
+        Get the second endpoint of the segment.
+        :return: the second endpoint of the segment.
+        """
+        ...
+
+    @property
+    def length(self) -> float:
+        """
+        Get the length of the segment.
+        :return: the length of the segment.
+        """
+        ...
+
+    @property
+    def direction(self) -> Vector3:
+        """
+        Get the direction vector of the segment, pointing from the first endpoint to the second
+        endpoint. This vector is not normalized; its magnitude is the length of the segment.
+        :return: the direction vector of the segment.
+        """
+        ...
+
+    @property
+    def aabb(self) -> Aabb3:
+        """
+        Get the axis-aligned bounding box of the segment.
+        :return: the axis-aligned bounding box of the segment.
+        """
+        ...
+
+    def to_line(self) -> Line3:
+        """
+        Convert the segment to an infinite line passing through its two endpoints.
+        :return: a Line3 passing through the segment's endpoints.
+        """
+        ...
+
+    def transformed_by(self, iso: Iso3) -> Segment3:
+        """
+        Return a new segment with both endpoints transformed by the given isometry.
+        :param iso: the isometry to apply.
+        :return: a new transformed Segment3.
         """
         ...
 

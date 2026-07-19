@@ -1,9 +1,11 @@
+use crate::bounding::Aabb3;
 use crate::common::Resample;
 use crate::conversions::{
     array_to_points3, array_to_vectors3, dvec_from_array, dvec_to_array, points_to_array,
     vectors_to_array,
 };
 use crate::geom2::{Point2, SplineProjection, SurfacePoint2, Vector2};
+use engeom::TransformBy;
 use engeom::common::To2D;
 use engeom::geom3::IsoExtensions3;
 use numpy::ndarray::{Array1, Array2};
@@ -786,6 +788,117 @@ impl Line3 {
 }
 
 // ================================================================================================
+// Segment3
+// ================================================================================================
+
+#[pyclass(from_py_object, module = "engeom.geom3")]
+#[derive(Clone, Debug)]
+pub struct Segment3 {
+    inner: engeom::geom3::Segment3,
+}
+
+impl Segment3 {
+    pub fn get_inner(&self) -> &engeom::geom3::Segment3 {
+        &self.inner
+    }
+
+    pub fn from_inner(inner: engeom::geom3::Segment3) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl Segment3 {
+    #[new]
+    fn new(x0: f64, y0: f64, z0: f64, x1: f64, y1: f64, z1: f64) -> PyResult<Self> {
+        let p0 = engeom::Point3::new(x0, y0, z0);
+        let p1 = engeom::Point3::new(x1, y1, z1);
+        Ok(Self {
+            inner: engeom::geom3::Segment3::new(&p0, &p1)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?,
+        })
+    }
+
+    fn __getstate__(&self) -> (f64, f64, f64, f64, f64, f64) {
+        (
+            self.inner.a.x,
+            self.inner.a.y,
+            self.inner.a.z,
+            self.inner.b.x,
+            self.inner.b.y,
+            self.inner.b.z,
+        )
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64, f64, f64, f64, f64) {
+        (
+            self.inner.a.x,
+            self.inner.a.y,
+            self.inner.a.z,
+            self.inner.b.x,
+            self.inner.b.y,
+            self.inner.b.z,
+        )
+    }
+
+    fn __setstate__(&mut self, state: (f64, f64, f64, f64, f64, f64)) {
+        let p0 = engeom::Point3::new(state.0, state.1, state.2);
+        let p1 = engeom::Point3::new(state.3, state.4, state.5);
+        self.inner =
+            engeom::geom3::Segment3::new(&p0, &p1).expect("Invalid segment points in __setstate__");
+    }
+
+    fn __eq__(&self, other: &Self) -> bool {
+        self.inner.a == other.inner.a && self.inner.b == other.inner.b
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Segment3({}, {}, {}, {}, {}, {})",
+            self.inner.a.x,
+            self.inner.a.y,
+            self.inner.a.z,
+            self.inner.b.x,
+            self.inner.b.y,
+            self.inner.b.z,
+        )
+    }
+
+    #[getter]
+    fn a(&self) -> Point3 {
+        Point3::from_inner(self.inner.a)
+    }
+
+    #[getter]
+    fn b(&self) -> Point3 {
+        Point3::from_inner(self.inner.b)
+    }
+
+    #[getter]
+    fn direction(&self) -> Vector3 {
+        Vector3::from_inner(self.inner.dir())
+    }
+
+    #[getter]
+    fn length(&self) -> f64 {
+        self.inner.length()
+    }
+
+    #[getter]
+    fn aabb(&self) -> Aabb3 {
+        Aabb3::from_inner(self.inner.aabb())
+    }
+
+    fn to_line(&self) -> Line3 {
+        Line3::from_inner(self.inner.to_line())
+    }
+
+    fn transformed_by(&self, iso: &Iso3) -> Self {
+        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
+    }
+}
+
+// ================================================================================================
 // Sphere3
 // ================================================================================================
 
@@ -1331,6 +1444,7 @@ enum Transformable3 {
     Line(Line3),
     Sphere(Sphere3),
     Circle(Circle3),
+    Seg(Segment3),
 }
 
 #[pyclass(from_py_object, module = "engeom.geom3")]
@@ -1512,6 +1626,9 @@ impl Iso3 {
             }
             Transformable3::Circle(other) => {
                 Circle3::from_inner(other.inner.transformed_by(&self.inner)).into_bound_py_any(py)
+            }
+            Transformable3::Seg(other) => {
+                Segment3::from_inner(other.inner.transformed_by(&self.inner)).into_bound_py_any(py)
             }
         }
     }
