@@ -467,7 +467,7 @@ mod tests {
 
     #[test]
     fn translations_are_in_local_origin_directions() {
-        let local = Iso3::try_from_basis_xy(
+        let local = Iso3::from_basis_xy(
             &Vector3::new(0.0, -1.0, 0.0),
             &Vector3::new(0.0, 0.0, 1.0),
             None,

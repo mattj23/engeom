@@ -192,7 +192,7 @@ The full set of variants is: `from_basis_xy`, `from_basis_xz`, `from_basis_yx`, 
 
 **Rust:**
 
-In Rust these are provided by the `IsoExtensions3` trait and are prefixed with `try_`, returning a `Result`.
+In Rust these are provided by the `IsoExtensions3` trait and return a `Result`.
 
 ```rust
 use engeom::geom3::IsoExtensions3;
@@ -203,12 +203,12 @@ let e0 = Vector3::new(1.0, 1.0, 0.0); // will become the X axis
 let e1 = Vector3::new(0.0, 1.0, 0.0); // Y axis derived from this
 let origin = Some(Point3::new(1.0, 2.0, 3.0));
 
-let frame = Iso3::try_from_basis_xy(&e0, &e1, origin).unwrap();
+let frame = Iso3::from_basis_xy(&e0, &e1, origin).unwrap();
 ```
 
 **Python:**
 
-In Python the methods are static methods on `Iso3`, without the `try_` prefix. They raise a `ValueError` if the
+In Python the methods are static methods on `Iso3`. They raise a `ValueError` if the
 vectors are parallel. The `origin` argument is an optional `Point3`.
 
 ```python

@@ -5,17 +5,17 @@ use parry3d_f64::na::{Matrix3, Translation3};
 use parry3d_f64::na::{Matrix4, UnitQuaternion, try_convert};
 
 pub trait IsoExtensions3 {
-    fn flip_around_x(&self) -> Iso3;
-    fn flip_around_y(&self) -> Iso3;
-    fn flip_around_z(&self) -> Iso3;
-    fn try_from_array(array: &[f64; 16]) -> Result<Iso3>;
+    fn flipped_around_x(&self) -> Iso3;
+    fn flipped_around_y(&self) -> Iso3;
+    fn flipped_around_z(&self) -> Iso3;
+    fn from_array(array: &[f64; 16]) -> Result<Iso3>;
 
-    fn try_from_basis_xy(e0: &Vector3, e1: &Vector3, origin: Option<Point3>) -> Result<Iso3>;
-    fn try_from_basis_xz(e0: &Vector3, e2: &Vector3, origin: Option<Point3>) -> Result<Iso3>;
-    fn try_from_basis_yz(e1: &Vector3, e2: &Vector3, origin: Option<Point3>) -> Result<Iso3>;
-    fn try_from_basis_yx(e1: &Vector3, e0: &Vector3, origin: Option<Point3>) -> Result<Iso3>;
-    fn try_from_basis_zx(e2: &Vector3, e0: &Vector3, origin: Option<Point3>) -> Result<Iso3>;
-    fn try_from_basis_zy(e2: &Vector3, e1: &Vector3, origin: Option<Point3>) -> Result<Iso3>;
+    fn from_basis_xy(e0: &Vector3, e1: &Vector3, origin: Option<Point3>) -> Result<Iso3>;
+    fn from_basis_xz(e0: &Vector3, e2: &Vector3, origin: Option<Point3>) -> Result<Iso3>;
+    fn from_basis_yz(e1: &Vector3, e2: &Vector3, origin: Option<Point3>) -> Result<Iso3>;
+    fn from_basis_yx(e1: &Vector3, e0: &Vector3, origin: Option<Point3>) -> Result<Iso3>;
+    fn from_basis_zx(e2: &Vector3, e0: &Vector3, origin: Option<Point3>) -> Result<Iso3>;
+    fn from_basis_zy(e2: &Vector3, e1: &Vector3, origin: Option<Point3>) -> Result<Iso3>;
 
     fn from_rx(angle: f64) -> Iso3;
     fn from_ry(angle: f64) -> Iso3;
@@ -23,30 +23,30 @@ pub trait IsoExtensions3 {
 }
 
 impl IsoExtensions3 for Iso3 {
-    /// Rotate the isometry in place by 180 degrees around the x-axis. The location of the origin
-    /// is not changed, but the y and z directions are reversed.
-    fn flip_around_x(&self) -> Self {
+    /// Return a copy of the isometry rotated by 180 degrees around the x-axis. The location of
+    /// the origin is not changed, but the y and z directions are reversed.
+    fn flipped_around_x(&self) -> Self {
         let r = Iso3::rotation(Vector3::x() * std::f64::consts::PI);
         self.translation * r * self.rotation
     }
 
-    /// Rotate the isometry in place by 180 degrees around the y-axis. The location of the origin
-    /// is not changed, but the x and z directions are reversed.
-    fn flip_around_y(&self) -> Self {
+    /// Return a copy of the isometry rotated by 180 degrees around the y-axis. The location of
+    /// the origin is not changed, but the x and z directions are reversed.
+    fn flipped_around_y(&self) -> Self {
         let r = Iso3::rotation(Vector3::y() * std::f64::consts::PI);
         self.translation * r * self.rotation
     }
 
-    /// Rotate the isometry in place by 180 degrees around the z-axis. The location of the origin
-    /// is not changed, but the x and y directions are reversed.
-    fn flip_around_z(&self) -> Self {
+    /// Return a copy of the isometry rotated by 180 degrees around the z-axis. The location of
+    /// the origin is not changed, but the x and y directions are reversed.
+    fn flipped_around_z(&self) -> Self {
         let r = Iso3::rotation(Vector3::z() * std::f64::consts::PI);
         self.translation * r * self.rotation
     }
 
     /// Try to convert a 16 element array into an Iso3. The array is expected to be in row-major
     /// order.
-    fn try_from_array(array: &[f64; 16]) -> Result<Self> {
+    fn from_array(array: &[f64; 16]) -> Result<Self> {
         try_convert(Matrix4::from_row_slice(array)).ok_or("Could not convert to Iso3".into())
     }
 
@@ -72,7 +72,7 @@ impl IsoExtensions3 for Iso3 {
     ///   be coincident with the origin of the world coordinate system.
     ///
     /// returns: Result<Isometry<f64, Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
-    fn try_from_basis_xy(e0: &Vector3, e1: &Vector3, origin: Option<Point3>) -> Result<Iso3> {
+    fn from_basis_xy(e0: &Vector3, e1: &Vector3, origin: Option<Point3>) -> Result<Iso3> {
         let e0 = e0.try_normalize(1e-10).ok_or("Could not normalize e0")?;
         let e2 = e0
             .cross(e1)
@@ -108,7 +108,7 @@ impl IsoExtensions3 for Iso3 {
     ///   be coincident with the origin of the world coordinate system.
     ///
     /// returns: Result<Isometry<f64, Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
-    fn try_from_basis_xz(e0: &Vector3, e2: &Vector3, origin: Option<Point3>) -> Result<Iso3> {
+    fn from_basis_xz(e0: &Vector3, e2: &Vector3, origin: Option<Point3>) -> Result<Iso3> {
         let e0 = e0.try_normalize(1e-10).ok_or("Could not normalize e0")?;
         let e1 = e2
             .cross(&e0)
@@ -143,7 +143,7 @@ impl IsoExtensions3 for Iso3 {
     ///   be coincident with the origin of the world coordinate system.
     ///
     /// returns: Result<Isometry<f64, Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
-    fn try_from_basis_yz(e1: &Vector3, e2: &Vector3, origin: Option<Point3>) -> Result<Iso3> {
+    fn from_basis_yz(e1: &Vector3, e2: &Vector3, origin: Option<Point3>) -> Result<Iso3> {
         let e1 = e1.try_normalize(1e-10).ok_or("Could not normalize e1")?;
         let e0 = e1
             .cross(e2)
@@ -178,7 +178,7 @@ impl IsoExtensions3 for Iso3 {
     ///   be coincident with the origin of the world coordinate system.
     ///
     /// returns: Result<Isometry<f64, Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
-    fn try_from_basis_yx(e1: &Vector3, e0: &Vector3, origin: Option<Point3>) -> Result<Iso3> {
+    fn from_basis_yx(e1: &Vector3, e0: &Vector3, origin: Option<Point3>) -> Result<Iso3> {
         let e1 = e1.try_normalize(1e-10).ok_or("Could not normalize e1")?;
         let e2 = e0
             .cross(&e1)
@@ -213,7 +213,7 @@ impl IsoExtensions3 for Iso3 {
     ///   be coincident with the origin of the world coordinate system.
     ///
     /// returns: Result<Isometry<f64, Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
-    fn try_from_basis_zx(e2: &Vector3, e0: &Vector3, origin: Option<Point3>) -> Result<Iso3> {
+    fn from_basis_zx(e2: &Vector3, e0: &Vector3, origin: Option<Point3>) -> Result<Iso3> {
         let e2 = e2.try_normalize(1e-10).ok_or("Could not normalize e2")?;
         let e1 = e2
             .cross(e0)
@@ -248,7 +248,7 @@ impl IsoExtensions3 for Iso3 {
     ///   be coincident with the origin of the world coordinate system.
     ///
     /// returns: Result<Isometry<f64, Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
-    fn try_from_basis_zy(e2: &Vector3, e1: &Vector3, origin: Option<Point3>) -> Result<Iso3> {
+    fn from_basis_zy(e2: &Vector3, e1: &Vector3, origin: Option<Point3>) -> Result<Iso3> {
         let e2 = e2.try_normalize(1e-10).ok_or("Could not normalize e2")?;
         let e0 = e1
             .cross(&e2)
@@ -318,60 +318,60 @@ mod tests {
     }
 
     #[test]
-    fn iso3_try_from_basis_xy() -> Result<()> {
+    fn iso3_from_basis_xy() -> Result<()> {
         let check = BasisCheck::new();
-        let iso = Iso3::try_from_basis_xy(&check.e0, &check.e1, Some(check.o))?;
+        let iso = Iso3::from_basis_xy(&check.e0, &check.e1, Some(check.o))?;
         assert_relative_eq!(iso, check.fwd, epsilon = 1e-6);
         Ok(())
     }
 
     #[test]
-    fn iso3_try_from_basis_xz() -> Result<()> {
+    fn iso3_from_basis_xz() -> Result<()> {
         let check = BasisCheck::new();
-        let iso = Iso3::try_from_basis_xz(&check.e0, &check.e2, Some(check.o))?;
+        let iso = Iso3::from_basis_xz(&check.e0, &check.e2, Some(check.o))?;
         assert_relative_eq!(iso, check.fwd, epsilon = 1e-6);
         Ok(())
     }
 
     #[test]
-    fn iso3_try_from_basis_yx() -> Result<()> {
+    fn iso3_from_basis_yx() -> Result<()> {
         let check = BasisCheck::new();
-        let iso = Iso3::try_from_basis_yx(&check.e1, &check.e0, Some(check.o))?;
+        let iso = Iso3::from_basis_yx(&check.e1, &check.e0, Some(check.o))?;
         assert_relative_eq!(iso, check.fwd, epsilon = 1e-6);
         Ok(())
     }
 
     #[test]
-    fn iso3_try_from_basis_yz() -> Result<()> {
+    fn iso3_from_basis_yz() -> Result<()> {
         let check = BasisCheck::new();
-        let iso = Iso3::try_from_basis_yz(&check.e1, &check.e2, Some(check.o))?;
+        let iso = Iso3::from_basis_yz(&check.e1, &check.e2, Some(check.o))?;
         assert_relative_eq!(iso, check.fwd, epsilon = 1e-6);
         Ok(())
     }
 
     #[test]
-    fn iso3_try_from_basis_zx() -> Result<()> {
+    fn iso3_from_basis_zx() -> Result<()> {
         let check = BasisCheck::new();
-        let iso = Iso3::try_from_basis_zx(&check.e2, &check.e0, Some(check.o))?;
+        let iso = Iso3::from_basis_zx(&check.e2, &check.e0, Some(check.o))?;
         assert_relative_eq!(iso, check.fwd, epsilon = 1e-6);
         Ok(())
     }
 
     #[test]
-    fn iso3_try_from_basis_zy() -> Result<()> {
+    fn iso3_from_basis_zy() -> Result<()> {
         let check = BasisCheck::new();
-        let iso = Iso3::try_from_basis_zy(&check.e2, &check.e1, Some(check.o))?;
+        let iso = Iso3::from_basis_zy(&check.e2, &check.e1, Some(check.o))?;
         assert_relative_eq!(iso, check.fwd, epsilon = 1e-6);
         Ok(())
     }
 
     #[test]
-    fn iso3_try_from_basis_xy_manual() {
+    fn iso3_from_basis_xy_manual() {
         let o = Point3::new(1.0, 2.0, 3.0);
         let e0 = UnitVec3::new_normalize(Vector3::new(1.0, 1.0, 0.0));
         let e1 = Vector3::new(0.0, 1.0, 1.0);
 
-        let iso = Iso3::try_from_basis_xy(&e0.into_inner(), &e1, Some(o)).unwrap();
+        let iso = Iso3::from_basis_xy(&e0.into_inner(), &e1, Some(o)).unwrap();
 
         assert_relative_eq!(iso * Point3::origin(), o, epsilon = 1e-6);
         assert_relative_eq!(
@@ -382,11 +382,11 @@ mod tests {
     }
 
     #[test]
-    fn iso3_try_from_array_simple() {
+    fn iso3_from_array_simple() {
         let array = [
             1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 2.0, 0.0, 0.0, 1.0, 3.0, 0.0, 0.0, 0.0, 1.0,
         ];
-        let iso = Iso3::try_from_array(&array).unwrap();
+        let iso = Iso3::from_array(&array).unwrap();
         let m = iso.to_matrix();
         let expected = Matrix4::new(
             1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 2.0, 0.0, 0.0, 1.0, 3.0, 0.0, 0.0, 0.0, 1.0,
@@ -397,7 +397,7 @@ mod tests {
     #[test]
     fn iso3_flip_x() {
         let iso = Iso3::new(Vector3::new(1.0, 2.0, 3.0), Vector3::new(0.0, 0.0, 0.0));
-        let flipped = iso.flip_around_x();
+        let flipped = iso.flipped_around_x();
 
         let p = Point3::new(0.0, 0.0, 0.0);
         assert_relative_eq!(flipped * p, Point3::new(1.0, 2.0, 3.0));

@@ -26,7 +26,7 @@ impl UnrollTransform {
         radius: f64,
         origin: Option<Point3>,
     ) -> Result<UnrollTransform> {
-        let iso = Iso3::try_from_basis_zx(&center_axis, &polar_axis, origin)?;
+        let iso = Iso3::from_basis_zx(&center_axis, &polar_axis, origin)?;
         let inv = iso.inverse();
         Ok(UnrollTransform { iso, inv, radius })
     }

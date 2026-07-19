@@ -594,7 +594,7 @@ impl Mesh {
         let box_geom = shape::Cuboid::new(Vector3::new(width / 2.0, height / 2.0, v.norm() / 2.0));
 
         // I think this is OK?
-        let transform = Iso3::try_from_basis_zy(&v, up, Some(pc))?;
+        let transform = Iso3::from_basis_zy(&v, up, Some(pc))?;
 
         let (vertices, faces) = box_geom.to_trimesh();
         let mut mesh = Self::new(vertices, faces, true);
@@ -608,8 +608,8 @@ impl Mesh {
         let cyl = shape::Cylinder::new(v.norm() / 2.0, radius);
 
         // I think this is OK?
-        let transform = Iso3::try_from_basis_yz(&v, &Vector3::z(), Some(pc))
-            .unwrap_or(Iso3::try_from_basis_yx(&v, &Vector3::x(), Some(pc)).unwrap());
+        let transform = Iso3::from_basis_yz(&v, &Vector3::z(), Some(pc))
+            .unwrap_or(Iso3::from_basis_yx(&v, &Vector3::x(), Some(pc)).unwrap());
 
         let (vertices, faces) = cyl.to_trimesh(steps as u32);
         let mut mesh = Self::new(vertices, faces, true);

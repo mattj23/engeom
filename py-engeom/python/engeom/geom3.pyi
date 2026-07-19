@@ -699,7 +699,7 @@ class Iso3:
         """
         ...
 
-    def flip_around_x(self) -> Iso3:
+    def flipped_around_x(self) -> Iso3:
         """
         Return a new isometry that flips the isometry 180° around the x-axis. The origin of the isometry will be
         preserved, but the y and z axes will point in the opposite directions.
@@ -707,7 +707,7 @@ class Iso3:
         """
         ...
 
-    def flip_around_y(self) -> Iso3:
+    def flipped_around_y(self) -> Iso3:
         """
         Return a new isometry that flips the isometry 180° around the y-axis. The origin of the isometry will be
         preserved, but the x and z axes will point in the opposite directions.
@@ -715,7 +715,7 @@ class Iso3:
         """
         ...
 
-    def flip_around_z(self) -> Iso3:
+    def flipped_around_z(self) -> Iso3:
         """
         Return a new isometry that flips the isometry 180° around the z-axis. The origin of the isometry will be
         preserved, but the x and y axes will point in the opposite directions.
