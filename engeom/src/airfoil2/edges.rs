@@ -435,7 +435,7 @@ pub fn fit_spline_max_k(
 fn half_line(inscribed: &Inscribed, clip_dir: &Vector2, last_result: &SfResult) -> Line2 {
     let l0 = Line2::new(inscribed.center(), *clip_dir);
     let l1 = last_result.end_line();
-    let l = l0.slerp_to(&l1, 0.5).rotated(PI / 2.0);
+    let l = l0.slerp(&l1, 0.5).rotated(PI / 2.0);
     if l.direction.dot(&inscribed.contact_dir()) < 0.0 {
         l.reversed()
     } else {

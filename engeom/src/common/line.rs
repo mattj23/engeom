@@ -85,7 +85,7 @@ impl<const D: usize> Line<D> {
 
     /// Returns a new line whose origin and direction are spherically interpolated between this
     /// line and `other` by parameter `t`.
-    pub fn slerp_to(&self, other: &Line<D>, t: f64) -> Self {
+    pub fn slerp(&self, other: &Line<D>, t: f64) -> Self {
         let new_direction = self.direction.lerp(&other.direction, t);
         let shift = other.origin - self.origin;
         Self::new(self.origin + shift * t, new_direction)

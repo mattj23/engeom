@@ -1,3 +1,4 @@
+use crate::boundary2::Manifold1Pos2;
 use crate::bounding::Aabb2;
 use crate::common::{AngleDir, Resample};
 use crate::conversions::{
@@ -499,6 +500,10 @@ impl SurfacePoint2 {
     fn to_line(&self) -> Line2 {
         Line2::from_inner(engeom::geom2::Line2::from(&self.inner))
     }
+
+    fn slerp(&self, other: &Self, t: f64) -> Self {
+        Self::from_inner(self.inner.slerp(&other.inner, t))
+    }
 }
 
 // ================================================================================================
@@ -857,8 +862,16 @@ impl Line2 {
         Self::from_inner(self.inner.normalized())
     }
 
+    fn reversed(&self) -> Self {
+        Self::from_inner(self.inner.reversed())
+    }
+
     fn offset_by(&self, delta_n: f64) -> Self {
         Self::from_inner(self.inner.offset_by(delta_n))
+    }
+
+    fn rotated(&self, angle: f64) -> Self {
+        Self::from_inner(self.inner.rotated(angle))
     }
 
     fn shifted_origin(&self, delta_t: f64) -> Self {
@@ -867,6 +880,40 @@ impl Line2 {
 
     fn transformed_by(&self, iso: &Iso2) -> Self {
         Self::from_inner(self.inner.transformed_by(iso.get_inner()))
+    }
+
+    fn slerp(&self, other: &Self, t: f64) -> Self {
+        Self::from_inner(self.inner.slerp(&other.inner, t))
+    }
+
+    fn projected_parameter(&self, p: &Point2) -> f64 {
+        use engeom::geom2::LineOps2;
+        self.inner.projected_parameter(p.get_inner())
+    }
+
+    fn projected_point(&self, p: &Point2) -> Point2 {
+        use engeom::geom2::LineOps2;
+        Point2::from_inner(self.inner.projected_point(p.get_inner()))
+    }
+
+    fn orthogonal(&self) -> Vector2 {
+        use engeom::geom2::LineOps2;
+        Vector2::from_inner(self.inner.orthogonal())
+    }
+
+    fn signed_projection_dist(&self, point: &Point2) -> f64 {
+        use engeom::geom2::LineOps2;
+        self.inner.signed_projection_dist(point.get_inner())
+    }
+
+    fn intersection_params(&self, other: &Line2) -> Option<(f64, f64)> {
+        use engeom::geom2::LineOps2;
+        self.inner.intersection_params(&other.inner)
+    }
+
+    fn winding_direction(&self, point: &Point2) -> AngleDir {
+        use engeom::geom2::LineOps2;
+        self.inner.winding_direction(point.get_inner()).into()
     }
 
     fn to_iso_from_x(&self) -> Iso2 {
@@ -983,6 +1030,38 @@ impl Segment2 {
 
     fn transformed_by(&self, iso: &Iso2) -> Self {
         Self::from_inner(self.inner.transformed_by(iso.get_inner()))
+    }
+
+    fn at(&self, t: f64) -> Point2 {
+        Point2::from_inner(self.inner.at(t))
+    }
+
+    fn reversed(&self) -> Self {
+        Self::from_inner(self.inner.reversed())
+    }
+
+    fn scalar_projection(&self, other: &Point2) -> f64 {
+        self.inner.scalar_projection(other.get_inner())
+    }
+
+    fn closest_point(&self, other: &Point2) -> Point2 {
+        Point2::from_inner(self.inner.closest_point(other.get_inner()))
+    }
+
+    fn offset_by(&self, d: f64) -> Self {
+        Self::from_inner(self.inner.offset_by(d))
+    }
+
+    fn normal(&self) -> Vector2 {
+        Vector2::from_inner(self.inner.normal().into_inner())
+    }
+
+    fn at_t(&self, t: f64) -> Manifold1Pos2 {
+        Manifold1Pos2::from_inner(self.inner.at_t(t))
+    }
+
+    fn intersects_other(&self, other: &Self) -> bool {
+        self.inner.intersects_other(&other.inner)
     }
 }
 

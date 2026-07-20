@@ -463,6 +463,18 @@ class SurfacePoint2:
         """
         ...
 
+    def slerp(self, other: SurfacePoint2, t: float) -> SurfacePoint2:
+        """
+        Spherically interpolate between this surface point and another by parameter `t`. The
+        position is linearly interpolated and the normal is spherically interpolated so that it
+        remains unit length.
+
+        :param other: the surface point to interpolate towards.
+        :param t: the interpolation parameter, where 0.0 returns this point and 1.0 returns `other`.
+        :return: a new surface point interpolated between this one and `other`.
+        """
+        ...
+
 
 class Iso2:
     """
@@ -1519,6 +1531,12 @@ class Line2:
         """
         ...
 
+    def reversed(self) -> Line2:
+        """
+        Return a new line with the same origin, but with the direction inverted.
+        """
+        ...
+
     def offset_by(self, delta_n: float) -> Line2:
         """
         Return a new line parallel to this one, with the origin shifted by ``delta_n`` along the
@@ -1527,6 +1545,17 @@ class Line2:
 
         :param delta_n: the offset distance along the normal.
         :return: a new parallel ``Line2``.
+        """
+        ...
+
+    def rotated(self, angle: float) -> Line2:
+        """
+        Return a copy of this line rotated about its own origin by ``angle`` radians. The origin
+        is unchanged and the direction is rotated counter-clockwise (a positive ``angle`` rotates
+        from the +x axis toward the +y axis); the direction's magnitude is preserved.
+
+        :param angle: the rotation angle in radians, counter-clockwise positive.
+        :return: a new rotated ``Line2``.
         """
         ...
 
@@ -1545,6 +1574,74 @@ class Line2:
 
         :param iso: the isometry to apply.
         :return: a new transformed ``Line2``.
+        """
+        ...
+
+    def slerp(self, other: Line2, t: float) -> Line2:
+        """
+        Return a new line whose origin and direction are spherically interpolated between this
+        line and ``other`` by parameter ``t``.
+
+        :param other: the line to interpolate towards.
+        :param t: the interpolation parameter, where 0.0 returns this line and 1.0 returns ``other``.
+        :return: a new interpolated ``Line2``.
+        """
+        ...
+
+    def projected_parameter(self, p: Point2) -> float:
+        """
+        Return the parameter ``t`` at which ``p`` projects onto this line's direction, measured
+        from the origin. Unlike ``scalar_project``, this projects onto the raw (possibly
+        non-unit-length) direction vector.
+
+        :param p: the point to project.
+        :return: the projection parameter.
+        """
+        ...
+
+    def projected_point(self, p: Point2) -> Point2:
+        """
+        Return the point on the line at the projected parameter of ``p``. Equivalent to
+        ``self.at(self.projected_parameter(p))``.
+
+        :param p: the point to project.
+        :return: the projected point on the line.
+        """
+        ...
+
+    def orthogonal(self) -> Vector2:
+        """
+        Return the direction vector rotated -90 degrees, typically used as a normal.
+        """
+        ...
+
+    def signed_projection_dist(self, point: Point2) -> float:
+        """
+        Return the signed perpendicular distance from ``point`` to this line, measured against
+        the ``orthogonal`` direction. Positive values indicate the point is to the right of the
+        direction of travel; negative values indicate the left.
+
+        :param point: the query point.
+        :return: the signed distance.
+        """
+        ...
+
+    def intersection_params(self, other: Line2) -> tuple[float, float] | None:
+        """
+        Return the pair of parameters ``(t_self, t_other)`` at which this line and ``other``
+        intersect, or ``None`` if the two directions are parallel.
+
+        :param other: the other line to intersect with.
+        :return: the intersection parameters, or ``None``.
+        """
+        ...
+
+    def winding_direction(self, point: Point2) -> AngleDir:
+        """
+        Determine the direction that the line winds around ``point``.
+
+        :param point: the reference point.
+        :return: ``AngleDir.Cw`` or ``AngleDir.Ccw``.
         """
         ...
 
@@ -1906,6 +2003,74 @@ class Segment2:
         Return a new segment with both endpoints transformed by the given isometry.
         :param iso: the isometry to apply.
         :return: a new transformed Segment2.
+        """
+        ...
+
+    def at(self, t: float) -> Point2:
+        """
+        Return the point at parameter t, where t=0 is the first endpoint and t=1 is the second.
+        :param t: the parameter value.
+        :return: the point on the segment at t.
+        """
+        ...
+
+    def reversed(self) -> Segment2:
+        """
+        Return a new segment with the endpoints reversed.
+        :return: a new Segment2 with a and b swapped.
+        """
+        ...
+
+    def scalar_projection(self, other: Point2) -> float:
+        """
+        Calculate the scalar projection of a point onto the segment, where 0.0 represents the
+        first endpoint and 1.0 represents the second endpoint. The result can be any finite value,
+        including negative ones or ones greater than one.
+        :param other: the point to project onto the segment.
+        :return: the scalar projection parameter.
+        """
+        ...
+
+    def closest_point(self, other: Point2) -> Point2:
+        """
+        Return the closest point on the segment to the given point, clamped to the segment's
+        endpoints.
+        :param other: the point to find the closest location to.
+        :return: the closest point on the segment.
+        """
+        ...
+
+    def offset_by(self, d: float) -> Segment2:
+        """
+        Create a new segment shifted by distance d in the direction of the segment's normal
+        vector. The normal vector is the direction vector rotated 90 degrees clockwise.
+        :param d: the distance to shift the segment along its normal vector.
+        :return: a new shifted Segment2.
+        """
+        ...
+
+    def normal(self) -> Vector2:
+        """
+        Return the unit normal of the segment: the direction vector rotated 90 degrees clockwise.
+        :return: the unit normal vector.
+        """
+        ...
+
+    def at_t(self, t: float) -> Manifold1Pos2:
+        """
+        Return the manifold position (point, tangent direction, normal, and arc length) at
+        parameter t, where t=0 is the first endpoint and t=1 is the second.
+        :param t: the parameter value.
+        :return: the manifold position at t.
+        """
+        ...
+
+    def intersects_other(self, other: Segment2) -> bool:
+        """
+        Determine whether this segment intersects another segment, considering only the bounded
+        extent of both segments (not their infinite line extensions).
+        :param other: the other segment to test against.
+        :return: True if the segments intersect, False otherwise.
         """
         ...
 

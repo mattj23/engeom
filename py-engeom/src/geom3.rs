@@ -518,6 +518,10 @@ impl SurfacePoint3 {
     fn to_2d(&self) -> SurfacePoint2 {
         SurfacePoint2::from_inner(self.inner.to_2d())
     }
+
+    fn slerp(&self, other: &Self, t: f64) -> Self {
+        Self::from_inner(self.inner.slerp(&other.inner, t))
+    }
 }
 
 // ================================================================================================
@@ -713,6 +717,29 @@ impl Line3 {
         Self::from_inner(engeom::Line3::from_points(p1.get_inner(), p2.get_inner()))
     }
 
+    #[staticmethod]
+    fn new_normalize(ox: f64, oy: f64, oz: f64, dx: f64, dy: f64, dz: f64) -> Self {
+        Self::from_inner(engeom::Line3::new_normalize(
+            engeom::Point3::new(ox, oy, oz),
+            engeom::Vector3::new(dx, dy, dz),
+        ))
+    }
+
+    #[staticmethod]
+    fn x_axis() -> Self {
+        Self::from_inner(engeom::Line3::x_axis())
+    }
+
+    #[staticmethod]
+    fn y_axis() -> Self {
+        Self::from_inner(engeom::Line3::y_axis())
+    }
+
+    #[staticmethod]
+    fn z_axis() -> Self {
+        Self::from_inner(engeom::Line3::z_axis())
+    }
+
     fn __repr__(&self) -> String {
         let o = self.inner.origin;
         let d = self.inner.direction;
@@ -783,6 +810,30 @@ impl Line3 {
 
     fn normalized(&self) -> Line3 {
         Line3::from_inner(self.inner.normalized())
+    }
+
+    fn reversed(&self) -> Line3 {
+        Line3::from_inner(self.inner.reversed())
+    }
+
+    fn shifted_origin(&self, delta_t: f64) -> Line3 {
+        Line3::from_inner(self.inner.shifted_origin(delta_t))
+    }
+
+    fn slerp(&self, other: &Line3, t: f64) -> Line3 {
+        Line3::from_inner(self.inner.slerp(&other.inner, t))
+    }
+
+    fn transformed_by(&self, iso: &Iso3) -> Line3 {
+        Line3::from_inner(self.inner.transformed_by(iso.get_inner()))
+    }
+
+    fn intersect_sphere(&self, sphere: &Sphere3) -> Vec<f64> {
+        self.inner.intersect_sphere(sphere.get_inner())
+    }
+
+    fn intersect_circle(&self, circle: &Circle3) -> Option<f64> {
+        self.inner.intersect_circle(circle.get_inner())
     }
 }
 
@@ -894,6 +945,30 @@ impl Segment3 {
 
     fn transformed_by(&self, iso: &Iso3) -> Self {
         Self::from_inner(self.inner.transformed_by(iso.get_inner()))
+    }
+
+    fn at(&self, t: f64) -> Point3 {
+        Point3::from_inner(self.inner.at(t))
+    }
+
+    fn reversed(&self) -> Self {
+        Self::from_inner(self.inner.reversed())
+    }
+
+    fn scalar_projection(&self, other: Point3) -> f64 {
+        self.inner.scalar_projection(other.get_inner())
+    }
+
+    fn closest_point(&self, other: Point3) -> Point3 {
+        Point3::from_inner(self.inner.closest_point(other.get_inner()))
+    }
+
+    fn at_t(&self, t: f64) -> Manifold1Pos3 {
+        Manifold1Pos3::from_inner(self.inner.at_t(t))
+    }
+
+    fn closest_to_point(&self, point: Point3) -> Manifold1Pos3 {
+        Manifold1Pos3::from_inner(self.inner.closest_to_point(point.get_inner()))
     }
 }
 

@@ -553,6 +553,18 @@ class SurfacePoint3:
         """
         ...
 
+    def slerp(self, other: SurfacePoint3, t: float) -> SurfacePoint3:
+        """
+        Spherically interpolate between this surface point and another by parameter `t`. The
+        position is linearly interpolated and the normal is spherically interpolated so that it
+        remains unit length.
+
+        :param other: the surface point to interpolate towards.
+        :param t: the interpolation parameter, where 0.0 returns this point and 1.0 returns `other`.
+        :return: a new surface point interpolated between this one and `other`.
+        """
+        ...
+
 
 class Iso3:
     """
@@ -1232,6 +1244,36 @@ class Line3:
         """
         ...
 
+    @staticmethod
+    def new_normalize(ox: float, oy: float, oz: float, dx: float, dy: float, dz: float) -> Line3:
+        """
+        Create a line from an origin and direction, normalizing the direction so that the
+        parameter t equals arc length from the origin.
+        :param ox: x component of the origin.
+        :param oy: y component of the origin.
+        :param oz: z component of the origin.
+        :param dx: x component of the direction (will be normalized).
+        :param dy: y component of the direction (will be normalized).
+        :param dz: z component of the direction (will be normalized).
+        :return: a new Line3 with a unit-length direction.
+        """
+        ...
+
+    @staticmethod
+    def x_axis() -> Line3:
+        """Return the X axis: origin at (0, 0, 0), direction (1, 0, 0)."""
+        ...
+
+    @staticmethod
+    def y_axis() -> Line3:
+        """Return the Y axis: origin at (0, 0, 0), direction (0, 1, 0)."""
+        ...
+
+    @staticmethod
+    def z_axis() -> Line3:
+        """Return the Z axis: origin at (0, 0, 0), direction (0, 0, 1)."""
+        ...
+
     @property
     def origin(self) -> Point3:
         """
@@ -1307,6 +1349,57 @@ class Line3:
         """
         ...
 
+    def reversed(self) -> Line3:
+        """
+        Return a new line with the same origin, but with the direction inverted.
+        :return: a new Line3 with the inverted direction.
+        """
+        ...
+
+    def shifted_origin(self, delta_t: float) -> Line3:
+        """
+        Return a new line with the origin shifted by delta_t along the direction vector.
+        :param delta_t: the distance to shift the origin along the direction.
+        :return: a new Line3 with the shifted origin.
+        """
+        ...
+
+    def slerp(self, other: Line3, t: float) -> Line3:
+        """
+        Return a new line whose origin and direction are spherically interpolated between this
+        line and other by parameter t.
+        :param other: the line to interpolate towards.
+        :param t: the interpolation parameter, where 0.0 returns this line and 1.0 returns other.
+        :return: a new interpolated Line3.
+        """
+        ...
+
+    def transformed_by(self, iso: Iso3) -> Line3:
+        """
+        Return a new line with both origin and direction transformed by the given isometry.
+        :param iso: the isometry to apply.
+        :return: a new transformed Line3.
+        """
+        ...
+
+    def intersect_sphere(self, sphere: Sphere3) -> list[float]:
+        """
+        Intersect the line with a sphere, returning 0, 1, or 2 parameters t at which the line
+        meets the sphere surface.
+        :param sphere: the sphere to intersect with.
+        :return: a list of the parameter values at the intersection points.
+        """
+        ...
+
+    def intersect_circle(self, circle: Circle3) -> float | None:
+        """
+        Intersect the line with the plane of a circle and check if the intersection point is
+        within the circle. Returns None if the line does not intersect the circle.
+        :param circle: the circle to intersect with.
+        :return: the parameter t at the intersection, or None.
+        """
+        ...
+
 
 class Segment3:
     """
@@ -1378,6 +1471,58 @@ class Segment3:
         Return a new segment with both endpoints transformed by the given isometry.
         :param iso: the isometry to apply.
         :return: a new transformed Segment3.
+        """
+        ...
+
+    def at(self, t: float) -> Point3:
+        """
+        Return the point at parameter t, where t=0 is the first endpoint and t=1 is the second.
+        :param t: the parameter value.
+        :return: the point on the segment at t.
+        """
+        ...
+
+    def reversed(self) -> Segment3:
+        """
+        Return a new segment with the endpoints reversed.
+        :return: a new Segment3 with a and b swapped.
+        """
+        ...
+
+    def scalar_projection(self, other: Point3) -> float:
+        """
+        Calculate the scalar projection of a point onto the segment, where 0.0 represents the
+        first endpoint and 1.0 represents the second endpoint. The result can be any finite value,
+        including negative ones or ones greater than one.
+        :param other: the point to project onto the segment.
+        :return: the scalar projection parameter.
+        """
+        ...
+
+    def closest_point(self, other: Point3) -> Point3:
+        """
+        Return the closest point on the segment to the given point, clamped to the segment's
+        endpoints.
+        :param other: the point to find the closest location to.
+        :return: the closest point on the segment.
+        """
+        ...
+
+    def at_t(self, t: float) -> Manifold1Pos3:
+        """
+        Return the manifold position (point, tangent direction, and arc length) at parameter t,
+        where t=0 is the first endpoint and t=1 is the second.
+        :param t: the parameter value.
+        :return: the manifold position at t.
+        """
+        ...
+
+    def closest_to_point(self, point: Point3) -> Manifold1Pos3:
+        """
+        Return the manifold position of the point on the segment closest to point, clamped to the
+        segment's endpoints.
+        :param point: the point to find the closest location to.
+        :return: the manifold position of the closest point.
         """
         ...
 
