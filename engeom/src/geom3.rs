@@ -42,7 +42,12 @@ pub type UnitVec3 = parry3d_f64::na::Unit<Vector3>;
 pub type Iso3 = parry3d_f64::na::Isometry3<f64>;
 pub type KdTree3 = crate::common::kd_tree::KdTree<3>;
 
-/// TODO: docstring
+/// A point in 3D space paired with a unit normal direction, representing a position on a
+/// 2-manifold (surface, mesh face, etc...) embedded in 3D space. Mathematically this is identical
+/// to a parameterized line or ray, but represents a different conceptual entity and so has
+/// different semantics.
+///
+/// This is one of `engeom`'s 3D geometric primitives.
 pub type SurfacePoint3 = SurfacePoint<3>;
 
 pub type SvdBasis3 = SvdBasis<3>;

@@ -31,7 +31,12 @@ pub type Ray2 = parry2d_f64::query::Ray;
 pub type Align2 = crate::common::align::Align<UnitComplex<f64>, 2>;
 pub type KdTree2 = crate::common::kd_tree::KdTree<2>;
 
-/// Todo: docstring
+/// A point in 2D space paired with a unit normal direction, representing a position on a
+/// 1-manifold (line, curve, etc...) embedded in 2D space. Mathematically this is identical to a
+/// parameterized line or ray with unit speed, but represents a different conceptual entity and so
+/// has different semantics.
+///
+/// This is one of `engeom`'s 2D geometric primitives.
 pub type SurfacePoint2 = SurfacePoint<2>;
 
 pub use self::aabb2::Aabb2;
