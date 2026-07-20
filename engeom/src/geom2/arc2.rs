@@ -12,7 +12,7 @@ use std::f64::consts::PI;
 /// A circular arc in 2D space, defined by a center point, a radius, a start angle, and an
 /// angular span.
 ///
-/// This is one of `engeom`'s 2D geometric primitives
+/// This is one of `engeom`'s 2D geometric primitives.
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct Arc2 {
     pub center: Point2,

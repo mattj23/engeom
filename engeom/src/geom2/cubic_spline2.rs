@@ -5,6 +5,15 @@ use crate::geom2::rot90;
 use crate::na::SVector;
 use crate::{Circle2, UnitVec2};
 
+/// A cubic Bézier curve in 2D space, defined by four control points.
+///
+/// This is one of `engeom`'s 2D geometric primitives.
+///
+/// This is the two-dimensional specialization of the dimension-generic
+/// [`CubicSpline`](CubicSpline); see that type for the shared constructors and queries (`new`,
+/// `position`, `derivative`, `tangent`, `curvature`, `split`, `polyline`, and so on). The methods
+/// defined directly on `CubicSpline2` here (`normal`, `curvature_circle`, `find_inflections`) are
+/// the ones that only make sense in 2D.
 pub type CubicSpline2 = CubicSpline<2>;
 
 impl CubicSpline2 {
