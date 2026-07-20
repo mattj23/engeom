@@ -2045,6 +2045,26 @@ impl Iso2 {
         Self { inner }
     }
 
+    fn __getstate__(&self) -> (f64, f64, f64) {
+        (
+            self.inner.translation.x,
+            self.inner.translation.y,
+            self.inner.rotation.angle(),
+        )
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64, f64) {
+        self.__getstate__()
+    }
+
+    fn __setstate__(&mut self, state: (f64, f64, f64)) {
+        self.inner = engeom::Iso2::translation(state.0, state.1) * engeom::Iso2::rotation(state.2);
+    }
+
+    fn __eq__(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+
     #[staticmethod]
     fn identity() -> Self {
         Self {

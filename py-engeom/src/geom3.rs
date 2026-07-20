@@ -1648,6 +1648,20 @@ impl Iso3 {
         Ok(Self { inner })
     }
 
+    fn __getnewargs__<'py>(&self, py: Python<'py>) -> (Bound<'py, PyArray2<f64>>,) {
+        (self.as_numpy(py),)
+    }
+
+    fn __getstate__(&self) -> (f64, f64, f64, f64, f64, f64, f64) {
+        self.to_quaternion()
+    }
+
+    fn __setstate__(&mut self, state: (f64, f64, f64, f64, f64, f64, f64)) {
+        let translation = Translation3::new(state.0, state.1, state.2);
+        let quat = Quaternion::new(state.6, state.3, state.4, state.5);
+        self.inner = engeom::Iso3::from_parts(translation, UnitQuaternion::from_quaternion(quat));
+    }
+
     #[staticmethod]
     fn from_translation(x: f64, y: f64, z: f64) -> Self {
         Self {

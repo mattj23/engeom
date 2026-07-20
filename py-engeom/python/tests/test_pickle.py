@@ -1,5 +1,15 @@
 import pickle
-from engeom.geom2 import Vector2, Point2, SurfacePoint2, Circle2, Segment2, Arc2, Line2, CubicSpline2
+from engeom.geom2 import (
+    Vector2,
+    Point2,
+    SurfacePoint2,
+    Circle2,
+    Segment2,
+    Arc2,
+    Line2,
+    CubicSpline2,
+    Iso2,
+)
 from engeom.geom3 import (
     Vector3,
     Point3,
@@ -10,6 +20,7 @@ from engeom.geom3 import (
     Circle3,
     Segment3,
     CubicSpline3,
+    Iso3,
 )
 
 
@@ -123,3 +134,27 @@ def test_pickle_cubic_spline3():
     spline = CubicSpline3(0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 2.0, 1.0, 0.0, 3.0, 0.0, 0.0)
     unpickled = pickle.loads(pickle.dumps(spline))
     assert spline == unpickled
+
+
+def test_pickle_iso2():
+    iso = Iso2(1.0, 2.0, 0.5)
+    unpickled = pickle.loads(pickle.dumps(iso))
+    assert iso == unpickled
+
+
+def test_pickle_iso2_identity():
+    iso = Iso2.identity()
+    unpickled = pickle.loads(pickle.dumps(iso))
+    assert iso == unpickled
+
+
+def test_pickle_iso3():
+    iso = Iso3.from_quaternion(1.0, 2.0, 3.0, 0.1, 0.2, 0.3, 0.5)
+    unpickled = pickle.loads(pickle.dumps(iso))
+    assert iso == unpickled
+
+
+def test_pickle_iso3_identity():
+    iso = Iso3.identity()
+    unpickled = pickle.loads(pickle.dumps(iso))
+    assert iso == unpickled
