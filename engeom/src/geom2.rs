@@ -25,12 +25,14 @@ use std::ops;
 pub type Point2 = parry2d_f64::na::Point2<f64>;
 pub type Vector2 = parry2d_f64::na::Vector2<f64>;
 pub type UnitVec2 = parry2d_f64::na::Unit<Vector2>;
-pub type SurfacePoint2 = SurfacePoint<2>;
 pub type Iso2 = parry2d_f64::na::Isometry2<f64>;
 pub type SvdBasis2 = SvdBasis<2>;
 pub type Ray2 = parry2d_f64::query::Ray;
 pub type Align2 = crate::common::align::Align<UnitComplex<f64>, 2>;
 pub type KdTree2 = crate::common::kd_tree::KdTree<2>;
+
+/// Todo: docstring
+pub type SurfacePoint2 = SurfacePoint<2>;
 
 pub use self::aabb2::Aabb2;
 pub use self::angles2::{directed_angle, rot90, rot270, signed_angle};

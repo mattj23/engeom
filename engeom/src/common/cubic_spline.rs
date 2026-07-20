@@ -59,6 +59,9 @@ impl<T> SplineValue<T> {
 /// four control points:
 ///
 /// `B(t) = (1 - t)^3 P0 + 3 (1 - t)^2 t P1 + 3 (1 - t) t^2 P2 + t^3 P3`
+///
+/// `CubicSpline<D>` is the base for `CubicSpline2` and `CubicSpline3`, which are two of `engeom`'s
+/// geometric primitives.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CubicSpline<const D: usize> {
     pub p0: Point<f64, D>,

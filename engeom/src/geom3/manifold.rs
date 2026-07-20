@@ -4,6 +4,9 @@ use crate::common::PCoords;
 use crate::na::SVector;
 use crate::{Point3, SurfacePoint3, UnitVec3};
 
+/// This struct represents a position along a 1-manifold embedded in 3D space. Examples of such
+/// manifolds are lines, line segments, circles, arcs, splines, etc...anything consisting of a
+/// contiguous set of 3D points along a single linear dimension.
 #[derive(Clone, Debug)]
 pub struct Manifold1Pos3 {
     /// The position of the point along the manifold length

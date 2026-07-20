@@ -7,6 +7,8 @@ mod consensus;
 /// A flat circle in 3D space, defined by a center point, a unit normal, and a radius. The circle
 /// consists of every point in the plane through `center` perpendicular to `normal` at distance
 /// `radius` from `center`.
+///
+/// This is one of `engeom`'s 3D geometric primitives.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Circle3 {
     pub center: Point3,

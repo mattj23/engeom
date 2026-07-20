@@ -5,6 +5,9 @@ use crate::geom2::{Aabb2, BoundaryElement2, LineOps2, Manifold1Pos2, rot90};
 use crate::{Iso2, Line2, Point2, Result, TransformBy, UnitVec2, Vector2};
 use serde::{Deserialize, Serialize};
 
+/// A line segment in 2D space, defined by two endpoints.
+///
+/// This is one of `engeom`'s 2D geometric primitives
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Segment2 {
     pub a: Point2,

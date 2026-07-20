@@ -7,6 +7,8 @@ use crate::{Iso3, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
 use std::ops;
 
 /// A sphere in 3D space, defined by a center point and a radius.
+///
+/// This is one of `engeom`'s 3D geometric primitives.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Sphere3 {
     pub center: Point3,

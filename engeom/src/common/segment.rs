@@ -3,6 +3,8 @@ use crate::na::{AbstractRotation, Isometry, Point, SVector};
 use serde::{Deserialize, Serialize};
 use std::ops;
 
+/// A line segment in D-dimensional space, defined by two endpoints.
+///
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct Segment<const D: usize> {
     a: Point<f64, D>,

@@ -4,6 +4,9 @@ use crate::geom3::line3::Line3;
 use crate::{Iso3, Point3, SurfacePoint3, SvdBasis3, Vector3};
 use std::ops;
 
+/// A plane in 3D space, defined by a unit normal and a signed offset from the origin.
+///
+/// This is one of `engeom`'s 3D geometric primitives.
 #[derive(Debug, Clone)]
 pub struct Plane3 {
     pub normal: UnitVec3,

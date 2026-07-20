@@ -11,10 +11,12 @@ use std::ops;
 
 /// A parameterized line in 2D space: `P(t) = origin + t * direction`.
 ///
-/// This is the two-dimensional specialization of the dimension-generic
-/// [`Line`](crate::common::Line); see that type for the shared constructors and queries (`new`,
-/// `new_normalize`, `from_points`, `at`, `closest_point`, `distance_to`, `transformed_by`, and so
-/// on). The methods defined directly on `Line2` here are the ones that only make sense in 2D.
+/// This is one of `engeom`'s 2D geometric primitives.
+///
+/// This is the two-dimensional specialization of the dimension-generic [`Line`](Line); see that
+/// type for the shared constructors and queries (`new`, `new_normalize`, `from_points`, `at`,
+/// `closest_point`, `distance_to`, `transformed_by`, and so on). The methods defined directly on
+/// `Line2` here are the ones that only make sense in 2D.
 ///
 /// The direction is not required to be normalized; use `new_normalize` for unit-speed
 /// parameterization where `t` equals unit length.

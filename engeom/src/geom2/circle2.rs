@@ -17,6 +17,9 @@ use std::f64::consts::FRAC_PI_2;
 
 mod consensus;
 
+/// A circle in 2D space, defined by a center point and a radius.
+///
+/// This is one of `engeom`'s 2D geometric primitives
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct Circle2 {
     pub center: Point2,

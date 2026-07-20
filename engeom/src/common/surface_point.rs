@@ -10,6 +10,9 @@ use approx::{AbsDiffEq, RelativeEq};
 /// manifold) in n-dimensional space. It is defined by a point and a normal vector. Mathematically,
 /// a `SurfacePoint` is identical to a parameterized line or a ray with a unit direction. It also
 /// uniquely defines half-spaces (so a plane in 3D and a half-space line in 2D).
+///
+/// `SurfacePoint<D>` is the base for `SurfacePoint2` and `SurfacePoint3`, which are two of
+/// `engeom`'s geometric primitives.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct SurfacePoint<const D: usize> {
     pub point: Point<f64, D>,

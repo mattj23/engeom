@@ -13,6 +13,8 @@ use serde::{Deserialize, Serialize};
 ///
 /// The direction is not required to be normalized; use [`new_normalize`](Line::new_normalize)
 /// for a unit-speed parameterization where `t` equals arc length from the origin.
+///
+/// `Line<D>` is the base for `Line2` and `Line3`, which are two of `engeom`'s geometric primitives.
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Line<const D: usize> {
     pub origin: Point<f64, D>,

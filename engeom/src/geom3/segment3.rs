@@ -6,6 +6,8 @@ use crate::{Iso3, Manifold1Pos3, Point3, Result, TransformBy, UnitVec3, Vector3}
 use serde::{Deserialize, Serialize};
 
 /// A line segment in 3D space, defined by two endpoints.
+///
+/// This is one of `engeom`'s 3D geometric primitives
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Segment3 {
     pub a: Point3,
