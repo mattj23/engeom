@@ -923,9 +923,21 @@ impl Sphere3 {
     #[new]
     fn new(cx: f64, cy: f64, cz: f64, radius: f64) -> Self {
         Self::from_inner(engeom::Sphere3::new(
-            engeom::Point3::new(cx, cy, cz),
+            &engeom::Point3::new(cx, cy, cz),
             radius,
         ))
+    }
+
+    #[staticmethod]
+    fn from_4_points(p0: &Point3, p1: &Point3, p2: &Point3, p3: &Point3) -> PyResult<Self> {
+        engeom::Sphere3::from_4_points(
+            p0.get_inner(),
+            p1.get_inner(),
+            p2.get_inner(),
+            p3.get_inner(),
+        )
+        .map(Self::from_inner)
+        .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     fn __repr__(&self) -> String {
@@ -950,7 +962,7 @@ impl Sphere3 {
     }
 
     fn __setstate__(&mut self, state: (f64, f64, f64, f64)) {
-        self.inner = engeom::Sphere3::new(engeom::Point3::new(state.0, state.1, state.2), state.3);
+        self.inner = engeom::Sphere3::new(&engeom::Point3::new(state.0, state.1, state.2), state.3);
     }
 
     fn __eq__(&self, other: &Sphere3) -> bool {

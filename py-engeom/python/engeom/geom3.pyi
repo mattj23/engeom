@@ -1413,6 +1413,20 @@ class Sphere3:
         """
         ...
 
+    @staticmethod
+    def from_4_points(p0: Point3, p1: Point3, p2: Point3, p3: Point3) -> Sphere3:
+        """
+        Create the unique sphere passing through four points. Raises ``ValueError`` if the points
+        are coplanar (or otherwise do not determine a unique sphere).
+
+        :param p0: the first point.
+        :param p1: the second point.
+        :param p2: the third point.
+        :param p3: the fourth point.
+        :return: a new ``Sphere3``.
+        """
+        ...
+
     def closest_point(self, test_point: Point3) -> SurfacePoint3 | None:
         """
         Return the closest point on the sphere's surface to test_point, along with the outward

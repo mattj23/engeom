@@ -378,6 +378,30 @@ def test_sphere3_intersect_sphere_no_overlap_returns_none():
     assert s1.intersect_sphere(s2) is None
 
 
+def test_sphere3_from_4_points():
+    # Sphere at (1, 2, 3), radius 2
+    s = Sphere3(1, 2, 3, 2)
+    p0 = Point3(3, 2, 3)
+    p1 = Point3(-1, 2, 3)
+    p2 = Point3(1, 4, 3)
+    p3 = Point3(1, 2, 5)
+    result = Sphere3.from_4_points(p0, p1, p2, p3)
+    assert isinstance(result, Sphere3)
+    assert result.center.x == pytest.approx(1.0)
+    assert result.center.y == pytest.approx(2.0)
+    assert result.center.z == pytest.approx(3.0)
+    assert result.r == pytest.approx(2.0)
+
+
+def test_sphere3_from_4_coplanar_points_raises():
+    p0 = Point3(0, 0, 0)
+    p1 = Point3(1, 0, 0)
+    p2 = Point3(0, 1, 0)
+    p3 = Point3(1, 1, 0)
+    with pytest.raises(ValueError):
+        Sphere3.from_4_points(p0, p1, p2, p3)
+
+
 # ==============================================================================
 # Circle3 tests
 # ==============================================================================

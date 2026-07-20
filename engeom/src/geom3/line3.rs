@@ -300,7 +300,7 @@ mod tests {
 
     #[test]
     fn line_through_sphere_two_intersections() {
-        let sphere = Sphere3::new(Point3::origin(), 3.0);
+        let sphere = Sphere3::new(&Point3::origin(), 3.0);
         let line = Line3::new(Point3::new(0.0, 0.0, -10.0), Vector3::z());
         let ts = line.intersect_sphere(&sphere);
         assert_eq!(ts.len(), 2);
@@ -323,14 +323,14 @@ mod tests {
 
     #[test]
     fn line_misses_sphere() {
-        let sphere = Sphere3::new(Point3::origin(), 1.0);
+        let sphere = Sphere3::new(&Point3::origin(), 1.0);
         let line = Line3::new(Point3::new(5.0, 0.0, 0.0), Vector3::z());
         assert!(line.intersect_sphere(&sphere).is_empty());
     }
 
     #[test]
     fn line_tangent_to_sphere() {
-        let sphere = Sphere3::new(Point3::origin(), 1.0);
+        let sphere = Sphere3::new(&Point3::origin(), 1.0);
         // Line at x=1, y=0 along Z is tangent to sphere
         let line = Line3::new(Point3::new(1.0, 0.0, 0.0), Vector3::z());
         let ts = line.intersect_sphere(&sphere);
@@ -344,7 +344,7 @@ mod tests {
     fn stress_intersect_sphere_points_on_surface() {
         let mut rg = RandomGeometry3::new();
         for _ in 0..1000 {
-            let sphere = Sphere3::new(rg.point3(2.0), rg.f64(0.1, 3.0));
+            let sphere = Sphere3::new(&rg.point3(2.0), rg.f64(0.1, 3.0));
             let line = Line3::new(rg.point3(3.0), rg.vector3(2.0));
 
             for &t in &line.intersect_sphere(&sphere) {
