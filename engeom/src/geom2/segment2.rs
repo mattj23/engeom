@@ -1,56 +1,20 @@
 use crate::AngleDir::Cw;
-use crate::common::PCoords;
-use crate::common::points::dist;
+use crate::common::{PCoords, Segment};
 use crate::geom2::{Aabb2, BoundaryElement2, LineOps2, Manifold1Pos2, rot90};
-use crate::{Iso2, Line2, Point2, Result, TransformBy, UnitVec2, Vector2};
-use serde::{Deserialize, Serialize};
+use crate::{Iso2, Point2, TransformBy, UnitVec2};
 
 /// A line segment in 2D space, defined by two endpoints.
 ///
-/// This is one of `engeom`'s 2D geometric primitives
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct Segment2 {
-    pub a: Point2,
-    pub b: Point2,
-}
+/// This is one of `engeom`'s 2D geometric primitives.
+///
+/// This is the two-dimensional specialization of the dimension-generic
+/// [`Segment`](Segment); see that type for the shared constructors and queries (`new`,
+/// `new_unchecked`, `at`, `length`, `scalar_projection`, `dir`, `closest_point`, `reversed`,
+/// `to_line`, `transformed_by`, and so on). The methods defined directly on `Segment2` here are
+/// the ones that only make sense in 2D.
+pub type Segment2 = Segment<2>;
 
 impl Segment2 {
-    pub fn new(a: &impl PCoords<2>, b: &impl PCoords<2>) -> Result<Self> {
-        if dist(a, b) < 1e-12 {
-            Err("The two points are too close to each other".into())
-        } else {
-            let a = Point2::from(a.coords());
-            let b = Point2::from(b.coords());
-            Ok(Self { a, b })
-        }
-    }
-
-    /// Returns the length of the segment, the distance between its two endpoints `a` and `b`.
-    pub fn length(&self) -> f64 {
-        dist(&self.a, &self.b)
-    }
-
-    /// Calculate the scalar projection of a set of coordinates onto the line segment, in which
-    /// 0.0 represents a point at the segment's starting point `a` and 1.0 represents a point at
-    /// the segment's end point `b`.  The result can be any finite value, including negative ones.
-    ///
-    /// # Arguments
-    ///
-    /// * `other`: an element with a position in 2d space
-    ///
-    /// returns: f64
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
-    pub fn scalar_projection(&self, other: &impl PCoords<2>) -> f64 {
-        let dir = self.b - self.a;
-        let test = other.coords() - self.a.coords();
-        dir.dot(&test) / self.length().powi(2)
-    }
-
     /// Create a new segment shifted by distance `d` in the direction of the segment normal vector.
     /// The normal vector is the direction vector rotated by 90 degrees clockwise, in keeping with
     /// the general convention of a normal vector pointing outwards from a counter-clockwise wound
@@ -84,14 +48,6 @@ impl Segment2 {
         }
     }
 
-    /// Create a new segment with the points reversed
-    pub fn reversed(&self) -> Self {
-        Self {
-            a: self.b,
-            b: self.a,
-        }
-    }
-
     pub fn aabb(&self) -> Aabb2 {
         let mins = Point2::new(self.a.x.min(self.b.x), self.a.y.min(self.b.y));
         let maxs = Point2::new(self.a.x.max(self.b.x), self.a.y.max(self.b.y));
@@ -110,18 +66,6 @@ impl Segment2 {
         rot90(Cw) * direction
     }
 
-    pub fn dir(&self) -> Vector2 {
-        self.b - self.a
-    }
-
-    pub fn to_line(&self) -> Line2 {
-        Line2::from_points(&self.a, &self.b)
-    }
-
-    pub fn at(&self, t: f64) -> Point2 {
-        self.a + (self.b - self.a) * t
-    }
-
     pub fn intersects_other(&self, other: &Segment2) -> bool {
         let l0 = self.to_line();
         let l1 = other.to_line();
@@ -135,10 +79,7 @@ impl Segment2 {
 
 impl TransformBy<Iso2, Segment2> for Segment2 {
     fn transformed_by(&self, t: &Iso2) -> Self {
-        Self {
-            a: t.transform_point(&self.a),
-            b: t.transform_point(&self.b),
-        }
+        Segment2::transformed_by(self, t)
     }
 }
 

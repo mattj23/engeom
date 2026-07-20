@@ -1,14 +1,19 @@
+use crate::Result;
+use crate::common::Line;
 use crate::common::PCoords;
+use crate::common::points::dist;
 use crate::na::{AbstractRotation, Isometry, Point, SVector};
 use serde::{Deserialize, Serialize};
 use std::ops;
 
 /// A line segment in D-dimensional space, defined by two endpoints.
 ///
+/// `Segment<D>` is the base for `Segment2` and `Segment3`, which are two of `engeom`'s geometric
+/// primitives.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct Segment<const D: usize> {
-    a: Point<f64, D>,
-    b: Point<f64, D>,
+    pub a: Point<f64, D>,
+    pub b: Point<f64, D>,
 }
 
 impl<const D: usize> Segment<D> {
@@ -16,24 +21,40 @@ impl<const D: usize> Segment<D> {
         Self { a, b }
     }
 
-    pub fn a(&self) -> &Point<f64, D> {
-        &self.a
-    }
-
-    pub fn b(&self) -> &Point<f64, D> {
-        &self.b
+    /// Create a new segment from two points, returning an error if the points are coincident
+    /// (within a tolerance of `1e-12`).
+    pub fn new(a: &impl PCoords<D>, b: &impl PCoords<D>) -> Result<Self> {
+        if dist(a, b) < 1e-12 {
+            Err("The two points are too close to each other".into())
+        } else {
+            Ok(Self::new_unchecked(
+                Point::from(a.coords()),
+                Point::from(b.coords()),
+            ))
+        }
     }
 
     pub fn dir(&self) -> SVector<f64, D> {
         self.b - self.a
     }
 
-    pub fn point_at(&self, t: f64) -> Point<f64, D> {
+    pub fn at(&self, t: f64) -> Point<f64, D> {
         self.a + t * self.dir()
     }
 
     pub fn length(&self) -> f64 {
         self.dir().norm()
+    }
+
+    /// Returns a new segment with the endpoints reversed.
+    pub fn reversed(&self) -> Self {
+        Self::new_unchecked(self.b, self.a)
+    }
+
+    /// Returns the infinite line passing through this segment's endpoints, in the direction from
+    /// `a` to `b`.
+    pub fn to_line(&self) -> Line<D> {
+        Line::from_points(&self.a, &self.b)
     }
 
     /// Calculate the scalar projection of a set of coordinates onto the line segment, in which
@@ -60,10 +81,11 @@ impl<const D: usize> Segment<D> {
 
     pub fn closest_point(&self, other: &impl PCoords<D>) -> Point<f64, D> {
         let t = self.scalar_projection(other).clamp(0.0, 1.0);
-        self.point_at(t)
+        self.at(t)
     }
 
-    pub fn new_transformed<R: AbstractRotation<f64, D>>(&self, iso: &Isometry<f64, R, D>) -> Self {
+    /// Returns a new segment with both endpoints transformed by the given isometry.
+    pub fn transformed_by<R: AbstractRotation<f64, D>>(&self, iso: &Isometry<f64, R, D>) -> Self {
         Self {
             a: iso * self.a,
             b: iso * self.b,
@@ -75,6 +97,6 @@ impl<const D: usize, R: AbstractRotation<f64, D>> ops::Mul<Segment<D>> for Isome
     type Output = Segment<D>;
 
     fn mul(self, rhs: Segment<D>) -> Self::Output {
-        rhs.new_transformed(&self)
+        rhs.transformed_by(&self)
     }
 }

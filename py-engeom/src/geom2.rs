@@ -4,8 +4,8 @@ use crate::conversions::{
     array_to_points2, array_to_vectors2, dvec_from_array, dvec_to_array, points_to_array,
     vectors_to_array,
 };
+use engeom::To3D;
 use engeom::geom2::IsoExtensions2;
-use engeom::{To3D, TransformBy};
 use numpy::ndarray::{Array1, Array2};
 use numpy::{
     IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods,

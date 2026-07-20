@@ -1,58 +1,19 @@
-use crate::common::PCoords;
-use crate::common::points::dist;
+use crate::common::{PCoords, Segment};
 use crate::geom3::Aabb3;
-use crate::geom3::line3::Line3;
-use crate::{Iso3, Manifold1Pos3, Point3, Result, TransformBy, UnitVec3, Vector3};
-use serde::{Deserialize, Serialize};
+use crate::{Iso3, Manifold1Pos3, Point3, TransformBy, UnitVec3};
 
 /// A line segment in 3D space, defined by two endpoints.
 ///
-/// This is one of `engeom`'s 3D geometric primitives
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct Segment3 {
-    pub a: Point3,
-    pub b: Point3,
-}
+/// This is one of `engeom`'s 3D geometric primitives.
+///
+/// This is the three-dimensional specialization of the dimension-generic
+/// [`Segment`](Segment); see that type for the shared constructors and queries (`new`,
+/// `new_unchecked`, `at`, `length`, `scalar_projection`, `dir`, `closest_point`, `reversed`,
+/// `to_line`, `transformed_by`, and so on). The methods defined directly on `Segment3` here are
+/// the ones that only make sense in 3D.
+pub type Segment3 = Segment<3>;
 
 impl Segment3 {
-    pub fn new(a: &impl PCoords<3>, b: &impl PCoords<3>) -> Result<Self> {
-        if dist(a, b) < 1e-12 {
-            Err("The two points are too close to each other".into())
-        } else {
-            let a = Point3::from(a.coords());
-            let b = Point3::from(b.coords());
-            Ok(Self { a, b })
-        }
-    }
-
-    /// Returns the length of the segment, the distance between its two endpoints `a` and `b`.
-    pub fn length(&self) -> f64 {
-        dist(&self.a, &self.b)
-    }
-
-    /// Calculate the scalar projection of a set of coordinates onto the line segment, in which
-    /// 0.0 represents a point at the segment's starting point `a` and 1.0 represents a point at
-    /// the segment's end point `b`.  The result can be any finite value, including negative ones.
-    ///
-    /// # Arguments
-    ///
-    /// * `other`: an element with a position in 3d space
-    ///
-    /// returns: f64
-    pub fn scalar_projection(&self, other: &impl PCoords<3>) -> f64 {
-        let dir = self.b - self.a;
-        let test = other.coords() - self.a.coords();
-        dir.dot(&test) / self.length().powi(2)
-    }
-
-    /// Create a new segment with the points reversed
-    pub fn reversed(&self) -> Self {
-        Self {
-            a: self.b,
-            b: self.a,
-        }
-    }
-
     pub fn aabb(&self) -> Aabb3 {
         let mins = Point3::new(
             self.a.x.min(self.b.x),
@@ -73,18 +34,6 @@ impl Segment3 {
         Manifold1Pos3::new(t * self.length(), point, direction)
     }
 
-    pub fn dir(&self) -> Vector3 {
-        self.b - self.a
-    }
-
-    pub fn to_line(&self) -> Line3 {
-        Line3::from_points(&self.a, &self.b)
-    }
-
-    pub fn at(&self, t: f64) -> Point3 {
-        self.a + (self.b - self.a) * t
-    }
-
     /// Returns the manifold position of the point on the segment closest to `point`, clamped to
     /// the segment's endpoints.
     pub fn closest_to_point(&self, point: &impl PCoords<3>) -> Manifold1Pos3 {
@@ -95,16 +44,14 @@ impl Segment3 {
 
 impl TransformBy<Iso3, Segment3> for Segment3 {
     fn transformed_by(&self, t: &Iso3) -> Self {
-        Self {
-            a: t * self.a,
-            b: t * self.b,
-        }
+        Segment3::transformed_by(self, t)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Vector3;
     use approx::assert_relative_eq;
 
     #[test]

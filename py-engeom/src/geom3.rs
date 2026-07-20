@@ -5,7 +5,6 @@ use crate::conversions::{
     vectors_to_array,
 };
 use crate::geom2::{Point2, SplineProjection, SurfacePoint2, Vector2};
-use engeom::TransformBy;
 use engeom::common::To2D;
 use engeom::geom3::IsoExtensions3;
 use numpy::ndarray::{Array1, Array2};
