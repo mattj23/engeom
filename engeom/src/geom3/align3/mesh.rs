@@ -36,7 +36,7 @@ use crate::common::vec_f64::mean_and_stdev;
 use crate::common::{IndexMask, PCoords};
 use crate::geom3::align3::{AlignSurfMatch3, SurfaceTarget3};
 use crate::geom3::mesh::MeshSurfPoint;
-use crate::{Iso3, KdTree3, Mesh, SelectOp, Selection, SvdBasis3, To2D, TransformBy};
+use crate::{Iso3, KdTree3, Mesh, SelectOp, Selection, SvdBasis3, To2D};
 use parry2d_f64::transformation::convex_hull;
 use std::f64::consts::PI;
 
@@ -469,7 +469,7 @@ pub fn sac_check(
     // be the surface normal direction. The origin is the centroid of the neighbors + the
     // original check point.
     let iso = Iso3::from(&basis);
-    let points = (&points).transformed_by(&iso);
+    let points = points.iter().map(|p| &iso * p).collect::<Vec<_>>();
 
     // Check that all the points are no more than out_of_plane_ratio * sample_spacing from the
     // x-y plane.

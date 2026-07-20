@@ -1,6 +1,6 @@
 use crate::common::{PCoords, Segment};
 use crate::geom3::Aabb3;
-use crate::{Iso3, Manifold1Pos3, Point3, TransformBy, UnitVec3};
+use crate::{Iso3, Manifold1Pos3, Point3, UnitVec3};
 
 /// A line segment in 3D space, defined by two endpoints.
 ///
@@ -39,12 +39,6 @@ impl Segment3 {
     pub fn closest_to_point(&self, point: &impl PCoords<3>) -> Manifold1Pos3 {
         let t = self.scalar_projection(point).clamp(0.0, 1.0);
         self.at_t(t)
-    }
-}
-
-impl TransformBy<Iso3, Segment3> for Segment3 {
-    fn transformed_by(&self, t: &Iso3) -> Self {
-        Segment3::transformed_by(self, t)
     }
 }
 

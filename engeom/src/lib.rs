@@ -63,7 +63,7 @@ pub use geom3::{
 };
 
 // Extremely common conversion tools
-pub use common::{To2D, To3D, TransformBy};
+pub use common::{To2D, To3D};
 
 /// General purpose option for how to handle the result of a dot product between directional
 /// vectors.

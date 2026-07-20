@@ -16,7 +16,6 @@ mod xyzwpr;
 
 use parry3d_f64::na::UnitQuaternion;
 
-use crate::TransformBy;
 use crate::common::surface_point::{SurfacePoint, SurfacePointCollection};
 use crate::common::svd_basis::SvdBasis;
 pub use circle3::Circle3;
@@ -99,18 +98,6 @@ impl SurfacePointCollection<3> for &[SurfacePoint3] {
 
     fn clone_normals(&self) -> Vec<UnitVec3> {
         self.iter().map(|sp| sp.normal).collect()
-    }
-}
-
-impl TransformBy<Iso3, Vec<Point3>> for &[Point3] {
-    fn transformed_by(&self, transform: &Iso3) -> Vec<Point3> {
-        self.iter().map(|p| transform * p).collect()
-    }
-}
-
-impl TransformBy<Iso3, Vec<Point3>> for &Vec<Point3> {
-    fn transformed_by(&self, transform: &Iso3) -> Vec<Point3> {
-        self.iter().map(|p| transform * p).collect()
     }
 }
 

@@ -56,11 +56,6 @@ pub trait Intersection<TOther, TResult> {
     fn intersection(&self, other: TOther) -> TResult;
 }
 
-/// A trait for transforming an entity by another entity
-pub trait TransformBy<T, TOut> {
-    fn transformed_by(&self, transform: &T) -> TOut;
-}
-
 /// A generic trait for points or point-like structures in D-dimensional space which provides a
 /// generic way to access the coordinates of the point as a vector.
 pub trait PCoords<const D: usize> {

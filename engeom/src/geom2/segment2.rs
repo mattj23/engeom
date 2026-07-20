@@ -1,7 +1,7 @@
 use crate::AngleDir::Cw;
 use crate::common::{PCoords, Segment};
 use crate::geom2::{Aabb2, BoundaryElement2, LineOps2, Manifold1Pos2, rot90};
-use crate::{Iso2, Point2, TransformBy, UnitVec2};
+use crate::{Iso2, Point2, UnitVec2};
 
 /// A line segment in 2D space, defined by two endpoints.
 ///
@@ -74,12 +74,6 @@ impl Segment2 {
         };
 
         t0 >= 0.0 && t1 >= 0.0 && t0 <= 1.0 && t1 <= 1.0
-    }
-}
-
-impl TransformBy<Iso2, Segment2> for Segment2 {
-    fn transformed_by(&self, t: &Iso2) -> Self {
-        Segment2::transformed_by(self, t)
     }
 }
 
