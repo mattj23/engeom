@@ -680,6 +680,10 @@ impl Plane3 {
             .intersect_plane(&other.inner)
             .map(Line3::from_inner)
     }
+
+    fn transformed_by(&self, iso: &Iso3) -> Self {
+        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
+    }
 }
 
 // ================================================================================================
@@ -1069,6 +1073,16 @@ impl Sphere3 {
         self.inner
             .intersect_sphere(&other.inner)
             .map(Circle3::from_inner)
+    }
+
+    fn transformed_by(&self, iso: &Iso3) -> Self {
+        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
+    }
+
+    fn intersect_ray(&self, line: &Line3) -> Option<SurfacePoint3> {
+        self.inner
+            .intersect_ray(line.get_inner())
+            .map(SurfacePoint3::from_inner)
     }
 }
 

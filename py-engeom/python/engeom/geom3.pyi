@@ -1212,6 +1212,14 @@ class Plane3:
         """
         ...
 
+    def transformed_by(self, iso: Iso3) -> Plane3:
+        """
+        Return a new plane transformed by the given isometry.
+        :param iso: the isometry to apply.
+        :return: a new transformed Plane3.
+        """
+        ...
+
 
 class Line3:
     """
@@ -1597,6 +1605,25 @@ class Sphere3:
         spheres do not intersect (too far apart, one inside the other, or concentric).
         :param other: the other sphere to intersect with.
         :return: the intersection circle, or None.
+        """
+        ...
+
+    def transformed_by(self, iso: Iso3) -> Sphere3:
+        """
+        Return a new sphere with its center transformed by the given isometry. The radius is
+        unaffected.
+        :param iso: the isometry to apply.
+        :return: a new transformed Sphere3.
+        """
+        ...
+
+    def intersect_ray(self, line: Line3) -> SurfacePoint3 | None:
+        """
+        Intersect the sphere with a ray (a parameterized line, considering only non-negative
+        parameter values), returning the closest surface point and its outward normal, or None if
+        the ray does not intersect the sphere.
+        :param line: the line whose non-negative parameter range is treated as the ray.
+        :return: the closest intersection point with its outward normal, or None.
         """
         ...
 
