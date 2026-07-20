@@ -24,7 +24,7 @@ mod queries;
 
 use crate::common::{Line, solve_quadratic_real_roots};
 pub use fitting::{SplineBuildFn, SplineFitResult, fit_spline_to_points};
-use parry3d_f64::na::{Point, SVector, Unit};
+use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector, Unit};
 pub use queries::CubicSplineQueries;
 use serde::{Deserialize, Serialize};
 
@@ -884,6 +884,16 @@ impl<const D: usize> CubicSpline<D> {
         let perp1 = v1 - chord * (chord.dot(&v1) / chord_len_sq);
         let perp2 = v2 - chord * (chord.dot(&v2) / chord_len_sq);
         perp1.norm().max(perp2.norm())
+    }
+
+    /// Returns a new curve with all four control points transformed by the given isometry.
+    pub fn transformed_by<R: AbstractRotation<f64, D>>(&self, iso: &Isometry<f64, R, D>) -> Self {
+        Self {
+            p0: iso * self.p0,
+            p1: iso * self.p1,
+            p2: iso * self.p2,
+            p3: iso * self.p3,
+        }
     }
 
     /// Consumes the curve and builds its [`CubicSplineQueries`] acceleration structure, ready for
