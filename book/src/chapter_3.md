@@ -9,7 +9,7 @@ In `engeom`, an isometry encodes two things:
 - A **rotation**: how much to rotate, and around which axis
 - A **translation**: how far to move after rotating
 
-Isometries are equivalent to 4x4 homogeneous transformation matrices, but with the constraint that the matrix must
+Isometries are equivalent to homogeneous transformation matrices, but with the constraint that the matrix must
 represent a valid rigid-body transformation (no shear, no scale). In practice this means they are more numerically
 stable than raw matrices because the rotation component is stored as a unit quaternion (3D) or unit complex number
 (2D), which is easy to keep normalized.
@@ -89,6 +89,7 @@ A 2D isometry is fully specified by an x translation, a y translation, and a rot
 **Rust:**
 
 ```rust
+use engeom::geom2::IsoExtensions2;
 use engeom::{Iso2, Vector2};
 use std::f64::consts::PI;
 
@@ -100,11 +101,16 @@ let t = Iso2::translation(1.0, 2.0);
 
 // Rotation only
 let r = Iso2::rotation(PI / 4.0);
+
+// From a 3x3 homogeneous matrix (row-major), from the `IsoExtensions2` trait
+let array = [1.0, 0.0, 1.0, 0.0, 1.0, 2.0, 0.0, 0.0, 1.0];
+let m = Iso2::from_array(&array).unwrap();
 ```
 
 **Python:**
 
 ```python
+import numpy as np
 from math import pi
 from engeom.geom2 import Iso2
 
@@ -113,6 +119,70 @@ iso = Iso2(1, 2, pi / 4)
 
 # Identity
 i0 = Iso2.identity()
+
+# From a 3x3 homogeneous matrix (raises an exception if not a valid isometry)
+m = np.array([[1, 0, 1],
+              [0, 1, 2],
+              [0, 0, 1]], dtype=np.float64)
+i1 = Iso2.from_array(m)
+```
+
+### 2D Isometries from an Arbitrary Rotation Point
+
+`Iso2::rotation` always rotates around the origin. To rotate around an arbitrary point, such as the center of a
+fitted circle, use `from_rotation_about`, provided by the `IsoExtensions2` trait (`engeom::geom2`). In 2D the axis of
+rotation is always perpendicular to the plane, so unlike the 3D `from_rot_axis` (which needs a `Line3` to describe an
+arbitrary direction), it is fully specified by a single point.
+
+**Rust:**
+
+```rust
+use engeom::geom2::IsoExtensions2;
+use engeom::{Iso2, Point2};
+use std::f64::consts::PI;
+
+let center = Point2::new(1.0, 1.0);
+let iso = Iso2::from_rotation_about(&center, PI / 2.0);
+```
+
+**Python:**
+
+```python
+from math import pi
+from engeom.geom2 import Iso2, Point2
+
+center = Point2(1, 1)
+iso = Iso2.from_rotation_about(center, pi / 2)
+```
+
+### 2D Isometries from a Basis Vector
+
+A 2D isometry's rotation is a single degree of freedom, so unlike the 3D `from_basis_xy`/`from_basis_xz`/etc. family
+(which needs two vectors to pin down all three axes), a single vector is enough to fully determine the frame: the
+second axis is always a fixed 90 degree turn away from the first. `from_basis_x` treats the vector as the local
+x-axis; `from_basis_y` treats it as the local y-axis.
+
+**Rust:**
+
+```rust
+use engeom::geom2::IsoExtensions2;
+use engeom::{Iso2, Point2, Vector2};
+
+let e0 = Vector2::new(1.0, 1.0); // will become the X axis
+let origin = Some(Point2::new(1.0, 2.0));
+
+let frame = Iso2::from_basis_x(&e0, origin).unwrap();
+```
+
+**Python:**
+
+```python
+from engeom.geom2 import Iso2, Vector2, Point2
+
+e0 = Vector2(1, 1)  # will become the X axis
+origin = Point2(1, 2)
+
+frame = Iso2.from_basis_x(e0, origin=origin)
 ```
 
 ### 3D Isometries
@@ -276,6 +346,59 @@ from engeom.geom3 import Iso3
 
 iso = Iso3.from_rotation(pi / 4, 1, 0, 0)
 inv = iso.inverse()
+```
+
+## Flipping an Isometry 180 Degrees
+
+Sometimes a coordinate frame needs to be turned around without moving its origin, for example when a measured
+feature's direction convention is the opposite of what a downstream calculation expects. This is a 180-degree
+**rotation**, not a mirror/reflection: the origin stays put, and the axes that reverse do so in pairs so that the
+result is still a proper rigid-body transformation.
+
+In 3D, `IsoExtensions3` provides `flipped_around_x`, `flipped_around_y`, and `flipped_around_z`, each of which keeps
+one axis fixed and reverses the other two.
+
+In 2D there is only one such operation: `IsoExtensions2::flipped` keeps the origin fixed and reverses both the x-axis
+and y-axis together, since the only axis a proper 180-degree rotation can turn around in the plane is the implicit
+axis perpendicular to it. There is no 2D equivalent of `flipped_around_x`/`flipped_around_y`, because reversing only
+one in-plane axis is a reflection (determinant -1), which `Iso2` cannot represent at all.
+
+**Rust:**
+
+```rust
+use engeom::geom3::IsoExtensions3;
+use engeom::{Iso3, Vector3};
+use std::f64::consts::PI;
+
+let iso3 = Iso3::rotation(Vector3::x() * (PI / 4.0));
+let flipped3 = iso3.flipped_around_z();
+```
+
+```rust
+use engeom::geom2::IsoExtensions2;
+use engeom::Iso2;
+use std::f64::consts::PI;
+
+let iso2 = Iso2::rotation(PI / 4.0);
+let flipped2 = iso2.flipped();
+```
+
+**Python:**
+
+```python
+from math import pi
+from engeom.geom3 import Iso3
+
+iso3 = Iso3.from_rotation(pi / 4, 1, 0, 0)
+flipped3 = iso3.flipped_around_z()
+```
+
+```python
+from math import pi
+from engeom.geom2 import Iso2
+
+iso2 = Iso2(0, 0, pi / 4)
+flipped2 = iso2.flipped()
 ```
 
 ## Composing Isometries

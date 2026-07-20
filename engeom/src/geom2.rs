@@ -7,6 +7,7 @@ mod circle2;
 mod cubic_spline2;
 mod curve2;
 pub mod hull;
+mod iso2;
 mod line2;
 pub mod polyline2;
 mod segment2;
@@ -38,6 +39,7 @@ pub use self::boundary2::*;
 pub use self::circle2::Circle2;
 pub use self::cubic_spline2::CubicSpline2;
 pub use self::curve2::{Curve2, CurvePartitioner2, CurveStation2};
+pub use self::iso2::IsoExtensions2;
 pub use self::line2::{Line2, LineOps2, intersect_lines, intersect_rays, intersection_param};
 pub use self::segment2::Segment2;
 

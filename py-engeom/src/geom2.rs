@@ -4,9 +4,12 @@ use crate::conversions::{
     array_to_points2, array_to_vectors2, dvec_from_array, dvec_to_array, points_to_array,
     vectors_to_array,
 };
+use engeom::geom2::IsoExtensions2;
 use engeom::{To3D, TransformBy};
 use numpy::ndarray::{Array1, Array2};
-use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
+use numpy::{
+    IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods,
+};
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::PyAnyMethods;
 use pyo3::types::PyIterator;
@@ -1791,6 +1794,59 @@ impl Iso2 {
         Self {
             inner: engeom::Iso2::identity(),
         }
+    }
+
+    #[staticmethod]
+    fn from_array(matrix: PyReadonlyArray2<'_, f64>) -> PyResult<Self> {
+        if matrix.shape().len() != 2 || matrix.shape()[0] != 3 || matrix.shape()[1] != 3 {
+            return Err(PyValueError::new_err("Expected 3x3 matrix"));
+        }
+
+        let mut array = [0.0; 9];
+        for (i, value) in matrix.as_array().iter().enumerate() {
+            array[i] = *value;
+        }
+
+        let inner = engeom::Iso2::from_array(&array)
+            .map_err(|e| PyValueError::new_err(format!("Error creating Iso2: {}", e)))?;
+
+        Ok(Self { inner })
+    }
+
+    #[staticmethod]
+    fn from_rotation_about(point: &Point2, angle: f64) -> Self {
+        Self {
+            inner: engeom::Iso2::from_rotation_about(point.get_inner(), angle),
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(e0, origin=None))]
+    fn from_basis_x(e0: &Vector2, origin: Option<Point2>) -> PyResult<Self> {
+        let inner = engeom::Iso2::from_basis_x(e0.get_inner(), origin.map(|p| *p.get_inner()))
+            .map_err(|e| PyValueError::new_err(format!("Error creating Iso2: {}", e)))?;
+
+        Ok(Self { inner })
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(e1, origin=None))]
+    fn from_basis_y(e1: &Vector2, origin: Option<Point2>) -> PyResult<Self> {
+        let inner = engeom::Iso2::from_basis_y(e1.get_inner(), origin.map(|p| *p.get_inner()))
+            .map_err(|e| PyValueError::new_err(format!("Error creating Iso2: {}", e)))?;
+
+        Ok(Self { inner })
+    }
+
+    fn flipped(&self) -> Self {
+        Self {
+            inner: self.inner.flipped(),
+        }
+    }
+
+    #[getter]
+    fn origin(&self) -> Point2 {
+        Point2::from_inner(self.inner.origin())
     }
 
     fn inverse(&self) -> Self {

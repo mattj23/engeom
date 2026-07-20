@@ -496,6 +496,76 @@ class Iso2:
         """
         ...
 
+    @staticmethod
+    def from_array(matrix: NDArray[float]) -> Iso2:
+        """
+        Try to create an isometry from a 3x3 homogeneous transformation matrix. Raises a `ValueError` if the matrix
+        does not represent a valid isometry (no shear or scale).
+        :param matrix: a numpy array of shape (3, 3) containing the matrix values.
+        :return: the isometry represented by the matrix.
+        """
+        ...
+
+    @staticmethod
+    def from_rotation_about(point: Point2, angle: float) -> Iso2:
+        """
+        Create an isometry representing a rotation around an arbitrary point by a given angle, rather than around
+        the origin as with the `Iso2` constructor. Positive angles rotate counter-clockwise.
+        :param point: the point in the plane that the isometry will rotate around.
+        :param angle: the angle to rotate by, in radians.
+        :return: the isometry representing the rotation.
+        """
+        ...
+
+    @staticmethod
+    def from_basis_x(e0: Vector2, origin: Point2 | None = None) -> Iso2:
+        """
+        Try to create an isometry from a single basis vector and an optional origin. The vector becomes the x-axis
+        of the isometry (after being normalized to unit length), and the y-axis is the x-axis rotated 90 degrees
+        counter-clockwise. Raises a `ValueError` if the vector cannot be normalized.
+
+        Unlike the 3D `from_basis_xy`/`from_basis_xz`/etc. family, a single vector fully determines a 2D isometry's
+        rotation, since there is only one rotational degree of freedom.
+        :param e0: the vector that will become the x-axis, will be normalized automatically.
+        :param origin: an optional origin point for the isometry, defaults to the world origin if omitted.
+        :return: the isometry defined by the basis vector and origin.
+        """
+        ...
+
+    @staticmethod
+    def from_basis_y(e1: Vector2, origin: Point2 | None = None) -> Iso2:
+        """
+        Try to create an isometry from a single basis vector and an optional origin. The vector becomes the y-axis
+        of the isometry (after being normalized to unit length), and the x-axis is the y-axis rotated 90 degrees
+        clockwise. Raises a `ValueError` if the vector cannot be normalized.
+
+        Unlike the 3D `from_basis_xy`/`from_basis_xz`/etc. family, a single vector fully determines a 2D isometry's
+        rotation, since there is only one rotational degree of freedom.
+        :param e1: the vector that will become the y-axis, will be normalized automatically.
+        :param origin: an optional origin point for the isometry, defaults to the world origin if omitted.
+        :return: the isometry defined by the basis vector and origin.
+        """
+        ...
+
+    def flipped(self) -> Iso2:
+        """
+        Return a copy of the isometry rotated 180 degrees in-plane around its own origin.
+
+        This is a rotation, not a mirror/reflection: the origin's location is unchanged, but both the x-axis and
+        y-axis directions are reversed together. A 2D isometry cannot represent a reflection (determinant -1), only
+        proper rotations, and a 180 degree turn about the implicit out-of-plane axis is the only one that flips both
+        in-plane axes at once.
+        """
+        ...
+
+    @property
+    def origin(self) -> Point2:
+        """
+        The world-space location of the isometry's origin.
+        :return: a Point2 at the isometry's translation.
+        """
+        ...
+
     def __matmul__(self, other: Transformable2) -> Transformable2:
         """
         Transform a point, vector, or other transformable object by the isometry using the matrix multiplication
