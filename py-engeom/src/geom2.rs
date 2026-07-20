@@ -1591,7 +1591,11 @@ impl Arc2 {
 
     #[staticmethod]
     fn from_circle(circle: &Circle2, angle0: f64, angle: f64) -> Self {
-        Self::from_inner(engeom::Arc2::from_circle(*circle.get_inner(), angle0, angle))
+        Self::from_inner(engeom::Arc2::from_circle(
+            *circle.get_inner(),
+            angle0,
+            angle,
+        ))
     }
 
     #[staticmethod]

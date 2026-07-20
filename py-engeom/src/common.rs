@@ -1,5 +1,5 @@
-use engeom::common::DistMode;
 use engeom::IntervalOps;
+use engeom::common::DistMode;
 use pyo3::prelude::*;
 
 #[pyclass(eq, eq_int, from_py_object, module = "engeom.common")]
