@@ -1083,6 +1083,12 @@ impl Segment2 {
 // CubicSpline2
 // ================================================================================================
 
+/// Filters a fixed-size `[f64; 2]` root array (where unused slots are `NaN`) down to a `Vec`
+/// containing only the finite values, for a cleaner Python-side result than a NaN-padded tuple.
+fn finite_roots(roots: [f64; 2]) -> Vec<f64> {
+    roots.into_iter().filter(|v| !v.is_nan()).collect()
+}
+
 #[pyclass(from_py_object, module = "engeom.geom2")]
 #[derive(Clone, Debug)]
 pub struct CubicSpline2 {
@@ -1237,6 +1243,87 @@ impl CubicSpline2 {
     fn project_point(&self, point: Point2) -> SplineProjection {
         let queries = engeom::common::cubic_spline::CubicSplineQueries::from(&self.inner);
         SplineProjection::from_inner(queries.project_point(point.get_inner()))
+    }
+
+    /// Return the position and derivative direction of the curve at parameter `t` in the form of
+    /// a parameterized line.
+    fn line_at(&self, t: f64) -> Line2 {
+        Line2::from_inner(self.inner.line_at(t))
+    }
+
+    /// Returns the real roots of the derivative of each component of the curve, as a tuple of
+    /// `(x_roots, y_roots)` where each is a list of 0, 1, or 2 parameter values.
+    fn derivative_roots(&self) -> (Vec<f64>, Vec<f64>) {
+        let roots = self.inner.derivative_roots();
+        (finite_roots(roots[0]), finite_roots(roots[1]))
+    }
+
+    /// Returns the parameter `t` of a cusp if one exists in `[0, 1]`, otherwise `None`.
+    fn find_cusp(&self) -> Option<f64> {
+        self.inner.find_cusp()
+    }
+
+    /// Returns parameter values in `[0, 1]` where the curve's curvature is zero, as a list of 0,
+    /// 1, or 2 parameter values.
+    fn find_curvature_zeros(&self) -> Vec<f64> {
+        finite_roots(self.inner.find_curvature_zeros())
+    }
+
+    /// Returns every local maximum of the curvature over `[0, 1]`, each as a `(t, curvature)`
+    /// tuple, ordered by ascending `t`.
+    fn find_curvature_maxima(&self) -> Vec<(f64, f64)> {
+        self.inner
+            .find_curvature_maxima()
+            .into_iter()
+            .map(|v| (v.t, v.value))
+            .collect()
+    }
+
+    /// Returns the corners `(min, max)` of the tight axis-aligned bounding box of the curve over
+    /// the parameter range `[0, 1]`.
+    fn compute_bounds(&self) -> (Point2, Point2) {
+        let (lo, hi) = self.inner.compute_bounds();
+        (Point2::from_inner(lo), Point2::from_inner(hi))
+    }
+
+    /// Returns the arc length of the curve over the parameter range `[t0, t1]`.
+    fn arc_length_between(&self, t0: f64, t1: f64) -> f64 {
+        self.inner.arc_length_between(t0, t1)
+    }
+
+    /// Returns the total arc length of the curve over the parameter range `[0, 1]`.
+    fn arc_length(&self) -> f64 {
+        self.inner.arc_length()
+    }
+
+    /// Splits the curve at parameter `t` using de Casteljau's algorithm, returning the left and
+    /// right sub-curves.
+    fn split(&self, t: f64) -> (Self, Self) {
+        let (left, right) = self.inner.split(t);
+        (Self::from_inner(left), Self::from_inner(right))
+    }
+
+    /// Splits the curve at parameter `t`, returning `None` if `t` is not in `[0, 1]`.
+    fn try_split(&self, t: f64) -> Option<(Self, Self)> {
+        self.inner
+            .try_split(t)
+            .map(|(left, right)| (Self::from_inner(left), Self::from_inner(right)))
+    }
+
+    /// Returns the axis-aligned bounding box of the curve, computed on demand.
+    #[getter]
+    fn aabb(&self) -> Aabb2 {
+        Aabb2::from_inner(self.inner.aabb())
+    }
+
+    fn transformed_by(&self, iso: &Iso2) -> Self {
+        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
+    }
+
+    /// Returns the parameter values of any inflection points of the curve, as a list of 0, 1, or
+    /// 2 parameter values. Roots are not filtered to `[0, 1]`.
+    fn find_inflections(&self) -> Vec<f64> {
+        finite_roots(self.inner.find_inflections())
     }
 }
 

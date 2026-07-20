@@ -3316,6 +3316,114 @@ class CubicSpline3:
         """
         ...
 
+    def line_at(self, t: float) -> Line3:
+        """
+        Return the position and derivative direction of the curve at parameter `t` in the form of
+        a parameterized line.
+
+        :param t: the curve parameter.
+        :return: a `Line3` through the curve's position at `t`, in the direction of the derivative.
+        """
+        ...
+
+    def derivative_roots(self) -> Tuple[List[float], List[float], List[float]]:
+        """
+        Returns the real roots of the derivative of each component of the curve, as an
+        `(x_roots, y_roots, z_roots)` tuple where each is a list of 0, 1, or 2 parameter values,
+        sorted ascending. Roots are not filtered to `[0, 1]`.
+
+        :return: the per-axis derivative roots.
+        """
+        ...
+
+    def find_cusp(self) -> float | None:
+        """
+        Returns the parameter `t` of a cusp if one exists in `[0, 1]`, otherwise `None`. A cusp is
+        a point where the velocity vector vanishes (`B'(t) = 0`).
+
+        :return: the parameter of the cusp, or `None`.
+        """
+        ...
+
+    def find_curvature_zeros(self) -> List[float]:
+        """
+        Returns parameter values in `[0, 1]` where the curve's curvature is zero, as a list of 0,
+        1, or 2 parameter values.
+
+        :return: the curvature-zero parameters.
+        """
+        ...
+
+    def find_curvature_maxima(self) -> List[Tuple[float, float]]:
+        """
+        Returns every local maximum of the curvature over `[0, 1]`, each as a `(t, curvature)`
+        tuple, ordered by ascending `t`.
+
+        :return: a list of `(t, curvature)` tuples, one per local maximum.
+        """
+        ...
+
+    def compute_bounds(self) -> Tuple[Point3, Point3]:
+        """
+        Returns the corners `(min, max)` of the tight axis-aligned bounding box of the curve over
+        the parameter range `[0, 1]`.
+
+        :return: a `(min, max)` tuple of points.
+        """
+        ...
+
+    def arc_length_between(self, t0: float, t1: float) -> float:
+        """
+        Returns the arc length of the curve over the parameter range `[t0, t1]`.
+
+        :param t0: the start parameter.
+        :param t1: the end parameter.
+        :return: the arc length between the two parameters.
+        """
+        ...
+
+    def arc_length(self) -> float:
+        """
+        Returns the total arc length of the curve over the parameter range `[0, 1]`.
+        """
+        ...
+
+    def split(self, t: float) -> Tuple[CubicSpline3, CubicSpline3]:
+        """
+        Splits the curve at parameter `t` using de Casteljau's algorithm, returning the left and
+        right sub-curves. Concatenating the left and right curves reproduces the original.
+
+        :param t: the parameter at which to split, expected to be in `[0, 1]`.
+        :return: a `(left, right)` tuple of the two sub-curves.
+        """
+        ...
+
+    def try_split(self, t: float) -> Tuple[CubicSpline3, CubicSpline3] | None:
+        """
+        Splits the curve at parameter `t`, returning `None` if `t` is not in `[0, 1]`.
+
+        :param t: the parameter at which to split.
+        :return: a `(left, right)` tuple of the two sub-curves, or `None`.
+        """
+        ...
+
+    @property
+    def aabb(self) -> Aabb3:
+        """
+        Get the axis-aligned bounding box of the curve, computed on demand.
+        :return: the axis-aligned bounding box of the curve.
+        """
+        ...
+
+    def transformed_by(self, iso: Iso3) -> CubicSpline3:
+        """
+        Return a new curve with all four control points transformed by the given isometry.
+
+        :param iso: the isometry to apply.
+        :return: a new transformed `CubicSpline3`.
+        """
+        ...
+
 
 class CubicSplineQueries3:
     """
