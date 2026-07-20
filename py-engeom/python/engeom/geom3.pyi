@@ -1790,6 +1790,26 @@ class Circle3:
         """
         ...
 
+    def transformed_by(self, iso: Iso3) -> Circle3:
+        """
+        Return a new circle with its center and normal transformed by the given isometry.
+        :param iso: the isometry to apply.
+        :return: a new transformed Circle3.
+        """
+        ...
+
+    @staticmethod
+    def from_3_points(p0: Point3, p1: Point3, p2: Point3) -> Circle3:
+        """
+        Create the unique circle passing through three non-collinear points.
+        :param p0: the first point.
+        :param p1: the second point.
+        :param p2: the third point.
+        :return: a new Circle3 passing through all three points.
+        :raises ValueError: if the points are collinear.
+        """
+        ...
+
 
 class Mesh:
     """

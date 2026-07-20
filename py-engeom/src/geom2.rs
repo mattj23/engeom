@@ -1,6 +1,6 @@
 use crate::boundary2::Manifold1Pos2;
 use crate::bounding::Aabb2;
-use crate::common::{AngleDir, Resample};
+use crate::common::{AngleDir, AngleInterval, Resample};
 use crate::conversions::{
     array_to_points2, array_to_vectors2, dvec_from_array, dvec_to_array, points_to_array,
     vectors_to_array,
@@ -721,6 +721,20 @@ impl Circle2 {
 
     fn line_direction(&self, line: &Line2) -> AngleDir {
         self.inner.line_direction(line.get_inner()).into()
+    }
+
+    fn at_angle(&self, angle: f64) -> Manifold1Pos2 {
+        Manifold1Pos2::from_inner(self.inner.at_angle(angle))
+    }
+
+    fn at_closest_to_point(&self, p: &Point2) -> Manifold1Pos2 {
+        Manifold1Pos2::from_inner(self.inner.at_closest_to_point(p.get_inner()))
+    }
+
+    fn intersection_interval(&self, other: &Circle2) -> Option<AngleInterval> {
+        self.inner
+            .intersection_interval(other.inner)
+            .map(AngleInterval::from_inner)
     }
 }
 
@@ -1486,6 +1500,78 @@ impl Arc2 {
         use engeom::geom2::BoundaryElement2;
         let points = self.inner.to_points(tol);
         points_to_array(&points).into_pyarray(py)
+    }
+
+    #[staticmethod]
+    fn from_circle(circle: &Circle2, angle0: f64, angle: f64) -> Self {
+        Self::from_inner(engeom::Arc2::from_circle(*circle.get_inner(), angle0, angle))
+    }
+
+    #[staticmethod]
+    fn from_ends(start: &Point2, end: &Point2, center: &Point2, clockwise: bool) -> PyResult<Self> {
+        engeom::Arc2::from_ends(
+            start.get_inner(),
+            end.get_inner(),
+            center.get_inner(),
+            clockwise,
+        )
+        .map(Self::from_inner)
+        .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[staticmethod]
+    fn from_point_angle(center: &Point2, radius: f64, point: &Point2, angle: f64) -> Self {
+        Self::from_inner(engeom::Arc2::from_point_angle(
+            *center.get_inner(),
+            radius,
+            *point.get_inner(),
+            angle,
+        ))
+    }
+
+    #[staticmethod]
+    fn from_3_points(p0: &Point2, p1: &Point2, p2: &Point2) -> Self {
+        Self::from_inner(engeom::Arc2::from_3_points(
+            *p0.get_inner(),
+            *p1.get_inner(),
+            *p2.get_inner(),
+        ))
+    }
+
+    fn length(&self) -> f64 {
+        self.inner.length()
+    }
+
+    fn point_at_angle(&self, angle: f64) -> Point2 {
+        Point2::from_inner(self.inner.point_at_angle(angle))
+    }
+
+    fn point_at_fraction(&self, fraction: f64) -> Point2 {
+        Point2::from_inner(self.inner.point_at_fraction(fraction))
+    }
+
+    fn point_at_length(&self, length: f64) -> Point2 {
+        Point2::from_inner(self.inner.point_at_length(length))
+    }
+
+    fn is_ccw(&self) -> bool {
+        self.inner.is_ccw()
+    }
+
+    fn angle_interval(&self) -> AngleInterval {
+        AngleInterval::from_inner(self.inner.angle_interval())
+    }
+
+    fn is_theta_on_arc(&self, theta: f64) -> bool {
+        self.inner.is_theta_on_arc(theta)
+    }
+
+    fn theta_to_fraction(&self, theta: f64) -> f64 {
+        self.inner.theta_to_fraction(theta)
+    }
+
+    fn at_fraction(&self, fraction: f64) -> Point2 {
+        Point2::from_inner(self.inner.at_fraction(fraction))
     }
 }
 

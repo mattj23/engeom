@@ -12,6 +12,54 @@ class AngleDir(Enum):
     """Counter-clockwise rotation (positive angular direction)."""
 
 
+class AngleInterval:
+    """
+    A continuous range of angles, specified by a starting angle and a positive (counter-clockwise)
+    included length.
+
+    This is a read-only view returned by other geometric queries (such as
+    ``Circle2.intersection_interval`` and ``Arc2.angle_interval``); it is not directly
+    constructible from Python. Only the core query surface is exposed here; the full interval
+    algebra (overlap, intersection, union, etc.) is not currently bound.
+    """
+
+    @property
+    def min(self) -> float:
+        """The starting angle of the interval, in radians, in the range [0, 2π]."""
+        ...
+
+    @property
+    def max(self) -> float:
+        """
+        The ending angle of the interval, in radians. If less than ``min``, the interval wraps
+        beyond 2π.
+        """
+        ...
+
+    @property
+    def extent(self) -> float:
+        """The angular extent (included angle) of the interval, in radians."""
+        ...
+
+    @property
+    def center(self) -> float:
+        """The angle at the midpoint of the interval, in radians."""
+        ...
+
+    def is_empty(self) -> bool:
+        """Return whether the interval contains zero angular extent."""
+        ...
+
+    def contains_value(self, x: float) -> bool:
+        """
+        Return whether the given angle (in radians) falls within the interval.
+
+        :param x: the angle to test, in radians.
+        :return: True if the angle is within the interval, False otherwise.
+        """
+        ...
+
+
 def angle_in_direction(radians0: float, radians1: float, angle_dir: AngleDir) -> float:
     """
     Returns the positive angle (in radians) needed to rotate `radians0` to `radians1` in the

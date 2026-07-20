@@ -4,7 +4,7 @@ from typing import Callable, Iterable, Tuple, TypeVar, Iterator, Any, List
 
 from numpy.typing import NDArray
 from engeom.engeom import ResampleEnum, VecDot
-from engeom.common import AngleDir
+from engeom.common import AngleDir, AngleInterval
 
 from engeom import geom3
 
@@ -1388,6 +1388,35 @@ class Circle2:
         """
         ...
 
+    def at_angle(self, angle: float) -> Manifold1Pos2:
+        """
+        Return the manifold position (point, tangent direction, normal, and arc length) at the
+        given angle around the circle.
+
+        :param angle: the angle, in radians.
+        :return: the manifold position at that angle.
+        """
+        ...
+
+    def at_closest_to_point(self, p: Point2) -> Manifold1Pos2:
+        """
+        Project ``p`` onto the circle's perimeter and return the manifold position there.
+
+        :param p: the point to project.
+        :return: the manifold position of the closest point on the perimeter.
+        """
+        ...
+
+    def intersection_interval(self, other: Circle2) -> AngleInterval | None:
+        """
+        Return the angular interval, measured on this circle, spanned by its intersection with
+        ``other``. Returns ``None`` if the circles do not intersect.
+
+        :param other: the other circle to intersect with.
+        :return: the angular interval of the intersection, or ``None``.
+        """
+        ...
+
 
 class Line2:
     """
@@ -2173,6 +2202,140 @@ class Arc2:
 
         :param tol: the maximum allowable chordal deviation.
         :return: an ``(n, 2)`` array of points along the arc, including both endpoints.
+        """
+        ...
+
+    @staticmethod
+    def from_circle(circle: Circle2, angle0: float, angle: float) -> Arc2:
+        """
+        Create an arc from a circle, a start angle, and a sweep angle.
+
+        :param circle: the circle of which the arc is a part.
+        :param angle0: the angle in radians (with respect to the x-axis) at which the arc starts.
+        :param angle: the angle in radians which the arc sweeps through, beginning at ``angle0``.
+            A positive value indicates a counter-clockwise sweep, while a negative value indicates
+            a clockwise sweep.
+        :return: a new ``Arc2``.
+        """
+        ...
+
+    @staticmethod
+    def from_ends(start: Point2, end: Point2, center: Point2, clockwise: bool) -> Arc2:
+        """
+        Create an arc from a start point, an end point, a center point, and a winding direction.
+
+        :param start: the starting point of the arc, on the perimeter of the circle.
+        :param end: the ending point of the arc, on the perimeter of the circle.
+        :param center: the center point of the arc.
+        :param clockwise: whether the arc sweeps clockwise (True) or counter-clockwise (False)
+            from ``start`` to ``end``.
+        :return: a new ``Arc2``.
+        :raises ValueError: if ``start`` and ``center`` are not consistent with ``end`` and
+            ``center`` being equidistant.
+        """
+        ...
+
+    @staticmethod
+    def from_point_angle(center: Point2, radius: float, point: Point2, angle: float) -> Arc2:
+        """
+        Create an arc from a center point, a radius, a point on the perimeter, and an included
+        angle starting at the point.
+
+        :param center: the arc center point.
+        :param radius: the arc radius.
+        :param point: a point on the perimeter of the arc at which the arc starting point should
+            be located.
+        :param angle: the angle in radians which the arc sweeps through, beginning at the point.
+            A positive value indicates a counter-clockwise sweep, while a negative value indicates
+            a clockwise sweep.
+        :return: a new ``Arc2``.
+        """
+        ...
+
+    @staticmethod
+    def from_3_points(p0: Point2, p1: Point2, p2: Point2) -> Arc2:
+        """
+        Create an arc from three points. The arc will begin at the first point, pass through the
+        second point, and end at the third point.
+
+        :param p0: the starting point of the arc.
+        :param p1: a point on the arc, between the start and end points.
+        :param p2: the ending point of the arc.
+        :return: a new ``Arc2``.
+        """
+        ...
+
+    def length(self) -> float:
+        """
+        Return the arc length: the radius times the absolute value of the sweep angle.
+        """
+        ...
+
+    def point_at_angle(self, angle: float) -> Point2:
+        """
+        Return the point on the arc's circle at ``angle0 + angle``.
+
+        :param angle: the angle, in radians, measured from the arc's start angle.
+        :return: the point at that angle.
+        """
+        ...
+
+    def point_at_fraction(self, fraction: float) -> Point2:
+        """
+        Return the point at the given fraction of the arc's sweep, where 0.0 is the start and 1.0
+        is the end.
+
+        :param fraction: the fraction of the sweep angle.
+        :return: the point at that fraction.
+        """
+        ...
+
+    def point_at_length(self, length: float) -> Point2:
+        """
+        Return the point at the given arc length from the start of the arc.
+
+        :param length: the arc length from the start.
+        :return: the point at that arc length.
+        """
+        ...
+
+    def is_ccw(self) -> bool:
+        """Return whether the arc sweeps counter-clockwise (a positive sweep angle)."""
+        ...
+
+    def angle_interval(self) -> AngleInterval:
+        """
+        Return the angular interval spanned by the arc, starting at ``angle0`` and extending for
+        ``angle`` radians.
+        """
+        ...
+
+    def is_theta_on_arc(self, theta: float) -> bool:
+        """
+        Return whether the given absolute angle, in radians, falls within the arc's angular span.
+
+        :param theta: the angle to test, in radians.
+        :return: True if the angle is on the arc, False otherwise.
+        """
+        ...
+
+    def theta_to_fraction(self, theta: float) -> float:
+        """
+        Convert an absolute angle, in radians, to the fraction of the arc's sweep at which it
+        occurs, where 0.0 is the start and 1.0 is the end.
+
+        :param theta: the angle to convert, in radians.
+        :return: the fraction of the sweep at that angle.
+        """
+        ...
+
+    def at_fraction(self, fraction: float) -> Point2:
+        """
+        Return the point at the given fraction of the arc's sweep. Equivalent to
+        ``point_at_fraction``.
+
+        :param fraction: the fraction of the sweep angle.
+        :return: the point at that fraction.
         """
         ...
 

@@ -1,4 +1,5 @@
 use engeom::common::DistMode;
+use engeom::IntervalOps;
 use pyo3::prelude::*;
 
 #[pyclass(eq, eq_int, from_py_object, module = "engeom.common")]
@@ -124,6 +125,75 @@ impl From<Resample> for engeom::Resample {
             Resample::Spacing(spacing) => engeom::Resample::BySpacing(spacing),
             Resample::MaxSpacing(max_spacing) => engeom::Resample::ByMaxSpacing(max_spacing),
         }
+    }
+}
+
+/// A continuous range of angles, specified by a starting angle and a positive (counter-clockwise)
+/// included length.
+///
+/// This is a read-only view returned by other geometric queries (such as
+/// `Circle2.intersection_interval` and `Arc2.angle_interval`); it is not directly constructible
+/// from Python. Only the core query surface is exposed here; the full interval algebra (overlap,
+/// intersection, union, etc.) is not currently bound.
+#[pyclass(from_py_object, module = "engeom.common")]
+#[derive(Copy, Clone, Debug)]
+pub struct AngleInterval {
+    inner: engeom::AngleInterval,
+}
+
+impl AngleInterval {
+    pub fn get_inner(&self) -> &engeom::AngleInterval {
+        &self.inner
+    }
+
+    pub fn from_inner(inner: engeom::AngleInterval) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl AngleInterval {
+    /// The starting angle of the interval, in radians, in the range [0, 2π].
+    #[getter]
+    fn min(&self) -> f64 {
+        self.inner.min()
+    }
+
+    /// The ending angle of the interval, in radians. If less than `min`, the interval wraps
+    /// beyond 2π.
+    #[getter]
+    fn max(&self) -> f64 {
+        self.inner.max()
+    }
+
+    /// The angular extent (included angle) of the interval, in radians.
+    #[getter]
+    fn extent(&self) -> f64 {
+        self.inner.extent()
+    }
+
+    /// The angle at the midpoint of the interval, in radians.
+    #[getter]
+    fn center(&self) -> f64 {
+        self.inner.center()
+    }
+
+    /// Whether the interval contains zero angular extent.
+    fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    /// Returns whether the given angle (in radians) falls within the interval.
+    fn contains_value(&self, x: f64) -> bool {
+        self.inner.contains_value(x)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "AngleInterval(min={}, max={})",
+            self.inner.min(),
+            self.inner.max()
+        )
     }
 }
 

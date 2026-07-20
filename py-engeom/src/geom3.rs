@@ -1320,6 +1320,17 @@ impl Circle3 {
     fn normal_reversed(&self) -> Self {
         Circle3::from_inner(self.inner.normal_reversed())
     }
+
+    fn transformed_by(&self, iso: &Iso3) -> Self {
+        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
+    }
+
+    #[staticmethod]
+    fn from_3_points(p0: Point3, p1: Point3, p2: Point3) -> PyResult<Self> {
+        engeom::geom3::Circle3::from_3_points(p0.get_inner(), p1.get_inner(), p2.get_inner())
+            .map(Self::from_inner)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
 }
 
 // ================================================================================================
