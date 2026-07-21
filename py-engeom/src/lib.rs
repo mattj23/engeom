@@ -89,6 +89,8 @@ fn register_geom3(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_class::<geom3::Sphere3>()?;
     child.add_class::<geom3::Manifold1Pos3>()?;
     child.add_class::<geom3::Circle3>()?;
+    child.add_class::<geom3::Cylinder3>()?;
+    child.add_class::<geom3::Cone3>()?;
 
     // Mesh, curves, other complex geometries
     child.add_class::<mesh::Mesh>()?;

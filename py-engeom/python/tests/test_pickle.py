@@ -18,6 +18,8 @@ from engeom.geom3 import (
     Line3,
     Sphere3,
     Circle3,
+    Cylinder3,
+    Cone3,
     Segment3,
     CubicSpline3,
     Iso3,
@@ -122,6 +124,18 @@ def test_pickle_circle3():
     circle = Circle3(1.0, 2.0, 3.0, 0.0, 0.0, 1.0, 5.0)
     unpickled = pickle.loads(pickle.dumps(circle))
     assert circle == unpickled
+
+
+def test_pickle_cylinder3():
+    cylinder = Cylinder3(1.0, 2.0, 3.0, 0.0, 0.0, 1.0, 4.0, 5.0)
+    unpickled = pickle.loads(pickle.dumps(cylinder))
+    assert cylinder == unpickled
+
+
+def test_pickle_cone3():
+    cone = Cone3(1.0, 2.0, 3.0, 0.0, 0.0, 1.0, 5.0, 4.0)
+    unpickled = pickle.loads(pickle.dumps(cone))
+    assert cone == unpickled
 
 
 def test_pickle_cubic_spline2():

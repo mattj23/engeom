@@ -1838,6 +1838,350 @@ class Circle3:
         ...
 
 
+class Cylinder3:
+    """
+    A cylinder in 3D space, defined by a starting point, a unit direction, a radius, and a
+    length. The cylinder's axis runs from `center` to `center + direction * length`, and the
+    cylindrical surface is every point at distance `radius` from that axis within its extent.
+
+    Because the axis direction is stored as a unit vector rather than being implied by a
+    non-zero length, `length` and `radius` may independently be zero: a zero-length cylinder is
+    a flat disc, a zero-radius cylinder is a line segment, and a cylinder with both zero is a
+    point.
+    """
+
+    def __init__(
+        self,
+        cx: float,
+        cy: float,
+        cz: float,
+        dx: float,
+        dy: float,
+        dz: float,
+        radius: float,
+        length: float,
+    ):
+        """
+        Create a cylinder from a starting point, a unit axis direction, a radius, and a length.
+        The direction vector (dx, dy, dz) will be normalized automatically.
+        :param cx: x coordinate of the starting point.
+        :param cy: y coordinate of the starting point.
+        :param cz: z coordinate of the starting point.
+        :param dx: x component of the axis direction.
+        :param dy: y component of the axis direction.
+        :param dz: z component of the axis direction.
+        :param radius: the radius of the cylinder.
+        :param length: the full length of the cylinder along its axis; the cylinder extends from
+            (cx, cy, cz) to (cx, cy, cz) + (dx, dy, dz) * length.
+        :raises ValueError: if the direction vector has zero length.
+        """
+        ...
+
+    @staticmethod
+    def from_points(p0: Point3, p1: Point3, radius: float) -> Cylinder3:
+        """
+        Create a cylinder whose axis runs between two points, with the given radius. The
+        starting point is `p0`, the direction points from `p0` towards `p1`, and the length is
+        the distance between them.
+        :param p0: the point at the center of the cylinder's starting cap.
+        :param p1: the point at the center of the cylinder's ending cap.
+        :param radius: the radius of the cylinder.
+        :return: a new `Cylinder3`.
+        :raises ValueError: if p0 and p1 are coincident.
+        """
+        ...
+
+    @property
+    def center(self) -> Point3:
+        """
+        The point at the base of the cylinder's axis, in world space.
+        :return: the starting point as a Point3.
+        """
+        ...
+
+    @property
+    def direction(self) -> Vector3:
+        """
+        The unit direction of the cylinder's axis.
+        :return: the direction as a Vector3.
+        """
+        ...
+
+    @property
+    def r(self) -> float:
+        """
+        The radius of the cylinder.
+        :return: the radius.
+        """
+        ...
+
+    @property
+    def length(self) -> float:
+        """
+        The full length of the cylinder along its axis.
+        :return: the length.
+        """
+        ...
+
+    def a(self) -> Point3:
+        """
+        The point at the center of the cylinder's starting cap. Identical to `center`; provided
+        for consistency with the `Segment3` endpoint API.
+        :return: the starting point as a Point3.
+        """
+        ...
+
+    def b(self) -> Point3:
+        """
+        The point at the center of the cylinder's ending cap, at `center + direction * length`.
+        :return: the ending point as a Point3.
+        """
+        ...
+
+    def axis(self) -> Line3:
+        """
+        The infinite line running through the cylinder's axis, in the direction of `direction`.
+        :return: the axis as a Line3.
+        """
+        ...
+
+    def start_cap(self) -> Circle3:
+        """
+        The circle bounding the starting cap of the cylinder, with its normal pointing outward
+        (opposite `direction`).
+        :return: the starting cap as a Circle3.
+        """
+        ...
+
+    def end_cap(self) -> Circle3:
+        """
+        The circle bounding the ending cap of the cylinder, with its normal pointing outward
+        (the same direction as `direction`).
+        :return: the ending cap as a Circle3.
+        """
+        ...
+
+    def volume(self) -> float:
+        """
+        The volume of the (solid) cylinder.
+        :return: the volume.
+        """
+        ...
+
+    def lateral_area(self) -> float:
+        """
+        The area of the cylinder's lateral (side) surface, excluding the end caps.
+        :return: the lateral surface area.
+        """
+        ...
+
+    def contains_point(self, test_point: Point3) -> bool:
+        """
+        Return True if test_point lies within (or on the boundary of) the solid cylinder.
+        :param test_point: the point to test.
+        :return: whether the point is inside or on the boundary of the cylinder.
+        """
+        ...
+
+    def transformed_by(self, iso: Iso3) -> Cylinder3:
+        """
+        Return a new cylinder transformed by the given isometry, without modifying the original.
+        :param iso: the isometry to apply.
+        :return: a new transformed Cylinder3.
+        """
+        ...
+
+    def reversed(self) -> Cylinder3:
+        """
+        Return a new cylinder occupying the same physical volume but with the axis direction
+        reversed, without modifying the original. The starting point (`center`/`a()`) becomes
+        the old ending point (`b()`) and vice versa.
+        :return: a new reversed Cylinder3.
+        """
+        ...
+
+    def closest_point(self, test_point: Point3, infinite: bool) -> SurfacePoint3 | None:
+        """
+        Project test_point onto the cylinder's lateral surface (no end caps) and return the
+        closest point paired with its outward normal. Returns None if test_point lies exactly on
+        the cylinder's axis, where every point around the wall at that axial position is equally
+        close.
+        :param test_point: the point to find the closest surface location to.
+        :param infinite: if False, the result is clamped to within the cylinder's ends; if True,
+            the lateral surface is treated as extending infinitely in both directions.
+        :return: a SurfacePoint3 on the cylinder's lateral surface, or None if ambiguous.
+        """
+        ...
+
+
+class Cone3:
+    """
+    A cone in 3D space, defined by a tip (apex) point, a unit direction, a height, and a base
+    radius. The cone's axis runs from `tip` to `tip + direction * height`, and the lateral
+    surface is every point whose distance from the axis grows linearly from 0 at `tip` to
+    `radius` at the base.
+
+    Because the axis direction is stored as a unit vector rather than being implied by a
+    non-zero height, `height` and `radius` may independently be zero: a zero-height cone is a
+    flat disc, a zero-radius cone is a line segment, and a cone with both zero is a point.
+    """
+
+    def __init__(
+        self,
+        tx: float,
+        ty: float,
+        tz: float,
+        dx: float,
+        dy: float,
+        dz: float,
+        height: float,
+        radius: float,
+    ):
+        """
+        Create a cone from a tip (apex) point, a unit axis direction, a height, and a base
+        radius. The direction vector (dx, dy, dz) will be normalized automatically.
+        :param tx: x coordinate of the apex.
+        :param ty: y coordinate of the apex.
+        :param tz: z coordinate of the apex.
+        :param dx: x component of the axis direction, from the tip towards the base.
+        :param dy: y component of the axis direction.
+        :param dz: z component of the axis direction.
+        :param height: the distance from the tip to the base along the axis.
+        :param radius: the radius of the circular base.
+        :raises ValueError: if the direction vector has zero length.
+        """
+        ...
+
+    @staticmethod
+    def from_points(tip: Point3, base_center: Point3, radius: float) -> Cone3:
+        """
+        Create a cone from a tip point and a base center point, with the given base radius. The
+        direction points from `tip` towards `base_center`, and the height is the distance
+        between them.
+        :param tip: the apex of the cone.
+        :param base_center: the center point of the cone's circular base.
+        :param radius: the radius of the circular base.
+        :return: a new `Cone3`.
+        :raises ValueError: if tip and base_center are coincident.
+        """
+        ...
+
+    @property
+    def tip(self) -> Point3:
+        """
+        The apex of the cone, in world space.
+        :return: the tip as a Point3.
+        """
+        ...
+
+    @property
+    def direction(self) -> Vector3:
+        """
+        The unit direction of the cone's axis, from the tip towards the base.
+        :return: the direction as a Vector3.
+        """
+        ...
+
+    @property
+    def height(self) -> float:
+        """
+        The distance from the tip to the base along the axis.
+        :return: the height.
+        """
+        ...
+
+    @property
+    def r(self) -> float:
+        """
+        The radius of the cone's base.
+        :return: the radius.
+        """
+        ...
+
+    def base_center(self) -> Point3:
+        """
+        The center point of the cone's base, at `tip + direction * height`.
+        :return: the base center as a Point3.
+        """
+        ...
+
+    def axis(self) -> Line3:
+        """
+        The infinite line running through the cone's axis, from the tip in the direction of
+        `direction`.
+        :return: the axis as a Line3.
+        """
+        ...
+
+    def base(self) -> Circle3:
+        """
+        The circle bounding the base of the cone, with its normal pointing outward (the same
+        direction as `direction`).
+        :return: the base as a Circle3.
+        """
+        ...
+
+    def half_angle(self) -> float:
+        """
+        The half-angle of the cone: the angle between the axis and the lateral surface, in
+        radians.
+        :return: the half-angle in radians.
+        """
+        ...
+
+    def slant_height(self) -> float:
+        """
+        The slant height of the cone: the distance from the tip to a point on the rim of the
+        base, along the lateral surface.
+        :return: the slant height.
+        """
+        ...
+
+    def volume(self) -> float:
+        """
+        The volume of the (solid) cone.
+        :return: the volume.
+        """
+        ...
+
+    def lateral_area(self) -> float:
+        """
+        The area of the cone's lateral surface, excluding the base.
+        :return: the lateral surface area.
+        """
+        ...
+
+    def contains_point(self, test_point: Point3) -> bool:
+        """
+        Return True if test_point lies within (or on the boundary of) the solid cone.
+        :param test_point: the point to test.
+        :return: whether the point is inside or on the boundary of the cone.
+        """
+        ...
+
+    def transformed_by(self, iso: Iso3) -> Cone3:
+        """
+        Return a new cone transformed by the given isometry, without modifying the original.
+        :param iso: the isometry to apply.
+        :return: a new transformed Cone3.
+        """
+        ...
+
+    def closest_point(self, test_point: Point3, infinite: bool) -> SurfacePoint3 | None:
+        """
+        Project test_point onto the cone's lateral surface (no base cap) and return the closest
+        point paired with its outward normal, clamped between the tip and the base rim. Returns
+        None if test_point lies on the cone's axis, where all directions around the surface are
+        equally close, or if the cone is degenerate (zero height).
+        :param test_point: the point to find the closest surface location to.
+        :param infinite: if False, the result is clamped between the tip and the base rim; if
+            True, the result may extend anywhere on the hourglass shape formed by an infinite
+            cone.
+        :return: a SurfacePoint3 on the cone's lateral surface, or None if ambiguous.
+        """
+        ...
+
+
 class Mesh:
     """
     A class holding an unstructured, 3-dimensional mesh of triangles.

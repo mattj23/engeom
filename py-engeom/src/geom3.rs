@@ -1348,6 +1348,358 @@ impl Circle3 {
 }
 
 // ================================================================================================
+// Cylinder3
+// ================================================================================================
+
+#[pyclass(from_py_object, module = "engeom.geom3")]
+#[derive(Clone, Debug)]
+pub struct Cylinder3 {
+    inner: engeom::geom3::Cylinder3,
+}
+
+impl Cylinder3 {
+    pub fn get_inner(&self) -> &engeom::geom3::Cylinder3 {
+        &self.inner
+    }
+
+    pub fn from_inner(inner: engeom::geom3::Cylinder3) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl Cylinder3 {
+    #[new]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        cx: f64,
+        cy: f64,
+        cz: f64,
+        dx: f64,
+        dy: f64,
+        dz: f64,
+        radius: f64,
+        length: f64,
+    ) -> PyResult<Self> {
+        let center = engeom::Point3::new(cx, cy, cz);
+        let direction = engeom::UnitVec3::try_new(engeom::Vector3::new(dx, dy, dz), 1.0e-6)
+            .ok_or_else(|| PyValueError::new_err("Invalid direction vector"))?;
+        Ok(Self::from_inner(engeom::geom3::Cylinder3::new(
+            center, direction, radius, length,
+        )))
+    }
+
+    #[staticmethod]
+    fn from_points(p0: Point3, p1: Point3, radius: f64) -> PyResult<Self> {
+        engeom::geom3::Cylinder3::from_points(p0.get_inner(), p1.get_inner(), radius)
+            .map(Self::from_inner)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    fn __repr__(&self) -> String {
+        let c = self.inner.center;
+        let d = self.inner.direction;
+        format!(
+            "Cylinder3(center=({}, {}, {}), direction=({}, {}, {}), radius={}, length={})",
+            c.x,
+            c.y,
+            c.z,
+            d.x,
+            d.y,
+            d.z,
+            self.inner.r(),
+            self.inner.length
+        )
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn __getnewargs__(&self) -> (f64, f64, f64, f64, f64, f64, f64, f64) {
+        let c = self.inner.center;
+        let d = self.inner.direction;
+        (
+            c.x,
+            c.y,
+            c.z,
+            d.x,
+            d.y,
+            d.z,
+            self.inner.r(),
+            self.inner.length,
+        )
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn __getstate__(&self) -> (f64, f64, f64, f64, f64, f64, f64, f64) {
+        let c = self.inner.center;
+        let d = self.inner.direction;
+        (
+            c.x,
+            c.y,
+            c.z,
+            d.x,
+            d.y,
+            d.z,
+            self.inner.r(),
+            self.inner.length,
+        )
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn __setstate__(&mut self, state: (f64, f64, f64, f64, f64, f64, f64, f64)) -> PyResult<()> {
+        let center = engeom::Point3::new(state.0, state.1, state.2);
+        let direction =
+            engeom::UnitVec3::try_new(engeom::Vector3::new(state.3, state.4, state.5), 1.0e-6)
+                .ok_or_else(|| PyValueError::new_err("Invalid direction vector"))?;
+        self.inner = engeom::geom3::Cylinder3::new(center, direction, state.6, state.7);
+        Ok(())
+    }
+
+    fn __eq__(&self, other: &Cylinder3) -> bool {
+        self.inner == other.inner
+    }
+
+    #[getter]
+    fn center(&self) -> Point3 {
+        Point3::from_inner(self.inner.center)
+    }
+
+    #[getter]
+    fn direction(&self) -> Vector3 {
+        Vector3::from_inner(self.inner.direction.into_inner())
+    }
+
+    #[getter]
+    fn r(&self) -> f64 {
+        self.inner.r()
+    }
+
+    #[getter]
+    fn length(&self) -> f64 {
+        self.inner.length
+    }
+
+    fn a(&self) -> Point3 {
+        Point3::from_inner(self.inner.a())
+    }
+
+    fn b(&self) -> Point3 {
+        Point3::from_inner(self.inner.b())
+    }
+
+    fn axis(&self) -> Line3 {
+        Line3::from_inner(self.inner.axis())
+    }
+
+    fn start_cap(&self) -> Circle3 {
+        Circle3::from_inner(self.inner.start_cap())
+    }
+
+    fn end_cap(&self) -> Circle3 {
+        Circle3::from_inner(self.inner.end_cap())
+    }
+
+    fn volume(&self) -> f64 {
+        self.inner.volume()
+    }
+
+    fn lateral_area(&self) -> f64 {
+        self.inner.lateral_area()
+    }
+
+    fn contains_point(&self, test_point: Point3) -> bool {
+        self.inner.contains_point(test_point.get_inner())
+    }
+
+    fn transformed_by(&self, iso: &Iso3) -> Self {
+        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
+    }
+
+    fn reversed(&self) -> Self {
+        Self::from_inner(self.inner.reversed())
+    }
+
+    fn closest_point(&self, test_point: Point3, infinite: bool) -> Option<SurfacePoint3> {
+        self.inner
+            .closest_point(test_point.get_inner(), infinite)
+            .map(SurfacePoint3::from_inner)
+    }
+}
+
+// ================================================================================================
+// Cone3
+// ================================================================================================
+
+#[pyclass(from_py_object, module = "engeom.geom3")]
+#[derive(Clone, Debug)]
+pub struct Cone3 {
+    inner: engeom::geom3::Cone3,
+}
+
+impl Cone3 {
+    pub fn get_inner(&self) -> &engeom::geom3::Cone3 {
+        &self.inner
+    }
+
+    pub fn from_inner(inner: engeom::geom3::Cone3) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl Cone3 {
+    #[new]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        tx: f64,
+        ty: f64,
+        tz: f64,
+        dx: f64,
+        dy: f64,
+        dz: f64,
+        height: f64,
+        radius: f64,
+    ) -> PyResult<Self> {
+        let tip = engeom::Point3::new(tx, ty, tz);
+        let direction = engeom::UnitVec3::try_new(engeom::Vector3::new(dx, dy, dz), 1.0e-6)
+            .ok_or_else(|| PyValueError::new_err("Invalid direction vector"))?;
+        Ok(Self::from_inner(engeom::geom3::Cone3::new(
+            tip, direction, height, radius,
+        )))
+    }
+
+    #[staticmethod]
+    fn from_points(tip: Point3, base_center: Point3, radius: f64) -> PyResult<Self> {
+        engeom::geom3::Cone3::from_points(tip.get_inner(), base_center.get_inner(), radius)
+            .map(Self::from_inner)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    fn __repr__(&self) -> String {
+        let t = self.inner.tip;
+        let d = self.inner.direction;
+        format!(
+            "Cone3(tip=({}, {}, {}), direction=({}, {}, {}), height={}, radius={})",
+            t.x,
+            t.y,
+            t.z,
+            d.x,
+            d.y,
+            d.z,
+            self.inner.height,
+            self.inner.r()
+        )
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn __getnewargs__(&self) -> (f64, f64, f64, f64, f64, f64, f64, f64) {
+        let t = self.inner.tip;
+        let d = self.inner.direction;
+        (
+            t.x,
+            t.y,
+            t.z,
+            d.x,
+            d.y,
+            d.z,
+            self.inner.height,
+            self.inner.r(),
+        )
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn __getstate__(&self) -> (f64, f64, f64, f64, f64, f64, f64, f64) {
+        let t = self.inner.tip;
+        let d = self.inner.direction;
+        (
+            t.x,
+            t.y,
+            t.z,
+            d.x,
+            d.y,
+            d.z,
+            self.inner.height,
+            self.inner.r(),
+        )
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn __setstate__(&mut self, state: (f64, f64, f64, f64, f64, f64, f64, f64)) -> PyResult<()> {
+        let tip = engeom::Point3::new(state.0, state.1, state.2);
+        let direction =
+            engeom::UnitVec3::try_new(engeom::Vector3::new(state.3, state.4, state.5), 1.0e-6)
+                .ok_or_else(|| PyValueError::new_err("Invalid direction vector"))?;
+        self.inner = engeom::geom3::Cone3::new(tip, direction, state.6, state.7);
+        Ok(())
+    }
+
+    fn __eq__(&self, other: &Cone3) -> bool {
+        self.inner == other.inner
+    }
+
+    #[getter]
+    fn tip(&self) -> Point3 {
+        Point3::from_inner(self.inner.tip)
+    }
+
+    #[getter]
+    fn direction(&self) -> Vector3 {
+        Vector3::from_inner(self.inner.direction.into_inner())
+    }
+
+    #[getter]
+    fn height(&self) -> f64 {
+        self.inner.height
+    }
+
+    #[getter]
+    fn r(&self) -> f64 {
+        self.inner.r()
+    }
+
+    fn base_center(&self) -> Point3 {
+        Point3::from_inner(self.inner.base_center())
+    }
+
+    fn axis(&self) -> Line3 {
+        Line3::from_inner(self.inner.axis())
+    }
+
+    fn base(&self) -> Circle3 {
+        Circle3::from_inner(self.inner.base())
+    }
+
+    fn half_angle(&self) -> f64 {
+        self.inner.half_angle()
+    }
+
+    fn slant_height(&self) -> f64 {
+        self.inner.slant_height()
+    }
+
+    fn volume(&self) -> f64 {
+        self.inner.volume()
+    }
+
+    fn lateral_area(&self) -> f64 {
+        self.inner.lateral_area()
+    }
+
+    fn contains_point(&self, test_point: Point3) -> bool {
+        self.inner.contains_point(test_point.get_inner())
+    }
+
+    fn transformed_by(&self, iso: &Iso3) -> Self {
+        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
+    }
+
+    fn closest_point(&self, test_point: Point3, infinite: bool) -> Option<SurfacePoint3> {
+        self.inner
+            .closest_point(test_point.get_inner(), infinite)
+            .map(SurfacePoint3::from_inner)
+    }
+}
+
+// ================================================================================================
 // Curve
 // ================================================================================================
 #[pyclass(from_py_object, module = "engeom.geom3")]
