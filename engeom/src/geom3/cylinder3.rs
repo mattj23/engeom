@@ -9,11 +9,11 @@ use std::ops;
 /// Epsilon for bounds check, it would be good to be able to replace this with something else
 const EPSILON: f64 = 1e-10;
 
-/// A cylinder in 3D space, defined by a starting point, a unit normal, a radius, and a length.
-/// The cylinder's axis runs from `center` to `center + normal * length`, and the cylindrical
+/// A cylinder in 3D space, defined by a starting point, a unit direction, a radius, and a length.
+/// The cylinder's axis runs from `center` to `center + direction * length`, and the cylindrical
 /// surface is every point at distance `radius` from that axis within its extent.
 ///
-/// Because the axis direction is stored as a unit normal rather than being implied by a
+/// Because the axis direction is stored as a unit vector rather than being implied by a
 /// non-zero length, `length` and `radius` may independently be zero: a zero-length cylinder is a
 /// flat disc, a zero-radius cylinder is a line segment, and a cylinder with both zero is a point.
 ///
@@ -21,34 +21,34 @@ const EPSILON: f64 = 1e-10;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Cylinder3 {
     pub center: Point3,
-    pub normal: UnitVec3,
+    pub direction: UnitVec3,
     pub radius: f64,
     pub length: f64,
 }
 
 impl Cylinder3 {
-    /// Create a cylinder from a starting point, a unit normal direction, a radius, and a length.
+    /// Create a cylinder from a starting point, a unit axis direction, a radius, and a length.
     ///
     /// # Arguments
     ///
     /// * `center`: the point at the base of the cylinder's axis, in world space
-    /// * `normal`: the direction of the cylinder's axis
+    /// * `direction`: the direction of the cylinder's axis
     /// * `radius`: the radius of the cylinder
     /// * `length`: the full length of the cylinder along its axis; the cylinder extends from
-    ///   `center` to `center + normal * length`
+    ///   `center` to `center + direction * length`
     ///
     /// returns: Cylinder3
-    pub fn new(center: Point3, normal: UnitVec3, radius: f64, length: f64) -> Self {
+    pub fn new(center: Point3, direction: UnitVec3, radius: f64, length: f64) -> Self {
         Self {
             center,
-            normal,
+            direction,
             radius,
             length,
         }
     }
 
     /// Create a cylinder whose axis runs between two points, with the given radius. `center` is
-    /// set to `p0`, the normal points from `p0` towards `p1`, and the length is the distance
+    /// set to `p0`, the direction points from `p0` towards `p1`, and the length is the distance
     /// between them.
     ///
     /// Returns an error if `p0` and `p1` are coincident, since the axis direction would then be
@@ -65,8 +65,8 @@ impl Cylinder3 {
         let a = Point3::from(p0.coords());
         let b = Point3::from(p1.coords());
         let diff = b - a;
-        let normal = UnitVec3::try_new(diff, 1e-10).ok_or("Points are coincident")?;
-        Ok(Self::new(a, normal, radius, diff.norm()))
+        let direction = UnitVec3::try_new(diff, 1e-10).ok_or("Points are coincident")?;
+        Ok(Self::new(a, direction, radius, diff.norm()))
     }
 
     /// Returns the radius of the cylinder.
@@ -80,27 +80,27 @@ impl Cylinder3 {
         self.center
     }
 
-    /// Returns the point at the center of the cylinder's ending cap, at `center + normal * length`.
+    /// Returns the point at the center of the cylinder's ending cap, at `center + direction * length`.
     pub fn b(&self) -> Point3 {
-        self.center + self.normal.into_inner() * self.length
+        self.center + self.direction.into_inner() * self.length
     }
 
     /// Returns the infinite line running through the cylinder's axis, in the direction of
-    /// `normal`.
+    /// `direction`.
     pub fn axis(&self) -> Line3 {
-        Line3::new(self.center, self.normal.into_inner())
+        Line3::new(self.center, self.direction.into_inner())
     }
 
     /// Returns the circle bounding the starting cap of the cylinder, with its normal pointing
-    /// outward (opposite `self.normal`).
+    /// outward (opposite `self.direction`).
     pub fn start_cap(&self) -> Circle3 {
-        Circle3::new(self.a(), -self.normal, self.radius)
+        Circle3::new(self.a(), -self.direction, self.radius)
     }
 
     /// Returns the circle bounding the ending cap of the cylinder, with its normal pointing
-    /// outward (the same direction as `self.normal`).
+    /// outward (the same direction as `self.direction`).
     pub fn end_cap(&self) -> Circle3 {
-        Circle3::new(self.b(), self.normal, self.radius)
+        Circle3::new(self.b(), self.direction, self.radius)
     }
 
     /// Returns the volume of the (solid) cylinder.
@@ -131,19 +131,19 @@ impl Cylinder3 {
     pub fn transformed_by(&self, iso: &Iso3) -> Self {
         Self {
             center: iso * self.center,
-            normal: UnitVec3::new_normalize(iso.rotation * self.normal.into_inner()),
+            direction: UnitVec3::new_normalize(iso.rotation * self.direction.into_inner()),
             radius: self.radius,
             length: self.length,
         }
     }
 
-    /// Returns a new cylinder occupying the same physical volume but with the normal direction
+    /// Returns a new cylinder occupying the same physical volume but with the axis direction
     /// reversed, without modifying the original. The starting point (`center`/`a()`) becomes the
     /// old ending point (`b()`) and vice versa.
     pub fn reversed(&self) -> Self {
         Self {
             center: self.b(),
-            normal: -self.normal,
+            direction: -self.direction,
             radius: self.radius,
             length: self.length,
         }
@@ -246,8 +246,8 @@ mod tests {
 
     fn tilted_cylinder() -> Cylinder3 {
         let center = Point3::new(1.0, 2.0, 3.0);
-        let normal = UnitVec3::new_normalize(Vector3::new(1.0, 1.0, 1.0));
-        Cylinder3::new(center, normal, 1.5, 6.0)
+        let direction = UnitVec3::new_normalize(Vector3::new(1.0, 1.0, 1.0));
+        Cylinder3::new(center, direction, 1.5, 6.0)
     }
 
     fn random_cylinder() -> Cylinder3 {
@@ -255,19 +255,19 @@ mod tests {
         let r = rg.f64(0.5, 4.0);
         let l = rg.f64(1.0, 10.0);
         let center = rg.point3(10.0);
-        let normal = rg.unit_vec3();
-        Cylinder3::new(center, normal, r, l)
+        let direction = rg.unit_vec3();
+        Cylinder3::new(center, direction, r, l)
     }
 
     #[test]
     fn new_stores_fields() {
         let center = Point3::new(1.0, 2.0, 3.0);
-        let normal = UnitVec3::new_normalize(Vector3::z());
-        let cyl = Cylinder3::new(center, normal, 2.0, 5.0);
+        let direction = UnitVec3::new_normalize(Vector3::z());
+        let cyl = Cylinder3::new(center, direction, 2.0, 5.0);
         assert_relative_eq!(cyl.center, center, epsilon = 1e-12);
         assert_relative_eq!(
-            cyl.normal.into_inner(),
-            normal.into_inner(),
+            cyl.direction.into_inner(),
+            direction.into_inner(),
             epsilon = 1e-12
         );
         assert_relative_eq!(cyl.r(), 2.0, epsilon = 1e-12);
@@ -281,7 +281,7 @@ mod tests {
         let cyl = Cylinder3::from_points(&p0, &p1, 1.5).unwrap();
         assert_relative_eq!(cyl.center, p0, epsilon = 1e-12);
         assert_relative_eq!(cyl.length, 4.0, epsilon = 1e-12);
-        assert_relative_eq!(cyl.normal.into_inner(), Vector3::z(), epsilon = 1e-12);
+        assert_relative_eq!(cyl.direction.into_inner(), Vector3::z(), epsilon = 1e-12);
         assert_relative_eq!(cyl.a(), p0, epsilon = 1e-12);
         assert_relative_eq!(cyl.b(), p1, epsilon = 1e-12);
     }
@@ -298,7 +298,7 @@ mod tests {
         assert_relative_eq!(cyl.a(), cyl.center, epsilon = 1e-12);
         assert_relative_eq!(
             cyl.b(),
-            cyl.center + cyl.normal.into_inner() * cyl.length,
+            cyl.center + cyl.direction.into_inner() * cyl.length,
             epsilon = 1e-12
         );
         assert_relative_eq!((cyl.b() - cyl.a()).norm(), cyl.length, epsilon = 1e-10);
@@ -309,7 +309,7 @@ mod tests {
         let cyl = tilted_cylinder();
         let axis = cyl.axis();
         assert_relative_eq!(axis.origin, cyl.center, epsilon = 1e-12);
-        assert_relative_eq!(axis.direction, cyl.normal.into_inner(), epsilon = 1e-12);
+        assert_relative_eq!(axis.direction, cyl.direction.into_inner(), epsilon = 1e-12);
     }
 
     #[test]
@@ -324,12 +324,12 @@ mod tests {
         assert_relative_eq!(end.r(), cyl.r(), epsilon = 1e-12);
         assert_relative_eq!(
             start.normal.into_inner(),
-            -cyl.normal.into_inner(),
+            -cyl.direction.into_inner(),
             epsilon = 1e-12
         );
         assert_relative_eq!(
             end.normal.into_inner(),
-            cyl.normal.into_inner(),
+            cyl.direction.into_inner(),
             epsilon = 1e-12
         );
     }
@@ -401,14 +401,14 @@ mod tests {
     #[test]
     fn contains_point_beyond_length_is_false() {
         let cyl = axis_cylinder();
-        let beyond = cyl.b() + cyl.normal.into_inner() * 1.0;
+        let beyond = cyl.b() + cyl.direction.into_inner() * 1.0;
         assert!(!cyl.contains_point(&beyond));
     }
 
     #[test]
     fn contains_point_before_start_is_false() {
         let cyl = axis_cylinder();
-        let before = cyl.a() - cyl.normal.into_inner() * 1.0;
+        let before = cyl.a() - cyl.direction.into_inner() * 1.0;
         assert!(!cyl.contains_point(&before));
     }
 
@@ -417,7 +417,7 @@ mod tests {
         let cyl = axis_cylinder();
         assert!(cyl.contains_point(&cyl.a()));
         assert!(cyl.contains_point(&cyl.b()));
-        let mid = cyl.center + cyl.normal.into_inner() * (cyl.length * 0.5);
+        let mid = cyl.center + cyl.direction.into_inner() * (cyl.length * 0.5);
         let rim = mid + Vector3::new(cyl.r(), 0.0, 0.0);
         assert!(cyl.contains_point(&rim));
     }
@@ -429,7 +429,7 @@ mod tests {
     #[test]
     fn closest_point_on_axis_is_none() {
         let cyl = axis_cylinder();
-        let mid = cyl.center + cyl.normal.into_inner() * (cyl.length * 0.5);
+        let mid = cyl.center + cyl.direction.into_inner() * (cyl.length * 0.5);
         assert!(cyl.closest_point(&mid, false).is_none());
         assert!(cyl.closest_point(&mid, true).is_none());
     }
@@ -439,7 +439,7 @@ mod tests {
         // Ambiguity is about the radial direction, not the axial position, so points on the axis
         // beyond the cylinder's ends are just as ambiguous as ones in the middle.
         let cyl = axis_cylinder();
-        let beyond = cyl.b() + cyl.normal.into_inner() * 5.0;
+        let beyond = cyl.b() + cyl.direction.into_inner() * 5.0;
         assert!(cyl.closest_point(&beyond, false).is_none());
         assert!(cyl.closest_point(&beyond, true).is_none());
     }
@@ -447,7 +447,7 @@ mod tests {
     #[test]
     fn closest_point_within_length_matches_for_both_modes() {
         let cyl = axis_cylinder(); // center origin, axis +z, r=2, length=10
-        let mid = cyl.center + cyl.normal.into_inner() * (cyl.length * 0.5);
+        let mid = cyl.center + cyl.direction.into_inner() * (cyl.length * 0.5);
         let test = mid + Vector3::new(5.0, 0.0, 0.0);
 
         let clamped = cyl.closest_point(&test, false).unwrap();
@@ -544,7 +544,7 @@ mod tests {
                 epsilon = 1e-8
             );
             // The normal must be perpendicular to the cylinder's axis.
-            assert_relative_eq!(sp.normal.dot(&cyl.normal), 0.0, epsilon = 1e-8);
+            assert_relative_eq!(sp.normal.dot(&cyl.direction), 0.0, epsilon = 1e-8);
         }
     }
 
@@ -577,8 +577,8 @@ mod tests {
         assert_relative_eq!(result.length, cyl.length, epsilon = 1e-12);
         assert_relative_eq!(result.center, cyl.center, epsilon = 1e-12);
         assert_relative_eq!(
-            result.normal.into_inner(),
-            cyl.normal.into_inner(),
+            result.direction.into_inner(),
+            cyl.direction.into_inner(),
             epsilon = 1e-12
         );
     }
@@ -607,35 +607,35 @@ mod tests {
         let b = iso * cyl;
         assert_relative_eq!(a.center, b.center, epsilon = 1e-12);
         assert_relative_eq!(
-            a.normal.into_inner(),
-            b.normal.into_inner(),
+            a.direction.into_inner(),
+            b.direction.into_inner(),
             epsilon = 1e-12
         );
     }
 
     #[test]
-    fn reversed_reverses_normal_preserves_radius_length_and_shape() {
+    fn reversed_reverses_direction_preserves_radius_length_and_shape() {
         let cyl = tilted_cylinder();
         let reversed = cyl.reversed();
         assert_relative_eq!(reversed.r(), cyl.r(), epsilon = 1e-12);
         assert_relative_eq!(reversed.length, cyl.length, epsilon = 1e-12);
         assert_relative_eq!(
-            reversed.normal.into_inner(),
-            -cyl.normal.into_inner(),
+            reversed.direction.into_inner(),
+            -cyl.direction.into_inner(),
             epsilon = 1e-12
         );
-        // Reversing the normal swaps which endpoint is `a()` vs `b()`, but the physical cylinder
-        // occupies the same space.
+        // Reversing the direction swaps which endpoint is `a()` vs `b()`, but the physical
+        // cylinder occupies the same space.
         assert_relative_eq!(reversed.a(), cyl.b(), epsilon = 1e-10);
         assert_relative_eq!(reversed.b(), cyl.a(), epsilon = 1e-10);
     }
 
     #[test]
-    fn diagonal_normal_sanity() {
-        // Basic sanity check that a non-axis-aligned normal behaves as expected: the length is
-        // projected along the (already unit) normal direction.
-        let normal = UnitVec3::new_normalize(Vector3::new(1.0, 1.0, 0.0));
-        let cyl = Cylinder3::new(Point3::origin(), normal, 1.0, std::f64::consts::SQRT_2);
+    fn diagonal_direction_sanity() {
+        // Basic sanity check that a non-axis-aligned direction behaves as expected: the length is
+        // projected along the (already unit) direction vector.
+        let direction = UnitVec3::new_normalize(Vector3::new(1.0, 1.0, 0.0));
+        let cyl = Cylinder3::new(Point3::origin(), direction, 1.0, std::f64::consts::SQRT_2);
         assert_relative_eq!(cyl.b().coords.x, 1.0, epsilon = 1e-10);
         assert_relative_eq!(cyl.b().coords.y, 1.0, epsilon = 1e-10);
     }
