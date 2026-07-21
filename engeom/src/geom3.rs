@@ -1,5 +1,6 @@
 pub mod align3;
 mod circle3;
+mod cone3;
 mod cubic_spline3;
 mod curve3;
 mod cylinder3;
@@ -20,6 +21,7 @@ use parry3d_f64::na::UnitQuaternion;
 use crate::common::surface_point::{SurfacePoint, SurfacePointCollection};
 use crate::common::svd_basis::SvdBasis;
 pub use circle3::Circle3;
+pub use cone3::Cone3;
 pub use cubic_spline3::CubicSpline3;
 pub use curve3::{Curve3, CurveStation3};
 pub use cylinder3::Cylinder3;
