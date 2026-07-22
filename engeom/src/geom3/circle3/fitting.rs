@@ -19,7 +19,7 @@
 use super::Circle3;
 use crate::common::PCoords;
 use crate::common::consensus::{ConsensusModel, Magsac};
-use crate::geom3::SvdBasis3;
+use crate::geom3::{IsoExtensions3, SvdBasis3};
 use crate::{Circle2, Iso3, Point2, Point3, Result, UnitVec3, Vector3};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use parry3d_f64::na::{Dyn, Matrix, Matrix3, Owned, U1, U6, UnitQuaternion, Vector, Vector6};
@@ -32,21 +32,6 @@ fn point_circle_distance(center: &Point3, normal: &UnitVec3, radius: f64, point:
     let in_plane = v - normal.into_inner() * h;
     let rho = in_plane.norm();
     ((rho - radius).powi(2) + h * h).sqrt()
-}
-
-/// Returns an arbitrary orthonormal basis spanning the plane perpendicular to `normal`, used only
-/// to parameterize small rotations of the normal during the refinement below (not a stable or
-/// otherwise meaningful reference frame for the circle itself).
-fn perpendicular_axes(normal: &UnitVec3) -> (Vector3, Vector3) {
-    let n = normal.into_inner();
-    let reference = if n.z.abs() < 0.9 {
-        Vector3::z()
-    } else {
-        Vector3::x()
-    };
-    let x_axis = reference.cross(&n).normalize();
-    let y_axis = n.cross(&x_axis);
-    (x_axis, y_axis)
 }
 
 impl ConsensusModel<3> for Circle3 {
@@ -254,9 +239,9 @@ struct Circle3Fit<'a> {
 
 impl<'a> Circle3Fit<'a> {
     fn new(points: &'a [Point3], weights: &'a [f64], base: &Circle3) -> Self {
-        let (raw_x, raw_y) = perpendicular_axes(&base.normal);
-        let axis_x = UnitVec3::new_normalize(raw_x);
-        let axis_y = UnitVec3::new_normalize(raw_y);
+        let arbitrary = Iso3::from_z_arbitrary_xy(&base.normal, None);
+        let axis_x = arbitrary.x();
+        let axis_y = arbitrary.y();
 
         let mut problem = Self {
             points,

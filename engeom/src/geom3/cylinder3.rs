@@ -5,6 +5,8 @@ use crate::{Iso3, Point3, Result, SurfacePoint3, UnitVec3};
 use std::f64::consts::PI;
 use std::ops;
 
+mod fitting;
+
 // TODO: Can this be replaced with another method or computed adaptively
 /// Epsilon for bounds check, it would be good to be able to replace this with something else
 const EPSILON: f64 = 1e-10;

@@ -38,6 +38,22 @@ pub trait IsoExtensions3 {
     /// ```
     fn from_array(array: &[f64; 16]) -> Result<Iso3>;
 
+    /// Create an isometry from an arbitrary orthonormal basis spanning the plane perpendicular to
+    /// `z`. There is no guarantee about the orientation of the `x` and `y` axes around the given
+    /// `z` beyond their mutual perpendicularity.
+    ///
+    /// If no origin is specified, the global origin will be used.
+    ///
+    /// Use this only when the orientation of `x` and `y` really don't matter.
+    ///
+    /// # Arguments
+    ///
+    /// * `z`: a unit vector pointing in the direction of the result's Z axis
+    /// * `origin`: an optional origin, if not provided the global origin will be used
+    ///
+    /// returns: Isometry<f64, Unit<Quaternion<f64>>, 3>
+    fn from_z_arbitrary_xy(z: &UnitVec3, origin: Option<Point3>) -> Iso3;
+
     /// Try to create an isometry that rotates around an axis represented by a `Line3` entity by
     /// a given angle. This will only return an `Err` if the length of the line is zero.
     ///
@@ -561,6 +577,27 @@ pub trait IsoExtensions3 {
 impl IsoExtensions3 for Iso3 {
     fn from_array(array: &[f64; 16]) -> Result<Self> {
         try_convert(Matrix4::from_row_slice(array)).ok_or("Could not convert to Iso3".into())
+    }
+
+    fn from_z_arbitrary_xy(z: &UnitVec3, origin: Option<Point3>) -> Iso3 {
+        let n = z.into_inner();
+        let reference = if n.z.abs() < 0.9 {
+            Vector3::z()
+        } else {
+            Vector3::x()
+        };
+        let x_axis = reference.cross(&n).normalize();
+        let y_axis = n.cross(&x_axis);
+
+        let rot_m = Matrix3::from_columns(&[x_axis, y_axis, n]);
+        let r = UnitQuaternion::from_matrix(&rot_m);
+        let t = if let Some(o) = origin {
+            Translation3::from(o.coords)
+        } else {
+            Translation3::identity()
+        };
+
+        Iso3::from_parts(t, r)
     }
 
     fn from_rot_axis(axis: &Line3, angle: f64) -> Result<Iso3> {
