@@ -1093,6 +1093,41 @@ class Plane3:
         """
         ...
 
+    @staticmethod
+    def from_3_points(p1: Point3, p2: Point3, p3: Point3) -> Plane3:
+        """
+        Create a plane from three points, with the normal following the right-hand rule from
+        p1 to p2 to p3.
+        :param p1: the first point.
+        :param p2: the second point.
+        :param p3: the third point.
+        :return: a Plane3 passing through all three points.
+        :raises ValueError: if the points are collinear (or coincident).
+        """
+        ...
+
+    @staticmethod
+    def from_surface_point(surface_point: SurfacePoint3) -> Plane3:
+        """
+        Create a plane from a SurfacePoint3, using its point and normal directly.
+        :param surface_point: the surface point to create the plane from.
+        :return: a Plane3 passing through the surface point's position with its normal direction.
+        """
+        ...
+
+    @staticmethod
+    def from_fit(points: NDArray[float], weights: NDArray[float] | None = None) -> Plane3:
+        """
+        Fit a plane to a set of points using singular value decomposition, resulting in a
+        least-squares fitting.
+        :param points: the points to fit the plane to, as an (n, 3) array.
+        :param weights: if provided, a length-n array of weights to multiply each point's
+            residual by. If None, all points are weighted equally.
+        :return: a new Plane3 fitted to the points.
+        :raises ValueError: if the singular value decomposition fails (e.g. too few points).
+        """
+        ...
+
     def normal_reversed(self) -> Plane3:
         """
         Return a new plane in the same position as this one, but with the normal direction
@@ -1264,6 +1299,20 @@ class Line3:
         :param dy: y component of the direction (will be normalized).
         :param dz: z component of the direction (will be normalized).
         :return: a new Line3 with a unit-length direction.
+        """
+        ...
+
+    @staticmethod
+    def from_fit(points: NDArray[float], weights: NDArray[float] | None = None) -> Line3:
+        """
+        Fit a line to a set of points using singular value decomposition, resulting in a
+        least-squares fitting. The resulting parameterized line will have its t=0 sitting at the
+        center of the SVD result.
+        :param points: the points to fit the line to, as an (n, 3) array.
+        :param weights: if provided, a length-n array of weights to multiply each point's
+            residual by. If None, all points are weighted equally.
+        :return: a new Line3 fitted to the points.
+        :raises ValueError: if the singular value decomposition fails (e.g. too few points).
         """
         ...
 

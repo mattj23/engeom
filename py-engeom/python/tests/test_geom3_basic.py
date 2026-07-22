@@ -2,6 +2,7 @@
     Tests of basic geometric elements (planes, circles, spheres, lines, etc.) in geom3 module.
 """
 import math
+import numpy as np
 import pytest
 from engeom.geom3 import Vector3, Point3, SurfacePoint3, Plane3, Line3, Segment3, Sphere3, Circle3, Iso3
 
@@ -134,6 +135,90 @@ def test_plane3_intersect_parallel_planes_returns_none():
     assert p1.intersect_plane(p2) is None
 
 
+def test_plane3_from_point_normal():
+    plane = Plane3.from_point_normal(0, 0, 3, 0, 0, 1)
+    assert isinstance(plane, Plane3)
+    assert plane.c == pytest.approx(1.0)
+    assert plane.d == pytest.approx(3.0)
+
+
+def test_plane3_from_point_normal_zero_normal_raises():
+    with pytest.raises(ValueError):
+        Plane3.from_point_normal(0, 0, 0, 0, 0, 0)
+
+
+def test_plane3_from_3_points():
+    plane = Plane3.from_3_points(Point3(0, 0, 0), Point3(1, 0, 0), Point3(0, 1, 0))
+    assert isinstance(plane, Plane3)
+    assert plane.c == pytest.approx(1.0)
+    assert plane.d == pytest.approx(0.0, abs=1e-6)
+
+
+def test_plane3_from_3_points_collinear_raises():
+    with pytest.raises(ValueError):
+        Plane3.from_3_points(Point3(0, 0, 0), Point3(1, 0, 0), Point3(2, 0, 0))
+
+
+def test_plane3_from_surface_point():
+    sp = SurfacePoint3(1, 2, 3, 0, 0, 1)
+    plane = Plane3.from_surface_point(sp)
+    assert isinstance(plane, Plane3)
+    assert plane.c == pytest.approx(1.0)
+    assert plane.d == pytest.approx(3.0)
+
+
+def test_plane3_from_fit_recovers_plane():
+    points = np.array(
+        [[0.0, 0.0, 5.0], [1.0, 0.0, 5.0], [0.0, 1.0, 5.0], [1.0, 1.0, 5.0]]
+    )
+    plane = Plane3.from_fit(points)
+    assert isinstance(plane, Plane3)
+    assert abs(plane.c) == pytest.approx(1.0)
+    assert plane.distance_to_point(Point3(0.5, 0.5, 5.0)) == pytest.approx(0.0, abs=1e-6)
+
+
+def test_plane3_from_fit_uniform_weights_match_unweighted():
+    points = np.array(
+        [[0.0, 0.0, 5.0], [1.0, 0.3, 5.2], [0.2, 1.0, 4.8], [1.0, 1.0, 5.1]]
+    )
+    unweighted = Plane3.from_fit(points)
+    uniform = Plane3.from_fit(points, np.ones(len(points)))
+    assert uniform.a == pytest.approx(unweighted.a)
+    assert uniform.b == pytest.approx(unweighted.b)
+    assert uniform.c == pytest.approx(unweighted.c)
+    assert uniform.d == pytest.approx(unweighted.d)
+
+
+def test_plane3_from_fit_heavily_weighted_point_pulls_plane_toward_it():
+    # A mostly-flat cluster at z=0 plus one outlier point; in the limit of a very large weight
+    # on the outlier, the least-squares fit is forced to pass through it almost exactly.
+    points = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [0.3, 0.7, 0.0],
+            [0.8, 0.2, 0.0],
+            [3.0, 3.0, 2.0],
+        ]
+    )
+    outlier = Point3(3.0, 3.0, 2.0)
+
+    unweighted = Plane3.from_fit(points)
+    weights = np.ones(len(points))
+    weights[-1] = 1000.0
+    weighted = Plane3.from_fit(points, weights)
+
+    assert weighted.distance_to_point(outlier) < unweighted.distance_to_point(outlier)
+    assert weighted.distance_to_point(outlier) == pytest.approx(0.0, abs=1e-2)
+
+
+def test_plane3_from_fit_insufficient_points_raises():
+    with pytest.raises(ValueError):
+        Plane3.from_fit(np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]))
+
+
 # ==============================================================================
 # Line3 tests
 # ==============================================================================
@@ -225,6 +310,34 @@ def test_line3_normalized():
     assert isinstance(norm, Line3)
     length = math.sqrt(norm.direction.x**2 + norm.direction.y**2 + norm.direction.z**2)
     assert length == pytest.approx(1.0)
+
+
+def test_line3_from_fit_recovers_axis_aligned_line():
+    points = np.array(
+        [[0.0, 1.0, 2.0], [1.0, 1.0, 2.0], [2.0, 1.0, 2.0], [3.0, 1.0, 2.0]]
+    )
+    line = Line3.from_fit(points)
+    assert isinstance(line, Line3)
+    assert line.origin.y == pytest.approx(1.0)
+    assert line.origin.z == pytest.approx(2.0)
+    direction = line.normalized().direction
+    assert abs(direction.x) == pytest.approx(1.0)
+    assert direction.y == pytest.approx(0.0, abs=1e-6)
+    assert direction.z == pytest.approx(0.0, abs=1e-6)
+
+
+def test_line3_from_fit_weighted_pulls_toward_heavier_points():
+    points = np.array(
+        [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 10.0, 0.0], [1.0, 10.0, 0.0]]
+    )
+    weights = np.array([1.0, 1.0, 100.0, 100.0])
+    line = Line3.from_fit(points, weights)
+    assert line.origin.y > 5.0
+
+
+def test_line3_from_fit_single_point_raises():
+    with pytest.raises(ValueError):
+        Line3.from_fit(np.array([[0.0, 0.0, 0.0]]))
 
 
 # ==============================================================================

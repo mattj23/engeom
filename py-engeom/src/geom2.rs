@@ -833,6 +833,24 @@ impl Line2 {
         ))
     }
 
+    #[staticmethod]
+    #[pyo3(signature=(points, weights=None))]
+    fn from_fit<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        weights: Option<PyReadonlyArray1<'py, f64>>,
+    ) -> PyResult<Self> {
+        let points = array_to_points2(&points.as_array())?;
+        let line = match weights {
+            Some(weights) => engeom::geom2::Line2::from_fit(
+                &points,
+                Some(weights.as_array().as_slice().unwrap()),
+            ),
+            None => engeom::geom2::Line2::from_fit(&points, None),
+        }
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(line))
+    }
+
     #[getter]
     fn origin(&self) -> Point2 {
         Point2::from_inner(self.inner.origin)

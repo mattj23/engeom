@@ -1473,6 +1473,21 @@ class Line2:
         """
         ...
 
+    @staticmethod
+    def from_fit(points: NDArray[float], weights: NDArray[float] | None = None) -> Line2:
+        """
+        Fit a line to a set of points using singular value decomposition, resulting in a
+        least-squares fitting. The resulting parameterized line will have its ``t=0`` sitting at
+        the center of the SVD result.
+
+        :param points: the points to fit the line to, as an (n, 2) array.
+        :param weights: if provided, a length-n array of weights to multiply each point's
+            residual by. If None, all points are weighted equally.
+        :return: a new ``Line2`` fitted to the points.
+        :raises ValueError: if the singular value decomposition fails (e.g. too few points).
+        """
+        ...
+
     @property
     def origin(self) -> Point2:
         """The origin point of the line."""

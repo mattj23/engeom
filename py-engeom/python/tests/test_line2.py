@@ -2,6 +2,7 @@
 import math
 import pickle
 
+import numpy as np
 import pytest
 from engeom.geom2 import Line2, Point2, Vector2, Iso2
 
@@ -47,6 +48,27 @@ def test_from_points_direction_is_difference():
     line = Line2.from_points(Point2(1.0, 0.0), Point2(4.0, 0.0))
     assert vec_eq(line.direction, 3.0, 0.0)
     assert point_eq(line.origin, 1.0, 0.0)
+
+
+def test_from_fit_recovers_axis_aligned_line():
+    points = np.array([[0.0, 1.0], [1.0, 1.0], [2.0, 1.0], [3.0, 1.0]])
+    line = Line2.from_fit(points)
+    assert approx_eq(line.origin.y, 1.0)
+    assert approx_eq(abs(line.direction.normalized().x), 1.0)
+    assert approx_eq(line.direction.normalized().y, 0.0)
+
+
+def test_from_fit_weighted_pulls_toward_heavier_points():
+    # Two points off the y=0 line, weighted heavily, should pull the fit origin towards them.
+    points = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 10.0], [1.0, 10.0]])
+    weights = np.array([1.0, 1.0, 100.0, 100.0])
+    line = Line2.from_fit(points, weights)
+    assert line.origin.y > 5.0
+
+
+def test_from_fit_single_point_raises():
+    with pytest.raises(ValueError):
+        Line2.from_fit(np.array([[0.0, 0.0]]))
 
 
 def test_new_normalize_unit_direction():

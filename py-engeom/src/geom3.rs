@@ -619,6 +619,37 @@ impl Plane3 {
         )))
     }
 
+    #[staticmethod]
+    fn from_3_points(p1: Point3, p2: Point3, p3: Point3) -> PyResult<Self> {
+        engeom::Plane3::from_3_points(p1.get_inner(), p2.get_inner(), p3.get_inner())
+            .map(Self::from_inner)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[staticmethod]
+    fn from_surface_point(surface_point: &SurfacePoint3) -> Self {
+        Self::from_inner(engeom::Plane3::from_surface_point(
+            surface_point.get_inner(),
+        ))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(points, weights=None))]
+    fn from_fit<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        weights: Option<PyReadonlyArray1<'py, f64>>,
+    ) -> PyResult<Self> {
+        let points = array_to_points3(&points.as_array())?;
+        let plane = match weights {
+            Some(weights) => {
+                engeom::Plane3::from_fit(&points, Some(weights.as_array().as_slice().unwrap()))
+            }
+            None => engeom::Plane3::from_fit(&points, None),
+        }
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(plane))
+    }
+
     fn normal_reversed(&self) -> Self {
         Self::from_inner(self.inner.normal_reversed())
     }
@@ -728,6 +759,23 @@ impl Line3 {
             engeom::Point3::new(ox, oy, oz),
             engeom::Vector3::new(dx, dy, dz),
         ))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(points, weights=None))]
+    fn from_fit<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        weights: Option<PyReadonlyArray1<'py, f64>>,
+    ) -> PyResult<Self> {
+        let points = array_to_points3(&points.as_array())?;
+        let line = match weights {
+            Some(weights) => {
+                engeom::Line3::from_fit(&points, Some(weights.as_array().as_slice().unwrap()))
+            }
+            None => engeom::Line3::from_fit(&points, None),
+        }
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(line))
     }
 
     #[staticmethod]
