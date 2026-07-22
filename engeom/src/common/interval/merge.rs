@@ -55,7 +55,7 @@ impl<T: IntervalOps> MergeDomain<T> {
         } else {
             // If there are overlaps, we work in reverse order (to preserve earlier indices),
             // removing intervals and merging them into a working replacement interval.
-            let mut working = item.clone();
+            let mut working = item;
             for i in overlaps.iter().rev() {
                 let popped = self.items.remove(*i);
                 working = working.new_containing(&popped);
@@ -116,7 +116,7 @@ impl<T: IntervalOps> MergeDomain<T> {
             .items
             .iter()
             .filter_map(|item| action(*item))
-            .filter_map(|item| if item.is_empty() { None } else { Some(item) })
+            .filter(|item| !item.is_empty())
             .collect::<Vec<_>>();
         let surrogate = Self::from_intervals(modified);
         self.items = surrogate.items;
@@ -126,12 +126,14 @@ impl<T: IntervalOps> MergeDomain<T> {
 // ================================================================================================
 // Editing Features
 // ================================================================================================
+#[allow(dead_code)] // WIP editing API, not yet wired up
 enum ModAct<T: IntervalOps> {
     None,
     Delete,
     Replace(T),
 }
 
+#[allow(dead_code)] // WIP editing API, not yet wired up
 pub trait IntervalHandleEdit<T: IntervalOps> {
     fn delete(self);
     fn replace(self, item: T);

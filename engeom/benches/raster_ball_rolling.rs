@@ -1,23 +1,13 @@
-use colorgrad::preset::turbo;
 use criterion::{Criterion, criterion_group, criterion_main};
 use engeom::na::DMatrix;
 use engeom::raster2::{
-    Point2I, Point2IIndexAccess, RasterKernel, RasterMask, ScalarRaster, SizeForIndex,
+    Point2I, Point2IIndexAccess, RasterMask, ScalarRaster, SizeForIndex,
     ball_rolling_background,
 };
 use std::hint::black_box;
-use std::path::Path;
 
 fn raster_ball_rolling(c: &mut Criterion) {
     let target = build_target();
-    target
-        .render_with_cmap(
-            &Path::new("D:/temp/k/rbtest.png"),
-            &turbo(),
-            Some((-2.0, 2.0)),
-        )
-        .unwrap();
-
     c.bench_function("raster2 ball_rolling", |b| {
         b.iter(|| {
             let _result = ball_rolling_background(black_box(&target), 2.0);

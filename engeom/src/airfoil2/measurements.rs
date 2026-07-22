@@ -46,6 +46,7 @@ use crate::{Curve2, Point2, Result, SurfacePoint2};
 /// ```
 ///
 /// ```
+#[allow(dead_code)] // public helper not yet wired into the airfoil pipeline
 pub fn caliper_chord_line(section: &Curve2, camber: &Curve2) -> Result<(Segment2, Segment2)> {
     // The tangent chord line is found through the caliper method.  We look at the convex hull and
     // find the longest straight line that can be drawn between two points on the hull.  This line

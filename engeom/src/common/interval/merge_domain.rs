@@ -214,7 +214,7 @@ impl IntervalMergeDomain {
         } else {
             // If there are overlaps, we work in reverse order (to preserve earlier indices),
             // removing intervals and merging them into a working replacement interval.
-            let mut working = item.clone();
+            let mut working = item;
             for i in overlaps.iter().rev() {
                 let popped = self.items.remove(*i);
                 working = working.new_containing(&popped);
@@ -253,22 +253,20 @@ impl IntervalMergeDomain {
     pub fn trim_below(&mut self, value: f64) {
         let cut = self.items.partition_point(|iv| iv.max <= value);
         self.items.drain(..cut);
-        if let Some(first) = self.items.first_mut() {
-            if first.min < value {
+        if let Some(first) = self.items.first_mut()
+            && first.min < value {
                 *first = Interval::new(value, first.max);
             }
-        }
     }
 
     /// Remove all content above `value`, clipping any straddling interval to end at `value`.
     pub fn trim_above(&mut self, value: f64) {
         let cut = self.items.partition_point(|iv| iv.min < value);
         self.items.truncate(cut);
-        if let Some(last) = self.items.last_mut() {
-            if last.max > value {
+        if let Some(last) = self.items.last_mut()
+            && last.max > value {
                 *last = Interval::new(last.min, value);
             }
-        }
     }
 
     /// Remove all content outside `bounds`, clipping any straddling intervals to the boundary.

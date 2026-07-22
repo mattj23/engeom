@@ -567,7 +567,7 @@ mod tests {
         let mut m1 = Mesh::create_cylinder(1.0, 2.0, 256);
         m1.transform_by(&Iso3::translation(0.0, 0.0, 2.0));
 
-        mesh.append(&mut m1).unwrap();
+        mesh.append(&m1).unwrap();
 
         let plane = Plane3::xz();
 

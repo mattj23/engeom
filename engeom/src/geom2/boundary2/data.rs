@@ -108,8 +108,12 @@ impl BoundaryData2 {
         self.nodes.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+
     pub(super) fn insert_first(&mut self, data: BData) -> Result<u32> {
-        if self.len() > 0 {
+        if !self.is_empty() {
             return Err("Boundary already has a first element".into());
         };
 
@@ -151,6 +155,7 @@ impl BoundaryData2 {
         Ok(new_id)
     }
 
+    #[allow(dead_code)] // exercised only by tests
     pub(super) fn insert_before(&mut self, before_this_id: u32, data: BData) -> Result<u32> {
         if !self.nodes.contains_key(&before_this_id) {
             return Err("Node not found".into());
@@ -183,6 +188,7 @@ impl BoundaryData2 {
         self.nodes.get(&id)
     }
 
+    #[allow(dead_code)] // exercised only by tests
     pub(super) fn try_remove(&mut self, id: u32) -> Result<()> {
         if !self.nodes.contains_key(&id) {
             return Err("Node not found".into());
@@ -208,7 +214,7 @@ impl BoundaryData2 {
     }
 
     pub(super) fn tail_id(&self) -> Option<u32> {
-        if self.len() == 0 {
+        if self.is_empty() {
             return None;
         }
         if self.is_closed() {
@@ -224,6 +230,7 @@ impl BoundaryData2 {
         }
     }
 
+    #[allow(dead_code)] // exercised only by tests
     pub(super) fn push_data(&mut self, data: BData) -> Result<()> {
         match self.tail_id() {
             None => {
@@ -241,13 +248,13 @@ impl BoundaryData2 {
     pub(super) fn iter(&self) -> BIter<'_> {
         BIter {
             data: self,
-            current: if self.len() == 0 {
+            current: if self.is_empty() {
                 None
             } else {
                 Some(self.head_id)
             },
             head: self.head_id,
-            done: self.len() == 0,
+            done: self.is_empty(),
         }
     }
 
@@ -267,7 +274,7 @@ impl BoundaryData2 {
     ///
     /// # Examples
     pub fn start_point_of(&self, id: u32) -> Result<Point2> {
-        if self.len() == 0 {
+        if self.is_empty() {
             return Err("Boundary has no elements".into());
         };
 
@@ -320,7 +327,7 @@ pub trait BoundaryAddData {
 
 impl BoundaryAddData for BoundaryData2 {
     fn add_data(&mut self, data: BData) -> u32 {
-        if self.nodes.len() == 0 {
+        if self.nodes.is_empty() {
             self.insert_first(data).unwrap()
         } else {
             self.insert_after(self.tail_id().unwrap(), data).unwrap()
@@ -399,7 +406,7 @@ mod tests {
 
     /// Walk an open boundary from head to tail, returning node ids in order.
     fn walk_open(bd: &BoundaryData2) -> Vec<u32> {
-        if bd.len() == 0 {
+        if bd.is_empty() {
             return vec![];
         }
         let mut ids = Vec::new();
@@ -416,7 +423,7 @@ mod tests {
 
     /// Walk a closed boundary one full revolution from head, returning node ids in order.
     fn walk_closed(bd: &BoundaryData2) -> Vec<u32> {
-        if bd.len() == 0 {
+        if bd.is_empty() {
             return vec![];
         }
         let mut ids = Vec::new();

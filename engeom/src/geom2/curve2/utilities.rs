@@ -46,11 +46,10 @@ impl Curve2 {
                     continue;
                 }
 
-                for k in 0..working.len() {
+                for (k, back_candidate) in working.iter().enumerate() {
                     if i == k {
                         continue;
                     }
-                    let back_candidate = &working[k];
                     if back_candidate.is_closed() {
                         continue;
                     }
@@ -71,7 +70,7 @@ impl Curve2 {
 
             if *d <= max_dist {
                 no_op = false;
-                let merged = (&working[*i]).concat_with(&working[*k], items);
+                let merged = working[*i].concat_with(&working[*k], items);
                 working.remove(*i.max(k));
                 working.remove(*i.min(k));
                 working.push(merged);

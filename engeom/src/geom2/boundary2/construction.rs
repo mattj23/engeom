@@ -199,7 +199,7 @@ impl<'a> BCursor<'a> {
 
 impl BoundaryAddData for BCursor<'_> {
     fn add_data(&mut self, data: BData) -> u32 {
-        let next_id = if self.data.len() == 0 {
+        let next_id = if self.data.is_empty() {
             self.data.insert_first(data).unwrap()
         } else {
             self.data.insert_after(self.node_id, data).unwrap()
@@ -210,7 +210,7 @@ impl BoundaryAddData for BCursor<'_> {
     }
 
     fn last_point(&self) -> Option<Point2> {
-        if self.data.len() == 0 {
+        if self.data.is_empty() {
             if self.data.is_closed() {
                 None
             } else {

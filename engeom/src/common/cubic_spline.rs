@@ -364,7 +364,7 @@ impl<const D: usize> CubicSpline<D> {
                 if !(0.0..=1.0).contains(&t) {
                     continue;
                 }
-                if self.derivative(t).norm_squared() <= eps_sq && best.map_or(true, |b| t < b) {
+                if self.derivative(t).norm_squared() <= eps_sq && best.is_none_or(|b| t < b) {
                     best = Some(t);
                 }
             }
@@ -919,12 +919,12 @@ const ARC_LENGTH_PANELS: usize = 16;
 const GAUSS_LEGENDRE_10: [(f64, f64); 10] = [
     (-0.973_906_528_517_171_7, 0.066_671_344_308_688_1),
     (-0.865_063_366_688_984_5, 0.149_451_349_150_580_6),
-    (-0.679_409_568_299_024_4, 0.219_086_362_515_982_0),
+    (-0.679_409_568_299_024_4, 0.219_086_362_515_982),
     (-0.433_395_394_129_247_2, 0.269_266_719_309_996_3),
     (-0.148_874_338_981_631_2, 0.295_524_224_714_752_9),
     (0.148_874_338_981_631_2, 0.295_524_224_714_752_9),
     (0.433_395_394_129_247_2, 0.269_266_719_309_996_3),
-    (0.679_409_568_299_024_4, 0.219_086_362_515_982_0),
+    (0.679_409_568_299_024_4, 0.219_086_362_515_982),
     (0.865_063_366_688_984_5, 0.149_451_349_150_580_6),
     (0.973_906_528_517_171_7, 0.066_671_344_308_688_1),
 ];
@@ -1190,9 +1190,9 @@ mod tests {
             Point3::new(3.0, 0.0, 0.0),
         );
         let roots = c.derivative_roots();
-        for dim in 0..3 {
-            assert!(roots[dim][0].is_nan(), "dim {} slot 0", dim);
-            assert!(roots[dim][1].is_nan(), "dim {} slot 1", dim);
+        for (dim, root) in roots.iter().enumerate() {
+            assert!(root[0].is_nan(), "dim {} slot 0", dim);
+            assert!(root[1].is_nan(), "dim {} slot 1", dim);
         }
     }
 

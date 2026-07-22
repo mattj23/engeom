@@ -872,6 +872,8 @@ mod tests {
     #[test_case((1.0, 0.0, 1.0), Some(((0.0, -1.0, 1.0, -1.0), (0.0, 1.0, 1.0, 1.0))))]
     #[test_case((2.0, 2.0, 3.0), Some(((-1.0, 0.0, -1.0, 2.0), (0.0, -1.0, 2.0, -1.0))))]
     #[test_case((0.5, 0.5, 0.5), Some(((0.0, 1.0, 0.5, 1.0), (1.0, 0.0, 1.0, 0.5))))]
+    // Tuple shape is dictated by the `test_case` rows below.
+    #[allow(clippy::type_complexity)]
     fn outer_tangencies(
         c: (f64, f64, f64),
         e: Option<((f64, f64, f64, f64), (f64, f64, f64, f64))>,

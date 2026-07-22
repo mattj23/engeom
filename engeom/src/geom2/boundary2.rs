@@ -167,6 +167,10 @@ impl Boundary2 {
         self.elements.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.elements.is_empty()
+    }
+
     pub fn to_points(&self, tol: f64) -> Result<Vec<Point2>> {
         let mut points = vec![self.elements[0].at_start().point];
         for e in self.elements.iter() {

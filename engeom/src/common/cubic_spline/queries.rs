@@ -265,13 +265,13 @@ impl<const D: usize> CubicSplineQueries<D> {
         // possible distance.  Any volume who does not have a _closest_ distance less than that
         // value cannot possibly contain the projection of the test point.
         let mut prune = [(f64::INFINITY, f64::INFINITY); N_INTR];
-        for i in 0..N_INTR {
+        for (i, slot) in prune.iter_mut().enumerate() {
             let end = if i < N_INTR - 1 {
                 self.intervals[i + 1].line0.origin
             } else {
                 self.line1.origin
             };
-            prune[i] = dist_min_max(point, &self.intervals[i], &end);
+            *slot = dist_min_max(point, &self.intervals[i], &end);
         }
         let min_farthest = prune
             .iter()
@@ -668,7 +668,7 @@ mod tests {
         let c = sample_2d();
         let helper = CubicSplineBaseDist::new(&c);
         let t = helper.find_max_t(0.6, 1.0);
-        assert!(t >= 0.6 - 1e-9 && t <= 1.0 + 1e-9);
+        assert!((0.6 - 1e-9..=1.0 + 1e-9).contains(&t));
         // Error is monotonically decreasing from the t=0.5 peak out to t=1, so the restricted
         // maximum should sit at the left edge of the window.
         assert_relative_eq!(t, 0.6, epsilon = 1e-6);

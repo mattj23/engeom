@@ -307,7 +307,7 @@ mod tests {
         let mesh = stanford_bun_2();
         let even = (0..mesh.vertices().len()).step_by(2).collect::<Vec<_>>();
         let mask = IndexMask::try_from_indices(&even, mesh.vertices().len())?;
-        let reduced_points = mask.clone_indices_of(&mesh.vertices())?;
+        let reduced_points = mask.clone_indices_of(mesh.vertices())?;
         let reduced_tree = KdTree::try_new(&reduced_points)?;
 
         let partial_tree = PartialKdTree::try_new(mesh.vertices(), &mask)?;

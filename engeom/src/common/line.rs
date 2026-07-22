@@ -407,7 +407,7 @@ mod tests {
 
         // A dense cluster of gross outliers well off the line.
         let center = Point2::new(-2.0, 3.0);
-        for i in 0..50 {
+        for _i in 0..50 {
             points.push(center + rand.gaussian_vector(1.0));
         }
 

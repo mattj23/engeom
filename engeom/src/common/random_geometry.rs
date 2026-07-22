@@ -17,6 +17,9 @@ use rand::{RngExt, SeedableRng};
 use rand_distr::Normal;
 use std::f64::consts::PI;
 
+// The `Seeded` variant carries a full `StdRng` state and is used directly on the hot sampling
+// path; boxing it to equalize variant sizes would only add indirection in test code.
+#[allow(clippy::large_enum_variant)]
 enum RngSource {
     Seeded(StdRng),
     Thread,

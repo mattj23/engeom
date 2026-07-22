@@ -135,7 +135,7 @@ pub fn load_downsample_filter_lptf3(
         .collect::<Vec<_>>();
 
     // Get everything back in order
-    combined.sort_by(|(row_i1, _, _), (row_i2, _, _)| row_i1.cmp(row_i2));
+    combined.sort_by_key(|(row_i1, _, _)| *row_i1);
     let mut final_rows = Vec::with_capacity(combined.len());
     let mut final_row_colors = Vec::with_capacity(combined.len());
     for (_, row_points, row_colors) in combined {

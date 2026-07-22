@@ -514,8 +514,8 @@ mod tests {
         let circle = Circle2::new(0.5, 0.5, 0.6);
 
         match curve.partition_by(&circle) {
-            SplitResult::Positive => assert!(false, "Should not be positive"),
-            SplitResult::Negative => assert!(false, "Should not be negative"),
+            SplitResult::Positive => panic!("Should not be positive"),
+            SplitResult::Negative => panic!("Should not be negative"),
             SplitResult::Pair(negatives, positives) => {
                 assert_eq!(negatives.len(), 3);
                 assert_eq!(positives.len(), 4);
@@ -529,8 +529,8 @@ mod tests {
         let line = Line2::new([0.5, 0.0].into(), [0.0, 1.0].into());
 
         match curve.partition_by(&line) {
-            SplitResult::Positive => assert!(false, "Should not be positive"),
-            SplitResult::Negative => assert!(false, "Should not be negative"),
+            SplitResult::Positive => panic!("Should not be positive"),
+            SplitResult::Negative => panic!("Should not be negative"),
             SplitResult::Pair(negatives, positives) => {
                 assert_eq!(negatives.len(), 2);
                 assert_eq!(positives.len(), 1);
@@ -544,8 +544,8 @@ mod tests {
         let line = Line2::new([0.5, 0.0].into(), [0.0, 1.0].into());
 
         match curve.partition_by(&line) {
-            SplitResult::Positive => assert!(false, "Should not be positive"),
-            SplitResult::Negative => assert!(false, "Should not be negative"),
+            SplitResult::Positive => panic!("Should not be positive"),
+            SplitResult::Negative => panic!("Should not be negative"),
             SplitResult::Pair(negatives, positives) => {
                 assert_eq!(negatives.len(), 1);
                 assert_eq!(positives.len(), 1);
@@ -559,8 +559,8 @@ mod tests {
         let aabb = Aabb2::new([-0.5, 0.5].into(), [0.5, 1.5].into());
 
         match curve.partition_by(&aabb) {
-            SplitResult::Positive => assert!(false, "Should not be positive"),
-            SplitResult::Negative => assert!(false, "Should not be negative"),
+            SplitResult::Positive => panic!("Should not be positive"),
+            SplitResult::Negative => panic!("Should not be negative"),
             SplitResult::Pair(negatives, positives) => {
                 assert_eq!(negatives.len(), 1);
                 assert_eq!(positives.len(), 1);
@@ -574,8 +574,8 @@ mod tests {
         let aabb = Aabb2::new([0.25, -1.0].into(), [0.75, 1.5].into());
 
         match curve.partition_by(&aabb) {
-            SplitResult::Positive => assert!(false, "Should not be positive"),
-            SplitResult::Negative => assert!(false, "Should not be negative"),
+            SplitResult::Positive => panic!("Should not be positive"),
+            SplitResult::Negative => panic!("Should not be negative"),
             SplitResult::Pair(negatives, positives) => {
                 assert_eq!(negatives.len(), 2);
                 assert_eq!(positives.len(), 3);
@@ -589,8 +589,8 @@ mod tests {
         let aabb = Aabb2::new([0.25, -1.0].into(), [0.75, 1.5].into());
 
         match curve.partition_by(&aabb) {
-            SplitResult::Positive => assert!(false, "Should not be positive"),
-            SplitResult::Negative => assert!(false, "Should not be negative"),
+            SplitResult::Positive => panic!("Should not be positive"),
+            SplitResult::Negative => panic!("Should not be negative"),
             SplitResult::Pair(negatives, positives) => {
                 assert_eq!(negatives.len(), 2);
                 assert_eq!(positives.len(), 2);

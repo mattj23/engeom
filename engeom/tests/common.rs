@@ -2,8 +2,8 @@ use engeom::Result;
 use std::env;
 use std::path::{Path, PathBuf};
 
-const TEST_DATA_FOLDER: &'static str = "test-data";
-const RESULT_DATA_FOLDER: &'static str = "result-data";
+const TEST_DATA_FOLDER: &str = "test-data";
+const RESULT_DATA_FOLDER: &str = "result-data";
 
 pub struct PathPair {
     root_path: PathBuf,

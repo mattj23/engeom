@@ -238,20 +238,19 @@ mod tests {
     fn extruded_points_off() {
         let target = open_extruded();
 
-        assert_eq!(false, target.align_surf_closest_to(&p(2.0, 0.0, 0.5)).is_on);
-        assert_eq!(false, target.align_surf_closest_to(&p(0.0, 2.0, 0.5)).is_on);
-        assert_eq!(
-            false,
-            target.align_surf_closest_to(&p(0.0, 0.0, -1.0)).is_on
+        assert!(!target.align_surf_closest_to(&p(2.0, 0.0, 0.5)).is_on);
+        assert!(!target.align_surf_closest_to(&p(0.0, 2.0, 0.5)).is_on);
+        assert!(
+            !target.align_surf_closest_to(&p(0.0, 0.0, -1.0)).is_on
         );
-        assert_eq!(false, target.align_surf_closest_to(&p(0.0, 0.0, 2.0)).is_on);
+        assert!(!target.align_surf_closest_to(&p(0.0, 0.0, 2.0)).is_on);
     }
 
     #[test]
     fn extruded_points_on() {
         let target = open_extruded();
-        assert_eq!(true, target.align_surf_closest_to(&p(0.5, 0.1, 0.5)).is_on);
-        assert_eq!(true, target.align_surf_closest_to(&p(0.1, 0.5, 0.5)).is_on);
+        assert!(target.align_surf_closest_to(&p(0.5, 0.1, 0.5)).is_on);
+        assert!(target.align_surf_closest_to(&p(0.1, 0.5, 0.5)).is_on);
     }
 
     #[test]
@@ -279,7 +278,7 @@ mod tests {
             data.add_seg_xy(0.0, 0.0);
             data.add_seg_xy(0.0, 1.0);
             let b = data.try_to_boundary().unwrap();
-            let target = ExtrudedBoundary3::new(b, iso.clone(), 1.0);
+            let target = ExtrudedBoundary3::new(b, iso, 1.0);
 
             for (t, e, n) in pairs.iter() {
                 let t = iso * Point3::from(*t);
@@ -309,28 +308,28 @@ mod tests {
     fn revolved_points_on() {
         let full = open_revolved(TAU);
         // Front, side, and back of the cylinder mid-height
-        assert_eq!(true, full.align_surf_closest_to(&p(2.0, 0.5, 0.0)).is_on);
-        assert_eq!(true, full.align_surf_closest_to(&p(0.0, 0.5, 2.0)).is_on);
-        assert_eq!(true, full.align_surf_closest_to(&p(-2.0, 0.5, 0.0)).is_on);
+        assert!(full.align_surf_closest_to(&p(2.0, 0.5, 0.0)).is_on);
+        assert!(full.align_surf_closest_to(&p(0.0, 0.5, 2.0)).is_on);
+        assert!(full.align_surf_closest_to(&p(-2.0, 0.5, 0.0)).is_on);
 
         let half = open_revolved(std::f64::consts::PI);
         // phi=0 and phi=PI/2 are within [0, PI]
-        assert_eq!(true, half.align_surf_closest_to(&p(2.0, 0.5, 0.0)).is_on);
-        assert_eq!(true, half.align_surf_closest_to(&p(0.0, 0.5, 2.0)).is_on);
+        assert!(half.align_surf_closest_to(&p(2.0, 0.5, 0.0)).is_on);
+        assert!(half.align_surf_closest_to(&p(0.0, 0.5, 2.0)).is_on);
     }
 
     #[test]
     fn revolved_points_off() {
         let full = open_revolved(TAU);
         // Off at the open profile ends (above and below the height range)
-        assert_eq!(false, full.align_surf_closest_to(&p(2.0, -1.0, 0.0)).is_on);
-        assert_eq!(false, full.align_surf_closest_to(&p(2.0, 2.0, 0.0)).is_on);
+        assert!(!full.align_surf_closest_to(&p(2.0, -1.0, 0.0)).is_on);
+        assert!(!full.align_surf_closest_to(&p(2.0, 2.0, 0.0)).is_on);
 
         let half = open_revolved(std::f64::consts::PI);
         // phi = atan2(-2, 0) = -PI/2, rem_euclid = 3*PI/2 > PI: off angular sweep
-        assert_eq!(false, half.align_surf_closest_to(&p(0.0, 0.5, -2.0)).is_on);
+        assert!(!half.align_surf_closest_to(&p(0.0, 0.5, -2.0)).is_on);
         // phi slightly greater than PI is off the half sweep
-        assert_eq!(false, half.align_surf_closest_to(&p(-1.0, 0.5, -0.1)).is_on);
+        assert!(!half.align_surf_closest_to(&p(-1.0, 0.5, -0.1)).is_on);
     }
 
     #[test]
@@ -341,6 +340,8 @@ mod tests {
         // Profile: open segment (1,0)→(1,1) in 2D, revolved fully (TAU) around the Y axis.
         // Rotation axis is Y; X is radial; Z is the other radial axis.
         // Note: off-surface points project onto the nearest profile point (not the query y).
+        // Test table of (query, expected-point, expected-normal) triples.
+        #[allow(clippy::type_complexity)]
         let pairs: Vec<([f64; 3], [f64; 3], Option<[f64; 3]>)> = vec![
             // +X side, mid-height
             ([2.0, 0.5, 0.0], [1.0, 0.5, 0.0], Some([1.0, 0.0, 0.0])),
@@ -368,7 +369,7 @@ mod tests {
             let mut data = BoundaryData2::new_open_xy(1.0, 0.0);
             data.add_seg_xy(1.0, 1.0);
             let b = data.try_to_boundary().unwrap();
-            let target = RevolvedBoundary3::new(b, iso.clone(), TAU);
+            let target = RevolvedBoundary3::new(b, iso, TAU);
 
             for (t, e, n) in pairs.iter() {
                 let t = iso * Point3::from(*t);

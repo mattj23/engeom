@@ -76,7 +76,7 @@ pub fn extract_inscribed_circles(input: &SectionInput) -> Result<Vec<Inscribed>>
 /// returns: Result<Vec<Inscribed, Global>, Box<dyn Error, Global>>
 fn extract_half_circles(input: &SectionInput, line: &Line2) -> Result<InscribedVec> {
     let mut results = InscribedVec::empty();
-    let mut working_line = line.clone();
+    let mut working_line = *line;
 
     loop {
         let circle = input.inscribed_from_crossing(&working_line);

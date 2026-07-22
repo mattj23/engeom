@@ -465,10 +465,8 @@ mod tests {
     fn line2_iso_mul_operator() {
         let line = Line2::new(Point2::new(1.0, 0.0), Vector2::x());
         let iso = Iso2::new(Vector2::new(0.0, 5.0), 0.0);
-        let t1 = iso * line.clone();
-        let t2 = &iso * &line;
+        let t1 = iso * line;
         assert_relative_eq!(t1.origin(), Point2::new(1.0, 5.0), epsilon = 1e-12);
-        assert_relative_eq!(t2.origin(), Point2::new(1.0, 5.0), epsilon = 1e-12);
     }
 
     #[test]

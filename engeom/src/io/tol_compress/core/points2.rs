@@ -35,7 +35,7 @@ pub fn write_tc_points2<W: Write>(
     writer.write_all(&y_bytes.to_le_bytes())?;
 
     for p in points {
-        let t = &iso * p;
+        let t = iso * p;
         write_var_width(writer, (t.x - bounds.mins.x) / bounds.extents().x, x_bytes)?;
         write_var_width(writer, (t.y - bounds.mins.y) / bounds.extents().y, y_bytes)?;
     }
@@ -61,7 +61,7 @@ pub fn read_tc_points2<R: Read>(reader: &mut R) -> crate::Result<Vec<Point2>> {
             let fx = read_var_width(reader, x_bytes)?;
             let fy = read_var_width(reader, y_bytes)?;
             let t = Point2::new(fx * ext.x + bounds.mins.x, fy * ext.y + bounds.mins.y);
-            all_points.push(&inv_iso * t);
+            all_points.push(inv_iso * t);
         }
     }
 

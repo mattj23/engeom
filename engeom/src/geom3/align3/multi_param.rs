@@ -131,6 +131,7 @@ mod tests {
 
     use crate::geom3::Vector3;
 
+    #[allow(dead_code)] // retained test helper
     fn gen_mean_pts() -> Vec<Point3> {
         vec![
             Point3::new(1.0, 2.0, 3.0),
@@ -139,6 +140,7 @@ mod tests {
         ]
     }
 
+    #[allow(dead_code)] // retained test helper
     fn gen_transform(x: f64, y: f64, z: f64, rx: f64, ry: f64, rz: f64) -> Iso3 {
         Iso3::new(Vector3::new(x, y, z), Vector3::new(rx, ry, rz))
     }

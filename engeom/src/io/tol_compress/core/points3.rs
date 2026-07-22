@@ -44,7 +44,7 @@ pub fn write_tc_points3<W: Write>(
 
     // Finally, we will convert and write the actual vertices
     for p in points {
-        let t = &iso * p;
+        let t = iso * p;
         write_var_width(writer, (t.x - bounds.mins.x) / bounds.extents().x, x_bytes)?;
         write_var_width(writer, (t.y - bounds.mins.y) / bounds.extents().y, y_bytes)?;
         write_var_width(writer, (t.z - bounds.mins.z) / bounds.extents().z, z_bytes)?;
@@ -77,7 +77,7 @@ pub fn read_tc_points3<R: Read>(reader: &mut R) -> crate::Result<Vec<Point3>> {
                 fy * ext.y + bounds.mins.y,
                 fz * ext.z + bounds.mins.z,
             );
-            all_points.push(&inv_iso * t);
+            all_points.push(inv_iso * t);
         }
     }
 

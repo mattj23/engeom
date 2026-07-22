@@ -2378,6 +2378,8 @@ type CubicSpline3State = (f64, f64, f64, f64, f64, f64, f64, f64, f64, f64, f64,
 #[pymethods]
 impl CubicSpline3 {
     #[new]
+    // Four control points as flat coordinates; the signature mirrors the Python API.
+    #[allow(clippy::too_many_arguments)]
     fn new(
         x0: f64,
         y0: f64,

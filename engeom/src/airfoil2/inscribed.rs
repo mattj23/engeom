@@ -84,6 +84,11 @@ impl InscribedVec {
         self.items.len()
     }
 
+    /// Returns `true` if the collection contains no inscribed circles.
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
     /// Create a new collection by taking ownership of a Vec of inscribed circles. The order is
     /// preserved exactly as it's received.
     pub fn new(items: Vec<Inscribed>) -> Self {

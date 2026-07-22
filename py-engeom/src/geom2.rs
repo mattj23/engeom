@@ -1128,6 +1128,8 @@ type CubicSpline2State = (f64, f64, f64, f64, f64, f64, f64, f64);
 #[pymethods]
 impl CubicSpline2 {
     #[new]
+    // Four control points as flat coordinates; the signature mirrors the Python API.
+    #[allow(clippy::too_many_arguments)]
     fn new(x0: f64, y0: f64, x1: f64, y1: f64, x2: f64, y2: f64, x3: f64, y3: f64) -> Self {
         Self {
             inner: engeom::geom2::CubicSpline2::new(
