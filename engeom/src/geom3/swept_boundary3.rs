@@ -240,9 +240,7 @@ mod tests {
 
         assert!(!target.align_surf_closest_to(&p(2.0, 0.0, 0.5)).is_on);
         assert!(!target.align_surf_closest_to(&p(0.0, 2.0, 0.5)).is_on);
-        assert!(
-            !target.align_surf_closest_to(&p(0.0, 0.0, -1.0)).is_on
-        );
+        assert!(!target.align_surf_closest_to(&p(0.0, 0.0, -1.0)).is_on);
         assert!(!target.align_surf_closest_to(&p(0.0, 0.0, 2.0)).is_on);
     }
 

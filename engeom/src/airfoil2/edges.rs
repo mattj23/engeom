@@ -689,9 +689,7 @@ impl EdgeWork {
 
     /// The maximum scalar projection of the fit points on the clipping line
     fn clip_max_scalar(&self) -> f64 {
-        
-        self
-            .fit_points
+        self.fit_points
             .iter()
             .map(|p| self.clip.scalar_project(p))
             .fold(0.0f64, |a, b| a.max(b))

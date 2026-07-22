@@ -254,9 +254,10 @@ impl IntervalMergeDomain {
         let cut = self.items.partition_point(|iv| iv.max <= value);
         self.items.drain(..cut);
         if let Some(first) = self.items.first_mut()
-            && first.min < value {
-                *first = Interval::new(value, first.max);
-            }
+            && first.min < value
+        {
+            *first = Interval::new(value, first.max);
+        }
     }
 
     /// Remove all content above `value`, clipping any straddling interval to end at `value`.
@@ -264,9 +265,10 @@ impl IntervalMergeDomain {
         let cut = self.items.partition_point(|iv| iv.min < value);
         self.items.truncate(cut);
         if let Some(last) = self.items.last_mut()
-            && last.max > value {
-                *last = Interval::new(last.min, value);
-            }
+            && last.max > value
+        {
+            *last = Interval::new(last.min, value);
+        }
     }
 
     /// Remove all content outside `bounds`, clipping any straddling intervals to the boundary.

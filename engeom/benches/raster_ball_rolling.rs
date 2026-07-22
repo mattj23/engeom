@@ -1,8 +1,7 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use engeom::na::DMatrix;
 use engeom::raster2::{
-    Point2I, Point2IIndexAccess, RasterMask, ScalarRaster, SizeForIndex,
-    ball_rolling_background,
+    Point2I, Point2IIndexAccess, RasterMask, ScalarRaster, SizeForIndex, ball_rolling_background,
 };
 use std::hint::black_box;
 
