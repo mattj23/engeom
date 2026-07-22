@@ -3,7 +3,7 @@
 use crate::common::PCoords;
 use crate::common::points::barycentric;
 use crate::raster2::RasterMapping;
-use crate::{Point2, Point3, Result, Vector2};
+use crate::{Point2, Result, Vector2};
 use parry2d_f64::partitioning::TraversalAction;
 use parry2d_f64::query::{PointQuery, PointQueryWithLocation};
 use parry2d_f64::shape::TriMesh;

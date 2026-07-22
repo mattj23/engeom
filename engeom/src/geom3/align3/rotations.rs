@@ -96,7 +96,7 @@ mod tests {
     use super::*;
     use crate::geom3::{Point3, Vector3};
     use approx::assert_relative_eq;
-    use rand::{Rng, RngExt};
+    use rand::RngExt;
     use std::f64::consts::PI;
 
     const NUMERIC_EPSILON: f64 = 1e-8;

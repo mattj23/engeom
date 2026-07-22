@@ -1,9 +1,9 @@
 //! Construction methods for `BoundaryData2`
 
 use crate::common::PCoords;
+use crate::geom2::BoundaryData2;
 use crate::geom2::boundary2::data::{BData, BoundaryAddData};
-use crate::geom2::{BoundaryData2, Segment2};
-use crate::{AngleDir, Arc2, Circle2, Line2, Point2, Result};
+use crate::{AngleDir, Circle2, Line2, Point2, Result};
 
 // ===============================================================================================
 //  Common boundary construction tools

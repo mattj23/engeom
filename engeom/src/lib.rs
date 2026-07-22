@@ -148,11 +148,9 @@ pub enum Smoothing {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::io::{deflate_bytes, read_tc_curve2_from, u_bytes_to_mesh, u_bytes_to_mesh_data};
-    use crate::na::{Translation3, UnitQuaternion};
-    use crate::{Curve2, Iso3, Mesh, Point3, Vector3};
-    use rand::distr::Uniform;
-    use std::f64::consts::PI;
+    use crate::io::{deflate_bytes, read_tc_curve2_from, u_bytes_to_mesh};
+
+    use crate::{Curve2, Mesh};
 
     /// Load a mesh with the stanford bunny reconstruction at resolution 4. The vertices are within
     /// 0.00000189 of the original ply file.

@@ -226,7 +226,7 @@ pub fn ball_pivot_with_centers_2d(
         // };
 
         if results.len() > completed.len() * 3 {
-            if let BallPivotEnd::EndOnIndex(end_index) = end {
+            if let BallPivotEnd::EndOnIndex(_end_index) = end {
                 // println!("Should have ended on {}", end_index);
                 // println!("Total: {}", points.len());
             }

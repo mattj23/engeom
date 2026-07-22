@@ -1,6 +1,5 @@
 use crate::Result;
 use crate::common::PCoords;
-use crate::common::triangulation::VertexBuilder;
 use crate::na::Point;
 
 /// This is a builder struct which manages the triangulation of repeated rows of vertices where the

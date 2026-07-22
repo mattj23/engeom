@@ -1,7 +1,7 @@
 use crate::AngleDir::Cw;
 use crate::common::{PCoords, Segment};
 use crate::geom2::{Aabb2, BoundaryElement2, LineOps2, Manifold1Pos2, rot90};
-use crate::{Iso2, Point2, UnitVec2};
+use crate::{Point2, UnitVec2};
 
 /// A line segment in 2D space, defined by two endpoints.
 ///

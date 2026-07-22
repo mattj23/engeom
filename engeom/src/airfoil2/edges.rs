@@ -737,7 +737,7 @@ impl EdgeWork {
 mod tests {
     use super::*;
     use crate::common::fill_gaps;
-    use crate::{Circle2, Curve2, Line2, Result, curve2};
+    use crate::{Circle2, Curve2, Result, curve2};
     use approx::assert_relative_eq;
 
     macro_rules! inscribed_vec {

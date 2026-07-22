@@ -191,7 +191,7 @@ mod tests {
     use super::*;
     use crate::curve2;
     use crate::tests::airfoil_curve;
-    use approx::{assert_abs_diff_eq, assert_relative_eq};
+    use approx::assert_abs_diff_eq;
 
     fn len_dist(curve: &Curve2, inscribed: &Inscribed) -> (f64, f64) {
         let m = curve.at_closest_to_point(&inscribed.c);

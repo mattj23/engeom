@@ -36,7 +36,7 @@ mod fitting;
 use crate::common::PCoords;
 use crate::common::points::dist;
 use crate::geom2::{Aabb2, Manifold1Pos2};
-use crate::{Iso2, Point2, Result};
+use crate::{Point2, Result};
 use parry2d_f64::bounding_volume::BoundingVolume;
 use std::ops::Deref;
 

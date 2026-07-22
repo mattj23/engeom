@@ -1,6 +1,6 @@
 use crate::common::{PCoords, Segment};
 use crate::geom3::Aabb3;
-use crate::{Iso3, Manifold1Pos3, Point3, UnitVec3};
+use crate::{Manifold1Pos3, Point3, UnitVec3};
 
 /// A line segment in 3D space, defined by two endpoints.
 ///
@@ -45,7 +45,7 @@ impl Segment3 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Vector3;
+    use crate::{Iso3, Vector3};
     use approx::assert_relative_eq;
 
     #[test]

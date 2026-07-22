@@ -305,7 +305,7 @@ mod tests {
         let circles = OrientUpperLower::Curvature.apply(circles)?;
 
         let result = fit_auto_edge(&input, circles, true)?;
-        let result = fit_auto_edge(&input, result.circles, false)?;
+        let _result = fit_auto_edge(&input, result.circles, false)?;
 
         Ok(())
     }

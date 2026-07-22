@@ -832,7 +832,7 @@ mod tests {
     use rand::RngExt;
     use rand::distr::Distribution;
 
-    use crate::geom2::{Line2, Ray2};
+    use crate::geom2::Ray2;
     use approx::assert_relative_eq;
 
     use crate::common::random_geometry::RandomGeometry2;
