@@ -1,21 +1,28 @@
-//! MAGSAC++ consensus fitting for [`Circle3`].
+//! Circle fitting for [`Circle3`], both ordinary least squares and MAGSAC++ robust consensus.
 //!
-//! Two entry points are provided:
-//!   - [`Circle3::from_consensus_planar`] reduces the problem to 2D by projecting the points onto
-//!     the best-fit plane (via an [`SvdBasis3`]), running the [`Circle2`] consensus fit there, and
-//!     lifting the result back into 3D. It is fast and effective when the points are genuinely
+//! All entry points share a single refinement engine, [`Circle3Fit`], a weighted least-squares
+//! problem over a circle's six degrees of freedom (center, plane orientation, and radius) solved
+//! with Levenberg-Marquardt against the true geometric point-to-circle distances:
+//!   - [`Circle3::from_fit`] seeds it with a closed-form estimate (best-fit plane via [`SvdBasis3`]
+//!     plus an in-plane algebraic circle fit) and refines once. It is fast but not robust to gross
+//!     outliers.
+//!   - [`Circle3::from_consensus`] drives the same [`Circle3Fit`] through the MAGSAC++
+//!     sample-and-refine loop in the native 3D dimension: every candidate is a full 3D circle,
+//!     residuals are true point-to-circle distances, and the refinement adjusts all six degrees of
+//!     freedom, so it is robust to out-of-plane outliers at the cost of a heavier per-iteration
+//!     refinement.
+//!   - [`Circle3::from_consensus_planar`] instead reduces the problem to 2D by projecting the points
+//!     onto the best-fit plane (via an [`SvdBasis3`]), running the [`Circle2`] consensus fit there,
+//!     and lifting the result back into 3D. It is fast and effective when the points are genuinely
 //!     near-planar, but its plane estimate is corrupted by gross out-of-plane outliers.
-//!   - [`Circle3::from_consensus`] fits the circle in its native 3D dimension: every candidate is a
-//!     full 3D circle, residuals are true point-to-circle distances, and the refinement adjusts all
-//!     six degrees of freedom (center, plane orientation, and radius). This is more robust to
-//!     out-of-plane outliers at the cost of a heavier per-iteration refinement.
 
 use super::Circle3;
+use crate::common::PCoords;
 use crate::common::consensus::{ConsensusModel, Magsac};
 use crate::geom3::SvdBasis3;
 use crate::{Circle2, Iso3, Point2, Point3, Result, UnitVec3, Vector3};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
-use parry3d_f64::na::{Dyn, Matrix, Owned, U1, U6, UnitQuaternion, Vector, Vector6};
+use parry3d_f64::na::{Dyn, Matrix, Matrix3, Owned, U1, U6, UnitQuaternion, Vector, Vector6};
 
 /// The Euclidean distance from a point to the nearest point on a 3D circle defined by its center,
 /// unit normal, and radius. It combines the out-of-plane offset with the in-plane radial deviation.
@@ -54,18 +61,90 @@ impl ConsensusModel<3> for Circle3 {
     }
 
     fn refine_weighted(points: &[Point3], weights: &[f64], initial: &Circle3) -> Option<Circle3> {
-        let problem = Circle3Fit::new(points, weights, initial);
-        let (result, report) = LevenbergMarquardt::new().minimize(problem);
-        if report.termination.was_successful() {
-            let (center, normal, radius) = result.circle_params(&result.params);
-            Some(Circle3::new(center, normal, radius))
-        } else {
-            None
-        }
+        Circle3Fit::refine(points, weights, initial)
     }
 }
 
+/// Closed-form circle estimate for a set of 3D points, used as the initial guess for the
+/// least-squares refinement. The best-fit plane is found via an [`SvdBasis3`], the points are
+/// projected into that plane, and an in-plane weighted algebraic (Kåsa-style) circle fit gives the
+/// center and radius, which are then lifted back into 3D with the plane's normal. Returns `None` if
+/// the plane cannot be estimated (fewer than three points, or collinear inputs) or the in-plane
+/// algebraic system is singular.
+fn algebraic_circle_fit(points: &[Point3], weights: &[f64]) -> Option<Circle3> {
+    let basis = SvdBasis3::from_points(points, Some(weights))?;
+
+    // `to_local` maps world points into the basis frame, whose third axis is the plane normal;
+    // dropping the local z coordinate projects each point onto the plane.
+    let to_local = Iso3::from(&basis);
+    let to_world = to_local.inverse();
+
+    // Weighted Kåsa algebraic circle fit in the plane: for the circle `x² + y² = a·x + b·y + c`,
+    // each point gives a linear equation in `s = [a, b, c]`, with `a = 2cx`, `b = 2cy`, and
+    // `c = r² − cx² − cy²`.
+    let mut m = Matrix3::zeros();
+    let mut v = Vector3::zeros();
+    for (p, &w) in points.iter().zip(weights) {
+        let local = to_local.transform_point(p);
+        let row = Vector3::new(local.x, local.y, 1.0);
+        let target = local.x * local.x + local.y * local.y;
+        m += w * row * row.transpose();
+        v += w * target * row;
+    }
+
+    let s = m.lu().solve(&v)?;
+    let cx = 0.5 * s[0];
+    let cy = 0.5 * s[1];
+    let r_squared = s[2] + cx * cx + cy * cy;
+    if r_squared <= 0.0 {
+        return None;
+    }
+
+    let center = to_world.transform_point(&Point3::new(cx, cy, 0.0));
+    let normal = UnitVec3::new_normalize(to_world.rotation * Vector3::z());
+    Some(Circle3::new(center, normal, r_squared.sqrt()))
+}
+
 impl Circle3 {
+    /// Fit a circle to a set of 3D points by ordinary least squares. A closed-form estimate (the
+    /// best-fit plane via an [`SvdBasis3`] combined with an in-plane algebraic circle fit) provides
+    /// the initial guess, which is then refined against the true geometric point-to-circle distances
+    /// with the same weighted [`Circle3Fit`] Levenberg-Marquardt engine used by the consensus fit.
+    /// Optional weights may be provided in a slice of `f64` with the same number of elements as
+    /// `points`, where the weight `i` corresponds with the point `i`.
+    ///
+    /// This is not robust to gross outliers; for that, use [`Circle3::from_consensus`].
+    ///
+    /// # Arguments
+    ///
+    /// * `points`: a slice of at least three non-collinear coordinates to fit the circle to
+    /// * `weights`: if `Some`, this must be a slice of floating points the same length as `points`,
+    ///   with the weight value to multiply each point residual by.
+    ///
+    /// returns: Result<Circle3, Box<dyn Error, Global>>
+    pub fn from_fit(points: &[impl PCoords<3>], weights: Option<&[f64]>) -> Result<Self> {
+        let pts: Vec<Point3> = points.iter().map(|p| Point3::from(p.coords())).collect();
+        if pts.len() < 3 {
+            return Err("At least three points are required to fit a circle".into());
+        }
+
+        let ones;
+        let weights = match weights {
+            Some(w) => w,
+            None => {
+                ones = vec![1.0; pts.len()];
+                &ones
+            }
+        };
+
+        let guess = algebraic_circle_fit(&pts, weights)
+            .ok_or("Failed to fit circle: points are collinear or degenerate")?;
+
+        // Refine the algebraic guess against true geometric residuals with the weighted LM engine.
+        Circle3Fit::refine(&pts, weights, &guess)
+            .ok_or_else(|| "Failed to refine circle fit".into())
+    }
+
     /// Fit a circle to a set of 3D points by first projecting them onto their best-fit plane and
     /// running the [`Circle2`] MAGSAC++ consensus fit in 2D, then lifting the result back into 3D.
     ///
@@ -193,6 +272,18 @@ impl<'a> Circle3Fit<'a> {
         problem
     }
 
+    /// Refine `initial` against the weighted geometric point-to-circle distances of `points` with a
+    /// single Levenberg-Marquardt solve, returning the optimized circle or `None` if the solve
+    /// fails. This is the shared entry point for both the least-squares and consensus fits.
+    fn refine(points: &[Point3], weights: &[f64], initial: &Circle3) -> Option<Circle3> {
+        let problem = Circle3Fit::new(points, weights, initial);
+        let (result, report) = LevenbergMarquardt::new().minimize(problem);
+        report.termination.was_successful().then(|| {
+            let (center, normal, radius) = result.circle_params(&result.params);
+            Circle3::new(center, normal, radius)
+        })
+    }
+
     /// Reconstruct the `(center, normal, radius)` of the circle described by an offset from the base.
     fn circle_params(&self, p: &Vector6<f64>) -> (Point3, UnitVec3, f64) {
         let center = self.base_center + Vector3::new(p[0], p[1], p[2]);
@@ -246,7 +337,8 @@ impl LeastSquaresProblem<f64, Dyn, U6> for Circle3Fit<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::common::consensus::Magsac;
+    use crate::common::consensus::{ConsensusModel, Magsac};
+    use crate::common::random_geometry::RandomGeometry3;
     use crate::geom3::Circle3;
     use crate::{Point3, Result, UnitVec3, Vector3};
     use approx::assert_relative_eq;
@@ -289,6 +381,73 @@ mod tests {
             .abs();
         assert_relative_eq!(dot, 1.0, epsilon = 1.0e-3);
     }
+
+    // from_fit tests ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn from_fit_recovers_clean_circle() -> Result<()> {
+        let expected = tilted();
+        let points = sample_circle(&expected, 60);
+
+        let fit = Circle3::from_fit(&points, None)?;
+        assert_relative_eq!(fit.center, expected.center, epsilon = 1e-8);
+        assert_relative_eq!(fit.r(), expected.r(), epsilon = 1e-8);
+        // Every sampled point should lie on the recovered circle.
+        for p in &points {
+            assert!(fit.residual(p).abs() < 1e-7);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn from_fit_with_noise_is_close() -> Result<()> {
+        let mut rg = RandomGeometry3::from_seed(8);
+        let expected = tilted();
+        let points: Vec<Point3> = sample_circle(&expected, 400)
+            .into_iter()
+            .map(|p| p + rg.gaussian_vector::<3>(0.01))
+            .collect();
+
+        let fit = Circle3::from_fit(&points, None)?;
+        assert_matches(&fit, &expected);
+        Ok(())
+    }
+
+    #[test]
+    fn from_fit_uniform_weights_match_unweighted() -> Result<()> {
+        let mut rg = RandomGeometry3::from_seed(21);
+        let expected = tilted();
+        let points: Vec<Point3> = sample_circle(&expected, 40)
+            .into_iter()
+            .map(|p| p + rg.gaussian_vector::<3>(0.02))
+            .collect();
+
+        let unweighted = Circle3::from_fit(&points, None)?;
+        let weights = vec![1.0; points.len()];
+        let weighted = Circle3::from_fit(&points, Some(&weights))?;
+        assert_relative_eq!(weighted.center, unweighted.center, epsilon = 1e-9);
+        assert_relative_eq!(weighted.r(), unweighted.r(), epsilon = 1e-9);
+        Ok(())
+    }
+
+    #[test]
+    fn from_fit_too_few_points_is_error() {
+        let points = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
+        assert!(Circle3::from_fit(&points, None).is_err());
+    }
+
+    #[test]
+    fn from_fit_collinear_points_is_error() {
+        let points = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(3.0, 0.0, 0.0),
+        ];
+        assert!(Circle3::from_fit(&points, None).is_err());
+    }
+
+    // from_consensus / construction tests ─────────────────────────────────────
 
     #[test]
     fn from_3_points_matches_known_circle() -> Result<()> {

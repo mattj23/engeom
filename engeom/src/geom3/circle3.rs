@@ -2,7 +2,7 @@ use crate::common::PCoords;
 use crate::{Iso3, Plane3, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
 use std::ops;
 
-mod consensus;
+mod fitting;
 
 /// A flat circle in 3D space, defined by a center point, a unit normal, and a radius. The circle
 /// consists of every point in the plane through `center` perpendicular to `normal` at distance
