@@ -250,8 +250,8 @@ impl Boundary2 {
 mod tests {
     use super::*;
     use crate::Vector2;
+    use crate::common::random_geometry::RandomGeometry2;
     use approx::assert_relative_eq;
-    use rand::RngExt;
     use std::f64::consts::PI;
 
     fn simple_data() -> BoundaryData2 {
@@ -337,9 +337,9 @@ mod tests {
     fn stress_boundary_length_closest_round_trip() {
         let data = simple_data();
         let boundary = data.try_to_boundary().unwrap();
-        let mut rng = rand::rng();
+        let mut rng = RandomGeometry2::new();
         for _ in 0..1000 {
-            let l = rng.random_range(0.0..boundary.length());
+            let l = rng.positive(boundary.length());
             let m = boundary.at_length(l).unwrap();
             let l2 = boundary.at_closest_to_point(&m.point).1.l;
             assert_relative_eq!(l, l2, epsilon = 1e-6);

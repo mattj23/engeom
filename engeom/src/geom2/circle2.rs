@@ -829,14 +829,11 @@ impl LeastSquaresProblem<f64, Dyn, U3> for CircleFit<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::RngExt;
-    use rand::distr::Distribution;
 
     use crate::geom2::Ray2;
     use approx::assert_relative_eq;
 
     use crate::common::random_geometry::RandomGeometry2;
-    use rand_distr::Normal;
     use std::f64::consts::PI;
     use test_case::test_case;
 
@@ -852,18 +849,13 @@ mod tests {
 
     #[test]
     fn stress_tangent_lines() {
-        let mut rng = rand::rng();
+        let mut rng = RandomGeometry2::new();
 
         for _ in 0..1000 {
-            let expected = Circle2::new(
-                rng.random_range(-5.0..5.0),
-                rng.random_range(-5.0..5.0),
-                rng.random_range(0.5..2.0),
-            );
-            // let expected = Circle2::new(0.0, 0.0, 1.0);
+            let expected = rng.circle2(5.0, 0.5, 2.0);
 
-            let tr = rng.random_range(0.01..5.0) + expected.r();
-            let tv = Iso2::rotation(rng.random_range(-PI..PI)) * Vector2::new(tr, 0.0);
+            let tr = rng.f64(0.01, 5.0) + expected.r();
+            let tv = Iso2::rotation(rng.angle_sym_pi()) * Vector2::new(tr, 0.0);
             let tc = expected.center + tv;
 
             let (p0, p1) = expected.tangent_points_to(&tc).unwrap();
@@ -1019,12 +1011,12 @@ mod tests {
     fn make_sample_circle_points(c: &Circle2, n: usize, sigma: Option<f64>) -> Vec<Point2> {
         let mut points = Vec::with_capacity(n);
         let angle_step = 2.0 * PI / (n as f64);
-        let mut rng = rand::rng();
+        let mut rng = RandomGeometry2::new();
 
         for i in 0..n {
             let angle = angle_step * i as f64;
             let r = if let Some(sigma) = sigma {
-                Normal::new(0.0, sigma).unwrap().sample(&mut rng)
+                rng.gaussian_f64(0.0, sigma)
             } else {
                 0.0
             } + c.r();

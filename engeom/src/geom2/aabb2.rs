@@ -55,21 +55,19 @@ mod tests {
     use super::*;
     use crate::common::linear_space;
     use crate::common::points::dist;
+    use crate::common::random_geometry::RandomGeometry2;
     use approx::assert_relative_eq;
-    use rand::RngExt;
 
     #[test]
     fn stress_test_arc_aabb2() {
-        let pi = std::f64::consts::PI;
-        let mut rng = rand::rng();
+        let mut rng = RandomGeometry2::new();
 
         for _ in 0..1000 {
-            // let center = Point2::new(rng.random_range(-10.0..10.0), rng.random_range(-10.0..10.0));
             let center = Point2::new(0.0, 0.0);
-            let radius = rng.random_range(0.0..10.0);
+            let radius = rng.positive(10.0);
             let circle = Circle2::from_point(center, radius);
-            let angle0 = rng.random_range(-pi..pi);
-            let angle = rng.random_range(-2.0 * pi..2.0 * pi);
+            let angle0 = rng.angle_sym_pi();
+            let angle = rng.angle_sym_2pi();
 
             let aabb = arc_aabb2(&circle, angle0, angle);
 

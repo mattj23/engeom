@@ -215,7 +215,6 @@ mod tests {
     use crate::common::linear_space;
     use crate::common::random_geometry::RandomGeometry3;
     use approx::assert_relative_eq;
-    use rand::RngExt;
     use std::f64::consts::PI;
 
     /// Build a circle with a non-trivial orientation
@@ -357,10 +356,10 @@ mod tests {
     fn stress_intersect_plane_points_on_circle_and_plane() {
         // For a random circle and a plane through two known on-circle points, verify the
         // returned points lie on both the circle and the plane.
-        let mut rng = rand::rng();
+        let mut rg = RandomGeometry3::new();
         for _ in 0..500 {
             let circle = random_circle();
-            let t = rng.random_range(-PI..PI);
+            let t = rg.angle_sym_pi();
             // Build a plane that passes through a diameter of the circle
             let p1 = sample_circle_point(&circle, t);
             let p2 = sample_circle_point(&circle, t + PI);
@@ -386,15 +385,11 @@ mod tests {
     #[test]
     fn stress_max_extent_point() {
         let n = 1000;
-        let mut rng = rand::rng();
+        let mut rg = RandomGeometry3::new();
 
         for _ in 0..n {
             let circle = random_circle();
-            let dir = Vector3::new(
-                rng.random_range(-1.0..1.0),
-                rng.random_range(-1.0..1.0),
-                rng.random_range(-1.0..1.0),
-            );
+            let dir = rg.vector(1.0);
 
             // Skip degenerate directions (parallel to normal)
             let Ok(best) = circle.max_extent_point(&dir) else {

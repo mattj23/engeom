@@ -94,9 +94,9 @@ fn to_wpr(m: &Matrix3<f64>) -> (f64, f64, f64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::random_geometry::RandomGeometry3;
     use crate::geom3::{Point3, Vector3};
     use approx::assert_relative_eq;
-    use rand::RngExt;
     use std::f64::consts::PI;
 
     const NUMERIC_EPSILON: f64 = 1e-8;
@@ -150,11 +150,11 @@ mod tests {
 
     #[test]
     fn test_wpr_round_trip_stress() {
-        let mut rnd = rand::rng();
+        let mut rnd = RandomGeometry3::new();
         for _ in 0..1000 {
-            let rx = rnd.random_range(-PI..PI);
-            let ry = rnd.random_range(-PI..PI);
-            let rz = rnd.random_range(-PI..PI);
+            let rx = rnd.angle_sym_pi();
+            let ry = rnd.angle_sym_pi();
+            let rz = rnd.angle_sym_pi();
 
             let m0 = RotationMatrices::from_euler(rx, ry, rz);
             let t0 = to_matrix(&m0.q);
@@ -169,12 +169,12 @@ mod tests {
 
     #[test]
     fn test_wpr_rot_mat_round_trip_stress() {
-        let mut rnd = rand::rng();
+        let mut rnd = RandomGeometry3::new();
         for _ in 0..1000 {
             let m0 = RotationMatrices::from_euler(
-                rnd.random_range(-PI..PI),
-                rnd.random_range(-PI..PI),
-                rnd.random_range(-PI..PI),
+                rnd.angle_sym_pi(),
+                rnd.angle_sym_pi(),
+                rnd.angle_sym_pi(),
             );
             let t0 = to_matrix(&m0.q);
 
