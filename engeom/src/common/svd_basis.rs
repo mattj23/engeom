@@ -104,10 +104,13 @@ impl<const D: usize> SvdBasis<D> {
         }
         if let Some(w) = weights {
             let center = mean_point_weighted(points, w);
+            // Weighted least-squares fit: each row is the centered point scaled by the square root
+            // of its weight, so that `MᵀM = Σ wᵢ (pᵢ − c)(pᵢ − c)ᵀ` is the weighted scatter matrix
+            // whose dominant eigenvector is the weighted best-fit direction.
             let vectors = points
                 .iter()
                 .zip(w)
-                .map(|(p, w)| p.coords() - center.coords * *w)
+                .map(|(p, w)| (p.coords() - center.coords) * w.max(0.0).sqrt())
                 .collect::<Vec<_>>();
             svd_from_vectors(&vectors, Some(center))
         } else {
