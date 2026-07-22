@@ -362,4 +362,121 @@ mod tests {
             }
         }
     }
+
+    // -------------------------------------------------------------------------
+    // from_fit tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn from_fit_recovers_flat_plane() {
+        let points = [
+            Point3::new(0.0, 0.0, 5.0),
+            Point3::new(1.0, 0.0, 5.0),
+            Point3::new(0.0, 1.0, 5.0),
+            Point3::new(1.0, 1.0, 5.0),
+        ];
+        let plane = Plane3::from_fit(&points, None).unwrap();
+        assert_relative_eq!(plane.normal.into_inner().z.abs(), 1.0, epsilon = 1e-10);
+        for p in &points {
+            assert_relative_eq!(plane.distance_to_point(p), 0.0, epsilon = 1e-10);
+        }
+    }
+
+    #[test]
+    fn from_fit_uniform_weights_match_unweighted() {
+        let points = [
+            Point3::new(0.0, 0.0, 5.0),
+            Point3::new(1.0, 0.3, 5.2),
+            Point3::new(0.2, 1.0, 4.8),
+            Point3::new(1.0, 1.0, 5.1),
+        ];
+        let unweighted = Plane3::from_fit(&points, None).unwrap();
+        let weights = [1.0; 4];
+        let weighted = Plane3::from_fit(&points, Some(&weights)).unwrap();
+        assert_relative_eq!(
+            weighted.normal.into_inner(),
+            unweighted.normal.into_inner(),
+            epsilon = 1e-10
+        );
+        assert_relative_eq!(weighted.d, unweighted.d, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn from_fit_heavily_weighted_point_pulls_plane_toward_it() {
+        // A mostly-flat cluster at z=0 plus one outlier point; in the limit of a very large
+        // weight on the outlier, the least-squares fit is forced to pass through it almost
+        // exactly.
+        let points = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(1.0, 1.0, 0.0),
+            Point3::new(0.3, 0.7, 0.0),
+            Point3::new(0.8, 0.2, 0.0),
+            Point3::new(3.0, 3.0, 2.0),
+        ];
+        let outlier = points[6];
+
+        let unweighted = Plane3::from_fit(&points, None).unwrap();
+        let mut weights = [1.0; 7];
+        weights[6] = 1000.0;
+        let weighted = Plane3::from_fit(&points, Some(&weights)).unwrap();
+
+        assert!(weighted.distance_to_point(&outlier) < unweighted.distance_to_point(&outlier));
+        assert_relative_eq!(weighted.distance_to_point(&outlier), 0.0, epsilon = 1e-2);
+    }
+
+    #[test]
+    fn from_fit_empty_points_is_error() {
+        let points: [Point3; 0] = [];
+        assert!(Plane3::from_fit(&points, None).is_err());
+    }
+
+    #[test]
+    fn from_fit_insufficient_points_is_error() {
+        // Two points can't uniquely determine a plane orientation; the SVD degenerates.
+        let points = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
+        assert!(Plane3::from_fit(&points, None).is_err());
+    }
+
+    #[test]
+    fn from_fit_coincident_points_is_error() {
+        let points = [Point3::new(1.0, 1.0, 1.0), Point3::new(1.0, 1.0, 1.0)];
+        assert!(Plane3::from_fit(&points, None).is_err());
+    }
+
+    #[test]
+    fn stress_from_fit_recovers_known_plane() {
+        let mut rg = RandomGeometry3::new();
+        for _ in 0..200 {
+            let normal = rg.unit_vec3();
+            let point_on_plane = rg.point3(10.0);
+            let true_plane = Plane3::from_point_normal(&point_on_plane, &normal);
+
+            // Build two orthonormal in-plane basis vectors to generate points that lie exactly
+            // on the plane.
+            let n = normal.into_inner();
+            let reference = if n.z.abs() < 0.9 {
+                Vector3::z()
+            } else {
+                Vector3::x()
+            };
+            let u = reference.cross(&n).normalize();
+            let v = n.cross(&u);
+
+            let points: Vec<Point3> = (0..12)
+                .map(|_| point_on_plane + u * rg.f64(-5.0, 5.0) + v * rg.f64(-5.0, 5.0))
+                .collect();
+
+            let fit = Plane3::from_fit(&points, None).unwrap();
+            for p in &points {
+                assert_relative_eq!(fit.distance_to_point(p), 0.0, epsilon = 1e-8);
+            }
+            assert_relative_eq!(
+                fit.normal.dot(&true_plane.normal).abs(),
+                1.0,
+                epsilon = 1e-8
+            );
+        }
+    }
 }

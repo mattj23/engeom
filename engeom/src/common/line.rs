@@ -154,6 +154,7 @@ mod tests {
     use super::*;
     use crate::{Point2, Point3, Vector2, Vector3};
     use approx::assert_relative_eq;
+    use rand::RngExt;
 
     #[test]
     fn at_endpoints() {
@@ -201,5 +202,133 @@ mod tests {
         assert_relative_eq!(shifted.origin, Point2::new(3.0, 0.0), epsilon = 1e-12);
         let shifted_again = shifted.shifted_origin(-1.0);
         assert_relative_eq!(shifted_again.origin, Point2::new(1.0, 0.0), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn from_fit_recovers_axis_aligned_line() {
+        let points = vec![
+            Point3::new(0.0, 1.0, 2.0),
+            Point3::new(1.0, 1.0, 2.0),
+            Point3::new(2.0, 1.0, 2.0),
+            Point3::new(3.0, 1.0, 2.0),
+        ];
+        let line = Line::<3>::from_fit(&points, None).unwrap();
+        assert_relative_eq!(line.origin, Point3::new(1.5, 1.0, 2.0), epsilon = 1e-10);
+        let dir = line.direction.normalize();
+        assert_relative_eq!(dir.x.abs(), 1.0, epsilon = 1e-10);
+        assert_relative_eq!(dir.y, 0.0, epsilon = 1e-10);
+        assert_relative_eq!(dir.z, 0.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn from_fit_origin_is_at_centroid() {
+        let points = vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(2.0, 0.0),
+            Point2::new(4.0, 0.0),
+            Point2::new(6.0, 0.0),
+        ];
+        let line = Line::<2>::from_fit(&points, None).unwrap();
+        assert_relative_eq!(line.origin, Point2::new(3.0, 0.0), epsilon = 1e-10);
+    }
+
+    #[test]
+    fn from_fit_minimizes_perpendicular_residuals() {
+        // A noisy but clearly linear point set: every point should end up close to the fitted
+        // line, much closer than to a line built from just two of the points.
+        let points = vec![
+            Point2::new(0.0, 0.05),
+            Point2::new(1.0, 0.95),
+            Point2::new(2.0, 2.05),
+            Point2::new(3.0, 2.95),
+            Point2::new(4.0, 4.05),
+        ];
+        let line = Line::<2>::from_fit(&points, None).unwrap();
+        for p in &points {
+            assert!(
+                line.distance_to(p) < 0.1,
+                "point {p:?} too far from fitted line"
+            );
+        }
+    }
+
+    #[test]
+    fn from_fit_uniform_weights_match_unweighted() {
+        let points = vec![
+            Point3::new(0.0, 0.0, 5.0),
+            Point3::new(1.0, 0.3, 5.2),
+            Point3::new(0.2, 1.0, 4.8),
+            Point3::new(1.0, 1.0, 5.1),
+        ];
+        let unweighted = Line::<3>::from_fit(&points, None).unwrap();
+        let weights = vec![1.0; points.len()];
+        let weighted = Line::<3>::from_fit(&points, Some(&weights)).unwrap();
+        assert_relative_eq!(weighted.origin, unweighted.origin, epsilon = 1e-10);
+        assert_relative_eq!(weighted.direction, unweighted.direction, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn from_fit_heavily_weighted_points_pull_fit_toward_them() {
+        // Two clusters of points on either side of the origin; heavily weighting one cluster
+        // should pull the fitted line's origin towards it.
+        let points = vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(0.0, 10.0),
+            Point2::new(1.0, 10.0),
+        ];
+        let weights = vec![1.0, 1.0, 100.0, 100.0];
+        let line = Line::<2>::from_fit(&points, Some(&weights)).unwrap();
+        assert!(line.origin.y > 5.0);
+    }
+
+    #[test]
+    fn from_fit_empty_points_is_error() {
+        let points: Vec<Point3> = vec![];
+        assert!(Line::<3>::from_fit(&points, None).is_err());
+    }
+
+    #[test]
+    fn from_fit_single_point_is_error() {
+        let points = vec![Point3::new(1.0, 2.0, 3.0)];
+        assert!(Line::<3>::from_fit(&points, None).is_err());
+    }
+
+    #[test]
+    fn from_fit_coincident_points_is_error() {
+        let points = vec![Point3::new(1.0, 1.0, 1.0), Point3::new(1.0, 1.0, 1.0)];
+        assert!(Line::<3>::from_fit(&points, None).is_err());
+    }
+
+    #[test]
+    fn stress_from_fit_recovers_known_line() {
+        let mut rng = rand::rng();
+        for _ in 0..200 {
+            let origin = Point3::new(
+                rng.random_range(-10.0..10.0),
+                rng.random_range(-10.0..10.0),
+                rng.random_range(-10.0..10.0),
+            );
+            let direction = Vector3::new(
+                rng.random_range(-1.0..1.0),
+                rng.random_range(-1.0..1.0),
+                rng.random_range(-1.0..1.0),
+            )
+            .normalize();
+            let true_line = Line::<3>::new(origin, direction);
+
+            let points: Vec<Point3> = (0..20).map(|i| true_line.at(i as f64 - 10.0)).collect();
+            let fit = Line::<3>::from_fit(&points, None).unwrap();
+
+            // The fitted line should pass through (or very near) every input point, since they
+            // are exactly collinear.
+            for p in &points {
+                assert_relative_eq!(fit.distance_to(p), 0.0, epsilon = 1e-8);
+            }
+
+            // The fitted direction should be parallel (or anti-parallel) to the true direction.
+            let fit_dir = fit.direction.normalize();
+            assert_relative_eq!(fit_dir.dot(&direction).abs(), 1.0, epsilon = 1e-8);
+        }
     }
 }
