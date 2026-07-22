@@ -50,6 +50,7 @@ fn perpendicular_axes(normal: &UnitVec3) -> (Vector3, Vector3) {
 }
 
 impl ConsensusModel<3> for Circle3 {
+    type Point = Point3;
     const SAMPLE_SIZE: usize = 3;
 
     fn from_sample(sample: &[Point3]) -> Option<Self> {

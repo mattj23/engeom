@@ -87,21 +87,24 @@
 //!
 //! The framework has three pieces:
 //!   - [`ConsensusModel`], a dimension-generic trait implemented by each geometric primitive. It
-//!     knows how to build a candidate from a minimal random sample, evaluate a point's geometric
-//!     residual, and perform one weighted least-squares refinement of itself.
+//!     declares the input sample type it consumes (via [`ConsensusModel::Point`]), and knows how to
+//!     build a candidate from a minimal random sample, evaluate a point's geometric residual, and
+//!     perform one weighted least-squares refinement of itself. The sample type is usually a plain
+//!     `Point<f64, D>`, but a primitive that needs oriented input (such as a cylinder or cone fit
+//!     from point/normal pairs) can require a richer [`PCoords<D>`] type like `SurfacePoint<D>`.
 //!   - [`Magsac`], the estimator configuration and driver. Its [`Magsac::fit`] /
 //!     [`Magsac::fit_filtered`] methods run the sample-and-refine loop over any `ConsensusModel`.
 //!   - [`ConsensusFit`], the result, holding the estimated model, the inlier indices, and the
 //!     model's marginalized quality score.
 //!
 //! Primitive-specific trait implementations live next to their types (for example the `Circle2`
-//! implementation is in `geom2/circle2/consensus.rs`), reusing that primitive's existing
+//! implementation is in `geom2/circle2/fitting.rs`), reusing that primitive's existing
 //! constructors, distance methods, and analytic-jacobian Levenberg-Marquardt problems.
 
 mod weights;
 
 use crate::Result;
-use crate::na::Point;
+use crate::common::PCoords;
 use rand::SeedableRng;
 use rand::distr::{Distribution, Uniform};
 use rand::prelude::StdRng;
@@ -115,6 +118,14 @@ use weights::MagsacWeight;
 /// least-squares refinement from a current estimate. The driver composes these into the full
 /// marginalizing-sample-consensus loop.
 pub trait ConsensusModel<const D: usize>: Sized {
+    /// The type of the input samples this model is estimated from. For most primitives this is just
+    /// [`Point<f64, D>`](crate::na::Point), but a model that needs oriented input (for example a
+    /// cylinder or cone fit from point/normal pairs) can require a richer type such as
+    /// [`SurfacePoint<D>`](crate::common::SurfacePoint). The driver only ever moves these values
+    /// around and hands them back to the model, so the bound is deliberately minimal: it must expose
+    /// coordinates via [`PCoords<D>`] and be trivially copyable.
+    type Point: PCoords<D> + Copy;
+
     /// The minimum number of points needed to instantiate a candidate model (for example, three
     /// for a circle or two for a line).
     const SAMPLE_SIZE: usize;
@@ -126,17 +137,17 @@ pub trait ConsensusModel<const D: usize>: Sized {
 
     /// Build a candidate model from a minimal sample of exactly [`Self::SAMPLE_SIZE`] points.
     /// Returns `None` if the sample is degenerate (for example, collinear points for a circle).
-    fn from_sample(sample: &[Point<f64, D>]) -> Option<Self>;
+    fn from_sample(sample: &[Self::Point]) -> Option<Self>;
 
     /// The geometric residual (signed or unsigned distance) from `point` to the model surface. Only
     /// its magnitude is used for scoring; the sign, where meaningful, keeps the residual smooth for
     /// the least-squares refinement.
-    fn residual(&self, point: &Point<f64, D>) -> f64;
+    fn residual(&self, point: &Self::Point) -> f64;
 
     /// Perform one weighted least-squares refit from `initial`, weighting each point by the matching
     /// entry of `weights`. Implemented with an analytic-jacobian Levenberg-Marquardt problem
     /// specific to the primitive. Returns `None` if the solve fails.
-    fn refine_weighted(points: &[Point<f64, D>], weights: &[f64], initial: &Self) -> Option<Self>;
+    fn refine_weighted(points: &[Self::Point], weights: &[f64], initial: &Self) -> Option<Self>;
 }
 
 /// Configuration and driver for MAGSAC++ robust estimation of a [`ConsensusModel`].
@@ -181,7 +192,7 @@ impl Magsac {
     /// Estimate a model from `points`, accepting any candidate the primitive can build.
     pub fn fit<const D: usize, M: ConsensusModel<D>>(
         &self,
-        points: &[Point<f64, D>],
+        points: &[M::Point],
     ) -> Result<ConsensusFit<M>> {
         self.fit_filtered(points, |_| true)
     }
@@ -191,7 +202,7 @@ impl Magsac {
     /// sampling and refinement.
     pub fn fit_filtered<const D: usize, M, F>(
         &self,
-        points: &[Point<f64, D>],
+        points: &[M::Point],
         accept: F,
     ) -> Result<ConsensusFit<M>>
     where
@@ -299,12 +310,12 @@ pub struct ConsensusFit<M> {
 
 /// Draw `size` distinct point indices uniformly and collect the corresponding points into `out`.
 /// Returns `false` if distinct indices could not be drawn in a reasonable number of attempts.
-fn draw_sample<const D: usize>(
-    points: &[Point<f64, D>],
+fn draw_sample<P: Copy>(
+    points: &[P],
     size: usize,
     sampler: &Uniform<usize>,
     rng: &mut StdRng,
-    out: &mut Vec<Point<f64, D>>,
+    out: &mut Vec<P>,
 ) -> bool {
     out.clear();
     let mut chosen: [usize; 8] = [usize::MAX; 8];
@@ -329,7 +340,7 @@ fn draw_sample<const D: usize>(
 /// refit fails or produces a rejected model.
 fn refine<const D: usize, M: ConsensusModel<D>>(
     model: &mut M,
-    points: &[Point<f64, D>],
+    points: &[M::Point],
     weighting: &MagsacWeight,
     weight_buf: &mut [f64],
     steps: usize,
@@ -348,7 +359,7 @@ fn refine<const D: usize, M: ConsensusModel<D>>(
 /// (the model's quality score).
 fn fill_weights<const D: usize, M: ConsensusModel<D>>(
     model: &M,
-    points: &[Point<f64, D>],
+    points: &[M::Point],
     weighting: &MagsacWeight,
     weight_buf: &mut [f64],
 ) -> f64 {
@@ -365,7 +376,7 @@ fn fill_weights<const D: usize, M: ConsensusModel<D>>(
 /// Count points whose residual magnitude falls below the MAGSAC++ cutoff.
 fn count_inliers<const D: usize, M: ConsensusModel<D>>(
     model: &M,
-    points: &[Point<f64, D>],
+    points: &[M::Point],
     cutoff: f64,
 ) -> usize {
     points

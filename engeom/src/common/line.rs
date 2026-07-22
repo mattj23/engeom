@@ -177,6 +177,7 @@ impl<const D: usize> Line<D> {
 }
 
 impl<const D: usize> ConsensusModel<D> for Line<D> {
+    type Point = Point<f64, D>;
     const SAMPLE_SIZE: usize = 2;
 
     fn from_sample(sample: &[Point<f64, D>]) -> Option<Self> {

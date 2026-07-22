@@ -126,6 +126,7 @@ impl Sphere3 {
 }
 
 impl ConsensusModel<3> for Sphere3 {
+    type Point = Point3;
     const SAMPLE_SIZE: usize = 4;
 
     fn from_sample(sample: &[Point3]) -> Option<Self> {

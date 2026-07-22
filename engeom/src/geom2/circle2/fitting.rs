@@ -17,6 +17,7 @@ use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use parry2d_f64::na::{Dyn, Matrix, Matrix3, Owned, U1, U3, Vector, Vector3};
 
 impl ConsensusModel<2> for Circle2 {
+    type Point = Point2;
     const SAMPLE_SIZE: usize = 3;
 
     fn from_sample(sample: &[Point2]) -> Option<Self> {

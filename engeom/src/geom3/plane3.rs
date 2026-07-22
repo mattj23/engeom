@@ -290,6 +290,7 @@ impl Plane3 {
 }
 
 impl ConsensusModel<3> for Plane3 {
+    type Point = Point3;
     const SAMPLE_SIZE: usize = 3;
 
     fn from_sample(sample: &[Point3]) -> Option<Self> {
