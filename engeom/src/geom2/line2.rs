@@ -446,7 +446,7 @@ mod tests {
 
     #[test]
     fn line2_transformed_by_preserves_points_on_line() {
-        use crate::geom2::tests::RandomGeometry2;
+        use crate::common::random_geometry::RandomGeometry2;
         let mut rg = RandomGeometry2::new();
         for _ in 0..200 {
             let line = Line2::new(rg.point(10.0), {

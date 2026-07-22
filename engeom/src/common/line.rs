@@ -7,6 +7,7 @@
 
 use crate::Result;
 use crate::common::PCoords;
+use crate::common::consensus::{ConsensusModel, Magsac};
 use crate::common::svd_basis::SvdBasis;
 use crate::na::{AbstractRotation, Isometry, Point, SVector};
 use serde::{Deserialize, Serialize};
@@ -62,6 +63,38 @@ impl<const D: usize> Line<D> {
         let basis = SvdBasis::from_points(points, weights)
             .ok_or("Failed to fit line with singular value decomposition")?;
         Ok(Line::new(basis.center, basis.largest().into_inner()))
+    }
+
+    /// Fit a line to a set of points using MAGSAC++ robust consensus estimation.
+    ///
+    /// Unlike an ordinary least-squares fit ([`Line::from_fit`]), this rejects gross outliers by
+    /// taking an upper bound on the inlier noise (`sigma_max`) rather than a hard inlier/outlier
+    /// threshold, and refines each candidate with noise-marginalized iteratively reweighted least
+    /// squares. It is substantially less sensitive to `sigma_max` than RANSAC is to its threshold,
+    /// as long as `sigma_max` is not chosen smaller than the actual noise.
+    ///
+    /// The resulting line has its origin at the centroid of the inlier set and a unit-length
+    /// direction vector.
+    ///
+    /// # Arguments
+    ///
+    /// * `points`: the points to fit the line to
+    /// * `sigma_max`: the upper bound on the expected inlier noise, in the same units as the points
+    /// * `options`: an optional [`Magsac`] configuration to override the iteration count, refinement
+    ///   steps, confidence, or RNG seed. Its `sigma_max` field is overridden by the `sigma_max`
+    ///   argument.
+    ///
+    /// returns: Result<Line<{ D }>, Box<dyn Error, Global>>
+    pub fn from_consensus(
+        points: &[Point<f64, D>],
+        sigma_max: f64,
+        options: Option<Magsac>,
+    ) -> Result<Self> {
+        let mut magsac = options.unwrap_or_else(|| Magsac::new(sigma_max));
+        magsac.sigma_max = sigma_max;
+
+        let fit = magsac.fit::<D, Line<D>>(points)?;
+        Ok(fit.model)
     }
 
     /// Returns a new line with the same origin, but with the direction inverted.
@@ -143,6 +176,26 @@ impl<const D: usize> Line<D> {
     }
 }
 
+impl<const D: usize> ConsensusModel<D> for Line<D> {
+    const SAMPLE_SIZE: usize = 2;
+
+    fn from_sample(sample: &[Point<f64, D>]) -> Option<Self> {
+        let line = Line::from_points(&sample[0], &sample[1]);
+        // Reject degenerate (coincident) samples, whose direction vector is effectively zero.
+        (line.direction.norm() > 1e-12).then_some(line)
+    }
+
+    fn residual(&self, point: &Point<f64, D>) -> f64 {
+        self.distance_to(point)
+    }
+
+    fn refine_weighted(points: &[Point<f64, D>], weights: &[f64], _initial: &Self) -> Option<Self> {
+        // The MAGSAC++ refinement step is a single weighted least-squares fit, which for a line is
+        // exactly the weighted SVD fit provided by `from_fit`.
+        Line::from_fit(points, Some(weights)).ok()
+    }
+}
+
 impl<const D: usize> PCoords<D> for Line<D> {
     fn coords(&self) -> SVector<f64, D> {
         self.origin.coords
@@ -155,6 +208,7 @@ mod tests {
     use crate::{Point2, Point3, Vector2, Vector3};
     use approx::assert_relative_eq;
     use rand::RngExt;
+    use crate::common::random_geometry::RandomGeometry3;
 
     #[test]
     fn at_endpoints() {
@@ -300,6 +354,11 @@ mod tests {
         assert!(Line::<3>::from_fit(&points, None).is_err());
     }
 
+    fn line_noise3(line: &Line<3>, n: usize, sigma: f64) -> Vec<Point3> {
+        let mut rand = RandomGeometry3::new();
+        (0..n).map(|_| line.at(rand.f64_sym(10.0)) + rand.gaussian_vector(sigma)).collect()
+    }
+
     #[test]
     fn stress_from_fit_recovers_known_line() {
         let mut rng = rand::rng();
@@ -330,5 +389,76 @@ mod tests {
             let fit_dir = fit.direction.normalize();
             assert_relative_eq!(fit_dir.dot(&direction).abs(), 1.0, epsilon = 1e-8);
         }
+    }
+
+    // from_consensus tests ────────────────────────────────────────────────────────
+
+    #[test]
+    fn from_consensus_rejects_outliers() {
+        // Inliers lie along the line y = 0.5 with a small deterministic perturbation.
+        let true_line = Line::<2>::new(Point2::new(0.0, 0.5), Vector2::new(1.0, 0.0));
+        let inlier_count = 120;
+        let mut points: Vec<Point2> = (0..inlier_count)
+            .map(|i| {
+                let x = i as f64 * 0.05;
+                let noise = 0.003 * (7.0 * x).sin();
+                Point2::new(x, 0.5 + noise)
+            })
+            .collect();
+
+        // A dense cluster of gross outliers well off the line.
+        for i in 0..50 {
+            let f = i as f64;
+            points.push(Point2::new(3.0 + 0.02 * f, 5.0 + 0.01 * (f).cos()));
+        }
+
+        let magsac = Magsac {
+            sigma_max: 0.02,
+            max_iterations: Some(400),
+            refinement_steps: 4,
+            confidence: 0.99,
+            seed: Some(42),
+        };
+        let fit = magsac
+            .fit_filtered::<2, Line<2>, _>(&points, |_| true)
+            .unwrap();
+
+        // Every inlier should lie very close to the recovered line, and no outlier should be
+        // classified as an inlier.
+        for i in 0..inlier_count {
+            assert!(fit.model.distance_to(&points[i]) < 0.02);
+        }
+        assert!(fit.inliers.iter().all(|&i| i < inlier_count));
+        assert!(fit.inliers.len() > inlier_count * 9 / 10);
+
+        // The direction should be parallel (or anti-parallel) to the true horizontal line.
+        let dir = fit.model.direction.normalize();
+        assert_relative_eq!(
+            dir.dot(&true_line.direction.normalize()).abs(),
+            1.0,
+            epsilon = 1e-2
+        );
+    }
+
+    #[test]
+    fn from_consensus_convenience_recovers_line_3d() {
+        // A clean set of collinear 3D points; the convenience method should recover the line.
+        let true_line =
+            Line::<3>::new_normalize(Point3::new(1.0, -2.0, 3.0), Vector3::new(0.5, 1.0, -0.25));
+        let points: Vec<Point3> = (0..60)
+            .map(|i| true_line.at(i as f64 * 0.1 - 3.0))
+            .collect();
+
+        let line = Line::<3>::from_consensus(&points, 0.01, None).unwrap();
+
+        for p in &points {
+            assert!(line.distance_to(p) < 1e-3);
+        }
+        let dir = line.direction.normalize();
+        assert_relative_eq!(
+            dir.dot(&true_line.direction.normalize()).abs(),
+            1.0,
+            epsilon = 1e-6
+        );
     }
 }

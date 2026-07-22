@@ -135,7 +135,7 @@ fn read_aabb3<R: Read>(reader: &mut R) -> crate::Result<Aabb3> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geom3::tests::RandomGeometry3;
+    use crate::common::random_geometry::RandomGeometry3;
     use std::io::Cursor;
 
     // bytes_for_count thresholds: 2 bytes for max_index < 65536,
@@ -146,7 +146,7 @@ mod tests {
     fn round_trip_points3() {
         let tol = 1e-4;
         let mut rg = RandomGeometry3::from_seed(42);
-        let points: Vec<Point3> = (0..100000).map(|_| rg.point3(100.0)).collect();
+        let points: Vec<Point3> = (0..100000).map(|_| rg.point(100.0)).collect();
 
         let mut buf = Vec::new();
         write_tc_points3(&mut buf, &points, tol).unwrap();

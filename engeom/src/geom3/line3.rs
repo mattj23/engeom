@@ -136,7 +136,7 @@ impl ops::Mul<&Line3> for &Iso3 {
 mod tests {
     use super::*;
     use crate::geom3::sphere3::Sphere3;
-    use crate::geom3::tests::RandomGeometry3;
+    use crate::common::random_geometry::RandomGeometry3;
     use crate::{Plane3, UnitVec3};
     use approx::assert_relative_eq;
 
@@ -242,7 +242,7 @@ mod tests {
         for _ in 0..500 {
             let iso = rg.iso3(10.0);
             let line = Line3::new(iso * Point3::origin(), iso.rotation * Vector3::x());
-            let pt = rg.point3(10.0);
+            let pt = rg.point(10.0);
             let cp = line.closest_point(&pt);
             // Vector from closest point to test point must be perpendicular to direction
             assert_relative_eq!((pt - cp).dot(&line.direction), 0.0, epsilon = 1e-10);
@@ -286,7 +286,7 @@ mod tests {
         for _ in 0..500 {
             let iso = rg.iso3(10.0);
             let origin = iso * Point3::origin();
-            let dir = rg.vector3(2.0);
+            let dir = rg.vector(2.0);
             let line = Line3::new(origin, dir);
             let plane = Plane3::new(UnitVec3::new_normalize(iso.rotation * Vector3::z()), 2.0);
 
@@ -346,8 +346,8 @@ mod tests {
     fn stress_intersect_sphere_points_on_surface() {
         let mut rg = RandomGeometry3::new();
         for _ in 0..1000 {
-            let sphere = Sphere3::new(&rg.point3(2.0), rg.f64(0.1, 3.0));
-            let line = Line3::new(rg.point3(3.0), rg.vector3(2.0));
+            let sphere = Sphere3::new(&rg.point(2.0), rg.f64(0.1, 3.0));
+            let line = Line3::new(rg.point(3.0), rg.vector(2.0));
 
             for &t in &line.intersect_sphere(&sphere) {
                 let dist = (line.at(t) - sphere.center).norm();
@@ -362,7 +362,7 @@ mod tests {
         for _ in 0..500 {
             let iso = rg.iso3(10.0);
             let plane = Plane3::xy().transformed_by(&iso);
-            let line = Line3::new(rg.point3(10.0), rg.vector3(1.0));
+            let line = Line3::new(rg.point(10.0), rg.vector(1.0));
             if let Some(proj) = line.project_onto_plane(&plane) {
                 assert_relative_eq!(
                     plane.signed_distance_to_point(&proj.origin).abs(),
@@ -379,7 +379,7 @@ mod tests {
         for _ in 0..500 {
             let iso = rg.iso3(10.0);
             let plane = Plane3::xy().transformed_by(&iso);
-            let line = Line3::new(rg.point3(10.0), rg.vector3(1.0));
+            let line = Line3::new(rg.point(10.0), rg.vector(1.0));
             if let Some(proj) = line.project_onto_plane(&plane) {
                 // projected direction must be perpendicular to the plane normal
                 assert_relative_eq!(plane.normal.dot(&proj.direction), 0.0, epsilon = 1e-10);
@@ -410,7 +410,7 @@ mod tests {
         let mut rg = RandomGeometry3::new();
 
         for _ in 0..500 {
-            let original = Line3::new(rg.point3(10.0), rg.vector3(1.0));
+            let original = Line3::new(rg.point(10.0), rg.vector(1.0));
             let iso = rg.iso3(10.0);
             let transformed = original.transformed_by(&iso);
 

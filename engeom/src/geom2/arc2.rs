@@ -305,7 +305,7 @@ mod tests {
     use super::*;
     use crate::common::points::mid_point;
 
-    use crate::geom2::tests::RandomGeometry2;
+    use crate::common::random_geometry::RandomGeometry2;
     use crate::{Arc2, Curve2};
     use approx::assert_relative_eq;
 

@@ -232,7 +232,7 @@ impl ops::Mul<&Cylinder3> for &Iso3 {
 mod tests {
     use super::*;
     use crate::Vector3;
-    use crate::geom3::tests::RandomGeometry3;
+    use crate::common::random_geometry::RandomGeometry3;
     use approx::assert_relative_eq;
 
     fn axis_cylinder() -> Cylinder3 {
@@ -254,8 +254,8 @@ mod tests {
         let mut rg = RandomGeometry3::new();
         let r = rg.f64(0.5, 4.0);
         let l = rg.f64(1.0, 10.0);
-        let center = rg.point3(10.0);
-        let direction = rg.unit_vec3();
+        let center = rg.point(10.0);
+        let direction = rg.unit_vec();
         Cylinder3::new(center, direction, r, l)
     }
 
@@ -529,7 +529,7 @@ mod tests {
         let mut rg = RandomGeometry3::new();
         for _ in 0..500 {
             let cyl = random_cylinder();
-            let test = rg.point3(20.0);
+            let test = rg.point(20.0);
             let axis = cyl.axis();
             let Some(sp) = cyl.closest_point(&test, true) else {
                 continue;
@@ -553,7 +553,7 @@ mod tests {
         let mut rg = RandomGeometry3::new();
         for _ in 0..500 {
             let cyl = random_cylinder();
-            let test = rg.point3(20.0);
+            let test = rg.point(20.0);
             let axis = cyl.axis();
             let Some(sp) = cyl.closest_point(&test, false) else {
                 continue;

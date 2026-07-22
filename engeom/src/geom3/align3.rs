@@ -272,7 +272,7 @@ mod tests {
     use crate::common::linear_space;
     use std::f64::consts::FRAC_PI_2;
 
-    use crate::geom3::tests::RandomGeometry3;
+    use crate::common::random_geometry::RandomGeometry3;
     use approx::assert_relative_eq;
 
     #[test]
@@ -370,7 +370,7 @@ mod tests {
         let mut rg = RandomGeometry3::new();
         for _ in 0..10000 {
             let t = rg.iso3(10.0);
-            let rc = rg.point3(10.0);
+            let rc = rg.point(10.0);
             let p = RcParams3::from_initial(&t, &rc);
             let t2 = p.transform();
 

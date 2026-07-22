@@ -106,7 +106,7 @@ fn read_aabb2<R: Read>(reader: &mut R) -> crate::Result<Aabb2> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geom3::tests::RandomGeometry3;
+    use crate::common::random_geometry::RandomGeometry3;
     use std::io::Cursor;
 
     #[test]

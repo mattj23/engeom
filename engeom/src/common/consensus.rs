@@ -343,7 +343,8 @@ fn fill_weights<const D: usize, M: ConsensusModel<D>>(
 ) -> f64 {
     let mut score = 0.0;
     for (i, p) in points.iter().enumerate() {
-        let w = weighting.weight(model.residual(p).abs());
+        let r = model.residual(p).abs();
+        let w = weighting.weight(r);
         weight_buf[i] = w;
         score += w;
     }

@@ -287,7 +287,7 @@ impl ops::Mul<&Plane3> for &Iso3 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geom3::tests::RandomGeometry3;
+    use crate::common::random_geometry::RandomGeometry3;
     use approx::assert_relative_eq;
 
     #[test]
@@ -300,7 +300,7 @@ mod tests {
         // The plane occupies the same position in space: signed distance is negated everywhere.
         let mut rg = RandomGeometry3::new();
         for _ in 0..100 {
-            let p = rg.point3(10.0);
+            let p = rg.point(10.0);
             assert_relative_eq!(
                 reversed.signed_distance_to_point(&p),
                 -plane.signed_distance_to_point(&p),
@@ -449,8 +449,8 @@ mod tests {
     fn stress_from_fit_recovers_known_plane() {
         let mut rg = RandomGeometry3::new();
         for _ in 0..200 {
-            let normal = rg.unit_vec3();
-            let point_on_plane = rg.point3(10.0);
+            let normal = rg.unit_vec();
+            let point_on_plane = rg.point(10.0);
             let true_plane = Plane3::from_point_normal(&point_on_plane, &normal);
 
             // Build two orthonormal in-plane basis vectors to generate points that lie exactly

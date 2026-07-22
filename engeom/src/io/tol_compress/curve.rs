@@ -120,7 +120,7 @@ mod tests {
     use super::*;
     use crate::geom2::Point2;
     use crate::geom3::Point3;
-    use crate::geom3::tests::RandomGeometry3;
+    use crate::common::random_geometry::RandomGeometry3;
     use approx::assert_relative_eq;
     use std::io::Cursor;
 

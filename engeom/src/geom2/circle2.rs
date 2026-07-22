@@ -835,7 +835,7 @@ mod tests {
     use crate::geom2::{Line2, Ray2};
     use approx::assert_relative_eq;
 
-    use crate::geom2::tests::RandomGeometry2;
+    use crate::common::random_geometry::RandomGeometry2;
     use rand_distr::Normal;
     use std::f64::consts::PI;
     use test_case::test_case;

@@ -213,7 +213,7 @@ mod tests {
     use super::*;
     use crate::Curve3;
     use crate::common::linear_space;
-    use crate::geom3::tests::RandomGeometry3;
+    use crate::common::random_geometry::RandomGeometry3;
     use approx::assert_relative_eq;
     use rand::RngExt;
     use std::f64::consts::PI;
@@ -228,8 +228,8 @@ mod tests {
     fn random_circle() -> Circle3 {
         let mut rg = RandomGeometry3::new();
         let r = rg.f64(0.8, 5.0);
-        let center = rg.point3(10.0);
-        let normal = rg.unit_vec3();
+        let center = rg.point(10.0);
+        let normal = rg.unit_vec();
         Circle3::new(center, normal, r)
     }
 
@@ -266,7 +266,7 @@ mod tests {
             let curve = Curve3::from_points(&points, 1e-10)?;
 
             for _ in 0..10 {
-                let test_pt = rg.point3(10.0);
+                let test_pt = rg.point(10.0);
                 let expected = curve.at_closest_to_point(&test_pt).point();
                 let test_result = circle.closest_point(&test_pt).unwrap();
 
@@ -296,7 +296,7 @@ mod tests {
 
         for _ in 0..n {
             let circle = random_circle();
-            let test_pt = rg.point3(10.0);
+            let test_pt = rg.point(10.0);
             let Some(sp) = circle.closest_point(&test_pt) else {
                 continue;
             };

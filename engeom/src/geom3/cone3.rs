@@ -253,7 +253,7 @@ impl ops::Mul<&Cone3> for &Iso3 {
 mod tests {
     use super::*;
     use crate::Vector3;
-    use crate::geom3::tests::RandomGeometry3;
+    use crate::common::random_geometry::RandomGeometry3;
     use approx::assert_relative_eq;
 
     fn axis_cone() -> Cone3 {
@@ -276,8 +276,8 @@ mod tests {
         let mut rg = RandomGeometry3::new();
         let r = rg.f64(0.5, 4.0);
         let h = rg.f64(1.0, 10.0);
-        let tip = rg.point3(10.0);
-        let direction = rg.unit_vec3();
+        let tip = rg.point(10.0);
+        let direction = rg.unit_vec();
         Cone3::new(tip, direction, h, r)
     }
 
@@ -576,7 +576,7 @@ mod tests {
         let mut rg = RandomGeometry3::new();
         for _ in 0..500 {
             let cone = random_cone();
-            let test = rg.point3(20.0);
+            let test = rg.point(20.0);
             let Some(sp) = cone.closest_point(&test, false) else {
                 continue;
             };
@@ -596,7 +596,7 @@ mod tests {
         let mut rg = RandomGeometry3::new();
         for _ in 0..500 {
             let cone = random_cone();
-            let test = rg.point3(20.0);
+            let test = rg.point(20.0);
             let Some(sp) = cone.closest_point(&test, true) else {
                 continue;
             };

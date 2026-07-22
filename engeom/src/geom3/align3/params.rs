@@ -421,7 +421,7 @@ mod tests {
     use super::*;
     use crate::geom3::IsoExtensions3;
     use crate::geom3::align3::params::{AlignOrigin, AlignParams3};
-    use crate::geom3::tests::RandomGeometry3;
+    use crate::common::random_geometry::RandomGeometry3;
     use crate::na::{Rotation, Rotation3, UnitQuaternion};
     use crate::{Iso3, Point3, Vector3};
     use approx::assert_relative_eq;
@@ -536,7 +536,7 @@ mod tests {
             let params = AlignParams3::new(AlignOrigin::Local(local), Some(working), None)
                 .with_storage(rg.vector(PI));
 
-            let test_point = rg.point3(10.0);
+            let test_point = rg.point(10.0);
             let exp_x = finite_diff(&params, &test_point, 0);
             let exp_y = finite_diff(&params, &test_point, 1);
             let exp_z = finite_diff(&params, &test_point, 2);
@@ -627,7 +627,7 @@ mod tests {
         let mut rg = RandomGeometry3::new();
         for _ in 0..1000 {
             let f = EulerFixture::new(rg.f64_sym(PI), rg.f64_sym(PI), rg.f64_sym(PI));
-            let p_local = rg.point3(10.0);
+            let p_local = rg.point(10.0);
             let p_rot = f.rot * p_local;
             let (rdx, rdy, rdz) = euler_partials(f.ry, f.rz);
 
@@ -655,7 +655,7 @@ mod tests {
             let c = params.current_values();
 
             // The test point in the test entity's space
-            let test_point = rg.point3(10.0);
+            let test_point = rg.point(10.0);
             let exp_x = finite_diff(&params, &test_point, 3);
             let exp_y = finite_diff(&params, &test_point, 4);
             let exp_z = finite_diff(&params, &test_point, 5);
