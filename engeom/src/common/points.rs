@@ -249,7 +249,6 @@ pub fn mean_point_weighted<const D: usize>(
     points: &[impl PCoords<D>],
     weights: &[f64],
 ) -> Point<f64, D> {
-    // TODO: needs test coverage
     let mut sum = SVector::<f64, D>::zeros();
     let mut total_weight = 0.0;
     for (p, w) in points.iter().zip(weights) {
@@ -907,5 +906,58 @@ mod tests {
         let error = linear_interpolation_error(&p0, &p1, &p_test);
 
         assert_relative_eq!(error, 1.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn mean_point_weighted_equal_weights_matches_unweighted() {
+        let points = vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 4.0, 6.0),
+            Point3::new(-1.0, 3.0, 5.0),
+            Point3::new(4.0, -2.0, 1.0),
+        ];
+        let weights = vec![2.5; points.len()];
+        let weighted = mean_point_weighted(&points, &weights);
+        let unweighted = mean_point(&points);
+        assert_relative_eq!(weighted, unweighted, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn mean_point_weighted_known_value() {
+        // Weighted mean of two points: with weights 1 and 3, the result sits 3/4 of the way from
+        // the first point toward the second.
+        let points = vec![Point2::new(0.0, 0.0), Point2::new(4.0, 8.0)];
+        let weights = vec![1.0, 3.0];
+        let mean = mean_point_weighted(&points, &weights);
+        assert_relative_eq!(mean, Point2::new(3.0, 6.0), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn mean_point_weighted_zero_weights_are_ignored() {
+        // Points with zero weight contribute nothing to either the numerator or the total weight,
+        // so the result depends only on the non-zero-weighted points.
+        let points = vec![
+            Point2::new(1.0, 1.0),
+            Point2::new(100.0, 100.0),
+            Point2::new(3.0, 3.0),
+        ];
+        let weights = vec![1.0, 0.0, 1.0];
+        let mean = mean_point_weighted(&points, &weights);
+        assert_relative_eq!(mean, Point2::new(2.0, 2.0), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn mean_point_weighted_scale_invariant() {
+        // Scaling every weight by a constant leaves the weighted mean unchanged.
+        let points = vec![
+            Point3::new(1.0, 2.0, 3.0),
+            Point3::new(-4.0, 0.5, 7.0),
+            Point3::new(2.0, -1.0, 0.0),
+        ];
+        let weights = vec![0.5, 2.0, 1.5];
+        let scaled: Vec<f64> = weights.iter().map(|w| w * 10.0).collect();
+        let a = mean_point_weighted(&points, &weights);
+        let b = mean_point_weighted(&points, &scaled);
+        assert_relative_eq!(a, b, epsilon = 1e-12);
     }
 }
