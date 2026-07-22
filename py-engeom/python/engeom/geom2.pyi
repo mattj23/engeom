@@ -1201,18 +1201,18 @@ class Circle2:
         ...
 
     @staticmethod
-    def from_fit(points: NDArray[float], guess: Circle2 | None = None) -> Circle2:
+    def from_fit(points: NDArray[float], weights: NDArray[float] | None = None) -> Circle2:
         """
-        Fit a circle to a set of points using an unconstrained Levenberg-Marquardt minimization of the sum of
-        squared errors between the points and the boundary of the circle.
+        Fit a circle to a set of points by ordinary least squares. A closed-form algebraic
+        (Kåsa-style) estimate provides the initial guess, which is then refined against the true
+        geometric radial residuals with a weighted Levenberg-Marquardt minimization.
 
-        The initial guess is used to provide a starting point for the optimization. If no guess is provided, the
-        unit circle will be used.
-
-        All points are weighted equally. To fit a circle robustly in the presence of outliers, use `from_consensus`.
-        :param points: the points to fit the circle to.
-        :param guess: an optional initial guess for the circle. If None, the unit circle will be used.
+        This is not robust to gross outliers; for that, use `from_consensus`.
+        :param points: the points to fit the circle to, as an (n, 2) array.
+        :param weights: if provided, a length-n array of weights to multiply each point's residual
+            by. If None, all points are weighted equally.
         :return: a new `Circle2` object representing the fitted circle.
+        :raises ValueError: if there are fewer than three points, or they are collinear.
         """
         ...
 

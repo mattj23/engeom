@@ -6,16 +6,13 @@ use crate::geom2::line2::intersect_lines;
 use crate::geom2::{
     Aabb2, Iso2, LineOps2, Manifold1Pos2, Point2, Segment2, Vector2, rot90, signed_angle,
 };
-use crate::geom3::Vector3;
 use crate::na::SVector;
 use crate::{AngleDir, AngleInterval, IntervalOps, SurfacePoint2, UnitVec2};
 use crate::{Arc2, Result};
-use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
-use parry2d_f64::na::{Dyn, Matrix, Owned, U1, U3, Vector};
 use serde::{Deserialize, Serialize};
 use std::f64::consts::FRAC_PI_2;
 
-mod consensus;
+mod fitting;
 
 /// A circle in 2D space, defined by a center point and a radius.
 ///
@@ -77,46 +74,6 @@ impl Circle2 {
     /// ```
     pub fn from_point(center: Point2, r: f64) -> Circle2 {
         Circle2 { center, radius: r }
-    }
-
-    /// Attempt to create a fitting circle from the given points and an initial guess. The fitting
-    /// is an unconstrained Levenberg-Marquardt minimization of the sum of squared errors between
-    /// the points and the boundary of the circle.
-    ///
-    /// The initial guess is used to provide an initial estimate of the circle's center and radius,
-    /// for best results this should at least be in the general vicinity of the test points.
-    ///
-    /// All points are weighted equally. To fit a circle robustly in the presence of outliers, use
-    /// [`Circle2::from_consensus`] instead.
-    ///
-    /// # Arguments
-    ///
-    /// * `points`: the points to be fit to the circle
-    /// * `guess`: an initial guess for the circle's center and radius
-    ///
-    /// returns: Result<Circle2, Box<dyn Error, Global>>
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use engeom::{Circle2, Point2};
-    /// use approx::assert_relative_eq;
-    ///
-    /// let points = vec![
-    ///     Point2::new(-1.0, 0.0),
-    ///     Point2::new(0.0, 1.0),
-    ///     Point2::new(1.0, 0.0),
-    ///     Point2::new(0.0, -1.0),
-    /// ];
-    ///
-    /// let guess = Circle2::new(-1.0, 1.0, 0.1);
-    /// let circle = Circle2::from_fit(&points, &guess).unwrap();
-    /// assert_relative_eq!(circle.x(), 0.0);
-    /// assert_relative_eq!(circle.y(), 0.0);
-    /// assert_relative_eq!(circle.r(), 1.0);
-    /// ```
-    pub fn from_fit(points: &[Point2], guess: &Circle2) -> Result<Circle2> {
-        fit_circle(points, guess)
     }
 
     /// Attempt to create a fitting circle from three points. Will return an `Err` if the points
@@ -715,117 +672,6 @@ impl Intersection<&Segment2, Vec<Point2>> for Circle2 {
     }
 }
 
-type Residuals = Matrix<f64, Dyn, U1, Owned<f64, Dyn, U1>>;
-
-fn fit_circle(points: &[Point2], initial: &Circle2) -> Result<Circle2> {
-    let problem = CircleFit::new(points, initial);
-    let (result, report) = LevenbergMarquardt::new().minimize(problem);
-
-    if report.termination.was_successful() {
-        Ok(result.circle)
-    } else {
-        let text = format!("Failed to fit circle: {:?}", report.termination);
-        Err(text.into())
-    }
-}
-
-struct CircleFit<'a> {
-    /// The points to be fit to the circle.
-    points: &'a [Point2],
-
-    /// The parameters being fit
-    x: Vector3,
-
-    /// The current active circle
-    circle: Circle2,
-
-    /// The active base residuals
-    base_residuals: Residuals,
-
-    /// The per-point weights, held fixed across the solve
-    weights: Residuals,
-}
-
-impl<'a> CircleFit<'a> {
-    /// Create an equally-weighted circle fit (ordinary least squares).
-    fn new(points: &'a [Point2], initial: &Circle2) -> Self {
-        let mut weights = Residuals::zeros(points.len());
-        weights.fill(1.0);
-        Self::build(points, weights, initial)
-    }
-
-    /// Create a circle fit with fixed, externally supplied per-point weights. `weights` must have
-    /// the same length as `points`.
-    fn with_weights(points: &'a [Point2], weights: &[f64], initial: &Circle2) -> Self {
-        Self::build(points, Residuals::from_column_slice(weights), initial)
-    }
-
-    fn build(points: &'a [Point2], weights: Residuals, initial: &Circle2) -> Self {
-        let x = Vector3::new(initial.center.x, initial.center.y, initial.r());
-        let circle = *initial;
-
-        let mut base_residuals = Residuals::zeros(points.len());
-        compute_residuals_mut(points, &circle, &mut base_residuals);
-
-        Self {
-            points,
-            x,
-            circle,
-            base_residuals,
-            weights,
-        }
-    }
-}
-
-fn compute_residuals_mut(points: &[Point2], circle: &Circle2, residuals: &mut Residuals) {
-    for (i, p) in points.iter().enumerate() {
-        residuals[i] = circle.distance_to(p)
-    }
-}
-
-impl LeastSquaresProblem<f64, Dyn, U3> for CircleFit<'_> {
-    type ResidualStorage = Owned<f64, Dyn, U1>;
-    type JacobianStorage = Owned<f64, Dyn, U3>;
-    type ParameterStorage = Owned<f64, U3>;
-
-    fn set_params(&mut self, x: &Vector<f64, U3, Self::ParameterStorage>) {
-        self.x = *x;
-        self.circle = Circle2::new(x[0], x[1], x[2]);
-        compute_residuals_mut(self.points, &self.circle, &mut self.base_residuals);
-    }
-
-    fn params(&self) -> Vector<f64, U3, Self::ParameterStorage> {
-        self.x
-    }
-
-    fn residuals(&self) -> Option<Vector<f64, Dyn, Self::ResidualStorage>> {
-        let mut res = Residuals::zeros(self.points.len());
-        for i in 0..self.points.len() {
-            res[i] = self.base_residuals[i] * self.weights[i];
-        }
-
-        Some(res)
-    }
-
-    fn jacobian(&self) -> Option<Matrix<f64, Dyn, U3, Self::JacobianStorage>> {
-        let mut jac = Matrix::<f64, Dyn, U3, Self::JacobianStorage>::zeros(self.points.len());
-        for (i, p) in self.points.iter().enumerate() {
-            // Find the vector from the center of the circle to the point
-            let v = p - self.circle.center;
-
-            // Normalize it
-            let n = v.normalize();
-
-            // Fill in the jacobian for this row
-            jac[(i, 0)] = -n.x * self.weights[i];
-            jac[(i, 1)] = -n.y * self.weights[i];
-            jac[(i, 2)] = -self.weights[i];
-        }
-
-        Some(jac)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -954,18 +800,6 @@ mod tests {
         let (p0, p1) = c.tangent_points_to(&p).unwrap();
         assert_relative_eq!(p0, Point2::new(-0.4844568895369135, 0.24075924101671814));
         assert_relative_eq!(p1, Point2::new(1.045148109645135, -1.2054127582099456));
-    }
-
-    #[test]
-    fn least_squares_fit() -> Result<()> {
-        let expected = Circle2::new(2.0, 3.0, 1.0);
-        let samples = make_sample_circle_points(&expected, 500, Some(0.01));
-        let guess = Circle2::new(0.0, 0.0, 1.0);
-        let result = Circle2::from_fit(&samples, &guess)?;
-
-        assert_relative_eq!(result.center, expected.center, epsilon = 3.0e-3);
-        assert_relative_eq!(result.r(), expected.r(), epsilon = 3.0e-3);
-        Ok(())
     }
 
     #[test]

@@ -623,17 +623,19 @@ impl Circle2 {
     }
 
     #[staticmethod]
-    #[pyo3(signature=(points, guess=None))]
-    fn from_fit<'py>(points: PyReadonlyArray2<'py, f64>, guess: Option<Circle2>) -> PyResult<Self> {
+    #[pyo3(signature=(points, weights=None))]
+    fn from_fit<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        weights: Option<PyReadonlyArray1<'py, f64>>,
+    ) -> PyResult<Self> {
         let points = array_to_points2(&points.as_array())?;
-        let guess = if let Some(c) = guess {
-            *c.get_inner()
-        } else {
-            engeom::Circle2::new(0.0, 0.0, 1.0)
-        };
-
-        let circle = engeom::Circle2::from_fit(&points, &guess)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let circle = match weights {
+            Some(weights) => {
+                engeom::Circle2::from_fit(&points, Some(weights.as_array().as_slice().unwrap()))
+            }
+            None => engeom::Circle2::from_fit(&points, None),
+        }
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(circle))
     }
 
