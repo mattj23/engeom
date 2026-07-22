@@ -33,8 +33,8 @@ impl ConsensusModel<2> for Circle2 {
     }
 }
 
-/// Closed-form algebraic circle fit (Kåsa-style) by weighted linear least squares, used as the
-/// initial guess for the least-squares refinement.
+/// Closed-form algebraic circle fit (Kåsa-style) by weighted linear least squares over already
+/// converted points and weights. This is the shared core of [`Circle2::from_fit_algebraic`].
 ///
 /// Writing the circle equation as `x² + y² = a·x + b·y + c`, each point contributes a linear
 /// equation in the unknowns `s = [a, b, c]`, where `a = 2cx`, `b = 2cy`, and `c = r² − cx² − cy²`.
@@ -62,11 +62,49 @@ fn algebraic_circle_fit(points: &[Point2], weights: &[f64]) -> Option<Circle2> {
 }
 
 impl Circle2 {
+    /// Fit a circle to a set of points using only the closed-form algebraic (Kåsa-style) weighted
+    /// least-squares method, without the geometric Levenberg-Marquardt refinement that
+    /// [`Circle2::from_fit`] applies on top of it.
+    ///
+    /// Writing the circle equation as `x² + y² = a·x + b·y + c`, each point contributes a linear
+    /// equation in the unknowns `s = [a, b, c]` (with `a = 2cx`, `b = 2cy`, `c = r² − cx² − cy²`);
+    /// solving the 3×3 weighted normal equations gives the center and radius directly. The algebraic
+    /// error minimized is not the true geometric radial distance, so the result is slightly biased
+    /// (most noticeably for partial arcs), but it is fast, closed-form, and needs no initial guess —
+    /// which makes it the seed for [`Circle2::from_fit`].
+    ///
+    /// # Arguments
+    ///
+    /// * `points`: a slice of at least three non-collinear coordinates to fit the circle to
+    /// * `weights`: if `Some`, a slice the same length as `points` giving the weight to multiply each
+    ///   point's contribution by; if `None`, all points are weighted equally.
+    ///
+    /// returns: Result<Circle2, Box<dyn Error, Global>>
+    pub fn from_fit_algebraic(points: &[impl PCoords<2>], weights: Option<&[f64]>) -> Result<Self> {
+        let pts: Vec<Point2> = points.iter().map(|p| Point2::from(p.coords())).collect();
+        if pts.len() < 3 {
+            return Err("At least three points are required to fit a circle".into());
+        }
+
+        let ones;
+        let weights = match weights {
+            Some(w) => w,
+            None => {
+                ones = vec![1.0; pts.len()];
+                &ones
+            }
+        };
+
+        algebraic_circle_fit(&pts, weights)
+            .ok_or_else(|| "Failed to fit circle: points are collinear or degenerate".into())
+    }
+
     /// Fit a circle to a set of points by ordinary least squares. A closed-form algebraic
-    /// (Kåsa-style) estimate provides the initial guess, which is then refined against the true
-    /// geometric radial residuals with the same weighted [`CircleFit`] Levenberg-Marquardt engine
-    /// used by the consensus fit. Optional weights may be provided in a slice of `f64` with the same
-    /// number of elements as `points`, where the weight `i` corresponds with the point `i`.
+    /// (Kåsa-style) estimate from [`Circle2::from_fit_algebraic`] provides the initial guess, which
+    /// is then refined against the true geometric radial residuals with the same weighted
+    /// [`CircleFit`] Levenberg-Marquardt engine used by the consensus fit. Optional weights may be
+    /// provided in a slice of `f64` with the same number of elements as `points`, where the weight
+    /// `i` corresponds with the point `i`.
     ///
     /// This is not robust to gross outliers; for that, use [`Circle2::from_consensus`].
     ///
@@ -97,11 +135,10 @@ impl Circle2 {
     /// assert_relative_eq!(circle.r(), 1.0);
     /// ```
     pub fn from_fit(points: &[impl PCoords<2>], weights: Option<&[f64]>) -> Result<Self> {
-        let pts: Vec<Point2> = points.iter().map(|p| Point2::from(p.coords())).collect();
-        if pts.len() < 3 {
-            return Err("At least three points are required to fit a circle".into());
-        }
+        // The algebraic fit validates the point count and produces the initial guess.
+        let guess = Circle2::from_fit_algebraic(points, weights)?;
 
+        let pts: Vec<Point2> = points.iter().map(|p| Point2::from(p.coords())).collect();
         let ones;
         let weights = match weights {
             Some(w) => w,
@@ -110,9 +147,6 @@ impl Circle2 {
                 &ones
             }
         };
-
-        let guess = algebraic_circle_fit(&pts, weights)
-            .ok_or("Failed to fit circle: points are collinear or degenerate")?;
 
         // Refine the algebraic guess against true geometric residuals with the weighted LM engine.
         CircleFit::refine(&pts, weights, &guess).ok_or_else(|| "Failed to refine circle fit".into())

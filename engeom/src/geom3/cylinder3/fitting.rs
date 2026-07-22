@@ -23,10 +23,10 @@
 
 use super::Cylinder3;
 use crate::common::PCoords;
+use crate::geom3::IsoExtensions3;
 use crate::{Iso3, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use parry3d_f64::na::{Dyn, Matrix, Matrix3, Owned, U1, U5, UnitQuaternion, Vector, Vector5};
-use crate::geom3::IsoExtensions3;
 
 /// The signed radial distance from a point to an infinite cylinder's surface: the perpendicular
 /// distance from the point to the axis line, minus the radius. It is positive outside the cylinder

@@ -22,7 +22,7 @@ use crate::common::consensus::{ConsensusModel, Magsac};
 use crate::geom3::{IsoExtensions3, SvdBasis3};
 use crate::{Circle2, Iso3, Point2, Point3, Result, UnitVec3, Vector3};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
-use parry3d_f64::na::{Dyn, Matrix, Matrix3, Owned, U1, U6, UnitQuaternion, Vector, Vector6};
+use parry3d_f64::na::{Dyn, Matrix, Owned, U1, U6, UnitQuaternion, Vector, Vector6};
 
 /// The Euclidean distance from a point to the nearest point on a 3D circle defined by its center,
 /// unit normal, and radius. It combines the out-of-plane offset with the in-plane radial deviation.
@@ -51,64 +51,25 @@ impl ConsensusModel<3> for Circle3 {
     }
 }
 
-/// Closed-form circle estimate for a set of 3D points, used as the initial guess for the
-/// least-squares refinement. The best-fit plane is found via an [`SvdBasis3`], the points are
-/// projected into that plane, and an in-plane weighted algebraic (Kåsa-style) circle fit gives the
-/// center and radius, which are then lifted back into 3D with the plane's normal. Returns `None` if
-/// the plane cannot be estimated (fewer than three points, or collinear inputs) or the in-plane
-/// algebraic system is singular.
-fn algebraic_circle_fit(points: &[Point3], weights: &[f64]) -> Option<Circle3> {
-    let basis = SvdBasis3::from_points(points, Some(weights))?;
-
-    // `to_local` maps world points into the basis frame, whose third axis is the plane normal;
-    // dropping the local z coordinate projects each point onto the plane.
-    let to_local = Iso3::from(&basis);
-    let to_world = to_local.inverse();
-
-    // Weighted Kåsa algebraic circle fit in the plane: for the circle `x² + y² = a·x + b·y + c`,
-    // each point gives a linear equation in `s = [a, b, c]`, with `a = 2cx`, `b = 2cy`, and
-    // `c = r² − cx² − cy²`.
-    let mut m = Matrix3::zeros();
-    let mut v = Vector3::zeros();
-    for (p, &w) in points.iter().zip(weights) {
-        let local = to_local.transform_point(p);
-        let row = Vector3::new(local.x, local.y, 1.0);
-        let target = local.x * local.x + local.y * local.y;
-        m += w * row * row.transpose();
-        v += w * target * row;
-    }
-
-    let s = m.lu().solve(&v)?;
-    let cx = 0.5 * s[0];
-    let cy = 0.5 * s[1];
-    let r_squared = s[2] + cx * cx + cy * cy;
-    if r_squared <= 0.0 {
-        return None;
-    }
-
-    let center = to_world.transform_point(&Point3::new(cx, cy, 0.0));
-    let normal = UnitVec3::new_normalize(to_world.rotation * Vector3::z());
-    Some(Circle3::new(center, normal, r_squared.sqrt()))
-}
-
 impl Circle3 {
-    /// Fit a circle to a set of 3D points by ordinary least squares. A closed-form estimate (the
-    /// best-fit plane via an [`SvdBasis3`] combined with an in-plane algebraic circle fit) provides
-    /// the initial guess, which is then refined against the true geometric point-to-circle distances
-    /// with the same weighted [`Circle3Fit`] Levenberg-Marquardt engine used by the consensus fit.
-    /// Optional weights may be provided in a slice of `f64` with the same number of elements as
-    /// `points`, where the weight `i` corresponds with the point `i`.
+    /// Fit a circle to a set of 3D points using only the closed-form algebraic estimate, without the
+    /// geometric Levenberg-Marquardt refinement that [`Circle3::from_fit`] applies on top of it. The
+    /// points' best-fit plane is found with an [`SvdBasis3`], the points are projected into it, an
+    /// in-plane algebraic circle fit is run with [`Circle2::from_fit_algebraic`], and the result is
+    /// lifted back into 3D with the plane's normal.
     ///
-    /// This is not robust to gross outliers; for that, use [`Circle3::from_consensus`].
+    /// Like the 2D algebraic fit, this minimizes an algebraic rather than geometric error, so it is
+    /// slightly biased but fast and needs no initial guess, which makes it the seed for
+    /// [`Circle3::from_fit`].
     ///
     /// # Arguments
     ///
     /// * `points`: a slice of at least three non-collinear coordinates to fit the circle to
-    /// * `weights`: if `Some`, this must be a slice of floating points the same length as `points`,
-    ///   with the weight value to multiply each point residual by.
+    /// * `weights`: if `Some`, a slice the same length as `points` giving the weight to multiply each
+    ///   point's contribution by; if `None`, all points are weighted equally.
     ///
     /// returns: Result<Circle3, Box<dyn Error, Global>>
-    pub fn from_fit(points: &[impl PCoords<3>], weights: Option<&[f64]>) -> Result<Self> {
+    pub fn from_fit_algebraic(points: &[impl PCoords<3>], weights: Option<&[f64]>) -> Result<Self> {
         let pts: Vec<Point3> = points.iter().map(|p| Point3::from(p.coords())).collect();
         if pts.len() < 3 {
             return Err("At least three points are required to fit a circle".into());
@@ -123,8 +84,60 @@ impl Circle3 {
             }
         };
 
-        let guess = algebraic_circle_fit(&pts, weights)
+        let basis = SvdBasis3::from_points(&pts, Some(weights))
             .ok_or("Failed to fit circle: points are collinear or degenerate")?;
+
+        // `to_local` maps world points into the basis frame, whose third axis is the plane normal;
+        // dropping the local z coordinate projects each point onto the plane.
+        let to_local = Iso3::from(&basis);
+        let to_world = to_local.inverse();
+
+        let pts_2d: Vec<Point2> = pts
+            .iter()
+            .map(|p| {
+                let local = to_local.transform_point(p);
+                Point2::new(local.x, local.y)
+            })
+            .collect();
+
+        // Delegate the in-plane fit to the shared 2D algebraic constructor, then lift back into 3D.
+        let circle = Circle2::from_fit_algebraic(&pts_2d, Some(weights))?;
+
+        let center = to_world.transform_point(&Point3::new(circle.x(), circle.y(), 0.0));
+        let normal = UnitVec3::new_normalize(to_world.rotation * Vector3::z());
+        Ok(Circle3::new(center, normal, circle.r()))
+    }
+
+    /// Fit a circle to a set of 3D points by ordinary least squares. A closed-form estimate from
+    /// [`Circle3::from_fit_algebraic`] (the best-fit plane via an [`SvdBasis3`] combined with an
+    /// in-plane algebraic circle fit) provides the initial guess, which is then refined against the
+    /// true geometric point-to-circle distances with the same weighted [`Circle3Fit`]
+    /// Levenberg-Marquardt engine used by the consensus fit. Optional weights may be provided in a
+    /// slice of `f64` with the same number of elements as `points`, where the weight `i` corresponds
+    /// with the point `i`.
+    ///
+    /// This is not robust to gross outliers; for that, use [`Circle3::from_consensus`].
+    ///
+    /// # Arguments
+    ///
+    /// * `points`: a slice of at least three non-collinear coordinates to fit the circle to
+    /// * `weights`: if `Some`, this must be a slice of floating points the same length as `points`,
+    ///   with the weight value to multiply each point residual by.
+    ///
+    /// returns: Result<Circle3, Box<dyn Error, Global>>
+    pub fn from_fit(points: &[impl PCoords<3>], weights: Option<&[f64]>) -> Result<Self> {
+        // The algebraic fit validates the point count and produces the initial guess.
+        let guess = Circle3::from_fit_algebraic(points, weights)?;
+
+        let pts: Vec<Point3> = points.iter().map(|p| Point3::from(p.coords())).collect();
+        let ones;
+        let weights = match weights {
+            Some(w) => w,
+            None => {
+                ones = vec![1.0; pts.len()];
+                &ones
+            }
+        };
 
         // Refine the algebraic guess against true geometric residuals with the weighted LM engine.
         Circle3Fit::refine(&pts, weights, &guess)
