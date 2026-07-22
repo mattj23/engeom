@@ -508,7 +508,7 @@ impl SurfacePoint3 {
     }
 
     fn get_plane(&self) -> Plane3 {
-        Plane3::from_inner(engeom::Plane3::from(&self.inner))
+        Plane3::from_inner(engeom::Plane3::from_surface_point(&self.inner))
     }
 
     fn new_shifted(&self, offset: f64) -> Self {
@@ -611,11 +611,12 @@ impl Plane3 {
 
     #[staticmethod]
     fn from_point_normal(px: f64, py: f64, pz: f64, nx: f64, ny: f64, nz: f64) -> PyResult<Self> {
-        let v = engeom::Vector3::new(nx, ny, nz);
-        let normal = engeom::UnitVec3::try_new(v, 1.0e-6)
+        let point = engeom::Point3::new(px, py, pz);
+        let normal = engeom::UnitVec3::try_new(engeom::Vector3::new(nx, ny, nz), 1.0e-6)
             .ok_or_else(|| PyValueError::new_err("Invalid normal vector"))?;
-        let d = normal.dot(&engeom::Vector3::new(px, py, pz));
-        Ok(Self::from_inner(engeom::Plane3::new(normal, d)))
+        Ok(Self::from_inner(engeom::Plane3::from_point_normal(
+            &point, &normal,
+        )))
     }
 
     fn normal_reversed(&self) -> Self {

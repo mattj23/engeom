@@ -365,7 +365,7 @@ mod tests {
             let p1 = sample_circle_point(&circle, t);
             let p2 = sample_circle_point(&circle, t + PI);
             let some_other = p1 + Vector3::z() * 3.0;
-            let plane = Plane3::from((&p1, &p2, &some_other));
+            let plane = Plane3::from_3_points(&p1, &p2, &some_other).unwrap();
 
             let points = circle.intersect_plane(&plane);
             assert!(

@@ -1,7 +1,8 @@
 use crate::common::PCoords;
+use crate::common::svd_basis::SvdBasis;
 use crate::geom3::UnitVec3;
 use crate::geom3::line3::Line3;
-use crate::{Iso3, Point3, SurfacePoint3, SvdBasis3, Vector3};
+use crate::{Iso3, Point3, Result, SurfacePoint3, Vector3};
 use std::ops;
 
 /// A plane in 3D space, defined by a unit normal and a signed offset from the origin.
@@ -29,8 +30,87 @@ impl Plane3 {
         Self::new(Vector3::z_axis(), 0.0)
     }
 
+    /// Create a new plane from a unit vector and an offset from the origin. The unit vector
+    /// components ux, uy, and uz are the equivalent to a, b, and c in the traditional a, b, c, d
+    /// representation of a plane.
+    ///
+    /// # Arguments
+    ///
+    /// * `normal`: The plane normal
+    /// * `d`: The distance between the plane and the origin in the direction of the plane normal
+    ///
+    /// returns: Plane3
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
     pub fn new(normal: UnitVec3, d: f64) -> Self {
         Self { normal, d }
+    }
+
+    /// Fit a plane to a set of points using singular value decomposition, resulting in a
+    /// least-squares fitting. Optional weights may be provided in a slice of `f64` with the same
+    /// number of elements as `points`, where the weight `i` corresponds with the point `i`.
+    ///
+    /// # Arguments
+    ///
+    /// * `points`: a slice of coordinates to fit the plane to
+    /// * `weights`: if `Some`, this must be a slice of floating points the same length as `points`,
+    ///   with the weight value to multiply each point residual by.
+    ///
+    /// returns: Result<Plane3, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    pub fn from_fit(points: &[impl PCoords<3>], weights: Option<&[f64]>) -> Result<Self> {
+        let basis = SvdBasis::from_points(points, weights)
+            .ok_or("Failed to fit plane with singular value decomposition")?;
+        Ok(Plane3::from_point_normal(&basis.center, &basis.smallest()))
+    }
+
+    /// Create a Plane3 from three points, with the normal following the right-hand rule from
+    /// `p1` to `p2` to `p3`. Returns an error if the points are collinear (or coincident).
+    ///
+    /// # Arguments
+    ///
+    /// * `p1`: the first point
+    /// * `p2`: the second point
+    /// * `p3`: the third point
+    ///
+    /// returns: Result<Plane3>
+    pub fn from_3_points(p1: &Point3, p2: &Point3, p3: &Point3) -> Result<Self> {
+        let cross = (p2 - p1).cross(&(p3 - p1));
+        let normal = UnitVec3::try_new(cross, 1e-10).ok_or("Points are collinear")?;
+        Ok(Self::from_point_normal(p1, &normal))
+    }
+
+    /// Create a Plane3 from a point on the plane and a unit normal direction.
+    ///
+    /// # Arguments
+    ///
+    /// * `point`: a point lying on the plane
+    /// * `normal`: the unit normal of the plane
+    ///
+    /// returns: Plane3
+    pub fn from_point_normal(point: &Point3, normal: &UnitVec3) -> Self {
+        let d = normal.dot(&point.coords);
+        Self::new(*normal, d)
+    }
+
+    /// Create a Plane3 from a `SurfacePoint3`, using its point and normal directly.
+    ///
+    /// # Arguments
+    ///
+    /// * `surface_point`: the surface point to create the plane from
+    ///
+    /// returns: Plane3
+    pub fn from_surface_point(surface_point: &SurfacePoint3) -> Self {
+        Self::from_point_normal(&surface_point.point, &surface_point.normal)
     }
 
     /// Returns a new plane in the same position as this one, but with the normal direction
@@ -172,75 +252,7 @@ impl Plane3 {
         let pos = self.normal.into_inner() * self.d;
         let repr = SurfacePoint3::new(pos.into(), self.normal);
         let new_repr = repr.transformed(iso);
-        Self::from(&new_repr)
-    }
-}
-
-impl From<&SvdBasis3> for Plane3 {
-    /// Create a Plane3 from a SvdBasis3 using the third basis vector as the normal and the mean
-    /// point to calculate d. If a `SvdBasis3` has been constructed from a set of planar points,
-    /// this will create a plane that best fits those points.
-    ///
-    /// # Arguments
-    ///
-    /// * `svd`: The SvdBasis3 to create the plane from
-    ///
-    /// returns: Plane3
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use approx::assert_relative_eq;
-    /// use engeom::geom3::{Plane3, SvdBasis3, Point3};
-    /// let points = vec![
-    ///    Point3::new(5.0, 10.0, 15.0),
-    ///    Point3::new(5.0, 11.0, 16.0),
-    ///    Point3::new(5.0, 10.0, 16.0),
-    ///    Point3::new(5.0, 11.0, 15.0),
-    /// ];
-    /// let svd = SvdBasis3::from_points(&points, None).unwrap();
-    /// let plane = Plane3::from(&svd);
-    /// assert_relative_eq!(plane.normal.x, 1.0, epsilon = 1e-6);
-    /// assert_relative_eq!(plane.d, 5.0, epsilon = 1e-6);
-    /// ```
-    fn from(svd: &SvdBasis3) -> Self {
-        let normal = UnitVec3::new_normalize(svd.basis[2]);
-        let d = normal.dot(&svd.center.coords);
-        Self::new(normal, d)
-    }
-}
-
-// TODO: should this be a Result?
-impl From<(&Point3, &Point3, &Point3)> for Plane3 {
-    /// Create a Plane3 from three points
-    ///
-    /// # Arguments
-    ///
-    /// * `(p1, p2, p3)`:
-    ///
-    /// returns: Plane3
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
-    fn from((p1, p2, p3): (&Point3, &Point3, &Point3)) -> Self {
-        let normal = UnitVec3::new_normalize((p2 - p1).cross(&(p3 - p1)));
-        Self::from((&normal, p1))
-    }
-}
-
-impl From<(&UnitVec3, &Point3)> for Plane3 {
-    fn from((normal, point): (&UnitVec3, &Point3)) -> Self {
-        let d = normal.dot(&point.coords);
-        Self::new(*normal, d)
-    }
-}
-
-impl From<&SurfacePoint3> for Plane3 {
-    fn from(surface_point: &SurfacePoint3) -> Self {
-        Self::from((&surface_point.normal, &surface_point.point))
+        Self::from_surface_point(&new_repr)
     }
 }
 

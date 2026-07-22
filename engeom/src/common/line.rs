@@ -5,7 +5,9 @@
 //! intersections in 3D, axis constructors, and isometry multiplication operators) lives in the
 //! `geom2` and `geom3` modules.
 
+use crate::Result;
 use crate::common::PCoords;
+use crate::common::svd_basis::SvdBasis;
 use crate::na::{AbstractRotation, Isometry, Point, SVector};
 use serde::{Deserialize, Serialize};
 
@@ -37,6 +39,29 @@ impl<const D: usize> Line<D> {
     pub fn from_points(p1: &impl PCoords<D>, p2: &impl PCoords<D>) -> Self {
         let origin = Point::from(p1.coords());
         Self::new(origin, p2.coords() - p1.coords())
+    }
+
+    /// Fit a line to a set of points using singular value decomposition, resulting in a
+    /// least-squares fitting. The resulting parameterized line will have its t=0 sitting at the
+    /// center of the SVD result.
+    ///
+    /// # Arguments
+    ///
+    /// * `points`: a slice of coordinates to fit the line to
+    /// * `weights`: if `Some`, this must be a slice of floating points the same length as `points`,
+    ///   with the weight value to multiply each point residual by.
+    ///
+    /// returns: Result<Line<{ D }>, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
+    pub fn from_fit(points: &[impl PCoords<D>], weights: Option<&[f64]>) -> Result<Self> {
+        let basis = SvdBasis::from_points(points, weights)
+            .ok_or("Failed to fit line with singular value decomposition")?;
+        Ok(Line::new(basis.center, basis.largest().into_inner()))
     }
 
     /// Returns a new line with the same origin, but with the direction inverted.
@@ -83,10 +108,25 @@ impl<const D: usize> Line<D> {
         (pt - self.closest_point(&pt)).norm()
     }
 
-    /// Returns a new line whose origin and direction are spherically interpolated between this
-    /// line and `other` by parameter `t`.
+    /// Return a new line whose direction is spherically interpolated between this instance and
+    /// `other`, and whose origin is _linearly interpolated_ between this instance and `other`.
+    ///
+    /// A value of `t=0` will return this line, and a value of `t=1` will return `other`.
+    ///
+    /// # Arguments
+    ///
+    /// * `other`: the other line to interpolate to
+    /// * `t`: the interpolation parameter, does _not_ need to be bounded between [0, 1]
+    ///
+    /// returns: Line<{ D }>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
     pub fn slerp(&self, other: &Line<D>, t: f64) -> Self {
-        let new_direction = self.direction.lerp(&other.direction, t);
+        let new_direction = self.direction.slerp(&other.direction, t);
         let shift = other.origin - self.origin;
         Self::new(self.origin + shift * t, new_direction)
     }

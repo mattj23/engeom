@@ -73,7 +73,7 @@ impl<'a> CurveStation3<'a> {
     }
 
     pub fn plane(&self) -> Plane3 {
-        Plane3::from((&self.direction, &self.point))
+        Plane3::from_point_normal(&self.point, &self.direction)
     }
 
     pub fn is_front(&self) -> bool {
