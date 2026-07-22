@@ -52,25 +52,36 @@
 //! # Geometric Entities
 //!
 //! The goal of this module is to create a unified framework that can be used to implement
-//! consensus creation methods for the following geometric entities.
+//! consensus creation methods for all of `engeom`'s geometric primitives.
 //!
 //! Two-dimensional entities:
 //!   - `Line2`
 //!   - `Circle2`
-//!   - `CubicSpline2`
+//!   - `Arc2`
+//!   - `Segment2`
 //!
 //! Three-dimensional entities:
 //!   - `Line3`
 //!   - `Circle3`
-//!   - `CubicSpline3`
 //!   - `Plane3`
 //!   - `Sphere3`
 //!   - `Cylinder3`
 //!   - `Cone3`
+//!   - `Segment3`
+//!
+//! The exception is `CubicSpline2`/`CubicSpline3`: consensus support for these isn't currently
+//! planned, since I don't yet have a means of generating an adequately complex minimal model for
+//! them (unlike the other primitives, a spline's minimal sample isn't a small fixed-size set of
+//! points).
 //!
 //! Fitting will need to be against true geometric residuals, for which we'll use the
-//! Levenberg-Marquardt solver this library already relies on.  There's some amount of
+//! Levenberg-Marquardt solver this library already relies on in cases where a simpler alternative
+//! doesn't exist (for example, line and plane fits are just SVD).  There's some amount of
 //! generalization that can be done here.
+//!
+//! Lastly, for `Arc2` and `Segment<const D: usize>`, which are just bounded versions of `Circle2`
+//! and `Line<const D: usize>`, respectively, we'll do a pass-through to the consensus method for
+//! the unbounded entity and then generate the bounds from where the inliers are.
 //!
 //! # API
 //!

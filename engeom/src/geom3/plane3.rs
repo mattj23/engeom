@@ -1,4 +1,5 @@
 use crate::common::PCoords;
+use crate::common::consensus::{ConsensusModel, Magsac};
 use crate::common::svd_basis::SvdBasis;
 use crate::geom3::UnitVec3;
 use crate::geom3::line3::Line3;
@@ -71,6 +72,38 @@ impl Plane3 {
         let basis = SvdBasis::from_points(points, weights)
             .ok_or("Failed to fit plane with singular value decomposition")?;
         Ok(Plane3::from_point_normal(&basis.center, &basis.smallest()))
+    }
+
+    /// Fit a plane to a set of points using MAGSAC++ robust consensus estimation.
+    ///
+    /// Unlike an ordinary least-squares fit ([`Plane3::from_fit`]), this rejects gross outliers by
+    /// taking an upper bound on the inlier noise (`sigma_max`) rather than a hard inlier/outlier
+    /// threshold, and refines each candidate with noise-marginalized iteratively reweighted least
+    /// squares. It is substantially less sensitive to `sigma_max` than RANSAC is to its threshold,
+    /// as long as `sigma_max` is not chosen smaller than the actual noise.
+    ///
+    /// The resulting plane passes through the centroid of the inlier set with a unit normal. The
+    /// direction of the normal is not meaningful (it may point to either side of the plane).
+    ///
+    /// # Arguments
+    ///
+    /// * `points`: the points to fit the plane to
+    /// * `sigma_max`: the upper bound on the expected inlier noise, in the same units as the points
+    /// * `options`: an optional [`Magsac`] configuration to override the iteration count, refinement
+    ///   steps, confidence, or RNG seed. Its `sigma_max` field is overridden by the `sigma_max`
+    ///   argument.
+    ///
+    /// returns: Result<Plane3, Box<dyn Error, Global>>
+    pub fn from_consensus(
+        points: &[Point3],
+        sigma_max: f64,
+        options: Option<Magsac>,
+    ) -> Result<Self> {
+        let mut magsac = options.unwrap_or_else(|| Magsac::new(sigma_max));
+        magsac.sigma_max = sigma_max;
+
+        let fit = magsac.fit::<3, Plane3>(points)?;
+        Ok(fit.model)
     }
 
     /// Create a Plane3 from three points, with the normal following the right-hand rule from
@@ -256,6 +289,27 @@ impl Plane3 {
     }
 }
 
+impl ConsensusModel<3> for Plane3 {
+    const SAMPLE_SIZE: usize = 3;
+
+    fn from_sample(sample: &[Point3]) -> Option<Self> {
+        // `from_3_points` already rejects collinear (and coincident) samples.
+        Plane3::from_3_points(&sample[0], &sample[1], &sample[2]).ok()
+    }
+
+    fn residual(&self, point: &Point3) -> f64 {
+        // Signed distance keeps the residual smooth through the plane for the least-squares
+        // refinement; only its magnitude is used for scoring.
+        self.signed_distance_to_point(point)
+    }
+
+    fn refine_weighted(points: &[Point3], weights: &[f64], _initial: &Self) -> Option<Self> {
+        // The MAGSAC++ refinement step is a single weighted least-squares fit, which for a plane is
+        // exactly the weighted SVD fit provided by `from_fit`.
+        Plane3::from_fit(points, Some(weights)).ok()
+    }
+}
+
 impl ops::Mul<Plane3> for Iso3 {
     type Output = Plane3;
     fn mul(self, rhs: Plane3) -> Plane3 {
@@ -287,8 +341,42 @@ impl ops::Mul<&Plane3> for &Iso3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::consensus::Magsac;
     use crate::common::random_geometry::RandomGeometry3;
     use approx::assert_relative_eq;
+
+    /// Build two orthonormal in-plane basis vectors spanning `plane`.
+    fn in_plane_basis(plane: &Plane3) -> (Vector3, Vector3) {
+        let n = plane.normal.into_inner();
+        let reference = if n.z.abs() < 0.9 {
+            Vector3::z()
+        } else {
+            Vector3::x()
+        };
+        let u = reference.cross(&n).normalize();
+        let v = n.cross(&u);
+        (u, v)
+    }
+
+    /// Generate `n` points scattered across `plane` with isotropic Gaussian noise `sigma`.
+    fn plane_noise(
+        rg: &mut RandomGeometry3,
+        plane: &Plane3,
+        n: usize,
+        span: f64,
+        sigma: f64,
+    ) -> Vec<Point3> {
+        let origin = Point3::from(plane.normal.into_inner() * plane.d);
+        let (u, v) = in_plane_basis(plane);
+        (0..n)
+            .map(|_| {
+                origin
+                    + u * rg.f64_sym(span)
+                    + v * rg.f64_sym(span)
+                    + rg.gaussian_vector::<3>(sigma)
+            })
+            .collect()
+    }
 
     #[test]
     fn normal_reversed_negates_normal_and_distance() {
@@ -478,5 +566,68 @@ mod tests {
                 epsilon = 1e-8
             );
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // from_consensus tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn from_consensus_convenience_recovers_plane() {
+        // A clean set of coplanar points; the convenience method should recover the plane.
+        let mut rg = RandomGeometry3::from_seed(7);
+        let true_plane = Plane3::from_point_normal(&Point3::new(1.0, -2.0, 3.0), &rg.unit_vec());
+        let points = plane_noise(&mut rg, &true_plane, 80, 5.0, 0.0);
+
+        let plane = Plane3::from_consensus(&points, 0.01, None).unwrap();
+
+        for p in &points {
+            assert!(plane.distance_to_point(p) < 1e-6);
+        }
+        assert_relative_eq!(
+            plane.normal.dot(&true_plane.normal).abs(),
+            1.0,
+            epsilon = 1e-6
+        );
+    }
+
+    #[test]
+    fn from_consensus_rejects_outliers() {
+        let mut rg = RandomGeometry3::from_seed(101);
+
+        // Inliers lie on the z = 2 plane with a small amount of noise.
+        let true_plane = Plane3::new(Vector3::z_axis(), 2.0);
+        let inliers = plane_noise(&mut rg, &true_plane, 200, 10.0, 0.01);
+        let mut points = inliers.clone();
+
+        // A dense cluster of gross outliers well off the plane.
+        let center = Point3::new(-4.0, 5.0, 9.0);
+        for _ in 0..60 {
+            points.push(center + rg.gaussian_vector::<3>(1.0));
+        }
+
+        let magsac = Magsac {
+            sigma_max: 0.02,
+            max_iterations: Some(400),
+            refinement_steps: 4,
+            confidence: 0.99,
+            seed: Some(42),
+        };
+        let fit = magsac.fit::<3, Plane3>(&points).unwrap();
+
+        // Every inlier should lie very close to the recovered plane.
+        for i in &inliers {
+            assert!(fit.model.distance_to_point(i) < 0.01 * 6.0);
+        }
+
+        // The recovered normal should be parallel (or anti-parallel) to the true plane's normal.
+        assert_relative_eq!(
+            fit.model.normal.dot(&true_plane.normal).abs(),
+            1.0,
+            epsilon = 1e-2
+        );
+
+        // No outlier should be classified as an inlier.
+        assert!(fit.inliers.iter().all(|&i| i < inliers.len()));
     }
 }
