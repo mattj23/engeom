@@ -740,6 +740,27 @@ impl Circle2 {
     }
 }
 
+/// Build a `Magsac` consensus configuration from the optional overrides exposed to Python, leaving
+/// any unset value at the library default.
+fn magsac_options(
+    sigma_max: f64,
+    max_iterations: Option<usize>,
+    refinement_steps: Option<usize>,
+    confidence: Option<f64>,
+    seed: Option<u64>,
+) -> engeom::common::consensus::Magsac {
+    let mut options = engeom::common::consensus::Magsac::new(sigma_max);
+    options.max_iterations = max_iterations;
+    if let Some(steps) = refinement_steps {
+        options.refinement_steps = steps;
+    }
+    if let Some(confidence) = confidence {
+        options.confidence = confidence;
+    }
+    options.seed = seed;
+    options
+}
+
 // ================================================================================================
 // Line2
 // ================================================================================================
@@ -851,6 +872,29 @@ impl Line2 {
         }
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(line))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(points, sigma_max, max_iterations=None, refinement_steps=None, confidence=None, seed=None))]
+    fn from_consensus<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        sigma_max: f64,
+        max_iterations: Option<usize>,
+        refinement_steps: Option<usize>,
+        confidence: Option<f64>,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        let points = array_to_points2(&points.as_array())?;
+        let options = magsac_options(
+            sigma_max,
+            max_iterations,
+            refinement_steps,
+            confidence,
+            seed,
+        );
+        let result = engeom::geom2::Line2::from_consensus(&points, sigma_max, Some(options))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(result))
     }
 
     #[getter]
@@ -995,6 +1039,47 @@ impl Segment2 {
             inner: engeom::geom2::Segment2::new(&p0, &p1)
                 .map_err(|e| PyValueError::new_err(e.to_string()))?,
         })
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(points, weights=None))]
+    fn from_fit<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        weights: Option<PyReadonlyArray1<'py, f64>>,
+    ) -> PyResult<Self> {
+        let points = array_to_points2(&points.as_array())?;
+        let result = match weights {
+            Some(weights) => engeom::geom2::Segment2::from_fit(
+                &points,
+                Some(weights.as_array().as_slice().unwrap()),
+            ),
+            None => engeom::geom2::Segment2::from_fit(&points, None),
+        }
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(result))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(points, sigma_max, max_iterations=None, refinement_steps=None, confidence=None, seed=None))]
+    fn from_consensus<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        sigma_max: f64,
+        max_iterations: Option<usize>,
+        refinement_steps: Option<usize>,
+        confidence: Option<f64>,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        let points = array_to_points2(&points.as_array())?;
+        let options = magsac_options(
+            sigma_max,
+            max_iterations,
+            refinement_steps,
+            confidence,
+            seed,
+        );
+        let result = engeom::geom2::Segment2::from_consensus(&points, sigma_max, Some(options))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(result))
     }
 
     fn __getstate__(&self) -> (f64, f64, f64, f64) {

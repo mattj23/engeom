@@ -1488,6 +1488,27 @@ class Line2:
         """
         ...
 
+    @staticmethod
+    def from_consensus(points: NDArray[float], sigma_max: float, max_iterations: int | None = None,
+                       refinement_steps: int | None = None, confidence: float | None = None,
+                       seed: int | None = None) -> Line2:
+        """
+        Fit a line to a set of points robustly using the MAGSAC++ consensus algorithm, rejecting gross outliers.
+        Unlike a fixed-threshold RANSAC, this takes an upper bound on the inlier noise (`sigma_max`) rather than a
+        hard inlier/outlier threshold, and refines each candidate with noise-marginalized iteratively reweighted
+        least squares.
+
+        :param points: the points to fit the line to.
+        :param sigma_max: the upper bound on the expected inlier noise, in the same units as the points.
+        :param max_iterations: the maximum number of minimal-sample iterations. If None, a default of 500 is used.
+        :param refinement_steps: the number of iteratively reweighted refinement steps per candidate. If None, a
+            default of 4 is used.
+        :param confidence: the probability used for adaptive termination. If None, a default of 0.99 is used.
+        :param seed: an optional fixed RNG seed for reproducible sampling. If None, a random seed is used.
+        :return: a new ``Line2`` object representing the fitted line.
+        """
+        ...
+
     @property
     def origin(self) -> Point2:
         """The origin point of the line."""
@@ -2109,6 +2130,43 @@ class Segment2:
         :param y0: the y-coordinate of the first endpoint.
         :param x1: the x-coordinate of the second endpoint.
         :param y1: the y-coordinate of the second endpoint.
+        """
+        ...
+
+    @staticmethod
+    def from_fit(points: NDArray[float], weights: NDArray[float] | None = None) -> Segment2:
+        """
+        Fit a segment to a set of points by ordinary least squares. An infinite line is fit to the points, and the
+        segment's endpoints are set to the extreme projections of the points onto that line, so the segment spans
+        exactly the range covered by the input.
+
+        This is not robust to gross outliers; for that, use `from_consensus`.
+        :param points: the points to fit the segment to, as an (n, 2) array.
+        :param weights: if provided, a length-n array of weights to multiply each point's residual by. Weights bias
+            the fitted line only; the endpoints are still the extreme projections of every point. If None, all
+            points are weighted equally.
+        :return: a new ``Segment2`` object representing the fitted segment.
+        :raises ValueError: if there are fewer than two distinct points.
+        """
+        ...
+
+    @staticmethod
+    def from_consensus(points: NDArray[float], sigma_max: float, max_iterations: int | None = None,
+                       refinement_steps: int | None = None, confidence: float | None = None,
+                       seed: int | None = None) -> Segment2:
+        """
+        Fit a segment to a set of points robustly using the MAGSAC++ consensus algorithm. A robust infinite line is
+        estimated (rejecting gross outliers), and the segment's endpoints are set to the extreme projections of the
+        *inlier* points onto that line, so outliers influence neither the line nor the segment's extent.
+
+        :param points: the points to fit the segment to.
+        :param sigma_max: the upper bound on the expected inlier noise, in the same units as the points.
+        :param max_iterations: the maximum number of minimal-sample iterations. If None, a default of 500 is used.
+        :param refinement_steps: the number of iteratively reweighted refinement steps per candidate. If None, a
+            default of 4 is used.
+        :param confidence: the probability used for adaptive termination. If None, a default of 0.99 is used.
+        :param seed: an optional fixed RNG seed for reproducible sampling. If None, a random seed is used.
+        :return: a new ``Segment2`` object representing the fitted segment.
         """
         ...
 

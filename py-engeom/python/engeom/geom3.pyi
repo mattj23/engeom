@@ -1128,6 +1128,28 @@ class Plane3:
         """
         ...
 
+    @staticmethod
+    def from_consensus(points: NDArray[float], sigma_max: float, max_iterations: int | None = None,
+                       refinement_steps: int | None = None, confidence: float | None = None,
+                       seed: int | None = None) -> Plane3:
+        """
+        Fit a plane to a set of points robustly using the MAGSAC++ consensus algorithm, rejecting gross outliers.
+        Unlike a fixed-threshold RANSAC, this takes an upper bound on the inlier noise (`sigma_max`) rather than a
+        hard inlier/outlier threshold, and refines each candidate with noise-marginalized iteratively reweighted
+        least squares. The resulting plane passes through the centroid of the inlier set with a unit normal whose
+        direction is not meaningful.
+
+        :param points: the points to fit the plane to.
+        :param sigma_max: the upper bound on the expected inlier noise, in the same units as the points.
+        :param max_iterations: the maximum number of minimal-sample iterations. If None, a default of 500 is used.
+        :param refinement_steps: the number of iteratively reweighted refinement steps per candidate. If None, a
+            default of 4 is used.
+        :param confidence: the probability used for adaptive termination. If None, a default of 0.99 is used.
+        :param seed: an optional fixed RNG seed for reproducible sampling. If None, a random seed is used.
+        :return: a new Plane3 object representing the fitted plane.
+        """
+        ...
+
     def normal_reversed(self) -> Plane3:
         """
         Return a new plane in the same position as this one, but with the normal direction
@@ -1317,6 +1339,27 @@ class Line3:
         ...
 
     @staticmethod
+    def from_consensus(points: NDArray[float], sigma_max: float, max_iterations: int | None = None,
+                       refinement_steps: int | None = None, confidence: float | None = None,
+                       seed: int | None = None) -> Line3:
+        """
+        Fit a line to a set of points robustly using the MAGSAC++ consensus algorithm, rejecting gross outliers.
+        Unlike a fixed-threshold RANSAC, this takes an upper bound on the inlier noise (`sigma_max`) rather than a
+        hard inlier/outlier threshold, and refines each candidate with noise-marginalized iteratively reweighted
+        least squares.
+
+        :param points: the points to fit the line to.
+        :param sigma_max: the upper bound on the expected inlier noise, in the same units as the points.
+        :param max_iterations: the maximum number of minimal-sample iterations. If None, a default of 500 is used.
+        :param refinement_steps: the number of iteratively reweighted refinement steps per candidate. If None, a
+            default of 4 is used.
+        :param confidence: the probability used for adaptive termination. If None, a default of 0.99 is used.
+        :param seed: an optional fixed RNG seed for reproducible sampling. If None, a random seed is used.
+        :return: a new Line3 object representing the fitted line.
+        """
+        ...
+
+    @staticmethod
     def x_axis() -> Line3:
         """Return the X axis: origin at (0, 0, 0), direction (1, 0, 0)."""
         ...
@@ -1475,6 +1518,43 @@ class Segment3:
         """
         ...
 
+    @staticmethod
+    def from_fit(points: NDArray[float], weights: NDArray[float] | None = None) -> Segment3:
+        """
+        Fit a segment to a set of points by ordinary least squares. An infinite line is fit to the points, and the
+        segment's endpoints are set to the extreme projections of the points onto that line, so the segment spans
+        exactly the range covered by the input.
+
+        This is not robust to gross outliers; for that, use `from_consensus`.
+        :param points: the points to fit the segment to, as an (n, 3) array.
+        :param weights: if provided, a length-n array of weights to multiply each point's residual by. Weights bias
+            the fitted line only; the endpoints are still the extreme projections of every point. If None, all
+            points are weighted equally.
+        :return: a new ``Segment3`` object representing the fitted segment.
+        :raises ValueError: if there are fewer than two distinct points.
+        """
+        ...
+
+    @staticmethod
+    def from_consensus(points: NDArray[float], sigma_max: float, max_iterations: int | None = None,
+                       refinement_steps: int | None = None, confidence: float | None = None,
+                       seed: int | None = None) -> Segment3:
+        """
+        Fit a segment to a set of points robustly using the MAGSAC++ consensus algorithm. A robust infinite line is
+        estimated (rejecting gross outliers), and the segment's endpoints are set to the extreme projections of the
+        *inlier* points onto that line, so outliers influence neither the line nor the segment's extent.
+
+        :param points: the points to fit the segment to.
+        :param sigma_max: the upper bound on the expected inlier noise, in the same units as the points.
+        :param max_iterations: the maximum number of minimal-sample iterations. If None, a default of 500 is used.
+        :param refinement_steps: the number of iteratively reweighted refinement steps per candidate. If None, a
+            default of 4 is used.
+        :param confidence: the probability used for adaptive termination. If None, a default of 0.99 is used.
+        :param seed: an optional fixed RNG seed for reproducible sampling. If None, a random seed is used.
+        :return: a new ``Segment3`` object representing the fitted segment.
+        """
+        ...
+
     @property
     def a(self) -> Point3:
         """
@@ -1629,6 +1709,45 @@ class Sphere3:
         """
         ...
 
+    @staticmethod
+    def from_fit(points: NDArray[float], weights: NDArray[float] | None = None) -> Sphere3:
+        """
+        Fit a sphere to a set of points by ordinary least squares. A closed-form algebraic (Kåsa-style) estimate
+        provides the initial guess, which is then refined against the true geometric radial residuals with a weighted
+        Levenberg-Marquardt minimization.
+
+        This is not robust to gross outliers; for that, use `from_consensus`.
+        :param points: the points to fit the sphere to, as an (n, 3) array.
+        :param weights: if provided, a length-n array of weights to multiply each point's residual by. If None, all
+            points are weighted equally.
+        :return: a new ``Sphere3`` object representing the fitted sphere.
+        :raises ValueError: if there are fewer than four points, or they are coplanar.
+        """
+        ...
+
+    @staticmethod
+    def from_consensus(points: NDArray[float], sigma_max: float, min_r: float | None = None,
+                       max_r: float | None = None, max_iterations: int | None = None,
+                       refinement_steps: int | None = None, confidence: float | None = None,
+                       seed: int | None = None) -> Sphere3:
+        """
+        Fit a sphere to a set of points robustly using the MAGSAC++ consensus algorithm. Unlike a fixed-threshold
+        RANSAC, this takes an upper bound on the inlier noise (`sigma_max`) rather than a hard inlier/outlier
+        threshold, and refines each candidate with noise-marginalized iteratively reweighted least squares.
+
+        :param points: the points to fit the sphere to.
+        :param sigma_max: the upper bound on the expected inlier noise, in the same units as the points.
+        :param min_r: the minimum radius of the sphere. If None, no minimum will be enforced.
+        :param max_r: the maximum radius of the sphere. If None, no maximum will be enforced.
+        :param max_iterations: the maximum number of minimal-sample iterations. If None, a default of 500 is used.
+        :param refinement_steps: the number of iteratively reweighted refinement steps per candidate. If None, a
+            default of 4 is used.
+        :param confidence: the probability used for adaptive termination. If None, a default of 0.99 is used.
+        :param seed: an optional fixed RNG seed for reproducible sampling. If None, a random seed is used.
+        :return: a new ``Sphere3`` object representing the fitted sphere.
+        """
+        ...
+
     def closest_point(self, test_point: Point3) -> SurfacePoint3 | None:
         """
         Return the closest point on the sphere's surface to test_point, along with the outward
@@ -1736,6 +1855,22 @@ class Circle3:
         :param nz: z component of the normal.
         :param radius: the radius of the circle.
         :raises ValueError: if the normal vector has zero length.
+        """
+        ...
+
+    @staticmethod
+    def from_fit(points: NDArray[float], weights: NDArray[float] | None = None) -> Circle3:
+        """
+        Fit a circle to a set of 3D points by ordinary least squares. A closed-form estimate (the best-fit plane
+        combined with an in-plane algebraic circle fit) provides the initial guess, which is then refined against the
+        true geometric point-to-circle distances with a weighted Levenberg-Marquardt minimization.
+
+        This is not robust to gross outliers; for that, use `from_consensus`.
+        :param points: the points to fit the circle to, as an (n, 3) array.
+        :param weights: if provided, a length-n array of weights to multiply each point's residual by. If None, all
+            points are weighted equally.
+        :return: a new ``Circle3`` object representing the fitted circle.
+        :raises ValueError: if there are fewer than three points, or they are collinear.
         """
         ...
 
