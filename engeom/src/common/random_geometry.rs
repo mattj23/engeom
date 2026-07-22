@@ -6,8 +6,11 @@
 //! genuinely dimension-specific constructors (isometries, circles) via additional inherent `impl`
 //! blocks.
 
-use crate::na::{Point, SVector, Translation3, Unit, UnitQuaternion};
-use crate::{Circle2, Iso2, Iso3, Vector3};
+// This entire module is test-only
+#![cfg(test)]
+
+use crate::na::{Point, Quaternion, SVector, Translation3, Unit, UnitQuaternion};
+use crate::{Circle2, Iso2, Iso3};
 use rand::distr::{Distribution, Uniform};
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
@@ -165,17 +168,17 @@ impl RandomGeometry2 {
 }
 
 impl RandomGeometry3 {
-    /// Returns a random `Iso3` with translation components in `[-t, t]` and arbitrary rotation.
+    /// Returns a random `Iso3` with translation components in `[-t, t]` and a rotation drawn
+    /// uniformly from `SO(3)` (Haar measure).
+    ///
+    /// The rotation is sampled by normalizing a 4D standard-normal vector into a unit quaternion:
+    /// an isotropic Gaussian projects to a uniform point on the unit 3-sphere, whose double cover
+    /// of `SO(3)` yields a uniformly-distributed rotation. This is unbiased, unlike independently
+    /// sampled Euler angles, which concentrate near the poles.
     pub fn iso3(&mut self, t: f64) -> Iso3 {
-        let tx = self.f64(-t, t);
-        let ty = self.f64(-t, t);
-        let tz = self.f64(-t, t);
-        let rx = self.f64(-PI, PI);
-        let ry = self.f64(-PI, PI);
-        let rz = self.f64(-PI, PI);
-        Iso3::from_parts(
-            Translation3::from(Vector3::new(tx, ty, tz)),
-            UnitQuaternion::from_euler_angles(rx, ry, rz),
-        )
+        let translation = Translation3::from(self.vector::<3>(t));
+        let g = self.gaussian_vector::<4>(1.0);
+        let rotation = UnitQuaternion::new_normalize(Quaternion::new(g[0], g[1], g[2], g[3]));
+        Iso3::from_parts(translation, rotation)
     }
 }

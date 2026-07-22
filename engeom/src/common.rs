@@ -14,7 +14,6 @@ pub mod kd_tree;
 mod line;
 pub mod points;
 pub mod poisson_disk;
-#[cfg(test)]
 pub mod random_geometry;
 pub mod ransac_tools;
 mod segment;

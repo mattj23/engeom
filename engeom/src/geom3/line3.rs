@@ -135,8 +135,8 @@ impl ops::Mul<&Line3> for &Iso3 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geom3::sphere3::Sphere3;
     use crate::common::random_geometry::RandomGeometry3;
+    use crate::geom3::sphere3::Sphere3;
     use crate::{Plane3, UnitVec3};
     use approx::assert_relative_eq;
 

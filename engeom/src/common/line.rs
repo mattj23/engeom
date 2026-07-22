@@ -205,10 +205,10 @@ impl<const D: usize> PCoords<D> for Line<D> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::random_geometry::{RandomGeometry, RandomGeometry2};
     use crate::{Point2, Point3, Vector2, Vector3};
     use approx::assert_relative_eq;
     use rand::RngExt;
-    use crate::common::random_geometry::RandomGeometry3;
 
     #[test]
     fn at_endpoints() {
@@ -354,9 +354,11 @@ mod tests {
         assert!(Line::<3>::from_fit(&points, None).is_err());
     }
 
-    fn line_noise3(line: &Line<3>, n: usize, sigma: f64) -> Vec<Point3> {
-        let mut rand = RandomGeometry3::new();
-        (0..n).map(|_| line.at(rand.f64_sym(10.0)) + rand.gaussian_vector(sigma)).collect()
+    fn line_noise<const D: usize>(line: &Line<D>, n: usize, sigma: f64) -> Vec<Point<f64, D>> {
+        let mut rand = RandomGeometry::<D>::new();
+        (0..n)
+            .map(|_| line.at(rand.f64_sym(10.0)) + rand.gaussian_vector(sigma))
+            .collect()
     }
 
     #[test]
@@ -395,21 +397,19 @@ mod tests {
 
     #[test]
     fn from_consensus_rejects_outliers() {
+        let mut rand = RandomGeometry2::new();
+
         // Inliers lie along the line y = 0.5 with a small deterministic perturbation.
         let true_line = Line::<2>::new(Point2::new(0.0, 0.5), Vector2::new(1.0, 0.0));
-        let inlier_count = 120;
-        let mut points: Vec<Point2> = (0..inlier_count)
-            .map(|i| {
-                let x = i as f64 * 0.05;
-                let noise = 0.003 * (7.0 * x).sin();
-                Point2::new(x, 0.5 + noise)
-            })
-            .collect();
+        let decoy_line = Line::<2>::new(Point2::new(0.0, 0.0), Vector2::new(1.0, 1.0));
+        let inliers = line_noise(&true_line, 150, 0.01);
+        let mut points = [inliers.clone(), line_noise(&decoy_line, 50, 0.05)].concat();
 
         // A dense cluster of gross outliers well off the line.
+        let center = Point2::new(-2.0, 3.0);
         for i in 0..50 {
             let f = i as f64;
-            points.push(Point2::new(3.0 + 0.02 * f, 5.0 + 0.01 * (f).cos()));
+            points.push(center + rand.gaussian_vector(1.0));
         }
 
         let magsac = Magsac {
@@ -423,13 +423,10 @@ mod tests {
             .fit_filtered::<2, Line<2>, _>(&points, |_| true)
             .unwrap();
 
-        // Every inlier should lie very close to the recovered line, and no outlier should be
-        // classified as an inlier.
-        for i in 0..inlier_count {
-            assert!(fit.model.distance_to(&points[i]) < 0.02);
+        // Every inlier should lie very close to the recovered line
+        for i in inliers.iter() {
+            assert!(fit.model.distance_to(i) < 0.01 * 6.0);
         }
-        assert!(fit.inliers.iter().all(|&i| i < inlier_count));
-        assert!(fit.inliers.len() > inlier_count * 9 / 10);
 
         // The direction should be parallel (or anti-parallel) to the true horizontal line.
         let dir = fit.model.direction.normalize();

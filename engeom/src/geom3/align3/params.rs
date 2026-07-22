@@ -419,9 +419,9 @@ fn euler_partials(ry: f64, rz: f64) -> (Matrix3<f64>, Matrix3<f64>, Matrix3<f64>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::random_geometry::RandomGeometry3;
     use crate::geom3::IsoExtensions3;
     use crate::geom3::align3::params::{AlignOrigin, AlignParams3};
-    use crate::common::random_geometry::RandomGeometry3;
     use crate::na::{Rotation, Rotation3, UnitQuaternion};
     use crate::{Iso3, Point3, Vector3};
     use approx::assert_relative_eq;

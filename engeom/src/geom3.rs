@@ -116,4 +116,3 @@ impl Default for SurfacePoint3 {
         SurfacePoint3::new(Point3::origin(), Vector3::x_axis())
     }
 }
-

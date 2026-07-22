@@ -218,8 +218,8 @@ impl SurfaceTarget3 for RevolvedBoundary3 {
 mod tests {
     use super::*;
     use crate::Vector3;
-    use crate::geom2::{BoundaryData2, BoundaryEditor};
     use crate::common::random_geometry::RandomGeometry3;
+    use crate::geom2::{BoundaryData2, BoundaryEditor};
     use approx::assert_relative_eq;
 
     fn open_extruded() -> ExtrudedBoundary3 {
