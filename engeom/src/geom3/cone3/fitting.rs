@@ -242,7 +242,8 @@ type Residuals = Matrix<f64, Dyn, U1, Owned<f64, Dyn, U1>>;
 /// six parameters are an offset applied relative to a fixed base cone: a translation of the apex
 /// (`[0..3]`), two rotations of the axis direction about the base's perpendicular axes (`[3..5]`),
 /// and a change in half-angle (`[5]`). Parameterizing relative to the base avoids any orientation
-/// singularity, and the jacobian of the surface distances is computed by forward finite differences.
+/// singularity, and the jacobian of the surface distances is computed analytically (see
+/// [`ConeFit::jacobian`]).
 struct ConeFit<'a> {
     points: &'a [Point3],
     weights: &'a [f64],
@@ -329,18 +330,56 @@ impl LeastSquaresProblem<f64, Dyn, U6> for ConeFit<'_> {
         Some(self.residuals.clone())
     }
 
+    /// Analytic jacobian of the weighted surface residuals with respect to the six offset
+    /// parameters. Writing `v = point - apex`, `q = v·direction`, `radial = v - direction*q` with
+    /// `rho = |radial|` and `u = radial/rho`, the residual is `D = rho·cos(alpha) - q·sin(alpha)`.
+    /// The gradient with respect to the apex (as a free point) is `sin(alpha)*direction -
+    /// cos(alpha)*u`, and the gradient with respect to the direction (treated as a free vector) is
+    /// `-(sin(alpha)*v + cos(alpha)*q*u)`. The latter is chained through `dn/dp3` and `dn/dp4`, the
+    /// derivatives of the direction with respect to its two rotation parameters; because those
+    /// rotations are about the fixed world-space `axis_x`/`axis_y`,
+    /// `d/dtheta [R(theta, a) * v] = a x (R(theta, a) * v)` gives those derivatives in closed form at
+    /// any iterate, not just at the base cone. The derivative with respect to the half-angle is
+    /// `-(rho·sin(alpha) + q·cos(alpha))`.
     fn jacobian(&self) -> Option<Matrix<f64, Dyn, U6, Self::JacobianStorage>> {
-        const DELTA: f64 = 1e-7;
+        let (apex, direction, half_angle) = self.cone_params(&self.params);
+        let n = direction.into_inner();
+        let (s, c) = half_angle.sin_cos();
+        let axis_x = self.axis_x.into_inner();
+        let axis_y = self.axis_y.into_inner();
+
+        let rot_x = UnitQuaternion::from_axis_angle(&self.axis_x, self.params[3]);
+        let n1 = rot_x * self.base_direction.into_inner();
+        let rot_y = UnitQuaternion::from_axis_angle(&self.axis_y, self.params[4]);
+        let dn_dp3 = rot_y * axis_x.cross(&n1);
+        let dn_dp4 = axis_y.cross(&n);
+
         let mut jac = Matrix::<f64, Dyn, U6, Self::JacobianStorage>::zeros(self.points.len());
 
-        for k in 0..6 {
-            let mut p = self.params;
-            p[k] += DELTA;
-            let (apex, direction, half_angle) = self.cone_params(&p);
-            for (i, point) in self.points.iter().enumerate() {
-                let d = self.weights[i] * point_cone_distance(&apex, &direction, half_angle, point);
-                jac[(i, k)] = (d - self.residuals[i]) / DELTA;
-            }
+        for (i, point) in self.points.iter().enumerate() {
+            let w = self.weights[i];
+            let v = point - apex;
+            let q = v.dot(&n);
+            let radial = v - n * q;
+            let rho = radial.norm();
+
+            // The radial direction is undefined right on the axis; leave that row's translation and
+            // rotation sensitivity at zero rather than dividing by zero.
+            let u = if rho > 1e-12 {
+                radial / rho
+            } else {
+                Vector3::zeros()
+            };
+
+            let grad_apex = n * s - u * c;
+            let grad_n = -(v * s + u * (c * q));
+
+            jac[(i, 0)] = w * grad_apex.x;
+            jac[(i, 1)] = w * grad_apex.y;
+            jac[(i, 2)] = w * grad_apex.z;
+            jac[(i, 3)] = w * grad_n.dot(&dn_dp3);
+            jac[(i, 4)] = w * grad_n.dot(&dn_dp4);
+            jac[(i, 5)] = -w * (rho * s + q * c);
         }
 
         Some(jac)
@@ -354,6 +393,8 @@ mod tests {
     use crate::geom3::Cone3;
     use crate::{Point3, UnitVec3, Vector3};
     use approx::assert_relative_eq;
+    use levenberg_marquardt::LeastSquaresProblem;
+    use parry3d_f64::na::Vector6;
     use std::f64::consts::TAU;
 
     fn tilted() -> Cone3 {
@@ -395,6 +436,37 @@ mod tests {
             .iter()
             .map(|sp| SurfacePoint3::new(sp.point + rg.gaussian_vector::<3>(sigma), sp.normal))
             .collect()
+    }
+
+    #[test]
+    fn jacobian_matches_finite_differences() {
+        let cone = tilted();
+        let surface = sample_surface(&cone, 30, true);
+        let points: Vec<Point3> = surface.iter().map(|sp| sp.point).collect();
+        let weights = vec![1.0; points.len()];
+
+        // Perturb away from the base cone so the jacobian is checked away from `p = 0`, where the
+        // fixed-axis rotation derivatives are exercised at a non-trivial angle.
+        let mut problem = ConeFit::new(&points, &weights, &cone);
+        let probe = Vector6::new(0.05, -0.03, 0.02, 0.2, -0.15, 0.05);
+        problem.set_params(&probe);
+
+        let analytic = problem.jacobian().expect("analytic jacobian");
+        let base_residuals = problem.residuals().expect("residuals");
+
+        const DELTA: f64 = 1e-6;
+        for k in 0..6 {
+            let mut perturbed = probe;
+            perturbed[k] += DELTA;
+            problem.set_params(&perturbed);
+            let perturbed_residuals = problem.residuals().expect("residuals");
+            problem.set_params(&probe);
+
+            for i in 0..points.len() {
+                let numeric = (perturbed_residuals[i] - base_residuals[i]) / DELTA;
+                assert_relative_eq!(analytic[(i, k)], numeric, epsilon = 1e-4);
+            }
+        }
     }
 
     /// Assert two cones describe the same geometry (apex, axis direction, half-angle) and extent.

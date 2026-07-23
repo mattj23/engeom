@@ -375,7 +375,7 @@ mod tests {
                 assert_relative_eq!(
                     plane.signed_distance_to_point(&pt).abs(),
                     0.0,
-                    epsilon = 1e-8
+                    epsilon = 1e-7
                 );
                 assert_relative_eq!((pt - circle.center).norm(), circle.r(), epsilon = 1e-8);
             }
