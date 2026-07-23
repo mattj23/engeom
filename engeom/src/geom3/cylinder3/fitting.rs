@@ -338,7 +338,7 @@ type Residuals = Matrix<f64, Dyn, U1, Owned<f64, Dyn, U1>>;
 /// axes translation *along* the axis is a gauge freedom and is deliberately excluded), two
 /// rotations of the axis direction about those perpendicular axes (`[2..4]`), and a change in radius
 /// (`[4]`). Parameterizing relative to the base avoids any orientation singularity, and the jacobian
-/// of the point-to-surface distances is computed by forward finite differences.
+/// of the point-to-surface distances is computed analytically (see [`CylinderFit::jacobian`]).
 struct CylinderFit<'a> {
     points: &'a [Point3],
     weights: &'a [f64],
@@ -426,19 +426,50 @@ impl LeastSquaresProblem<f64, Dyn, U5> for CylinderFit<'_> {
         Some(self.residuals.clone())
     }
 
+    /// Analytic jacobian of the weighted radial residuals with respect to the five offset
+    /// parameters. Writing `v = point - center`, `a = v·direction` (the axial component), and
+    /// `radial = v - direction*a` with `rho = |radial|`, the residual is `D = rho - radius`. The
+    /// gradient with respect to the center (as a free vector) is `-u`, where `u = radial/rho` is the
+    /// unit radial direction, and the gradient with respect to the direction (also treated as free)
+    /// is `-a*u`. The latter is chained through `dn/dp2` and `dn/dp3`, the derivatives of the
+    /// direction with respect to its two rotation parameters; because those rotations are about the
+    /// fixed world-space `axis_x`/`axis_y`, `d/dtheta [R(theta, a) * v] = a x (R(theta, a) * v)` gives
+    /// those derivatives in closed form at any iterate, not just at the base cylinder.
     fn jacobian(&self) -> Option<Matrix<f64, Dyn, U5, Self::JacobianStorage>> {
-        const DELTA: f64 = 1e-7;
+        let (center, direction, _radius) = self.cylinder_params(&self.params);
+        let n = direction.into_inner();
+        let axis_x = self.axis_x.into_inner();
+        let axis_y = self.axis_y.into_inner();
+
+        let rot_x = UnitQuaternion::from_axis_angle(&self.axis_x, self.params[2]);
+        let n1 = rot_x * self.base_direction.into_inner();
+        let rot_y = UnitQuaternion::from_axis_angle(&self.axis_y, self.params[3]);
+        let dn_dp2 = rot_y * axis_x.cross(&n1);
+        let dn_dp3 = axis_y.cross(&n);
+
         let mut jac = Matrix::<f64, Dyn, U5, Self::JacobianStorage>::zeros(self.points.len());
 
-        for k in 0..5 {
-            let mut p = self.params;
-            p[k] += DELTA;
-            let (center, direction, radius) = self.cylinder_params(&p);
-            for (i, point) in self.points.iter().enumerate() {
-                let d =
-                    self.weights[i] * point_cylinder_distance(&center, &direction, radius, point);
-                jac[(i, k)] = (d - self.residuals[i]) / DELTA;
-            }
+        for (i, point) in self.points.iter().enumerate() {
+            let w = self.weights[i];
+            let v = point - center;
+            let a = v.dot(&n);
+            let radial = v - n * a;
+            let rho = radial.norm();
+
+            // The axis point is undefined right on the axis; leave that row's rotation/translation
+            // sensitivity at zero rather than dividing by zero.
+            let u = if rho > 1e-12 {
+                radial / rho
+            } else {
+                Vector3::zeros()
+            };
+            let grad_n = -u * a;
+
+            jac[(i, 0)] = -w * u.dot(&axis_x);
+            jac[(i, 1)] = -w * u.dot(&axis_y);
+            jac[(i, 2)] = w * grad_n.dot(&dn_dp2);
+            jac[(i, 3)] = w * grad_n.dot(&dn_dp3);
+            jac[(i, 4)] = -w;
         }
 
         Some(jac)
@@ -452,6 +483,8 @@ mod tests {
     use crate::geom3::Cylinder3;
     use crate::{Point3, UnitVec3, Vector3};
     use approx::assert_relative_eq;
+    use levenberg_marquardt::LeastSquaresProblem;
+    use parry3d_f64::na::Vector5;
     use std::f64::consts::TAU;
 
     fn tilted() -> Cylinder3 {
@@ -493,6 +526,37 @@ mod tests {
             .iter()
             .map(|sp| SurfacePoint3::new(sp.point + rg.gaussian_vector::<3>(sigma), sp.normal))
             .collect()
+    }
+
+    #[test]
+    fn jacobian_matches_finite_differences() {
+        let cyl = tilted();
+        let surface = sample_surface(&cyl, 30, true);
+        let points: Vec<Point3> = surface.iter().map(|sp| sp.point).collect();
+        let weights = vec![1.0; points.len()];
+
+        // Perturb away from the base cylinder so the jacobian is checked away from `p = 0`, where the
+        // fixed-axis rotation derivatives are exercised at a non-trivial angle.
+        let mut problem = CylinderFit::new(&points, &weights, &cyl);
+        let probe = Vector5::new(0.05, -0.03, 0.2, -0.15, 0.1);
+        problem.set_params(&probe);
+
+        let analytic = problem.jacobian().expect("analytic jacobian");
+        let base_residuals = problem.residuals().expect("residuals");
+
+        const DELTA: f64 = 1e-6;
+        for k in 0..5 {
+            let mut perturbed = probe;
+            perturbed[k] += DELTA;
+            problem.set_params(&perturbed);
+            let perturbed_residuals = problem.residuals().expect("residuals");
+            problem.set_params(&probe);
+
+            for i in 0..points.len() {
+                let numeric = (perturbed_residuals[i] - base_residuals[i]) / DELTA;
+                assert_relative_eq!(analytic[(i, k)], numeric, epsilon = 1e-4);
+            }
+        }
     }
 
     /// Assert two cylinders describe the same infinite geometry (coincident axis line, parallel
