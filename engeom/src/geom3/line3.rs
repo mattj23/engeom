@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn scalar_project_perpendicular_offset() {
-        // Point directly above the origin — projection is at t=0
+        // Point directly above the origin - projection is at t=0
         let line = x_axis_line();
         let pt = Point3::new(0.0, 3.0, 0.0);
         assert_relative_eq!(line.scalar_project(&pt), 0.0, epsilon = 1e-12);

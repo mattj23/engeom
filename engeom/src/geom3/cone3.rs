@@ -5,6 +5,8 @@ use crate::{Iso3, Point3, Result, SurfacePoint3, UnitVec3};
 use std::f64::consts::PI;
 use std::ops;
 
+mod fitting;
+
 /// Epsilon for bounds/degeneracy checks.
 const EPSILON: f64 = 1e-10;
 

@@ -1,6 +1,6 @@
 //! Cylinder fitting for [`Cylinder3`] by ordinary least squares against geometric radial residuals.
 //!
-//! There are two constructors, both refining through the same shared [`CylinderFit`]
+//! There are three entry points, all refining through the same shared [`CylinderFit`]
 //! Levenberg-Marquardt engine (which works over the infinite cylinder's five degrees of freedom:
 //! the axis line and the radius):
 //!   - [`Cylinder3::from_fit`] takes bare positions plus a caller-supplied initial guess. Positions
@@ -11,6 +11,12 @@
 //!     axis is the eigenvector of the normal scatter matrix `Σ wᵢ nᵢ nᵢᵀ` for its smallest
 //!     eigenvalue), then estimates a point on the axis and the radius with an in-plane algebraic
 //!     circle fit before refining.
+//!   - [`Cylinder3::from_consensus`] takes oriented [`SurfacePoint3`] samples and runs the MAGSAC++
+//!     robust estimator, rejecting gross outliers. Each minimal sample is three oriented points (the
+//!     smallest set that determines both the axis, from the normals, and the radius, from the circle
+//!     through the three projected points), reusing the same oriented bootstrap as
+//!     [`Cylinder3::from_fit_oriented`]. Scoring and refinement use only the point positions, so the
+//!     normals matter only for building candidates.
 //!
 //! The normals are used *only* to bootstrap the axis in [`Cylinder3::from_fit_oriented`]; the shared
 //! engine and the residual are position-only. The radial residual `dist(point, axis) − radius` does
@@ -23,6 +29,7 @@
 
 use super::Cylinder3;
 use crate::common::PCoords;
+use crate::common::consensus::{ConsensusModel, Magsac};
 use crate::geom3::IsoExtensions3;
 use crate::{Iso3, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
@@ -128,6 +135,19 @@ fn axis_point_and_radius(
     Some((axis_point, r_squared.sqrt()))
 }
 
+/// Build an unbounded initial cylinder from oriented points: the axis from the normal scatter
+/// matrix, then a point on the axis and the radius from an in-plane algebraic circle fit. This is
+/// the shared bootstrap used by both [`Cylinder3::from_fit_oriented`] and the consensus minimal
+/// sample. The returned cylinder's `center` lies on the axis and its `length` is unset (`0`); it is
+/// meant to be refined and then bounded. Returns `None` if the sample does not constrain a cylinder
+/// (parallel normals or collinear projections).
+fn bootstrap_cylinder(points: &[SurfacePoint3], weights: &[f64]) -> Option<Cylinder3> {
+    let direction = axis_from_normals(points, weights)?;
+    let pts: Vec<Point3> = points.iter().map(|sp| sp.point).collect();
+    let (axis_point, radius) = axis_point_and_radius(&direction, &pts, weights)?;
+    Some(Cylinder3::new(axis_point, direction, radius, 0.0))
+}
+
 /// Convert the infinite cylinder produced by the least-squares refinement into a finite one by
 /// setting `center` and `length` to span the axial extent of `points` along the refined axis. The
 /// axis line and radius are left unchanged.
@@ -222,17 +242,91 @@ impl Cylinder3 {
             }
         };
 
-        let direction = axis_from_normals(points, weights)
-            .ok_or("Normals do not constrain a cylinder axis (near-planar sample)")?;
+        let guess = bootstrap_cylinder(points, weights).ok_or(
+            "Failed to estimate an initial cylinder from the oriented points \
+             (parallel normals or degenerate sample)",
+        )?;
 
         let pts: Vec<Point3> = points.iter().map(|sp| sp.point).collect();
-        let (axis_point, radius) = axis_point_and_radius(&direction, &pts, weights)
-            .ok_or("Failed to estimate cylinder radius from points")?;
-        let guess = Cylinder3::new(axis_point, direction, radius, 0.0);
-
         let refined =
             CylinderFit::refine(&pts, weights, &guess).ok_or("Failed to refine cylinder fit")?;
         Ok(bound_axially(&refined, &pts))
+    }
+
+    /// Fit a cylinder to a set of oriented surface points using MAGSAC++ robust consensus
+    /// estimation. Unlike [`Cylinder3::from_fit_oriented`], this rejects gross outliers by taking an
+    /// upper bound on the inlier noise (`sigma_max`) rather than a hard inlier/outlier threshold.
+    ///
+    /// Each minimal sample is three oriented points, the smallest set that determines the cylinder:
+    /// the axis comes from the normals and the radius from the circle through the three projected
+    /// points. Candidate scoring and refinement use only the point positions (the radial distance to
+    /// the axis), so the normals are used solely to build candidates; consequently inner- and
+    /// outer-facing surfaces (and mixed normals) are handled identically. The returned cylinder is
+    /// bounded to the axial extent of the inlier points.
+    ///
+    /// # Arguments
+    ///
+    /// * `points`: the oriented surface points to fit the cylinder to (at least three)
+    /// * `sigma_max`: the upper bound on the expected inlier noise, in the same units as the points
+    /// * `min_r`: an optional minimum radius; candidate cylinders smaller than this are rejected
+    /// * `max_r`: an optional maximum radius; candidate cylinders larger than this are rejected
+    /// * `options`: an optional [`Magsac`] configuration; its `sigma_max` is overridden by the
+    ///   `sigma_max` argument
+    ///
+    /// returns: Result<Cylinder3, Box<dyn Error, Global>>
+    pub fn from_consensus(
+        points: &[SurfacePoint3],
+        sigma_max: f64,
+        min_r: Option<f64>,
+        max_r: Option<f64>,
+        options: Option<Magsac>,
+    ) -> Result<Cylinder3> {
+        let min_r = min_r.unwrap_or(0.0);
+        let max_r = max_r.unwrap_or(f64::INFINITY);
+
+        let mut magsac = options.unwrap_or_else(|| Magsac::new(sigma_max));
+        magsac.sigma_max = sigma_max;
+
+        let fit =
+            magsac.fit_filtered::<3, Cylinder3, _>(points, |c| c.r() >= min_r && c.r() <= max_r)?;
+
+        // Bound the infinite consensus cylinder to the axial extent of its inliers (falling back to
+        // all points in the unlikely event the inlier set is empty).
+        let bound_pts: Vec<Point3> = if fit.inliers.is_empty() {
+            points.iter().map(|sp| sp.point).collect()
+        } else {
+            fit.inliers.iter().map(|&i| points[i].point).collect()
+        };
+        Ok(bound_axially(&fit.model, &bound_pts))
+    }
+}
+
+impl ConsensusModel<3> for Cylinder3 {
+    /// A cylinder is estimated from oriented points: the normals are needed to bootstrap the axis.
+    type Point = SurfacePoint3;
+
+    /// Three oriented points: the smallest sample that fixes the axis (from the normals) and the
+    /// radius (from the in-plane circle through the three projected positions).
+    const SAMPLE_SIZE: usize = 3;
+
+    fn from_sample(sample: &[SurfacePoint3]) -> Option<Self> {
+        let weights = vec![1.0; sample.len()];
+        bootstrap_cylinder(sample, &weights)
+    }
+
+    fn residual(&self, point: &SurfacePoint3) -> f64 {
+        // Position-only radial distance; the normal plays no part in scoring.
+        point_cylinder_distance(&self.center, &self.direction, self.radius, &point.point)
+    }
+
+    fn refine_weighted(
+        points: &[SurfacePoint3],
+        weights: &[f64],
+        initial: &Cylinder3,
+    ) -> Option<Cylinder3> {
+        // Strip the normals and hand the bare positions to the shared position-only LM engine.
+        let pts: Vec<Point3> = points.iter().map(|sp| sp.point).collect();
+        CylinderFit::refine(&pts, weights, initial)
     }
 }
 
@@ -241,7 +335,7 @@ type Residuals = Matrix<f64, Dyn, U1, Owned<f64, Dyn, U1>>;
 /// A weighted least-squares problem for refining an infinite cylinder (axis line and radius). The
 /// five parameters are an offset applied relative to a fixed base cylinder: a translation of the
 /// axis point within the plane perpendicular to the axis (`[0..2]`, along the base's perpendicular
-/// axes — translation *along* the axis is a gauge freedom and is deliberately excluded), two
+/// axes translation *along* the axis is a gauge freedom and is deliberately excluded), two
 /// rotations of the axis direction about those perpendicular axes (`[2..4]`), and a change in radius
 /// (`[4]`). Parameterizing relative to the base avoids any orientation singularity, and the jacobian
 /// of the point-to-surface distances is computed by forward finite differences.
@@ -547,5 +641,72 @@ mod tests {
         let guess = tilted();
         let points = [Point3::new(0.0, 0.0, 0.0)];
         assert!(Cylinder3::from_fit(&points, &guess, None).is_err());
+    }
+
+    // from_consensus tests ─────────────────────────────────────────────────────
+
+    #[test]
+    fn from_consensus_recovers_clean_cylinder() {
+        let expected = tilted();
+        let points = sample_surface(&expected, 120, true);
+        let options = Magsac {
+            sigma_max: 0.01,
+            max_iterations: Some(500),
+            refinement_steps: 5,
+            confidence: 0.99,
+            seed: Some(17),
+        };
+        let fit = Cylinder3::from_consensus(&points, 0.01, None, None, Some(options)).unwrap();
+        assert_cyl_matches(&fit, &expected, 5e-3);
+    }
+
+    #[test]
+    fn from_consensus_rejects_outliers() {
+        let mut rg = RandomGeometry3::from_seed(29);
+        let expected = tilted();
+        let inliers = with_noise(&mut rg, &sample_surface(&expected, 150, true), 0.01);
+        let inlier_count = inliers.len();
+        let mut points = inliers.clone();
+
+        // A dense cluster of gross outliers, well off the cylinder, with arbitrary normals.
+        let center = expected.center + Vector3::new(6.0, -5.0, 4.0);
+        for _ in 0..50 {
+            let p = center + rg.gaussian_vector::<3>(1.0);
+            points.push(SurfacePoint3::new_normalize(p, rg.unit_vec().into_inner()));
+        }
+
+        let magsac = Magsac {
+            sigma_max: 0.03,
+            max_iterations: Some(500),
+            refinement_steps: 5,
+            confidence: 0.99,
+            seed: Some(17),
+        };
+        let fit = magsac
+            .fit_filtered::<3, Cylinder3, _>(&points, |_| true)
+            .unwrap();
+
+        // The axis and radius match (length is not checked: the raw consensus model is unbounded).
+        assert_relative_eq!(fit.model.r(), expected.r(), epsilon = 0.05);
+        let dot = fit
+            .model
+            .direction
+            .into_inner()
+            .dot(&expected.direction.into_inner())
+            .abs();
+        assert_relative_eq!(dot, 1.0, epsilon = 1e-2);
+        assert!(expected.axis().distance_to(&fit.model.center) < 0.05);
+
+        // No outlier is classified as an inlier, and nearly all true inliers are recovered.
+        assert!(fit.inliers.iter().all(|&i| i < inlier_count));
+        assert!(fit.inliers.len() > inlier_count * 9 / 10);
+    }
+
+    #[test]
+    fn from_consensus_too_few_points_is_error() {
+        // The minimal sample is three oriented points, so two cannot seed a candidate.
+        let expected = tilted();
+        let points = sample_surface(&expected, 2, true);
+        assert!(Cylinder3::from_consensus(&points, 0.01, None, None, None).is_err());
     }
 }

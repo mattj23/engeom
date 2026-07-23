@@ -188,7 +188,7 @@ mod tests {
 
     #[test]
     fn unit_vec3_to_2d_renormalizes() {
-        // A vector pointing at 45° in XY with a Z component — result should be unit length
+        // A vector pointing at 45° in XY with a Z component - result should be unit length
         let uv3 = UnitVec3::new_normalize(Vector3::new(1.0, 1.0, 10.0));
         let uv2 = uv3.to_2d();
         assert_relative_eq!(uv2.norm(), 1.0, epsilon = 1e-10);
@@ -222,7 +222,7 @@ mod tests {
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
         );
-        // Normal is (0,0,1) — projecting to XY gives (0,0), which is degenerate but the
+        // Normal is (0,0,1) - projecting to XY gives (0,0), which is degenerate but the
         // function still calls new_normalize; test a non-degenerate case instead.
         let sp2 = SurfacePoint::<3>::new_normalize(
             Point3::new(1.0, 2.0, 3.0),

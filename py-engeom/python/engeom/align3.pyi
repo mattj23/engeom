@@ -55,9 +55,9 @@ class AlignParams3:
     Parameters for a 3-D rigid-body alignment problem.
 
     An `AlignParams3` encodes:
-    - A *local origin* $L$ — the point/orientation around which rotation happens and relative
+    - A *local origin* $L$ - the point/orientation around which rotation happens and relative
       to which translation directions are defined.
-    - A *working offset* $O$ — an additional transformation applied after the alignment step,
+    - A *working offset* $O$ - an additional transformation applied after the alignment step,
       typically used to encode an initial guess.
     - A `Dof6` constraint that locks selected degrees of freedom.
 
@@ -126,7 +126,7 @@ class AlignParams3:
         constraints refer to those same local axes.
 
         Use this when the test geometry is already in a good starting position and you need full
-        control over translation directions and rotation axes — for example when applying DOF
+        control over translation directions and rotation axes - for example when applying DOF
         constraints along an arbitrary direction.
 
         :param local: The `Iso3` defining the local origin.

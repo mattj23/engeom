@@ -7,7 +7,7 @@ use std::ops::{Add, Div};
 /// A lightweight accumulator for computing the arithmetic mean or weighted mean of a stream of
 /// values.
 ///
-/// `Averager` stores only two values internally — a running sum and a running count — making it
+/// `Averager` stores only two values internally - a running sum and a running count - making it
 /// suitable for use when you need to track several independent averages simultaneously without
 /// allocating a collection for each one.
 ///

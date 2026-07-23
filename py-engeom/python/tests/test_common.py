@@ -99,7 +99,7 @@ def test_signed_compliment_2pi_values(degrees, expected):
     # Quarter turn each way from 0
     (0.0, PI / 2, AngleDir.Ccw, PI / 2),
     (0.0, PI / 2, AngleDir.Cw, 3 * PI / 2),
-    # Half-turn — same in both directions
+    # Half-turn - same in both directions
     (0.0, PI, AngleDir.Ccw, PI),
     (0.0, PI, AngleDir.Cw, PI),
     # Full circle (same start and end)
@@ -140,7 +140,7 @@ def test_angle_in_direction_rotation_check():
 @pytest.mark.parametrize("start,end,expected", [
     (0.0, PI / 2, PI / 2),  # CCW is shorter → positive
     (0.0, -PI / 4, -PI / 4),  # CW is shorter → negative
-    (0.0, PI, PI),  # exactly half — positive by convention (ccw ≤ cw)
+    (0.0, PI, PI),  # exactly half - positive by convention (ccw ≤ cw)
     (0.0, 0.0, 0.0),  # same angle
     (PI / 2, -PI / 2, PI),  # half turn
 ])

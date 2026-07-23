@@ -127,7 +127,7 @@ impl AlignParams3 {
     /// constraints refer to those same local axes.
     ///
     /// Use this when the test geometry is already in a good starting position and you want full
-    /// control over the direction of translation and the center/axes of rotation — for example
+    /// control over the direction of translation and the center/axes of rotation - for example
     /// when applying DOF constraints in an arbitrary direction.
     ///
     /// :param local: The `Iso3` defining the local origin.

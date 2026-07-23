@@ -70,7 +70,7 @@ impl Circle2 {
     /// equation in the unknowns `s = [a, b, c]` (with `a = 2cx`, `b = 2cy`, `c = r² − cx² − cy²`);
     /// solving the 3×3 weighted normal equations gives the center and radius directly. The algebraic
     /// error minimized is not the true geometric radial distance, so the result is slightly biased
-    /// (most noticeably for partial arcs), but it is fast, closed-form, and needs no initial guess —
+    /// (most noticeably for partial arcs), but it is fast, closed-form, and needs no initial guess,
     /// which makes it the seed for [`Circle2::from_fit`].
     ///
     /// # Arguments

@@ -111,7 +111,7 @@ def signed_compliment_2pi(radians: float) -> float:
     """
     Returns the signed complement of an angle with respect to a full rotation (2π).
 
-    A positive input returns a negative complement, and vice versa — together they sum to ±2π.
+    A positive input returns a negative complement, and vice versa - together they sum to ±2π.
     The result is in (-2π, 2π].
 
     :param radians: The angle to complement, in radians.

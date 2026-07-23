@@ -25,9 +25,9 @@
 //! The [`MeshWeight`] trait and its two built-in implementations let callers scale alignment
 //! residuals by region:
 //!
-//! - [`FaceIndexWeight`] — applies a weight to points whose face index falls within a given
+//! - [`FaceIndexWeight`] - applies a weight to points whose face index falls within a given
 //!   [`IndexMask`], leaving all other points at weight `1.0`.
-//! - [`NearMeshWeight`] — applies a weight to points that are close to (and similarly oriented as)
+//! - [`NearMeshWeight`] - applies a weight to points that are close to (and similarly oriented as)
 //!   a second reference mesh, based on distance and normal angle thresholds.
 
 use crate::common::kd_tree::KdTreeSearch;
