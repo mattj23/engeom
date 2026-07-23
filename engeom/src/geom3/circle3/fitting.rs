@@ -232,7 +232,7 @@ type Residuals = Matrix<f64, Dyn, U1, Owned<f64, Dyn, U1>>;
 /// applied relative to a fixed base circle: a translation of the center (`[0..3]`), two rotations
 /// of the normal about the base circle's local x and y axes (`[3..5]`), and a change in radius
 /// (`[5]`). Parameterizing relative to the base avoids any orientation singularity, and the
-/// jacobian of the point-to-circle distances is computed by forward finite differences.
+/// jacobian of the point-to-circle distances is computed analytically (see [`Circle3Fit::jacobian`]).
 struct Circle3Fit<'a> {
     points: &'a [Point3],
     weights: &'a [f64],
@@ -316,18 +316,55 @@ impl LeastSquaresProblem<f64, Dyn, U6> for Circle3Fit<'_> {
         Some(self.residuals.clone())
     }
 
+    /// Analytic jacobian of the weighted point-to-circle distances with respect to the six offset
+    /// parameters. Writing the residual as `D = sqrt(A^2 + h^2)`, with `A = rho - radius` the
+    /// in-plane radial deviation and `h` the out-of-plane height, the gradient with respect to the
+    /// center is `-(A*u + h*normal)/D` (where `u` is the unit in-plane radial direction) and the
+    /// gradient with respect to the normal (treated as a free vector) is `(h/D)*(v - A*u)`. The
+    /// latter is chained through `dn/dp3` and `dn/dp4`, the derivatives of the normal with respect to
+    /// its two rotation parameters; because those rotations are about the fixed world-space
+    /// `axis_x`/`axis_y`, `d/dtheta [R(theta, a) * v] = a x (R(theta, a) * v)` gives those derivatives
+    /// in closed form at any iterate, not just at the base circle.
     fn jacobian(&self) -> Option<Matrix<f64, Dyn, U6, Self::JacobianStorage>> {
-        const DELTA: f64 = 1e-7;
+        let (center, normal, radius) = self.circle_params(&self.params);
+        let n = normal.into_inner();
+
+        let rot_x = UnitQuaternion::from_axis_angle(&self.axis_x, self.params[3]);
+        let n1 = rot_x * self.base_normal.into_inner();
+        let rot_y = UnitQuaternion::from_axis_angle(&self.axis_y, self.params[4]);
+        let dn_dp3 = rot_y * self.axis_x.into_inner().cross(&n1);
+        let dn_dp4 = self.axis_y.into_inner().cross(&n);
+
         let mut jac = Matrix::<f64, Dyn, U6, Self::JacobianStorage>::zeros(self.points.len());
 
-        for k in 0..6 {
-            let mut p = self.params;
-            p[k] += DELTA;
-            let (center, normal, radius) = self.circle_params(&p);
-            for (i, point) in self.points.iter().enumerate() {
-                let d = self.weights[i] * point_circle_distance(&center, &normal, radius, point);
-                jac[(i, k)] = (d - self.residuals[i]) / DELTA;
+        for (i, point) in self.points.iter().enumerate() {
+            let w = self.weights[i];
+            let v = point - center;
+            let h = v.dot(&n);
+            let in_plane = v - n * h;
+            let rho = in_plane.norm();
+            let a = rho - radius;
+            let d = (a * a + h * h).sqrt();
+
+            // The distance is non-differentiable exactly on the circle; leave the row zero there.
+            if d < 1e-12 {
+                continue;
             }
+            let u = if rho > 1e-12 {
+                in_plane / rho
+            } else {
+                Vector3::zeros()
+            };
+
+            let grad_center = -(u * a + n * h) / d;
+            let grad_n = (v - u * a) * (h / d);
+
+            jac[(i, 0)] = w * grad_center.x;
+            jac[(i, 1)] = w * grad_center.y;
+            jac[(i, 2)] = w * grad_center.z;
+            jac[(i, 3)] = w * grad_n.dot(&dn_dp3);
+            jac[(i, 4)] = w * grad_n.dot(&dn_dp4);
+            jac[(i, 5)] = w * (-a / d);
         }
 
         Some(jac)
@@ -336,11 +373,14 @@ impl LeastSquaresProblem<f64, Dyn, U6> for Circle3Fit<'_> {
 
 #[cfg(test)]
 mod tests {
+    use super::Circle3Fit;
     use crate::common::consensus::{ConsensusModel, Magsac};
     use crate::common::random_geometry::RandomGeometry3;
     use crate::geom3::Circle3;
     use crate::{Point3, Result, UnitVec3, Vector3};
     use approx::assert_relative_eq;
+    use levenberg_marquardt::LeastSquaresProblem;
+    use parry3d_f64::na::Vector6;
     use std::f64::consts::TAU;
 
     fn tilted() -> Circle3 {
@@ -367,6 +407,36 @@ mod tests {
         (0..n)
             .map(|i| sample_circle_point(circle, TAU * i as f64 / n as f64))
             .collect()
+    }
+
+    #[test]
+    fn jacobian_matches_finite_differences() {
+        let circle = tilted();
+        let points = sample_circle(&circle, 30);
+        let weights = vec![1.0; points.len()];
+
+        // Perturb away from the base circle so the jacobian is checked away from `p = 0`, where the
+        // fixed-axis rotation derivatives are exercised at a non-trivial angle.
+        let mut problem = Circle3Fit::new(&points, &weights, &circle);
+        let probe = Vector6::new(0.05, -0.03, 0.02, 0.2, -0.15, 0.1);
+        problem.set_params(&probe);
+
+        let analytic = problem.jacobian().expect("analytic jacobian");
+        let base_residuals = problem.residuals().expect("residuals");
+
+        const DELTA: f64 = 1e-6;
+        for k in 0..6 {
+            let mut perturbed = probe;
+            perturbed[k] += DELTA;
+            problem.set_params(&perturbed);
+            let perturbed_residuals = problem.residuals().expect("residuals");
+            problem.set_params(&probe);
+
+            for i in 0..points.len() {
+                let numeric = (perturbed_residuals[i] - base_residuals[i]) / DELTA;
+                assert_relative_eq!(analytic[(i, k)], numeric, epsilon = 1e-4);
+            }
+        }
     }
 
     fn assert_matches(result: &Circle3, expected: &Circle3) {
