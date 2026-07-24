@@ -2,7 +2,7 @@ import math
 
 from engeom.engeom import SelectOp, DeviationMode
 from pyvista import Plotter
-from engeom.geom3 import Mesh, Iso3
+from engeom.geom3 import Mesh, Iso3, Point3
 from engeom.align3 import AlignParams3, points_to_mesh
 from engeom.plot import PyvistaPlotterHelper
 
@@ -32,7 +32,7 @@ def main():
 
     center = to_align.mean(axis=0)
     print(center)
-    params = AlignParams3.at_center(*center)
+    params = AlignParams3(center=Point3(*center))
     result = points_to_mesh(to_align, mesh, params)
     aligned = result.full.transform_points(to_align)
 

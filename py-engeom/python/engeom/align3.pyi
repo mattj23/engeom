@@ -63,9 +63,6 @@ class AlignParams3:
 
     The full transformation applied to the test geometry is $O * A * L^{-1}$, where $A$ is
     the alignment transformation produced by the six optimized parameters.
-
-    Use the factory class methods (`at_origin`, `at_center`, `at_local`, `new`) instead of
-    constructing this class directly.
     """
 
     @property
@@ -83,74 +80,35 @@ class AlignParams3:
         """The working offset transformation $O$."""
         ...
 
-    @staticmethod
-    def at_origin(dof: Dof6 | None = None) -> AlignParams3:
-        """
-        Create an `AlignParams3` with the local origin and working offset at the world origin.
-
-        Use this when the test geometry is already near the origin and a good starting position,
-        and you are not concerned about the numerical stability of rotations.
-
-        :param dof: Optional `Dof6` constraint. If `None`, all six degrees of freedom are active.
-        """
-        ...
-
-    @staticmethod
-    def at_center(x: float, y: float, z: float, dof: Dof6 | None = None) -> AlignParams3:
-        """
-        Create an `AlignParams3` that rotates the test entity around a given center point.
-
-        The local origin $L$ is placed at `center` with cardinal directions aligned to the world
-        axes, and the working offset is set to match. Translations (`tx`, `ty`, `tz`) still act
-        along the world axes; rotations happen around `center`.
-
-        Use this when the test geometry is already in a good starting position but you want to
-        provide an explicit rotation center for numerical stability (e.g. the geometry is far
-        from the world origin).
-
-        :param x: The X coordinate of the center point.
-        :param y: The Y coordinate of the center point.
-        :param z: The Z coordinate of the center point.
-        :param dof: Optional `Dof6` constraint. If `None`, all six degrees of freedom are active.
-        """
-        ...
-
-    @staticmethod
-    def at_local(local: Iso3, dof: Dof6 | None = None) -> AlignParams3:
-        """
-        Create an `AlignParams3` whose transformation is expressed at a given local origin.
-
-        Both the local origin $L$ and the working offset $O$ are set to `local`. The physical
-        interpretation is that `tx`, `ty`, `tz` translate along the local origin's axes, and
-        `rx`, `ry`, `rz` rotate around the local origin's center point and axes. Any DOF
-        constraints refer to those same local axes.
-
-        Use this when the test geometry is already in a good starting position and you need full
-        control over translation directions and rotation axes - for example when applying DOF
-        constraints along an arbitrary direction.
-
-        :param local: The `Iso3` defining the local origin.
-        :param dof: Optional `Dof6` constraint. If `None`, all six degrees of freedom are active.
-        """
-        ...
-
-    @staticmethod
-    def new(
-        local: Iso3 | Point3 | None = None,
+    def __init__(
+        self,
+        center: Point3 | None = None,
+        local: Iso3 | None = None,
         offset: Iso3 | None = None,
         dof: Dof6 | None = None,
-    ) -> AlignParams3:
+    ) -> None:
         """
-        Create an `AlignParams3` with full, explicit control over all three components.
+        Create an `AlignParams3` describing how a 3-D alignment is parameterized.
 
-        This is the most flexible constructor. The simpler factory methods (`at_origin`,
-        `at_center`, `at_local`) cover the common cases and should be preferred.
+        The local origin $L$ is selected by supplying at most one of `center` or `local`:
 
-        :param local: `Iso3` defining the local origin $L$, a `Point3` defining the desired center of rotation, or
-            `None` to use the world origin.
-        :param offset: `Iso3` working offset $O$ applied after the alignment step. Pass `None`
-            to use the identity.
+        - `center`: rotations happen about this point, and translations act along the world axes.
+        - `local`: rotations happen about, and translations act along, the axes of this full
+          `Iso3` frame. Use this for full control over the rotation center and translation
+          directions, for example when applying DOF constraints along an arbitrary direction.
+        - neither: the world origin is used, for geometry already near the origin where the
+          numerical stability of rotations is not a concern.
+
+        If `offset` is not given, it defaults to the local origin frame, so the test geometry
+        starts in place and the alignment happens about that origin. Only pass an explicit
+        `offset` (including the identity) if you specifically need the raw $O * A * L^{-1}$
+        behavior where the geometry is displaced by $L^{-1}$ before alignment.
+
+        :param center: Optional `Point3` rotation center. Mutually exclusive with `local`.
+        :param local: Optional `Iso3` local origin frame. Mutually exclusive with `center`.
+        :param offset: Optional `Iso3` working offset $O$. Defaults to the local origin frame.
         :param dof: Optional `Dof6` constraint. If `None`, all six degrees of freedom are active.
+        :raises ValueError: if both `center` and `local` are supplied.
         """
         ...
 

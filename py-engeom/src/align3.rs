@@ -5,7 +5,7 @@ use engeom::geom3::align3::{AlignOrigin, Dof6 as InnerDof6};
 use numpy::ndarray::Array1;
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
-use pyo3::{Bound, FromPyObject, PyResult, Python, pyclass, pyfunction, pymethods};
+use pyo3::{Bound, PyResult, Python, pyclass, pyfunction, pymethods};
 
 // ================================================================================================
 // Dof6
@@ -72,12 +72,6 @@ impl From<Dof6> for InnerDof6 {
 // ================================================================================================
 // AlignParams3
 // ================================================================================================
-#[derive(FromPyObject)]
-pub enum AlignOrigin3 {
-    Point(Point3),
-    Origin(Iso3),
-}
-
 #[pyclass(from_py_object, module = "engeom.align3")]
 #[derive(Clone, Debug)]
 pub struct AlignParams3 {
@@ -96,64 +90,64 @@ impl AlignParams3 {
 
 #[pymethods]
 impl AlignParams3 {
-    /// Create an `AlignParams3` with the local and working transformations set to the identity.
+    /// Create an `AlignParams3` describing how a 3D alignment is parameterized.
     ///
-    /// Use this when the test geometry is already in a good starting position and is close enough
-    /// to the world origin that numerical stability of rotations is not a concern.
+    /// The local origin $L$ is selected by supplying at most one of `center` or `local`:
     ///
+    /// - `center`: rotations happen about this point, and translations act along the world axes.
+    /// - `local`: rotations happen about, and translations act along, the axes of this full
+    ///   `Iso3` frame. Use this when you want full control over the rotation center and the
+    ///   directions of translation, for example when applying DOF constraints along an arbitrary
+    ///   direction.
+    /// - neither: the world origin is used. Use this when the test geometry is already close to
+    ///   the origin and numerical stability of rotations is not a concern.
+    ///
+    /// Supplying both `center` and `local` raises a `ValueError`.
+    ///
+    /// If `offset` is not given, it defaults to the local origin frame, so the test geometry
+    /// starts in place and the alignment happens about that origin. Only pass an explicit
+    /// `offset` (including the identity) if you specifically need the raw `O * A * L^-1`
+    /// behavior where the geometry is displaced by `L^-1` before alignment.
+    ///
+    /// :param center: Optional `Point3` rotation center. Mutually exclusive with `local`.
+    /// :param local: Optional `Iso3` local origin frame. Mutually exclusive with `center`.
+    /// :param offset: Optional `Iso3` working offset $O$. Defaults to the local origin frame.
     /// :param dof: Optional `Dof6` constraint. If `None`, all six degrees of freedom are active.
-    #[staticmethod]
-    #[pyo3(signature = (dof=None))]
-    pub fn at_origin(dof: Option<Dof6>) -> Self {
-        Self::from_inner(engeom::geom3::align3::AlignParams3::new_at_origin(
-            dof.map(Into::into),
-        ))
-    }
-
-    #[staticmethod]
-    #[pyo3(signature = (x, y, z, dof=None))]
-    pub fn at_center(x: f64, y: f64, z: f64, dof: Option<Dof6>) -> Self {
-        Self::from_inner(engeom::geom3::align3::AlignParams3::new_at_center(
-            engeom::Point3::new(x, y, z),
-            dof.map(Into::into),
-        ))
-    }
-
-    /// Create an `AlignParams3` whose transformation is applied at a given local origin.
-    ///
-    /// Both the local origin $L$ and the working offset $O$ are set to `local`. The physical
-    /// interpretation is that `tx`, `ty`, `tz` translate along the local origin's axes and
-    /// `rx`, `ry`, `rz` rotate around the local origin's center point and axes. Any DOF
-    /// constraints refer to those same local axes.
-    ///
-    /// Use this when the test geometry is already in a good starting position and you want full
-    /// control over the direction of translation and the center/axes of rotation - for example
-    /// when applying DOF constraints in an arbitrary direction.
-    ///
-    /// :param local: The `Iso3` defining the local origin.
-    /// :param dof: Optional `Dof6` constraint. If `None`, all six degrees of freedom are active.
-    #[staticmethod]
-    #[pyo3(signature = (local, dof=None))]
-    pub fn at_local(local: &Iso3, dof: Option<Dof6>) -> Self {
-        Self::from_inner(engeom::geom3::align3::AlignParams3::new_at_local(
-            *local.get_inner(),
-            dof.map(Into::into),
-        ))
-    }
-
-    #[staticmethod]
-    #[pyo3(signature = (local=None, offset=None, dof=None))]
-    pub fn new(local: Option<AlignOrigin3>, offset: Option<&Iso3>, dof: Option<Dof6>) -> Self {
-        let origin = match local {
-            Some(AlignOrigin3::Point(p)) => AlignOrigin::Center(*p.get_inner()),
-            Some(AlignOrigin3::Origin(o)) => AlignOrigin::Local(*o.get_inner()),
-            None => AlignOrigin::Origin,
+    #[new]
+    #[pyo3(signature = (center=None, local=None, offset=None, dof=None))]
+    pub fn new(
+        center: Option<&Point3>,
+        local: Option<&Iso3>,
+        offset: Option<&Iso3>,
+        dof: Option<Dof6>,
+    ) -> PyResult<Self> {
+        let (origin, frame) = match (center, local) {
+            (Some(_), Some(_)) => {
+                return Err(PyValueError::new_err(
+                    "Supply at most one of `center` or `local`, not both",
+                ));
+            }
+            (Some(p), None) => {
+                let p = *p.get_inner();
+                (
+                    AlignOrigin::Center(p),
+                    engeom::Iso3::translation(p.x, p.y, p.z),
+                )
+            }
+            (None, Some(o)) => {
+                let t = *o.get_inner();
+                (AlignOrigin::Local(t), t)
+            }
+            (None, None) => (AlignOrigin::Origin, engeom::Iso3::identity()),
         };
-        Self::from_inner(engeom::geom3::align3::AlignParams3::new(
+
+        let offset = offset.map(|o| *o.get_inner()).unwrap_or(frame);
+
+        Ok(Self::from_inner(engeom::geom3::align3::AlignParams3::new(
             origin,
-            offset.map(|o| *o.get_inner()),
+            Some(offset),
             dof.map(Into::into),
-        ))
+        )))
     }
 
     /// The degrees-of-freedom constraint currently active on this alignment.
