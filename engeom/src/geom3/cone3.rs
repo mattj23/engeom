@@ -20,6 +20,12 @@ const EPSILON: f64 = 1e-10;
 /// flat disc, a zero-radius cone is a line segment, and a cone with both zero is a point.
 ///
 /// This is one of `engeom`'s 3D geometric primitives.
+///
+/// > [!NOTE]
+/// > I have some misgivings about this representation. The separate height/radius makes it quick
+/// > to retrieve a unit speed axis line and allows for independent zero-height and zero-length
+/// > cones, but those are degenerate cases, and it makes it so we need a separate representation
+/// > when we do fitting in the `./fitting.rs` module.  I'm not fully sold on the cost/benefit here.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Cone3 {
     pub tip: Point3,

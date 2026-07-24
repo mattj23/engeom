@@ -1,6 +1,6 @@
-//! Cone fitting for [`Cone3`] by ordinary least squares against geometric surface residuals.
+//! Cone fitting for [`Cone3`] by ordinary least squares and MAGSAC++ robust consensus.
 //!
-//! There are two constructors, both refining through the same shared [`ConeFit`]
+//! There are three constructors, all refining through the same shared [`ConeFit`]
 //! Levenberg-Marquardt engine (which works over the infinite cone's six degrees of freedom: the apex
 //! position, the axis direction, and the half-angle):
 //!   - [`Cone3::from_fit`] takes bare positions plus a caller-supplied initial guess. Positions
@@ -11,12 +11,19 @@
 //!     so the apex is the least-squares solution of `nᵢ·a = nᵢ·pᵢ`; the unit directions from the
 //!     apex to the points, `uᵢ = normalize(pᵢ − a)`, then lie on a plane whose normal is the axis and
 //!     whose offset is `cos α`, giving the axis direction and half-angle in closed form.
+//!   - [`Cone3::from_consensus`] takes oriented [`SurfacePoint3`] samples and runs the MAGSAC++
+//!     robust estimator, rejecting gross outliers. Each minimal sample is four oriented points (the
+//!     same minimum [`Cone3::from_fit_oriented`] requires), reusing the same oriented bootstrap.
+//!     Scoring and refinement use only the point positions, so the normals matter only for building
+//!     candidates.
 //!
-//! The normals are used *only* to bootstrap the apex in [`Cone3::from_fit_oriented`]; the shared
-//! engine and the residual are position-only. The residual `ρ·cos α − q·sin α` (the orthogonal
-//! distance from a point to the lateral surface, where `q` is the axial coordinate from the apex and
-//! `ρ` the radial distance from the axis) does not depend on which side the surface faces, and the
-//! apex system `nᵢ·a = nᵢ·pᵢ` is invariant under flipping any normal, so inner- and outer-facing
+//! The normals are used *only* to bootstrap the apex in [`Cone3::from_fit_oriented`] and
+//! [`Cone3::from_consensus`]; the shared engine and the residual are position-only. The residual
+//! (see [`point_cone_distance`]) treats the "infinite" cone as a single nappe: it opens without
+//! bound in the positive axis direction from the apex, but does not extend backward through it, so a
+//! point behind the apex is measured against the apex itself rather than the mirror-image nappe that
+//! a naive doubly-infinite cone would have. It does not depend on which side the surface faces, and
+//! the apex system `nᵢ·a = nᵢ·pᵢ` is invariant under flipping any normal, so inner- and outer-facing
 //! cones (inward vs. outward normals, even mixed) fit identically.
 //!
 //! The least-squares refinement estimates the *infinite* cone (apex + axis + half-angle); the
@@ -25,6 +32,7 @@
 
 use super::Cone3;
 use crate::common::PCoords;
+use crate::common::consensus::{ConsensusModel, Magsac};
 use crate::geom3::{IsoExtensions3, SvdBasis3};
 use crate::{Iso3, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
@@ -34,12 +42,18 @@ use std::f64::consts::FRAC_PI_2;
 /// Small tolerance for degeneracy checks and non-zero direction extraction.
 const EPSILON: f64 = 1e-10;
 
-/// The signed orthogonal distance from a point to an infinite cone's lateral surface. With `q` the
-/// signed axial coordinate of the point from the apex and `ρ` its radial distance from the axis, the
-/// slant surface through the apex at half-angle `α` has distance `ρ·cos α − q·sin α` (positive
-/// outside the cone, negative inside). It is exact near the surface - where cone fits operate - and
-/// its sign does not depend on which way the surface faces, so inner- and outer-facing cones produce
-/// identical residuals.
+/// The signed distance from a point to a single-nappe infinite cone's lateral surface: the cone
+/// opens without bound in the positive `direction` from `apex`, but does not extend backward through
+/// it. With `q` the signed axial coordinate of the point from the apex and `ρ` its radial distance
+/// from the axis, the slant surface at half-angle `α` has perpendicular distance `ρ·cos α − q·sin α`
+/// (positive outside the cone, negative inside) *when the point's perpendicular foot on the slant
+/// line falls at or past the apex* (`t = q·cos α + ρ·sin α ≥ 0`). Otherwise the closest feature is
+/// the apex itself, and the distance is the plain Euclidean distance to it, `|point − apex|`. Without
+/// this apex clamp, a point well behind the apex could register a small (or even negative) distance
+/// against the mirror-image nappe that a naive doubly-infinite cone would have; the clamp keeps the
+/// residual growing without bound behind the apex instead. The result is exact near the surface -
+/// where cone fits operate - and its sign does not depend on which way the surface faces, so inner-
+/// and outer-facing cones produce identical residuals.
 fn point_cone_distance(
     apex: &Point3,
     direction: &UnitVec3,
@@ -49,7 +63,10 @@ fn point_cone_distance(
     let v = point - apex;
     let q = v.dot(&direction.into_inner());
     let rho = (v - direction.into_inner() * q).norm();
-    rho * half_angle.cos() - q * half_angle.sin()
+
+    let (s, c) = half_angle.sin_cos();
+    let t = q * c + rho * s;
+    if t < 0.0 { v.norm() } else { rho * c - q * s }
 }
 
 /// Estimate the cone apex from oriented surface points. Every tangent plane of a cone passes through
@@ -125,6 +142,25 @@ fn axis_and_half_angle(
     }
 
     Some((UnitVec3::new_normalize(axis), half_angle))
+}
+
+/// Build an unbounded initial cone from oriented points: the apex from the tangent-plane system,
+/// then the axis direction and half-angle from the plane the apex-relative unit directions lie on
+/// (see [`apex_from_normals`] and [`axis_and_half_angle`]). This is the shared bootstrap used by both
+/// [`Cone3::from_fit_oriented`] and the consensus minimal sample. The half-angle is encoded in the
+/// returned cone's `height`/`radius` as `(cos α, sin α)`; it is meant to be refined and then bounded.
+/// Returns `None` if the sample does not constrain a cone (near-cylindrical normals, degenerate
+/// directions, or an improper half-angle).
+fn bootstrap_cone(points: &[SurfacePoint3], weights: &[f64]) -> Option<Cone3> {
+    let apex = apex_from_normals(points, weights)?;
+    let pts: Vec<Point3> = points.iter().map(|sp| sp.point).collect();
+    let (direction, half_angle) = axis_and_half_angle(&apex, &pts, weights)?;
+    Some(Cone3::new(
+        apex,
+        direction,
+        half_angle.cos(),
+        half_angle.sin(),
+    ))
 }
 
 /// Convert the infinite cone produced by the least-squares refinement into a finite one by setting
@@ -220,19 +256,98 @@ impl Cone3 {
             }
         };
 
-        let apex = apex_from_normals(points, weights)
-            .ok_or("Normals do not constrain a cone apex (near-cylindrical sample)")?;
+        let guess = bootstrap_cone(points, weights).ok_or(
+            "Failed to estimate an initial cone from the oriented points \
+             (near-cylindrical normals or degenerate sample)",
+        )?;
 
         let pts: Vec<Point3> = points.iter().map(|sp| sp.point).collect();
-        let (direction, half_angle) = axis_and_half_angle(&apex, &pts, weights)
-            .ok_or("Failed to estimate cone axis and half-angle from points")?;
-
-        // Encode the half-angle in the guess via `(height, radius) = (cos α, sin α)`, so
-        // `guess.half_angle() == α`; the extent is set properly after refinement.
-        let guess = Cone3::new(apex, direction, half_angle.cos(), half_angle.sin());
-
         let refined = ConeFit::refine(&pts, weights, &guess).ok_or("Failed to refine cone fit")?;
         Ok(bound_axially(&refined, &pts))
+    }
+
+    /// Fit a cone to a set of oriented surface points using MAGSAC++ robust consensus estimation.
+    /// Unlike [`Cone3::from_fit_oriented`], this rejects gross outliers by taking an upper bound on
+    /// the inlier noise (`sigma_max`) rather than a hard inlier/outlier threshold.
+    ///
+    /// Each minimal sample is four oriented points, the same minimum [`Cone3::from_fit_oriented`]
+    /// requires: the apex comes from the tangent-plane system and the axis/half-angle from the plane
+    /// the apex-relative unit directions lie on. Candidate scoring and refinement use only the point
+    /// positions (the orthogonal distance to the lateral surface), so the normals are used solely to
+    /// build candidates; consequently inner- and outer-facing surfaces (and mixed normals) are
+    /// handled identically. The returned cone is bounded to the axial extent of the inlier points.
+    ///
+    /// Because the infinite cone's `radius` field merely encodes the half-angle until it is bounded,
+    /// candidates are filtered by half-angle rather than by radius.
+    ///
+    /// # Arguments
+    ///
+    /// * `points`: the oriented surface points to fit the cone to (at least four)
+    /// * `sigma_max`: the upper bound on the expected inlier noise, in the same units as the points
+    /// * `min_half_angle`: an optional minimum half-angle, in radians; candidate cones narrower than
+    ///   this are rejected
+    /// * `max_half_angle`: an optional maximum half-angle, in radians; candidate cones wider than
+    ///   this are rejected
+    /// * `options`: an optional [`Magsac`] configuration; its `sigma_max` is overridden by the
+    ///   `sigma_max` argument
+    ///
+    /// returns: Result<Cone3, Box<dyn Error, Global>>
+    pub fn from_consensus(
+        points: &[SurfacePoint3],
+        sigma_max: f64,
+        min_half_angle: Option<f64>,
+        max_half_angle: Option<f64>,
+        options: Option<Magsac>,
+    ) -> Result<Cone3> {
+        let min_half_angle = min_half_angle.unwrap_or(EPSILON);
+        let max_half_angle = max_half_angle.unwrap_or(FRAC_PI_2 - EPSILON);
+
+        let mut magsac = options.unwrap_or_else(|| Magsac::new(sigma_max));
+        magsac.sigma_max = sigma_max;
+
+        let fit = magsac.fit_filtered::<3, Cone3, _>(points, |c| {
+            let half_angle = c.half_angle();
+            half_angle >= min_half_angle && half_angle <= max_half_angle
+        })?;
+
+        // Bound the infinite consensus cone to the axial extent of its inliers (falling back to all
+        // points in the unlikely event the inlier set is empty).
+        let bound_pts: Vec<Point3> = if fit.inliers.is_empty() {
+            points.iter().map(|sp| sp.point).collect()
+        } else {
+            fit.inliers.iter().map(|&i| points[i].point).collect()
+        };
+        Ok(bound_axially(&fit.model, &bound_pts))
+    }
+}
+
+impl ConsensusModel<3> for Cone3 {
+    /// A cone is estimated from oriented points: the normals are needed to bootstrap the apex.
+    type Point = SurfacePoint3;
+
+    /// Four oriented points, the same minimum [`Cone3::from_fit_oriented`] requires: the smallest
+    /// sample that reliably fixes the apex (from the normals) and the axis/half-angle (from the plane
+    /// the apex-relative directions lie on).
+    const SAMPLE_SIZE: usize = 4;
+
+    fn from_sample(sample: &[SurfacePoint3]) -> Option<Self> {
+        let weights = vec![1.0; sample.len()];
+        bootstrap_cone(sample, &weights)
+    }
+
+    fn residual(&self, point: &SurfacePoint3) -> f64 {
+        // Position-only surface distance; the normal plays no part in scoring.
+        point_cone_distance(&self.tip, &self.direction, self.half_angle(), &point.point)
+    }
+
+    fn refine_weighted(
+        points: &[SurfacePoint3],
+        weights: &[f64],
+        initial: &Cone3,
+    ) -> Option<Cone3> {
+        // Strip the normals and hand the bare positions to the shared position-only LM engine.
+        let pts: Vec<Point3> = points.iter().map(|sp| sp.point).collect();
+        ConeFit::refine(&pts, weights, initial)
     }
 }
 
@@ -332,15 +447,18 @@ impl LeastSquaresProblem<f64, Dyn, U6> for ConeFit<'_> {
 
     /// Analytic jacobian of the weighted surface residuals with respect to the six offset
     /// parameters. Writing `v = point - apex`, `q = v·direction`, `radial = v - direction*q` with
-    /// `rho = |radial|` and `u = radial/rho`, the residual is `D = rho·cos(alpha) - q·sin(alpha)`.
-    /// The gradient with respect to the apex (as a free point) is `sin(alpha)*direction -
-    /// cos(alpha)*u`, and the gradient with respect to the direction (treated as a free vector) is
-    /// `-(sin(alpha)*v + cos(alpha)*q*u)`. The latter is chained through `dn/dp3` and `dn/dp4`, the
-    /// derivatives of the direction with respect to its two rotation parameters; because those
-    /// rotations are about the fixed world-space `axis_x`/`axis_y`,
+    /// `rho = |radial|` and `u = radial/rho`: when the perpendicular foot on the slant line falls at
+    /// or past the apex (see [`point_cone_distance`]), the residual is
+    /// `D = rho·cos(alpha) - q·sin(alpha)`, whose gradient with respect to the apex (as a free point)
+    /// is `sin(alpha)*direction - cos(alpha)*u`, and with respect to the direction (treated as a free
+    /// vector) is `-(sin(alpha)*v + cos(alpha)*q*u)`. The latter is chained through `dn/dp3` and
+    /// `dn/dp4`, the derivatives of the direction with respect to its two rotation parameters;
+    /// because those rotations are about the fixed world-space `axis_x`/`axis_y`,
     /// `d/dtheta [R(theta, a) * v] = a x (R(theta, a) * v)` gives those derivatives in closed form at
     /// any iterate, not just at the base cone. The derivative with respect to the half-angle is
-    /// `-(rho·sin(alpha) + q·cos(alpha))`.
+    /// `-(rho·sin(alpha) + q·cos(alpha))`. Otherwise (the foot falls behind the apex) the residual is
+    /// `D = |v|`, which depends only on the apex, with gradient `-v/|v|`; the direction and
+    /// half-angle columns are zero there.
     fn jacobian(&self) -> Option<Matrix<f64, Dyn, U6, Self::JacobianStorage>> {
         let (apex, direction, half_angle) = self.cone_params(&self.params);
         let n = direction.into_inner();
@@ -371,15 +489,24 @@ impl LeastSquaresProblem<f64, Dyn, U6> for ConeFit<'_> {
                 Vector3::zeros()
             };
 
-            let grad_apex = n * s - u * c;
-            let grad_n = -(v * s + u * (c * q));
+            // When the perpendicular foot on the slant line falls behind the apex, the residual is
+            // the plain distance to the apex instead (see `point_cone_distance`); the direction and
+            // half-angle play no part there, only the apex position does.
+            let t = q * c + rho * s;
+            let (grad_apex, grad_n, grad_half_angle) = if t < 0.0 {
+                let d = v.norm();
+                let grad_apex = if d > 1e-12 { -v / d } else { Vector3::zeros() };
+                (grad_apex, Vector3::zeros(), 0.0)
+            } else {
+                (n * s - u * c, -(v * s + u * (c * q)), -(rho * s + q * c))
+            };
 
             jac[(i, 0)] = w * grad_apex.x;
             jac[(i, 1)] = w * grad_apex.y;
             jac[(i, 2)] = w * grad_apex.z;
             jac[(i, 3)] = w * grad_n.dot(&dn_dp3);
             jac[(i, 4)] = w * grad_n.dot(&dn_dp4);
-            jac[(i, 5)] = -w * (rho * s + q * c);
+            jac[(i, 5)] = w * grad_half_angle;
         }
 
         Some(jac)
@@ -439,6 +566,49 @@ mod tests {
     }
 
     #[test]
+    fn point_cone_distance_on_axis_behind_apex_is_distance_to_apex() {
+        // A point on the axis, 10 units behind the apex: no slant line projects there (t < 0 for
+        // every azimuth), so the closest feature is the apex itself and the distance must equal the
+        // plain Euclidean distance to it, not the unclamped `rho*cos(alpha) - q*sin(alpha)` line
+        // formula (which would badly underestimate it: at rho = 0, q = -10, alpha = 30 degrees, that
+        // formula gives `10*sin(30deg) = 5`, half the true distance of `10`).
+        let apex = Point3::new(1.0, 2.0, 3.0);
+        let direction = UnitVec3::new_normalize(Vector3::new(0.0, 0.0, 1.0));
+        let half_angle = std::f64::consts::FRAC_PI_6;
+        let behind = apex - direction.into_inner() * 10.0;
+
+        let d = point_cone_distance(&apex, &direction, half_angle, &behind);
+        assert_relative_eq!(d, 10.0, epsilon = 1e-9);
+    }
+
+    #[test]
+    fn point_cone_distance_far_off_axis_behind_apex_uses_apex_too() {
+        // Far off-axis but still behind the apex (t < 0): still clamps to the apex distance rather
+        // than the unbounded line formula.
+        let apex = Point3::new(0.0, 0.0, 0.0);
+        let direction = UnitVec3::new_normalize(Vector3::new(0.0, 0.0, 1.0));
+        let half_angle = std::f64::consts::FRAC_PI_4; // 45 degrees, tan = 1
+        // q = -1, rho = 0.5: t = q*cos+rho*sin = -0.707 + 0.354 = -0.354 < 0, so still clamped.
+        let point = Point3::new(0.5, 0.0, -1.0);
+
+        let d = point_cone_distance(&apex, &direction, half_angle, &point);
+        let expected = (point - apex).norm();
+        assert_relative_eq!(d, expected, epsilon = 1e-9);
+    }
+
+    #[test]
+    fn point_cone_distance_on_surface_ahead_of_apex_matches_unclamped_formula() {
+        // Ahead of the apex and exactly on the lateral surface: the perpendicular foot is on the
+        // ray (t >= 0), so the residual should be (near) zero, matching the unclamped case.
+        let cone = tilted();
+        let points = sample_surface(&cone, 20, true);
+        for sp in &points {
+            let d = point_cone_distance(&cone.tip, &cone.direction, cone.half_angle(), &sp.point);
+            assert_relative_eq!(d, 0.0, epsilon = 1e-9);
+        }
+    }
+
+    #[test]
     fn jacobian_matches_finite_differences() {
         let cone = tilted();
         let surface = sample_surface(&cone, 30, true);
@@ -447,6 +617,41 @@ mod tests {
 
         // Perturb away from the base cone so the jacobian is checked away from `p = 0`, where the
         // fixed-axis rotation derivatives are exercised at a non-trivial angle.
+        let mut problem = ConeFit::new(&points, &weights, &cone);
+        let probe = Vector6::new(0.05, -0.03, 0.02, 0.2, -0.15, 0.05);
+        problem.set_params(&probe);
+
+        let analytic = problem.jacobian().expect("analytic jacobian");
+        let base_residuals = problem.residuals().expect("residuals");
+
+        const DELTA: f64 = 1e-6;
+        for k in 0..6 {
+            let mut perturbed = probe;
+            perturbed[k] += DELTA;
+            problem.set_params(&perturbed);
+            let perturbed_residuals = problem.residuals().expect("residuals");
+            problem.set_params(&probe);
+
+            for i in 0..points.len() {
+                let numeric = (perturbed_residuals[i] - base_residuals[i]) / DELTA;
+                assert_relative_eq!(analytic[(i, k)], numeric, epsilon = 1e-4);
+            }
+        }
+    }
+
+    #[test]
+    fn jacobian_matches_finite_differences_behind_apex() {
+        // Points solidly behind the apex (large negative `t` even after perturbing the params by
+        // `DELTA`), exercising the apex-clamp branch of both the residual and its jacobian.
+        let cone = tilted();
+        let d = cone.direction.into_inner();
+        let arbitrary = Iso3::from_z_arbitrary_xy(&cone.direction, None);
+        let u = arbitrary.x().into_inner();
+        let points: Vec<Point3> = (0..10)
+            .map(|i| cone.tip - d * (5.0 + i as f64) + u * (0.1 * i as f64))
+            .collect();
+        let weights = vec![1.0; points.len()];
+
         let mut problem = ConeFit::new(&points, &weights, &cone);
         let probe = Vector6::new(0.05, -0.03, 0.02, 0.2, -0.15, 0.05);
         problem.set_params(&probe);
@@ -629,5 +834,92 @@ mod tests {
         let guess = tilted();
         let points = [Point3::new(0.0, 0.0, 0.0)];
         assert!(Cone3::from_fit(&points, &guess, None).is_err());
+    }
+
+    // from_consensus tests ───────────────────────────────────────────────────
+
+    #[test]
+    fn from_consensus_recovers_clean_cone() {
+        let expected = tilted();
+        let points = sample_surface(&expected, 120, true);
+        let options = Magsac {
+            sigma_max: 0.01,
+            max_iterations: Some(500),
+            refinement_steps: 5,
+            confidence: 0.99,
+            seed: Some(17),
+        };
+        let fit = Cone3::from_consensus(&points, 0.01, None, None, Some(options)).unwrap();
+        assert_cone_matches(&fit, &expected, 5e-3);
+    }
+
+    #[test]
+    fn from_consensus_rejects_outliers() {
+        let mut rg = RandomGeometry3::from_seed(29);
+        let expected = tilted();
+        let inliers = with_noise(&mut rg, &sample_surface(&expected, 150, true), 0.01);
+        let inlier_count = inliers.len();
+        let mut points = inliers.clone();
+
+        // Gross outliers spread along the same axial range as the inliers but well outside the true
+        // lateral surface radially. A fixed-offset gaussian cluster (as used for the cylinder's
+        // equivalent test) risks landing close enough to the surface for some draws to slip under
+        // sigma_max by chance, since the cone's residual gap at a single point is easily comparable
+        // to the noise scale; anchoring the radial offset to a large multiple of the true radius at
+        // each axial position keeps every outlier at a guaranteed distance from the surface instead.
+        let arbitrary = Iso3::from_z_arbitrary_xy(&expected.direction, None);
+        let u = arbitrary.x().into_inner();
+        let v = arbitrary.y().into_inner();
+        let d = expected.direction.into_inner();
+        for i in 0..50 {
+            let f = i as f64 / 49.0;
+            let q = expected.height * f;
+            let r_at_q = q * expected.half_angle().tan();
+            let ang = TAU * i as f64 * 0.6180339887 + 1.0;
+            let radial = u * ang.cos() + v * ang.sin();
+            let point = expected.tip + d * q + radial * (5.0 * r_at_q + 1.0);
+            points.push(SurfacePoint3::new_normalize(
+                point,
+                rg.unit_vec().into_inner(),
+            ));
+        }
+
+        let magsac = Magsac {
+            sigma_max: 0.03,
+            max_iterations: Some(500),
+            refinement_steps: 5,
+            confidence: 0.99,
+            seed: Some(17),
+        };
+        let fit = magsac
+            .fit_filtered::<3, Cone3, _>(&points, |_| true)
+            .unwrap();
+
+        // The apex, axis, and half-angle match (height/radius are not checked: the raw consensus
+        // model's extent fields merely encode the half-angle until bounded).
+        assert_relative_eq!(
+            fit.model.half_angle(),
+            expected.half_angle(),
+            epsilon = 1e-2
+        );
+        let dot = fit
+            .model
+            .direction
+            .into_inner()
+            .dot(&expected.direction.into_inner());
+        assert_relative_eq!(dot, 1.0, epsilon = 1e-2);
+        assert!((fit.model.tip - expected.tip).norm() < 0.05);
+
+        // No outlier is classified as an inlier, and nearly all true inliers are recovered.
+        assert!(fit.inliers.iter().all(|&i| i < inlier_count));
+        assert!(fit.inliers.len() > inlier_count * 9 / 10);
+    }
+
+    #[test]
+    fn from_consensus_too_few_points_is_error() {
+        // The minimal sample is four oriented points, so three cannot seed a candidate.
+        let expected = tilted();
+        let points = sample_surface(&expected, 3, true);
+        assert!(Cone3::from_consensus(&points, 0.01, None, None, None).is_err());
     }
 }
