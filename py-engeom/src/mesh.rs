@@ -5,7 +5,7 @@ use crate::conversions::{
 };
 use crate::geom3::{Curve3, Iso3, Plane3, Point3, SurfacePoint3, Vector3};
 use crate::metrology::Distance3;
-use crate::point_cloud::Lptf3Load;
+use crate::point_cloud::lptf3_load_from_args;
 use engeom::Selection;
 use engeom::common::SplitResult;
 use engeom::common::points::dist;
@@ -510,8 +510,16 @@ impl Mesh {
     }
 
     #[staticmethod]
-    fn load_lptf3(file_path: PathBuf, params: Lptf3Load) -> PyResult<Mesh> {
-        let half_edge_mesh = engeom::io::load_lptf3_mesh(&file_path, params.into())
+    #[pyo3(signature = (file_path, take_every=1, look_scale=None, weight_scale=None, max_move=None))]
+    fn load_lptf3(
+        file_path: PathBuf,
+        take_every: u32,
+        look_scale: Option<f64>,
+        weight_scale: Option<f64>,
+        max_move: Option<f64>,
+    ) -> PyResult<Mesh> {
+        let load = lptf3_load_from_args(take_every, look_scale, weight_scale, max_move)?;
+        let half_edge_mesh = engeom::io::load_lptf3_mesh(&file_path, load)
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
         let mesh = engeom::Mesh::try_from(&half_edge_mesh)

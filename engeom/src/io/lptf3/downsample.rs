@@ -7,16 +7,16 @@ use std::path::Path;
 pub struct Lptf3DsParams {
     pub take_every: u32,
     pub look_scale: f64,
-    pub weight_sigma: f64,
+    pub weight_scale: f64,
     pub max_move: f64,
 }
 
 impl Lptf3DsParams {
-    pub fn new(take_every: u32, look_scale: f64, weight_sigma: f64, max_move: f64) -> Self {
+    pub fn new(take_every: u32, look_scale: f64, weight_scale: f64, max_move: f64) -> Self {
         Self {
             take_every,
             look_scale,
-            weight_sigma,
+            weight_scale,
             max_move,
         }
     }
@@ -84,7 +84,7 @@ pub fn load_downsample_filter_lptf3(
     // The number of rows to look forward and backwards when sampling the point cloud.
     let look_rows = (params.take_every as f64 * params.look_scale.abs()).ceil() as i32;
     let look_dist = look_rows as f64 * loader.y_translation * 1.25;
-    let weight_sigma = params.weight_sigma * look_dist;
+    let weight_sigma = params.weight_scale * look_dist;
 
     let working_indices = (0..row_data.len())
         .filter(|&i| !row_data[i].is_empty())

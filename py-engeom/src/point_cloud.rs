@@ -8,56 +8,34 @@ use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use std::path::PathBuf;
 
-#[pyclass(from_py_object, module = "engeom.geom3")]
-#[derive(Clone, Copy, Debug)]
-pub enum Lptf3Load {
-    All {},
-    TakeEveryN {
-        n: u32,
-    },
-    SmoothSample {
-        take_every: u32,
-        look_scale: f64,
-        weight_scale: f64,
-        max_move: f64,
-    },
-}
-
-#[pymethods]
-impl Lptf3Load {
-    fn __repr__(&self) -> String {
-        match self {
-            Lptf3Load::All {} => "Lptf3Load.All".to_string(),
-            Lptf3Load::TakeEveryN { n } => format!("Lptf3Load.TakeEveryN({})", n),
-            Lptf3Load::SmoothSample {
-                take_every,
-                look_scale,
-                weight_scale,
-                max_move,
-            } => format!(
-                "Lptf3Load.SmoothSample(take_every={}, look_scale={}, weight_scale={}, max_move={})",
-                take_every, look_scale, weight_scale, max_move
-            ),
-        }
-    }
-}
-
-impl From<Lptf3Load> for engeom::io::Lptf3Load {
-    fn from(load: Lptf3Load) -> Self {
-        match load {
-            Lptf3Load::All {} => engeom::io::Lptf3Load::All,
-            Lptf3Load::TakeEveryN { n } => engeom::io::Lptf3Load::TakeEveryN(n),
-            Lptf3Load::SmoothSample {
-                take_every,
-                look_scale,
-                weight_scale,
-                max_move,
-            } => {
-                let p =
-                    engeom::io::Lptf3DsParams::new(take_every, look_scale, weight_scale, max_move);
-                engeom::io::Lptf3Load::SmoothSample(p)
+/// Build an `engeom::io::Lptf3Load` from the flattened loader keyword arguments.
+///
+/// The smoothing parameters (`look_scale`, `weight_scale`, `max_move`) form an all-or-nothing
+/// group that selects the gaussian smoothing filter. If none of them are given, the load is a
+/// plain decimation controlled by `take_every` (`take_every <= 1` loads every point). Supplying
+/// some but not all of the smoothing parameters is an error.
+pub fn lptf3_load_from_args(
+    take_every: u32,
+    look_scale: Option<f64>,
+    weight_scale: Option<f64>,
+    max_move: Option<f64>,
+) -> PyResult<engeom::io::Lptf3Load> {
+    match (look_scale, weight_scale, max_move) {
+        (None, None, None) => {
+            if take_every <= 1 {
+                Ok(engeom::io::Lptf3Load::All)
+            } else {
+                Ok(engeom::io::Lptf3Load::TakeEveryN(take_every))
             }
         }
+        (Some(look_scale), Some(weight_scale), Some(max_move)) => {
+            let p = engeom::io::Lptf3DsParams::new(take_every, look_scale, weight_scale, max_move);
+            Ok(engeom::io::Lptf3Load::SmoothSample(p))
+        }
+        _ => Err(PyValueError::new_err(
+            "The smoothing parameters `look_scale`, `weight_scale`, and `max_move` must all be \
+             given together or all left unset",
+        )),
     }
 }
 
@@ -125,9 +103,17 @@ impl PointCloud {
     }
 
     #[staticmethod]
-    fn load_lptf3(path: PathBuf, params: Lptf3Load) -> PyResult<Self> {
-        let inner = engeom::io::load_lptf3(&path, params.into())
-            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+    #[pyo3(signature = (path, take_every=1, look_scale=None, weight_scale=None, max_move=None))]
+    fn load_lptf3(
+        path: PathBuf,
+        take_every: u32,
+        look_scale: Option<f64>,
+        weight_scale: Option<f64>,
+        max_move: Option<f64>,
+    ) -> PyResult<Self> {
+        let load = lptf3_load_from_args(take_every, look_scale, weight_scale, max_move)?;
+        let inner =
+            engeom::io::load_lptf3(&path, load).map_err(|e| PyIOError::new_err(e.to_string()))?;
         Ok(Self::from_inner(inner))
     }
 

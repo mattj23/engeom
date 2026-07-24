@@ -14,51 +14,6 @@ import metrology
 Transformable3 = TypeVar("Transformable3", Vector3, Point3, Plane3, Iso3, SurfacePoint3, Sphere3, Line3, Circle3, Segment3)
 PointOrVector3 = TypeVar("PointOrVector3", Vector3, Point3)
 
-type Lptf3LoadEnum = Lptf3Load.All | Lptf3Load.TakeEveryN | Lptf3Load.SmoothSample
-
-
-class Lptf3Load:
-    """
-    An enumeration representing the different load types that can be used when loading LPTF3 files.
-    """
-
-    class All:
-        def __init__(self):
-            """
-            Load all points from the file
-            """
-            ...
-
-    class TakeEveryN:
-        def __init__(self, n: int):
-            """
-            Load every nth row from the file. The loader will attempt to roughly match the inter-row spacing when
-            loading the individual points, resulting in an approximate grid-like array of points.
-            :param n: the interval at which to take rows from the file.
-            """
-            ...
-
-    class SmoothSample:
-        def __init__(self, take_every: int, look_scale: float, weight_scale: float, max_move: float):
-            """
-            Load the points using a downsampling filter, which downsamples the point cloud similar to the `TakeEveryN`
-            method, but also performs a gaussian smoothing step using the full original cloud.  This takes the longest
-            time, but can remove a significant amount of noise from the data by making use of an adjacency structure
-            that will be lost once the points are turned into a cloud.
-
-            :param take_every: the interval at which to take rows from the file.
-            :param look_scale: smoothing will use a sampling window relative to the `take_every` spacing, so a value
-            of 1 will use the same spacing as `take_every`, while a value of 2 will use twice that spacing. A reasonable
-            default for preserving detail is 0.5.
-            :param weight_scale: during the gaussian smoothing, neighboring points will be weighted by their distance
-            from the point being smoothed.  At `weight_scale` of 1, the standard deviation of the gaussian will be
-            slightly larger than the `look_scale` distance.
-            :param max_move: the maximum distance a point can move when smoothing. If a point attempts to move more
-            than 10x this distance, it will not be moved at all. Otherwise, it will be clamped to within this distance.
-            """
-            ...
-
-
 class Vector3(Iterable[float]):
     """
     A class representing a vector in 3D space. The vector is represented by its x, y, and z components. It is
@@ -2449,32 +2404,46 @@ class Mesh:
         ...
 
     @staticmethod
-    def load_lptf3(path: str | Path, params: Lptf3LoadEnum) -> Mesh:
+    def load_lptf3(
+        file_path: str | Path,
+        take_every: int = 1,
+        look_scale: float | None = None,
+        weight_scale: float | None = None,
+        max_move: float | None = None,
+    ) -> Mesh:
         """
         This function reads a LPTF3 file, which is a compact file format for storing 3D point data
         taken from a laser profile triangulation scanner. The format is simple and compact, capable
         of practically storing about 200k points (with an 8-bit color value each) per MB when using a
         16-bit coordinate format, or half that when using a 32-bit coordinate format.
 
-        There are a few different ways to load the data, controlled by the `Lptf3Load` enum:
-          - `Lptf3Load.All`: Load all points from the file.
-          - `Lptf3Load.TakeEveryN(n)`: Load every Nth row from the file. The loader will attempt to
-            roughly match the x spacing of the points to the gap distance between rows, resulting in a
-            grid-like point cloud with an approximately uniform point spacing when viewed from the
-            X-Y plane.  This is a very fast method of retrieving a downsampled set of points.
-          - `Lptf3Load.SmoothSample(params)`: Load the points using a downsampling filter, which
-            downsamples the point cloud similar to the `TakeEveryN` method, but also performs a gaussian
-            smoothing step using the full original cloud.  This takes the longest time, but can remove
-            a significant amount of noise from the data by making use of an adjacency structure that
-            will be lost once the points are turned into a mesh.
+        The way the data is loaded is controlled by the keyword arguments:
+          - By default (no smoothing parameters given) the points are decimated by row: `take_every=1`
+            loads every point, while `take_every=n` loads every nth row, roughly matching the x
+            spacing of the points to the gap distance between rows for an approximately uniform,
+            grid-like spacing. This is the fastest method.
+          - If the smoothing parameters `look_scale`, `weight_scale`, and `max_move` are all given, a
+            gaussian smoothing filter is applied on top of the decimation using the full original
+            cloud. This is the slowest method but can remove a significant amount of noise. The three
+            smoothing parameters must be given together or all left unset.
 
         Once the points are loaded, they will be converted into a triangle mesh by connecting points in adjacent
         rows with triangles that meet certain edge length criterial. The result is a fast mesh that can be built
         using knowledge of the LPTF3's internal structure rather than having to rely on more general techniques
         that can build meshes from arbitrary point clouds.
 
-        :param path: the path to the LPTF3 file to load.
-        :param params: the method and parameters to use when loading the LPTF3 file.
+        :param file_path: the path to the LPTF3 file to load.
+        :param take_every: the interval at which to take rows from the file. `take_every=1` loads every point.
+        :param look_scale: the smoothing sampling window relative to the `take_every` spacing (1 matches the
+            `take_every` spacing, 2 uses twice that). A reasonable default for preserving detail is 0.5. Must be
+            given together with `weight_scale` and `max_move`.
+        :param weight_scale: during smoothing, neighboring points are weighted by their distance from the point
+            being smoothed; at `weight_scale` of 1 the gaussian standard deviation is slightly larger than the
+            `look_scale` distance. Must be given together with `look_scale` and `max_move`.
+        :param max_move: the maximum distance a point can move when smoothing. A point attempting to move more than
+            10x this distance is not moved at all; otherwise it is clamped to this distance. Must be given together
+            with `look_scale` and `weight_scale`.
+        :raises ValueError: if only some of the smoothing parameters are supplied.
         """
         ...
 
@@ -3564,27 +3533,41 @@ class PointCloud:
         ...
 
     @staticmethod
-    def load_lptf3(path: str | Path, params: Lptf3LoadEnum) -> PointCloud:
+    def load_lptf3(
+        path: str | Path,
+        take_every: int = 1,
+        look_scale: float | None = None,
+        weight_scale: float | None = None,
+        max_move: float | None = None,
+    ) -> PointCloud:
         """
         This function reads a LPTF3 file, which is a compact file format for storing 3D point data
         taken from a laser profile triangulation scanner. The format is simple and compact, capable
         of practically storing about 200k points (with an 8-bit color value each) per MB when using a
         16-bit coordinate format, or half that when using a 32-bit coordinate format.
 
-        There are a few different ways to load the data, controlled by the `Lptf3Load` enum:
-          - `Lptf3Load.All`: Load all points from the file.
-          - `Lptf3Load.TakeEveryN(n)`: Load every Nth row from the file. The loader will attempt to
-            roughly match the x spacing of the points to the gap distance between rows, resulting in a
-            grid-like point cloud with an approximately uniform point spacing when viewed from the
-            X-Y plane.  This is a very fast method of retrieving a downsampled point cloud.
-          - `Lptf3Load.SmoothSample(params)`: Load the points using a downsampling filter, which
-            downsamples the point cloud similar to the `TakeEveryN` method, but also performs a gaussian
-            smoothing step using the full original cloud.  This takes the longest time, but can remove
-            a significant amount of noise from the data by making use of an adjacency structure that
-            will be lost once the points are turned into a cloud.
+        The way the data is loaded is controlled by the keyword arguments:
+          - By default (no smoothing parameters given) the points are decimated by row: `take_every=1`
+            loads every point, while `take_every=n` loads every nth row, roughly matching the x
+            spacing of the points to the gap distance between rows for an approximately uniform,
+            grid-like spacing. This is the fastest method.
+          - If the smoothing parameters `look_scale`, `weight_scale`, and `max_move` are all given, a
+            gaussian smoothing filter is applied on top of the decimation using the full original
+            cloud. This is the slowest method but can remove a significant amount of noise. The three
+            smoothing parameters must be given together or all left unset.
 
         :param path: the path to the LPTF3 file to load.
-        :param params: the method and parameters to use when loading the LPTF3 file.
+        :param take_every: the interval at which to take rows from the file. `take_every=1` loads every point.
+        :param look_scale: the smoothing sampling window relative to the `take_every` spacing (1 matches the
+            `take_every` spacing, 2 uses twice that). A reasonable default for preserving detail is 0.5. Must be
+            given together with `weight_scale` and `max_move`.
+        :param weight_scale: during smoothing, neighboring points are weighted by their distance from the point
+            being smoothed; at `weight_scale` of 1 the gaussian standard deviation is slightly larger than the
+            `look_scale` distance. Must be given together with `look_scale` and `max_move`.
+        :param max_move: the maximum distance a point can move when smoothing. A point attempting to move more than
+            10x this distance is not moved at all; otherwise it is clamped to this distance. Must be given together
+            with `look_scale` and `weight_scale`.
+        :raises ValueError: if only some of the smoothing parameters are supplied.
         """
         ...
 
