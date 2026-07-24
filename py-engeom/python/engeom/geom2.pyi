@@ -1380,11 +1380,11 @@ class Circle2:
 
     def line_direction(self, line: Line2) -> AngleDir:
         """
-        Determine whether the circle center is on the clockwise (``Cw``) or counter-clockwise
-        (``Ccw``) side of a line.
+        Determine whether the circle center is on the clockwise (``"cw"``) or counter-clockwise
+        (``"ccw"``) side of a line.
 
         :param line: the reference line.
-        :return: ``AngleDir.Cw`` or ``AngleDir.Ccw``.
+        :return: ``"cw"`` or ``"ccw"``.
         """
         ...
 
@@ -1706,7 +1706,7 @@ class Line2:
         Determine the direction that the line winds around ``point``.
 
         :param point: the reference point.
-        :return: ``AngleDir.Cw`` or ``AngleDir.Ccw``.
+        :return: ``"cw"`` or ``"ccw"``.
         """
         ...
 
@@ -2999,13 +2999,13 @@ def fit_boundary_to_surface_points(
     distances from each sample to its nearest location on the boundary, weighted by the dot product of the sample normal
     with the boundary normal. The ``weight_mode`` parameter controls how the dot product is applied:
 
-    * ``VecDot.AsIs``     : raw dot product (can downweight or negate antiparallel samples).
-    * ``VecDot.Abs``      : absolute value (de-weights orthogonal normals, ignores direction).
-    * ``VecDot.ClampPos`` : clamped to ``[0, 1]`` (ignores samples facing away from boundary).
+    * ``"as_is"``     : raw dot product (can downweight or negate antiparallel samples).
+    * ``"abs"``       : absolute value (de-weights orthogonal normals, ignores direction).
+    * ``"clamp_pos"`` : clamped to ``[0, 1]`` (ignores samples facing away from boundary).
 
-    I suggest that you use ``VecDot.ClampPos`` if you know that the boundary normal and the surface point normals are
+    I suggest that you use ``"clamp_pos"`` if you know that the boundary normal and the surface point normals are
     definitely facing the correct directions and want to take advantage of the additional filtering.  Otherwise, I
-    recommend using ``VecDot.Abs`` if you aren't sure that the boundary will be facing the correct way, since it won't
+    recommend using ``"abs"`` if you aren't sure that the boundary will be facing the correct way, since it won't
     penalize the optimizer for "flipping" the boundary normal during optimization.
 
     :param points: a numpy array of shape ``(N, 4)`` with columns ``[x, y, nx, ny]``.

@@ -1,5 +1,5 @@
 use crate::bounding::Aabb2;
-use crate::common::VecDot;
+use crate::common::vec_dot_from_str;
 use crate::conversions::{array_to_points2, points_to_array};
 use crate::geom2::{Iso2, Line2, Point2, SurfacePoint2, Vector2};
 use engeom::geom2::BoundaryEditor;
@@ -331,7 +331,7 @@ pub fn fit_boundary_to_surface_points<'py>(
     points: PyReadonlyArray2<'py, f64>,
     builder: Py<PyAny>,
     initial: PyReadonlyArray1<'py, f64>,
-    weight_mode: VecDot,
+    weight_mode: &str,
     ignore_ends: bool,
 ) -> PyResult<Bound<'py, PyArray1<f64>>> {
     let arr = points.as_array();
@@ -353,12 +353,13 @@ pub fn fit_boundary_to_surface_points<'py>(
 
     let initial_vec = dvec_from_array(&initial)?;
     let bld = make_builder(builder);
+    let weight_mode = vec_dot_from_str(weight_mode)?;
 
     let result = engeom::geom2::fit_boundary_to_surface_points(
         &sps,
         &bld,
         initial_vec,
-        weight_mode.into(),
+        weight_mode,
         ignore_ends,
     )
     .map_err(|e| PyValueError::new_err(e.to_string()))?;

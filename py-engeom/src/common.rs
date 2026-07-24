@@ -1,39 +1,36 @@
 use engeom::IntervalOps;
 use engeom::common::DistMode;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-#[pyclass(eq, eq_int, from_py_object, module = "engeom.common")]
-#[derive(PartialEq, Copy, Clone, Debug)]
-pub enum AngleDir {
-    /// Clockwise rotation (negative angular direction).
-    Cw = 0,
-    /// Counter-clockwise rotation (positive angular direction).
-    Ccw = 1,
-}
-
-impl From<AngleDir> for engeom::common::AngleDir {
-    fn from(val: AngleDir) -> Self {
-        match val {
-            AngleDir::Cw => engeom::common::AngleDir::Cw,
-            AngleDir::Ccw => engeom::common::AngleDir::Ccw,
-        }
+/// Parse an angle-direction string token (`"cw"` or `"ccw"`) into the core `AngleDir` enum.
+pub fn angle_dir_from_str(s: &str) -> PyResult<engeom::common::AngleDir> {
+    match s {
+        "cw" => Ok(engeom::common::AngleDir::Cw),
+        "ccw" => Ok(engeom::common::AngleDir::Ccw),
+        _ => Err(PyValueError::new_err(format!(
+            "Invalid angle direction '{s}', expected 'cw' or 'ccw'"
+        ))),
     }
 }
 
-impl From<engeom::common::AngleDir> for AngleDir {
-    fn from(val: engeom::common::AngleDir) -> Self {
-        match val {
-            engeom::common::AngleDir::Cw => AngleDir::Cw,
-            engeom::common::AngleDir::Ccw => AngleDir::Ccw,
-        }
+/// Render a core `AngleDir` enum as its string token (`"cw"` or `"ccw"`).
+pub fn angle_dir_to_str(val: engeom::common::AngleDir) -> &'static str {
+    match val {
+        engeom::common::AngleDir::Cw => "cw",
+        engeom::common::AngleDir::Ccw => "ccw",
     }
 }
 
 /// Returns the positive angle (in radians) needed to rotate `radians0` to `radians1` in the
 /// given direction. The result is always in the range [0, 2π].
 #[pyfunction]
-pub fn angle_in_direction(radians0: f64, radians1: f64, angle_dir: AngleDir) -> f64 {
-    engeom::common::angle_in_direction(radians0, radians1, angle_dir.into())
+pub fn angle_in_direction(radians0: f64, radians1: f64, angle_dir: &str) -> PyResult<f64> {
+    Ok(engeom::common::angle_in_direction(
+        radians0,
+        radians1,
+        angle_dir_from_str(angle_dir)?,
+    ))
 }
 
 /// Returns the signed shortest angular distance from `radians0` to `radians1`. A positive result
@@ -62,38 +59,27 @@ pub fn signed_compliment_2pi(radians: f64) -> f64 {
     engeom::common::signed_compliment_2pi(radians)
 }
 
-#[pyclass(eq, eq_int, from_py_object, module = "engeom.common")]
-#[derive(PartialEq, Copy, Clone, Debug)]
-pub enum SelectOp {
-    Add = 0,
-    Remove = 1,
-    Keep = 2,
-}
-
-impl From<SelectOp> for engeom::SelectOp {
-    fn from(val: SelectOp) -> Self {
-        match val {
-            SelectOp::Add => engeom::SelectOp::Add,
-            SelectOp::Remove => engeom::SelectOp::Remove,
-            SelectOp::Keep => engeom::SelectOp::KeepOnly,
-        }
+/// Parse a face-selection operation token (`"add"`, `"remove"`, or `"keep"`) into the core
+/// `SelectOp` enum.
+pub fn select_op_from_str(s: &str) -> PyResult<engeom::SelectOp> {
+    match s {
+        "add" => Ok(engeom::SelectOp::Add),
+        "remove" => Ok(engeom::SelectOp::Remove),
+        "keep" => Ok(engeom::SelectOp::KeepOnly),
+        _ => Err(PyValueError::new_err(format!(
+            "Invalid select operation '{s}', expected 'add', 'remove', or 'keep'"
+        ))),
     }
 }
 
-#[pyclass(eq, eq_int, from_py_object, module = "engeom.common")]
-#[derive(PartialEq, Copy, Clone, Debug, Default)]
-pub enum DeviationMode {
-    #[default]
-    Point,
-    Plane,
-}
-
-impl From<DeviationMode> for DistMode {
-    fn from(val: DeviationMode) -> Self {
-        match val {
-            DeviationMode::Point => DistMode::ToPoint,
-            DeviationMode::Plane => DistMode::ToPlane,
-        }
+/// Parse a deviation-mode token (`"point"` or `"plane"`) into the core `DistMode` enum.
+pub fn deviation_mode_from_str(s: &str) -> PyResult<DistMode> {
+    match s {
+        "point" => Ok(DistMode::ToPoint),
+        "plane" => Ok(DistMode::ToPlane),
+        _ => Err(PyValueError::new_err(format!(
+            "Invalid deviation mode '{s}', expected 'point' or 'plane'"
+        ))),
     }
 }
 
@@ -197,23 +183,15 @@ impl AngleInterval {
     }
 }
 
-#[pyclass(eq, eq_int, from_py_object, module = "engeom")]
-#[derive(PartialEq, Copy, Clone, Debug)]
-pub enum VecDot {
-    /// Use the raw dot product value as-is (can be negative).
-    AsIs = 0,
-    /// Use the absolute value of the dot product.
-    Abs = 1,
-    /// Clamp the dot product to zero from below (ignore anti-parallel normals).
-    ClampPos = 2,
-}
-
-impl From<VecDot> for engeom::VecDot {
-    fn from(val: VecDot) -> Self {
-        match val {
-            VecDot::AsIs => engeom::VecDot::AsIs,
-            VecDot::Abs => engeom::VecDot::Abs,
-            VecDot::ClampPos => engeom::VecDot::ClampPos,
-        }
+/// Parse a vector dot-product handling token (`"as_is"`, `"abs"`, or `"clamp_pos"`) into the core
+/// `VecDot` enum.
+pub fn vec_dot_from_str(s: &str) -> PyResult<engeom::VecDot> {
+    match s {
+        "as_is" => Ok(engeom::VecDot::AsIs),
+        "abs" => Ok(engeom::VecDot::Abs),
+        "clamp_pos" => Ok(engeom::VecDot::ClampPos),
+        _ => Err(PyValueError::new_err(format!(
+            "Invalid vector dot mode '{s}', expected 'as_is', 'abs', or 'clamp_pos'"
+        ))),
     }
 }

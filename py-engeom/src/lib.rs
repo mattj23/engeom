@@ -176,7 +176,6 @@ fn register_sensor_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
 fn register_common_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     let child = PyModule::new(parent_module.py(), "_common")?;
 
-    child.add_class::<common::AngleDir>()?;
     child.add_class::<common::AngleInterval>()?;
     child.add_function(wrap_pyfunction!(common::angle_in_direction, &child)?)?;
     child.add_function(wrap_pyfunction!(common::shortest_angle_between, &child)?)?;
@@ -218,10 +217,7 @@ fn py_engeom(m: &Bound<'_, PyModule>) -> PyResult<()> {
     register_common_module(m)?;
 
     // Common features and primitives
-    m.add_class::<common::DeviationMode>()?;
     m.add_class::<common::Resample>()?;
-    m.add_class::<common::SelectOp>()?;
-    m.add_class::<common::VecDot>()?;
 
     Ok(())
 }

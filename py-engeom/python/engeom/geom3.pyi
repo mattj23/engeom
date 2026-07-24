@@ -2588,13 +2588,14 @@ class Mesh:
     def deviation(self, points: NDArray[float], mode: engeom.DeviationMode) -> NDArray[float]:
         """
         Calculate the deviation between a set of points and their respective closest points on the mesh surface.
-        There are two possible modes of computing the distance, specified using the `DeviationMode` enum.  The two
-        modes are essentially the same except for how they treat points which are beyond the edge of the closest face.
+        There are two possible modes of computing the distance, specified by the deviation-mode string (``"point"``
+        or ``"plane"``).  The two modes are essentially the same except for how they treat points which are beyond
+        the edge of the closest face.
 
-        - `DeviationMode.Point`: The deviation is calculated as the direct distance from the test point to the closest
+        - ``"point"``: The deviation is calculated as the direct distance from the test point to the closest
         point on the face.
 
-        - `DeviationMode.Plane`: The deviation is calculated as the distance from the test point to the plane of the
+        - ``"plane"``: The deviation is calculated as the distance from the test point to the plane of the
         face on which the closest point lies. This allows for points that are slightly beyond the edge of the closest
         face to have a deviation which would be the same as if the edge of the face extended to beyond the test point.
 
@@ -2718,13 +2719,14 @@ class Mesh:
         The first point `.a` of the measurement is the point on the mesh, and the second point `.b` is the test point
         that was given as an argument.
 
-        There are two possible modes of computing the distance, specified using the `DeviationMode` enum.  The two
-        modes are essentially the same except for how they treat points which are beyond the edge of the closest face.
+        There are two possible modes of computing the distance, specified by the deviation-mode string (``"point"``
+        or ``"plane"``).  The two modes are essentially the same except for how they treat points which are beyond
+        the edge of the closest face.
 
-        - `DeviationMode.Point`: The deviation is calculated as the direct distance from the test point to the closest
+        - ``"point"``: The deviation is calculated as the direct distance from the test point to the closest
         point on the face.
 
-        - `DeviationMode.Plane`: The deviation is calculated as the distance from the test point to the plane of the
+        - ``"plane"``: The deviation is calculated as the distance from the test point to the plane of the
         face on which the closest point lies. This allows for points that are slightly beyond the edge of the closest
         face to have a deviation which would be the same as if the edge of the face extended to beyond the test point.
 
@@ -3046,7 +3048,7 @@ class FaceFilterHandle:
         :param y: the y component of the direction to check against
         :param z: the z component of the direction to check against
         :param angle: the maximum angle in radians between the face normal and the filter direction
-        :param mode: the operation to perform on the faces, one of `SelectOp.Add`, `SelectOp.Remove`, or `SelectOp.Keep`
+        :param mode: the operation to perform on the faces, one of ``"add"``, ``"remove"``, or ``"keep"``
         :return: the altered filter handle object
         """
         ...
@@ -3077,7 +3079,7 @@ class FaceFilterHandle:
         :param other: the mesh to use as a reference
         :param all_points: if True, all points of the triangle must be within the tolerance, if False, only one point
         :param distance_tol: the maximum distance between the triangle and its projection onto the reference mesh
-        :param mode: the operation to perform on the faces, one of `SelectOp.Add`, `SelectOp.Remove`, or `SelectOp.Keep`
+        :param mode: the operation to perform on the faces, one of ``"add"``, ``"remove"``, or ``"keep"``
         :param planar_tol: the maximum in-plane distance between the triangle and its projection onto the reference mesh
         :param angle_tol: the maximum angle between the normals of the triangle and the reference mesh
         """

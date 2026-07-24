@@ -1,11 +1,11 @@
 """
-Tests for the engeom.common module: AngleDir enum and angle utility functions.
+Tests for the engeom.common module: angle direction tokens and angle utility functions.
 """
 import math
 
 import numpy
 import pytest
-from engeom.common import (AngleDir, angle_in_direction, shortest_angle_between, angle_signed_pi, angle_to_2pi,
+from engeom.common import (angle_in_direction, shortest_angle_between, angle_signed_pi, angle_to_2pi,
                            signed_compliment_2pi)
 
 TOL = 1e-10
@@ -13,18 +13,12 @@ PI = math.pi
 
 
 # ---------------------------------------------------------------------------
-# AngleDir
+# angle direction tokens
 # ---------------------------------------------------------------------------
 
-def test_angle_dir_variants_exist():
-    assert AngleDir.Cw is not None
-    assert AngleDir.Ccw is not None
-
-
-def test_angle_dir_equality():
-    assert AngleDir.Cw == AngleDir.Cw
-    assert AngleDir.Ccw == AngleDir.Ccw
-    assert AngleDir.Cw != AngleDir.Ccw
+def test_angle_in_direction_rejects_unknown_token():
+    with pytest.raises(ValueError):
+        angle_in_direction(0.0, PI / 2, "clockwise")
 
 
 # ---------------------------------------------------------------------------
@@ -97,14 +91,14 @@ def test_signed_compliment_2pi_values(degrees, expected):
 
 @pytest.mark.parametrize("start,end,direction,expected", [
     # Quarter turn each way from 0
-    (0.0, PI / 2, AngleDir.Ccw, PI / 2),
-    (0.0, PI / 2, AngleDir.Cw, 3 * PI / 2),
+    (0.0, PI / 2, "ccw", PI / 2),
+    (0.0, PI / 2, "cw", 3 * PI / 2),
     # Half-turn - same in both directions
-    (0.0, PI, AngleDir.Ccw, PI),
-    (0.0, PI, AngleDir.Cw, PI),
+    (0.0, PI, "ccw", PI),
+    (0.0, PI, "cw", PI),
     # Full circle (same start and end)
-    (0.0, 0.0, AngleDir.Ccw, 0.0),
-    (0.0, 0.0, AngleDir.Cw, 0.0),
+    (0.0, 0.0, "ccw", 0.0),
+    (0.0, 0.0, "cw", 0.0),
 ])
 def test_angle_in_direction_values(start, end, direction, expected):
     assert angle_in_direction(start, end, direction) == pytest.approx(expected, abs=TOL)
@@ -113,21 +107,21 @@ def test_angle_in_direction_values(start, end, direction, expected):
 def test_angle_in_direction_always_positive():
     for start in [-PI, -PI / 2, 0.0, PI / 4, PI]:
         for end in [-PI, -PI / 2, 0.0, PI / 4, PI]:
-            for d in (AngleDir.Cw, AngleDir.Ccw):
+            for d in ("cw", "ccw"):
                 assert angle_in_direction(start, end, d) >= -TOL
 
 
 def test_angle_in_direction_rotation_check():
     """Rotating start by the returned angle in the stated direction must reach end."""
     cases = [
-        (0.3, 1.8, AngleDir.Ccw),
-        (1.8, 0.3, AngleDir.Ccw),
-        (0.3, 1.8, AngleDir.Cw),
-        (-2.5, 2.5, AngleDir.Ccw),
+        (0.3, 1.8, "ccw"),
+        (1.8, 0.3, "ccw"),
+        (0.3, 1.8, "cw"),
+        (-2.5, 2.5, "ccw"),
     ]
     for start, end, direction in cases:
         arc = angle_in_direction(start, end, direction)
-        sign = 1.0 if direction == AngleDir.Ccw else -1.0
+        sign = 1.0 if direction == "ccw" else -1.0
         rotated = start + sign * arc
         assert math.sin(rotated) == pytest.approx(math.sin(end), abs=TOL)
         assert math.cos(rotated) == pytest.approx(math.cos(end), abs=TOL)

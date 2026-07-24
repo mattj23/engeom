@@ -1,15 +1,8 @@
 from __future__ import annotations
-from enum import Enum
+from typing import Literal
 
-
-class AngleDir(Enum):
-    """Enumerates the two possible directions of rotation, clockwise and counter-clockwise."""
-
-    Cw = 0
-    """Clockwise rotation (negative angular direction)."""
-
-    Ccw = 1
-    """Counter-clockwise rotation (positive angular direction)."""
+AngleDir = Literal["cw", "ccw"]
+"""A direction of rotation: ``"cw"`` (clockwise, negative) or ``"ccw"`` (counter-clockwise, positive)."""
 
 
 class AngleInterval:

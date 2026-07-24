@@ -1,4 +1,4 @@
-use crate::common::DeviationMode;
+use crate::common::deviation_mode_from_str;
 use crate::conversions::array_to_points3;
 use crate::geom3::Iso3;
 use crate::mesh::Mesh;
@@ -38,7 +38,7 @@ pub fn mesh_to_mesh_iterative(
     moving: &Mesh,
     reference: &Mesh,
     initial: &Iso3,
-    mode: DeviationMode,
+    mode: &str,
     max_iter: usize,
     sample_spacing: f64,
     max_neighbor_angle: f64,       // PI / 3.0
@@ -46,6 +46,7 @@ pub fn mesh_to_mesh_iterative(
     centroid_ratio: f64,           // 1.0
     filter_distances: Option<f64>, // Some(3.0)
 ) -> PyResult<Iso3> {
+    let dist_mode = deviation_mode_from_str(mode)?;
     let params = GAPParams::new(
         sample_spacing,
         max_neighbor_angle,
@@ -57,7 +58,7 @@ pub fn mesh_to_mesh_iterative(
         moving.get_inner(),
         reference.get_inner(),
         initial.get_inner(),
-        mode.into(),
+        dist_mode,
         max_iter,
         &params,
     );

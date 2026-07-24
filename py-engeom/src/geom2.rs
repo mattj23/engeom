@@ -1,6 +1,6 @@
 use crate::boundary2::Manifold1Pos2;
 use crate::bounding::Aabb2;
-use crate::common::{AngleDir, AngleInterval, Resample};
+use crate::common::{AngleInterval, Resample, angle_dir_from_str, angle_dir_to_str};
 use crate::conversions::{
     array_to_points2, array_to_vectors2, dvec_from_array, dvec_to_array, points_to_array,
     vectors_to_array,
@@ -28,14 +28,18 @@ enum Vector2OrPoint2 {
 
 /// Returns an isometry representing a 90-degree rotation in the given direction.
 #[pyfunction]
-pub fn rot90(dir: AngleDir) -> Iso2 {
-    Iso2::from_inner(engeom::geom2::rot90(dir.into()))
+pub fn rot90(dir: &str) -> PyResult<Iso2> {
+    Ok(Iso2::from_inner(engeom::geom2::rot90(angle_dir_from_str(
+        dir,
+    )?)))
 }
 
 /// Returns an isometry representing a 270-degree rotation in the given direction.
 #[pyfunction]
-pub fn rot270(dir: AngleDir) -> Iso2 {
-    Iso2::from_inner(engeom::geom2::rot270(dir.into()))
+pub fn rot270(dir: &str) -> PyResult<Iso2> {
+    Ok(Iso2::from_inner(engeom::geom2::rot270(angle_dir_from_str(
+        dir,
+    )?)))
 }
 
 /// Returns the signed angle from `v1` to `v2` in radians, in the range (-π, π].
@@ -47,8 +51,12 @@ pub fn signed_angle(v1: &Vector2, v2: &Vector2) -> f64 {
 
 /// Returns the angle from `v1` to `v2` measured in the given direction, in radians, in [0, 2π].
 #[pyfunction]
-pub fn directed_angle(v1: &Vector2, v2: &Vector2, direction: AngleDir) -> f64 {
-    engeom::geom2::directed_angle(v1.get_inner(), v2.get_inner(), direction.into())
+pub fn directed_angle(v1: &Vector2, v2: &Vector2, direction: &str) -> PyResult<f64> {
+    Ok(engeom::geom2::directed_angle(
+        v1.get_inner(),
+        v2.get_inner(),
+        angle_dir_from_str(direction)?,
+    ))
 }
 
 // ================================================================================================
@@ -721,8 +729,8 @@ impl Circle2 {
         Arc2::from_inner(self.inner.to_partial_arc(angle0, angle))
     }
 
-    fn line_direction(&self, line: &Line2) -> AngleDir {
-        self.inner.line_direction(line.get_inner()).into()
+    fn line_direction(&self, line: &Line2) -> &'static str {
+        angle_dir_to_str(self.inner.line_direction(line.get_inner()))
     }
 
     fn at_angle(&self, angle: f64) -> Manifold1Pos2 {
@@ -989,9 +997,9 @@ impl Line2 {
         self.inner.intersection_params(&other.inner)
     }
 
-    fn winding_direction(&self, point: &Point2) -> AngleDir {
+    fn winding_direction(&self, point: &Point2) -> &'static str {
         use engeom::geom2::LineOps2;
-        self.inner.winding_direction(point.get_inner()).into()
+        angle_dir_to_str(self.inner.winding_direction(point.get_inner()))
     }
 
     fn to_iso_from_x(&self) -> Iso2 {

@@ -1,5 +1,6 @@
 use crate::bounding::Aabb3;
-use crate::common::{DeviationMode, SelectOp};
+use crate::common::{deviation_mode_from_str, select_op_from_str};
+use engeom::common::DistMode;
 use crate::conversions::{
     array_to_faces, array_to_points3, faces_to_array, points_to_array, vectors_to_array,
 };
@@ -296,8 +297,9 @@ impl Mesh {
         &self,
         py: Python<'py>,
         points: PyReadonlyArray2<'py, f64>,
-        mode: DeviationMode,
+        mode: &str,
     ) -> PyResult<Bound<'py, PyArray1<f64>>> {
+        let mode = deviation_mode_from_str(mode)?;
         let points = array_to_points3(&points.as_array())?;
         let mut result = Array1::zeros(points.len());
 
@@ -307,8 +309,8 @@ impl Mesh {
 
             result[i] = match mode {
                 // Copy the sign of the normal deviation
-                DeviationMode::Point => dist(&closest.sp.point, point) * normal_dev.signum(),
-                DeviationMode::Plane => normal_dev,
+                DistMode::ToPoint => dist(&closest.sp.point, point) * normal_dev.signum(),
+                DistMode::ToPlane => normal_dev,
             }
         }
 
@@ -320,10 +322,13 @@ impl Mesh {
         x: f64,
         y: f64,
         z: f64,
-        dist_mode: DeviationMode,
-    ) -> Distance3 {
+        dist_mode: &str,
+    ) -> PyResult<Distance3> {
         let point = engeom::Point3::new(x, y, z);
-        Distance3::from_inner(self.inner.measure_point_deviation(&point, dist_mode.into()))
+        Ok(Distance3::from_inner(self.inner.measure_point_deviation(
+            &point,
+            deviation_mode_from_str(dist_mode)?,
+        )))
     }
 
     fn boundary_first_flatten<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
@@ -583,15 +588,16 @@ impl FaceFilterHandle {
         y: f64,
         z: f64,
         angle: f64,
-        mode: SelectOp,
+        mode: &str,
     ) -> PyResult<Bound<'py, Self>> {
+        let op = select_op_from_str(mode)?;
         let normal = engeom::UnitVec3::new_normalize([x, y, z].into());
         let temp = slf.mesh.bind(py).borrow();
         let i = slf.indices.clone();
         slf.indices = temp
             .inner
             .face_select(Selection::Indices(i))
-            .facing(&normal, angle, mode.into())
+            .facing(&normal, angle, op)
             .collect_indices();
         slf.into_pyobject(py)
             .map_err(|e| PyValueError::new_err(e.to_string()))
@@ -605,10 +611,11 @@ impl FaceFilterHandle {
         other: PyRef<Mesh>,
         all_points: bool,
         distance_tol: f64,
-        mode: SelectOp,
+        mode: &str,
         planar_tol: Option<f64>,
         angle_tol: Option<f64>,
     ) -> PyResult<Bound<'py, Self>> {
+        let op = select_op_from_str(mode)?;
         let temp = slf.mesh.bind(py).borrow();
         let i = slf.indices.clone();
         slf.indices = temp
@@ -620,7 +627,7 @@ impl FaceFilterHandle {
                 distance_tol,
                 planar_tol,
                 angle_tol,
-                mode.into(),
+                op,
             )
             .collect_indices();
         slf.into_pyobject(py)
