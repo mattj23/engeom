@@ -24,7 +24,7 @@ use crate::{Iso3, Point2, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
 pub use collisions::MeshCollisionSet;
 pub use edges::MeshEdges;
 pub use half_edge::HalfEdgeMesh;
-pub use data::{MeshAttr3, MeshAttrSet3};
+pub use data::{MeshAttr3, MeshAttrSet3, MeshData3};
 pub use nav_structure::MeshNav;
 use parry3d_f64::bounding_volume::Aabb;
 use parry3d_f64::shape::{TriMesh, TriMeshFlags};
