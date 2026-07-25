@@ -51,10 +51,12 @@ use crate::geom3::mesh::data::{MeshAttr3, MeshAttrSet3, MeshData3};
 use crate::{Mesh, Point3, Result, UnitVec3, Vector3};
 use ply_rs_bw::parser::{Parser, Reader};
 use ply_rs_bw::ply::{
-    BeginList, ElementDef, PropertyAccess, PropertyAccessResult, PropertyType, ScalarType,
+    BeginList, ElementDef, Encoding, Header, PropertyAccess, PropertyAccessResult, PropertyDef,
+    PropertyType, ScalarType,
 };
+use ply_rs_bw::writer::Writer;
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
 
 /// Load a triangle mesh from a PLY file, preserving every property the file carries.
@@ -133,6 +135,367 @@ pub fn load_ply_mesh(path: &Path) -> Result<Mesh> {
         data.faces().to_vec(),
         false,
     ))
+}
+
+// ===============================================================================================
+// Writing
+// ===============================================================================================
+
+/// Options controlling how a mesh is written to a PLY file.
+///
+/// There is deliberately no attribute-loss flag here, because PLY can represent everything a
+/// `MeshData3` carries. Formats which cannot are the ones that need the guard.
+#[non_exhaustive]
+#[derive(Debug, Clone)]
+pub struct PlyWriteOpts {
+    /// Write a binary little-endian payload rather than ascii. Binary is smaller, faster, and
+    /// round-trips floating point exactly. This is the default.
+    pub binary: bool,
+
+    /// Comment lines to record in the header.
+    pub comments: Vec<String>,
+
+    /// The width to write floating point values at. Defaults to [`PlyPrecision::Double`], which is
+    /// lossless.
+    pub precision: PlyPrecision,
+}
+
+impl Default for PlyWriteOpts {
+    fn default() -> Self {
+        Self {
+            binary: true,
+            comments: Vec::new(),
+            precision: PlyPrecision::Double,
+        }
+    }
+}
+
+/// The width used for every floating point value written: positions, normals, standard deviations,
+/// and the `Scalar` and `Vector` open attributes.
+///
+/// `MeshData3` holds positions as `f64`, so writing `Double` is lossless while writing `Single`
+/// narrows and cannot be undone. `Single` is worth choosing when the data was `f32` at the source
+/// anyway, since the extra mantissa bits are then all zero and cost roughly a third of the file size
+/// for nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PlyPrecision {
+    /// 32-bit floats, declared in the header as `float`.
+    Single,
+
+    /// 64-bit floats, declared in the header as `double`. Lossless, and the default.
+    #[default]
+    Double,
+}
+
+impl PlyPrecision {
+    /// The PLY scalar type this precision declares.
+    fn scalar_type(&self) -> ScalarType {
+        match self {
+            PlyPrecision::Single => ScalarType::Float,
+            PlyPrecision::Double => ScalarType::Double,
+        }
+    }
+}
+
+/// Write a mesh to a PLY file, preserving every attribute it carries.
+///
+/// Positions and floating point attributes are written as `double`, so nothing is lost to
+/// narrowing. See [`load_ply_mesh_data`] for the property naming, which this is the exact inverse
+/// of.
+///
+/// # Arguments
+///
+/// * `path`: the path to write to, which is overwritten if it exists
+/// * `mesh`: the mesh to write
+/// * `opts`: encoding and header options
+///
+/// returns: `Result<()>`
+pub fn write_ply_mesh_data(path: &Path, mesh: &MeshData3, opts: &PlyWriteOpts) -> Result<()> {
+    let file = File::create(path)?;
+    let mut out = BufWriter::new(file);
+    write_ply_to(&mut out, mesh, opts)?;
+    out.flush()?;
+    Ok(())
+}
+
+/// Write a mesh as PLY to any sink, preserving every attribute it carries.
+///
+/// The payload is streamed one element at a time rather than being materialized, so memory use does
+/// not scale with the size of the mesh.
+///
+/// # Arguments
+///
+/// * `out`: the sink to write to
+/// * `mesh`: the mesh to write
+/// * `opts`: encoding and header options
+///
+/// returns: `Result<()>`
+pub fn write_ply_to<W: Write>(out: &mut W, mesh: &MeshData3, opts: &PlyWriteOpts) -> Result<()> {
+    let point_cols = point_columns(mesh);
+    let face_cols = face_columns(mesh);
+
+    let mut header = Header::new();
+    header.encoding = if opts.binary {
+        Encoding::BinaryLittleEndian
+    } else {
+        Encoding::Ascii
+    };
+    header.comments = opts.comments.clone();
+
+    let mut vertex = ElementDef::new("vertex".to_string());
+    vertex.count = mesh.point_count();
+    for (name, col) in point_cols.iter() {
+        vertex.properties.insert(
+            name.clone(),
+            PropertyDef::new(
+                name.clone(),
+                PropertyType::Scalar(col.scalar_type(opts.precision)),
+            ),
+        );
+    }
+    header.elements.insert("vertex".to_string(), vertex);
+
+    let mut face = ElementDef::new("face".to_string());
+    face.count = mesh.face_count();
+    face.properties.insert(
+        "vertex_indices".to_string(),
+        PropertyDef::new(
+            "vertex_indices".to_string(),
+            PropertyType::List(ScalarType::UChar, ScalarType::Int),
+        ),
+    );
+    for (name, col) in face_cols.iter() {
+        face.properties.insert(
+            name.clone(),
+            PropertyDef::new(
+                name.clone(),
+                PropertyType::Scalar(col.scalar_type(opts.precision)),
+            ),
+        );
+    }
+    header.elements.insert("face".to_string(), face);
+
+    let writer = Writer::<Row>::new();
+    writer.write_header(out, &header)?;
+
+    let vertex_def = &header.elements["vertex"];
+    let mut row = Row::new();
+    row.cols = point_cols;
+    for i in 0..mesh.point_count() {
+        row.index = i;
+        write_row(&writer, out, &row, vertex_def, header.encoding)?;
+    }
+
+    let face_def = &header.elements["face"];
+    let mut row = Row::new();
+    row.cols = face_cols;
+    for (i, f) in mesh.faces().iter().enumerate() {
+        row.index = i;
+        for (slot, index) in row.face.iter_mut().zip(f.iter()) {
+            *slot = i32::try_from(*index).map_err(|_| {
+                format!(
+                    "Point index {index} does not fit the `int` type PLY faces are written with"
+                )
+            })?;
+        }
+        write_row(&writer, out, &row, face_def, header.encoding)?;
+    }
+
+    Ok(())
+}
+
+/// Write one row in whichever encoding the header declares.
+fn write_row<W: Write>(
+    writer: &Writer<Row>,
+    out: &mut W,
+    row: &Row,
+    def: &ElementDef,
+    encoding: Encoding,
+) -> Result<()> {
+    match encoding {
+        Encoding::Ascii => writer.write_ascii_element(out, row, def)?,
+        Encoding::BinaryLittleEndian => writer.write_little_endian_element(out, row, def)?,
+        Encoding::BinaryBigEndian => writer.write_big_endian_element(out, row, def)?,
+    };
+    Ok(())
+}
+
+/// One column of values to be written, borrowed from the mesh rather than copied.
+///
+/// Multi-component sources carry the index of the component this column represents, which is how a
+/// position or a vector attribute is split across the three PLY properties it needs.
+enum Col<'a> {
+    Point(&'a [Point3], usize),
+    Unit(&'a [UnitVec3], usize),
+    Scalar(&'a [f64]),
+    Label(&'a [u32]),
+    Vector(&'a [Vector3], usize),
+    Color(&'a [[u8; 3]], usize),
+}
+
+impl Col<'_> {
+    /// The PLY scalar type this column is declared as.
+    ///
+    /// Only the floating point columns are affected by the requested precision; labels and colors
+    /// are integers and have a fixed width.
+    fn scalar_type(&self, precision: PlyPrecision) -> ScalarType {
+        match self {
+            Col::Point(..) | Col::Unit(..) | Col::Scalar(..) | Col::Vector(..) => {
+                precision.scalar_type()
+            }
+            Col::Label(..) => ScalarType::UInt,
+            Col::Color(..) => ScalarType::UChar,
+        }
+    }
+
+    /// The value at a row, as a double, for the columns which are declared that way.
+    fn double(&self, i: usize) -> Option<f64> {
+        match self {
+            Col::Point(v, c) => Some(v[i][*c]),
+            Col::Unit(v, c) => Some(v[i][*c]),
+            Col::Scalar(v) => Some(v[i]),
+            Col::Vector(v, c) => Some(v[i][*c]),
+            _ => None,
+        }
+    }
+
+    /// The value at a row, as an unsigned integer, for the columns which are declared that way.
+    fn uint(&self, i: usize) -> Option<u32> {
+        match self {
+            Col::Label(v) => Some(v[i]),
+            _ => None,
+        }
+    }
+
+    /// The value at a row, as a byte, for the columns which are declared that way.
+    fn uchar(&self, i: usize) -> Option<u8> {
+        match self {
+            Col::Color(v, c) => Some(v[i][*c]),
+            _ => None,
+        }
+    }
+}
+
+/// Build the columns for the `vertex` element, in the order they will be declared.
+fn point_columns(mesh: &MeshData3) -> Vec<(String, Col<'_>)> {
+    let mut cols = Vec::new();
+
+    for (name, c) in [("x", 0), ("y", 1), ("z", 2)] {
+        cols.push((name.to_string(), Col::Point(mesh.points(), c)));
+    }
+
+    if let Some(n) = mesh.point_normals() {
+        for (name, c) in [("nx", 0), ("ny", 1), ("nz", 2)] {
+            cols.push((name.to_string(), Col::Unit(n, c)));
+        }
+    }
+
+    if let Some(colors) = mesh.point_colors() {
+        for (name, c) in [("red", 0), ("green", 1), ("blue", 2)] {
+            cols.push((name.to_string(), Col::Color(colors, c)));
+        }
+    }
+
+    if let Some(stdev) = mesh.point_stdev() {
+        cols.push(("stdev".to_string(), Col::Scalar(stdev)));
+    }
+
+    let mut names: Vec<&str> = mesh.attrs().point_attr_names().collect();
+    names.sort_unstable();
+    for name in names {
+        push_open_attr(&mut cols, name, mesh.point_attr(name).unwrap());
+    }
+
+    cols
+}
+
+/// Build the columns for the `face` element, excluding the index list which is always present.
+fn face_columns(mesh: &MeshData3) -> Vec<(String, Col<'_>)> {
+    let mut cols = Vec::new();
+
+    if let Some(colors) = mesh.face_colors() {
+        for (name, c) in [("red", 0), ("green", 1), ("blue", 2)] {
+            cols.push((name.to_string(), Col::Color(colors, c)));
+        }
+    }
+
+    if let Some(labels) = mesh.face_labels() {
+        cols.push(("label".to_string(), Col::Label(labels)));
+    }
+
+    let mut names: Vec<&str> = mesh.attrs().face_attr_names().collect();
+    names.sort_unstable();
+    for name in names {
+        push_open_attr(&mut cols, name, mesh.face_attr(name).unwrap());
+    }
+
+    cols
+}
+
+/// Add the columns needed for one open-map attribute.
+///
+/// Scalars and labels are a single property. Vectors and colors have no single-property form in PLY
+/// and are split across three properties sharing a base name, which the reader folds back together.
+fn push_open_attr<'a>(cols: &mut Vec<(String, Col<'a>)>, name: &str, attr: &'a MeshAttr3) {
+    match attr {
+        MeshAttr3::Scalar(v) => cols.push((name.to_string(), Col::Scalar(v))),
+        MeshAttr3::Label(v) => cols.push((name.to_string(), Col::Label(v))),
+        MeshAttr3::Vector(v) => {
+            for (c, suffix) in VECTOR_SUFFIXES.iter().enumerate() {
+                cols.push((format!("{name}{suffix}"), Col::Vector(v, c)));
+            }
+        }
+        MeshAttr3::Color(v) => {
+            for (c, suffix) in COLOR_SUFFIXES.iter().enumerate() {
+                cols.push((format!("{name}{suffix}"), Col::Color(v, c)));
+            }
+        }
+    }
+}
+
+/// A cursor over the columns, presented to the writer as one row at a time.
+///
+/// Nothing is allocated per row: the columns borrow the mesh, and moving to the next row is just an
+/// index bump. The writer only ever reads through this, so `new` exists to satisfy the trait and is
+/// never used to produce a row that gets written.
+#[derive(Default)]
+struct Row<'a> {
+    cols: Vec<(String, Col<'a>)>,
+    index: usize,
+    face: [i32; 3],
+}
+
+impl Row<'_> {
+    /// Find the column a property name refers to.
+    fn col(&self, name: &str) -> Option<&Col<'_>> {
+        self.cols.iter().find(|(n, _)| n == name).map(|(_, c)| c)
+    }
+}
+
+impl PropertyAccess for Row<'_> {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn get_double(&self, name: &str) -> Option<f64> {
+        self.col(name)?.double(self.index)
+    }
+
+    fn get_float(&self, name: &str) -> Option<f32> {
+        self.col(name)?.double(self.index).map(|v| v as f32)
+    }
+
+    fn get_uint(&self, name: &str) -> Option<u32> {
+        self.col(name)?.uint(self.index)
+    }
+
+    fn get_uchar(&self, name: &str) -> Option<u8> {
+        self.col(name)?.uchar(self.index)
+    }
+
+    fn get_list_int(&self, _name: &str) -> Option<&[i32]> {
+        Some(&self.face)
+    }
 }
 
 // ===============================================================================================
@@ -325,7 +688,12 @@ fn read_points(
         attrs.set_point_stdev(Some(stdev.values.clone()), n)?;
     }
 
-    for column in remaining(&columns, POINT_CONSUMED) {
+    let (composites, taken) = take_composites(&columns);
+    for (name, attr) in composites {
+        attrs.insert_point_attr(&name, attr, n)?;
+    }
+
+    for column in remaining(&columns, POINT_CONSUMED, &taken) {
         attrs.insert_point_attr(&column.name, column.to_attr(), n)?;
     }
 
@@ -394,7 +762,12 @@ fn read_faces(
         attrs.set_face_labels(Some(labels.as_labels()?), n)?;
     }
 
-    for column in remaining(&columns, FACE_CONSUMED) {
+    let (composites, taken) = take_composites(&columns);
+    for (name, attr) in composites {
+        attrs.insert_face_attr(&name, attr, n)?;
+    }
+
+    for column in remaining(&columns, FACE_CONSUMED, &taken) {
         attrs.insert_face_attr(&column.name, column.to_attr(), n)?;
     }
 
@@ -527,12 +900,73 @@ fn take_colors(columns: &[Column], n: usize) -> Option<Vec<[u8; 3]>> {
     Some((0..n).map(|i| [r[i], g[i], b[i]]).collect())
 }
 
-/// List the columns which were not consumed by a typed field.
-fn remaining<'a>(columns: &'a [Column], consumed: &[&str]) -> Vec<&'a Column> {
+/// List the columns which were not consumed by a typed field or folded into a composite.
+fn remaining<'a>(columns: &'a [Column], consumed: &[&str], taken: &[String]) -> Vec<&'a Column> {
     columns
         .iter()
-        .filter(|c| !consumed.contains(&c.name.as_str()))
+        .filter(|c| !consumed.contains(&c.name.as_str()) && !taken.contains(&c.name))
         .collect()
+}
+
+/// Suffix triples which are folded back into a single multi-component attribute.
+///
+/// A `MeshAttr3::Vector` or `MeshAttr3::Color` has no single-property representation in PLY, so it is
+/// written as three properties sharing a base name. Recognizing them on the way back in is what makes
+/// the round trip exact, and it also picks up the same convention when another tool happens to use
+/// it, which is common for directional fields.
+const VECTOR_SUFFIXES: [&str; 3] = ["_x", "_y", "_z"];
+const COLOR_SUFFIXES: [&str; 3] = ["_red", "_green", "_blue"];
+
+/// Fold any complete suffix triple among the columns back into a single multi-component attribute.
+///
+/// Returns the reassembled attributes along with the names of every column they consumed, so those
+/// columns are not also emitted individually.
+fn take_composites(columns: &[Column]) -> (Vec<(String, MeshAttr3)>, Vec<String>) {
+    let mut composites = Vec::new();
+    let mut taken = Vec::new();
+
+    for column in columns.iter() {
+        let Some(base) = column.name.strip_suffix(VECTOR_SUFFIXES[0]) else {
+            continue;
+        };
+
+        let parts: Vec<&Column> = VECTOR_SUFFIXES
+            .iter()
+            .filter_map(|s| take_column(columns, &format!("{base}{s}")))
+            .collect();
+        if parts.len() != 3 {
+            continue;
+        }
+
+        let values = (0..column.values.len())
+            .map(|i| Vector3::new(parts[0].values[i], parts[1].values[i], parts[2].values[i]))
+            .collect();
+        composites.push((base.to_string(), MeshAttr3::Vector(values)));
+        taken.extend(parts.iter().map(|p| p.name.clone()));
+    }
+
+    for column in columns.iter() {
+        let Some(base) = column.name.strip_suffix(COLOR_SUFFIXES[0]) else {
+            continue;
+        };
+
+        let parts: Vec<&Column> = COLOR_SUFFIXES
+            .iter()
+            .filter_map(|s| take_column(columns, &format!("{base}{s}")))
+            .collect();
+        if parts.len() != 3 {
+            continue;
+        }
+
+        let channels: Vec<Vec<u8>> = parts.iter().map(|p| p.as_channel()).collect();
+        let values = (0..column.values.len())
+            .map(|i| [channels[0][i], channels[1][i], channels[2][i]])
+            .collect();
+        composites.push((base.to_string(), MeshAttr3::Color(values)));
+        taken.extend(parts.iter().map(|p| p.name.clone()));
+    }
+
+    (composites, taken)
 }
 
 #[cfg(test)]
@@ -804,6 +1238,332 @@ mod tests {
         );
 
         assert!(result.is_err());
+    }
+
+    // ===========================================================================================
+    // Writing
+    // ===========================================================================================
+
+    /// Round trip a mesh through an in-memory PLY and hand back what comes out.
+    fn round_trip(mesh: &MeshData3, binary: bool) -> Result<MeshData3> {
+        let opts = PlyWriteOpts {
+            binary,
+            ..Default::default()
+        };
+        let mut buffer = Vec::new();
+        write_ply_to(&mut buffer, mesh, &opts)?;
+        read_ply_mesh_data(Cursor::new(buffer))
+    }
+
+    /// A mesh carrying every typed field and one open attribute of each `MeshAttr3` variant.
+    fn loaded_mesh() -> MeshData3 {
+        let mut mesh = MeshData3::new(
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ],
+            vec![[0, 1, 2]],
+        )
+        .unwrap();
+
+        mesh.set_point_normals(Some(vec![UnitVec3::new_normalize(Vector3::z()); 3]))
+            .unwrap();
+        mesh.set_point_colors(Some(vec![[255, 0, 0], [0, 255, 0], [0, 0, 255]]))
+            .unwrap();
+        mesh.set_point_stdev(Some(vec![0.001, 0.002, 0.003]))
+            .unwrap();
+        mesh.set_face_colors(Some(vec![[10, 20, 30]])).unwrap();
+        mesh.set_face_labels(Some(vec![42])).unwrap();
+
+        mesh.insert_point_attr("confidence", MeshAttr3::Scalar(vec![0.25, 0.5, 0.75]))
+            .unwrap();
+        mesh.insert_point_attr("scan_pass", MeshAttr3::Label(vec![1, 2, 3]))
+            .unwrap();
+        mesh.insert_point_attr(
+            "principal_dir",
+            MeshAttr3::Vector(vec![Vector3::x(), Vector3::y(), Vector3::z()]),
+        )
+        .unwrap();
+        mesh.insert_point_attr(
+            "shade",
+            MeshAttr3::Color(vec![[1, 2, 3], [4, 5, 6], [7, 8, 9]]),
+        )
+        .unwrap();
+        mesh.insert_face_attr("quality", MeshAttr3::Scalar(vec![0.875]))
+            .unwrap();
+
+        mesh
+    }
+
+    /// Assert that two meshes are identical in geometry and in every attribute.
+    fn assert_same(a: &MeshData3, b: &MeshData3) {
+        assert_eq!(a.point_count(), b.point_count());
+        assert_eq!(a.faces(), b.faces());
+        for (p, q) in a.points().iter().zip(b.points()) {
+            assert_relative_eq!(p, q, epsilon = 0.0);
+        }
+
+        assert_eq!(a.point_colors(), b.point_colors());
+        assert_eq!(a.point_stdev(), b.point_stdev());
+        assert_eq!(a.face_colors(), b.face_colors());
+        assert_eq!(a.face_labels(), b.face_labels());
+
+        match (a.point_normals(), b.point_normals()) {
+            (Some(x), Some(y)) => {
+                for (p, q) in x.iter().zip(y) {
+                    assert_relative_eq!(p.into_inner(), q.into_inner(), epsilon = 1.0e-15);
+                }
+            }
+            (None, None) => {}
+            _ => panic!("normals present on only one side"),
+        }
+
+        let mut a_names: Vec<&str> = a.attrs().point_attr_names().collect();
+        let mut b_names: Vec<&str> = b.attrs().point_attr_names().collect();
+        a_names.sort_unstable();
+        b_names.sort_unstable();
+        assert_eq!(a_names, b_names, "point attribute names differ");
+
+        for name in a_names {
+            assert_eq!(
+                a.point_attr(name),
+                b.point_attr(name),
+                "point attr '{name}'"
+            );
+        }
+
+        let mut a_names: Vec<&str> = a.attrs().face_attr_names().collect();
+        let mut b_names: Vec<&str> = b.attrs().face_attr_names().collect();
+        a_names.sort_unstable();
+        b_names.sort_unstable();
+        assert_eq!(a_names, b_names, "face attribute names differ");
+
+        for name in a_names {
+            assert_eq!(a.face_attr(name), b.face_attr(name), "face attr '{name}'");
+        }
+    }
+
+    #[test]
+    fn binary_round_trip_preserves_everything() -> Result<()> {
+        let mesh = loaded_mesh();
+        assert_same(&mesh, &round_trip(&mesh, true)?);
+        Ok(())
+    }
+
+    #[test]
+    fn ascii_round_trip_preserves_everything() -> Result<()> {
+        let mesh = loaded_mesh();
+        assert_same(&mesh, &round_trip(&mesh, false)?);
+        Ok(())
+    }
+
+    #[test]
+    fn positions_survive_at_full_double_precision() -> Result<()> {
+        // A value which cannot be represented in f32, to catch any narrowing on the way through.
+        let awkward = 1.0 / 3.0;
+        let mesh = MeshData3::new(
+            vec![
+                Point3::new(awkward, -awkward, 1.0e-9),
+                Point3::new(1.0e9 + awkward, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ],
+            vec![[0, 1, 2]],
+        )?;
+
+        for binary in [true, false] {
+            let back = round_trip(&mesh, binary)?;
+            for (p, q) in mesh.points().iter().zip(back.points()) {
+                // Exactly equal, not merely close.
+                assert_eq!(p, q, "binary = {binary}");
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn a_bare_mesh_round_trips_without_inventing_attributes() -> Result<()> {
+        let mesh = MeshData3::new(
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ],
+            vec![[0, 1, 2]],
+        )?;
+
+        let back = round_trip(&mesh, true)?;
+        assert!(back.attrs().is_empty());
+        assert_same(&mesh, &back);
+
+        Ok(())
+    }
+
+    #[test]
+    fn a_mesh_with_no_faces_round_trips() -> Result<()> {
+        let mut mesh = MeshData3::new(
+            vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+            Vec::new(),
+        )?;
+        mesh.set_point_stdev(Some(vec![0.1, 0.2]))?;
+
+        let back = round_trip(&mesh, true)?;
+        assert_eq!(back.point_count(), 2);
+        assert_eq!(back.face_count(), 0);
+        assert_eq!(back.point_stdev().unwrap(), &[0.1, 0.2]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn multi_component_attributes_are_written_as_suffixed_triples() -> Result<()> {
+        let mesh = loaded_mesh();
+        let opts = PlyWriteOpts {
+            binary: false,
+            ..Default::default()
+        };
+        let mut buffer = Vec::new();
+        write_ply_to(&mut buffer, &mesh, &opts)?;
+        let text = String::from_utf8(buffer).unwrap();
+
+        // A Vector has no single-property form in PLY, so it becomes three doubles.
+        assert!(text.contains("property double principal_dir_x"), "{text}");
+        assert!(text.contains("property double principal_dir_y"), "{text}");
+        assert!(text.contains("property double principal_dir_z"), "{text}");
+
+        // A Color becomes three bytes.
+        assert!(text.contains("property uchar shade_red"), "{text}");
+        assert!(text.contains("property uchar shade_green"), "{text}");
+        assert!(text.contains("property uchar shade_blue"), "{text}");
+
+        Ok(())
+    }
+
+    #[test]
+    fn single_precision_narrows_and_shrinks_the_output() -> Result<()> {
+        let mesh = loaded_mesh();
+
+        let mut wide = Vec::new();
+        write_ply_to(&mut wide, &mesh, &PlyWriteOpts::default())?;
+
+        let narrow_opts = PlyWriteOpts {
+            precision: PlyPrecision::Single,
+            ..Default::default()
+        };
+        let mut narrow = Vec::new();
+        write_ply_to(&mut narrow, &mesh, &narrow_opts)?;
+
+        assert!(
+            narrow.len() < wide.len(),
+            "single precision produced {} bytes against {} for double",
+            narrow.len(),
+            wide.len()
+        );
+
+        // Values come back exactly as the f32 narrowing left them, not as the originals.
+        let back = read_ply_mesh_data(Cursor::new(narrow))?;
+        for (original, returned) in mesh.points().iter().zip(back.points()) {
+            for c in 0..3 {
+                assert_eq!(returned[c], original[c] as f32 as f64);
+            }
+        }
+
+        // Integer-valued attributes are unaffected by the float width.
+        assert_eq!(back.point_colors(), mesh.point_colors());
+        assert_eq!(back.face_labels(), mesh.face_labels());
+        assert_eq!(
+            back.point_attr("scan_pass").unwrap(),
+            mesh.point_attr("scan_pass").unwrap()
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn precision_is_declared_in_the_header() -> Result<()> {
+        let mesh = loaded_mesh();
+
+        for (precision, expected) in [
+            (PlyPrecision::Double, "property double x"),
+            (PlyPrecision::Single, "property float x"),
+        ] {
+            let opts = PlyWriteOpts {
+                binary: false,
+                precision,
+                ..Default::default()
+            };
+            let mut buffer = Vec::new();
+            write_ply_to(&mut buffer, &mesh, &opts)?;
+            let text = String::from_utf8(buffer).unwrap();
+            assert!(text.contains(expected), "expected `{expected}` in:\n{text}");
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn a_file_that_was_f32_at_source_round_trips_at_single_precision() -> Result<()> {
+        // The sample file declares `property float x`, so widening it into f64 gains nothing and
+        // writing it back at single precision is lossless while being about a third smaller.
+        let mesh = load_ply_mesh_data(&get_test_file_path("sample-clip.ply"))?;
+
+        let opts = PlyWriteOpts {
+            precision: PlyPrecision::Single,
+            ..Default::default()
+        };
+        let mut buffer = Vec::new();
+        write_ply_to(&mut buffer, &mesh, &opts)?;
+
+        let back = read_ply_mesh_data(Cursor::new(buffer))?;
+        assert_same(&mesh, &back);
+
+        Ok(())
+    }
+
+    #[test]
+    fn the_default_options_are_binary_and_lossless() {
+        let opts = PlyWriteOpts::default();
+        assert!(opts.binary);
+        assert_eq!(opts.precision, PlyPrecision::Double);
+    }
+
+    #[test]
+    fn comments_are_recorded_in_the_header() -> Result<()> {
+        let opts = PlyWriteOpts {
+            binary: false,
+            comments: vec!["Unit: mm".to_string()],
+            ..Default::default()
+        };
+        let mut buffer = Vec::new();
+        write_ply_to(&mut buffer, &loaded_mesh(), &opts)?;
+
+        let text = String::from_utf8(buffer).unwrap();
+        assert!(text.contains("comment Unit: mm"), "{text}");
+
+        Ok(())
+    }
+
+    #[test]
+    fn a_file_read_from_disk_round_trips_through_the_writer() -> Result<()> {
+        // The ascii bunny carries `confidence` and `intensity`, so this exercises open attributes
+        // that came from a real file rather than ones this test constructed.
+        let mesh = load_ply_mesh_data(&get_test_file_path("bun_zipper_res4.ply"))?;
+        assert_same(&mesh, &round_trip(&mesh, true)?);
+        assert_same(&mesh, &round_trip(&mesh, false)?);
+        Ok(())
+    }
+
+    #[test]
+    fn a_large_binary_file_round_trips() -> Result<()> {
+        let mesh = load_ply_mesh_data(&get_test_file_path("sample-clip.ply"))?;
+        let back = round_trip(&mesh, true)?;
+
+        assert_eq!(back.point_count(), 41706);
+        assert_eq!(back.face_count(), 82275);
+        assert_same(&mesh, &back);
+
+        Ok(())
     }
 
     #[test]

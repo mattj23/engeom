@@ -23,11 +23,13 @@ pub use attributes::MeshAttr3;
 use crate::geom3::mesh::algorithms;
 use crate::{Point3, Result, UnitVec3};
 use std::fmt;
+use std::path::Path;
 
 #[cfg(feature = "ply")]
 use crate::io::load_ply_mesh_data;
 #[cfg(feature = "ply")]
-use std::path::Path;
+use crate::io::PlyWriteOpts;
+use crate::io::write_ply_mesh_data;
 
 /// A container for the raw data of a triangle mesh: a buffer of points, a buffer of faces indexing
 /// into it, and the per-element attributes attached to either domain.
@@ -137,6 +139,23 @@ impl MeshData3 {
     #[cfg(feature = "ply")]
     pub fn load_ply(path: &Path) -> Result<Self> {
         load_ply_mesh_data(path)
+    }
+
+    /// Write this mesh data to a PLY file, preserving every attribute it carries.
+    ///
+    /// If you use the default options, the data will be saved in binary format using double
+    /// floating point precision.  If you wish to alter this, construct the `PlyWriteOpts`
+    /// directly.
+    ///
+    /// # Arguments
+    ///
+    /// * `path`: the path to write to, which is overwritten if it already exists
+    /// * `opts`: encoding and header options
+    ///
+    /// returns: Result<(), Box<dyn Error, Global>>
+    #[cfg(feature = "ply")]
+    pub fn save_ply(&self, path: &Path, opts: &PlyWriteOpts) -> Result<()> {
+        write_ply_mesh_data(path, self, opts)
     }
 }
 
