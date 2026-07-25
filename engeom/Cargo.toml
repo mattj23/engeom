@@ -8,7 +8,7 @@ edition.workspace = true
 [features]
 stl = ["dep:stl_io"]
 three_d = ["dep:three-d"]
-ply = ["dep:serde-ply"]
+ply = ["dep:ply-rs-bw"]
 private_tests = []
 
 [dependencies]
@@ -36,7 +36,7 @@ kdtree = "0.7.0"
 imageproc = "0.25.0"
 colorgrad = "0.7.2"
 
-serde-ply = { version = "0.2.2" , optional = true}
+ply-rs-bw = { version = "4.0.1", optional = true }
 
 [dev-dependencies]
 test-case = "3.3.1"

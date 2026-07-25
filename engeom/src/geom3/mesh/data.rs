@@ -19,6 +19,8 @@ pub use attributes::MeshAttr3;
 
 use crate::{Point3, Result, UnitVec3};
 use std::fmt;
+use std::path::Path;
+use crate::io::load_ply_mesh_data;
 
 /// A container for the raw data of a triangle mesh: a buffer of points, a buffer of faces indexing
 /// into it, and the per-element attributes attached to either domain.
@@ -109,6 +111,25 @@ impl MeshData3 {
             faces: Vec::new(),
             attrs: MeshAttrSet3::empty(),
         }
+    }
+
+    /// Load a triangle mesh from a PLY file, preserving every property the file carries.
+    ///
+    /// The file must have a `vertex` element with `x`, `y`, and `z` properties.
+    ///
+    /// A `face` element is optional but will result in mesh data with points and no faces, which
+    /// is OK for the `MeshData3` type but won't be for `Mesh`. If you attempted to open a PLY
+    /// file that was a save of a point cloud, this is the result you'll get, and you will need
+    /// to verify the number of faces independently.
+    ///
+    /// # Arguments
+    ///
+    /// * `path`: the path to the PLY file
+    ///
+    /// returns: `Result<MeshData3>`
+    #[cfg(feature = "ply")]
+    pub fn load_ply(path: &Path) -> Result<Self> {
+        load_ply_mesh_data(path)
     }
 }
 
