@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Literal
 
-type ResampleEnum = Resample_Count | Resample_Spacing | Resample_MaxSpacing
+type ResampleEnum = Resample.Count | Resample.Spacing | Resample.MaxSpacing
 
 VecDot = Literal["as_is", "abs", "clamp_pos"]
 """Controls how algorithms use a dot product between two direction vectors: ``"as_is"`` (raw value,

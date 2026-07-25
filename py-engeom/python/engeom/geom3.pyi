@@ -439,6 +439,14 @@ class SurfacePoint3:
         """
         ...
 
+    def transformed(self, iso: Iso3) -> SurfacePoint3:
+        """
+        Transform the surface point by an isometry, moving its position and rotating its normal.
+        :param iso: the isometry to apply to the surface point.
+        :return: a new surface point transformed by the given isometry.
+        """
+        ...
+
     def planar_distance(self, point: Point3) -> float:
         """
         Calculate the planar (non-normal) distance between the surface point and a point. This is complementary to the
@@ -2838,6 +2846,15 @@ class Mesh:
         """
         ...
 
+    def get_patch_boundaries(self) -> List[Curve3]:
+        """
+        Extract the boundary loops of the mesh's surface patches, each returned as a closed
+        ``Curve3``.
+        :return: a list of ``Curve3`` objects, one per patch boundary loop.
+        :raises ValueError: if the patch boundaries cannot be computed or converted to curves.
+        """
+        ...
+
     def boundary_curves(self) -> List[Curve3]:
         """
         Extract the boundary curves of the mesh. This will return a list of `Curve3` objects representing the
@@ -3169,6 +3186,15 @@ class CurveStation3:
         """
         Get the index of the previous vertex on the curve, at or before the station.
         :return: the index of the previous vertex on the curve.
+        """
+        ...
+
+    @property
+    def fraction(self) -> float:
+        """
+        Get the fractional position of the station between the previous vertex and the next vertex
+        on the curve, in the range [0, 1].
+        :return: the fraction between the previous and next vertex.
         """
         ...
 

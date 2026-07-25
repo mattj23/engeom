@@ -70,19 +70,6 @@ class LaserProfile:
         """
         ...
 
-    def load_lptf3(self, path: str | Path, take_every: int | None = None,
-                   normal_neighborhood: float | None = None) -> PointCloud:
-        """
-        Load a laser profile from a LPTF3 file.
-
-        :param path: The path to the LPTF3 file.
-        :param take_every: Optional parameter to take every nth row/col from the file.
-        :param normal_neighborhood: Optional parameter to specify the neighborhood size for normal
-          calculation.
-        :return: A PointCloud containing the points from the LPTF3 file.
-        """
-        ...
-
 
 class PanningLaserProfile:
     def __init__(self, laser_line: LaserProfile, y_step: float, steps: int):

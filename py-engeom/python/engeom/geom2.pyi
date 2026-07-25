@@ -437,11 +437,11 @@ class SurfacePoint2:
         """
         ...
 
-    def offset(self, offset: Vector2) -> SurfacePoint2:
+    def transformed(self, iso: Iso2) -> SurfacePoint2:
         """
-        Offset the surface point by a given vector. The normal vector is not affected.
-        :param offset: the vector to offset the surface point by.
-        :return: a new surface point with the position offset by the given vector.
+        Transform the surface point by an isometry, moving its position and rotating its normal.
+        :param iso: the isometry to apply to the surface point.
+        :return: a new surface point transformed by the given isometry.
         """
         ...
 
@@ -819,6 +819,15 @@ class CurveStation2:
         ...
 
     @property
+    def fraction(self) -> float:
+        """
+        Get the fractional position of the station between the previous vertex and the next vertex
+        on the curve, in the range [0, 1].
+        :return: the fraction between the previous and next vertex.
+        """
+        ...
+
+    @property
     def length_along(self) -> float:
         """
         Get the length along the curve to the station, starting at the first vertex of the curve.
@@ -1003,7 +1012,7 @@ class Curve2:
         """
         ...
 
-    def max_distance_in_direction(self, surf_point: SurfacePoint2) -> float:
+    def max_dist_in_direction(self, surf_point: SurfacePoint2) -> float:
         """
         Find the maximum scalar projection of all vertices of the curve onto a surface point.
         :param surf_point: the direction to find the furthest point in.
