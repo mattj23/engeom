@@ -28,7 +28,7 @@ pub use cylinder3::Cylinder3;
 pub use iso3::IsoExtensions3;
 pub use line3::Line3;
 pub use manifold::Manifold1Pos3;
-pub use mesh::{Mesh, MeshCollisionSet, UvMapping};
+pub use mesh::{Mesh, MeshAttr3, MeshAttrSet3, MeshCollisionSet, UvMapping};
 use parry3d_f64::query::Ray;
 pub use plane3::Plane3;
 pub use point_cloud::{PointCloud, PointCloudFeatures, PointCloudKdTree, PointCloudOverlap};

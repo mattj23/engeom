@@ -1,17 +1,11 @@
-//! This module contains the per-element attribute arrays which can be attached to a `MeshData3`.
-//!
-//! Attributes come in two flavors. A small set of first-class attributes (vertex normals, colors,
-//! standard deviations, face colors, and face labels) are stored as typed fields because they are
-//! read directly by algorithms in the library and shouldn't pay for a hash lookup. Everything else
-//! lives in an open, name-keyed map of `MeshAttr3` values, which is what allows arbitrary data
-//! (such as the `quality`, `confidence`, and `intensity` properties conventionally found in ply
-//! files) to survive a round trip through the library.
+//! This module contains the per-element attribute arrays which can be attached to a `MeshData3`
+//! or `Mesh3` through an attribute set.
 
 use crate::common::IndexMask;
 use crate::{Iso3, Result, Vector3};
 
 /// A single per-element attribute array attached to a mesh. The length of the underlying vector is
-/// expected to match either the vertex count or the face count of the mesh it belongs to, but this
+/// expected to match either the point count or the face count of the mesh it belongs to, but this
 /// type does not know which, and does not enforce it. Validation is the responsibility of the
 /// owner, which knows the counts.
 ///
