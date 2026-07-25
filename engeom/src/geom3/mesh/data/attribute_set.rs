@@ -71,6 +71,38 @@ impl MeshAttrSet3 {
             && self.face_attrs.is_empty()
     }
 
+    /// List the names of every per-point attribute which is present, typed fields included.
+    ///
+    /// This is what an operation which cannot supply values for a new point reports back, so the
+    /// caller can see what is standing in the way.
+    pub fn point_attr_labels(&self) -> Vec<&str> {
+        let mut names = Vec::new();
+        if self.point_normals.is_some() {
+            names.push("point_normals");
+        }
+        if self.point_colors.is_some() {
+            names.push("point_colors");
+        }
+        if self.point_stdev.is_some() {
+            names.push("point_stdev");
+        }
+        names.extend(self.point_attrs.keys().map(|k| k.as_str()));
+        names
+    }
+
+    /// List the names of every per-face attribute which is present, typed fields included.
+    pub fn face_attr_labels(&self) -> Vec<&str> {
+        let mut names = Vec::new();
+        if self.face_colors.is_some() {
+            names.push("face_colors");
+        }
+        if self.face_labels.is_some() {
+            names.push("face_labels");
+        }
+        names.extend(self.face_attrs.keys().map(|k| k.as_str()));
+        names
+    }
+
     /// Get the per-point unit normals, if present.
     pub fn point_normals(&self) -> Option<&[UnitVec3]> {
         self.point_normals.as_deref()

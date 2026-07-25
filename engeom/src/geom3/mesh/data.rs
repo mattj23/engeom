@@ -13,14 +13,18 @@
 
 mod attribute_set;
 mod attributes;
+mod editing;
 
 pub use attribute_set::MeshAttrSet3;
 pub use attributes::MeshAttr3;
 
 use crate::{Point3, Result, UnitVec3};
 use std::fmt;
-use std::path::Path;
+
+#[cfg(feature = "ply")]
 use crate::io::load_ply_mesh_data;
+#[cfg(feature = "ply")]
+use std::path::Path;
 
 /// A container for the raw data of a triangle mesh: a buffer of points, a buffer of faces indexing
 /// into it, and the per-element attributes attached to either domain.
