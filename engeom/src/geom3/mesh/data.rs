@@ -18,6 +18,7 @@ mod editing;
 pub use attribute_set::MeshAttrSet3;
 pub use attributes::MeshAttr3;
 
+use crate::geom3::mesh::algorithms;
 use crate::{Point3, Result, UnitVec3};
 use std::fmt;
 
@@ -170,6 +171,27 @@ impl MeshData3 {
     /// Get a reference to the full set of per-element attributes attached to this mesh.
     pub fn attrs(&self) -> &MeshAttrSet3 {
         &self.attrs
+    }
+}
+
+// ===============================================================================================
+// Derived computations
+// ===============================================================================================
+
+impl MeshData3 {
+    /// Compute a normal for every point by averaging the normals of the faces which touch it,
+    /// weighting each by the interior angle of that face at that point.
+    ///
+    /// This always computes from the faces. It does not consult any normals already stored on the
+    /// mesh, so that a caller which wants measured normals in preference to computed ones can make
+    /// that choice explicitly rather than having it made silently here.
+    ///
+    /// See [`crate::geom3::mesh::algorithms::normals`] for why the faces are weighted by angle
+    /// rather than by area, and for what this normal is and is not suitable for.
+    ///
+    /// returns: `Result<Vec<UnitVec3>>`, failing if any point has no well-defined normal
+    pub fn compute_point_normals(&self) -> Result<Vec<UnitVec3>> {
+        algorithms::compute_point_normals(&self.points, &self.faces)
     }
 }
 
