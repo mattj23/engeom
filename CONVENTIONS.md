@@ -139,4 +139,4 @@ wrapped_rust_function(MyVariant.method3(true, n=1000))
 Structs that bundle independent fields (a product type, not a sum type) get an ordinary keyword `__init__` with sensible defaults, rather than being hidden behind factory staticmethods. `Dof6` is the reference example: `Dof6(tx=True, ty=True, ..., rz=True)`.
 
 > [!IMPORTANT]
-> The `.pyi` need to be kept up-to-date with the binding signatures. If I can find a way to automate the checking of this I'll implement it.
+> The `.pyi` need to be kept up-to-date with the binding signatures. I have a simple automated name tester in `py-engeom/python/tests/test_stub_drift.py`, which we'll see if it proves to be useful in the long term.
