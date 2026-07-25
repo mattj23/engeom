@@ -14,6 +14,7 @@
 mod attribute_set;
 mod attributes;
 mod editing;
+mod operations;
 
 pub use attribute_set::MeshAttrSet3;
 pub use attributes::MeshAttr3;
@@ -186,8 +187,8 @@ impl MeshData3 {
     /// mesh, so that a caller which wants measured normals in preference to computed ones can make
     /// that choice explicitly rather than having it made silently here.
     ///
-    /// See [`crate::geom3::mesh::algorithms::normals`] for why the faces are weighted by angle
-    /// rather than by area, and for what this normal is and is not suitable for.
+    /// See [`algorithms::normals`] for why the faces are weighted by angle rather than by area,
+    /// and for what this normal is and is not suitable for.
     ///
     /// returns: `Result<Vec<UnitVec3>>`, failing if any point has no well-defined normal
     pub fn compute_point_normals(&self) -> Result<Vec<UnitVec3>> {
