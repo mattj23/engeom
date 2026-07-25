@@ -15,6 +15,7 @@ mod attribute_set;
 mod attributes;
 mod editing;
 mod operations;
+mod subsets;
 
 pub use attribute_set::MeshAttrSet3;
 pub use attributes::MeshAttr3;
