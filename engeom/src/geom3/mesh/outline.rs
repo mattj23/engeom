@@ -1,6 +1,6 @@
 //! This module exists to help generate a visual outline of a mesh
 
-use super::Mesh;
+use super::Mesh3;
 use crate::common::points::{fill_gaps, mid_point};
 use crate::geom3::mesh::edges::{edge_key, naive_edges, unique_edges};
 use crate::{Point3, UnitVec3};
@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
 type CEdgeTypes = (HashSet<[u32; 2]>, HashMap<[u32; 2], [u32; 2]>);
 
-impl Mesh {
+impl Mesh3 {
     pub fn visual_outline(
         &self,
         facing: UnitVec3,

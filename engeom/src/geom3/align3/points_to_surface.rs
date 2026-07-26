@@ -250,7 +250,7 @@ mod tests {
     use crate::common::points::{clone_points, mean_point, transform_points};
     use crate::na::{Translation3, UnitQuaternion};
     use crate::tests::engine_blade;
-    use crate::{Mesh, SelectOp, Selection, Vector3};
+    use crate::{Mesh3, SelectOp, Selection, Vector3};
     use approx::assert_relative_eq;
     use std::f64::consts::PI;
 
@@ -258,7 +258,7 @@ mod tests {
     fn simple_box_disturbed() -> Result<()> {
         // This test is to verify that a simple test against a box that doesn't have large rotations
         // produces a result that is roughly the inverse of the disturbance
-        let mesh = Mesh::create_box(10.0, 5.0, 2.0, false);
+        let mesh = Mesh3::create_box(10.0, 5.0, 2.0, false);
         let points = clone_points(&mesh.sample_poisson(0.1, None));
         let disturb = Iso3::from_parts(
             Translation3::new(3.0, 2.0, 1.0),

@@ -2,7 +2,7 @@
 //! parry3d implementation because I've found it to get stuck in infinite loops under certain
 //! conditions.
 
-use super::Mesh;
+use super::Mesh3;
 use crate::geom3::Aabb3;
 use crate::geom3::mesh::edges::edge_key;
 use crate::{Curve3, Line3, Plane3, Point3, Result, Vector3};
@@ -10,7 +10,7 @@ use parry3d_f64::partitioning::TraversalAction;
 use parry3d_f64::shape::TriMesh;
 use std::collections::{HashMap, HashSet};
 
-impl Mesh {
+impl Mesh3 {
     pub fn section_with_plane(
         &self,
         plane: &Plane3,
@@ -226,7 +226,7 @@ mod tests {
 
     #[test]
     fn candidates_box_has_eight() {
-        let mesh = Mesh::create_box(2.0, 2.0, 2.0, false);
+        let mesh = Mesh3::create_box(2.0, 2.0, 2.0, false);
         let plane = Plane3::new(Vector3::z_axis(), 0.0);
         let candidates = candidate_faces(&mesh.shape, &plane);
         assert_eq!(candidates.len(), 8);
@@ -240,7 +240,7 @@ mod tests {
             Point3::new(0.0, 1.0, 0.0),
         ];
         let faces = vec![[0, 1, 2]];
-        let mesh = Mesh::new(vertices, faces, false);
+        let mesh = Mesh3::new(vertices, faces, false);
         let plane = Plane3::new(Vector3::z_axis(), 0.0);
         let candidates = candidate_faces(&mesh.shape, &plane);
         assert!(candidates.is_empty());
@@ -248,7 +248,7 @@ mod tests {
 
     #[test]
     fn single_loop() -> Result<()> {
-        let mesh = Mesh::create_box(2.0, 2.0, 2.0, false);
+        let mesh = Mesh3::create_box(2.0, 2.0, 2.0, false);
 
         let curves = mesh.section_with_plane(&Plane3::xy(), None)?;
 

@@ -48,7 +48,7 @@
 //!   `MeshAttrSet3` has no per-corner domain yet.
 
 use crate::geom3::mesh::data::{MeshAttr3, MeshAttrSet3, MeshData3};
-use crate::{Mesh, Point3, Result, UnitVec3, Vector3};
+use crate::{Mesh3, Point3, Result, UnitVec3, Vector3};
 use ply_rs_bw::parser::{Parser, Reader};
 use ply_rs_bw::ply::{
     BeginList, ElementDef, Encoding, Header, PropertyAccess, PropertyAccessResult, PropertyDef,
@@ -117,7 +117,7 @@ pub fn read_ply_mesh_data<R: BufRead>(source: R) -> Result<MeshData3> {
     MeshData3::new_with_attrs(points, faces, attrs)
 }
 
-/// Load a triangle mesh from a PLY file into the accelerated `Mesh` type.
+/// Load a triangle mesh from a PLY file into the accelerated `Mesh3` type.
 ///
 /// This is a temporary bridge which exists so that callers written against the old reader keep
 /// working. It will be replaced by the conversion from `MeshData3`, at which point every attribute
@@ -127,10 +127,10 @@ pub fn read_ply_mesh_data<R: BufRead>(source: R) -> Result<MeshData3> {
 ///
 /// * `path`: the path to the PLY file
 ///
-/// returns: `Result<Mesh>`
-pub fn load_ply_mesh(path: &Path) -> Result<Mesh> {
+/// returns: `Result<Mesh3>`
+pub fn load_ply_mesh(path: &Path) -> Result<Mesh3> {
     let data = load_ply_mesh_data(path)?;
-    Ok(Mesh::new(
+    Ok(Mesh3::new(
         data.points().to_vec(),
         data.faces().to_vec(),
         false,

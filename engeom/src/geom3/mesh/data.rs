@@ -1,14 +1,14 @@
 //! This module contains `MeshData3`, a plain container for triangle mesh data and its associated
-//! per-element attributes.  Mesh information is stored in the common point (vertex) and face
+//! per-element attributes.  Mesh3 information is stored in the common point (vertex) and face
 //! (triangle) buffer representation.
 //!
-//! Unlike `Mesh`, which is built around a `parry3d` `TriMesh` and pays for a BVH build on every
+//! Unlike `Mesh3`, which is built around a `parry3d` `TriMesh` and pays for a BVH build on every
 //! construction, `MeshData3` holds nothing but the point and face buffers and whatever attributes
 //! are attached to them. It is the type to reach for when actively building or modifying mesh data
 //! in place, or when working directly with serialization/deserialization. Convert it into the
-//! accelerated `Mesh` or the half-edge representation to work with it in those contexts.
+//! accelerated `Mesh3` or the half-edge representation to work with it in those contexts.
 //!
-//! There are convenience construction methods on `Mesh` which transparently pass-through to this
+//! There are convenience construction methods on `Mesh3` which transparently pass-through to this
 //! struct for ergonomic reasons.
 
 mod attribute_set;
@@ -21,7 +21,9 @@ pub use attribute_set::MeshAttrSet3;
 pub use attributes::MeshAttr3;
 
 use crate::geom3::mesh::algorithms;
-use crate::geom3::mesh::algorithms::{compute_face_offset_points, OffsetOpts, compute_normal_displaced_points};
+use crate::geom3::mesh::algorithms::{
+    OffsetOpts, compute_face_offset_points, compute_normal_displaced_points,
+};
 use crate::{Point3, Result, UnitVec3};
 use std::fmt;
 
@@ -51,7 +53,7 @@ use std::path::Path;
 /// - You are doing something custom with serialization or deserialization
 ///
 /// If you need to perform spatial queries or do the types of edits requiring a half-edge
-/// representation, you should use the `Mesh` and `HalfEdgeMesh` types, respectively. The
+/// representation, you should use the `Mesh3` and `HalfEdgeMesh` types, respectively. The
 /// `MeshData3` type has consuming `TryFrom<T>` and `TryInto<T>` implementations for these types.
 ///
 /// # Invariants
@@ -128,7 +130,7 @@ impl MeshData3 {
     /// The file must have a `vertex` element with `x`, `y`, and `z` properties.
     ///
     /// A `face` element is optional but will result in mesh data with points and no faces, which
-    /// is OK for the `MeshData3` type but won't be for `Mesh`. If you attempted to open a PLY
+    /// is OK for the `MeshData3` type but won't be for `Mesh3`. If you attempted to open a PLY
     /// file that was a save of a point cloud, this is the result you'll get, and you will need
     /// to verify the number of faces independently.
     ///
@@ -231,7 +233,7 @@ impl MeshData3 {
             format,
             lost.join(", ")
         )
-            .into())
+        .into())
     }
 }
 
@@ -334,7 +336,7 @@ impl MeshData3 {
     /// returns: Result<(), Box<dyn Error, Global>>
     pub fn offset_points_in_place(&mut self, distance: f64) -> Result<()> {
         if let Some(normals) = self.attrs.point_normals() {
-            self.points = compute_normal_displaced_points(&self.points, &normals, distance)?;
+            self.points = compute_normal_displaced_points(&self.points, normals, distance)?;
         } else {
             let local_normals = self.compute_point_normals()?;
             self.points = compute_normal_displaced_points(&self.points, &local_normals, distance)?;
@@ -540,7 +542,7 @@ fn check_face_indices(faces: &[[u32; 3]], n_points: usize) -> Result<()> {
                 return Err(format!(
                     "Face {i} refers to point {index}, but the mesh has only {n_points} points"
                 )
-                    .into());
+                .into());
             }
         }
     }
@@ -726,7 +728,10 @@ mod tests {
         let mut mesh = MeshData3::new(points, faces).unwrap();
         let before = mesh.points().to_vec();
 
-        assert!(mesh.offset_faces_in_place(1.0, &OffsetOpts::default()).is_err());
+        assert!(
+            mesh.offset_faces_in_place(1.0, &OffsetOpts::default())
+                .is_err()
+        );
         assert_eq!(mesh.points(), before.as_slice());
     }
 }

@@ -5,7 +5,7 @@ use crate::common::PathPair;
 use engeom::io::{
     DiffTanModel, Lptf3DsParams, Lptf3Load, load_lptf3_mesh_data, read_mesh_stl, write_tc_mesh_file,
 };
-use engeom::{Iso3, Mesh, Result};
+use engeom::{Iso3, Mesh3, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -58,7 +58,7 @@ fn run_test_case(manifest: &Manifest, dir: &PathPair) -> Result<()> {
         assert_eq!(stdev.len(), mesh_data.point_count());
 
         let (points, faces, _) = mesh_data.into_parts();
-        let mesh = Mesh::new(points, faces, false);
+        let mesh = Mesh3::new(points, faces, false);
 
         let output_path = dir.result().join(&item.file_name).with_extension("tcmesh");
         write_tc_mesh_file(&output_path, &mesh, 1e-5)?;

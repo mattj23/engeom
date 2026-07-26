@@ -16,7 +16,7 @@
 //!
 //! ## Alignment mesh container
 //!
-//! [`AlignmentMesh`] wraps a `&Mesh` together with optional per-vertex uncertainty values, an
+//! [`AlignmentMesh`] wraps a `&Mesh3` together with optional per-vertex uncertainty values, an
 //! initial transform, and a list of [`MeshWeight`] providers.  It is used by the multi-mesh bundle
 //! adjustment solver (`multi_mesh`) where each entity needs its own configuration.
 //!
@@ -36,11 +36,11 @@ use crate::common::vec_f64::mean_and_stdev;
 use crate::common::{IndexMask, PCoords};
 use crate::geom3::align3::{AlignSurfMatch3, SurfaceTarget3};
 use crate::geom3::mesh::MeshSurfPoint;
-use crate::{Iso3, KdTree3, Mesh, SelectOp, Selection, SvdBasis3, To2D};
+use crate::{Iso3, KdTree3, Mesh3, SelectOp, Selection, SvdBasis3, To2D};
 use parry2d_f64::transformation::convex_hull;
 use std::f64::consts::PI;
 
-impl SurfaceTarget3 for Mesh {
+impl SurfaceTarget3 for Mesh3 {
     fn align_surf_closest_to(&self, p: &impl PCoords<3>) -> AlignSurfMatch3 {
         let m = self.surf_closest_to(p);
         AlignSurfMatch3::new(m.point(), m.normal(), true, 1.0)
@@ -56,7 +56,7 @@ impl SurfaceTarget3 for Mesh {
 /// alignment process, such as the uncertainty of the mesh vertex points, an initial alignment,
 /// and methods of applying weights to the sample points.
 pub struct AlignmentMesh<'a> {
-    pub mesh: &'a Mesh,
+    pub mesh: &'a Mesh3,
     pub uncertainty: Option<&'a [f64]>,
     pub initial: Option<&'a Iso3>,
     pub weights: Option<&'a [Box<dyn MeshWeight + Sync>]>,
@@ -79,7 +79,7 @@ impl<'a> AlignmentMesh<'a> {
     ///   weights of the alignment points _once_ upon initialization. These weights will be combined
     ///   and will then scale the residual calculated at the associated alignment point.
     pub fn new(
-        mesh: &'a Mesh,
+        mesh: &'a Mesh3,
         uncertainty: Option<&'a [f64]>,
         initial: Option<&'a Iso3>,
         weights: Option<&'a [Box<dyn MeshWeight + Sync>]>,
@@ -150,7 +150,7 @@ impl MeshWeight for FaceIndexWeight {
 
 #[derive(Clone)]
 pub struct NearMeshWeight {
-    mesh: Mesh,
+    mesh: Mesh3,
     weight: f64,
     max_dist: f64,
     max_angle: f64,
@@ -165,7 +165,7 @@ impl NearMeshWeight {
     /// * `weight`: The weight to apply to the mesh points.
     /// * `max_dist`: The maximum distance to consider for the weight.
     /// * `max_angle`: The maximum angle between normals to consider for the weight.
-    pub fn new(mesh: Mesh, weight: f64, max_dist: f64, max_angle: f64) -> Self {
+    pub fn new(mesh: Mesh3, weight: f64, max_dist: f64, max_angle: f64) -> Self {
         Self {
             mesh,
             weight,
@@ -277,8 +277,8 @@ impl GAPParams {
 }
 
 pub fn simple_alignment_points(
-    test_mesh: &Mesh,
-    ref_mesh: &Mesh,
+    test_mesh: &Mesh3,
+    ref_mesh: &Mesh3,
     spacing: f64,
 ) -> Vec<MeshSurfPoint> {
     let overlap = test_mesh
@@ -333,8 +333,8 @@ pub fn simple_alignment_points(
 ///
 /// returns: Vec<MeshSurfPoint, Global>
 pub fn generate_alignment_points(
-    test_mesh: &Mesh,
-    ref_mesh: &Mesh,
+    test_mesh: &Mesh3,
+    ref_mesh: &Mesh3,
     iso: &Iso3,
     params: &GAPParams,
 ) -> Vec<MeshSurfPoint> {
@@ -390,7 +390,7 @@ pub fn generate_alignment_points(
 fn smpl_check(
     check: &MeshSurfPoint,
     neighbors: &[MeshSurfPoint],
-    reference: &Mesh,
+    reference: &Mesh3,
     iso: &Iso3,
     params: &GAPParams,
 ) -> (bool, f64) {

@@ -39,11 +39,11 @@ impl SimpleViewer {
     /// # Examples
     ///
     /// ```no_run
-    /// use engeom::{Point3, Mesh};
+    /// use engeom::{Point3, Mesh3};
     /// use engeom::td::{SimpleViewer, ToCpuMesh, cpu_mat};
     ///
     /// let p0 = Point3::new(5.0, 0.0, 0.0);
-    /// let m0 = Mesh::create_capsule(&(-p0), &p0, 1.0, 100, 100);
+    /// let m0 = Mesh3::create_capsule(&(-p0), &p0, 1.0, 100, 100);
     /// let mut view = SimpleViewer::new("Demo", None).unwrap();
     /// view.add_mesh(m0.to_cpu_mesh(), cpu_mat(150, 150, 150, 255, 0.7, 0.8));
     /// view.display().unwrap();
@@ -105,10 +105,10 @@ impl SimpleViewer {
             return Ok(()); // Not enough points to create a polyline
         }
 
-        let mut mesh = crate::Mesh::create_cylinder_between(&points[0], &points[1], thickness, 6);
+        let mut mesh = crate::Mesh3::create_cylinder_between(&points[0], &points[1], thickness, 6);
         for i in 2..points.len() {
             let next_mesh =
-                crate::Mesh::create_cylinder_between(&points[i - 1], &points[i], thickness, 6);
+                crate::Mesh3::create_cylinder_between(&points[i - 1], &points[i], thickness, 6);
             mesh.append(&next_mesh)?
         }
 

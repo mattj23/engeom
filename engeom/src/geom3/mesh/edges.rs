@@ -1,6 +1,6 @@
-//! Mesh edge structure
+//! Mesh3 edge structure
 
-use super::Mesh;
+use super::Mesh3;
 use crate::{Point3, Result};
 use std::collections::{HashMap, HashSet};
 
@@ -8,7 +8,7 @@ type EdgesFacesLoops = (Vec<[u32; 2]>, Vec<[u32; 3]>, Vec<Vec<u32>>);
 
 pub struct MeshEdges<'a> {
     /// The original mesh associated with the edge structure
-    mesh: &'a Mesh,
+    mesh: &'a Mesh3,
 
     /// A list of edges in the mesh. Each edge consists of two indices into the `vertices` list,
     /// which are the two vertices of the edge. The order of the vertices in the edge is not
@@ -30,7 +30,7 @@ pub struct MeshEdges<'a> {
 }
 
 impl<'a> MeshEdges<'a> {
-    pub fn mesh(&self) -> &Mesh {
+    pub fn mesh(&self) -> &Mesh3 {
         self.mesh
     }
 
@@ -44,7 +44,7 @@ impl<'a> MeshEdges<'a> {
         self.mesh.shape.indices()
     }
 
-    pub fn new(mesh: &'a Mesh) -> Result<Self> {
+    pub fn new(mesh: &'a Mesh3) -> Result<Self> {
         let (edges, face_edges, boundary_loops) = identify_edges(mesh.faces())?;
 
         let edge_lengths = edges

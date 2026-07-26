@@ -2,7 +2,7 @@
 
 use crate::common::points::{dist, mean_point, triangle_area};
 use crate::common::{IndexMask, PCoords};
-use crate::{Mesh, Point3, SelectOp, Selection, SurfacePoint3, UnitVec3, Vector3};
+use crate::{Mesh3, Point3, SelectOp, Selection, SurfacePoint3, UnitVec3, Vector3};
 use crate::{Plane3, Result};
 use itertools::Itertools;
 use parry3d_f64::query::PointQuery;
@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
 
 pub struct TriangleFilter<'a> {
-    mesh: &'a Mesh,
+    mesh: &'a Mesh3,
     mask: IndexMask,
 }
 
@@ -64,7 +64,7 @@ impl TriangleFilter<'_> {
     }
 
     /// Create a new mesh from the filtered indices
-    pub fn create_mesh(self) -> Mesh {
+    pub fn create_mesh(self) -> Mesh3 {
         self.mesh.create_from_mask(&self.mask).unwrap()
     }
 
@@ -257,7 +257,7 @@ impl TriangleFilter<'_> {
     /// ```
     pub fn near_mesh(
         self,
-        other: &Mesh,
+        other: &Mesh3,
         all_points: bool,
         distance_tol: f64,
         planar_tol: Option<f64>,
@@ -385,7 +385,7 @@ impl TriangleFilter<'_> {
 
     pub fn faces_overlap(
         self,
-        other: &Mesh,
+        other: &Mesh3,
         angle_tol: f64,
         distance_tol: f64,
         mode: SelectOp,
@@ -469,7 +469,7 @@ impl TriangleFilter<'_> {
     }
 }
 
-impl Mesh {
+impl Mesh3 {
     /// Create a new mask with the same length as the number of faces in the mesh, initialized to
     /// the specified value.
     pub fn new_face_mask(&self, value: bool) -> IndexMask {
@@ -558,7 +558,7 @@ impl Mesh {
     /// * `mask`: a mask of face indices to be part of the new mesh. Must have the same length as
     ///   the number of faces in the mesh, or the function will return an error.
     ///
-    /// returns: Result<Mesh, Box<dyn Error, Global>>
+    /// returns: Result<Mesh3, Box<dyn Error, Global>>
     pub fn create_from_mask(&self, mask: &IndexMask) -> Result<Self> {
         let (new_verts, new_faces) = self.faces_verts_from_mask(mask)?;
         Ok(Self::new(new_verts, new_faces, false))
@@ -575,14 +575,14 @@ impl Mesh {
     ///   original mesh. There cannot be any duplicate indices, or the function will return a
     ///   non-manifold mesh.
     ///
-    /// returns: Mesh
+    /// returns: Mesh3
     ///
     /// # Examples
     ///
     /// ```
     /// use std::f64::consts::PI;
-    /// use engeom::{Mesh, Vector3, SelectOp, Selection};
-    /// let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+    /// use engeom::{Mesh3, Vector3, SelectOp, Selection};
+    /// let mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
     /// let indices = mesh.face_select(Selection::None)
     ///     .facing(&Vector3::z(), PI / 2.0, SelectOp::Add)
     ///     .collect_indices();
@@ -669,8 +669,8 @@ impl Mesh {
 }
 
 struct MeshNearCheck<'a> {
-    this_mesh: &'a Mesh,
-    ref_mesh: &'a Mesh,
+    this_mesh: &'a Mesh3,
+    ref_mesh: &'a Mesh3,
     checked: HashMap<u32, bool>,
     distance_tol: f64,
     planar_tol: Option<f64>,
@@ -679,8 +679,8 @@ struct MeshNearCheck<'a> {
 
 impl<'a> MeshNearCheck<'a> {
     fn new(
-        this_mesh: &'a Mesh,
-        ref_mesh: &'a Mesh,
+        this_mesh: &'a Mesh3,
+        ref_mesh: &'a Mesh3,
         distance_tol: f64,
         planar_tol: Option<f64>,
         angle_tol: Option<f64>,
@@ -753,7 +753,7 @@ mod tests {
 
     #[test]
     fn test_triangles_facing() {
-        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+        let mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let selection = mesh
             .face_select(Selection::None)
             .facing(&Vector3::z(), PI / 2.0, Add);

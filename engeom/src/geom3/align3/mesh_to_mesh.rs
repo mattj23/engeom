@@ -2,14 +2,14 @@ use crate::common::DistMode;
 use crate::geom3::Align3;
 use crate::geom3::align3::GAPParams;
 use crate::geom3::align3::mesh::generate_alignment_points;
-use crate::{Iso3, Mesh, Result};
+use crate::{Iso3, Mesh3, Result};
 
 /// Perform an iterative alignment of one mesh to another. Each iteration is a full
 /// Levenberg-Marquardt optimization of the alignment of a set of specific points sampled from the
 /// moving mesh, with the set of points being updated each iteration based on where the previous
 /// alignment ended.
 ///
-/// The alignment points are chosen using the `sample_alignment_candidates` method of the `Mesh`
+/// The alignment points are chosen using the `sample_alignment_candidates` method of the `Mesh3`
 /// struct, which performs an extremely selective sampling of points on the surface of the moving
 /// mesh at areas of low curvature, away from corners and edges, and with projections onto the
 /// reference mesh that have the same restrictive properties. Lastly, points with a distance more
@@ -33,7 +33,7 @@ use crate::{Iso3, Mesh, Result};
 /// * `sample_spacing`: a Poisson disk sampling spacing used to pick the initial candidates for the
 ///   alignment points. The spacing will then be used to derive a set of physical limits for the
 ///   quality of the alignment candidates. See the `sample_alignment_candidates` method of the
-///   `Mesh` struct for more details.
+///   `Mesh3` struct for more details.
 /// * `initial`: an initial guess for the alignment transform
 /// * `mode`: the distance mode to use for the alignment. This can be either `DistMode::ToPoint` or
 ///   `DistMode::ToPlane`. The two are identical except for cases where an alignment point drifts
@@ -43,8 +43,8 @@ use crate::{Iso3, Mesh, Result};
 ///
 /// returns: Result<Alignment<Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
 pub fn mesh_to_mesh_iterative(
-    moving: &Mesh,
-    reference: &Mesh,
+    moving: &Mesh3,
+    reference: &Mesh3,
     initial: &Iso3,
     _mode: DistMode,
     _max_iter: usize,

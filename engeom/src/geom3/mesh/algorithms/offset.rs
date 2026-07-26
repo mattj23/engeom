@@ -529,10 +529,14 @@ mod tests {
     /// grow the radius by `d` everywhere.
     #[test]
     fn a_sphere_grows_by_the_offset_distance() -> Result<()> {
-        let sphere = crate::Mesh::create_sphere(10.0, 64, 64);
+        let sphere = crate::Mesh3::create_sphere(10.0, 64, 64);
         let d = 1.5;
-        let moved =
-            compute_face_offset_points(sphere.vertices(), sphere.faces(), d, &OffsetOpts::default())?;
+        let moved = compute_face_offset_points(
+            sphere.vertices(),
+            sphere.faces(),
+            d,
+            &OffsetOpts::default(),
+        )?;
 
         let mut worst: f64 = 0.0;
         for p in moved.iter() {
@@ -745,7 +749,9 @@ mod tests {
     fn invalid_arguments_are_rejected() {
         let (points, faces) = cube();
 
-        assert!(compute_face_offset_points(&points, &faces, f64::NAN, &OffsetOpts::default()).is_err());
+        assert!(
+            compute_face_offset_points(&points, &faces, f64::NAN, &OffsetOpts::default()).is_err()
+        );
         assert!(
             compute_face_offset_points(
                 &points,

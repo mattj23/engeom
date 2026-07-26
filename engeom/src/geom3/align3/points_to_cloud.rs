@@ -134,11 +134,11 @@ pub fn points_to_cloud(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geom3::{Mesh, PointCloud};
+    use crate::geom3::{Mesh3, PointCloud};
     use approx::assert_relative_eq;
 
-    fn rotated_box_mesh() -> Mesh {
-        let mut box_mesh = Mesh::create_box(10.0, 5.0, 5.0, false);
+    fn rotated_box_mesh() -> Mesh3 {
+        let mut box_mesh = Mesh3::create_box(10.0, 5.0, 5.0, false);
         let adjust =
             Iso3::rotation(Vector3::new(0.7, 0.7, 0.7)) * Iso3::translation(-5.0, -2.5, -2.5);
         box_mesh.transform_by(&adjust);

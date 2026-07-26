@@ -2,7 +2,7 @@ use crate::common::{DiscreteDomain, IndexMask};
 use crate::io::lptf3::{Lptf3Loader, Lptf3UncertaintyModel};
 use crate::io::{Lptf3DsParams, Lptf3Load, load_lptf3_mesh_data};
 use crate::sensors::LaserProfileGeom;
-use crate::{Mesh, Point3, PointCloud, Result, SurfacePoint3, UnitVec3};
+use crate::{Mesh3, Point3, PointCloud, Result, SurfacePoint3, UnitVec3};
 use parry3d_f64::query::{Ray, RayCast};
 use rayon::prelude::*;
 use std::path::Path;
@@ -36,7 +36,7 @@ pub fn load_lptf3_comprehensive(
     let base_params = Lptf3Load::SmoothSample(Lptf3DsParams::new(8, 1.5, 1.0, 1.0));
     let (base_points, base_faces, _) =
         load_lptf3_mesh_data(file_path, base_params, None)?.into_parts();
-    let mesh = Mesh::new(base_points, base_faces, false);
+    let mesh = Mesh3::new(base_points, base_faces, false);
 
     let mut loader = Lptf3Loader::new(file_path, None, false)?;
 

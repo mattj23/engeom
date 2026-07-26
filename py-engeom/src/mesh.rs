@@ -20,7 +20,7 @@ use std::path::PathBuf;
 
 #[pyclass(from_py_object, module = "engeom.geom3")]
 pub struct Mesh {
-    inner: engeom::Mesh,
+    inner: engeom::Mesh3,
     vertices: Option<Py<PyArray2<f64>>>,
     faces: Option<Py<PyArray2<u32>>>,
     face_normals: Option<Py<PyArray2<f64>>>,
@@ -35,11 +35,11 @@ impl Mesh {
         self.vertex_normals = None;
     }
 
-    pub fn get_inner(&self) -> &engeom::Mesh {
+    pub fn get_inner(&self) -> &engeom::Mesh3 {
         &self.inner
     }
 
-    pub fn from_inner(inner: engeom::Mesh) -> Self {
+    pub fn from_inner(inner: engeom::Mesh3) -> Self {
         Self {
             inner,
             vertices: None,
@@ -68,7 +68,7 @@ impl Mesh {
     ) -> PyResult<Self> {
         let vertices = array_to_points3(&vertices.as_array())?;
         let faces = array_to_faces(&faces.as_array())?;
-        let mesh = engeom::Mesh::new_with_options(
+        let mesh = engeom::Mesh3::new_with_options(
             vertices,
             faces,
             false,
@@ -446,38 +446,38 @@ impl Mesh {
 
     #[staticmethod]
     fn create_box(length: f64, width: f64, height: f64) -> Self {
-        let mesh = engeom::Mesh::create_box(length, width, height, true);
+        let mesh = engeom::Mesh3::create_box(length, width, height, true);
         Self::from_inner(mesh)
     }
 
     #[staticmethod]
     fn create_cylinder(radius: f64, height: f64, steps: usize) -> Self {
-        let mesh = engeom::Mesh::create_cylinder(radius, height, steps);
+        let mesh = engeom::Mesh3::create_cylinder(radius, height, steps);
         Self::from_inner(mesh)
     }
 
     #[staticmethod]
     fn create_sphere(radius: f64, n_theta: usize, n_phi: usize) -> Self {
-        let mesh = engeom::Mesh::create_sphere(radius, n_theta, n_phi);
+        let mesh = engeom::Mesh3::create_sphere(radius, n_theta, n_phi);
         Self::from_inner(mesh)
     }
 
     #[staticmethod]
     fn create_cone(radius: f64, height: f64, steps: usize) -> Self {
-        let mesh = engeom::Mesh::create_cone(radius, height, steps);
+        let mesh = engeom::Mesh3::create_cone(radius, height, steps);
         Self::from_inner(mesh)
     }
 
     #[staticmethod]
     fn create_circle(radius: f64, segments: usize) -> Self {
-        let mesh = engeom::Mesh::create_circle(radius, segments);
+        let mesh = engeom::Mesh3::create_circle(radius, segments);
         Self::from_inner(mesh)
     }
 
     #[staticmethod]
     fn create_capsule(p0: Point3, p1: Point3, radius: f64, n_theta: usize, n_phi: usize) -> Self {
         let mesh =
-            engeom::Mesh::create_capsule(p0.get_inner(), p1.get_inner(), radius, n_theta, n_phi);
+            engeom::Mesh3::create_capsule(p0.get_inner(), p1.get_inner(), radius, n_theta, n_phi);
         Self::from_inner(mesh)
     }
 
@@ -491,7 +491,7 @@ impl Mesh {
         up: Option<Vector3>,
     ) -> PyResult<Self> {
         let up = up.map_or(engeom::Vector3::z(), |v| *v.get_inner());
-        let mesh = engeom::Mesh::create_rect_beam_between(
+        let mesh = engeom::Mesh3::create_rect_beam_between(
             p0.get_inner(),
             p1.get_inner(),
             width,
@@ -510,7 +510,7 @@ impl Mesh {
         steps: usize,
     ) -> PyResult<Self> {
         let mesh =
-            engeom::Mesh::create_cylinder_between(p0.get_inner(), p1.get_inner(), radius, steps);
+            engeom::Mesh3::create_cylinder_between(p0.get_inner(), p1.get_inner(), radius, steps);
         Ok(Self::from_inner(mesh))
     }
 
@@ -528,7 +528,7 @@ impl Mesh {
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
         let (points, faces, _) = mesh_data.into_parts();
-        Ok(Self::from_inner(engeom::Mesh::new(points, faces, false)))
+        Ok(Self::from_inner(engeom::Mesh3::new(points, faces, false)))
     }
 
     #[staticmethod]
@@ -549,19 +549,19 @@ impl Mesh {
 
     #[staticmethod]
     fn stanford_bunny_res4() -> Self {
-        let mesh = engeom::Mesh::stanford_bunny_res4();
+        let mesh = engeom::Mesh3::stanford_bunny_res4();
         Self::from_inner(mesh)
     }
 
     #[staticmethod]
     fn stanford_bunny_res3() -> Self {
-        let mesh = engeom::Mesh::stanford_bunny_res3();
+        let mesh = engeom::Mesh3::stanford_bunny_res3();
         Self::from_inner(mesh)
     }
 
     #[staticmethod]
     fn stanford_bunny_res2() -> Self {
-        let mesh = engeom::Mesh::stanford_bunny_res2();
+        let mesh = engeom::Mesh3::stanford_bunny_res2();
         Self::from_inner(mesh)
     }
 }

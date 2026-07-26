@@ -21,7 +21,7 @@
 
 use crate::geom3::mesh::MeshData3;
 use crate::geom3::mesh::algorithms::normals::compute_face_normal;
-use crate::{Mesh, Point3, Result};
+use crate::{Mesh3, Point3, Result};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Seek, Write};
 use std::path::Path;
@@ -69,7 +69,7 @@ pub fn read_stl_mesh_data<R: Read + Seek>(source: &mut R) -> Result<MeshData3> {
     //   nothing about what is actually wrong. It is why `DEFAULT_HEADER` exists.
     // - Errors would be ours, so a malformed facet could report its byte offset.
     //
-    // Worth doing alongside the `Mesh3` migration, when the `Mesh` bridges in this module get
+    // Worth doing alongside the `Mesh3` migration, when the `Mesh3` bridges in this module get
     // deleted anyway. Not urgent: the crate is small, and a hand written weld is the kind of thing
     // that fails silently by changing topology rather than loudly, so the replacement wants the
     // same care the writer got.
@@ -96,7 +96,7 @@ pub fn read_stl_mesh_data<R: Read + Seek>(source: &mut R) -> Result<MeshData3> {
     MeshData3::new(points, faces)
 }
 
-/// Read an STL file into a `Mesh`.
+/// Read an STL file into a `Mesh3`.
 ///
 /// This is a temporary bridge for callers which need the accelerated type, and will be replaced by
 /// a conversion from `MeshData3` once that exists. Prefer `load_stl_mesh_data`.
@@ -107,9 +107,13 @@ pub fn read_stl_mesh_data<R: Read + Seek>(source: &mut R) -> Result<MeshData3> {
 /// * `merge_duplicates`: additionally merge points which compare equal as `f64`, which after the
 ///   exact weld the reader already performs means only merging `0.0` with `-0.0`
 /// * `delete_degenerate`: drop triangles with zero area or bad topology
-pub fn read_mesh_stl(path: &Path, merge_duplicates: bool, delete_degenerate: bool) -> Result<Mesh> {
+pub fn read_mesh_stl(
+    path: &Path,
+    merge_duplicates: bool,
+    delete_degenerate: bool,
+) -> Result<Mesh3> {
     let (points, faces, _) = load_stl_mesh_data(path)?.into_parts();
-    Mesh::new_with_options(
+    Mesh3::new_with_options(
         points,
         faces,
         false,
@@ -326,11 +330,11 @@ fn write_ascii<W: Write>(out: &mut W, mesh: &MeshData3, header: &str) -> Result<
     Ok(())
 }
 
-/// Write a `Mesh` to a binary STL file.
+/// Write a `Mesh3` to a binary STL file.
 ///
 /// This is a temporary bridge for callers holding the accelerated type, and will be replaced by a
 /// conversion to `MeshData3` once that exists. Prefer `write_stl_mesh_data`.
-pub fn write_mesh_stl(path: &Path, mesh: &Mesh) -> Result<()> {
+pub fn write_mesh_stl(path: &Path, mesh: &Mesh3) -> Result<()> {
     let data = MeshData3::new(mesh.vertices().to_vec(), mesh.faces().to_vec())?;
     write_stl_mesh_data(path, &data, &StlWriteOpts::default())
 }

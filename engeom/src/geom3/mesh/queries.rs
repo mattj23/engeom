@@ -1,6 +1,6 @@
 //! Distance queries and measurements on meshes
 
-use super::{Mesh, MeshSurfPoint};
+use super::{Mesh3, MeshSurfPoint};
 use crate::common::PCoords;
 use crate::common::indices::chained_indices;
 use crate::common::points::dist;
@@ -9,7 +9,7 @@ use parry3d_f64::query::{IntersectResult, PointProjection, PointQueryWithLocatio
 use parry3d_f64::shape::TrianglePointLocation;
 use std::f64::consts::PI;
 
-impl Mesh {
+impl Mesh3 {
     /// This is an extremely simple closest distance query that returns only the scalar distance
     /// from the mesh to the point. It does not return any information about the face or which
     /// side of the corresponding face normal the point is on.  It will always return a single
@@ -239,13 +239,13 @@ impl Mesh {
     ///
     /// # Returns
     ///
-    /// A `SplitResult<Mesh>` describing how the mesh relates to the plane.
-    pub fn split(&self, plane: &Plane3) -> SplitResult<Mesh> {
+    /// A `SplitResult<Mesh3>` describing how the mesh relates to the plane.
+    pub fn split(&self, plane: &Plane3) -> SplitResult<Mesh3> {
         let result = self.shape.local_split(&plane.normal, plane.d, 1.0e-6);
         match result {
             SplitResult::Pair(a, b) => {
-                let mesh_a = Mesh::new_take_trimesh(a, false);
-                let mesh_b = Mesh::new_take_trimesh(b, false);
+                let mesh_a = Mesh3::new_take_trimesh(a, false);
+                let mesh_b = Mesh3::new_take_trimesh(b, false);
                 SplitResult::Pair(mesh_a, mesh_b)
             }
             SplitResult::Negative => SplitResult::Negative,
@@ -290,14 +290,14 @@ impl Mesh {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geom3::Mesh;
+    use crate::geom3::Mesh3;
     use crate::tests::stanford_bun_4;
     use approx::assert_relative_eq;
     use parry3d_f64::na::Vector3;
 
     #[test]
     fn distance_closest_to_unit_box_face() {
-        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+        let mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let point = Point3::new(1.5, 0.0, 0.0);
 
         let distance = mesh.distance_closest_to(&point);
@@ -309,7 +309,7 @@ mod tests {
 
     #[test]
     fn distance_closest_to_unit_box_edge() {
-        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+        let mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let point = Point3::new(1.5, 1.5, 0.0);
 
         let distance = mesh.distance_closest_to(&point);
@@ -321,7 +321,7 @@ mod tests {
 
     #[test]
     fn distance_closest_to_unit_box_corner_vertex() {
-        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+        let mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let point = Point3::new(1.5, 1.5, 1.5);
 
         let distance = mesh.distance_closest_to(&point);
@@ -333,7 +333,7 @@ mod tests {
 
     #[test]
     fn closest_to_matches_brute_force_on_unit_box() {
-        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+        let mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let eps = 1.0e-12;
 
         for (face_index, face) in mesh.faces().iter().enumerate() {
@@ -444,7 +444,7 @@ mod tests {
 
     #[test]
     fn check_brute_force_closest_edge() {
-        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+        let mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let point = Point3::new(1.5, 1.5, 0.0);
 
         let results = brute_force_closest(&point, &mesh);
@@ -456,7 +456,7 @@ mod tests {
 
     #[test]
     fn check_brute_force_closest_face() {
-        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+        let mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let point = Point3::new(0.33, 0.0, 0.51);
 
         let results = brute_force_closest(&point, &mesh);
@@ -466,7 +466,7 @@ mod tests {
         }
     }
 
-    fn brute_force_closest(query_point: &Point3, mesh: &Mesh) -> Vec<(u32, Point3)> {
+    fn brute_force_closest(query_point: &Point3, mesh: &Mesh3) -> Vec<(u32, Point3)> {
         let mut closest: Vec<(u32, Point3)> = Vec::new();
         let mut best_dist = f64::INFINITY;
 
@@ -491,7 +491,7 @@ mod tests {
     }
     #[test]
     fn split_unit_box_through_center_yields_two_nonempty_parts() {
-        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+        let mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let plane = Plane3::yz();
 
         match mesh.split(&plane) {
@@ -512,7 +512,7 @@ mod tests {
 
     #[test]
     fn split_unit_box_with_plane_outside_returns_positive_side() {
-        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+        let mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let plane = Plane3::new(Vector3::x_axis(), -2.0);
 
         match mesh.split(&plane) {
@@ -523,7 +523,7 @@ mod tests {
 
     #[test]
     fn split_unit_box_with_plane_outside_returns_negative_side() {
-        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+        let mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let plane = Plane3::new(Vector3::x_axis(), 2.0);
 
         match mesh.split(&plane) {
@@ -536,7 +536,7 @@ mod tests {
     fn section_unit_cylinder_in_xz_plane_creates_one_circle_curve() {
         use std::f64::consts::TAU;
 
-        let mesh = Mesh::create_cylinder(1.0, 2.0, 256);
+        let mesh = Mesh3::create_cylinder(1.0, 2.0, 256);
         let plane = Plane3::xz();
 
         let curves = mesh.section(&plane, Some(1.0e-10)).unwrap();
@@ -562,9 +562,9 @@ mod tests {
     fn section_two_unit_cylinder_in_xy_plane_creates_two_circles_curves() {
         use std::f64::consts::TAU;
 
-        let mut mesh = Mesh::create_cylinder(1.0, 2.0, 256);
+        let mut mesh = Mesh3::create_cylinder(1.0, 2.0, 256);
         mesh.transform_by(&Iso3::translation(0.0, 0.0, -2.0));
-        let mut m1 = Mesh::create_cylinder(1.0, 2.0, 256);
+        let mut m1 = Mesh3::create_cylinder(1.0, 2.0, 256);
         m1.transform_by(&Iso3::translation(0.0, 0.0, 2.0));
 
         mesh.append(&m1).unwrap();

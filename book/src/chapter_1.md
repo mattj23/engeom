@@ -60,7 +60,7 @@ engeom = "0.3"
 The most commonly used types are re-exported directly from the crate root:
 
 ```rust
-use engeom::{Point3, Vector3, SurfacePoint3, Plane3, Mesh};
+use engeom::{Point3, Vector3, SurfacePoint3, Plane3, Mesh3};
 use engeom::{Point2, Vector2, SurfacePoint2, Circle2, Curve2};
 ```
 
@@ -74,7 +74,7 @@ After installing the package, import from the `engeom.geom2` or `engeom.geom3` s
 
 ```python
 from engeom.geom2 import Point2, Vector2, SurfacePoint2, Circle2
-from engeom.geom3 import Point3, Vector3, SurfacePoint3, Plane3, Mesh
+from engeom.geom3 import Point3, Vector3, SurfacePoint3, Plane3, Mesh3
 ```
 
 > **Working with large datasets:** For operations on many points or vectors, prefer `numpy` arrays over Python lists
@@ -105,10 +105,10 @@ vectors = np.random.rand(10, 2)  # shape (10, 2)
 ```
 
 **Read-only array access.** Some `engeom` objects expose their internal data directly as read-only `numpy.ndarray`
-views. For example, `Mesh` provides its vertex positions and face index lists as arrays without copying the underlying
+views. For example, `Mesh3` provides its vertex positions and face index lists as arrays without copying the underlying
 data. These arrays follow the same `(n, d)` shape convention, and floating-point data is always 64-bit (`float64`).
 
-**Integer index arrays.** Where index lists are used - such as the face-vertex lists of a `Mesh` - the expected dtype
+**Integer index arrays.** Where index lists are used - such as the face-vertex lists of a `Mesh3` - the expected dtype
 is an unsigned integer. Internally these are stored as Rust `u32` or `usize` values. If you encounter a construction
 error when passing index data, check that the array dtype is an unsigned integer type (e.g. `numpy.uint32`) rather
 than the default signed `int64`.

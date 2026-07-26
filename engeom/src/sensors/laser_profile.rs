@@ -9,7 +9,7 @@
 use crate::SurfacePoint3;
 use crate::na::Translation3;
 use crate::sensors::SimulatedPointSensor;
-use crate::{Iso3, Mesh, Point3, PointCloud, PointCloudFeatures, UnitVec3, Vector3};
+use crate::{Iso3, Mesh3, Point3, PointCloud, PointCloudFeatures, UnitVec3, Vector3};
 use parry3d_f64::query::{Ray, RayCast};
 use std::f64::consts::PI;
 
@@ -206,7 +206,7 @@ impl LaserProfile {
 //     }
 // }
 //
-fn obstruction_limit(obstruction: Option<&Mesh>, ray: &Ray, iso: &Iso3) -> f64 {
+fn obstruction_limit(obstruction: Option<&Mesh3>, ray: &Ray, iso: &Iso3) -> f64 {
     obstruction
         .map(|ob| {
             ob.tri_mesh()
@@ -219,8 +219,8 @@ fn obstruction_limit(obstruction: Option<&Mesh>, ray: &Ray, iso: &Iso3) -> f64 {
 impl SimulatedPointSensor for LaserProfile {
     fn get_points(
         &self,
-        target: &Mesh,
-        obstruction: Option<&Mesh>,
+        target: &Mesh3,
+        obstruction: Option<&Mesh3>,
         iso: &Iso3,
     ) -> (PointCloud, Option<Vec<f64>>) {
         let limit = self.angle_limit.unwrap_or(PI / 2.0);
@@ -337,8 +337,8 @@ impl PanningLaserProfile {
 impl SimulatedPointSensor for PanningLaserProfile {
     fn get_points(
         &self,
-        target: &Mesh,
-        obstruction: Option<&Mesh>,
+        target: &Mesh3,
+        obstruction: Option<&Mesh3>,
         iso: &Iso3,
     ) -> (PointCloud, Option<Vec<f64>>) {
         let pan_vector = Vector3::new(0.0, self.y_step, 0.0);

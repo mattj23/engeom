@@ -2,9 +2,9 @@
 
 use crate::common::DistMode;
 use crate::metrology::Distance3;
-use crate::{Mesh, Point3, UnitVec3};
+use crate::{Mesh3, Point3, UnitVec3};
 
-impl Mesh {
+impl Mesh3 {
     /// Compute the deviation of a point from this mesh (this mesh is considered the reference) and
     /// return it as a Length Measurement object.
     ///

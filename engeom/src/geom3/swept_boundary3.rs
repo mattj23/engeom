@@ -5,7 +5,7 @@ use crate::common::{PCoords, transform_points};
 use crate::geom2::Boundary2;
 use crate::geom3::IsoExtensions3;
 use crate::geom3::align3::{AlignSurfMatch3, SurfaceTarget3};
-use crate::{Iso3, Mesh, Point2, Point3, Result, To2D, To3D, UnitVec3, Vector3};
+use crate::{Iso3, Mesh3, Point2, Point3, Result, To2D, To3D, UnitVec3, Vector3};
 
 /// An `ExtrudedBoundary3` is a means of representing a surface in 3D space using a 2D [`Boundary2`]
 /// entity and an arbitrary 3D position, direction, and length. The surface is the set of all points
@@ -52,7 +52,7 @@ impl ExtrudedBoundary3 {
         }
     }
 
-    pub fn to_mesh(&self, tol: f64) -> Result<Mesh> {
+    pub fn to_mesh(&self, tol: f64) -> Result<Mesh3> {
         let points = self.shape.to_points(tol)?.to_3d();
         let mut builder = ParallelBuilder::new(points.len(), false);
 
@@ -65,7 +65,7 @@ impl ExtrudedBoundary3 {
 
         let (points, faces) = builder.take();
 
-        Ok(Mesh::new(points, faces, false))
+        Ok(Mesh3::new(points, faces, false))
     }
 
     pub fn transform_by(&mut self, iso: &Iso3) {
@@ -144,7 +144,7 @@ impl RevolvedBoundary3 {
         }
     }
 
-    pub fn to_mesh(&self, tol: f64) -> Result<Mesh> {
+    pub fn to_mesh(&self, tol: f64) -> Result<Mesh3> {
         let points = self.shape.to_points(tol)?.to_3d();
 
         // Find the largest radius
@@ -172,7 +172,7 @@ impl RevolvedBoundary3 {
 
         let (points, faces) = builder.take();
 
-        Ok(Mesh::new(points, faces, false))
+        Ok(Mesh3::new(points, faces, false))
     }
 
     pub fn transform_by(&mut self, iso: &Iso3) {

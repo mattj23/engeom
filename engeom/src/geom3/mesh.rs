@@ -97,7 +97,7 @@ impl PCoords<3> for MeshSurfPoint {
 /// some very basic functionality for editing.  However, it is not a structure optimized for
 /// editing or modification.
 #[derive(Clone)]
-pub struct Mesh {
+pub struct Mesh3 {
     shape: TriMesh,
     is_solid: bool,
     uv: Option<UvMapping>,
@@ -107,7 +107,7 @@ pub struct Mesh {
 // Core access
 // ===============================================================================================
 
-impl Mesh {
+impl Mesh3 {
     /// Get a reference to the AABB of the underlying mesh in the local coordinate system.
     pub fn aabb(&self) -> Aabb {
         self.shape.local_aabb()
@@ -140,7 +140,7 @@ impl Mesh {
 // ===============================================================================================
 // General creation methods
 // ===============================================================================================
-impl Mesh {
+impl Mesh3 {
     /// Create a new mesh from a list of vertices and a list of triangles.  Additional options can
     /// be set to merge duplicate vertices and delete degenerate triangles.
     ///
@@ -153,7 +153,7 @@ impl Mesh {
     /// * `delete_degenerate`:
     /// * `uv`:
     ///
-    /// returns: Result<Mesh, Box<dyn Error, Global>>
+    /// returns: Result<Mesh3, Box<dyn Error, Global>>
     ///
     /// # Examples
     ///
@@ -212,7 +212,7 @@ impl Mesh {
 // ===============================================================================================
 // Mutation/Transformation
 // ===============================================================================================
-impl Mesh {
+impl Mesh3 {
     /// Transform the mesh in place by applying the given transformation to all vertices.
     pub fn transform_by(&mut self, transform: &Iso3) {
         self.shape.transform_vertices(transform);
@@ -232,13 +232,13 @@ impl Mesh {
     ///
     /// * `scale`: a scale factor to apply to all vertices
     ///
-    /// returns: Mesh
+    /// returns: Mesh3
     pub fn new_scaled_uniform(&self, scale: f64) -> Self {
         let new_shape = self
             .shape
             .clone()
             .scaled(&Vector3::new(scale, scale, scale));
-        Mesh::new_take_trimesh(new_shape, self.is_solid)
+        Mesh3::new_take_trimesh(new_shape, self.is_solid)
     }
 
     /// Create a new mesh by offsetting each vertex along its smoothed vertex normal.
@@ -253,7 +253,7 @@ impl Mesh {
     ///
     /// * `offset`: The distance to offset each vertex along its normal.
     ///
-    /// returns: Mesh
+    /// returns: Mesh3
     pub fn new_offset_vertices(&self, offset: f64) -> Self {
         // These are already normalized
         let normals = self.get_vertex_normals();
@@ -277,7 +277,7 @@ impl Mesh {
 // Unsorted
 // ===============================================================================================
 
-impl Mesh {
+impl Mesh3 {
     pub fn calc_edges(&self) -> Result<MeshEdges<'_>> {
         MeshEdges::new(self)
     }
@@ -288,7 +288,7 @@ impl Mesh {
         Self::new(vertices, faces, true)
     }
 
-    pub fn append(&mut self, other: &Mesh) -> Result<()> {
+    pub fn append(&mut self, other: &Mesh3) -> Result<()> {
         // For now, both meshes must have an empty UV mapping
         if self.uv.is_some() || other.uv.is_some() {
             return Err("Cannot append meshes with UV mappings".into());
@@ -458,7 +458,7 @@ impl Mesh {
 // Shape creation methods
 // ===============================================================================================
 
-impl Mesh {
+impl Mesh3 {
     pub fn create_cone(half_height: f64, radius: f64, steps: usize) -> Self {
         let cone = shape::Cone::new(half_height, radius);
         let (vertices, faces) = cone.to_trimesh(steps as u32);
@@ -488,17 +488,17 @@ impl Mesh {
     /// * `n_theta` - Number of subdivisions around the polar direction.
     /// * `n_phi` - Number of subdivisions around the azimuthal direction.
     ///
-    /// returns: Mesh
+    /// returns: Mesh3
     ///
     /// # Examples
     ///
     /// ```
-    /// use engeom::Mesh;
+    /// use engeom::Mesh3;
     /// use approx::assert_relative_eq;
     ///
     /// let n_t = 14;
     /// let n_p = 15;
-    /// let sphere = Mesh::create_sphere(1.0, n_t, n_p);
+    /// let sphere = Mesh3::create_sphere(1.0, n_t, n_p);
     ///
     /// assert_eq!(sphere.vertices().len(), n_t * (n_p - 1) + 2);
     ///
@@ -525,14 +525,14 @@ impl Mesh {
     /// * `is_solid`: whether the box is solid or hollow, used for some specific distance queries
     ///   in the underlying parry library
     ///
-    /// returns: Mesh
+    /// returns: Mesh3
     ///
     /// # Examples
     ///
     /// ```
-    /// use engeom::Mesh;
+    /// use engeom::Mesh3;
     /// use approx::assert_relative_eq;
-    /// let mesh = Mesh::create_box(2.0, 4.0, 6.0, false);
+    /// let mesh = Mesh3::create_box(2.0, 4.0, 6.0, false);
     /// assert_relative_eq!(mesh.aabb().maxs.x, 1.0);
     /// assert_relative_eq!(mesh.aabb().maxs.y, 2.0);
     /// assert_relative_eq!(mesh.aabb().maxs.z, 3.0);
@@ -556,15 +556,15 @@ impl Mesh {
     /// * `height` - Full height of the cylinder (along the y-axis).
     /// * `steps` - Number of subdivisions around the cylinder axis.
     ///
-    /// returns: Mesh
+    /// returns: Mesh3
     ///
     /// # Examples
     ///
     /// ```
-    /// use engeom::{Mesh, Point3};
+    /// use engeom::{Mesh3, Point3};
     /// use approx::assert_relative_eq;
     ///
-    /// let cyl = Mesh::create_cylinder(1.0, 4.0, 16);
+    /// let cyl = Mesh3::create_cylinder(1.0, 4.0, 16);
     ///
     /// assert_relative_eq!(cyl.aabb().mins.z, -1.0);
     /// assert_relative_eq!(cyl.aabb().maxs.z,  1.0);
@@ -629,14 +629,14 @@ impl Mesh {
     /// * `radius` - Radius of the circle.
     /// * `segments` - Number of perimeter vertices (and triangles). Must be at least 3.
     ///
-    /// returns: Mesh
+    /// returns: Mesh3
     ///
     /// # Examples
     ///
     /// ```
-    /// use engeom::Mesh;
+    /// use engeom::Mesh3;
     ///
-    /// let circle = Mesh::create_circle(1.0, 32);
+    /// let circle = Mesh3::create_circle(1.0, 32);
     /// assert_eq!(circle.vertices().len(), 33); // center + 32 perimeter
     /// assert_eq!(circle.faces().len(), 32);
     /// ```
@@ -710,7 +710,7 @@ mod tests {
     fn new_scaled_uniform_scales_spherical_radius() {
         let radius = 1.0;
         let scale = 2.5;
-        let mesh = Mesh::create_sphere(radius, 100, 100);
+        let mesh = Mesh3::create_sphere(radius, 100, 100);
         let scaled = mesh.new_scaled_uniform(scale);
 
         assert_eq!(mesh.vertices().len(), scaled.vertices().len());
@@ -724,7 +724,7 @@ mod tests {
     fn new_offset_vertices_preserves_spherical_radius() {
         let radius = 1.0;
         let offset = 0.1;
-        let mesh = Mesh::create_sphere(radius, 100, 100);
+        let mesh = Mesh3::create_sphere(radius, 100, 100);
         let offset_mesh = mesh.new_offset_vertices(offset);
 
         assert_eq!(mesh.vertices().len(), offset_mesh.vertices().len());

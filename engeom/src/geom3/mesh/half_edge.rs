@@ -1,5 +1,5 @@
 //! This module provides an implementation of a half edge mesh structure using the `alum` library.
-//! The main type is `HalfEdgeMesh`, which is a polyhedral mesh that can be converted to a `Mesh`
+//! The main type is `HalfEdgeMesh`, which is a polyhedral mesh that can be converted to a `Mesh3`
 //! type using the `TryFrom` trait. The `NaAdaptor` struct provides the necessary adaptors for
 //! `alum` to work with `nalgebra` types.
 //!
@@ -8,7 +8,7 @@
 
 mod smoothing;
 
-use crate::{Mesh, Point3, Vector3};
+use crate::{Mesh3, Point3, Vector3};
 use alum;
 use alum::{
     Adaptor, CrossProductAdaptor, DotProductAdaptor, FloatScalarAdaptor, Handle, HasIterators,
@@ -44,20 +44,20 @@ impl HalfEdgeCloneOps for HalfEdgeMesh {
     }
 }
 
-impl TryFrom<&HalfEdgeMesh> for Mesh {
+impl TryFrom<&HalfEdgeMesh> for Mesh3 {
     type Error = Box<dyn Error>;
 
     fn try_from(value: &HalfEdgeMesh) -> Result<Self, Self::Error> {
         let vertices = value.clone_vertices()?;
         let faces = value.clone_faces()?;
-        Ok(Mesh::new(vertices, faces, false))
+        Ok(Mesh3::new(vertices, faces, false))
     }
 }
 
-impl TryFrom<&Mesh> for HalfEdgeMesh {
+impl TryFrom<&Mesh3> for HalfEdgeMesh {
     type Error = Box<dyn Error>;
 
-    fn try_from(value: &Mesh) -> Result<Self, Self::Error> {
+    fn try_from(value: &Mesh3) -> Result<Self, Self::Error> {
         let mut result = HalfEdgeMesh::new();
         let mut indices = Vec::new();
         for v in value.vertices() {

@@ -24,4 +24,4 @@ pub mod normals;
 pub mod offset;
 
 pub use normals::compute_point_normals;
-pub use offset::{OffsetOpts, compute_normal_displaced_points, compute_face_offset_points};
+pub use offset::{OffsetOpts, compute_face_offset_points, compute_normal_displaced_points};

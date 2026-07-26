@@ -385,7 +385,7 @@ impl<'a> LeastSquaresProblem<f64, Dyn, Dyn> for MultiMeshProblem<'a> {
     }
 }
 
-// fn un_cert(point: &Point3, target: &Mesh, by_vertex: &[f64]) -> (f64, SurfacePoint3) {
+// fn un_cert(point: &Point3, target: &Mesh3, by_vertex: &[f64]) -> (f64, SurfacePoint3) {
 //     let (prj, (fi, tpl)) = target
 //         .tri_mesh()
 //         .project_local_point_and_get_location(point, false);

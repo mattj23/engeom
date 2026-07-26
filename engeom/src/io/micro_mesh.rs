@@ -2,31 +2,31 @@
 //! less than u16::MAX vertices and discretizes the positions to 1/u16::MAX increments in an
 //! axis-aligned bounding box of a size specified.
 use crate::geom3::Aabb3;
-use crate::{Mesh, Point3, Result};
+use crate::{Mesh3, Point3, Result};
 
-/// Serialize a [`Mesh`] into the micro mesh binary format.
+/// Serialize a [`Mesh3`] into the micro mesh binary format.
 ///
 /// This is a convenience wrapper around [`u_mesh_data_to_bytes`] that operates directly on a
-/// [`Mesh`] object. The mesh must have fewer than [`u16::MAX`] vertices.
+/// [`Mesh3`] object. The mesh must have fewer than [`u16::MAX`] vertices.
 ///
 /// # Errors
 ///
 /// Returns an error if the mesh has more than [`u16::MAX`] vertices.
-pub fn u_mesh_to_bytes(mesh: &Mesh) -> Result<Vec<u8>> {
+pub fn u_mesh_to_bytes(mesh: &Mesh3) -> Result<Vec<u8>> {
     u_mesh_data_to_bytes(mesh.vertices(), mesh.faces())
 }
 
-/// Deserialize a [`Mesh`] from a micro mesh binary buffer.
+/// Deserialize a [`Mesh3`] from a micro mesh binary buffer.
 ///
 /// This is a convenience wrapper around [`u_bytes_to_mesh_data`] that constructs and returns a
-/// [`Mesh`] directly.
+/// [`Mesh3`] directly.
 ///
 /// # Errors
 ///
 /// Returns an error if the byte buffer is malformed or too short to be read.
-pub fn u_bytes_to_mesh(bytes: &[u8]) -> Result<Mesh> {
+pub fn u_bytes_to_mesh(bytes: &[u8]) -> Result<Mesh3> {
     let (vertices, triangles) = u_bytes_to_mesh_data(bytes)?;
-    Ok(Mesh::new(vertices, triangles, false))
+    Ok(Mesh3::new(vertices, triangles, false))
 }
 
 /// Deserialize raw vertex and triangle data from a micro mesh binary buffer.
