@@ -32,9 +32,9 @@ impl Mesh3 {
             let ai = self.faces()[face_i as usize][0];
             let bi = self.faces()[face_i as usize][1];
             let ci = self.faces()[face_i as usize][2];
-            let a = self.vertices()[ai as usize];
-            let b = self.vertices()[bi as usize];
-            let c = self.vertices()[ci as usize];
+            let a = self.points()[ai as usize];
+            let b = self.points()[bi as usize];
+            let c = self.points()[ci as usize];
 
             let ab = edge_intersection(&a, &b, plane);
             let bc = edge_intersection(&b, &c, plane);

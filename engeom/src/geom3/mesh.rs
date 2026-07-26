@@ -126,8 +126,8 @@ impl Mesh3 {
         self.is_solid
     }
 
-    /// Get a reference to the vertices of the mesh.
-    pub fn vertices(&self) -> &[Point3] {
+    /// Get a reference to the points of the mesh.
+    pub fn points(&self) -> &[Point3] {
         self.shape.vertices()
     }
 
@@ -259,7 +259,7 @@ impl Mesh3 {
         let normals = self.get_vertex_normals();
 
         let updated = self
-            .vertices()
+            .points()
             .iter()
             .zip(normals.iter())
             .map(|(v, n)| v + offset * n)
@@ -379,7 +379,7 @@ impl Mesh3 {
             b_loops.push(
                 b_loop
                     .iter()
-                    .map(|vi| self.vertices()[*vi as usize])
+                    .map(|vi| self.points()[*vi as usize])
                     .collect(),
             );
         }
@@ -500,10 +500,10 @@ impl Mesh3 {
     /// let n_p = 15;
     /// let sphere = Mesh3::create_sphere(1.0, n_t, n_p);
     ///
-    /// assert_eq!(sphere.vertices().len(), n_t * (n_p - 1) + 2);
+    /// assert_eq!(sphere.points().len(), n_t * (n_p - 1) + 2);
     ///
     /// // Verify that the vertices are on the surface of the unit sphere.
-    /// for vertex in sphere.vertices() {
+    /// for vertex in sphere.points() {
     ///     let dist_from_origin = vertex.coords.norm();
     ///     assert_relative_eq!(dist_from_origin, 1.0)
     /// }
@@ -573,7 +573,7 @@ impl Mesh3 {
     /// assert_relative_eq!(cyl.aabb().mins.y, -2.0);
     /// assert_relative_eq!(cyl.aabb().maxs.y,  2.0);
     ///
-    /// for vertex in cyl.vertices() {
+    /// for vertex in cyl.points() {
     ///     let proj = Point3::new(vertex.x, 0.0, vertex.z);
     ///     assert_relative_eq!(proj.coords.norm(), 1.0);
     /// }
@@ -637,7 +637,7 @@ impl Mesh3 {
     /// use engeom::Mesh3;
     ///
     /// let circle = Mesh3::create_circle(1.0, 32);
-    /// assert_eq!(circle.vertices().len(), 33); // center + 32 perimeter
+    /// assert_eq!(circle.points().len(), 33); // center + 32 perimeter
     /// assert_eq!(circle.faces().len(), 32);
     /// ```
     pub fn create_circle(radius: f64, segments: usize) -> Self {
@@ -699,7 +699,7 @@ mod tests {
         let mesh = stanford_bun_4();
         let normals = mesh.get_vertex_normals();
 
-        assert_eq!(normals.len(), mesh.vertices().len());
+        assert_eq!(normals.len(), mesh.points().len());
 
         for normal in normals {
             assert_relative_eq!(normal.norm(), 1.0, epsilon = 1.0e-12);
@@ -713,9 +713,9 @@ mod tests {
         let mesh = Mesh3::create_sphere(radius, 100, 100);
         let scaled = mesh.new_scaled_uniform(scale);
 
-        assert_eq!(mesh.vertices().len(), scaled.vertices().len());
+        assert_eq!(mesh.points().len(), scaled.points().len());
 
-        for vertex in scaled.vertices() {
+        for vertex in scaled.points() {
             assert_relative_eq!(vertex.coords.norm(), radius * scale, epsilon = 1.0e-12);
         }
     }
@@ -727,9 +727,9 @@ mod tests {
         let mesh = Mesh3::create_sphere(radius, 100, 100);
         let offset_mesh = mesh.new_offset_vertices(offset);
 
-        assert_eq!(mesh.vertices().len(), offset_mesh.vertices().len());
+        assert_eq!(mesh.points().len(), offset_mesh.points().len());
 
-        for vertex in offset_mesh.vertices() {
+        for vertex in offset_mesh.points() {
             assert_relative_eq!(vertex.coords.norm(), radius + offset, epsilon = 1.0e-5);
         }
     }

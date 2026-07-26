@@ -158,7 +158,7 @@ impl Mesh {
     #[getter]
     fn vertices<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArray2<f64>> {
         if self.vertices.is_none() {
-            let array = points_to_array(self.inner.vertices());
+            let array = points_to_array(self.inner.points());
             self.vertices = Some(array.into_pyarray(py).unbind());
         }
         self.vertices.as_ref().unwrap().bind(py)
@@ -253,7 +253,7 @@ impl Mesh {
         for item in edges.boundary_loops.iter() {
             let mut points = Vec::new();
             for &index in item.iter() {
-                let point = self.inner.vertices()[index as usize];
+                let point = self.inner.points()[index as usize];
                 points.push(point);
             }
 
@@ -278,7 +278,7 @@ impl Mesh {
     fn __repr__(&self) -> String {
         format!(
             "<Mesh {} vertices, {} faces>",
-            self.inner.vertices().len(),
+            self.inner.points().len(),
             self.inner.faces().len()
         )
     }

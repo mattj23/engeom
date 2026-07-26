@@ -24,8 +24,8 @@ const MAGIC: &[u8; 6] = b"TCMESH";
 /// Use [`write_tc_mesh_file`] for the common case of writing directly to a file path.
 pub fn write_tc_mesh_to<W: Write>(writer: &mut W, mesh: &Mesh3, tol: f64) -> Result<()> {
     writer.write_all(MAGIC)?;
-    write_tc_points3(writer, mesh.vertices(), tol)?;
-    write_indices(writer, mesh.faces(), mesh.vertices().len() as u32)?;
+    write_tc_points3(writer, mesh.points(), tol)?;
+    write_indices(writer, mesh.faces(), mesh.points().len() as u32)?;
     Ok(())
 }
 
@@ -69,9 +69,9 @@ mod tests {
     use std::io::Cursor;
 
     fn check_round_trip(original: &Mesh3, recovered: &Mesh3, tol: f64) {
-        assert_eq!(original.vertices().len(), recovered.vertices().len());
+        assert_eq!(original.points().len(), recovered.points().len());
         assert_eq!(original.faces().len(), recovered.faces().len());
-        for (a, b) in original.vertices().iter().zip(recovered.vertices().iter()) {
+        for (a, b) in original.points().iter().zip(recovered.points().iter()) {
             assert_relative_eq!(a, b, epsilon = tol);
         }
         for (a, b) in original.faces().iter().zip(recovered.faces().iter()) {

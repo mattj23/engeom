@@ -60,14 +60,14 @@ fn cmd_to_tcmesh(input: &Path, output: Option<&Path>, tol: f64) -> Result<()> {
     write_tc_mesh_file(&output, &mesh, tol)?;
 
     let recovered = read_tc_mesh_file(&output)?;
-    if mesh.vertices().len() != recovered.vertices().len() {
+    if mesh.points().len() != recovered.points().len() {
         return Err("Vertex count mismatch after round-trip".into());
     }
 
     let deviations = mesh
-        .vertices()
+        .points()
         .iter()
-        .zip(recovered.vertices().iter())
+        .zip(recovered.points().iter())
         .map(|(a, b)| (a - b).norm())
         .collect::<Vec<_>>();
 
@@ -80,7 +80,7 @@ fn cmd_to_tcmesh(input: &Path, output: Option<&Path>, tol: f64) -> Result<()> {
     println!("Saved tcmesh to {}", output.display());
     println!(
         " > {} vertices, {} faces",
-        mesh.vertices().len(),
+        mesh.points().len(),
         mesh.faces().len()
     );
     println!(" > Tolerance: {tol}");
@@ -99,13 +99,13 @@ fn cmd_to_umesh(input: &Path, output: &PathBuf, compress: bool) -> Result<()> {
     let (vertices, triangles) = match ext.as_deref() {
         Some("stl") => {
             let mesh = read_mesh_stl(input, true, true)?;
-            let verts = mesh.vertices().to_vec();
+            let verts = mesh.points().to_vec();
             let tris = mesh.faces().to_vec();
             (verts, tris)
         }
         Some("ply") => {
             let mesh = load_ply_mesh(input)?;
-            let verts = mesh.vertices().to_vec();
+            let verts = mesh.points().to_vec();
             let tris = mesh.faces().to_vec();
             (verts, tris)
         }

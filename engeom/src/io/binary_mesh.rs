@@ -93,7 +93,7 @@ pub fn mesh_from_binary_bytes(bytes: &[u8]) -> Result<Mesh3> {
 pub fn write_mesh_binary<W: Write>(writer: &mut W, mesh: &Mesh3) -> Result<()> {
     writer.write_all(MAGIC)?;
 
-    let vertices = mesh.vertices();
+    let vertices = mesh.points();
     writer.write_all(&(vertices.len() as u32).to_le_bytes())?;
     for v in vertices {
         writer.write_all(&(v.x as f32).to_le_bytes())?;
@@ -186,9 +186,9 @@ mod tests {
     use approx::assert_relative_eq;
 
     fn check_round_trip(mesh: &Mesh3, recovered: &Mesh3) {
-        assert_eq!(mesh.vertices().len(), recovered.vertices().len());
+        assert_eq!(mesh.points().len(), recovered.points().len());
         assert_eq!(mesh.faces().len(), recovered.faces().len());
-        for (a, b) in mesh.vertices().iter().zip(recovered.vertices().iter()) {
+        for (a, b) in mesh.points().iter().zip(recovered.points().iter()) {
             assert_relative_eq!(a, b, epsilon = 1e-8);
         }
         for (a, b) in mesh.faces().iter().zip(recovered.faces().iter()) {

@@ -34,8 +34,8 @@ impl<'a> MeshEdges<'a> {
         self.mesh
     }
 
-    /// Get a reference to the vertices of the mesh.
-    pub fn vertices(&self) -> &[Point3] {
+    /// Get a reference to the points of the mesh.
+    pub fn points(&self) -> &[Point3] {
         self.mesh.shape.vertices()
     }
 
@@ -50,8 +50,8 @@ impl<'a> MeshEdges<'a> {
         let edge_lengths = edges
             .iter()
             .map(|edge| {
-                let v0 = mesh.vertices()[edge[0] as usize];
-                let v1 = mesh.vertices()[edge[1] as usize];
+                let v0 = mesh.points()[edge[0] as usize];
+                let v1 = mesh.points()[edge[1] as usize];
                 (v1 - v0).norm()
             })
             .collect();

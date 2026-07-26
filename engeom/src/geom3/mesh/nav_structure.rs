@@ -318,9 +318,9 @@ mod tests {
     fn faces_from_mask(mask: &RasterMask, mapping: &RasterMapping, mesh: &Mesh3) -> IndexMask {
         let mut indices = IndexMask::new(mesh.faces().len(), false);
         for (i, face) in mesh.faces().iter().enumerate() {
-            let v0 = mapping.image_index_of(&mesh.vertices()[face[0] as usize].to_2d());
-            let v1 = mapping.image_index_of(&mesh.vertices()[face[1] as usize].to_2d());
-            let v2 = mapping.image_index_of(&mesh.vertices()[face[2] as usize].to_2d());
+            let v0 = mapping.image_index_of(&mesh.points()[face[0] as usize].to_2d());
+            let v1 = mapping.image_index_of(&mesh.points()[face[1] as usize].to_2d());
+            let v2 = mapping.image_index_of(&mesh.points()[face[2] as usize].to_2d());
             if mask.get_point(v0) || mask.get_point(v1) || mask.get_point(v2) {
                 indices.set(i, true);
             }

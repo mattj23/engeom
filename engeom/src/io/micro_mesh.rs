@@ -13,7 +13,7 @@ use crate::{Mesh3, Point3, Result};
 ///
 /// Returns an error if the mesh has more than [`u16::MAX`] vertices.
 pub fn u_mesh_to_bytes(mesh: &Mesh3) -> Result<Vec<u8>> {
-    u_mesh_data_to_bytes(mesh.vertices(), mesh.faces())
+    u_mesh_data_to_bytes(mesh.points(), mesh.faces())
 }
 
 /// Deserialize a [`Mesh3`] from a micro mesh binary buffer.

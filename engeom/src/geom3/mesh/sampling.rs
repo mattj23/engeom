@@ -79,9 +79,9 @@ impl Mesh3 {
                 continue;
             }
 
-            let a = self.vertices()[vert[0] as usize];
-            let b = self.vertices()[vert[1] as usize];
-            let c = self.vertices()[vert[2] as usize];
+            let a = self.points()[vert[0] as usize];
+            let b = self.points()[vert[1] as usize];
+            let c = self.points()[vert[2] as usize];
             let face_index = face_i as u32;
 
             if dist(&a, &b) < max_spacing

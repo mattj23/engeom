@@ -335,7 +335,7 @@ fn write_ascii<W: Write>(out: &mut W, mesh: &MeshData3, header: &str) -> Result<
 /// This is a temporary bridge for callers holding the accelerated type, and will be replaced by a
 /// conversion to `MeshData3` once that exists. Prefer `write_stl_mesh_data`.
 pub fn write_mesh_stl(path: &Path, mesh: &Mesh3) -> Result<()> {
-    let data = MeshData3::new(mesh.vertices().to_vec(), mesh.faces().to_vec())?;
+    let data = MeshData3::new(mesh.points().to_vec(), mesh.faces().to_vec())?;
     write_stl_mesh_data(path, &data, &StlWriteOpts::default())
 }
 

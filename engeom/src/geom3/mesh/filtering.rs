@@ -332,17 +332,17 @@ impl TriangleFilter<'_> {
         let vert_mask = match mode {
             // If we're adding new faces, we'll start with the vertices that are part of triangles
             // that are currently selected by the filter
-            SelectOp::Add => self.mesh.unique_vertex_mask(&self.mask),
+            SelectOp::Add => self.mesh.unique_point_mask(&self.mask),
 
             // If we're removing or keeping faces, we start with the vertices that are part of
             // triangles that are NOT currently selected by the filter
             SelectOp::Remove | SelectOp::KeepOnly => {
                 let mut flipped = self.mask.clone();
                 flipped.not_mut();
-                self.mesh.unique_vertex_mask(&flipped)
+                self.mesh.unique_point_mask(&flipped)
             }
         }
-        .expect("Failed to create vertex mask from face mask, was the face mask valid?");
+        .expect("Failed to create point mask from face mask, was the face mask valid?");
 
         // Now we'll check the triangles in the check mask, and if they contain any of the vertices
         // in the vertex mask, we'll add them to the pass list
@@ -393,7 +393,7 @@ impl TriangleFilter<'_> {
         // Project every vertex onto the other mesh
         let projected: Vec<Option<Point3>> = self
             .mesh
-            .vertices()
+            .points()
             .iter()
             .map(|v| {
                 other
@@ -476,8 +476,10 @@ impl Mesh3 {
         IndexMask::new(self.faces().len(), value)
     }
 
-    pub fn new_vertex_mask(&self, value: bool) -> IndexMask {
-        IndexMask::new(self.vertices().len(), value)
+    /// Create a new mask with the same length as the number of points in the mesh, initialized to
+    /// the specified value.
+    pub fn new_point_mask(&self, value: bool) -> IndexMask {
+        IndexMask::new(self.points().len(), value)
     }
 
     /// Start an operation to filter the faces of the mesh. This function will return a filter
@@ -524,15 +526,15 @@ impl Mesh3 {
     ///
     /// returns: Result<(Vec<OPoint<f64, Const<3>>, Global>, Vec<[u32; 3], Global>), Box<dyn Error, Global>>
     pub fn faces_verts_from_mask(&self, mask: &IndexMask) -> Result<(Vec<Point3>, Vec<[u32; 3]>)> {
-        let vertex_mask = self.unique_vertex_mask(mask)?;
+        let point_mask = self.unique_point_mask(mask)?;
 
         // The map_back array will map the old vertex indices to the new ones
-        let mut map_back = vec![u32::MAX; self.vertices().len()];
+        let mut map_back = vec![u32::MAX; self.points().len()];
         let mut new_verts = Vec::new();
 
-        for (new_i, old_i) in vertex_mask.iter_true().enumerate() {
+        for (new_i, old_i) in point_mask.iter_true().enumerate() {
             map_back[old_i] = new_i as u32;
-            new_verts.push(self.vertices()[old_i]);
+            new_verts.push(self.points()[old_i]);
         }
 
         let mut new_faces = Vec::new();
@@ -589,10 +591,10 @@ impl Mesh3 {
     /// let new_mesh = mesh.create_from_indices(&indices);
     ///
     /// assert_eq!(new_mesh.faces().len(), 2);
-    /// assert_eq!(new_mesh.vertices().len(), 4);
+    /// assert_eq!(new_mesh.points().len(), 4);
     /// ```
     pub fn create_from_indices(&self, indices: &[usize]) -> Self {
-        let to_keep = self.unique_vertices(indices);
+        let to_keep = self.unique_points(indices);
         // The map_back array will map the old vertex indices to the new ones
         let map_back: HashMap<u32, u32> = to_keep
             .iter()
@@ -600,10 +602,7 @@ impl Mesh3 {
             .map(|(i, v)| (*v, i as u32))
             .collect();
 
-        let vertices: Vec<Point3> = to_keep
-            .iter()
-            .map(|i| self.vertices()[*i as usize])
-            .collect();
+        let vertices: Vec<Point3> = to_keep.iter().map(|i| self.points()[*i as usize]).collect();
 
         let triangles = indices
             .iter()
@@ -628,30 +627,30 @@ impl Mesh3 {
         }
     }
 
-    /// Using a mask of face indices, this function will create a vertex mask that contains only
-    /// the vertices that are used in the triangles specified by the face mask.
+    /// Using a mask of face indices, this function will create a point mask that contains only
+    /// the points that are used in the triangles specified by the face mask.
     ///
     /// # Arguments
     ///
-    /// * `face_mask`: a mask of face indices that will be used to filter the vertices. Must have
+    /// * `face_mask`: a mask of face indices that will be used to filter the points. Must have
     ///   the same length as the number of faces in the mesh, or the function will return an error.
     ///
     /// returns: Result<IndexMask, Box<dyn Error, Global>>
-    fn unique_vertex_mask(&self, face_mask: &IndexMask) -> Result<IndexMask> {
+    fn unique_point_mask(&self, face_mask: &IndexMask) -> Result<IndexMask> {
         self.check_face_mask(face_mask)?;
 
-        let mut vertex_mask = IndexMask::new(self.vertices().len(), false);
+        let mut point_mask = IndexMask::new(self.points().len(), false);
         for i in face_mask.iter_true() {
             let t = self.faces()[i];
-            vertex_mask.set(t[0] as usize, true);
-            vertex_mask.set(t[1] as usize, true);
-            vertex_mask.set(t[2] as usize, true);
+            point_mask.set(t[0] as usize, true);
+            point_mask.set(t[1] as usize, true);
+            point_mask.set(t[2] as usize, true);
         }
 
-        Ok(vertex_mask)
+        Ok(point_mask)
     }
 
-    fn unique_vertices(&self, triangle_indices: &[usize]) -> Vec<u32> {
+    fn unique_points(&self, triangle_indices: &[usize]) -> Vec<u32> {
         let mut to_save = HashSet::new();
         for i in triangle_indices {
             let t = self.faces()[*i];
@@ -704,7 +703,7 @@ impl<'a> MeshNearCheck<'a> {
         if let Some(&checked) = self.checked.get(&vertex_index) {
             checked
         } else {
-            let p = self.this_mesh.vertices()[vertex_index as usize];
+            let p = self.this_mesh.points()[vertex_index as usize];
 
             let is_ok = if let Some((prj, ri, _loc)) =
                 self.ref_mesh.project_with_max_dist(&p, self.distance_tol)

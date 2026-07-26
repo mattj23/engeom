@@ -14,7 +14,7 @@ type SparseMat = SparseColMat<u32, f64>;
 
 impl MeshEdges<'_> {
     pub fn boundary_first_flatten(&self) -> Result<Vec<Point2>> {
-        let n_vert = self.vertices().len();
+        let n_vert = self.points().len();
 
         // Get a single boundary loop or return an error
         if self.boundary_loops.len() != 1 {
@@ -55,7 +55,7 @@ impl MeshEdges<'_> {
         let im_k = dirichlet_boundary(&ub, &aii_lu, &aib, &abb, &i_inner, i_bound, &angle_defects)?;
 
         // Calculate the uv positions of the boundary vertices in the final layout
-        let boundary_edge_len = boundary_edge_lengths(self.vertices(), i_bound);
+        let boundary_edge_len = boundary_edge_lengths(self.points(), i_bound);
         let uvb = best_fit_curve(&ub, &im_k, &boundary_edge_len)?;
 
         // Finally, extend the boundary vertices into the interior of the layout.
@@ -67,7 +67,7 @@ impl MeshEdges<'_> {
 
 fn inner_vertices(mesh: &MeshEdges, boundary_vertices: &[u32]) -> Result<Vec<u32>> {
     let boundary_set: HashSet<u32> = boundary_vertices.iter().cloned().collect();
-    let inner: Vec<u32> = (0..mesh.vertices().len() as u32)
+    let inner: Vec<u32> = (0..mesh.points().len() as u32)
         .filter(|&i| !boundary_set.contains(&i))
         .collect();
     Ok(inner)

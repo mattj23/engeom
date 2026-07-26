@@ -305,15 +305,15 @@ mod tests {
     #[test]
     fn partial_kd_tree_nearest() -> Result<()> {
         let mesh = stanford_bun_2();
-        let even = (0..mesh.vertices().len()).step_by(2).collect::<Vec<_>>();
-        let mask = IndexMask::try_from_indices(&even, mesh.vertices().len())?;
-        let reduced_points = mask.clone_indices_of(mesh.vertices())?;
+        let even = (0..mesh.points().len()).step_by(2).collect::<Vec<_>>();
+        let mask = IndexMask::try_from_indices(&even, mesh.points().len())?;
+        let reduced_points = mask.clone_indices_of(mesh.points())?;
         let reduced_tree = KdTree::try_new(&reduced_points)?;
 
-        let partial_tree = PartialKdTree::try_new(mesh.vertices(), &mask)?;
+        let partial_tree = PartialKdTree::try_new(mesh.points(), &mask)?;
         let n = 3;
 
-        for p in mesh.vertices().iter() {
+        for p in mesh.points().iter() {
             let mut result = partial_tree
                 .nearest(p, n)
                 .iter()
@@ -329,7 +329,7 @@ mod tests {
 
             assert_eq!(result.len(), reduced_result.len());
             for (a, b) in result.iter().zip(reduced_result.iter()) {
-                assert_relative_eq!(mesh.vertices()[*a], reduced_points[*b], epsilon = 1e-6);
+                assert_relative_eq!(mesh.points()[*a], reduced_points[*b], epsilon = 1e-6);
             }
         }
 
@@ -339,7 +339,7 @@ mod tests {
     #[test]
     fn kd_tree_nearest_one_matches_brute_force_on_stanford_bun_vertices() {
         let mesh = stanford_bun_2();
-        let vertices = mesh.vertices().to_vec();
+        let vertices = mesh.points().to_vec();
         let tree = KdTree::try_new(&vertices).expect("KD tree creation failed");
 
         for (expected_index, query) in vertices.iter().enumerate() {
@@ -357,7 +357,7 @@ mod tests {
     #[test]
     fn kd_tree_nearest_matches_brute_force_on_stanford_bun_vertices() {
         let mesh = stanford_bun_2();
-        let vertices = mesh.vertices().to_vec();
+        let vertices = mesh.points().to_vec();
         let tree = KdTree::try_new(&vertices).expect("KD tree creation failed");
 
         for query in &vertices {
@@ -377,7 +377,7 @@ mod tests {
     #[test]
     fn kd_tree_within_matches_brute_force_on_stanford_bun_vertices() {
         let mesh = stanford_bun_2();
-        let vertices = mesh.vertices().to_vec();
+        let vertices = mesh.points().to_vec();
         let tree = KdTree::try_new(&vertices).expect("KD tree creation failed");
 
         let search_dist = mesh.aabb().extents().x * 0.1;

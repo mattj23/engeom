@@ -1028,13 +1028,13 @@ mod tests {
         let mesh = load_ply_mesh_data(&get_test_file_path("bun_zipper_res4.ply"))?;
         let expected = crate::tests::stanford_bun_4();
 
-        assert_eq!(mesh.point_count(), expected.vertices().len());
+        assert_eq!(mesh.point_count(), expected.points().len());
         assert_eq!(mesh.face_count(), expected.faces().len());
 
         for (a, b) in mesh.faces().iter().zip(expected.faces().iter()) {
             assert_eq!(a, b);
         }
-        for (a, b) in mesh.points().iter().zip(expected.vertices().iter()) {
+        for (a, b) in mesh.points().iter().zip(expected.points().iter()) {
             assert_relative_eq!(a, b, epsilon = 0.000002);
         }
 

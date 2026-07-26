@@ -60,7 +60,7 @@ impl TryFrom<&Mesh3> for HalfEdgeMesh {
     fn try_from(value: &Mesh3) -> Result<Self, Self::Error> {
         let mut result = HalfEdgeMesh::new();
         let mut indices = Vec::new();
-        for v in value.vertices() {
+        for v in value.points() {
             let handle = result
                 .add_vertex(v.coords)
                 .map_err(|e| format!("Failed to add vertex: {:?}", e))?;

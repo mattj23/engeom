@@ -10,7 +10,7 @@ pub trait ToCpuMesh {
 impl ToCpuMesh for Mesh3 {
     fn to_cpu_mesh(&self) -> CpuMesh {
         let points = self
-            .vertices()
+            .points()
             .iter()
             .map(|v| three_d::vec3(v.x, v.y, v.z))
             .collect::<Vec<_>>();

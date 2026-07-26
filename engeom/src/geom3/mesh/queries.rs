@@ -338,9 +338,9 @@ mod tests {
 
         for (face_index, face) in mesh.faces().iter().enumerate() {
             let face_index = face_index as u32;
-            let a = mesh.vertices()[face[0] as usize];
-            let b = mesh.vertices()[face[1] as usize];
-            let c = mesh.vertices()[face[2] as usize];
+            let a = mesh.points()[face[0] as usize];
+            let b = mesh.points()[face[1] as usize];
+            let c = mesh.points()[face[2] as usize];
 
             let centroid = Point3::from((a.coords + b.coords + c.coords) / 3.0);
             let normal = mesh.tri_mesh().triangle(face_index).normal().unwrap();
@@ -409,9 +409,9 @@ mod tests {
 
         for (face_id, face) in mesh.faces().iter().enumerate() {
             let face_id = face_id as u32;
-            let a = mesh.vertices()[face[0] as usize];
-            let b = mesh.vertices()[face[1] as usize];
-            let c = mesh.vertices()[face[2] as usize];
+            let a = mesh.points()[face[0] as usize];
+            let b = mesh.points()[face[1] as usize];
+            let c = mesh.points()[face[2] as usize];
 
             let expected_normal = mesh.tri_mesh().triangle(face_id).normal().unwrap();
 
@@ -471,9 +471,9 @@ mod tests {
         let mut best_dist = f64::INFINITY;
 
         for (face_index, face) in mesh.faces().iter().enumerate() {
-            let a = mesh.vertices()[face[0] as usize];
-            let b = mesh.vertices()[face[1] as usize];
-            let c = mesh.vertices()[face[2] as usize];
+            let a = mesh.points()[face[0] as usize];
+            let b = mesh.points()[face[1] as usize];
+            let c = mesh.points()[face[2] as usize];
 
             let closest_point = manual_closest_point_on_triangle(a, b, c, *query_point);
             let dist = dist(&closest_point, query_point);
@@ -499,10 +499,10 @@ mod tests {
                 assert!(!negative.faces().is_empty());
                 assert!(!positive.faces().is_empty());
 
-                for vertex in negative.vertices() {
+                for vertex in negative.points() {
                     assert!(vertex.x <= 1.0e-12);
                 }
-                for vertex in positive.vertices() {
+                for vertex in positive.points() {
                     assert!(vertex.x >= -1.0e-12);
                 }
             }
