@@ -96,9 +96,28 @@ impl PCoords<3> for MeshSurfPoint {
 /// triangle meshes. This mesh has some basic functionality for interrogating its structure, and
 /// some very basic functionality for editing.  However, it is not a structure optimized for
 /// editing or modification.
+///
+/// # Relationship with `MeshData3`
+///
+/// This is the accelerated half of a complementary pair. `MeshData3` holds the same point and face
+/// buffers with no spatial acceleration at all, and is the type to reach for when building or
+/// editing mesh data, or when working with serialization. Converting between the two is done with
+/// `from_data`/`to_data`, or the equivalent `TryFrom`/`From` implementations.
+///
+/// Both types carry the same `MeshAttrSet3` of per-element attributes, so a mesh loaded with
+/// measured normals, colors, or uncertainties keeps them across the conversion in either direction.
+///
+/// # Invariants
+///
+/// The attribute arrays are validated against the point and face counts, exactly as they are on
+/// `MeshData3`. That makes the point and face buffers inside the underlying `TriMesh` load bearing:
+/// anything which renumbers a point or drops a face has to update the attributes to match, or
+/// refuse to run. This is why the `merge_duplicates` and `delete_degenerate` options on
+/// `new_with_options` are only reachable from a constructor which attaches no attributes.
 #[derive(Clone)]
 pub struct Mesh3 {
     shape: TriMesh,
+    attrs: MeshAttrSet3,
     is_solid: bool,
     uv: Option<UvMapping>,
 }
@@ -135,6 +154,185 @@ impl Mesh3 {
     pub fn faces(&self) -> &[[u32; 3]] {
         self.shape.indices()
     }
+
+    /// Get the number of points in the mesh.
+    pub fn point_count(&self) -> usize {
+        self.shape.vertices().len()
+    }
+
+    /// Get the number of faces in the mesh.
+    pub fn face_count(&self) -> usize {
+        self.shape.indices().len()
+    }
+}
+
+// ===============================================================================================
+// Attribute access
+// ===============================================================================================
+
+impl Mesh3 {
+    /// Get a reference to the full set of per-element attributes attached to this mesh.
+    pub fn attrs(&self) -> &MeshAttrSet3 {
+        &self.attrs
+    }
+
+    /// Get the per-point unit normals, if present.
+    ///
+    /// These are whatever was measured or stored, not a computed quantity. Use
+    /// `compute_point_normals` to derive normals from the faces.
+    pub fn point_normals(&self) -> Option<&[UnitVec3]> {
+        self.attrs.point_normals()
+    }
+
+    /// Get the per-point RGB colors, if present.
+    pub fn point_colors(&self) -> Option<&[[u8; 3]]> {
+        self.attrs.point_colors()
+    }
+
+    /// Get the per-point standard deviations, if present. These are 1-sigma values in the mesh's
+    /// own length units.
+    pub fn point_stdev(&self) -> Option<&[f64]> {
+        self.attrs.point_stdev()
+    }
+
+    /// Get the per-face RGB colors, if present.
+    pub fn face_colors(&self) -> Option<&[[u8; 3]]> {
+        self.attrs.face_colors()
+    }
+
+    /// Get the per-face labels, if present.
+    pub fn face_labels(&self) -> Option<&[u32]> {
+        self.attrs.face_labels()
+    }
+
+    /// Get the open-map per-point attribute stored under the given name, if present.
+    pub fn point_attr(&self, name: &str) -> Option<&MeshAttr3> {
+        self.attrs.point_attr(name)
+    }
+
+    /// Get the open-map per-face attribute stored under the given name, if present.
+    pub fn face_attr(&self, name: &str) -> Option<&MeshAttr3> {
+        self.attrs.face_attr(name)
+    }
+}
+
+// ===============================================================================================
+// Attribute mutation
+// ===============================================================================================
+
+impl Mesh3 {
+    /// Set or clear the per-point unit normals.
+    ///
+    /// # Arguments
+    ///
+    /// * `values`: the normals to store, or `None` to clear them. Must match the point count.
+    ///
+    /// returns: `Result<()>`
+    pub fn set_point_normals(&mut self, values: Option<Vec<UnitVec3>>) -> Result<()> {
+        self.attrs.set_point_normals(values, self.point_count())
+    }
+
+    /// Set or clear the per-point RGB colors.
+    ///
+    /// # Arguments
+    ///
+    /// * `values`: the colors to store, or `None` to clear them. Must match the point count.
+    ///
+    /// returns: `Result<()>`
+    pub fn set_point_colors(&mut self, values: Option<Vec<[u8; 3]>>) -> Result<()> {
+        self.attrs.set_point_colors(values, self.point_count())
+    }
+
+    /// Set or clear the per-point standard deviations, which must be 1-sigma values in the mesh's
+    /// own length units.
+    ///
+    /// # Arguments
+    ///
+    /// * `values`: the standard deviations to store, or `None` to clear them. Must match the point
+    ///   count, and must be finite and non-negative.
+    ///
+    /// returns: `Result<()>`
+    pub fn set_point_stdev(&mut self, values: Option<Vec<f64>>) -> Result<()> {
+        self.attrs.set_point_stdev(values, self.point_count())
+    }
+
+    /// Set or clear the per-face RGB colors.
+    ///
+    /// # Arguments
+    ///
+    /// * `values`: the colors to store, or `None` to clear them. Must match the face count.
+    ///
+    /// returns: `Result<()>`
+    pub fn set_face_colors(&mut self, values: Option<Vec<[u8; 3]>>) -> Result<()> {
+        self.attrs.set_face_colors(values, self.face_count())
+    }
+
+    /// Set or clear the per-face labels.
+    ///
+    /// # Arguments
+    ///
+    /// * `values`: the labels to store, or `None` to clear them. Must match the face count.
+    ///
+    /// returns: `Result<()>`
+    pub fn set_face_labels(&mut self, values: Option<Vec<u32>>) -> Result<()> {
+        self.attrs.set_face_labels(values, self.face_count())
+    }
+
+    /// Insert an open-map per-point attribute under the given name, replacing any attribute already
+    /// stored there.
+    ///
+    /// # Arguments
+    ///
+    /// * `name`: the key to store under, which must not be a reserved name
+    /// * `attr`: the attribute array to store, whose length must match the point count
+    ///
+    /// returns: `Result<()>`
+    pub fn insert_point_attr(&mut self, name: &str, attr: MeshAttr3) -> Result<()> {
+        self.attrs
+            .insert_point_attr(name, attr, self.shape.vertices().len())
+    }
+
+    /// Insert an open-map per-face attribute under the given name, replacing any attribute already
+    /// stored there.
+    ///
+    /// # Arguments
+    ///
+    /// * `name`: the key to store under, which must not be a reserved name
+    /// * `attr`: the attribute array to store, whose length must match the face count
+    ///
+    /// returns: `Result<()>`
+    pub fn insert_face_attr(&mut self, name: &str, attr: MeshAttr3) -> Result<()> {
+        self.attrs
+            .insert_face_attr(name, attr, self.shape.indices().len())
+    }
+
+    /// Remove and return the open-map per-point attribute stored under the given name.
+    pub fn remove_point_attr(&mut self, name: &str) -> Option<MeshAttr3> {
+        self.attrs.remove_point_attr(name)
+    }
+
+    /// Remove and return the open-map per-face attribute stored under the given name.
+    pub fn remove_face_attr(&mut self, name: &str) -> Option<MeshAttr3> {
+        self.attrs.remove_face_attr(name)
+    }
+
+    /// Replace the entire set of per-element attributes.
+    ///
+    /// # Arguments
+    ///
+    /// * `attrs`: the attribute set to attach, whose arrays must match the point and face counts
+    ///
+    /// returns: `Result<()>`, leaving the existing attributes untouched on failure
+    pub fn set_attrs(&mut self, attrs: MeshAttrSet3) -> Result<()> {
+        attrs.validate(self.point_count(), self.face_count())?;
+        self.attrs = attrs;
+        Ok(())
+    }
+
+    /// Remove and return the entire set of per-element attributes, leaving the mesh with none.
+    pub fn take_attrs(&mut self) -> MeshAttrSet3 {
+        std::mem::take(&mut self.attrs)
+    }
 }
 
 // ===============================================================================================
@@ -143,6 +341,10 @@ impl Mesh3 {
 impl Mesh3 {
     /// Create a new mesh from a list of vertices and a list of triangles.  Additional options can
     /// be set to merge duplicate vertices and delete degenerate triangles.
+    ///
+    /// The resulting mesh carries no attributes. The cleanup options renumber points and drop
+    /// faces, so there is no correct way to carry an attribute array through them, which is why
+    /// they live here rather than on the `MeshData3` conversion path.
     ///
     /// # Arguments
     ///
@@ -187,6 +389,7 @@ impl Mesh3 {
         let shape = TriMesh::with_flags(vertices, triangles, flags)?;
         Ok(Self {
             shape,
+            attrs: MeshAttrSet3::empty(),
             is_solid,
             uv: uv_mapping,
         })
@@ -196,6 +399,7 @@ impl Mesh3 {
         let shape = TriMesh::new(vertices, triangles).expect("Failed to create TriMesh");
         Self {
             shape,
+            attrs: MeshAttrSet3::empty(),
             is_solid,
             uv: None,
         }
@@ -203,9 +407,96 @@ impl Mesh3 {
     pub fn new_take_trimesh(shape: TriMesh, is_solid: bool) -> Self {
         Self {
             shape,
+            attrs: MeshAttrSet3::empty(),
             is_solid,
             uv: None,
         }
+    }
+}
+
+// ===============================================================================================
+// Conversion to and from MeshData3
+// ===============================================================================================
+
+impl Mesh3 {
+    /// Build an accelerated mesh from plain mesh data, taking ownership of its buffers and its
+    /// attributes.
+    ///
+    /// The point and face buffers are moved into the underlying `TriMesh` unchanged, so every
+    /// index keeps the meaning it had and the attribute arrays stay valid. The cost paid here is
+    /// the bounding volume hierarchy build.
+    ///
+    /// # Arguments
+    ///
+    /// * `data`: the mesh data to consume
+    /// * `is_solid`: whether distance queries should treat points inside the mesh as being at zero
+    ///   distance
+    ///
+    /// returns: `Result<Mesh3>`, failing if the mesh has no faces, since there is nothing to build
+    /// an acceleration structure over
+    pub fn from_data(data: MeshData3, is_solid: bool) -> Result<Self> {
+        let (points, faces, attrs) = data.into_parts();
+
+        if faces.is_empty() {
+            return Err(
+                "Cannot build a Mesh3 from mesh data with no faces. A MeshData3 is allowed \
+                        to hold points without faces, but there is nothing for an acceleration \
+                        structure to be built over."
+                    .into(),
+            );
+        }
+
+        let shape = TriMesh::new(points, faces)?;
+        Ok(Self {
+            shape,
+            attrs,
+            is_solid,
+            uv: None,
+        })
+    }
+
+    /// Copy this mesh's buffers and attributes out into plain mesh data.
+    ///
+    /// Unlike `from_data`, this **clones** the point and face buffers. `parry3d` gives no way to
+    /// move them back out of a `TriMesh`, so the copy is unavoidable. Use `into_data` if you are
+    /// done with the accelerated mesh, which at least drops the acceleration structure.
+    ///
+    /// returns: `MeshData3`
+    pub fn to_data(&self) -> MeshData3 {
+        MeshData3::new_with_attrs(
+            self.points().to_vec(),
+            self.faces().to_vec(),
+            self.attrs.clone(),
+        )
+        .expect(
+            "A Mesh3's attributes are validated against its point and face counts on every \
+             operation which can change them, so rebuilding a MeshData3 from them cannot fail",
+        )
+    }
+
+    /// Consume this mesh and return its buffers and attributes as plain mesh data.
+    ///
+    /// This still copies the point and face buffers, for the reason given on `to_data`, but it
+    /// discards the acceleration structure rather than leaving it alive alongside the copy.
+    ///
+    /// returns: `MeshData3`
+    pub fn into_data(self) -> MeshData3 {
+        self.to_data()
+    }
+}
+
+impl TryFrom<MeshData3> for Mesh3 {
+    type Error = Box<dyn std::error::Error>;
+
+    /// Build an accelerated mesh which is **not** solid. Use `Mesh3::from_data` to choose.
+    fn try_from(value: MeshData3) -> Result<Self> {
+        Mesh3::from_data(value, false)
+    }
+}
+
+impl From<Mesh3> for MeshData3 {
+    fn from(value: Mesh3) -> Self {
+        value.into_data()
     }
 }
 
@@ -214,8 +505,12 @@ impl Mesh3 {
 // ===============================================================================================
 impl Mesh3 {
     /// Transform the mesh in place by applying the given transformation to all vertices.
+    ///
+    /// Any stored point normals and `Vector` attributes are rotated with the geometry. Because
+    /// those hold directions rather than positions, only the rotation component has any effect.
     pub fn transform_by(&mut self, transform: &Iso3) {
         self.shape.transform_vertices(transform);
+        self.attrs.transform_in_place(transform);
     }
 
     /// Returns a new mesh with all vertices transformed by the given isometry, leaving the
@@ -228,17 +523,27 @@ impl Mesh3 {
 
     /// Create a new mesh by scaling all vertices uniformly.
     ///
+    /// Any stored point standard deviations are scaled with the geometry, since they are lengths in
+    /// the mesh's own units. Normals are directions and a uniform scale does not move them.
+    ///
     /// # Arguments
     ///
     /// * `scale`: a scale factor to apply to all vertices
     ///
     /// returns: Mesh3
+    // TODO: `MeshData3::scale_in_place` rejects a zero or non-finite factor and reverses the face
+    //   winding for a negative one, which is a mirror. This does neither, so the two types disagree
+    //   on what a negative scale means. Unify them when the derived-mesh operations are reworked.
     pub fn new_scaled_uniform(&self, scale: f64) -> Self {
         let new_shape = self
             .shape
             .clone()
             .scaled(&Vector3::new(scale, scale, scale));
-        Mesh3::new_take_trimesh(new_shape, self.is_solid)
+
+        let mut result = Mesh3::new_take_trimesh(new_shape, self.is_solid);
+        result.attrs = self.attrs.clone();
+        result.attrs.scale_in_place(scale);
+        result
     }
 
     /// Create a new mesh by offsetting each vertex along its smoothed vertex normal.
@@ -268,8 +573,13 @@ impl Mesh3 {
         Self::new(updated, self.faces().to_vec(), self.is_solid)
     }
 
+    /// Reverse the winding order of every face, turning the surface inside out.
+    ///
+    /// Any stored point normals are negated to match, since the direction the surface faces has
+    /// changed.
     pub fn flip_normals(&mut self) {
-        self.shape.reverse()
+        self.shape.reverse();
+        self.attrs.flip_in_place();
     }
 }
 
@@ -283,15 +593,27 @@ impl Mesh3 {
     }
 
     /// Return a convex hull of the points in the mesh.
+    // TODO: The hull is new topology with no index mapping back to the original, so the attributes
+    //   are silently dropped. This should refuse to run on an attributed mesh unless the caller has
+    //   accepted the loss, the way the geometry-only format writers do.
     pub fn convex_hull(&self) -> Self {
         let (vertices, faces) = transformation::convex_hull(self.shape.vertices());
         Self::new(vertices, faces, true)
     }
 
+    // TODO: Both of these restrictions should become a real union of the two attribute sets, using
+    //   `MeshAttrSet3::extend_from`, which already implements the all-or-nothing rule.
     pub fn append(&mut self, other: &Mesh3) -> Result<()> {
         // For now, both meshes must have an empty UV mapping
         if self.uv.is_some() || other.uv.is_some() {
             return Err("Cannot append meshes with UV mappings".into());
+        }
+
+        // Appending grows the point and face buffers, which would leave any attribute array the
+        // wrong length. Refusing is the only thing that keeps the invariant until the union is
+        // implemented.
+        if !self.attrs.is_empty() || !other.attrs.is_empty() {
+            return Err("Cannot yet append meshes carrying per-element attributes".into());
         }
 
         self.shape.append(&other.shape);
@@ -693,6 +1015,7 @@ mod tests {
     use super::*;
     use crate::tests::stanford_bun_4;
     use approx::assert_relative_eq;
+    use std::f64::consts::FRAC_PI_2;
 
     #[test]
     fn vertex_normals_match_vertex_count_and_are_normalized() {
@@ -732,5 +1055,225 @@ mod tests {
         for vertex in offset_mesh.points() {
             assert_relative_eq!(vertex.coords.norm(), radius + offset, epsilon = 1.0e-5);
         }
+    }
+
+    // ===========================================================================================
+    // Conversion to and from MeshData3
+    // ===========================================================================================
+
+    /// A single triangle in the xy plane, wound so that its normal is +z, carrying one attribute of
+    /// every kind an operation might have to touch.
+    fn attributed_data() -> MeshData3 {
+        let mut data = MeshData3::new(
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ],
+            vec![[0, 1, 2]],
+        )
+        .unwrap();
+
+        data.set_point_normals(Some(vec![UnitVec3::new_normalize(Vector3::z()); 3]))
+            .unwrap();
+        data.set_point_stdev(Some(vec![0.1, 0.2, 0.3])).unwrap();
+        data.set_face_labels(Some(vec![7])).unwrap();
+        data.insert_point_attr("confidence", MeshAttr3::Scalar(vec![0.5, 0.6, 0.7]))
+            .unwrap();
+        data.insert_point_attr("principal_dir", MeshAttr3::Vector(vec![Vector3::x(); 3]))
+            .unwrap();
+
+        data
+    }
+
+    #[test]
+    fn round_trip_through_mesh_data_preserves_everything() -> Result<()> {
+        let before = attributed_data();
+        let mesh = Mesh3::from_data(before.clone(), true)?;
+
+        assert!(mesh.is_solid());
+        assert_eq!(mesh.point_count(), 3);
+        assert_eq!(mesh.face_count(), 1);
+
+        let after = mesh.to_data();
+
+        assert_eq!(after.points(), before.points());
+        assert_eq!(after.faces(), before.faces());
+        assert_eq!(after.attrs(), before.attrs());
+
+        Ok(())
+    }
+
+    /// The buffers have to come across index-identical, or every attribute array would be pointing
+    /// at the wrong elements.
+    #[test]
+    fn from_data_does_not_renumber_the_buffers() -> Result<()> {
+        let data = stanford_bun_4().to_data();
+        let mesh = Mesh3::from_data(data.clone(), false)?;
+
+        assert_eq!(mesh.points(), data.points());
+        assert_eq!(mesh.faces(), data.faces());
+
+        Ok(())
+    }
+
+    /// `MeshData3` allows points without faces, but there is nothing to accelerate.
+    #[test]
+    fn from_data_rejects_a_mesh_with_no_faces() -> Result<()> {
+        let data = MeshData3::new(
+            vec![Point3::origin(), Point3::new(1.0, 0.0, 0.0)],
+            Vec::new(),
+        )?;
+        assert!(Mesh3::from_data(data, false).is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn conversion_traits_agree_with_the_named_methods() -> Result<()> {
+        let mesh = Mesh3::try_from(attributed_data())?;
+
+        // The trait impl has no way to be told, so it picks the non-solid reading.
+        assert!(!mesh.is_solid());
+
+        let data: MeshData3 = mesh.into();
+        assert_eq!(data.attrs(), attributed_data().attrs());
+
+        Ok(())
+    }
+
+    // ===========================================================================================
+    // Attributes under in-place mutation
+    // ===========================================================================================
+
+    #[test]
+    fn transform_rotates_the_direction_attributes() -> Result<()> {
+        let mut mesh = Mesh3::from_data(attributed_data(), false)?;
+
+        // A quarter turn about +z, which maps +x onto +y, plus a translation.
+        let iso = Iso3::new(Vector3::new(10.0, 0.0, 0.0), Vector3::z() * FRAC_PI_2);
+        mesh.transform_by(&iso);
+
+        assert_relative_eq!(
+            mesh.points()[1],
+            Point3::new(10.0, 1.0, 0.0),
+            epsilon = 1.0e-12
+        );
+
+        // +z lies on the axis of rotation and does not move.
+        assert_relative_eq!(
+            mesh.point_normals().unwrap()[0].into_inner(),
+            Vector3::z(),
+            epsilon = 1.0e-12
+        );
+        assert_relative_eq!(
+            mesh.point_attr("principal_dir")
+                .unwrap()
+                .as_vector()
+                .unwrap()[0],
+            Vector3::y(),
+            epsilon = 1.0e-12
+        );
+
+        // Scalars are untouched.
+        assert_eq!(mesh.point_stdev().unwrap(), &[0.1, 0.2, 0.3]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn scaling_scales_the_standard_deviations() -> Result<()> {
+        let mesh = Mesh3::from_data(attributed_data(), false)?;
+        let scaled = mesh.new_scaled_uniform(25.4);
+
+        for (actual, expected) in scaled
+            .point_stdev()
+            .unwrap()
+            .iter()
+            .zip([0.1, 0.2, 0.3].iter())
+        {
+            assert_relative_eq!(*actual, expected * 25.4, epsilon = 1.0e-12);
+        }
+
+        // Normals are directions and a uniform scale does not move them.
+        assert_relative_eq!(
+            scaled.point_normals().unwrap()[0].into_inner(),
+            Vector3::z(),
+            epsilon = 1.0e-12
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn flipping_negates_the_stored_normals() -> Result<()> {
+        let mut mesh = Mesh3::from_data(attributed_data(), false)?;
+        mesh.flip_normals();
+
+        assert_relative_eq!(
+            mesh.point_normals().unwrap()[0].into_inner(),
+            -Vector3::z(),
+            epsilon = 1.0e-12
+        );
+
+        Ok(())
+    }
+
+    /// Appending grows both buffers, which would leave every attribute array the wrong length.
+    /// Until the union is implemented, it has to refuse rather than corrupt the mesh.
+    #[test]
+    fn append_refuses_an_attributed_mesh() -> Result<()> {
+        let mut mesh = Mesh3::from_data(attributed_data(), false)?;
+        let other = Mesh3::from_data(attributed_data(), false)?;
+
+        assert!(mesh.append(&other).is_err());
+        assert_eq!(mesh.point_count(), 3);
+        assert_eq!(mesh.point_stdev().unwrap(), &[0.1, 0.2, 0.3]);
+
+        Ok(())
+    }
+
+    // ===========================================================================================
+    // Attribute setters
+    // ===========================================================================================
+
+    #[test]
+    fn attribute_setters_supply_the_counts() -> Result<()> {
+        let mut mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
+        let n_points = mesh.point_count();
+        let n_faces = mesh.face_count();
+
+        mesh.set_point_stdev(Some(vec![0.5; n_points]))?;
+        mesh.set_face_labels(Some(vec![3; n_faces]))?;
+
+        assert_eq!(mesh.point_stdev().unwrap().len(), n_points);
+        assert_eq!(mesh.face_labels().unwrap().len(), n_faces);
+
+        // The wrong length is rejected without the caller having to know the count.
+        assert!(mesh.set_point_stdev(Some(vec![0.5; n_points + 1])).is_err());
+        assert!(mesh.set_face_labels(Some(vec![3; n_faces - 1])).is_err());
+
+        // The rejected calls must have left the existing attributes in place.
+        assert_eq!(mesh.point_stdev().unwrap().len(), n_points);
+
+        Ok(())
+    }
+
+    #[test]
+    fn set_attrs_validates_against_the_current_counts() -> Result<()> {
+        let mut mesh = Mesh3::from_data(attributed_data(), false)?;
+
+        let mut bad = MeshAttrSet3::empty();
+        bad.set_face_labels(Some(vec![1, 2, 3]), 3)?;
+        assert!(mesh.set_attrs(bad).is_err());
+
+        // The rejected set must have left the existing attributes in place.
+        assert_eq!(mesh.face_labels().unwrap(), &[7]);
+
+        let taken = mesh.take_attrs();
+        assert_eq!(taken.face_labels().unwrap(), &[7]);
+        assert!(mesh.attrs().is_empty());
+
+        Ok(())
     }
 }
