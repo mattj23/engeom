@@ -21,5 +21,7 @@
 //! layer over these functions rather than a second home for the logic.
 
 pub mod normals;
+pub mod offset;
 
 pub use normals::compute_point_normals;
+pub use offset::{OffsetOpts, compute_normal_displaced_points, compute_face_offset_points};

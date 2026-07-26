@@ -21,6 +21,7 @@ pub use attribute_set::MeshAttrSet3;
 pub use attributes::MeshAttr3;
 
 use crate::geom3::mesh::algorithms;
+use crate::geom3::mesh::algorithms::{compute_face_offset_points, OffsetOpts, compute_normal_displaced_points};
 use crate::{Point3, Result, UnitVec3};
 use std::fmt;
 
@@ -230,7 +231,7 @@ impl MeshData3 {
             format,
             lost.join(", ")
         )
-        .into())
+            .into())
     }
 }
 
@@ -288,6 +289,58 @@ impl MeshData3 {
     /// returns: `Result<Vec<UnitVec3>>`, failing if any point has no well-defined normal
     pub fn compute_point_normals(&self) -> Result<Vec<UnitVec3>> {
         algorithms::compute_point_normals(&self.points, &self.faces)
+    }
+
+    /// Offset this mesh's surface by `distance` in place, leaving its faces and attributes alone.
+    ///
+    /// Only the point positions change, so the topology and every per-element attribute survive
+    /// unchanged. Note that any stored `point_normals` are **not** recomputed: an offset can change
+    /// them where the surface is curved, so a caller relying on them should recompute them after.
+    ///
+    /// # Arguments
+    ///
+    /// * `distance`: how far to move the surface, in the mesh's length units
+    /// * `opts`: how to handle unconstrained directions and near-degenerate spikes
+    ///
+    /// returns: `Result<()>`, leaving the mesh untouched on failure
+    pub fn offset_faces_in_place(&mut self, distance: f64, opts: &OffsetOpts) -> Result<()> {
+        self.points = compute_face_offset_points(&self.points, &self.faces, distance, opts)?;
+        Ok(())
+    }
+
+    pub fn offset_faces_copy(&self, distance: f64, opts: &OffsetOpts) -> Result<Self> {
+        let mut clone = self.clone();
+        clone.offset_faces_in_place(distance, opts)?;
+        Ok(clone)
+    }
+
+    pub fn offset_points_copy(&self, distance: f64) -> Result<Self> {
+        let mut clone = self.clone();
+        clone.offset_points_in_place(distance)?;
+        Ok(clone)
+    }
+
+    /// Offset this mesh's points by `distance` along their surface normals, editing the mesh in
+    /// place. The faces and the attributes are left alone, so the topology and per-element
+    /// attributes are unchanged.
+    ///
+    /// If the `MeshData3` does not have point normals stored in its attributes, temporary normals
+    /// will be computed for the operation and discarded afterwards.
+    ///
+    /// # Arguments
+    ///
+    /// * `distance`: the distance to move, in the mesh's length units
+    ///
+    /// returns: Result<(), Box<dyn Error, Global>>
+    pub fn offset_points_in_place(&mut self, distance: f64) -> Result<()> {
+        if let Some(normals) = self.attrs.point_normals() {
+            self.points = compute_normal_displaced_points(&self.points, &normals, distance)?;
+        } else {
+            let local_normals = self.compute_point_normals()?;
+            self.points = compute_normal_displaced_points(&self.points, &local_normals, distance)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -487,7 +540,7 @@ fn check_face_indices(faces: &[[u32; 3]], n_points: usize) -> Result<()> {
                 return Err(format!(
                     "Face {i} refers to point {index}, but the mesh has only {n_points} points"
                 )
-                .into());
+                    .into());
             }
         }
     }
@@ -499,6 +552,7 @@ fn check_face_indices(faces: &[[u32; 3]], n_points: usize) -> Result<()> {
 mod tests {
     use super::*;
     use crate::Vector3;
+    use approx::assert_relative_eq;
 
     fn unit_square() -> (Vec<Point3>, Vec<[u32; 3]>) {
         let points = vec![
@@ -633,5 +687,46 @@ mod tests {
         let text = format!("{:?}", square_mesh());
         assert!(text.contains("points: 4"), "{text}");
         assert!(text.contains("faces: 2"), "{text}");
+    }
+
+    /// The offset moves the points and leaves everything else alone, which is what makes it safe
+    /// to apply to a mesh carrying measured data.
+    #[test]
+    fn offsetting_moves_the_points_and_keeps_the_attributes() -> Result<()> {
+        let mut mesh = square_mesh();
+        mesh.set_point_stdev(Some(vec![0.1, 0.2, 0.3, 0.4]))?;
+        mesh.set_face_labels(Some(vec![7, 9]))?;
+
+        let d = 2.0;
+        let moved = mesh.offset_faces_copy(d, &OffsetOpts::default())?;
+
+        // A flat square offsets straight along its normal. Compared approximately, since the
+        // answer comes out of an SVD rather than a closed form.
+        for (before, after) in mesh.points().iter().zip(moved.points().iter()) {
+            assert_relative_eq!(
+                after.coords,
+                before.coords + Vector3::z() * d,
+                epsilon = 1.0e-12
+            );
+        }
+
+        assert_eq!(moved.faces(), mesh.faces());
+        assert_eq!(moved.point_stdev(), Some([0.1, 0.2, 0.3, 0.4].as_slice()));
+        assert_eq!(moved.face_labels(), Some([7, 9].as_slice()));
+
+        Ok(())
+    }
+
+    /// A failed offset must leave the mesh exactly as it was, not half moved.
+    #[test]
+    fn a_failed_offset_leaves_the_mesh_untouched() {
+        // An orphan point has nothing to offset against, so the whole operation fails.
+        let (mut points, faces) = unit_square();
+        points.push(Point3::new(9.0, 9.0, 9.0));
+        let mut mesh = MeshData3::new(points, faces).unwrap();
+        let before = mesh.points().to_vec();
+
+        assert!(mesh.offset_faces_in_place(1.0, &OffsetOpts::default()).is_err());
+        assert_eq!(mesh.points(), before.as_slice());
     }
 }
