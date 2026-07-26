@@ -26,7 +26,9 @@ use std::fmt;
 
 #[cfg(feature = "ply")]
 use crate::io::{PlyWriteOpts, load_ply_mesh_data, write_ply_mesh_data};
-#[cfg(feature = "ply")]
+#[cfg(feature = "stl")]
+use crate::io::{StlWriteOpts, load_stl_mesh_data, write_stl_mesh_data};
+#[cfg(any(feature = "ply", feature = "stl"))]
 use std::path::Path;
 
 /// A container for the raw data of a triangle mesh: a buffer of points, a buffer of faces indexing
@@ -154,6 +156,81 @@ impl MeshData3 {
     #[cfg(feature = "ply")]
     pub fn save_ply(&self, path: &Path, opts: &PlyWriteOpts) -> Result<()> {
         write_ply_mesh_data(path, self, opts)
+    }
+
+    /// Load a triangle mesh from an STL file, in either the ascii or binary encoding.
+    ///
+    /// STL is a triangle soup with no point identity, so the points are recovered by welding on
+    /// exact coordinate equality. See `load_stl_mesh_data` for what that does and does not
+    /// recover, and for the precision the format costs you.
+    ///
+    /// # Arguments
+    ///
+    /// * `path`: the path to the STL file
+    ///
+    /// returns: `Result<MeshData3>`
+    #[cfg(feature = "stl")]
+    pub fn load_stl(path: &Path) -> Result<Self> {
+        load_stl_mesh_data(path)
+    }
+
+    /// Write this mesh to an STL file, which carries geometry and nothing else.
+    ///
+    /// The default options write binary with no attribute loss permitted, so a mesh carrying any
+    /// attributes at all is refused rather than silently stripped. Set `allow_attribute_loss` to
+    /// accept the loss.
+    ///
+    /// # Arguments
+    ///
+    /// * `path`: the path to write to, which is overwritten if it already exists
+    /// * `opts`: encoding, header, and attribute loss options
+    ///
+    /// returns: `Result<()>`
+    #[cfg(feature = "stl")]
+    pub fn save_stl(&self, path: &Path, opts: &StlWriteOpts) -> Result<()> {
+        write_stl_mesh_data(path, self, opts)
+    }
+}
+
+// ===============================================================================================
+// Serialization support
+// ===============================================================================================
+
+impl MeshData3 {
+    /// Verify that the caller has accepted the loss of this mesh's attributes, for a format which
+    /// cannot represent them.
+    ///
+    /// A writer for a geometry-only format calls this before doing any work. If the mesh carries
+    /// no attributes there is nothing to lose and this always succeeds, so the flag only ever
+    /// matters when data would actually die.
+    ///
+    /// This exists because the failure it prevents is both silent and discovered late: save a mesh
+    /// carrying measured uncertainty, close the session, and find out weeks later that the data is
+    /// gone. An error at the moment of loss cannot be ignored the way a return value or a log line
+    /// can.
+    ///
+    /// # Arguments
+    ///
+    /// * `format`: the name of the target format, used in the error message
+    /// * `allow_loss`: whether the caller has accepted the loss, which comes from the
+    ///   `allow_attribute_loss` field of the format's options struct
+    ///
+    /// returns: `Result<()>`
+    pub fn check_attribute_loss(&self, format: &str, allow_loss: bool) -> Result<()> {
+        if allow_loss || self.attrs.is_empty() {
+            return Ok(());
+        }
+
+        let mut lost = self.attrs.point_attr_labels();
+        lost.extend(self.attrs.face_attr_labels());
+
+        Err(format!(
+            "Writing to {} would discard the attributes on this mesh ({}), because the format \
+             cannot represent them. Set `allow_attribute_loss` to accept this.",
+            format,
+            lost.join(", ")
+        )
+        .into())
     }
 }
 
