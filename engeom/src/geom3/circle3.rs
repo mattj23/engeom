@@ -354,6 +354,8 @@ mod tests {
 
     #[test]
     fn stress_intersect_plane_points_on_circle_and_plane() {
+        // TODO: this test fails occasionally
+
         // For a random circle and a plane through two known on-circle points, verify the
         // returned points lie on both the circle and the plane.
         let mut rg = RandomGeometry3::new();

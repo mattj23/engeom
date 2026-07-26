@@ -23,13 +23,11 @@ pub use attributes::MeshAttr3;
 use crate::geom3::mesh::algorithms;
 use crate::{Point3, Result, UnitVec3};
 use std::fmt;
-use std::path::Path;
 
 #[cfg(feature = "ply")]
-use crate::io::load_ply_mesh_data;
+use crate::io::{PlyWriteOpts, load_ply_mesh_data, write_ply_mesh_data};
 #[cfg(feature = "ply")]
-use crate::io::PlyWriteOpts;
-use crate::io::write_ply_mesh_data;
+use std::path::Path;
 
 /// A container for the raw data of a triangle mesh: a buffer of points, a buffer of faces indexing
 /// into it, and the per-element attributes attached to either domain.
@@ -372,6 +370,19 @@ impl MeshData3 {
     /// Remove and return the entire set of per-element attributes, leaving the mesh with none.
     pub fn take_attrs(&mut self) -> MeshAttrSet3 {
         std::mem::take(&mut self.attrs)
+    }
+
+    /// Consume the mesh and return ownership of its three components: the point buffer, the face
+    /// buffer, and the attribute set.
+    ///
+    /// This is the counterpart to `new_with_attrs` and exists so that handing this data to another
+    /// representation does not require copying the buffers. Once the mesh is decomposed nothing
+    /// enforces the invariants between the three pieces any more, so a caller putting them back
+    /// together is responsible for keeping them consistent.
+    ///
+    /// returns: `(Vec<Point3>, Vec<[u32; 3]>, MeshAttrSet3)`
+    pub fn into_parts(self) -> (Vec<Point3>, Vec<[u32; 3]>, MeshAttrSet3) {
+        (self.points, self.faces, self.attrs)
     }
 }
 

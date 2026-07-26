@@ -1,6 +1,6 @@
 use crate::common::{DiscreteDomain, IndexMask};
 use crate::io::lptf3::{Lptf3Loader, Lptf3UncertaintyModel};
-use crate::io::{Lptf3DsParams, Lptf3Load, load_lptf3_mesh};
+use crate::io::{Lptf3DsParams, Lptf3Load, load_lptf3_mesh_data};
 use crate::sensors::LaserProfileGeom;
 use crate::{Mesh, Point3, PointCloud, Result, SurfacePoint3, UnitVec3};
 use parry3d_f64::query::{Ray, RayCast};
@@ -31,9 +31,12 @@ pub fn load_lptf3_comprehensive(
     bad_edge_count: usize,
     ray_check: Option<(&LaserProfileGeom, f64)>,
 ) -> Result<PointCloud> {
+    // This mesh is used only as a query surface, to get a normal at every point and to check
+    // whether a point is occluded from the detector, so it carries no attributes of its own.
     let base_params = Lptf3Load::SmoothSample(Lptf3DsParams::new(8, 1.5, 1.0, 1.0));
-    let half_mesh = load_lptf3_mesh(file_path, base_params)?;
-    let mesh = Mesh::try_from(&half_mesh)?;
+    let (base_points, base_faces, _) =
+        load_lptf3_mesh_data(file_path, base_params, None)?.into_parts();
+    let mesh = Mesh::new(base_points, base_faces, false);
 
     let mut loader = Lptf3Loader::new(file_path, None, false)?;
 

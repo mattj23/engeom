@@ -1,6 +1,5 @@
 use crate::bounding::Aabb3;
 use crate::common::{deviation_mode_from_str, select_op_from_str};
-use engeom::common::DistMode;
 use crate::conversions::{
     array_to_faces, array_to_points3, faces_to_array, points_to_array, vectors_to_array,
 };
@@ -8,6 +7,7 @@ use crate::geom3::{Curve3, Iso3, Plane3, Point3, SurfacePoint3, Vector3};
 use crate::metrology::Distance3;
 use crate::point_cloud::lptf3_load_from_args;
 use engeom::Selection;
+use engeom::common::DistMode;
 use engeom::common::SplitResult;
 use engeom::common::points::dist;
 use engeom::geom3::align3::{GAPParams, generate_alignment_points};
@@ -524,13 +524,11 @@ impl Mesh {
         max_move: Option<f64>,
     ) -> PyResult<Mesh> {
         let load = lptf3_load_from_args(take_every, look_scale, weight_scale, max_move)?;
-        let half_edge_mesh = engeom::io::load_lptf3_mesh(&file_path, load)
+        let mesh_data = engeom::io::load_lptf3_mesh_data(&file_path, load, None)
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
-        let mesh = engeom::Mesh::try_from(&half_edge_mesh)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
-
-        Ok(Self::from_inner(mesh))
+        let (points, faces, _) = mesh_data.into_parts();
+        Ok(Self::from_inner(engeom::Mesh::new(points, faces, false)))
     }
 
     #[staticmethod]

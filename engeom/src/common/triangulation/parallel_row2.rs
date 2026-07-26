@@ -5,9 +5,10 @@
 
 use crate::common::points::three_point_angle;
 use crate::{Point2, Result};
-use alum::VH;
 
-pub type VHFace = (VH, VH, VH);
+/// A face produced by the strip triangulation, given as the three indices of its points in
+/// whatever point set the `StripRowPoint` indices referred to.
+pub type StripFace = [u32; 3];
 
 pub fn build_parallel_row_strip(
     a: &[StripRowPoint],
@@ -15,7 +16,7 @@ pub fn build_parallel_row_strip(
     b: &[StripRowPoint],
     y_b: f64,
     max_edge_ratio: f64,
-) -> Result<Vec<VHFace>> {
+) -> Result<Vec<StripFace>> {
     // Initialize the indices as the first points in each row. The x positions of the points need
     // to be sorted.
     let mut state = StripRowState::try_new(a, y_a, b, y_b, max_edge_ratio)?;
@@ -134,7 +135,7 @@ impl<'a> StripRowState<'a> {
     }
 
     /// Get the next possible face by advancing the index in row 0
-    pub fn next_0(&self) -> Option<(f64, VHFace)> {
+    pub fn next_0(&self) -> Option<(f64, StripFace)> {
         if !self.has_next_0() {
             return None;
         }
@@ -154,10 +155,10 @@ impl<'a> StripRowState<'a> {
         let b = &self.row1[self.i1];
         let c = &self.row0[self.i0 + 1];
 
-        Some((max_edge, (a.handle, b.handle, c.handle)))
+        Some((max_edge, [a.index, b.index, c.index]))
     }
 
-    pub fn next_1(&self) -> Option<(f64, VHFace)> {
+    pub fn next_1(&self) -> Option<(f64, StripFace)> {
         if !self.has_next_1() {
             return None;
         }
@@ -177,7 +178,7 @@ impl<'a> StripRowState<'a> {
         let b = &self.row1[self.i1];
         let c = &self.row1[self.i1 + 1];
 
-        Some((max_edge, (a.handle, b.handle, c.handle)))
+        Some((max_edge, [a.index, b.index, c.index]))
     }
 
     pub fn is_done(&self) -> bool {
@@ -257,22 +258,24 @@ impl<'a> StripRowState<'a> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StripRowPoint {
     /// The X coordinate of the point in the row.
     pub x: f64,
 
-    /// The index of the point in the original (potentially untransformed) vertex set.
-    pub handle: VH,
+    /// The index of the point in the original (potentially untransformed) point set.
+    pub index: u32,
 }
 
 impl StripRowPoint {
-    /// Creates a new `DelaunayRowPoint`.
+    /// Creates a new `StripRowPoint`.
     ///
     /// # Arguments
     ///
     /// * `x`: The X coordinate of the point in the row.
-    /// * `i`: The index of the point in the original vertex set.
-    pub fn new(x: f64, handle: VH) -> Self {
-        Self { x, handle }
+    /// * `index`: The index of the point in the original point set. The triangulation does not
+    ///   interpret this value in any way, it only carries it through to the faces it produces.
+    pub fn new(x: f64, index: u32) -> Self {
+        Self { x, index }
     }
 }
