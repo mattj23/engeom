@@ -9,7 +9,7 @@ round trips, and the bridges to the accelerated types.
 import numpy
 import pytest
 
-from engeom.geom3 import Iso3, Mesh, MeshData3, PointCloud, PointCloudData3
+from engeom.geom3 import Iso3, Mesh3, MeshData3, PointCloud, PointCloudData3
 
 
 def triangle_points() -> numpy.ndarray:
@@ -23,7 +23,7 @@ def triangle_faces() -> numpy.ndarray:
 
 
 def loaded_mesh_data() -> MeshData3:
-    """Mesh data carrying one attribute of every typed kind."""
+    """Mesh3 data carrying one attribute of every typed kind."""
     data = MeshData3(triangle_points(), triangle_faces())
     data.set_point_normals(numpy.tile([0.0, 0.0, 1.0], (3, 1)))
     data.set_point_colors(numpy.array([[255, 0, 0], [0, 255, 0], [0, 0, 255]], dtype=numpy.uint8))
@@ -234,7 +234,7 @@ def test_mesh_data_round_trips_through_mesh():
     before = loaded_mesh_data()
     mesh = before.to_mesh()
 
-    assert isinstance(mesh, Mesh)
+    assert isinstance(mesh, Mesh3)
     assert mesh.vertices.shape == (3, 3)
 
     after = MeshData3.from_mesh(mesh)
@@ -381,13 +381,13 @@ def test_mesh_flip_faces_in_place_reverses_the_winding():
 
 
 # ================================================================================================
-# Attributes surviving (or refusing) the derived-mesh operations on Mesh
+# Attributes surviving (or refusing) the derived-mesh operations on Mesh3
 # ================================================================================================
 
 
-def attributed_mesh() -> Mesh:
+def attributed_mesh() -> Mesh3:
     """A box carrying a per-point and a per-face attribute, as the accelerated type."""
-    data = MeshData3.from_mesh(Mesh.create_box(1.0, 1.0, 1.0))
+    data = MeshData3.from_mesh(Mesh3.create_box(1.0, 1.0, 1.0))
     data.set_point_stdev(numpy.full(len(data), 0.01))
     data.set_face_labels(numpy.arange(data.faces.shape[0], dtype=numpy.uint32))
     return data.to_mesh()
@@ -409,7 +409,7 @@ def test_split_refuses_an_attributed_mesh_unless_the_loss_is_accepted():
     assert negative is not None and positive is not None
 
     # A bare mesh needs no flag.
-    bare = Mesh.create_box(1.0, 1.0, 1.0)
+    bare = Mesh3.create_box(1.0, 1.0, 1.0)
     assert bare.split(plane) is not None
 
 
@@ -420,7 +420,7 @@ def test_convex_hull_refuses_an_attributed_mesh_unless_the_loss_is_accepted():
         mesh.convex_hull()
 
     assert mesh.convex_hull(allow_attribute_loss=True) is not None
-    assert Mesh.create_box(1.0, 1.0, 1.0).convex_hull() is not None
+    assert Mesh3.create_box(1.0, 1.0, 1.0).convex_hull() is not None
 
 
 def test_a_mesh_subset_carries_its_attributes():
@@ -435,12 +435,12 @@ def test_a_mesh_subset_carries_its_attributes():
 
 
 def test_mesh_ply_round_trip_keeps_the_attributes(tmp_path):
-    """The old `Mesh.load_ply` discarded every property the file carried; this one does not."""
+    """The old `Mesh3.load_ply` discarded every property the file carried; this one does not."""
     before = attributed_mesh()
     path = tmp_path / "mesh.ply"
 
     before.save_ply(path)
-    after = Mesh.load_ply(path)
+    after = Mesh3.load_ply(path)
 
     data = MeshData3.from_mesh(after)
     assert data.point_stdev == pytest.approx(0.01)
@@ -457,7 +457,7 @@ def test_mesh_write_stl_refuses_to_drop_attributes_silently(tmp_path):
         mesh.write_stl(path)
 
     mesh.write_stl(path, allow_attribute_loss=True)
-    assert Mesh.load_stl(path) is not None
+    assert Mesh3.load_stl(path) is not None
 
 
 # ================================================================================================
@@ -467,7 +467,7 @@ def test_mesh_write_stl_refuses_to_drop_attributes_silently(tmp_path):
 
 def test_create_cone_uses_the_radius_and_full_height_it_was_given():
     """The two arguments used to reach parry swapped, so a cone came out with them exchanged."""
-    cone = Mesh.create_cone(radius=2.0, height=10.0, steps=32)
+    cone = Mesh3.create_cone(radius=2.0, height=10.0, steps=32)
     aabb = cone.aabb
 
     assert aabb.min.x == pytest.approx(-2.0)
@@ -477,8 +477,8 @@ def test_create_cone_uses_the_radius_and_full_height_it_was_given():
 
 
 def test_cone_and_cylinder_agree_on_what_height_means():
-    cone = Mesh.create_cone(radius=1.0, height=6.0, steps=16)
-    cyl = Mesh.create_cylinder(radius=1.0, height=6.0, steps=16)
+    cone = Mesh3.create_cone(radius=1.0, height=6.0, steps=16)
+    cyl = Mesh3.create_cylinder(radius=1.0, height=6.0, steps=16)
 
     assert cone.aabb.max.y == pytest.approx(cyl.aabb.max.y)
     assert cone.aabb.min.y == pytest.approx(cyl.aabb.min.y)
@@ -486,11 +486,11 @@ def test_cone_and_cylinder_agree_on_what_height_means():
 
 def test_primitives_carry_no_attributes():
     for mesh in [
-        Mesh.create_box(1.0, 2.0, 3.0),
-        Mesh.create_sphere(1.0, 8, 8),
-        Mesh.create_cylinder(1.0, 2.0, 8),
-        Mesh.create_cone(1.0, 2.0, 8),
-        Mesh.create_circle(1.0, 8),
+        Mesh3.create_box(1.0, 2.0, 3.0),
+        Mesh3.create_sphere(1.0, 8, 8),
+        Mesh3.create_cylinder(1.0, 2.0, 8),
+        Mesh3.create_cone(1.0, 2.0, 8),
+        Mesh3.create_circle(1.0, 8),
     ]:
         data = MeshData3.from_mesh(mesh)
         assert data.point_normals is None
@@ -507,7 +507,7 @@ def test_mesh_data_has_the_primitives_too():
 
 
 def test_mesh_scale_copy_rejects_a_zero_factor():
-    mesh = Mesh.create_box(1.0, 1.0, 1.0)
+    mesh = Mesh3.create_box(1.0, 1.0, 1.0)
 
     assert mesh.scale_copy(2.0) is not None
     with pytest.raises(ValueError):

@@ -1,10 +1,10 @@
 import pytest
 from numpy import linalg
-from engeom.geom3 import Mesh
+from engeom.geom3 import Mesh3
 
 
 def test_mesh_new_offset_vertices():
-    m = Mesh.create_sphere(1.0, 100, 100)
+    m = Mesh3.create_sphere(1.0, 100, 100)
     n = m.new_offset_vertices(0.1)
 
     for v in n.vertices:

@@ -4,7 +4,7 @@ from engeom.engeom import DeviationMode
 from pyvista import Plotter
 
 from engeom.align import points_to_mesh, Dof6
-from engeom.geom3 import Mesh, Iso3
+from engeom.geom3 import Mesh3, Iso3
 from engeom.plot import PyvistaPlotterHelper
 
 
@@ -12,7 +12,7 @@ def main():
     # Load a mesh of a small turbine blade to demonstrate. The blade mesh is dimensioned in millimeters and is roughly
     # aligned with the +Z direction pointing in the stacking axis and +X pointing in the engine axis direction towards
     # the front.
-    mesh = Mesh.create_box(10, 5, 2)
+    mesh = Mesh3.create_box(10, 5, 2)
     sample_points = mesh.sample_poisson(0.5)
 
     disturb = Iso3.from_translation(0.5, 1, 1) @ Iso3.from_rotation(-math.pi / 12, 1, 1, 1)

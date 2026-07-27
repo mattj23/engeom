@@ -1,10 +1,10 @@
 from pyvista import Plotter
-from engeom.geom3 import Mesh
+from engeom.geom3 import Mesh3
 from engeom.plot import PyvistaPlotterHelper
 
 
 def main():
-    mesh = Mesh.stanford_bunny_res4()
+    mesh = Mesh3.stanford_bunny_res4()
     plotter = Plotter()
     helper = PyvistaPlotterHelper(plotter)
     helper.mesh(mesh)

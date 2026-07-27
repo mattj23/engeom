@@ -1,6 +1,6 @@
 use crate::conversions::array_to_points3;
 use crate::geom3::{Iso3, Point3};
-use crate::mesh::Mesh;
+use crate::mesh::Mesh3;
 use engeom::geom3::align3::{AlignOrigin, Dof6 as InnerDof6};
 use numpy::ndarray::Array1;
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray2};
@@ -267,7 +267,7 @@ impl Alignment3 {
 #[pyo3(signature = (points, mesh, params))]
 pub fn points_to_mesh(
     points: PyReadonlyArray2<'_, f64>,
-    mesh: &Mesh,
+    mesh: &Mesh3,
     params: AlignParams3,
 ) -> PyResult<Alignment3> {
     let points = array_to_points3(&points.as_array())?;

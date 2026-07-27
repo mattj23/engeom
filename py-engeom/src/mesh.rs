@@ -21,7 +21,7 @@ use pyo3::prelude::*;
 use std::path::PathBuf;
 
 #[pyclass(from_py_object, module = "engeom.geom3")]
-pub struct Mesh {
+pub struct Mesh3 {
     inner: engeom::Mesh3,
     vertices: Option<Py<PyArray2<f64>>>,
     faces: Option<Py<PyArray2<u32>>>,
@@ -29,7 +29,7 @@ pub struct Mesh {
     vertex_normals: Option<Py<PyArray2<f64>>>,
 }
 
-impl Mesh {
+impl Mesh3 {
     fn clear_cached(&mut self) {
         self.vertices = None;
         self.faces = None;
@@ -52,14 +52,14 @@ impl Mesh {
     }
 }
 
-impl Clone for Mesh {
+impl Clone for Mesh3 {
     fn clone(&self) -> Self {
         Self::from_inner(self.inner.clone())
     }
 }
 
 #[pymethods]
-impl Mesh {
+impl Mesh3 {
     #[new]
     #[pyo3(signature=(vertices, faces, merge_duplicates = false, delete_degenerate = false))]
     fn new<'py>(
@@ -144,7 +144,7 @@ impl Mesh {
         Point3::from_inner(self.inner.point_closest_to(&p))
     }
 
-    fn append(&mut self, other: &Mesh) -> PyResult<()> {
+    fn append(&mut self, other: &Mesh3) -> PyResult<()> {
         self.clear_cached();
         self.inner
             .append(&other.inner)
@@ -307,7 +307,7 @@ impl Mesh {
 
     fn __repr__(&self) -> String {
         format!(
-            "<Mesh {} vertices, {} faces>",
+            "<Mesh3 {} vertices, {} faces>",
             self.inner.points().len(),
             self.inner.faces().len()
         )
@@ -403,7 +403,7 @@ impl Mesh {
     fn sample_alignment_points<'py>(
         &self,
         py: Python<'py>,
-        reference: &Mesh,
+        reference: &Mesh3,
         iso: Iso3,
         max_spacing: f64,
         max_neighbor_angle: f64,       // PI / 3.0
@@ -571,7 +571,7 @@ impl Mesh {
         look_scale: Option<f64>,
         weight_scale: Option<f64>,
         max_move: Option<f64>,
-    ) -> PyResult<Mesh> {
+    ) -> PyResult<Mesh3> {
         let load = lptf3_load_from_args(take_every, look_scale, weight_scale, max_move)?;
         let mesh_data = engeom::io::load_lptf3_mesh_data(&file_path, load, None)
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
@@ -581,7 +581,7 @@ impl Mesh {
     }
 
     #[staticmethod]
-    fn load_umesh(file_path: PathBuf) -> PyResult<Mesh> {
+    fn load_umesh(file_path: PathBuf) -> PyResult<Mesh3> {
         // These files are always small, so we're going to just pull the whole thing into memory
         let file_bytes =
             std::fs::read(&file_path).map_err(|e| PyIOError::new_err(e.to_string()))?;
@@ -620,7 +620,7 @@ impl Mesh {
 
 #[pyclass(module = "engeom.geom3")]
 pub struct FaceFilterHandle {
-    mesh: Py<Mesh>,
+    mesh: Py<Mesh3>,
     indices: Vec<usize>,
 }
 
@@ -658,7 +658,7 @@ impl FaceFilterHandle {
     fn near_mesh<'py>(
         mut slf: PyRefMut<'py, Self>,
         py: Python<'py>,
-        other: PyRef<Mesh>,
+        other: PyRef<Mesh3>,
         all_points: bool,
         distance_tol: f64,
         mode: &str,
@@ -688,7 +688,7 @@ impl FaceFilterHandle {
         self.indices.clone()
     }
 
-    fn create_mesh(&self, py: Python<'_>) -> PyResult<Mesh> {
+    fn create_mesh(&self, py: Python<'_>) -> PyResult<Mesh3> {
         self.mesh
             .bind(py)
             .borrow()
@@ -718,12 +718,12 @@ impl MeshCollisionSet {
         Self::from_inner(engeom::geom3::MeshCollisionSet::new())
     }
 
-    fn add_stationary(&mut self, mesh: &Mesh) -> usize {
+    fn add_stationary(&mut self, mesh: &Mesh3) -> usize {
         let inner = mesh.inner.clone();
         self.inner.add_stationary(inner)
     }
 
-    fn add_moving(&mut self, mesh: &Mesh) -> usize {
+    fn add_moving(&mut self, mesh: &Mesh3) -> usize {
         let inner = mesh.inner.clone();
         self.inner.add_moving(inner)
     }
@@ -1035,17 +1035,17 @@ impl MeshData3 {
         self.clone()
     }
 
-    /// Build the accelerated `Mesh` from this data, carrying every attribute across.
+    /// Build the accelerated `Mesh3` from this data, carrying every attribute across.
     #[pyo3(signature = (is_solid = false))]
-    fn to_mesh(&self, is_solid: bool) -> PyResult<Mesh> {
+    fn to_mesh(&self, is_solid: bool) -> PyResult<Mesh3> {
         let inner = engeom::Mesh3::from_data(self.inner.clone(), is_solid)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok(Mesh::from_inner(inner))
+        Ok(Mesh3::from_inner(inner))
     }
 
-    /// Copy the buffers and attributes out of an accelerated `Mesh`.
+    /// Copy the buffers and attributes out of an accelerated `Mesh3`.
     #[staticmethod]
-    fn from_mesh(mesh: &Mesh) -> Self {
+    fn from_mesh(mesh: &Mesh3) -> Self {
         Self::from_inner(mesh.get_inner().to_data())
     }
 

@@ -1,7 +1,7 @@
 use crate::common::deviation_mode_from_str;
 use crate::conversions::array_to_points3;
 use crate::geom3::Iso3;
-use crate::mesh::Mesh;
+use crate::mesh::Mesh3;
 use crate::point_cloud::PointCloud;
 use engeom::geom3::align3::GAPParams;
 use numpy::PyReadonlyArray2;
@@ -35,8 +35,8 @@ pub fn points_to_cloud(
 #[allow(clippy::too_many_arguments)]
 #[pyfunction]
 pub fn mesh_to_mesh_iterative(
-    moving: &Mesh,
-    reference: &Mesh,
+    moving: &Mesh3,
+    reference: &Mesh3,
     initial: &Iso3,
     mode: &str,
     max_iter: usize,

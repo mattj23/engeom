@@ -2,7 +2,7 @@ import math
 
 from engeom.engeom import SelectOp, DeviationMode
 from pyvista import Plotter
-from engeom.geom3 import Mesh, Iso3, Point3
+from engeom.geom3 import Mesh3, Iso3, Point3
 from engeom.align3 import AlignParams3, points_to_mesh
 from engeom.plot import PyvistaPlotterHelper
 
@@ -13,7 +13,7 @@ def main():
     # Load a mesh of a small turbine blade to demonstrate. The blade mesh is dimensioned in millimeters and is roughly
     # aligned with the +Z direction pointing in the stacking axis and +X pointing in the engine axis direction towards
     # the front.
-    mesh = Mesh.load_umesh(DATA_DIR / "engine-blade.umesh.gz")
+    mesh = Mesh3.load_umesh(DATA_DIR / "engine-blade.umesh.gz")
 
     # We're going to grab a sub-mesh consisting of the faces that are rougly pointed towards +Y and then generate
     # points from it using a poisson disk sample with radius of 2mm. Note that the sample points include mesh normals,

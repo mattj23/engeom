@@ -9,7 +9,7 @@ from typing import List, Any, Dict, Union, Iterable, Tuple
 import numpy
 from pyvista import ColorLike
 
-from engeom.geom3 import Mesh, Curve3, Vector3, Point3, Iso3, SurfacePoint3, PointCloud, Circle3, Sphere3
+from engeom.geom3 import Mesh3, Curve3, Vector3, Point3, Iso3, SurfacePoint3, PointCloud, Circle3, Sphere3
 from engeom.metrology import Distance3
 from .common import LabelPlace
 
@@ -76,7 +76,7 @@ else:
             :param opacity: Opacity of the sphere (0.0–1.0). If `None`, the default PyVista opacity is used.
             :return: The PyVista `vtkActor` representing the sphere.
             """
-            mesh = Mesh.create_sphere(sphere.r, n_theta, n_phi)
+            mesh = Mesh3.create_sphere(sphere.r, n_theta, n_phi)
             mesh.transform_by(Iso3.from_translation(*sphere.center))
             return self.mesh(mesh, color=color, opacity=opacity)
 
@@ -101,7 +101,7 @@ else:
             :param line_opacity: Opacity of the outline edge (0.0–1.0). If `None`, the default PyVista opacity is used.
             :param face_opacity: Opacity of the filled face (0.0–1.0). If `None`, the default PyVista opacity is used.
             """
-            mesh = Mesh.create_circle(circle.r, n)
+            mesh = Mesh3.create_circle(circle.r, n)
             mesh.transform_by(circle.iso)
             actors = []
             if edge_color is not None:
@@ -174,7 +174,7 @@ else:
                 name=name,
             )
 
-        def mesh(self, mesh: Mesh, **kwargs) -> pyvista.vtkActor:
+        def mesh(self, mesh: Mesh3, **kwargs) -> pyvista.vtkActor:
             """
             Add an `engeom` mesh to be plotted. Additional keyword arguments will be passed directly to the PyVista
             `Plotter.add_mesh` method, allowing for customization of the mesh appearance.

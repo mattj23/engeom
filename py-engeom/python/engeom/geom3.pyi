@@ -2329,7 +2329,7 @@ class Cone3:
         ...
 
 
-class Mesh:
+class Mesh3:
     """
     A class holding an unstructured, 3-dimensional mesh of triangles.
     """
@@ -2365,7 +2365,7 @@ class Mesh:
 
     @staticmethod
     def load_stl(path: str | Path, merge_duplicates: bool = False, delete_degenerate: bool = False,
-                 is_solid: bool = False) -> Mesh:
+                 is_solid: bool = False) -> Mesh3:
         """
         Load a mesh from an STL file. This will return a new mesh object containing the vertices and triangles from the
         file.  Optional parameters can be used to control the behavior of the loader when handling duplicate vertices/
@@ -2385,7 +2385,7 @@ class Mesh:
         ...
 
     @staticmethod
-    def load_umesh(path: str | Path) -> Mesh:
+    def load_umesh(path: str | Path) -> Mesh3:
         """
         Load a mesh from the micro mesh (.umesh) format. This format was made for this library as a way of doing lossy
         compression on very small meshes which have less than 2^16 vertices. The compression works by discretizing each
@@ -2401,7 +2401,7 @@ class Mesh:
         ...
 
     @staticmethod
-    def load_ply(path: str | Path, is_solid: bool = False) -> Mesh:
+    def load_ply(path: str | Path, is_solid: bool = False) -> Mesh3:
         """
         Loads a PLY (Polygon File Format or Stanford Triangle Format) file and returns its corresponding
         mesh representation.
@@ -2411,7 +2411,7 @@ class Mesh:
 
         :param path: The file path to the PLY file, provided as a string or Path object.
         :param is_solid: whether distance queries should treat points inside the mesh as being at zero distance
-        :return: A Mesh object constructed from the contents of the PLY file.
+        :return: A Mesh3 object constructed from the contents of the PLY file.
         """
         ...
 
@@ -2431,7 +2431,7 @@ class Mesh:
         look_scale: float | None = None,
         weight_scale: float | None = None,
         max_move: float | None = None,
-    ) -> Mesh:
+    ) -> Mesh3:
         """
         This function reads a LPTF3 file, which is a compact file format for storing 3D point data
         taken from a laser profile triangulation scanner. The format is simple and compact, capable
@@ -2482,7 +2482,7 @@ class Mesh:
         ...
 
     @staticmethod
-    def load_tcmesh(path: str | Path, is_solid: bool = False) -> Mesh:
+    def load_tcmesh(path: str | Path, is_solid: bool = False) -> Mesh3:
         """
         Load a mesh from a tolerance-compressed mesh (.tcmesh) file. The tcmesh format stores vertex
         positions as variable-width integers scaled within the bounding box of each partition,
@@ -2511,7 +2511,7 @@ class Mesh:
         """
         ...
 
-    def cloned(self) -> Mesh:
+    def cloned(self) -> Mesh3:
         """
         Will return a copy of the mesh. This is a copy of the data, so modifying the returned mesh will not modify the
         original mesh.
@@ -2520,7 +2520,7 @@ class Mesh:
         """
         ...
 
-    def scale_copy(self, scale: float) -> Mesh:
+    def scale_copy(self, scale: float) -> Mesh3:
         """
         Create a new mesh with all points scaled uniformly about the origin by the given factor. The original mesh is
         not modified.
@@ -2533,7 +2533,7 @@ class Mesh:
         """
         ...
 
-    def new_offset_vertices(self, offset: float) -> Mesh:
+    def new_offset_vertices(self, offset: float) -> Mesh3:
         """
         Create a new mesh with the same structure, but in which the vertices have been offset by the specified amount
         along their normal directions. The vertex normals are calculated through the same method as `vertex_normals`,
@@ -2550,7 +2550,7 @@ class Mesh:
         """
         ...
 
-    def new_transformed_by(self, iso: Iso3) -> Mesh:
+    def new_transformed_by(self, iso: Iso3) -> Mesh3:
         """
         Returns a new mesh with all vertices transformed by the given isometry, leaving the
         original unchanged.
@@ -2559,7 +2559,7 @@ class Mesh:
         """
         ...
 
-    def append(self, other: Mesh):
+    def append(self, other: Mesh3):
         """
         Append another mesh to this mesh. This will add the vertices and triangles from the other mesh to this mesh,
         changing this one and leaving the other one unmodified.
@@ -2606,7 +2606,7 @@ class Mesh:
         """
         ...
 
-    def split(self, plane: Plane3, allow_attribute_loss: bool = False) -> Tuple[Mesh | None, Mesh | None]:
+    def split(self, plane: Plane3, allow_attribute_loss: bool = False) -> Tuple[Mesh3 | None, Mesh3 | None]:
         """
         Split the mesh by a plane. The plane will divide the mesh into two possible parts and return them as two new
         objects.  If the part lies entirely on one side of the plane, the other part will be `None`.
@@ -2668,7 +2668,7 @@ class Mesh:
 
     def sample_alignment_points(
             self,
-            reference: Mesh,
+            reference: Mesh3,
             iso: Iso3,
             max_spacing: float,
             max_neighbor_angle: float,
@@ -2724,7 +2724,7 @@ class Mesh:
         """
         ...
 
-    def separate_patches(self) -> List[Mesh]:
+    def separate_patches(self) -> List[Mesh3]:
         """
         Separate the mesh into connected patches. This will return a list of new mesh objects, each containing one
         connected patch of the original mesh. These objects will be clones of the original mesh, so modifying them will
@@ -2732,7 +2732,7 @@ class Mesh:
         :return: a list of new mesh objects containing the connected patches.
         """
 
-    def create_from_indices(self, indices: List[int]) -> Mesh:
+    def create_from_indices(self, indices: List[int]) -> Mesh3:
         """
         Create a new mesh from a list of face indices. This will build a new mesh object containing only the faces
         (and the points they reference) identified by the given list of indices. Every attribute is carried through.
@@ -2870,7 +2870,7 @@ class Mesh:
         """
         ...
 
-    def convex_hull(self, allow_attribute_loss: bool = False) -> Mesh:
+    def convex_hull(self, allow_attribute_loss: bool = False) -> Mesh3:
         """
         Calculate the convex hull of the mesh. The convex hull is the smallest convex shape that contains all the
         points of the mesh. This will return a new mesh object containing the points and faces of the convex hull.
@@ -2904,19 +2904,19 @@ class Mesh:
         ...
 
     @staticmethod
-    def create_box(length: float, width: float, height: float) -> Mesh:
+    def create_box(length: float, width: float, height: float) -> Mesh3:
         """
         Creates a box with the center at the origin and the specified length, width, and height
 
         :param length: the size of the box along the X-axis
         :param width: the size of the box along the Y-axis
         :param height: the size of the box along the Z-axis
-        :return: a new `Mesh` object representing the box
+        :return: a new `Mesh3` object representing the box
         """
         ...
 
     @staticmethod
-    def create_cylinder(radius: float, height: float, steps: int) -> Mesh:
+    def create_cylinder(radius: float, height: float, steps: int) -> Mesh3:
         """
         Creates a cylinder with a radius and height. The cylinder will be centered at the origin and oriented along the
         Y-axis.
@@ -2925,12 +2925,12 @@ class Mesh:
         :param height: the size of the cylinder along the Y-axis
         :param steps: the number of subdivisions to create vertices around the cylinder. The more steps the smoother the
         cylinder will be.
-        :return: a new `Mesh` object representing the cylinder
+        :return: a new `Mesh3` object representing the cylinder
         """
         ...
 
     @staticmethod
-    def create_sphere(radius: float, n_theta: int, n_phi: int) -> Mesh:
+    def create_sphere(radius: float, n_theta: int, n_phi: int) -> Mesh3:
         """
         Creates a sphere with a radius. The sphere will be centered at the origin. The step counts `n_theta` and `n_phi`
         will determine the smoothness of the sphere in the radial (n_theta) and polar (n_phi) directions. The poles
@@ -2939,12 +2939,12 @@ class Mesh:
         :param radius: the radius of the sphere
         :param n_theta: the number of subdivisions to create vertices around the sphere in the theta direction
         :param n_phi: the number of subdivisions to create vertices around the sphere in the phi direction
-        :return: a new `Mesh` object representing the sphere
+        :return: a new `Mesh3` object representing the sphere
         """
         ...
 
     @staticmethod
-    def create_cone(radius: float, height: float, steps: int) -> Mesh:
+    def create_cone(radius: float, height: float, steps: int) -> Mesh3:
         """
         Creates a cone with a radius and height. The cone will be centered at the origin and oriented so that the
         point of the cone is located at Y=height/2 and the base is located at Y=-height/2.
@@ -2958,24 +2958,24 @@ class Mesh:
         :param height: the size of the cone along the Y-axis
         :param steps: the number of subdivisions to create vertices around the cone. The more steps the smoother the
         cone will be.
-        :return: a new `Mesh` object representing the cone
+        :return: a new `Mesh3` object representing the cone
         """
         ...
 
     @staticmethod
-    def create_circle(radius: float, segments: int) -> Mesh:
+    def create_circle(radius: float, segments: int) -> Mesh3:
         """
         Creates a flat, filled circle mesh lying in the XY plane, centered at the origin, with the normal pointing
         along +Z. The mesh is a triangle fan from the center to `segments` evenly spaced perimeter vertices.
 
         :param radius: the radius of the circle
         :param segments: the number of perimeter vertices (and triangles). Higher values produce a smoother circle.
-        :return: a new `Mesh` object representing the circle
+        :return: a new `Mesh3` object representing the circle
         """
         ...
 
     @staticmethod
-    def create_capsule(p0: Point3, p1: Point3, radius: float, n_theta: int, n_phi: int) -> Mesh:
+    def create_capsule(p0: Point3, p1: Point3, radius: float, n_theta: int, n_phi: int) -> Mesh3:
         """
         Creates a capsule shape between two points with a specified radius. The capsule will be centered between the two
         points and oriented along the line connecting them. The step counts `n_theta` and `n_phi` will determine the
@@ -2986,12 +2986,12 @@ class Mesh:
         :param radius: the radius of the capsule
         :param n_theta: the number of subdivisions to create vertices around the sphere in the theta direction
         :param n_phi: the number of subdivisions to create vertices around the sphere in the phi direction
-        :return: a new `Mesh` object representing the capsule
+        :return: a new `Mesh3` object representing the capsule
         """
         ...
 
     @staticmethod
-    def create_cylinder_between(p0: Point3, p1: Point3, radius: float, steps: int) -> Mesh:
+    def create_cylinder_between(p0: Point3, p1: Point3, radius: float, steps: int) -> Mesh3:
         """
         Creates a cylinder between two points with a specified radius. The cylinder will be centered between the two
         points and oriented along the line connecting them.
@@ -3001,13 +3001,13 @@ class Mesh:
         :param radius: the radius of the cylinder
         :param steps: the number of subdivisions to create vertices around the cylinder. The more steps the smoother the
         cylinder will be.
-        :return: a new `Mesh` object representing the cylinder
+        :return: a new `Mesh3` object representing the cylinder
         """
         ...
 
     @staticmethod
     def create_rect_beam_between(p0: Point3, p1: Point3, width: float, height: float,
-                                 up: Vector3 | None = None) -> Mesh:
+                                 up: Vector3 | None = None) -> Mesh3:
         """
         Create a rectangular cross-sectioned prism between two points with a specified width and height. The prism will
         be centered between the two points and oriented along the line connecting them. The up vector's projection onto
@@ -3021,12 +3021,12 @@ class Mesh:
         :param width: the width of the prism
         :param height: the height of the prism
         :param up: the up vector to use for the height direction. If None, the Z-axis will be used
-        :return: a new `Mesh` object representing the prism
+        :return: a new `Mesh3` object representing the prism
         """
         ...
 
     @staticmethod
-    def stanford_bunny_res4() -> Mesh:
+    def stanford_bunny_res4() -> Mesh3:
         """
         Returns a low-resolution version of the Stanford Bunny mesh with 453 vertices and 948 faces
         that has been embedded into the binary. The mesh structure is the same as the original
@@ -3036,12 +3036,12 @@ class Mesh:
         The mesh dimensions are in meters, and the maximum vertex deviation from the original is
         0.00000189 meters.
 
-        :return: a new `Mesh` object representing the Stanford Bunny
+        :return: a new `Mesh3` object representing the Stanford Bunny
         """
         ...
 
     @staticmethod
-    def stanford_bunny_res3() -> Mesh:
+    def stanford_bunny_res3() -> Mesh3:
         """
         Returns a medium-resolution version of the Stanford Bunny mesh with 1889 vertices and 3851 faces
         that has been embedded into the binary. The mesh structure is the same as the original
@@ -3051,12 +3051,12 @@ class Mesh:
         The mesh dimensions are in meters, and the maximum vertex deviation from the original is
         0.00000189 meters.
 
-        :return: a new `Mesh` object representing the Stanford Bunny
+        :return: a new `Mesh3` object representing the Stanford Bunny
         """
         ...
 
     @staticmethod
-    def stanford_bunny_res2() -> Mesh:
+    def stanford_bunny_res2() -> Mesh3:
         """
         Returns a higher-resolution version of the Stanford Bunny mesh with 8171 vertices and 16301 faces
         that has been embedded into the binary. The mesh structure is the same as the original
@@ -3066,7 +3066,7 @@ class Mesh:
         The mesh dimensions are in meters, and the maximum vertex deviation from the original is
         0.00000189 meters.
 
-        :return: a new `Mesh` object representing the Stanford Bunny
+        :return: a new `Mesh3` object representing the Stanford Bunny
         """
         ...
 
@@ -3075,7 +3075,7 @@ class FaceFilterHandle:
     """
     A class that acts as a handle to a filtering (selection/deselection) operation of faces on a mesh.
 
-    A filtering operation is started using the `face_select_all` or `face_select_none` methods on a `Mesh` object, and
+    A filtering operation is started using the `face_select_all` or `face_select_none` methods on a `Mesh3` object, and
     then further filtering operations can be done on the handle to select or deselect faces based on various criteria.
 
     Once finished, the handle can be finalized into a list of the final indices of the triangles that passed the filter,
@@ -3089,7 +3089,7 @@ class FaceFilterHandle:
         """
         ...
 
-    def create_mesh(self) -> Mesh:
+    def create_mesh(self) -> Mesh3:
         """
         Create a new mesh from the filtered faces. This will build a new mesh object containing only the faces (and
         the points they reference) that are still retained in the filter. Every attribute is carried through.
@@ -3118,7 +3118,7 @@ class FaceFilterHandle:
 
     def near_mesh(
             self,
-            other: Mesh,
+            other: Mesh3,
             all_points: bool,
             distance_tol: float,
             mode: engeom.SelectOp,
@@ -3161,7 +3161,7 @@ class MeshCollisionSet:
         """
         ...
 
-    def add_stationary(self, mesh: Mesh) -> int:
+    def add_stationary(self, mesh: Mesh3) -> int:
         """
         Add a stationary mesh to the collision set. This mesh will be used as a reference for collision detection.
         :param mesh: the mesh to add to the collision set.
@@ -3169,7 +3169,7 @@ class MeshCollisionSet:
         """
         ...
 
-    def add_moving(self, mesh: Mesh) -> int:
+    def add_moving(self, mesh: Mesh3) -> int:
         """
         Add a moving mesh to the collision set. This mesh will be used to check for collisions against the stationary
         meshes in the set.
@@ -3413,7 +3413,7 @@ class Aabb3:
     exposed here in the Python API.
 
     Typically, `Aabb3` objects will be retrieved from other `engeom` objects which use them internally, such as
-    `Curve3` and `Mesh` entities.  However, they can also be created and manipulated directly.
+    `Curve3` and `Mesh3` entities.  However, they can also be created and manipulated directly.
     """
 
     def __init__(self, x_min: float, y_min: float, z_min: float, x_max: float, y_max: float, z_max: float):
@@ -3549,7 +3549,7 @@ class RayBundle3:
         """
         ...
 
-    def intersect_mesh(self, mesh: Mesh, iso: Iso3 | None = None, angle: float | None = None) -> NDArray[float]:
+    def intersect_mesh(self, mesh: Mesh3, iso: Iso3 | None = None, angle: float | None = None) -> NDArray[float]:
         """
 
         :param angle:
@@ -3728,7 +3728,7 @@ class PointCloud:
         """
         ...
 
-    def overlap_mesh_by_reciprocity(self, mesh: Mesh, max_distance: float) -> list[int]:
+    def overlap_mesh_by_reciprocity(self, mesh: Mesh3, max_distance: float) -> list[int]:
         """
         Find the indices of points in this point cloud that "overlap" with triangles in a mesh by looking for
         reciprocity in the closest point in each direction.
@@ -4077,9 +4077,9 @@ class MeshData3:
     attributes attached to either domain.
 
     This is the type to reach for when reading or writing files, or when editing mesh data, since it pays no cost for
-    a spatial acceleration structure. Call `to_mesh()` to build the queryable `Mesh` when you need spatial queries.
+    a spatial acceleration structure. Call `to_mesh()` to build the queryable `Mesh3` when you need spatial queries.
 
-    Unlike `Mesh`, this type carries per-element attributes (normals, colors, standard deviations, labels) through
+    Unlike `Mesh3`, this type carries per-element attributes (normals, colors, standard deviations, labels) through
     serialization, so a PLY loaded here keeps every property the file declared.
     """
 
@@ -4316,9 +4316,9 @@ class MeshData3:
         """
         ...
 
-    def to_mesh(self, is_solid: bool = False) -> Mesh:
+    def to_mesh(self, is_solid: bool = False) -> Mesh3:
         """
-        Build the accelerated `Mesh` from this data, carrying every attribute across.
+        Build the accelerated `Mesh3` from this data, carrying every attribute across.
 
         A mesh with no faces is refused, because there is nothing for an acceleration structure to be built over.
 
@@ -4328,9 +4328,9 @@ class MeshData3:
         ...
 
     @staticmethod
-    def from_mesh(mesh: Mesh) -> MeshData3:
+    def from_mesh(mesh: Mesh3) -> MeshData3:
         """
-        Copy the buffers and attributes out of an accelerated `Mesh`.
+        Copy the buffers and attributes out of an accelerated `Mesh3`.
 
         :param mesh: the mesh to copy from.
         :return: the mesh data.

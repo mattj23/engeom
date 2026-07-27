@@ -1,6 +1,6 @@
 from __future__ import annotations
 import numpy
-from .geom3 import Mesh, Iso3, Point3
+from .geom3 import Mesh3, Iso3, Point3
 
 
 class Dof6:
@@ -168,14 +168,14 @@ class Alignment3:
 
 def points_to_mesh(
     points: numpy.ndarray,
-    mesh: Mesh,
+    mesh: Mesh3,
     params: AlignParams3,
 ) -> Alignment3:
     """
     Align a set of 3-D points to a mesh surface using an iterative least-squares solver.
 
     :param points: An ``(N, 3)`` ``float64`` numpy array of test points.
-    :param mesh: The target `Mesh` surface.
+    :param mesh: The target `Mesh3` surface.
     :param params: An `AlignParams3` that controls the local origin, working offset, and DOF
         constraints for the alignment.
     :returns: An `Alignment3` containing the resulting transformation and residuals.

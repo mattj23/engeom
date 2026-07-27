@@ -3,7 +3,7 @@ use crate::conversions::{
     points_to_array, scalars_to_array, unit_vectors_to_array, vectors_to_array,
 };
 use crate::geom3::Iso3;
-use crate::mesh::Mesh;
+use crate::mesh::Mesh3;
 use engeom::{PointCloudFeatures, PointCloudKdTree, PointCloudOverlap};
 use numpy::ndarray::Array2;
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
@@ -231,7 +231,7 @@ impl PointCloud {
 
     fn overlap_mesh_by_reciprocity(
         &mut self,
-        mesh: &Mesh,
+        mesh: &Mesh3,
         max_distance: f64,
     ) -> PyResult<Vec<usize>> {
         let this_with_tree = self

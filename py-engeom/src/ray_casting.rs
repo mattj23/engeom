@@ -1,5 +1,5 @@
 use crate::geom3::Iso3;
-use crate::mesh::Mesh;
+use crate::mesh::Mesh3;
 use numpy::ndarray::ArrayD;
 use numpy::{IntoPyArray, PyArrayDyn, PyReadonlyArrayDyn};
 use parry3d_f64::query::{Ray as PRay3, RayCast};
@@ -57,7 +57,7 @@ impl RayBundle3 {
     fn intersect_mesh<'py>(
         &self,
         py: Python<'py>,
-        mesh: &Mesh,
+        mesh: &Mesh3,
         mesh_iso: Option<&Iso3>,
         angle: Option<f64>,
     ) -> PyResult<Bound<'py, PyArrayDyn<f64>>> {
