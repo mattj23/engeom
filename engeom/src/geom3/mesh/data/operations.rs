@@ -175,7 +175,7 @@ impl MeshData3 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geom3::mesh::data::MeshAttr3;
+    use crate::geom3::mesh::data::Attr3;
     use crate::{UnitVec3, Vector3};
     use approx::assert_relative_eq;
     use std::f64::consts::FRAC_PI_2;
@@ -197,9 +197,9 @@ mod tests {
             .unwrap();
         mesh.set_point_stdev(Some(vec![0.1, 0.2, 0.3])).unwrap();
         mesh.set_face_labels(Some(vec![7])).unwrap();
-        mesh.insert_point_attr("confidence", MeshAttr3::Scalar(vec![0.5, 0.6, 0.7]))
+        mesh.insert_point_attr("confidence", Attr3::Scalar(vec![0.5, 0.6, 0.7]))
             .unwrap();
-        mesh.insert_point_attr("principal_dir", MeshAttr3::Vector(vec![Vector3::x(); 3]))
+        mesh.insert_point_attr("principal_dir", Attr3::Vector(vec![Vector3::x(); 3]))
             .unwrap();
 
         mesh

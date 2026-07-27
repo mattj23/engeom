@@ -2,7 +2,7 @@
 //! `MeshData3`.
 //!
 //! The bundle holds two kinds of data. A small set of first-class attributes are stored as typed
-//! fields, and everything else lives in an open, name-keyed map of `MeshAttr3` values. An attribute
+//! fields, and everything else lives in an open, name-keyed map of `Attr3` values. An attribute
 //! earns a typed field if either of the following is true:
 //!
 //! 1. An algorithm in the library reads it in a hot loop, so it shouldn't pay for a hash lookup and
@@ -18,17 +18,10 @@
 //! scale the value correctly (for example, when converting a mesh from mm to inches) without
 //! knowing which is stored, so the name has to say.
 
-use super::MeshAttr3;
 use crate::common::IndexMask;
+use crate::geom3::attributes3::{Attr3, RESERVED_ATTR_NAMES};
 use crate::{Iso3, Result, UnitVec3};
 use std::collections::HashMap;
-
-/// Attribute names which may not be used as keys in the open maps, because they name a quantity
-/// that either already has a typed field or is computed on demand. As a precaution we're going to
-/// reject them to prevent any quantity from having two homes that can silently disagree.
-const RESERVED_ATTR_NAMES: [&str; 8] = [
-    "normal", "normals", "color", "colors", "stdev", "std_dev", "label", "labels",
-];
 
 /// The set of per-element attributes attached to a mesh, holding both the first-class typed
 /// attributes and an open, name-keyed map of everything else.
@@ -46,8 +39,8 @@ pub struct MeshAttrSet3 {
     face_colors: Option<Vec<[u8; 3]>>,
     face_labels: Option<Vec<u32>>,
 
-    point_attrs: HashMap<String, MeshAttr3>,
-    face_attrs: HashMap<String, MeshAttr3>,
+    point_attrs: HashMap<String, Attr3>,
+    face_attrs: HashMap<String, Attr3>,
 }
 
 // ===============================================================================================
@@ -134,12 +127,12 @@ impl MeshAttrSet3 {
     }
 
     /// Get the open-map per-point attribute stored under the given name, if present.
-    pub fn point_attr(&self, name: &str) -> Option<&MeshAttr3> {
+    pub fn point_attr(&self, name: &str) -> Option<&Attr3> {
         self.point_attrs.get(name)
     }
 
     /// Get the open-map per-face attribute stored under the given name, if present.
-    pub fn face_attr(&self, name: &str) -> Option<&MeshAttr3> {
+    pub fn face_attr(&self, name: &str) -> Option<&Attr3> {
         self.face_attrs.get(name)
     }
 
@@ -263,12 +256,7 @@ impl MeshAttrSet3 {
     /// * `n_points`: the point count of the owning mesh, which `attr` must match
     ///
     /// returns: `Result<()>`
-    pub fn insert_point_attr(
-        &mut self,
-        name: &str,
-        attr: MeshAttr3,
-        n_points: usize,
-    ) -> Result<()> {
+    pub fn insert_point_attr(&mut self, name: &str, attr: Attr3, n_points: usize) -> Result<()> {
         check_reserved(name)?;
         check_len(Some(attr.len()), n_points, name)?;
         self.point_attrs.insert(name.to_string(), attr);
@@ -285,7 +273,7 @@ impl MeshAttrSet3 {
     /// * `n_faces`: the face count of the owning mesh, which `attr` must match
     ///
     /// returns: `Result<()>`
-    pub fn insert_face_attr(&mut self, name: &str, attr: MeshAttr3, n_faces: usize) -> Result<()> {
+    pub fn insert_face_attr(&mut self, name: &str, attr: Attr3, n_faces: usize) -> Result<()> {
         check_reserved(name)?;
         check_len(Some(attr.len()), n_faces, name)?;
         self.face_attrs.insert(name.to_string(), attr);
@@ -293,12 +281,12 @@ impl MeshAttrSet3 {
     }
 
     /// Remove and return the open-map per-point attribute stored under the given name.
-    pub fn remove_point_attr(&mut self, name: &str) -> Option<MeshAttr3> {
+    pub fn remove_point_attr(&mut self, name: &str) -> Option<Attr3> {
         self.point_attrs.remove(name)
     }
 
     /// Remove and return the open-map per-face attribute stored under the given name.
-    pub fn remove_face_attr(&mut self, name: &str) -> Option<MeshAttr3> {
+    pub fn remove_face_attr(&mut self, name: &str) -> Option<Attr3> {
         self.face_attrs.remove(name)
     }
 }
@@ -462,7 +450,7 @@ impl MeshAttrSet3 {
 impl MeshAttrSet3 {
     /// Transform the spatial attributes in place by the given isometry.
     ///
-    /// This rotates the point normals and every per-point `MeshAttr3::Vector` attribute. Because
+    /// This rotates the point normals and every per-point `Attr3::Vector` attribute. Because
     /// all of these hold directions rather than positions, only the rotation component of the
     /// isometry has any effect. Per-face vector attributes are rotated as well.
     ///
@@ -563,8 +551,8 @@ fn check_both_or_neither(a: bool, b: bool, name: &str) -> Result<()> {
 
 /// Verify that two open maps hold exactly the same set of keys.
 fn check_keys_match(
-    a: &HashMap<String, MeshAttr3>,
-    b: &HashMap<String, MeshAttr3>,
+    a: &HashMap<String, Attr3>,
+    b: &HashMap<String, Attr3>,
     domain: &str,
 ) -> Result<()> {
     for name in a.keys() {
@@ -591,7 +579,7 @@ fn check_keys_match(
 }
 
 /// Verify that two attributes stored under the same name hold the same variant.
-fn check_same_variant(a: &MeshAttr3, b: &MeshAttr3, name: &str) -> Result<()> {
+fn check_same_variant(a: &Attr3, b: &Attr3, name: &str) -> Result<()> {
     if a.kind() != b.kind() {
         return Err(format!(
             "Cannot append: attribute '{}' is a {} on this side and a {} on the other",
@@ -664,13 +652,13 @@ mod tests {
         attrs
             .insert_point_attr(
                 "confidence",
-                MeshAttr3::Scalar(vec![0.5, 0.6, 0.7, 0.8]),
+                Attr3::Scalar(vec![0.5, 0.6, 0.7, 0.8]),
                 N_POINTS,
             )
             .unwrap();
 
         attrs
-            .insert_face_attr("material_index", MeshAttr3::Label(vec![1, 2]), N_FACES)
+            .insert_face_attr("material_index", Attr3::Label(vec![1, 2]), N_FACES)
             .unwrap();
 
         attrs
@@ -699,7 +687,7 @@ mod tests {
         assert!(attrs.set_face_labels(Some(vec![1, 2, 3]), N_FACES).is_err());
         assert!(
             attrs
-                .insert_point_attr("q", MeshAttr3::Scalar(vec![1.0]), N_POINTS)
+                .insert_point_attr("q", Attr3::Scalar(vec![1.0]), N_POINTS)
                 .is_err()
         );
 
@@ -743,13 +731,13 @@ mod tests {
         for name in RESERVED_ATTR_NAMES {
             assert!(
                 attrs
-                    .insert_point_attr(name, MeshAttr3::Scalar(vec![0.0; N_POINTS]), N_POINTS)
+                    .insert_point_attr(name, Attr3::Scalar(vec![0.0; N_POINTS]), N_POINTS)
                     .is_err(),
                 "expected '{name}' to be rejected as a point attribute name"
             );
             assert!(
                 attrs
-                    .insert_face_attr(name, MeshAttr3::Scalar(vec![0.0; N_FACES]), N_FACES)
+                    .insert_face_attr(name, Attr3::Scalar(vec![0.0; N_FACES]), N_FACES)
                     .is_err(),
                 "expected '{name}' to be rejected as a face attribute name"
             );
@@ -760,7 +748,7 @@ mod tests {
             attrs
                 .insert_point_attr(
                     "scanner_color_temp",
-                    MeshAttr3::Scalar(vec![0.0; N_POINTS]),
+                    Attr3::Scalar(vec![0.0; N_POINTS]),
                     N_POINTS
                 )
                 .is_ok()
@@ -850,7 +838,7 @@ mod tests {
         let mut other = full_attrs();
         other.remove_point_attr("confidence");
         other
-            .insert_point_attr("confidence", MeshAttr3::Label(vec![1, 2, 3, 4]), N_POINTS)
+            .insert_point_attr("confidence", Attr3::Label(vec![1, 2, 3, 4]), N_POINTS)
             .unwrap();
 
         assert!(attrs.extend_from(&other).is_err());
@@ -862,7 +850,7 @@ mod tests {
         let mut attrs = full_attrs();
         attrs.insert_point_attr(
             "principal_dir",
-            MeshAttr3::Vector(vec![Vector3::new(1.0, 0.0, 0.0); N_POINTS]),
+            Attr3::Vector(vec![Vector3::new(1.0, 0.0, 0.0); N_POINTS]),
             N_POINTS,
         )?;
 

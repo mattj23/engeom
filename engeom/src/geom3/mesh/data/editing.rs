@@ -263,7 +263,7 @@ impl MeshData3 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geom3::mesh::data::MeshAttr3;
+    use crate::geom3::mesh::data::Attr3;
 
     /// Two triangles sharing an edge, over four points.
     fn square_mesh() -> MeshData3 {
@@ -326,7 +326,7 @@ mod tests {
     #[test]
     fn insertion_names_an_open_map_attribute_too() -> Result<()> {
         let mut mesh = square_mesh();
-        mesh.insert_point_attr("confidence", MeshAttr3::Scalar(vec![0.5; 4]))?;
+        mesh.insert_point_attr("confidence", Attr3::Scalar(vec![0.5; 4]))?;
 
         let err = mesh.push_point(Point3::origin()).unwrap_err().to_string();
         assert!(err.contains("confidence"), "{err}");
@@ -405,7 +405,7 @@ mod tests {
         let mut mesh = square_mesh();
         mesh.set_point_stdev(Some(vec![0.1, 0.2, 0.3, 0.4]))?;
         mesh.set_face_labels(Some(vec![10, 20]))?;
-        mesh.insert_point_attr("confidence", MeshAttr3::Scalar(vec![1.0, 2.0, 3.0, 4.0]))?;
+        mesh.insert_point_attr("confidence", Attr3::Scalar(vec![1.0, 2.0, 3.0, 4.0]))?;
 
         // Point 3 belongs only to face 1.
         mesh.remove_point(3)?;

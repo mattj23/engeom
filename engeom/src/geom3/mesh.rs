@@ -23,7 +23,7 @@ use crate::io::{deflate_bytes, u_bytes_to_mesh};
 use crate::na::SVector;
 use crate::{Iso3, Point2, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
 pub use collisions::MeshCollisionSet;
-pub use data::{MeshAttr3, MeshAttrSet3, MeshData3};
+pub use data::{Attr3, MeshAttrSet3, MeshData3};
 pub use edges::MeshEdges;
 pub use half_edge::HalfEdgeMesh;
 pub use nav_structure::MeshNav;
@@ -206,12 +206,12 @@ impl Mesh3 {
     }
 
     /// Get the open-map per-point attribute stored under the given name, if present.
-    pub fn point_attr(&self, name: &str) -> Option<&MeshAttr3> {
+    pub fn point_attr(&self, name: &str) -> Option<&Attr3> {
         self.attrs.point_attr(name)
     }
 
     /// Get the open-map per-face attribute stored under the given name, if present.
-    pub fn face_attr(&self, name: &str) -> Option<&MeshAttr3> {
+    pub fn face_attr(&self, name: &str) -> Option<&Attr3> {
         self.attrs.face_attr(name)
     }
 }
@@ -287,7 +287,7 @@ impl Mesh3 {
     /// * `attr`: the attribute array to store, whose length must match the point count
     ///
     /// returns: `Result<()>`
-    pub fn insert_point_attr(&mut self, name: &str, attr: MeshAttr3) -> Result<()> {
+    pub fn insert_point_attr(&mut self, name: &str, attr: Attr3) -> Result<()> {
         self.attrs
             .insert_point_attr(name, attr, self.shape.vertices().len())
     }
@@ -301,18 +301,18 @@ impl Mesh3 {
     /// * `attr`: the attribute array to store, whose length must match the face count
     ///
     /// returns: `Result<()>`
-    pub fn insert_face_attr(&mut self, name: &str, attr: MeshAttr3) -> Result<()> {
+    pub fn insert_face_attr(&mut self, name: &str, attr: Attr3) -> Result<()> {
         self.attrs
             .insert_face_attr(name, attr, self.shape.indices().len())
     }
 
     /// Remove and return the open-map per-point attribute stored under the given name.
-    pub fn remove_point_attr(&mut self, name: &str) -> Option<MeshAttr3> {
+    pub fn remove_point_attr(&mut self, name: &str) -> Option<Attr3> {
         self.attrs.remove_point_attr(name)
     }
 
     /// Remove and return the open-map per-face attribute stored under the given name.
-    pub fn remove_face_attr(&mut self, name: &str) -> Option<MeshAttr3> {
+    pub fn remove_face_attr(&mut self, name: &str) -> Option<Attr3> {
         self.attrs.remove_face_attr(name)
     }
 
@@ -1078,9 +1078,9 @@ mod tests {
             .unwrap();
         data.set_point_stdev(Some(vec![0.1, 0.2, 0.3])).unwrap();
         data.set_face_labels(Some(vec![7])).unwrap();
-        data.insert_point_attr("confidence", MeshAttr3::Scalar(vec![0.5, 0.6, 0.7]))
+        data.insert_point_attr("confidence", Attr3::Scalar(vec![0.5, 0.6, 0.7]))
             .unwrap();
-        data.insert_point_attr("principal_dir", MeshAttr3::Vector(vec![Vector3::x(); 3]))
+        data.insert_point_attr("principal_dir", Attr3::Vector(vec![Vector3::x(); 3]))
             .unwrap();
 
         data

@@ -1,5 +1,5 @@
 //! This module contains `MeshData3`, a plain container for triangle mesh data and its associated
-//! per-element attributes.  Mesh3 information is stored in the common point (vertex) and face
+//! per-element attributes.  Mesh information is stored in the common point (vertex) and face
 //! (triangle) buffer representation.
 //!
 //! Unlike `Mesh3`, which is built around a `parry3d` `TriMesh` and pays for a BVH build on every
@@ -12,13 +12,13 @@
 //! struct for ergonomic reasons.
 
 mod attribute_set;
-mod attributes;
 mod editing;
 mod operations;
 mod subsets;
 
 pub use attribute_set::MeshAttrSet3;
-pub use attributes::MeshAttr3;
+
+pub use crate::geom3::attributes3::Attr3;
 
 use crate::geom3::mesh::algorithms;
 use crate::geom3::mesh::algorithms::{
@@ -378,12 +378,12 @@ impl MeshData3 {
     }
 
     /// Get the open-map per-point attribute stored under the given name, if present.
-    pub fn point_attr(&self, name: &str) -> Option<&MeshAttr3> {
+    pub fn point_attr(&self, name: &str) -> Option<&Attr3> {
         self.attrs.point_attr(name)
     }
 
     /// Get the open-map per-face attribute stored under the given name, if present.
-    pub fn face_attr(&self, name: &str) -> Option<&MeshAttr3> {
+    pub fn face_attr(&self, name: &str) -> Option<&Attr3> {
         self.attrs.face_attr(name)
     }
 }
@@ -459,7 +459,7 @@ impl MeshData3 {
     /// * `attr`: the attribute array to store, whose length must match the point count
     ///
     /// returns: `Result<()>`
-    pub fn insert_point_attr(&mut self, name: &str, attr: MeshAttr3) -> Result<()> {
+    pub fn insert_point_attr(&mut self, name: &str, attr: Attr3) -> Result<()> {
         self.attrs.insert_point_attr(name, attr, self.points.len())
     }
 
@@ -472,17 +472,17 @@ impl MeshData3 {
     /// * `attr`: the attribute array to store, whose length must match the face count
     ///
     /// returns: `Result<()>`
-    pub fn insert_face_attr(&mut self, name: &str, attr: MeshAttr3) -> Result<()> {
+    pub fn insert_face_attr(&mut self, name: &str, attr: Attr3) -> Result<()> {
         self.attrs.insert_face_attr(name, attr, self.faces.len())
     }
 
     /// Remove and return the open-map per-point attribute stored under the given name.
-    pub fn remove_point_attr(&mut self, name: &str) -> Option<MeshAttr3> {
+    pub fn remove_point_attr(&mut self, name: &str) -> Option<Attr3> {
         self.attrs.remove_point_attr(name)
     }
 
     /// Remove and return the open-map per-face attribute stored under the given name.
-    pub fn remove_face_attr(&mut self, name: &str) -> Option<MeshAttr3> {
+    pub fn remove_face_attr(&mut self, name: &str) -> Option<Attr3> {
         self.attrs.remove_face_attr(name)
     }
 
@@ -633,8 +633,8 @@ mod tests {
 
         mesh.set_point_stdev(Some(vec![0.1, 0.2, 0.3, 0.4]))?;
         mesh.set_face_labels(Some(vec![7, 8]))?;
-        mesh.insert_point_attr("confidence", MeshAttr3::Scalar(vec![0.5; 4]))?;
-        mesh.insert_face_attr("material_index", MeshAttr3::Label(vec![1, 2]))?;
+        mesh.insert_point_attr("confidence", Attr3::Scalar(vec![0.5; 4]))?;
+        mesh.insert_face_attr("material_index", Attr3::Label(vec![1, 2]))?;
 
         assert_eq!(mesh.point_stdev().unwrap(), &[0.1, 0.2, 0.3, 0.4]);
         assert_eq!(mesh.face_labels().unwrap(), &[7, 8]);

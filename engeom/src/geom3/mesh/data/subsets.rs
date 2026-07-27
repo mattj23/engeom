@@ -174,7 +174,7 @@ impl MeshData3 {
 mod tests {
     use super::*;
     use crate::Point3;
-    use crate::geom3::mesh::data::MeshAttr3;
+    use crate::geom3::mesh::data::Attr3;
 
     /// Two triangles sharing the edge 0-2, over four points, plus a fifth point belonging to no
     /// face at all. Every attribute domain is populated so that subsetting can be checked on both.
@@ -194,12 +194,9 @@ mod tests {
         mesh.set_point_stdev(Some(vec![0.0, 0.1, 0.2, 0.3, 0.4]))
             .unwrap();
         mesh.set_face_labels(Some(vec![10, 20])).unwrap();
-        mesh.insert_point_attr(
-            "confidence",
-            MeshAttr3::Scalar(vec![0.0, 1.0, 2.0, 3.0, 4.0]),
-        )
-        .unwrap();
-        mesh.insert_face_attr("quality", MeshAttr3::Scalar(vec![0.5, 0.75]))
+        mesh.insert_point_attr("confidence", Attr3::Scalar(vec![0.0, 1.0, 2.0, 3.0, 4.0]))
+            .unwrap();
+        mesh.insert_face_attr("quality", Attr3::Scalar(vec![0.5, 0.75]))
             .unwrap();
 
         mesh

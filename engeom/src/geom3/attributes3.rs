@@ -1,21 +1,33 @@
-//! This module contains the per-element attribute arrays which can be attached to a `MeshData3`
-//! or `Mesh3` through an attribute set.
+//! This module contains the per-element attribute arrays which can be attached to any of the 3D
+//! geometry containers through an attribute set: `MeshData3` and `Mesh3` on either the point or the
+//! face domain, and `PointCloudData3` on the point domain.
+//!
+//! It lives here, outside `mesh`, because nothing about the array itself is specific to a mesh. The
+//! attribute set types which own these arrays and know the element counts to validate against are
+//! the ones which belong to a particular container.
 
 use crate::common::IndexMask;
 use crate::{Iso3, Result, Vector3};
 
-/// A single per-element attribute array attached to a mesh. The length of the underlying vector is
-/// expected to match either the point count or the face count of the mesh it belongs to, but this
-/// type does not know which, and does not enforce it. Validation is the responsibility of the
-/// owner, which knows the counts.
+/// Attribute names which may not be used as keys in the open attribute maps, because they name a
+/// quantity that either already has a typed field or is computed on demand. As a precaution we're
+/// going to reject them to prevent any quantity from having two homes that can silently disagree.
+pub(crate) const RESERVED_ATTR_NAMES: [&str; 8] = [
+    "normal", "normals", "color", "colors", "stdev", "std_dev", "label", "labels",
+];
+
+/// A single per-element attribute array. The length of the underlying vector is expected to match
+/// the element count of the domain it is attached to, but this type does not know which domain that
+/// is, and does not enforce it. Validation is the responsibility of the owning attribute set, which
+/// knows the counts.
 ///
 /// # The `Vector` variant is spatial
 ///
-/// `MeshAttr3::Vector` is documented as holding *spatial* directions, which means it is rotated
-/// when the mesh is transformed. If you need to store a non-spatial triple of numbers, store it as
-/// three separate `Scalar` attributes instead, or it will be silently rotated out from under you.
+/// `Attr3::Vector` is documented as holding *spatial* directions, which means it is rotated
+/// when the geometry is transformed. If you need to store a non-spatial triple of numbers, store it
+/// as three separate `Scalar` attributes instead, or it will be silently rotated out from under you.
 #[derive(Debug, Clone, PartialEq)]
-pub enum MeshAttr3 {
+pub enum Attr3 {
     /// A floating point value per element, such as a curvature, a deviation, or a confidence.
     Scalar(Vec<f64>),
 
@@ -30,14 +42,14 @@ pub enum MeshAttr3 {
     Color(Vec<[u8; 3]>),
 }
 
-impl MeshAttr3 {
+impl Attr3 {
     /// Get the number of elements in the attribute array.
     pub fn len(&self) -> usize {
         match self {
-            MeshAttr3::Scalar(v) => v.len(),
-            MeshAttr3::Label(v) => v.len(),
-            MeshAttr3::Vector(v) => v.len(),
-            MeshAttr3::Color(v) => v.len(),
+            Attr3::Scalar(v) => v.len(),
+            Attr3::Label(v) => v.len(),
+            Attr3::Vector(v) => v.len(),
+            Attr3::Color(v) => v.len(),
         }
     }
 
@@ -50,17 +62,17 @@ impl MeshAttr3 {
     /// messages.
     pub fn kind(&self) -> &'static str {
         match self {
-            MeshAttr3::Scalar(_) => "scalar",
-            MeshAttr3::Label(_) => "label",
-            MeshAttr3::Vector(_) => "vector",
-            MeshAttr3::Color(_) => "color",
+            Attr3::Scalar(_) => "scalar",
+            Attr3::Label(_) => "label",
+            Attr3::Vector(_) => "vector",
+            Attr3::Color(_) => "color",
         }
     }
 
     /// Get the underlying values if this is a `Scalar` attribute, otherwise `None`.
     pub fn as_scalar(&self) -> Option<&[f64]> {
         match self {
-            MeshAttr3::Scalar(v) => Some(v),
+            Attr3::Scalar(v) => Some(v),
             _ => None,
         }
     }
@@ -68,7 +80,7 @@ impl MeshAttr3 {
     /// Get the underlying values if this is a `Label` attribute, otherwise `None`.
     pub fn as_label(&self) -> Option<&[u32]> {
         match self {
-            MeshAttr3::Label(v) => Some(v),
+            Attr3::Label(v) => Some(v),
             _ => None,
         }
     }
@@ -76,7 +88,7 @@ impl MeshAttr3 {
     /// Get the underlying values if this is a `Vector` attribute, otherwise `None`.
     pub fn as_vector(&self) -> Option<&[Vector3]> {
         match self {
-            MeshAttr3::Vector(v) => Some(v),
+            Attr3::Vector(v) => Some(v),
             _ => None,
         }
     }
@@ -84,7 +96,7 @@ impl MeshAttr3 {
     /// Get the underlying values if this is a `Color` attribute, otherwise `None`.
     pub fn as_color(&self) -> Option<&[[u8; 3]]> {
         match self {
-            MeshAttr3::Color(v) => Some(v),
+            Attr3::Color(v) => Some(v),
             _ => None,
         }
     }
@@ -96,13 +108,13 @@ impl MeshAttr3 {
     ///
     /// * `mask`: a mask whose length must match the length of this attribute array
     ///
-    /// returns: `Result<MeshAttr3>`
+    /// returns: `Result<Attr3>`
     pub fn clone_indices_of(&self, mask: &IndexMask) -> Result<Self> {
         match self {
-            MeshAttr3::Scalar(v) => Ok(MeshAttr3::Scalar(mask.clone_indices_of(v)?)),
-            MeshAttr3::Label(v) => Ok(MeshAttr3::Label(mask.clone_indices_of(v)?)),
-            MeshAttr3::Vector(v) => Ok(MeshAttr3::Vector(mask.clone_indices_of(v)?)),
-            MeshAttr3::Color(v) => Ok(MeshAttr3::Color(mask.clone_indices_of(v)?)),
+            Attr3::Scalar(v) => Ok(Attr3::Scalar(mask.clone_indices_of(v)?)),
+            Attr3::Label(v) => Ok(Attr3::Label(mask.clone_indices_of(v)?)),
+            Attr3::Vector(v) => Ok(Attr3::Vector(mask.clone_indices_of(v)?)),
+            Attr3::Color(v) => Ok(Attr3::Color(mask.clone_indices_of(v)?)),
         }
     }
 
@@ -114,7 +126,7 @@ impl MeshAttr3 {
     /// * `indices`: the indices to take, each of which must be less than the length of this
     ///   attribute array
     ///
-    /// returns: `Result<MeshAttr3>`
+    /// returns: `Result<Attr3>`
     pub fn clone_indices(&self, indices: &[usize]) -> Result<Self> {
         let n = self.len();
         if let Some(bad) = indices.iter().find(|&&i| i >= n) {
@@ -124,10 +136,10 @@ impl MeshAttr3 {
         }
 
         Ok(match self {
-            MeshAttr3::Scalar(v) => MeshAttr3::Scalar(take_indices(v, indices)),
-            MeshAttr3::Label(v) => MeshAttr3::Label(take_indices(v, indices)),
-            MeshAttr3::Vector(v) => MeshAttr3::Vector(take_indices(v, indices)),
-            MeshAttr3::Color(v) => MeshAttr3::Color(take_indices(v, indices)),
+            Attr3::Scalar(v) => Attr3::Scalar(take_indices(v, indices)),
+            Attr3::Label(v) => Attr3::Label(take_indices(v, indices)),
+            Attr3::Vector(v) => Attr3::Vector(take_indices(v, indices)),
+            Attr3::Color(v) => Attr3::Color(take_indices(v, indices)),
         })
     }
 
@@ -142,10 +154,10 @@ impl MeshAttr3 {
     /// returns: `Result<()>`
     pub fn extend_from(&mut self, other: &Self) -> Result<()> {
         match (self, other) {
-            (MeshAttr3::Scalar(a), MeshAttr3::Scalar(b)) => a.extend_from_slice(b),
-            (MeshAttr3::Label(a), MeshAttr3::Label(b)) => a.extend_from_slice(b),
-            (MeshAttr3::Vector(a), MeshAttr3::Vector(b)) => a.extend_from_slice(b),
-            (MeshAttr3::Color(a), MeshAttr3::Color(b)) => a.extend_from_slice(b),
+            (Attr3::Scalar(a), Attr3::Scalar(b)) => a.extend_from_slice(b),
+            (Attr3::Label(a), Attr3::Label(b)) => a.extend_from_slice(b),
+            (Attr3::Vector(a), Attr3::Vector(b)) => a.extend_from_slice(b),
+            (Attr3::Color(a), Attr3::Color(b)) => a.extend_from_slice(b),
             (a, b) => {
                 return Err(format!(
                     "Cannot append a {} attribute onto a {} attribute",
@@ -169,7 +181,7 @@ impl MeshAttr3 {
     ///
     /// * `iso`: the isometry to apply
     pub fn transform_in_place(&mut self, iso: &Iso3) {
-        if let MeshAttr3::Vector(v) = self {
+        if let Attr3::Vector(v) = self {
             for value in v.iter_mut() {
                 *value = iso * *value;
             }
@@ -189,16 +201,16 @@ mod tests {
     use approx::assert_relative_eq;
     use std::f64::consts::FRAC_PI_2;
 
-    fn sample_scalar() -> MeshAttr3 {
-        MeshAttr3::Scalar(vec![0.0, 1.0, 2.0, 3.0])
+    fn sample_scalar() -> Attr3 {
+        Attr3::Scalar(vec![0.0, 1.0, 2.0, 3.0])
     }
 
-    fn sample_label() -> MeshAttr3 {
-        MeshAttr3::Label(vec![10, 11, 12, 13])
+    fn sample_label() -> Attr3 {
+        Attr3::Label(vec![10, 11, 12, 13])
     }
 
-    fn sample_vector() -> MeshAttr3 {
-        MeshAttr3::Vector(vec![
+    fn sample_vector() -> Attr3 {
+        Attr3::Vector(vec![
             Vector3::new(1.0, 0.0, 0.0),
             Vector3::new(0.0, 1.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -206,11 +218,11 @@ mod tests {
         ])
     }
 
-    fn sample_color() -> MeshAttr3 {
-        MeshAttr3::Color(vec![[0, 1, 2], [3, 4, 5], [6, 7, 8], [9, 10, 11]])
+    fn sample_color() -> Attr3 {
+        Attr3::Color(vec![[0, 1, 2], [3, 4, 5], [6, 7, 8], [9, 10, 11]])
     }
 
-    fn all_samples() -> Vec<MeshAttr3> {
+    fn all_samples() -> Vec<Attr3> {
         vec![
             sample_scalar(),
             sample_label(),
@@ -226,7 +238,7 @@ mod tests {
             assert!(!attr.is_empty());
         }
 
-        assert!(MeshAttr3::Scalar(Vec::new()).is_empty());
+        assert!(Attr3::Scalar(Vec::new()).is_empty());
     }
 
     #[test]
@@ -252,15 +264,15 @@ mod tests {
 
         assert_eq!(
             sample_scalar().clone_indices_of(&mask)?,
-            MeshAttr3::Scalar(vec![1.0, 3.0])
+            Attr3::Scalar(vec![1.0, 3.0])
         );
         assert_eq!(
             sample_label().clone_indices_of(&mask)?,
-            MeshAttr3::Label(vec![11, 13])
+            Attr3::Label(vec![11, 13])
         );
         assert_eq!(
             sample_color().clone_indices_of(&mask)?,
-            MeshAttr3::Color(vec![[3, 4, 5], [9, 10, 11]])
+            Attr3::Color(vec![[3, 4, 5], [9, 10, 11]])
         );
 
         let vectors = sample_vector().clone_indices_of(&mask)?;
@@ -283,10 +295,10 @@ mod tests {
     #[test]
     fn clone_indices_preserves_order_and_allows_repeats() -> Result<()> {
         let taken = sample_scalar().clone_indices(&[3, 0, 3])?;
-        assert_eq!(taken, MeshAttr3::Scalar(vec![3.0, 0.0, 3.0]));
+        assert_eq!(taken, Attr3::Scalar(vec![3.0, 0.0, 3.0]));
 
         let taken = sample_label().clone_indices(&[2, 1])?;
-        assert_eq!(taken, MeshAttr3::Label(vec![12, 11]));
+        assert_eq!(taken, Attr3::Label(vec![12, 11]));
 
         Ok(())
     }
@@ -301,11 +313,11 @@ mod tests {
     #[test]
     fn extend_from_appends_matching_variants() -> Result<()> {
         let mut attr = sample_scalar();
-        attr.extend_from(&MeshAttr3::Scalar(vec![4.0]))?;
-        assert_eq!(attr, MeshAttr3::Scalar(vec![0.0, 1.0, 2.0, 3.0, 4.0]));
+        attr.extend_from(&Attr3::Scalar(vec![4.0]))?;
+        assert_eq!(attr, Attr3::Scalar(vec![0.0, 1.0, 2.0, 3.0, 4.0]));
 
         let mut attr = sample_color();
-        attr.extend_from(&MeshAttr3::Color(vec![[12, 13, 14]]))?;
+        attr.extend_from(&Attr3::Color(vec![[12, 13, 14]]))?;
         assert_eq!(attr.len(), 5);
 
         Ok(())

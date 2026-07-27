@@ -346,7 +346,7 @@ pub fn write_mesh_stl(path: &Path, mesh: &Mesh3) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geom3::MeshAttr3;
+    use crate::geom3::Attr3;
     use crate::tests::get_test_file_path;
     use crate::{UnitVec3, Vector3};
     use std::io::Cursor;
@@ -508,7 +508,7 @@ mod tests {
         mesh.set_point_normals(Some(vec![UnitVec3::new_normalize(Vector3::z()); 4]))
             .unwrap();
         mesh.set_face_labels(Some(vec![7, 9])).unwrap();
-        mesh.insert_point_attr("intensity", MeshAttr3::Scalar(vec![1.0, 2.0, 3.0, 4.0]))
+        mesh.insert_point_attr("intensity", Attr3::Scalar(vec![1.0, 2.0, 3.0, 4.0]))
             .unwrap();
 
         let mut buf = Vec::new();

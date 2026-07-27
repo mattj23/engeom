@@ -1,4 +1,5 @@
 pub mod align3;
+pub mod attributes3;
 mod circle3;
 mod cone3;
 mod cubic_spline3;
@@ -20,6 +21,7 @@ use parry3d_f64::na::UnitQuaternion;
 
 use crate::common::surface_point::{SurfacePoint, SurfacePointCollection};
 use crate::common::svd_basis::SvdBasis;
+pub use attributes3::Attr3;
 pub use circle3::Circle3;
 pub use cone3::Cone3;
 pub use cubic_spline3::CubicSpline3;
@@ -28,7 +30,7 @@ pub use cylinder3::Cylinder3;
 pub use iso3::IsoExtensions3;
 pub use line3::Line3;
 pub use manifold::Manifold1Pos3;
-pub use mesh::{Mesh3, MeshAttr3, MeshAttrSet3, MeshCollisionSet, MeshData3, UvMapping};
+pub use mesh::{Mesh3, MeshAttrSet3, MeshCollisionSet, MeshData3, UvMapping};
 use parry3d_f64::query::Ray;
 pub use plane3::Plane3;
 pub use point_cloud::{PointCloud, PointCloudFeatures, PointCloudKdTree, PointCloudOverlap};

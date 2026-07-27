@@ -47,7 +47,8 @@
 //! - Per-corner properties (PLY's face `texcoord`, for instance) are not supported, since
 //!   `MeshAttrSet3` has no per-corner domain yet.
 
-use crate::geom3::mesh::data::{MeshAttr3, MeshAttrSet3, MeshData3};
+use crate::geom3::attributes3::Attr3;
+use crate::geom3::mesh::data::{MeshAttrSet3, MeshData3};
 use crate::{Mesh3, Point3, Result, UnitVec3, Vector3};
 use ply_rs_bw::parser::{Parser, Reader};
 use ply_rs_bw::ply::{
@@ -436,16 +437,16 @@ fn face_columns(mesh: &MeshData3) -> Vec<(String, Col<'_>)> {
 ///
 /// Scalars and labels are a single property. Vectors and colors have no single-property form in PLY
 /// and are split across three properties sharing a base name, which the reader folds back together.
-fn push_open_attr<'a>(cols: &mut Vec<(String, Col<'a>)>, name: &str, attr: &'a MeshAttr3) {
+fn push_open_attr<'a>(cols: &mut Vec<(String, Col<'a>)>, name: &str, attr: &'a Attr3) {
     match attr {
-        MeshAttr3::Scalar(v) => cols.push((name.to_string(), Col::Scalar(v))),
-        MeshAttr3::Label(v) => cols.push((name.to_string(), Col::Label(v))),
-        MeshAttr3::Vector(v) => {
+        Attr3::Scalar(v) => cols.push((name.to_string(), Col::Scalar(v))),
+        Attr3::Label(v) => cols.push((name.to_string(), Col::Label(v))),
+        Attr3::Vector(v) => {
             for (c, suffix) in VECTOR_SUFFIXES.iter().enumerate() {
                 cols.push((format!("{name}{suffix}"), Col::Vector(v, c)));
             }
         }
-        MeshAttr3::Color(v) => {
+        Attr3::Color(v) => {
             for (c, suffix) in COLOR_SUFFIXES.iter().enumerate() {
                 cols.push((format!("{name}{suffix}"), Col::Color(v, c)));
             }
@@ -792,7 +793,7 @@ const FACE_CONSUMED: &[&str] = &[
 // ===============================================================================================
 
 /// One property's worth of values, pulled out of the row-oriented parse into a column, along with
-/// the PLY type it was declared as so that it can be given the right `MeshAttr3` variant.
+/// the PLY type it was declared as so that it can be given the right `Attr3` variant.
 struct Column {
     name: String,
     declared: ScalarType,
@@ -800,17 +801,17 @@ struct Column {
 }
 
 impl Column {
-    /// Choose a `MeshAttr3` variant for this column.
+    /// Choose a `Attr3` variant for this column.
     ///
     /// Floating point properties become scalars. Integer properties become labels, which is what
     /// the identifiers they usually hold (region, scan pass, material index) want to be, unless the
     /// column actually contains a negative value, in which case it is a signed quantity rather than
     /// an identifier and stays a scalar.
-    fn to_attr(&self) -> MeshAttr3 {
+    fn to_attr(&self) -> Attr3 {
         match &self.declared {
-            ScalarType::Float | ScalarType::Double => MeshAttr3::Scalar(self.values.clone()),
-            _ if self.values.iter().any(|v| *v < 0.0) => MeshAttr3::Scalar(self.values.clone()),
-            _ => MeshAttr3::Label(self.values.iter().map(|v| *v as u32).collect()),
+            ScalarType::Float | ScalarType::Double => Attr3::Scalar(self.values.clone()),
+            _ if self.values.iter().any(|v| *v < 0.0) => Attr3::Scalar(self.values.clone()),
+            _ => Attr3::Label(self.values.iter().map(|v| *v as u32).collect()),
         }
     }
 
@@ -910,7 +911,7 @@ fn remaining<'a>(columns: &'a [Column], consumed: &[&str], taken: &[String]) -> 
 
 /// Suffix triples which are folded back into a single multi-component attribute.
 ///
-/// A `MeshAttr3::Vector` or `MeshAttr3::Color` has no single-property representation in PLY, so it is
+/// A `Attr3::Vector` or `Attr3::Color` has no single-property representation in PLY, so it is
 /// written as three properties sharing a base name. Recognizing them on the way back in is what makes
 /// the round trip exact, and it also picks up the same convention when another tool happens to use
 /// it, which is common for directional fields.
@@ -921,7 +922,7 @@ const COLOR_SUFFIXES: [&str; 3] = ["_red", "_green", "_blue"];
 ///
 /// Returns the reassembled attributes along with the names of every column they consumed, so those
 /// columns are not also emitted individually.
-fn take_composites(columns: &[Column]) -> (Vec<(String, MeshAttr3)>, Vec<String>) {
+fn take_composites(columns: &[Column]) -> (Vec<(String, Attr3)>, Vec<String>) {
     let mut composites = Vec::new();
     let mut taken = Vec::new();
 
@@ -941,7 +942,7 @@ fn take_composites(columns: &[Column]) -> (Vec<(String, MeshAttr3)>, Vec<String>
         let values = (0..column.values.len())
             .map(|i| Vector3::new(parts[0].values[i], parts[1].values[i], parts[2].values[i]))
             .collect();
-        composites.push((base.to_string(), MeshAttr3::Vector(values)));
+        composites.push((base.to_string(), Attr3::Vector(values)));
         taken.extend(parts.iter().map(|p| p.name.clone()));
     }
 
@@ -962,7 +963,7 @@ fn take_composites(columns: &[Column]) -> (Vec<(String, MeshAttr3)>, Vec<String>
         let values = (0..column.values.len())
             .map(|i| [channels[0][i], channels[1][i], channels[2][i]])
             .collect();
-        composites.push((base.to_string(), MeshAttr3::Color(values)));
+        composites.push((base.to_string(), Attr3::Color(values)));
         taken.extend(parts.iter().map(|p| p.name.clone()));
     }
 
@@ -1255,7 +1256,7 @@ mod tests {
         read_ply_mesh_data(Cursor::new(buffer))
     }
 
-    /// A mesh carrying every typed field and one open attribute of each `MeshAttr3` variant.
+    /// A mesh carrying every typed field and one open attribute of each `Attr3` variant.
     fn loaded_mesh() -> MeshData3 {
         let mut mesh = MeshData3::new(
             vec![
@@ -1276,21 +1277,18 @@ mod tests {
         mesh.set_face_colors(Some(vec![[10, 20, 30]])).unwrap();
         mesh.set_face_labels(Some(vec![42])).unwrap();
 
-        mesh.insert_point_attr("confidence", MeshAttr3::Scalar(vec![0.25, 0.5, 0.75]))
+        mesh.insert_point_attr("confidence", Attr3::Scalar(vec![0.25, 0.5, 0.75]))
             .unwrap();
-        mesh.insert_point_attr("scan_pass", MeshAttr3::Label(vec![1, 2, 3]))
+        mesh.insert_point_attr("scan_pass", Attr3::Label(vec![1, 2, 3]))
             .unwrap();
         mesh.insert_point_attr(
             "principal_dir",
-            MeshAttr3::Vector(vec![Vector3::x(), Vector3::y(), Vector3::z()]),
+            Attr3::Vector(vec![Vector3::x(), Vector3::y(), Vector3::z()]),
         )
         .unwrap();
-        mesh.insert_point_attr(
-            "shade",
-            MeshAttr3::Color(vec![[1, 2, 3], [4, 5, 6], [7, 8, 9]]),
-        )
-        .unwrap();
-        mesh.insert_face_attr("quality", MeshAttr3::Scalar(vec![0.875]))
+        mesh.insert_point_attr("shade", Attr3::Color(vec![[1, 2, 3], [4, 5, 6], [7, 8, 9]]))
+            .unwrap();
+        mesh.insert_face_attr("quality", Attr3::Scalar(vec![0.875]))
             .unwrap();
 
         mesh

@@ -1,4 +1,4 @@
-//! Mesh3 serialization for the practical tol-compression mesh format. This uses the algorithms
+//! Mesh serialization for the practical tol-compression mesh format. This uses the algorithms
 //! in the `engeom::io::tol_compress::core` module and its submodules to dynamically adjust the
 //! byte width and store mesh information in an efficient binary representation.
 //!
