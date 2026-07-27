@@ -4023,3 +4023,424 @@ def fit_spline_to_points(
         not converge.
     """
     ...
+
+
+class MeshData3:
+    """
+    The unaccelerated mesh container: a buffer of points, a buffer of faces indexing into it, and the per-element
+    attributes attached to either domain.
+
+    This is the type to reach for when reading or writing files, or when editing mesh data, since it pays no cost for
+    a spatial acceleration structure. Call `to_mesh()` to build the queryable `Mesh` when you need spatial queries.
+
+    Unlike `Mesh`, this type carries per-element attributes (normals, colors, standard deviations, labels) through
+    serialization, so a PLY loaded here keeps every property the file declared.
+    """
+
+    def __init__(self, points: NDArray[float], faces: NDArray[numpy.uint32]):
+        """
+        Create mesh data from a point buffer and a face buffer.
+
+        :param points: a numpy array of shape (n, 3) and dtype float64 with the point positions.
+        :param faces: a numpy array of shape (m, 3) and dtype uint32 with triples of indices into `points`.
+        """
+        ...
+
+    @staticmethod
+    def load_ply(path: str | Path) -> MeshData3:
+        """
+        Load a mesh from a PLY file, preserving every property the file carries.
+
+        :param path: the path to the PLY file.
+        :return: the loaded mesh data.
+        """
+        ...
+
+    def save_ply(self, path: str | Path, binary: bool = True):
+        """
+        Write this mesh to a PLY file, preserving every attribute it carries.
+
+        :param path: the path to write to, which is overwritten if it exists.
+        :param binary: write a binary payload rather than ascii. Binary is smaller, faster, and round-trips floating
+        point exactly.
+        """
+        ...
+
+    @staticmethod
+    def load_stl(path: str | Path) -> MeshData3:
+        """
+        Load a mesh from an STL file, in either the ascii or binary encoding. STL is a triangle soup with no point
+        identity, so the points are recovered by welding on exact coordinate equality.
+
+        :param path: the path to the STL file.
+        :return: the loaded mesh data.
+        """
+        ...
+
+    def save_stl(self, path: str | Path, binary: bool = True, allow_attribute_loss: bool = False):
+        """
+        Write this mesh to an STL file, which carries geometry and nothing else.
+
+        A mesh carrying any attributes at all is refused rather than silently stripped, unless `allow_attribute_loss`
+        is set.
+
+        :param path: the path to write to, which is overwritten if it exists.
+        :param binary: write the binary encoding rather than ascii.
+        :param allow_attribute_loss: accept the loss of every attribute this mesh carries.
+        """
+        ...
+
+    @staticmethod
+    def load_lptf3(
+        path: str | Path,
+        take_every: int = 1,
+        look_scale: float | None = None,
+        weight_scale: float | None = None,
+        max_move: float | None = None,
+    ) -> MeshData3:
+        """
+        Read a LPTF3 laser profile scan and build a triangle mesh from it, connecting points in adjacent rows.
+
+        Points which end up in no face are discarded, so the point buffer is a subset of what
+        `PointCloudData3.load_lptf3` returns for the same file. Use that instead when every measured point matters.
+
+        The way the data is loaded is controlled by the keyword arguments:
+
+        * If `take_every` is 1 (the default) and no smoothing parameters are given, every point is loaded.
+        * If `take_every` is greater than 1, every Nth row is loaded.
+        * If `look_scale`, `weight_scale`, and `max_move` are all given, a gaussian smoothing filter is applied.
+          These three form an all-or-nothing group.
+
+        :param path: the path to the LPTF3 file.
+        :param take_every: load every Nth row.
+        :param look_scale: the smoothing neighborhood size, as a multiple of the row spacing.
+        :param weight_scale: the gaussian weight sigma, as a fraction of the look distance.
+        :param max_move: the furthest a point may be moved by the smoothing, in the file's length units.
+        :return: the loaded mesh data.
+        """
+        ...
+
+    @property
+    def points(self) -> NDArray[float]:
+        """
+        The point positions, as a numpy array of shape (n, 3) and dtype float64.
+        """
+        ...
+
+    @property
+    def faces(self) -> NDArray[numpy.uint32]:
+        """
+        The face indices, as a numpy array of shape (m, 3) and dtype uint32.
+        """
+        ...
+
+    @property
+    def point_normals(self) -> NDArray[float] | None:
+        """
+        The per-point unit normals as a numpy array of shape (n, 3) and dtype float64, or None if the mesh carries
+        none. These are stored normals, not a computed quantity.
+        """
+        ...
+
+    @property
+    def point_colors(self) -> NDArray[numpy.uint8] | None:
+        """
+        The per-point RGB colors as a numpy array of shape (n, 3) and dtype uint8, or None if the mesh carries none.
+        """
+        ...
+
+    @property
+    def point_stdev(self) -> NDArray[float] | None:
+        """
+        The per-point standard deviations as a numpy array of shape (n,) and dtype float64, or None if the mesh
+        carries none. These are 1-sigma values in the mesh's own length units.
+        """
+        ...
+
+    @property
+    def face_colors(self) -> NDArray[numpy.uint8] | None:
+        """
+        The per-face RGB colors as a numpy array of shape (m, 3) and dtype uint8, or None if the mesh carries none.
+        """
+        ...
+
+    @property
+    def face_labels(self) -> NDArray[numpy.uint32] | None:
+        """
+        The per-face labels as a numpy array of shape (m,) and dtype uint32, or None if the mesh carries none. These
+        identify which region, patch, scan pass, or material each face belongs to.
+        """
+        ...
+
+    def set_point_normals(self, values: NDArray[float] | None = None):
+        """
+        Set or clear the per-point unit normals. Rows are normalized on the way in, and a row of zero length is an
+        error.
+
+        :param values: an array of shape (n, 3) matching the point count, or None to clear.
+        """
+        ...
+
+    def set_point_colors(self, values: NDArray[numpy.uint8] | None = None):
+        """
+        Set or clear the per-point RGB colors.
+
+        :param values: an array of shape (n, 3) and dtype uint8 matching the point count, or None to clear.
+        """
+        ...
+
+    def set_point_stdev(self, values: NDArray[float] | None = None):
+        """
+        Set or clear the per-point standard deviations, which must be finite and non-negative.
+
+        :param values: an array of shape (n,) matching the point count, or None to clear.
+        """
+        ...
+
+    def set_face_colors(self, values: NDArray[numpy.uint8] | None = None):
+        """
+        Set or clear the per-face RGB colors.
+
+        :param values: an array of shape (m, 3) and dtype uint8 matching the face count, or None to clear.
+        """
+        ...
+
+    def set_face_labels(self, values: NDArray[numpy.uint32] | None = None):
+        """
+        Set or clear the per-face labels.
+
+        :param values: an array of shape (m,) and dtype uint32 matching the face count, or None to clear.
+        """
+        ...
+
+    def transform_by(self, iso: Iso3):
+        """
+        Transform the mesh in place by a rigid isometry. Stored normals and vector attributes are rotated with the
+        geometry.
+
+        :param iso: the isometry to apply.
+        """
+        ...
+
+    def to_mesh(self, is_solid: bool = False) -> Mesh:
+        """
+        Build the accelerated `Mesh` from this data, carrying every attribute across.
+
+        A mesh with no faces is refused, because there is nothing for an acceleration structure to be built over.
+
+        :param is_solid: whether distance queries should treat points inside the mesh as being at zero distance.
+        :return: the accelerated mesh.
+        """
+        ...
+
+    @staticmethod
+    def from_mesh(mesh: Mesh) -> MeshData3:
+        """
+        Copy the buffers and attributes out of an accelerated `Mesh`.
+
+        :param mesh: the mesh to copy from.
+        :return: the mesh data.
+        """
+        ...
+
+    def cloned(self) -> MeshData3:
+        """
+        Create a copy of this mesh data.
+        """
+        ...
+
+    def __len__(self) -> int:
+        ...
+
+    def __repr__(self) -> str:
+        ...
+
+
+class PointCloudData3:
+    """
+    The unaccelerated point cloud container: a buffer of points and the per-point attributes attached to them.
+
+    This is the type to reach for when reading or writing files, or when editing point data. Call `to_cloud()` to
+    build the queryable `PointCloud` when you need nearest-neighbor queries.
+
+    Unlike `PointCloud`, this type carries attributes through serialization, so a PLY loaded here keeps every property
+    the file declared.
+    """
+
+    def __init__(self, points: NDArray[float]):
+        """
+        Create point data from a point buffer.
+
+        :param points: a numpy array of shape (n, 3) and dtype float64 with the point positions.
+        """
+        ...
+
+    @staticmethod
+    def load_ply(path: str | Path) -> PointCloudData3:
+        """
+        Load a point cloud from a PLY file, preserving every property the file carries.
+
+        A file which declares faces is refused, because it is a mesh and loading it here would discard the
+        connectivity. Use `MeshData3.load_ply` for those.
+
+        :param path: the path to the PLY file.
+        :return: the loaded point data.
+        """
+        ...
+
+    def save_ply(self, path: str | Path, binary: bool = True):
+        """
+        Write this point cloud to a PLY file, preserving every attribute it carries.
+
+        :param path: the path to write to, which is overwritten if it exists.
+        :param binary: write a binary payload rather than ascii.
+        """
+        ...
+
+    @staticmethod
+    def load_lptf3(
+        path: str | Path,
+        take_every: int = 1,
+        look_scale: float | None = None,
+        weight_scale: float | None = None,
+        max_move: float | None = None,
+    ) -> PointCloudData3:
+        """
+        Read a LPTF3 laser profile scan as a point cloud, keeping every measured point.
+
+        If the file has a color channel it is expanded to grayscale and stored as `point_colors`. The channel is a
+        single 8-bit laser return intensity, not a true color.
+
+        The way the data is loaded is controlled by the keyword arguments:
+
+        * If `take_every` is 1 (the default) and no smoothing parameters are given, every point is loaded.
+        * If `take_every` is greater than 1, every Nth row is loaded.
+        * If `look_scale`, `weight_scale`, and `max_move` are all given, a gaussian smoothing filter is applied.
+          These three form an all-or-nothing group.
+
+        :param path: the path to the LPTF3 file.
+        :param take_every: load every Nth row.
+        :param look_scale: the smoothing neighborhood size, as a multiple of the row spacing.
+        :param weight_scale: the gaussian weight sigma, as a fraction of the look distance.
+        :param max_move: the furthest a point may be moved by the smoothing, in the file's length units.
+        :return: the loaded point data.
+        """
+        ...
+
+    @property
+    def points(self) -> NDArray[float]:
+        """
+        The point positions, as a numpy array of shape (n, 3) and dtype float64.
+        """
+        ...
+
+    @property
+    def point_normals(self) -> NDArray[float] | None:
+        """
+        The per-point unit normals as a numpy array of shape (n, 3) and dtype float64, or None if the cloud carries
+        none.
+        """
+        ...
+
+    @property
+    def point_colors(self) -> NDArray[numpy.uint8] | None:
+        """
+        The per-point RGB colors as a numpy array of shape (n, 3) and dtype uint8, or None if the cloud carries none.
+        """
+        ...
+
+    @property
+    def point_stdev(self) -> NDArray[float] | None:
+        """
+        The per-point standard deviations as a numpy array of shape (n,) and dtype float64, or None if the cloud
+        carries none. These are 1-sigma values in the cloud's own length units.
+        """
+        ...
+
+    def set_point_normals(self, values: NDArray[float] | None = None):
+        """
+        Set or clear the per-point unit normals. Rows are normalized on the way in, and a row of zero length is an
+        error.
+
+        :param values: an array of shape (n, 3) matching the point count, or None to clear.
+        """
+        ...
+
+    def set_point_colors(self, values: NDArray[numpy.uint8] | None = None):
+        """
+        Set or clear the per-point RGB colors.
+
+        :param values: an array of shape (n, 3) and dtype uint8 matching the point count, or None to clear.
+        """
+        ...
+
+    def set_point_stdev(self, values: NDArray[float] | None = None):
+        """
+        Set or clear the per-point standard deviations, which must be finite and non-negative.
+
+        :param values: an array of shape (n,) matching the point count, or None to clear.
+        """
+        ...
+
+    def transform_by(self, iso: Iso3):
+        """
+        Transform the cloud in place by a rigid isometry. Stored normals and vector attributes are rotated with the
+        geometry.
+
+        :param iso: the isometry to apply.
+        """
+        ...
+
+    def append(self, other: PointCloudData3):
+        """
+        Append another cloud onto the end of this one.
+
+        Attributes are all-or-nothing: an attribute present on one side and absent on the other is an error. The
+        append is validated before anything is modified, so a failure leaves this cloud untouched.
+
+        :param other: the cloud to append.
+        """
+        ...
+
+    def create_from_indices(self, indices: List[int]) -> PointCloudData3:
+        """
+        Create a new cloud containing the points at the given indices, in the order given. Indices may repeat. Every
+        attribute is carried through.
+
+        :param indices: the points to take.
+        :return: the new cloud.
+        """
+        ...
+
+    def to_cloud(self) -> PointCloud:
+        """
+        Build the queryable `PointCloud` from this data.
+
+        Only the normals, colors, and standard deviations come across; `PointCloud` has nowhere to put the open-map
+        attributes.
+
+        :return: the queryable point cloud.
+        """
+        ...
+
+    @staticmethod
+    def from_cloud(cloud: PointCloud) -> PointCloudData3:
+        """
+        Copy the buffer and attributes out of a queryable `PointCloud`.
+
+        :param cloud: the cloud to copy from.
+        :return: the point data.
+        """
+        ...
+
+    def cloned(self) -> PointCloudData3:
+        """
+        Create a copy of this point data.
+        """
+        ...
+
+    def __len__(self) -> int:
+        ...
+
+    def __repr__(self) -> str:
+        ...

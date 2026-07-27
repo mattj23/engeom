@@ -94,6 +94,7 @@ fn register_geom3(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Mesh, curves, other complex geometries
     child.add_class::<mesh::Mesh>()?;
+    child.add_class::<mesh::MeshData3>()?;
     child.add_class::<mesh::MeshCollisionSet>()?;
     child.add_class::<mesh::FaceFilterHandle>()?;
     child.add_class::<geom3::Curve3>()?;
@@ -103,6 +104,7 @@ fn register_geom3(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_class::<geom2::SplineProjection>()?;
     child.add_function(wrap_pyfunction!(geom3::fit_spline_to_points, &child)?)?;
     child.add_class::<point_cloud::PointCloud>()?;
+    child.add_class::<point_cloud::PointCloudData3>()?;
 
     // Bounding and tools
     child.add_class::<bounding::Aabb3>()?;

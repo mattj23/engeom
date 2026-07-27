@@ -1,7 +1,9 @@
 use crate::bounding::Aabb3;
 use crate::common::{deviation_mode_from_str, select_op_from_str};
 use crate::conversions::{
-    array_to_faces, array_to_points3, faces_to_array, points_to_array, vectors_to_array,
+    array_to_colors, array_to_faces, array_to_points3, array_to_unit_vectors3, array_to_vec,
+    colors_to_array, faces_to_array, labels_to_array, points_to_array, scalars_to_array,
+    unit_vectors_to_array, vectors_to_array,
 };
 use crate::geom3::{Curve3, Iso3, Plane3, Point3, SurfacePoint3, Vector3};
 use crate::metrology::Distance3;
@@ -13,7 +15,7 @@ use engeom::common::points::dist;
 use engeom::geom3::align3::{GAPParams, generate_alignment_points};
 use engeom::io::{deflate_bytes, u_bytes_to_mesh};
 use numpy::ndarray::{Array1, Array2, ArrayD};
-use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray2};
+use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use std::path::PathBuf;
@@ -696,5 +698,285 @@ impl MeshCollisionSet {
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         Ok(result)
+    }
+}
+
+// ================================================================================================
+// MeshData3
+// ================================================================================================
+
+/// The unaccelerated mesh container, holding the point and face buffers and their per-element
+/// attributes.
+///
+/// Numpy arrays handed out through the getters are cached and invalidated by any method which can
+/// change what they hold, so repeated access does not repeatedly copy the buffers.
+#[pyclass(from_py_object, module = "engeom.geom3")]
+pub struct MeshData3 {
+    inner: engeom::MeshData3,
+    points: Option<Py<PyArray2<f64>>>,
+    faces: Option<Py<PyArray2<u32>>>,
+    point_normals: Option<Py<PyArray2<f64>>>,
+    point_colors: Option<Py<PyArray2<u8>>>,
+    point_stdev: Option<Py<PyArray1<f64>>>,
+    face_colors: Option<Py<PyArray2<u8>>>,
+    face_labels: Option<Py<PyArray1<u32>>>,
+}
+
+impl MeshData3 {
+    fn clear_cached(&mut self) {
+        self.points = None;
+        self.faces = None;
+        self.point_normals = None;
+        self.point_colors = None;
+        self.point_stdev = None;
+        self.face_colors = None;
+        self.face_labels = None;
+    }
+
+    pub fn get_inner(&self) -> &engeom::MeshData3 {
+        &self.inner
+    }
+
+    pub fn from_inner(inner: engeom::MeshData3) -> Self {
+        Self {
+            inner,
+            points: None,
+            faces: None,
+            point_normals: None,
+            point_colors: None,
+            point_stdev: None,
+            face_colors: None,
+            face_labels: None,
+        }
+    }
+}
+
+impl Clone for MeshData3 {
+    fn clone(&self) -> Self {
+        Self::from_inner(self.inner.clone())
+    }
+}
+
+#[pymethods]
+impl MeshData3 {
+    #[new]
+    fn new<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        faces: PyReadonlyArray2<'py, u32>,
+    ) -> PyResult<Self> {
+        let points = array_to_points3(&points.as_array())?;
+        let faces = array_to_faces(&faces.as_array())?;
+        let inner = engeom::MeshData3::new(points, faces)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(inner))
+    }
+
+    // --- Serialization ---------------------------------------------------------------------
+
+    #[staticmethod]
+    fn load_ply(path: PathBuf) -> PyResult<Self> {
+        let inner =
+            engeom::MeshData3::load_ply(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(inner))
+    }
+
+    #[pyo3(signature = (path, binary = true))]
+    fn save_ply(&self, path: PathBuf, binary: bool) -> PyResult<()> {
+        let mut opts = engeom::io::PlyWriteOpts::default();
+        opts.binary = binary;
+        self.inner
+            .save_ply(&path, &opts)
+            .map_err(|e| PyIOError::new_err(e.to_string()))
+    }
+
+    #[staticmethod]
+    fn load_stl(path: PathBuf) -> PyResult<Self> {
+        let inner =
+            engeom::MeshData3::load_stl(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(inner))
+    }
+
+    #[pyo3(signature = (path, binary = true, allow_attribute_loss = false))]
+    fn save_stl(&self, path: PathBuf, binary: bool, allow_attribute_loss: bool) -> PyResult<()> {
+        let mut opts = engeom::io::StlWriteOpts::default();
+        opts.binary = binary;
+        opts.allow_attribute_loss = allow_attribute_loss;
+        self.inner
+            .save_stl(&path, &opts)
+            .map_err(|e| PyIOError::new_err(e.to_string()))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (path, take_every=1, look_scale=None, weight_scale=None, max_move=None))]
+    fn load_lptf3(
+        path: PathBuf,
+        take_every: u32,
+        look_scale: Option<f64>,
+        weight_scale: Option<f64>,
+        max_move: Option<f64>,
+    ) -> PyResult<Self> {
+        let load = lptf3_load_from_args(take_every, look_scale, weight_scale, max_move)?;
+        let inner = engeom::io::load_lptf3_mesh_data(&path, load, None)
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(inner))
+    }
+
+    // --- Buffers ---------------------------------------------------------------------------
+
+    #[getter]
+    fn points<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArray2<f64>> {
+        if self.points.is_none() {
+            let array = points_to_array(self.inner.points());
+            self.points = Some(array.into_pyarray(py).unbind());
+        }
+        self.points.as_ref().unwrap().bind(py)
+    }
+
+    #[getter]
+    fn faces<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArray2<u32>> {
+        if self.faces.is_none() {
+            let array = faces_to_array(self.inner.faces());
+            self.faces = Some(array.into_pyarray(py).unbind());
+        }
+        self.faces.as_ref().unwrap().bind(py)
+    }
+
+    // --- Attributes ------------------------------------------------------------------------
+
+    #[getter]
+    fn point_normals<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray2<f64>>> {
+        let values = self.inner.point_normals()?;
+        if self.point_normals.is_none() {
+            let array = unit_vectors_to_array(values);
+            self.point_normals = Some(array.into_pyarray(py).unbind());
+        }
+        Some(self.point_normals.as_ref().unwrap().bind(py))
+    }
+
+    #[getter]
+    fn point_colors<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray2<u8>>> {
+        let values = self.inner.point_colors()?;
+        if self.point_colors.is_none() {
+            let array = colors_to_array(values);
+            self.point_colors = Some(array.into_pyarray(py).unbind());
+        }
+        Some(self.point_colors.as_ref().unwrap().bind(py))
+    }
+
+    #[getter]
+    fn point_stdev<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray1<f64>>> {
+        let values = self.inner.point_stdev()?;
+        if self.point_stdev.is_none() {
+            let array = scalars_to_array(values);
+            self.point_stdev = Some(array.into_pyarray(py).unbind());
+        }
+        Some(self.point_stdev.as_ref().unwrap().bind(py))
+    }
+
+    #[getter]
+    fn face_colors<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray2<u8>>> {
+        let values = self.inner.face_colors()?;
+        if self.face_colors.is_none() {
+            let array = colors_to_array(values);
+            self.face_colors = Some(array.into_pyarray(py).unbind());
+        }
+        Some(self.face_colors.as_ref().unwrap().bind(py))
+    }
+
+    #[getter]
+    fn face_labels<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray1<u32>>> {
+        let values = self.inner.face_labels()?;
+        if self.face_labels.is_none() {
+            let array = labels_to_array(values);
+            self.face_labels = Some(array.into_pyarray(py).unbind());
+        }
+        Some(self.face_labels.as_ref().unwrap().bind(py))
+    }
+
+    #[pyo3(signature = (values=None))]
+    fn set_point_normals<'py>(
+        &mut self,
+        values: Option<PyReadonlyArray2<'py, f64>>,
+    ) -> PyResult<()> {
+        let values = values
+            .map(|v| array_to_unit_vectors3(&v.as_array()))
+            .transpose()?;
+        self.clear_cached();
+        self.inner
+            .set_point_normals(values)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[pyo3(signature = (values=None))]
+    fn set_point_colors<'py>(&mut self, values: Option<PyReadonlyArray2<'py, u8>>) -> PyResult<()> {
+        let values = values.map(|v| array_to_colors(&v.as_array())).transpose()?;
+        self.clear_cached();
+        self.inner
+            .set_point_colors(values)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[pyo3(signature = (values=None))]
+    fn set_point_stdev<'py>(&mut self, values: Option<PyReadonlyArray1<'py, f64>>) -> PyResult<()> {
+        let values = values.map(|v| array_to_vec(&v)).transpose()?;
+        self.clear_cached();
+        self.inner
+            .set_point_stdev(values)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[pyo3(signature = (values=None))]
+    fn set_face_colors<'py>(&mut self, values: Option<PyReadonlyArray2<'py, u8>>) -> PyResult<()> {
+        let values = values.map(|v| array_to_colors(&v.as_array())).transpose()?;
+        self.clear_cached();
+        self.inner
+            .set_face_colors(values)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[pyo3(signature = (values=None))]
+    fn set_face_labels<'py>(&mut self, values: Option<PyReadonlyArray1<'py, u32>>) -> PyResult<()> {
+        let values = values.map(|v| array_to_vec(&v)).transpose()?;
+        self.clear_cached();
+        self.inner
+            .set_face_labels(values)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    // --- Operations ------------------------------------------------------------------------
+
+    fn transform_by(&mut self, iso: &Iso3) {
+        self.clear_cached();
+        self.inner.transform_in_place(iso.get_inner());
+    }
+
+    fn cloned(&self) -> Self {
+        self.clone()
+    }
+
+    /// Build the accelerated `Mesh` from this data, carrying every attribute across.
+    #[pyo3(signature = (is_solid = false))]
+    fn to_mesh(&self, is_solid: bool) -> PyResult<Mesh> {
+        let inner = engeom::Mesh3::from_data(self.inner.clone(), is_solid)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Mesh::from_inner(inner))
+    }
+
+    /// Copy the buffers and attributes out of an accelerated `Mesh`.
+    #[staticmethod]
+    fn from_mesh(mesh: &Mesh) -> Self {
+        Self::from_inner(mesh.get_inner().to_data())
+    }
+
+    fn __len__(&self) -> usize {
+        self.inner.point_count()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "<MeshData3 {} points, {} faces>",
+            self.inner.point_count(),
+            self.inner.face_count()
+        )
     }
 }
