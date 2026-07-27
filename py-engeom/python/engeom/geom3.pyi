@@ -2482,7 +2482,7 @@ class Mesh:
         ...
 
     @staticmethod
-    def load_tcmesh(path: str | Path) -> Mesh:
+    def load_tcmesh(path: str | Path, is_solid: bool = False) -> Mesh:
         """
         Load a mesh from a tolerance-compressed mesh (.tcmesh) file. The tcmesh format stores vertex
         positions as variable-width integers scaled within the bounding box of each partition,
@@ -2490,19 +2490,24 @@ class Mesh:
         tolerance that was specified when the file was written.
 
         :param path: the path to the .tcmesh file to load.
+        :param is_solid: whether distance queries should treat points inside the mesh as being at zero distance
         :return: the mesh loaded from the file.
         """
         ...
 
-    def write_tcmesh(self, path: str | Path, tol: float):
+    def write_tcmesh(self, path: str | Path, tol: float, allow_attribute_loss: bool = False):
         """
         Write the mesh to a tolerance-compressed mesh (.tcmesh) file. The tolerance controls the
         maximum allowable round-trip position error for any vertex: a smaller tolerance produces a
         more accurate file at the cost of more bytes per vertex, while a larger tolerance allows
         greater compression.
 
+        The format stores geometry and nothing else, so a mesh carrying any attributes at all is refused rather than
+        silently stripped, unless `allow_attribute_loss` is set.
+
         :param path: the path to the .tcmesh file to write.
         :param tol: the maximum acceptable round-trip position error, in model units.
+        :param allow_attribute_loss: accept the loss of every attribute this mesh carries.
         """
         ...
 

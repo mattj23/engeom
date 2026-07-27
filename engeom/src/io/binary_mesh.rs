@@ -11,14 +11,14 @@
 //! - 1 × `u32`: face count
 //! - face count × 3 × `u32`: vertex indices per face
 
-use crate::{Mesh3, Point3, Result};
+use crate::{MeshData3, Point3, Result};
 use std::fs::File;
 use std::io::{BufWriter, Cursor, Read, Write};
 use std::path::Path;
 
 const MAGIC: &[u8; 4] = b"BMSH";
 
-/// Save a [`Mesh3`] to a file in the portable binary mesh format.
+/// Save a [`MeshData3`] to a file in the portable binary mesh format.
 ///
 /// This is a no-nonsense, extremely simple binary mesh format that serializes only the vertices
 /// and face indices of a mesh. The vertices are stored as 32-bit floats and the face indices as
@@ -29,13 +29,17 @@ const MAGIC: &[u8; 4] = b"BMSH";
 /// # Errors
 ///
 /// Returns an error if the file cannot be created or written.
-pub fn write_mesh_binary_file(path: &Path, mesh: &Mesh3) -> Result<()> {
+pub fn write_mesh_binary_file(
+    path: &Path,
+    mesh: &MeshData3,
+    allow_attribute_loss: bool,
+) -> Result<()> {
     let file = File::create(path)?;
     let mut w = BufWriter::new(file);
-    write_mesh_binary(&mut w, mesh)
+    write_mesh_binary(&mut w, mesh, allow_attribute_loss)
 }
 
-/// Load a [`Mesh3`] from a file written by [`write_mesh_binary_file`].
+/// Load a [`MeshData3`] from a file written by [`write_mesh_binary_file`].
 ///
 /// This is a no-nonsense, extremely simple binary mesh format that serializes only the vertices
 /// and face indices of a mesh. The vertices are stored as 32-bit floats and the face indices as
@@ -46,12 +50,12 @@ pub fn write_mesh_binary_file(path: &Path, mesh: &Mesh3) -> Result<()> {
 /// # Errors
 ///
 /// Returns an error if the file cannot be read, or if the magic bytes do not match.
-pub fn read_mesh_binary_file(path: &Path) -> Result<Mesh3> {
+pub fn read_mesh_binary_file(path: &Path) -> Result<MeshData3> {
     let mut file = File::open(path)?;
     read_mesh_binary(&mut file)
 }
 
-/// Serialize a [`Mesh3`] to a `Vec<u8>`.
+/// Serialize a [`MeshData3`] to a `Vec<u8>`.
 ///
 /// This is a no-nonsense, extremely simple binary mesh format that serializes only the vertices
 /// and face indices of a mesh. The vertices are stored as 32-bit floats and the face indices as
@@ -61,13 +65,13 @@ pub fn read_mesh_binary_file(path: &Path) -> Result<Mesh3> {
 ///
 /// Returns an error if serialization fails (in practice this should never happen for in-memory
 /// writes).
-pub fn mesh_to_binary_bytes(mesh: &Mesh3) -> Result<Vec<u8>> {
+pub fn mesh_to_binary_bytes(mesh: &MeshData3, allow_attribute_loss: bool) -> Result<Vec<u8>> {
     let mut buf = Vec::new();
-    write_mesh_binary(&mut buf, mesh)?;
+    write_mesh_binary(&mut buf, mesh, allow_attribute_loss)?;
     Ok(buf)
 }
 
-/// Deserialize a [`Mesh3`] from a byte slice.
+/// Deserialize a [`MeshData3`] from a byte slice.
 ///
 /// This is a no-nonsense, extremely simple binary mesh format that serializes only the vertices
 /// and face indices of a mesh. The vertices are stored as 32-bit floats and the face indices as
@@ -76,12 +80,12 @@ pub fn mesh_to_binary_bytes(mesh: &Mesh3) -> Result<Vec<u8>> {
 /// # Errors
 ///
 /// Returns an error if the bytes are too short, malformed, or the magic bytes do not match.
-pub fn mesh_from_binary_bytes(bytes: &[u8]) -> Result<Mesh3> {
+pub fn mesh_from_binary_bytes(bytes: &[u8]) -> Result<MeshData3> {
     let mut cursor = Cursor::new(bytes);
     read_mesh_binary(&mut cursor)
 }
 
-/// Serialize a [`Mesh3`] into any [`Write`] destination.
+/// Serialize a [`MeshData3`] into any [`Write`] destination.
 ///
 /// This is a no-nonsense, extremely simple binary mesh format that serializes only the vertices
 /// and face indices of a mesh. The vertices are stored as 32-bit floats and the face indices as
@@ -90,7 +94,13 @@ pub fn mesh_from_binary_bytes(bytes: &[u8]) -> Result<Mesh3> {
 /// # Errors
 ///
 /// Returns an error if any write fails.
-pub fn write_mesh_binary<W: Write>(writer: &mut W, mesh: &Mesh3) -> Result<()> {
+pub fn write_mesh_binary<W: Write>(
+    writer: &mut W,
+    mesh: &MeshData3,
+    allow_attribute_loss: bool,
+) -> Result<()> {
+    mesh.check_attribute_loss("the binary mesh format", allow_attribute_loss)?;
+
     writer.write_all(MAGIC)?;
 
     let vertices = mesh.points();
@@ -112,7 +122,7 @@ pub fn write_mesh_binary<W: Write>(writer: &mut W, mesh: &Mesh3) -> Result<()> {
     Ok(())
 }
 
-/// Deserialize a [`Mesh3`] from any [`Read`] source.
+/// Deserialize a [`MeshData3`] from any [`Read`] source.
 ///
 /// This is a no-nonsense, extremely simple binary mesh format that serializes only the vertices
 /// and face indices of a mesh. The vertices are stored as 32-bit floats and the face indices as
@@ -121,7 +131,7 @@ pub fn write_mesh_binary<W: Write>(writer: &mut W, mesh: &Mesh3) -> Result<()> {
 /// # Errors
 ///
 /// Returns an error if any read fails or if the magic bytes do not match.
-pub fn read_mesh_binary<R: Read>(reader: &mut R) -> Result<Mesh3> {
+pub fn read_mesh_binary<R: Read>(reader: &mut R) -> Result<MeshData3> {
     let mut bytes = Vec::new();
     reader.read_to_end(&mut bytes)?;
 
@@ -147,7 +157,7 @@ pub fn read_mesh_binary<R: Read>(reader: &mut R) -> Result<Mesh3> {
         faces.push([r.read_u32(), r.read_u32(), r.read_u32()]);
     }
 
-    Ok(Mesh3::new(vertices, faces, false))
+    MeshData3::new(vertices, faces)
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -185,7 +195,7 @@ mod tests {
     use crate::tests::stanford_bun_2;
     use approx::assert_relative_eq;
 
-    fn check_round_trip(mesh: &Mesh3, recovered: &Mesh3) {
+    fn check_round_trip(mesh: &MeshData3, recovered: &MeshData3) {
         assert_eq!(mesh.points().len(), recovered.points().len());
         assert_eq!(mesh.faces().len(), recovered.faces().len());
         for (a, b) in mesh.points().iter().zip(recovered.points().iter()) {
@@ -198,19 +208,31 @@ mod tests {
 
     #[test]
     fn round_trip_bytes() {
-        let mesh = stanford_bun_2();
-        let bytes = mesh_to_binary_bytes(&mesh).unwrap();
+        let mesh = stanford_bun_2().to_data();
+        let bytes = mesh_to_binary_bytes(&mesh, false).unwrap();
         let recovered = mesh_from_binary_bytes(&bytes).unwrap();
         check_round_trip(&mesh, &recovered);
     }
 
     #[test]
     fn round_trip_file() {
-        let mesh = stanford_bun_2();
+        let mesh = stanford_bun_2().to_data();
         let path = std::env::temp_dir().join("stanford_bun_2_round_trip.binmsh");
-        write_mesh_binary_file(&path, &mesh).unwrap();
+        write_mesh_binary_file(&path, &mesh, false).unwrap();
         let recovered = read_mesh_binary_file(&path).unwrap();
         check_round_trip(&mesh, &recovered);
+    }
+
+    /// The format stores geometry only, so it has to refuse an attributed mesh rather than
+    /// silently stripping it.
+    #[test]
+    fn writing_refuses_to_drop_attributes_silently() {
+        let mut mesh = stanford_bun_2().to_data();
+        mesh.set_point_stdev(Some(vec![0.001; mesh.point_count()]))
+            .unwrap();
+
+        assert!(mesh_to_binary_bytes(&mesh, false).is_err());
+        assert!(mesh_to_binary_bytes(&mesh, true).is_ok());
     }
 
     #[test]

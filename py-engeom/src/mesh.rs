@@ -13,7 +13,7 @@ use engeom::common::DistMode;
 use engeom::common::SplitResult;
 use engeom::common::points::dist;
 use engeom::geom3::align3::{GAPParams, generate_alignment_points};
-use engeom::io::{deflate_bytes, u_bytes_to_mesh};
+use engeom::io::{deflate_bytes, u_bytes_to_mesh_data};
 use numpy::ndarray::{Array1, Array2, ArrayD};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::{PyIOError, PyValueError};
@@ -166,14 +166,18 @@ impl Mesh {
     }
 
     #[staticmethod]
-    fn load_tcmesh(path: PathBuf) -> PyResult<Self> {
-        let mesh =
+    #[pyo3(signature = (path, is_solid = false))]
+    fn load_tcmesh(path: PathBuf, is_solid: bool) -> PyResult<Self> {
+        let data =
             engeom::io::read_tc_mesh_file(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
+        let mesh = engeom::Mesh3::from_data(data, is_solid)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(mesh))
     }
 
-    fn write_tcmesh(&self, path: PathBuf, tol: f64) -> PyResult<()> {
-        engeom::io::write_tc_mesh_file(&path, &self.inner, tol)
+    #[pyo3(signature = (path, tol, allow_attribute_loss = false))]
+    fn write_tcmesh(&self, path: PathBuf, tol: f64, allow_attribute_loss: bool) -> PyResult<()> {
+        engeom::io::write_tc_mesh_file(&path, &self.inner.to_data(), tol, allow_attribute_loss)
             .map_err(|e| PyIOError::new_err(e.to_string()))
     }
 
@@ -588,7 +592,10 @@ impl Mesh {
             file_bytes
         };
 
-        let mesh = u_bytes_to_mesh(&deflated).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let data =
+            u_bytes_to_mesh_data(&deflated).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let mesh = engeom::Mesh3::from_data(data, false)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(mesh))
     }
 

@@ -45,7 +45,12 @@ fn run_test_case(manifest: &Manifest, dir: &PathPair) -> Result<()> {
     )?;
 
     // Save the reference mesh to the result directory
-    write_tc_mesh_file(&dir.result().join("reference.tcmesh"), &mesh, 1e-5)?;
+    write_tc_mesh_file(
+        &dir.result().join("reference.tcmesh"),
+        &mesh.to_data(),
+        1e-5,
+        false,
+    )?;
 
     for item in manifest.items.iter() {
         let params = Lptf3DsParams::new(8, 1.0, 1.0, 0.010 * 25.4);
@@ -66,7 +71,7 @@ fn run_test_case(manifest: &Manifest, dir: &PathPair) -> Result<()> {
         let mesh = Mesh3::new(points, faces, false);
 
         let output_path = dir.result().join(&item.file_name).with_extension("tcmesh");
-        write_tc_mesh_file(&output_path, &mesh, 1e-5)?;
+        write_tc_mesh_file(&output_path, &mesh.to_data(), 1e-5, false)?;
         break;
     }
 

@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 use engeom::io::{
     read_tc_mesh_file, u_bytes_to_mesh_data, u_mesh_data_to_bytes, write_tc_mesh_file,
 };
-use engeom::{Mesh3, Result};
+use engeom::{Mesh3, MeshData3, Result};
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use std::fs;
@@ -41,6 +41,18 @@ enum Commands {
     },
 }
 
+/// Load a mesh from whichever of the supported input formats the extension names.
+///
+/// The STL path goes through `Mesh3` only to reach the point-merging and degenerate-triangle
+/// cleanup, which lives on the accelerated constructor because it renumbers points.
+fn load_input_mesh(input: &Path, ext: Option<&str>) -> Result<MeshData3> {
+    match ext {
+        Some("stl") => Ok(Mesh3::load_stl(input, false, true, true)?.into_data()),
+        Some("ply") => MeshData3::load_ply(input),
+        _ => Err("Input file must have a .stl or .ply extension".into()),
+    }
+}
+
 fn cmd_to_tcmesh(input: &Path, output: Option<&Path>, tol: f64) -> Result<()> {
     let output = output
         .map(PathBuf::from)
@@ -50,13 +62,9 @@ fn cmd_to_tcmesh(input: &Path, output: Option<&Path>, tol: f64) -> Result<()> {
         .and_then(|e| e.to_str())
         .map(|e| e.to_lowercase());
 
-    let mesh = match ext.as_deref() {
-        Some("stl") => Mesh3::load_stl(input, false, true, true)?,
-        Some("ply") => Mesh3::load_ply(input, false)?,
-        _ => return Err("Input file must have a .stl or .ply extension".into()),
-    };
+    let mesh = load_input_mesh(input, ext.as_deref())?;
 
-    write_tc_mesh_file(&output, &mesh, tol)?;
+    write_tc_mesh_file(&output, &mesh, tol, false)?;
 
     let recovered = read_tc_mesh_file(&output)?;
     if mesh.points().len() != recovered.points().len() {
@@ -95,26 +103,13 @@ fn cmd_to_umesh(input: &Path, output: &PathBuf, compress: bool) -> Result<()> {
         .and_then(|e| e.to_str())
         .map(|e| e.to_lowercase());
 
-    let (vertices, triangles) = match ext.as_deref() {
-        Some("stl") => {
-            let mesh = Mesh3::load_stl(input, false, true, true)?;
-            let verts = mesh.points().to_vec();
-            let tris = mesh.faces().to_vec();
-            (verts, tris)
-        }
-        Some("ply") => {
-            let mesh = Mesh3::load_ply(input, false)?;
-            let verts = mesh.points().to_vec();
-            let tris = mesh.faces().to_vec();
-            (verts, tris)
-        }
-        _ => return Err("Input file must have a .stl or .ply extension".into()),
-    };
+    let mesh = load_input_mesh(input, ext.as_deref())?;
+    let vertices = mesh.points().to_vec();
 
-    let bytes = u_mesh_data_to_bytes(&vertices, &triangles)?;
+    let bytes = u_mesh_data_to_bytes(&mesh, false)?;
 
     // Load it back again and check the deviation
-    let (u_vert, _) = u_bytes_to_mesh_data(&bytes)?;
+    let u_vert = u_bytes_to_mesh_data(&bytes)?.points().to_vec();
 
     // Verify that the number of vertices is the same
     if (vertices.len() as u32) != u_vert.len() as u32 {
@@ -137,7 +132,11 @@ fn cmd_to_umesh(input: &Path, output: &PathBuf, compress: bool) -> Result<()> {
     let avg_dev = deviations.iter().sum::<f64>() / deviations.len() as f64;
 
     println!("Saved micro mesh to {}", output.to_str().unwrap());
-    println!(" > {} vertices, {} faces", vertices.len(), triangles.len());
+    println!(
+        " > {} vertices, {} faces",
+        vertices.len(),
+        mesh.faces().len()
+    );
     println!(" > Max deviation: {}", max_dev);
     println!(" > Average deviation: {}", avg_dev);
 

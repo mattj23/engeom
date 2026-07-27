@@ -148,7 +148,7 @@ pub enum Smoothing {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::io::{deflate_bytes, read_tc_curve2_from, u_bytes_to_mesh};
+    use crate::io::{deflate_bytes, read_tc_curve2_from, u_bytes_to_mesh_data};
 
     use crate::{Curve2, Mesh3};
 
@@ -156,21 +156,24 @@ pub mod tests {
     /// 0.00000189 of the original ply file.
     pub fn stanford_bun_4() -> Mesh3 {
         let bytes = include_bytes!("../tests/data/stanford_bun_4.umesh.gz");
-        u_bytes_to_mesh(&deflate_bytes(bytes).unwrap()).unwrap()
+        let data = u_bytes_to_mesh_data(&deflate_bytes(bytes).unwrap()).unwrap();
+        Mesh3::from_data(data, false).unwrap()
     }
 
     /// Load a mesh with the stanford bunny reconstruction at resolution 2. The vertices are within
     /// 0.00000189 of the original ply file.
     pub fn stanford_bun_2() -> Mesh3 {
         let bytes = include_bytes!("../tests/data/stanford_bun_2.umesh.gz");
-        u_bytes_to_mesh(&deflate_bytes(bytes).unwrap()).unwrap()
+        let data = u_bytes_to_mesh_data(&deflate_bytes(bytes).unwrap()).unwrap();
+        Mesh3::from_data(data, false).unwrap()
     }
 
     /// Load a mesh with the stanford bunny reconstruction at resolution 3. The vertices are within
     /// 0.00000189 of the original ply file.
     pub fn stanford_bun_3() -> Mesh3 {
         let bytes = include_bytes!("../tests/data/stanford_bun_3.umesh.gz");
-        u_bytes_to_mesh(&deflate_bytes(bytes).unwrap()).unwrap()
+        let data = u_bytes_to_mesh_data(&deflate_bytes(bytes).unwrap()).unwrap();
+        Mesh3::from_data(data, false).unwrap()
     }
 
     /// Load a mesh of a small engine blade. The mesh has 21795 vertices and 43586 faces. Dimensions
@@ -178,7 +181,8 @@ pub mod tests {
     /// be watertight.
     pub fn engine_blade() -> Mesh3 {
         let bytes = include_bytes!("../tests/data/engine-blade.umesh.gz");
-        u_bytes_to_mesh(&deflate_bytes(bytes).unwrap()).unwrap()
+        let data = u_bytes_to_mesh_data(&deflate_bytes(bytes).unwrap()).unwrap();
+        Mesh3::from_data(data, false).unwrap()
     }
 
     pub fn airfoil_curve() -> Curve2 {

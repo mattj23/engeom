@@ -69,10 +69,9 @@ pub fn read_stl_mesh_data<R: Read + Seek>(source: &mut R) -> Result<MeshData3> {
     //   nothing about what is actually wrong. It is why `DEFAULT_HEADER` exists.
     // - Errors would be ours, so a malformed facet could report its byte offset.
     //
-    // Worth doing alongside the `Mesh3` migration, when the `Mesh3` bridges in this module get
-    // deleted anyway. Not urgent: the crate is small, and a hand written weld is the kind of thing
-    // that fails silently by changing topology rather than loudly, so the replacement wants the
-    // same care the writer got.
+    // Not urgent: the crate is small, and a hand written weld is the kind of thing that fails
+    // silently by changing topology rather than loudly, so the replacement wants the same care the
+    // writer got.
     let raw = stl_io::read_stl(source)?;
 
     let points = raw
