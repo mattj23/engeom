@@ -1,3 +1,4 @@
+mod data;
 mod normal_estimation;
 
 use crate::common::kd_tree::{KdTreeSearch, MatchedTree};
@@ -8,6 +9,7 @@ use uuid::Uuid;
 use crate::common::IndexMask;
 use crate::common::poisson_disk::sample_poisson_disk_all;
 use crate::geom3::Aabb3;
+pub use data::PointCloudData3;
 pub use normal_estimation::{NormalEstimates, estimate_by_neighborhood};
 
 pub trait PointCloudOverlap<TOther> {

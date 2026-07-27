@@ -45,11 +45,10 @@ mod loader;
 mod mesh;
 mod uncertainty;
 
-use self::downsample::load_lptf3_downfilter;
 use crate::geom3::mesh::MeshData3;
 use crate::io::lptf3::downsample::load_downsample_filter_lptf3;
 use crate::io::lptf3::mesh::load_lptf3_mesh_data_core;
-use crate::{Point3, PointCloud, Result};
+use crate::{Point3, PointCloud, PointCloudData3, Result};
 use std::path::Path;
 
 pub use self::comprehensive::*;
@@ -134,11 +133,41 @@ pub fn lptf3_point_distribution(file_path: &Path, bin_size: f64) -> Result<Vec<u
 ///
 /// returns: Result<PointCloud, Box<dyn Error, Global>>
 pub fn load_lptf3(file_path: &Path, load: Lptf3Load) -> Result<PointCloud> {
-    match load {
-        Lptf3Load::All => load_take_every(file_path, None),
-        Lptf3Load::TakeEveryN(n) => load_take_every(file_path, Some(n)),
-        Lptf3Load::SmoothSample(params) => load_lptf3_downfilter(file_path, params),
+    load_lptf3_point_data(file_path, load)?.to_cloud()
+}
+
+/// Read a lptf3 (Laser Profile Triangulation Format 3D) file and return a `PointCloudData3`.
+///
+/// This is the same load as [`load_lptf3`], which is a thin wrapper over it, but it returns the
+/// plain data container rather than the queryable `PointCloud`. Prefer it when you are going to
+/// serialize the result or edit it, and convert with `to_cloud` when you need spatial queries.
+///
+/// See [`load_lptf3`] for what the `Lptf3Load` variants do.
+///
+/// # Attributes
+///
+/// If the file has a color channel it is expanded to grayscale and stored as `point_colors`. The
+/// channel is a single 8-bit laser return intensity, not a true color.
+///
+/// # Arguments
+///
+/// * `file_path`: A path to the LPTF3 file to load.
+/// * `load`: An enum specifying how to load the data from the file.
+///
+/// returns: `Result<PointCloudData3>`
+pub fn load_lptf3_point_data(file_path: &Path, load: Lptf3Load) -> Result<PointCloudData3> {
+    let (points, colors) = match load {
+        Lptf3Load::All => load_take_every(file_path, None)?,
+        Lptf3Load::TakeEveryN(n) => load_take_every(file_path, Some(n))?,
+        Lptf3Load::SmoothSample(params) => load_downfilter_points(file_path, params)?,
+    };
+
+    let mut data = PointCloudData3::new(points);
+    if colors.is_some() {
+        data.set_point_colors(colors)?;
     }
+
+    Ok(data)
 }
 
 /// Read a lptf3 (Laser Profile Triangulation Format 3D) file and return a `MeshData3`.
@@ -209,7 +238,11 @@ pub fn load_lptf3_mesh_data(
     load_lptf3_mesh_data_core(file_path, load, uncertainty)
 }
 
-fn load_take_every(file_path: &Path, take_every: Option<u32>) -> Result<PointCloud> {
+/// Load every `take_every`th row of a file, returning the points and, if the file has a color
+/// channel, one grayscale triple per point.
+type LoadedPoints = (Vec<Point3>, Option<Vec<[u8; 3]>>);
+
+fn load_take_every(file_path: &Path, take_every: Option<u32>) -> Result<LoadedPoints> {
     let mut loader = Lptf3Loader::new(file_path, take_every, false)?;
     let mut points = Vec::new();
     let mut colors = Vec::new();
@@ -231,7 +264,21 @@ fn load_take_every(file_path: &Path, take_every: Option<u32>) -> Result<PointClo
 
     let c = if loader.has_color { Some(colors) } else { None };
 
-    PointCloud::try_new(points, None, c, None)
+    Ok((points, c))
+}
+
+/// The same as `load_take_every` but running the gaussian downsampling filter, which flattens the
+/// row structure the filter works over once it is done with it.
+fn load_downfilter_points(file_path: &Path, params: Lptf3DsParams) -> Result<LoadedPoints> {
+    let downsampled = load_downsample_filter_lptf3(file_path, params)?;
+    let points = downsampled.rows.into_iter().flatten().collect::<Vec<_>>();
+
+    let colors = downsampled.colors.map(|c| {
+        let flat = c.into_iter().flatten().collect::<Vec<_>>();
+        expand_colors(&flat)
+    });
+
+    Ok((points, colors))
 }
 
 /// The rows of points recovered from a LPTF3 file, in the order they were scanned. Each inner

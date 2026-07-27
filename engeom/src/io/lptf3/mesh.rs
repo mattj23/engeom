@@ -548,6 +548,108 @@ mod tests {
 
         Ok(())
     }
+
+    // ===========================================================================================
+    // Point data loading
+    // ===========================================================================================
+
+    /// The point pathway keeps every measured point, unlike the mesh pathway which drops the ones
+    /// that end up in no face.
+    #[test]
+    fn loads_every_point_of_a_flat_scan() -> Result<()> {
+        use crate::io::load_lptf3_point_data;
+
+        let file = TempFile::new("cloud-grid", &encode(RES_NM, false, &flat_grid(4, 5)));
+        let cloud = load_lptf3_point_data(file.path(), Lptf3Load::All)?;
+
+        assert_eq!(cloud.point_count(), 20);
+
+        // Points arrive in scan order: row by row, and within a row in ascending x.
+        for row in 0..4 {
+            for col in 0..5 {
+                let p = cloud.points()[row * 5 + col];
+                assert_relative_eq!(p.x, col as f64, epsilon = 1.0e-12);
+                assert_relative_eq!(p.y, row as f64, epsilon = 1.0e-12);
+                assert_relative_eq!(p.z, 0.0, epsilon = 1.0e-12);
+            }
+        }
+
+        // Nothing was supplied to attach, so nothing should have been invented.
+        assert!(cloud.attrs().is_empty());
+
+        Ok(())
+    }
+
+    #[test]
+    fn carries_the_color_channel_onto_the_cloud() -> Result<()> {
+        use crate::io::load_lptf3_point_data;
+
+        let file = TempFile::new("cloud-color", &encode(RES_NM, true, &flat_grid(3, 4)));
+        let cloud = load_lptf3_point_data(file.path(), Lptf3Load::All)?;
+
+        let colors = cloud
+            .point_colors()
+            .expect("the file declares a color channel");
+        assert_eq!(colors.len(), cloud.point_count());
+
+        // The synthetic rows set the channel to the x index, expanded to a gray triple.
+        for row in 0..3 {
+            for col in 0..4 {
+                let c = colors[row * 4 + col];
+                assert_eq!(c, [col as u8; 3]);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// A scan with no color channel must not invent one.
+    #[test]
+    fn a_scan_without_color_produces_a_bare_cloud() -> Result<()> {
+        use crate::io::load_lptf3_point_data;
+
+        let file = TempFile::new("cloud-nocolor", &encode(RES_NM, false, &flat_grid(2, 3)));
+        let cloud = load_lptf3_point_data(file.path(), Lptf3Load::All)?;
+
+        assert!(cloud.point_colors().is_none());
+        assert!(cloud.attrs().is_empty());
+
+        Ok(())
+    }
+
+    /// The wrapper which still returns a `PointCloud` has to agree with the data loader it now
+    /// delegates to.
+    #[test]
+    fn the_point_cloud_wrapper_agrees_with_the_data_loader() -> Result<()> {
+        use crate::PointCloudFeatures;
+        use crate::io::{load_lptf3, load_lptf3_point_data};
+
+        let file = TempFile::new("cloud-wrapper", &encode(RES_NM, true, &flat_grid(3, 4)));
+
+        let data = load_lptf3_point_data(file.path(), Lptf3Load::All)?;
+        let cloud = load_lptf3(file.path(), Lptf3Load::All)?;
+
+        assert_eq!(cloud.points(), data.points());
+        assert_eq!(cloud.colors(), data.point_colors());
+
+        Ok(())
+    }
+
+    /// The mesh pathway drops the points which end up in no face, so its point buffer is a strict
+    /// subset of what the point pathway returns for the same file.
+    #[test]
+    fn the_mesh_pathway_keeps_no_more_points_than_the_point_pathway() -> Result<()> {
+        use crate::io::load_lptf3_point_data;
+
+        let file = TempFile::new("cloud-vs-mesh", &encode(RES_NM, false, &flat_grid(4, 5)));
+
+        let cloud = load_lptf3_point_data(file.path(), Lptf3Load::All)?;
+        let mesh = load_lptf3_mesh_data(file.path(), Lptf3Load::All, None)?;
+
+        assert!(mesh.point_count() <= cloud.point_count());
+
+        Ok(())
+    }
 }
 
 // ===============================================================================================

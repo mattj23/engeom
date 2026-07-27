@@ -259,6 +259,29 @@ impl PointAttrSet3 {
         })
     }
 
+    /// Create a new attribute set containing the points at the given indices, in the order the
+    /// indices are given. Indices may repeat.
+    ///
+    /// # Arguments
+    ///
+    /// * `indices`: the points to take, each of which must be less than the owning container's
+    ///   point count
+    ///
+    /// returns: `Result<PointAttrSet3>`
+    pub fn subset_indices(&self, indices: &[usize]) -> Result<Self> {
+        let mut open = HashMap::with_capacity(self.open.len());
+        for (name, attr) in self.open.iter() {
+            open.insert(name.clone(), attr.clone_indices(indices)?);
+        }
+
+        Ok(Self {
+            normals: clone_indexed(self.normals.as_deref(), indices)?,
+            colors: clone_indexed(self.colors.as_deref(), indices)?,
+            stdev: clone_indexed(self.stdev.as_deref(), indices)?,
+            open,
+        })
+    }
+
     /// Append the contents of another attribute set onto the end of this one.
     ///
     /// Attributes are all-or-nothing: a typed field or an open-map key which is present on one side
@@ -373,6 +396,20 @@ impl PointAttrSet3 {
             }
         }
     }
+}
+
+/// Select the elements of an optional attribute array at the given indices, in the order given.
+fn clone_indexed<T: Clone>(values: Option<&[T]>, indices: &[usize]) -> Result<Option<Vec<T>>> {
+    let Some(values) = values else {
+        return Ok(None);
+    };
+
+    let n = values.len();
+    if let Some(bad) = indices.iter().find(|&&i| i >= n) {
+        return Err(format!("Index {bad} is out of bounds for an attribute of length {n}").into());
+    }
+
+    Ok(Some(indices.iter().map(|&i| values[i].clone()).collect()))
 }
 
 #[cfg(test)]

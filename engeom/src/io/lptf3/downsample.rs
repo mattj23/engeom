@@ -1,5 +1,5 @@
-use crate::io::lptf3::{Lptf3Loader, expand_colors};
-use crate::{Point3, PointCloud, Result, SurfacePoint3, UnitVec3, Vector3};
+use crate::io::lptf3::Lptf3Loader;
+use crate::{Point3, Result, SurfacePoint3, UnitVec3, Vector3};
 use rayon::prelude::*;
 use std::path::Path;
 
@@ -20,19 +20,6 @@ impl Lptf3DsParams {
             max_move,
         }
     }
-}
-
-pub fn load_lptf3_downfilter(file_path: &Path, params: Lptf3DsParams) -> Result<PointCloud> {
-    let downsampled = load_downsample_filter_lptf3(file_path, params)?;
-    let final_points = downsampled.rows.into_iter().flatten().collect::<Vec<_>>();
-
-    let c = if let Some(colors) = downsampled.colors {
-        let final_colors = colors.into_iter().flatten().collect::<Vec<_>>();
-        Some(expand_colors(&final_colors))
-    } else {
-        None
-    };
-    PointCloud::try_new(final_points, None, c, None)
 }
 
 pub struct Lptf3Downsampled {
