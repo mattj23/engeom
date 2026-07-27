@@ -17,6 +17,9 @@
 use super::MeshData3;
 use crate::Result;
 use crate::common::IndexMask;
+use crate::geom3::mesh::algorithms::subsets::{
+    compact_by_masks, unique_face_mask, unique_point_mask,
+};
 
 // ===============================================================================================
 // Deriving one domain's mask from the other
@@ -31,16 +34,7 @@ impl MeshData3 {
     ///
     /// returns: `Result<IndexMask>` of length equal to the point count
     pub fn unique_point_mask(&self, face_mask: &IndexMask) -> Result<IndexMask> {
-        self.check_face_mask(face_mask)?;
-
-        let mut points = IndexMask::new(self.points.len(), false);
-        for f in face_mask.iter_true() {
-            for index in self.faces[f] {
-                points.set(index as usize, true);
-            }
-        }
-
-        Ok(points)
+        unique_point_mask(&self.faces, face_mask, self.points.len())
     }
 
     /// Given a mask over the points, produce the mask over the faces which can survive it.
@@ -56,14 +50,7 @@ impl MeshData3 {
     /// returns: `Result<IndexMask>` of length equal to the face count
     pub fn unique_face_mask(&self, point_mask: &IndexMask) -> Result<IndexMask> {
         self.check_point_mask(point_mask)?;
-
-        let mut faces = IndexMask::new(self.faces.len(), false);
-        for (i, face) in self.faces.iter().enumerate() {
-            let keep = face.iter().all(|index| point_mask.get(*index as usize));
-            faces.set(i, keep);
-        }
-
-        Ok(faces)
+        unique_face_mask(&self.faces, point_mask)
     }
 }
 
@@ -107,31 +94,7 @@ impl MeshData3 {
     /// Build a new mesh from a pair of masks which are already known to be consistent, meaning that
     /// every point referenced by a selected face is itself selected.
     fn compact(&self, point_mask: &IndexMask, face_mask: &IndexMask) -> Result<Self> {
-        // Maps an old point index onto its position in the compacted buffer. Points which were not
-        // selected keep the sentinel, and reaching one means the masks disagreed.
-        let mut remap = vec![u32::MAX; self.points.len()];
-        for (new, old) in point_mask.iter_true().enumerate() {
-            remap[old] = new as u32;
-        }
-
-        let mut faces = Vec::with_capacity(face_mask.count_true());
-        for f in face_mask.iter_true() {
-            let face = self.faces[f];
-            let mut mapped = [0u32; 3];
-            for (slot, index) in mapped.iter_mut().zip(face.iter()) {
-                let new = remap[*index as usize];
-                if new == u32::MAX {
-                    return Err(format!(
-                        "Face {f} refers to point {index}, which the point selection excludes"
-                    )
-                    .into());
-                }
-                *slot = new;
-            }
-            faces.push(mapped);
-        }
-
-        let points = point_mask.clone_indices_of(&self.points)?;
+        let (points, faces) = compact_by_masks(&self.points, &self.faces, point_mask, face_mask)?;
         let attrs = self.attrs.subset(point_mask, face_mask)?;
 
         Self::new_with_attrs(points, faces, attrs)
@@ -150,19 +113,6 @@ impl MeshData3 {
                 "A point mask of length {} does not match a mesh with {} points",
                 mask.len(),
                 self.points.len()
-            )
-            .into());
-        }
-        Ok(())
-    }
-
-    /// Verify that a mask is the right length to select over the faces.
-    fn check_face_mask(&self, mask: &IndexMask) -> Result<()> {
-        if mask.len() != self.faces.len() {
-            return Err(format!(
-                "A face mask of length {} does not match a mesh with {} faces",
-                mask.len(),
-                self.faces.len()
             )
             .into());
         }

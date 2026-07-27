@@ -177,8 +177,12 @@ impl Mesh {
         self.vertex_normals.as_ref().unwrap().bind(py)
     }
 
-    fn new_scaled_uniform(&self, scale: f64) -> Self {
-        Self::from_inner(self.inner.new_scaled_uniform(scale))
+    fn scale_copy(&self, scale: f64) -> PyResult<Self> {
+        let inner = self
+            .inner
+            .scale_copy(scale)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(inner))
     }
 
     fn new_offset_vertices(&self, offset: f64) -> Self {
@@ -285,8 +289,18 @@ impl Mesh {
         )
     }
 
-    fn split(&self, plane: &Plane3) -> PyResult<(Option<Self>, Option<Self>)> {
-        match self.inner.split(&plane.inner) {
+    #[pyo3(signature = (plane, allow_attribute_loss = false))]
+    fn split(
+        &self,
+        plane: &Plane3,
+        allow_attribute_loss: bool,
+    ) -> PyResult<(Option<Self>, Option<Self>)> {
+        let result = self
+            .inner
+            .split(&plane.inner, allow_attribute_loss)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        match result {
             SplitResult::Pair(mesh1, mesh2) => {
                 Ok((Some(Self::from_inner(mesh1)), Some(Self::from_inner(mesh2))))
             }
@@ -422,8 +436,12 @@ impl Mesh {
         .into_pyobject(py)
     }
 
-    fn create_from_indices(&self, indices: Vec<usize>) -> Self {
-        Self::from_inner(self.inner.create_from_indices(&indices))
+    fn create_from_indices(&self, indices: Vec<usize>) -> PyResult<Self> {
+        let inner = self
+            .inner
+            .create_from_indices(&indices)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(inner))
     }
 
     fn separate_patches(&self) -> PyResult<Vec<Self>> {
@@ -442,8 +460,13 @@ impl Mesh {
         Ok(results.into_iter().map(Self::from_inner).collect())
     }
 
-    fn convex_hull(&self) -> Self {
-        Self::from_inner(self.inner.convex_hull())
+    #[pyo3(signature = (allow_attribute_loss = false))]
+    fn convex_hull(&self, allow_attribute_loss: bool) -> PyResult<Self> {
+        let inner = self
+            .inner
+            .convex_hull(allow_attribute_loss)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(inner))
     }
 
     #[staticmethod]
@@ -638,7 +661,7 @@ impl FaceFilterHandle {
         self.indices.clone()
     }
 
-    fn create_mesh(&self, py: Python<'_>) -> Mesh {
+    fn create_mesh(&self, py: Python<'_>) -> PyResult<Mesh> {
         self.mesh
             .bind(py)
             .borrow()

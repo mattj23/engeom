@@ -521,20 +521,30 @@ impl Mesh3 {
         result
     }
 
-    /// Create a new mesh by scaling all vertices uniformly.
+    /// Create a new mesh by scaling all points uniformly about the origin.
     ///
     /// Any stored point standard deviations are scaled with the geometry, since they are lengths in
     /// the mesh's own units. Normals are directions and a uniform scale does not move them.
     ///
+    /// A **negative** factor is a mirror, which is orientation-reversing: the face normals implied
+    /// by the winding keep pointing the same way in space while the solid turns inside out around
+    /// them. The winding is therefore reversed and any stored point normals negated, matching what
+    /// `MeshData3::scale_copy` does.
+    ///
     /// # Arguments
     ///
-    /// * `scale`: a scale factor to apply to all vertices
+    /// * `scale`: the factor to scale by, which must be finite and non-zero
     ///
-    /// returns: Mesh3
-    // TODO: `MeshData3::scale_in_place` rejects a zero or non-finite factor and reverses the face
-    //   winding for a negative one, which is a mirror. This does neither, so the two types disagree
-    //   on what a negative scale means. Unify them when the derived-mesh operations are reworked.
-    pub fn new_scaled_uniform(&self, scale: f64) -> Self {
+    /// returns: `Result<Mesh3>`
+    pub fn scale_copy(&self, scale: f64) -> Result<Self> {
+        if !scale.is_finite() || scale == 0.0 {
+            return Err(format!(
+                "A scale factor must be finite and non-zero, but {scale} was given. Scaling by zero \
+                 would collapse the mesh to a point irrecoverably."
+            )
+            .into());
+        }
+
         let new_shape = self
             .shape
             .clone()
@@ -543,7 +553,12 @@ impl Mesh3 {
         let mut result = Mesh3::new_take_trimesh(new_shape, self.is_solid);
         result.attrs = self.attrs.clone();
         result.attrs.scale_in_place(scale);
-        result
+
+        if scale < 0.0 {
+            result.flip_normals();
+        }
+
+        Ok(result)
     }
 
     /// Create a new mesh by offsetting each vertex along its smoothed vertex normal.
@@ -593,31 +608,84 @@ impl Mesh3 {
     }
 
     /// Return a convex hull of the points in the mesh.
-    // TODO: The hull is new topology with no index mapping back to the original, so the attributes
-    //   are silently dropped. This should refuse to run on an attributed mesh unless the caller has
-    //   accepted the loss, the way the geometry-only format writers do.
-    pub fn convex_hull(&self) -> Self {
+    ///
+    /// The hull is new topology: its points are a subset of this mesh's but its faces are not, and
+    /// `parry3d` gives no mapping back from one to the other. There is therefore no correct value
+    /// to carry any attribute forward with, so a mesh which has any is refused unless the caller
+    /// says the loss is acceptable.
+    ///
+    /// # Arguments
+    ///
+    /// * `allow_attribute_loss`: accept the loss of every attribute this mesh carries
+    ///
+    /// returns: `Result<Mesh3>`
+    pub fn convex_hull(&self, allow_attribute_loss: bool) -> Result<Self> {
+        self.check_attribute_loss("a convex hull", allow_attribute_loss)?;
+
         let (vertices, faces) = transformation::convex_hull(self.shape.vertices());
-        Self::new(vertices, faces, true)
+        Ok(Self::new(vertices, faces, true))
     }
 
-    // TODO: Both of these restrictions should become a real union of the two attribute sets, using
-    //   `MeshAttrSet3::extend_from`, which already implements the all-or-nothing rule.
+    /// Append another mesh onto the end of this one.
+    ///
+    /// The other mesh's points are added after this one's and its faces are re-indexed to match. No
+    /// points are welded and no faces are merged, so a shared boundary between the two meshes stays
+    /// as two coincident sets of points.
+    ///
+    /// Attributes are all-or-nothing: a typed field or an open-map key present on one side and
+    /// absent on the other is an error, because there is no correct value to pad the missing side
+    /// with. The whole append is validated before anything is modified, so a failure leaves this
+    /// mesh untouched.
+    ///
+    /// # Arguments
+    ///
+    /// * `other`: the mesh to append
+    ///
+    /// returns: `Result<()>`
     pub fn append(&mut self, other: &Mesh3) -> Result<()> {
         // For now, both meshes must have an empty UV mapping
         if self.uv.is_some() || other.uv.is_some() {
             return Err("Cannot append meshes with UV mappings".into());
         }
 
-        // Appending grows the point and face buffers, which would leave any attribute array the
-        // wrong length. Refusing is the only thing that keeps the invariant until the union is
-        // implemented.
-        if !self.attrs.is_empty() || !other.attrs.is_empty() {
-            return Err("Cannot yet append meshes carrying per-element attributes".into());
-        }
+        // The attributes are merged into a copy first, because that is the step which can fail.
+        // Only once it has succeeded is either the geometry or this mesh's attribute set touched.
+        let mut merged = self.attrs.clone();
+        merged.extend_from(&other.attrs)?;
 
         self.shape.append(&other.shape);
+        self.attrs = merged;
+
         Ok(())
+    }
+
+    /// Verify that the caller has accepted the loss of this mesh's attributes, for an operation
+    /// which cannot carry them.
+    ///
+    /// See `MeshData3::check_attribute_loss` for why this is an error rather than a warning.
+    ///
+    /// # Arguments
+    ///
+    /// * `operation`: what is about to discard them, used in the error message
+    /// * `allow_loss`: whether the caller has accepted the loss
+    ///
+    /// returns: `Result<()>`
+    pub fn check_attribute_loss(&self, operation: &str, allow_loss: bool) -> Result<()> {
+        if allow_loss || self.attrs.is_empty() {
+            return Ok(());
+        }
+
+        let mut lost = self.attrs.point_attr_labels();
+        lost.extend(self.attrs.face_attr_labels());
+
+        Err(format!(
+            "Taking {} would discard the attributes on this mesh ({}), because it produces \
+             topology with no index mapping back to the original. Pass `allow_attribute_loss` to \
+             accept this.",
+            operation,
+            lost.join(", ")
+        )
+        .into())
     }
 
     pub fn uv(&self) -> Option<&UvMapping> {
@@ -1013,8 +1081,10 @@ impl Mesh3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Plane3;
     use crate::tests::stanford_bun_4;
     use approx::assert_relative_eq;
+    use parry3d_f64::query::SplitResult;
     use std::f64::consts::FRAC_PI_2;
 
     #[test]
@@ -1030,17 +1100,19 @@ mod tests {
     }
 
     #[test]
-    fn new_scaled_uniform_scales_spherical_radius() {
+    fn scale_copy_scales_spherical_radius() -> Result<()> {
         let radius = 1.0;
         let scale = 2.5;
         let mesh = Mesh3::create_sphere(radius, 100, 100);
-        let scaled = mesh.new_scaled_uniform(scale);
+        let scaled = mesh.scale_copy(scale)?;
 
         assert_eq!(mesh.points().len(), scaled.points().len());
 
         for vertex in scaled.points() {
             assert_relative_eq!(vertex.coords.norm(), radius * scale, epsilon = 1.0e-12);
         }
+
+        Ok(())
     }
 
     #[test]
@@ -1184,7 +1256,7 @@ mod tests {
     #[test]
     fn scaling_scales_the_standard_deviations() -> Result<()> {
         let mesh = Mesh3::from_data(attributed_data(), false)?;
-        let scaled = mesh.new_scaled_uniform(25.4);
+        let scaled = mesh.scale_copy(25.4)?;
 
         for (actual, expected) in scaled
             .point_stdev()
@@ -1219,16 +1291,217 @@ mod tests {
         Ok(())
     }
 
-    /// Appending grows both buffers, which would leave every attribute array the wrong length.
-    /// Until the union is implemented, it has to refuse rather than corrupt the mesh.
     #[test]
-    fn append_refuses_an_attributed_mesh() -> Result<()> {
+    fn append_unions_the_attributes() -> Result<()> {
         let mut mesh = Mesh3::from_data(attributed_data(), false)?;
         let other = Mesh3::from_data(attributed_data(), false)?;
 
+        mesh.append(&other)?;
+
+        assert_eq!(mesh.point_count(), 6);
+        assert_eq!(mesh.face_count(), 2);
+        assert_eq!(mesh.faces()[1], [3, 4, 5]);
+        assert_eq!(mesh.point_stdev().unwrap(), &[0.1, 0.2, 0.3, 0.1, 0.2, 0.3]);
+        assert_eq!(mesh.face_labels().unwrap(), &[7, 7]);
+        assert_eq!(mesh.point_attr("confidence").unwrap().len(), 6);
+
+        mesh.attrs()
+            .validate(mesh.point_count(), mesh.face_count())?;
+
+        Ok(())
+    }
+
+    /// An attribute on one side and not the other has no correct padding value, and a failure has
+    /// to leave the target completely untouched rather than half appended.
+    #[test]
+    fn append_rejects_a_mismatch_without_modifying_the_target() -> Result<()> {
+        let mut mesh = Mesh3::from_data(attributed_data(), false)?;
+
+        let mut bare_data = attributed_data();
+        bare_data.set_point_stdev(None)?;
+        let other = Mesh3::from_data(bare_data, false)?;
+
         assert!(mesh.append(&other).is_err());
+
         assert_eq!(mesh.point_count(), 3);
+        assert_eq!(mesh.face_count(), 1);
         assert_eq!(mesh.point_stdev().unwrap(), &[0.1, 0.2, 0.3]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn appending_two_bare_meshes_works() -> Result<()> {
+        let mut mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
+        let other = Mesh3::create_box(1.0, 1.0, 1.0, false);
+        let n = mesh.point_count();
+
+        mesh.append(&other)?;
+        assert_eq!(mesh.point_count(), n * 2);
+
+        Ok(())
+    }
+
+    // ===========================================================================================
+    // Attributes on derived meshes
+    // ===========================================================================================
+
+    /// A box with a distinct label on every face and a distinct standard deviation on every point,
+    /// so a subset can be checked against exactly which elements survived.
+    fn labeled_box() -> Result<Mesh3> {
+        let mut mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
+        let stdev = (0..mesh.point_count()).map(|i| i as f64).collect();
+        let labels = (0..mesh.face_count() as u32).collect();
+        mesh.set_point_stdev(Some(stdev))?;
+        mesh.set_face_labels(Some(labels))?;
+        Ok(mesh)
+    }
+
+    #[test]
+    fn create_from_mask_carries_the_attributes() -> Result<()> {
+        let mesh = labeled_box()?;
+        let mask = IndexMask::try_from_indices(&[0, 1], mesh.face_count())?;
+
+        let sub = mesh.create_from_mask(&mask)?;
+
+        assert_eq!(sub.face_count(), 2);
+        assert_eq!(sub.face_labels().unwrap(), &[0, 1]);
+
+        // The attribute arrays have to match the counts of the mesh they ended up on.
+        assert_eq!(sub.point_stdev().unwrap().len(), sub.point_count());
+        sub.attrs().validate(sub.point_count(), sub.face_count())?;
+
+        // The surviving standard deviations are exactly those of the points the faces reference.
+        let kept: Vec<f64> = mesh
+            .unique_point_mask(&mask)?
+            .iter_true()
+            .map(|i| mesh.point_stdev().unwrap()[i])
+            .collect();
+        assert_eq!(sub.point_stdev().unwrap(), kept.as_slice());
+
+        Ok(())
+    }
+
+    #[test]
+    fn create_from_indices_carries_the_attributes() -> Result<()> {
+        let mesh = labeled_box()?;
+        let sub = mesh.create_from_indices(&[2, 3])?;
+
+        assert_eq!(sub.face_count(), 2);
+        assert_eq!(sub.face_labels().unwrap(), &[2, 3]);
+        sub.attrs().validate(sub.point_count(), sub.face_count())?;
+
+        Ok(())
+    }
+
+    /// Routing through a mask makes the selection a set, so order does not matter and a repeat
+    /// selects its face once rather than duplicating it.
+    #[test]
+    fn create_from_indices_normalizes_the_selection() -> Result<()> {
+        let mesh = labeled_box()?;
+
+        let ordered = mesh.create_from_indices(&[1, 3])?;
+        let reversed = mesh.create_from_indices(&[3, 1])?;
+        let repeated = mesh.create_from_indices(&[3, 1, 3])?;
+
+        assert_eq!(ordered.faces(), reversed.faces());
+        assert_eq!(ordered.faces(), repeated.faces());
+        assert_eq!(ordered.face_labels().unwrap(), &[1, 3]);
+        assert_eq!(repeated.face_count(), 2);
+
+        Ok(())
+    }
+
+    #[test]
+    fn create_from_indices_rejects_an_out_of_range_index() -> Result<()> {
+        let mesh = labeled_box()?;
+        assert!(mesh.create_from_indices(&[0, mesh.face_count()]).is_err());
+        Ok(())
+    }
+
+    /// The split re-triangulates and introduces new points, with no mapping back, so it has to
+    /// refuse rather than silently drop what it cannot carry.
+    #[test]
+    fn split_refuses_an_attributed_mesh_unless_the_loss_is_accepted() -> Result<()> {
+        let mesh = labeled_box()?;
+        let plane = Plane3::yz();
+
+        assert!(mesh.split(&plane, false).is_err());
+
+        // The message has to name what would be lost.
+        let message = match mesh.split(&plane, false) {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("expected the split to be refused"),
+        };
+        assert!(message.contains("point_stdev"), "{message}");
+        assert!(message.contains("face_labels"), "{message}");
+
+        // Accepting the loss lets it through, and the halves come back bare.
+        match mesh.split(&plane, true)? {
+            SplitResult::Pair(a, b) => {
+                assert!(a.attrs().is_empty());
+                assert!(b.attrs().is_empty());
+            }
+            _ => panic!("expected the plane to cut the box in two"),
+        }
+
+        // A bare mesh needs no flag at all.
+        let bare = Mesh3::create_box(1.0, 1.0, 1.0, false);
+        assert!(bare.split(&plane, false).is_ok());
+
+        Ok(())
+    }
+
+    #[test]
+    fn convex_hull_refuses_an_attributed_mesh_unless_the_loss_is_accepted() -> Result<()> {
+        let mesh = labeled_box()?;
+
+        assert!(mesh.convex_hull(false).is_err());
+        assert!(mesh.convex_hull(true)?.attrs().is_empty());
+
+        let bare = Mesh3::create_box(1.0, 1.0, 1.0, false);
+        assert!(bare.convex_hull(false).is_ok());
+
+        Ok(())
+    }
+
+    // ===========================================================================================
+    // Scaling
+    // ===========================================================================================
+
+    /// The two containers have to agree on what a negative factor means, or the same mesh scaled
+    /// through each would come back with opposite orientations.
+    #[test]
+    fn a_negative_scale_reverses_the_winding_like_mesh_data_does() -> Result<()> {
+        let mesh = Mesh3::from_data(attributed_data(), false)?;
+
+        let through_mesh = mesh.scale_copy(-1.0)?;
+        let through_data = mesh.to_data().scale_copy(-1.0)?;
+
+        assert_eq!(through_mesh.faces(), through_data.faces());
+        assert_eq!(
+            through_mesh.point_normals().unwrap(),
+            through_data.point_normals().unwrap()
+        );
+
+        // The single triangle was wound +z, so mirroring must leave it wound -z.
+        let p = through_mesh.points();
+        let f = through_mesh.faces()[0];
+        let normal = (p[f[1] as usize] - p[f[0] as usize])
+            .cross(&(p[f[2] as usize] - p[f[0] as usize]))
+            .normalize();
+        assert_relative_eq!(normal, -Vector3::z(), epsilon = 1.0e-12);
+
+        Ok(())
+    }
+
+    #[test]
+    fn scale_copy_rejects_zero_and_non_finite_factors() -> Result<()> {
+        let mesh = Mesh3::from_data(attributed_data(), false)?;
+
+        assert!(mesh.scale_copy(0.0).is_err());
+        assert!(mesh.scale_copy(f64::NAN).is_err());
+        assert!(mesh.scale_copy(f64::INFINITY).is_err());
 
         Ok(())
     }

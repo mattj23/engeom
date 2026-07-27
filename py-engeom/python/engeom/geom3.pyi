@@ -2498,13 +2498,16 @@ class Mesh:
         """
         ...
 
-    def new_scaled_uniform(self, scale: float) -> Mesh:
+    def scale_copy(self, scale: float) -> Mesh:
         """
-        Create a new mesh with all vertices scaled uniformly by the given factor. The original mesh
-        is not modified.
+        Create a new mesh with all points scaled uniformly about the origin by the given factor. The original mesh is
+        not modified.
 
-        :param scale: the scale factor to apply to all vertices
-        :return: a new mesh with all vertices scaled
+        Stored point standard deviations are scaled with the geometry. A negative factor mirrors the mesh, which
+        reverses the face winding and negates any stored point normals.
+
+        :param scale: the scale factor to apply, which must be finite and non-zero.
+        :return: a new mesh with all points scaled
         """
         ...
 
@@ -2581,12 +2584,17 @@ class Mesh:
         """
         ...
 
-    def split(self, plane: Plane3) -> Tuple[Mesh | None, Mesh | None]:
+    def split(self, plane: Plane3, allow_attribute_loss: bool = False) -> Tuple[Mesh | None, Mesh | None]:
         """
         Split the mesh by a plane. The plane will divide the mesh into two possible parts and return them as two new
         objects.  If the part lies entirely on one side of the plane, the other part will be `None`.
 
+        The cut introduces new points and re-triangulates the faces it crosses, with no mapping back to the original,
+        so there is no correct value to carry any attribute forward with. A mesh which carries attributes is refused
+        unless `allow_attribute_loss` is set.
+
         :param plane: the plane to split the mesh by.
+        :param allow_attribute_loss: accept the loss of every attribute this mesh carries.
 
         :return: a tuple of two optional meshes, the first being that on the negative side of the plane, the second
         being that on the positive side of the plane.
@@ -2704,11 +2712,14 @@ class Mesh:
 
     def create_from_indices(self, indices: List[int]) -> Mesh:
         """
-        Create a new mesh from a list of triangle indices. This will build a new mesh object containing only the
-        triangles (and their respective vertices) identified by the given list of indices.  Do not allow duplicate
-        indices in the list.
-        :param indices: the triangle indices to include in the new mesh
-        :return: a new mesh object containing only the specified triangles
+        Create a new mesh from a list of face indices. This will build a new mesh object containing only the faces
+        (and the points they reference) identified by the given list of indices. Every attribute is carried through.
+
+        The selection is treated as a set, so the faces of the result are in ascending index order regardless of the
+        order the indices were given in, and a repeated index selects its face once rather than duplicating it.
+
+        :param indices: the face indices to include in the new mesh
+        :return: a new mesh object containing only the specified faces
         """
         ...
 
@@ -2837,11 +2848,16 @@ class Mesh:
         """
         ...
 
-    def convex_hull(self) -> Mesh:
+    def convex_hull(self, allow_attribute_loss: bool = False) -> Mesh:
         """
         Calculate the convex hull of the mesh. The convex hull is the smallest convex shape that contains all the
-        vertices of the mesh. This will return a new mesh object containing the vertices and triangles of the convex
-        hull. This method will not modify the original mesh.
+        points of the mesh. This will return a new mesh object containing the points and faces of the convex hull.
+        This method will not modify the original mesh.
+
+        The hull is new topology with no mapping back to the original, so there is no correct value to carry any
+        attribute forward with. A mesh which carries attributes is refused unless `allow_attribute_loss` is set.
+
+        :param allow_attribute_loss: accept the loss of every attribute this mesh carries.
         :return: a new mesh object containing the convex hull of the original mesh.
         """
         ...
@@ -3048,9 +3064,12 @@ class FaceFilterHandle:
 
     def create_mesh(self) -> Mesh:
         """
-        Create a new mesh from the filtered triangles. This will build a new mesh object containing only the triangles
-        (and their respective vertices) that are still retained in the filter.
-        :return: a new mesh object containing only the filtered triangles.
+        Create a new mesh from the filtered faces. This will build a new mesh object containing only the faces (and
+        the points they reference) that are still retained in the filter. Every attribute is carried through.
+
+        Raises if the selection is empty, since a mesh needs at least one face.
+
+        :return: a new mesh object containing only the filtered faces.
         """
         ...
 

@@ -233,16 +233,32 @@ impl Mesh3 {
     /// The returned meshes are newly constructed from the split triangle meshes and are not
     /// solid.
     ///
+    /// # Attributes
+    ///
+    /// The cut introduces new points along the plane and re-triangulates the faces it crosses, and
+    /// `parry3d` gives no mapping from the result back to the original. There is therefore no
+    /// correct value to carry any attribute forward with, so a mesh which has any is refused unless
+    /// the caller says the loss is acceptable.
+    ///
+    /// Note that `Negative` and `Positive` mean the plane missed the mesh entirely, so nothing is
+    /// rebuilt and nothing would have been lost. The check still runs, because whether the plane
+    /// intersects is not something the caller can be expected to know in advance, and an operation
+    /// which silently kept the attributes on one path and dropped them on another would be worse
+    /// than one which is consistent.
+    ///
     /// # Arguments
     ///
     /// * `plane`: the plane used to split the mesh
+    /// * `allow_attribute_loss`: accept the loss of every attribute this mesh carries
     ///
     /// # Returns
     ///
     /// A `SplitResult<Mesh3>` describing how the mesh relates to the plane.
-    pub fn split(&self, plane: &Plane3) -> SplitResult<Mesh3> {
+    pub fn split(&self, plane: &Plane3, allow_attribute_loss: bool) -> Result<SplitResult<Mesh3>> {
+        self.check_attribute_loss("a plane split", allow_attribute_loss)?;
+
         let result = self.shape.local_split(&plane.normal, plane.d, 1.0e-6);
-        match result {
+        Ok(match result {
             SplitResult::Pair(a, b) => {
                 let mesh_a = Mesh3::new_take_trimesh(a, false);
                 let mesh_b = Mesh3::new_take_trimesh(b, false);
@@ -250,7 +266,7 @@ impl Mesh3 {
             }
             SplitResult::Negative => SplitResult::Negative,
             SplitResult::Positive => SplitResult::Positive,
-        }
+        })
     }
 
     /// Perform a section of the mesh with a plane, returning a list of `Curve3` objects that
@@ -490,11 +506,11 @@ mod tests {
         closest
     }
     #[test]
-    fn split_unit_box_through_center_yields_two_nonempty_parts() {
+    fn split_unit_box_through_center_yields_two_nonempty_parts() -> Result<()> {
         let mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let plane = Plane3::yz();
 
-        match mesh.split(&plane) {
+        match mesh.split(&plane, false)? {
             SplitResult::Pair(negative, positive) => {
                 assert!(!negative.faces().is_empty());
                 assert!(!positive.faces().is_empty());
@@ -508,28 +524,34 @@ mod tests {
             }
             _ => panic!("expected mesh to split into two parts"),
         }
+
+        Ok(())
     }
 
     #[test]
-    fn split_unit_box_with_plane_outside_returns_positive_side() {
+    fn split_unit_box_with_plane_outside_returns_positive_side() -> Result<()> {
         let mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let plane = Plane3::new(Vector3::x_axis(), -2.0);
 
-        match mesh.split(&plane) {
+        match mesh.split(&plane, false)? {
             SplitResult::Positive => {}
             _ => panic!("expected whole mesh on positive side"),
         }
+
+        Ok(())
     }
 
     #[test]
-    fn split_unit_box_with_plane_outside_returns_negative_side() {
+    fn split_unit_box_with_plane_outside_returns_negative_side() -> Result<()> {
         let mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let plane = Plane3::new(Vector3::x_axis(), 2.0);
 
-        match mesh.split(&plane) {
+        match mesh.split(&plane, false)? {
             SplitResult::Negative => {}
             _ => panic!("expected whole mesh on negative side"),
         }
+
+        Ok(())
     }
 
     #[test]

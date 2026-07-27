@@ -380,6 +380,68 @@ def test_mesh_flip_faces_in_place_reverses_the_winding():
     assert data.point_normals[0] == pytest.approx([0.0, 0.0, -1.0])
 
 
+# ================================================================================================
+# Attributes surviving (or refusing) the derived-mesh operations on Mesh
+# ================================================================================================
+
+
+def attributed_mesh() -> Mesh:
+    """A box carrying a per-point and a per-face attribute, as the accelerated type."""
+    data = MeshData3.from_mesh(Mesh.create_box(1.0, 1.0, 1.0))
+    data.set_point_stdev(numpy.full(len(data), 0.01))
+    data.set_face_labels(numpy.arange(data.faces.shape[0], dtype=numpy.uint32))
+    return data.to_mesh()
+
+
+def test_split_refuses_an_attributed_mesh_unless_the_loss_is_accepted():
+    from engeom.geom3 import Plane3
+
+    mesh = attributed_mesh()
+    plane = Plane3(1.0, 0.0, 0.0, 0.0)
+
+    with pytest.raises(ValueError) as info:
+        mesh.split(plane)
+
+    assert "point_stdev" in str(info.value)
+
+    # Accepting the loss lets it through.
+    negative, positive = mesh.split(plane, allow_attribute_loss=True)
+    assert negative is not None and positive is not None
+
+    # A bare mesh needs no flag.
+    bare = Mesh.create_box(1.0, 1.0, 1.0)
+    assert bare.split(plane) is not None
+
+
+def test_convex_hull_refuses_an_attributed_mesh_unless_the_loss_is_accepted():
+    mesh = attributed_mesh()
+
+    with pytest.raises(ValueError):
+        mesh.convex_hull()
+
+    assert mesh.convex_hull(allow_attribute_loss=True) is not None
+    assert Mesh.create_box(1.0, 1.0, 1.0).convex_hull() is not None
+
+
+def test_a_mesh_subset_carries_its_attributes():
+    mesh = attributed_mesh()
+    sub = mesh.create_from_indices([0, 1])
+
+    data = MeshData3.from_mesh(sub)
+
+    assert data.faces.shape == (2, 3)
+    assert numpy.array_equal(data.face_labels, [0, 1])
+    assert data.point_stdev.shape == (len(data),)
+
+
+def test_mesh_scale_copy_rejects_a_zero_factor():
+    mesh = Mesh.create_box(1.0, 1.0, 1.0)
+
+    assert mesh.scale_copy(2.0) is not None
+    with pytest.raises(ValueError):
+        mesh.scale_copy(0.0)
+
+
 def test_mesh_append_in_place_offsets_the_face_indices():
     data = loaded_mesh_data()
     data.append_in_place(loaded_mesh_data())
