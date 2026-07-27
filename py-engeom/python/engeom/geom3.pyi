@@ -4213,12 +4213,60 @@ class MeshData3:
         """
         ...
 
-    def transform_by(self, iso: Iso3):
+    def transform_in_place(self, iso: Iso3):
         """
         Transform the mesh in place by a rigid isometry. Stored normals and vector attributes are rotated with the
         geometry.
 
         :param iso: the isometry to apply.
+        """
+        ...
+
+    def transform_copy(self, iso: Iso3) -> MeshData3:
+        """
+        Return a copy of the mesh transformed by a rigid isometry, leaving this one unchanged.
+
+        :param iso: the isometry to apply.
+        :return: the transformed copy.
+        """
+        ...
+
+    def scale_in_place(self, scale: float):
+        """
+        Scale the mesh in place about the origin by a uniform factor.
+
+        Stored standard deviations are scaled with the geometry, since they are lengths in the mesh's own units. A
+        negative factor mirrors the mesh, which reverses the face winding and negates the stored normals.
+
+        :param scale: the factor to scale by, which must be finite and non-zero.
+        """
+        ...
+
+    def scale_copy(self, scale: float) -> MeshData3:
+        """
+        Return a copy of the mesh scaled about the origin by a uniform factor, leaving this one unchanged.
+
+        :param scale: the factor to scale by, which must be finite and non-zero.
+        :return: the scaled copy.
+        """
+        ...
+
+    def flip_faces_in_place(self):
+        """
+        Reverse the winding order of every face, turning the surface inside out. Stored point normals are negated to
+        match.
+        """
+        ...
+
+    def append_in_place(self, other: MeshData3):
+        """
+        Append another mesh onto the end of this one, re-indexing its faces to match. No points are welded and no
+        faces are merged.
+
+        Attributes are all-or-nothing: an attribute present on one side and absent on the other is an error. The
+        append is validated before anything is modified, so a failure leaves this mesh untouched.
+
+        :param other: the mesh to append.
         """
         ...
 
@@ -4382,7 +4430,7 @@ class PointCloudData3:
         """
         ...
 
-    def transform_by(self, iso: Iso3):
+    def transform_in_place(self, iso: Iso3):
         """
         Transform the cloud in place by a rigid isometry. Stored normals and vector attributes are rotated with the
         geometry.
@@ -4391,7 +4439,36 @@ class PointCloudData3:
         """
         ...
 
-    def append(self, other: PointCloudData3):
+    def transform_copy(self, iso: Iso3) -> PointCloudData3:
+        """
+        Return a copy of the cloud transformed by a rigid isometry, leaving this one unchanged.
+
+        :param iso: the isometry to apply.
+        :return: the transformed copy.
+        """
+        ...
+
+    def scale_in_place(self, scale: float):
+        """
+        Scale the cloud in place about the origin by a uniform factor.
+
+        Stored standard deviations are scaled with the geometry, since they are lengths in the cloud's own units. A
+        negative factor mirrors the cloud, which negates the stored normals.
+
+        :param scale: the factor to scale by, which must be finite and non-zero.
+        """
+        ...
+
+    def scale_copy(self, scale: float) -> PointCloudData3:
+        """
+        Return a copy of the cloud scaled about the origin by a uniform factor, leaving this one unchanged.
+
+        :param scale: the factor to scale by, which must be finite and non-zero.
+        :return: the scaled copy.
+        """
+        ...
+
+    def append_in_place(self, other: PointCloudData3):
         """
         Append another cloud onto the end of this one.
 
@@ -4402,7 +4479,7 @@ class PointCloudData3:
         """
         ...
 
-    def create_from_indices(self, indices: List[int]) -> PointCloudData3:
+    def create_subset_indices(self, indices: List[int]) -> PointCloudData3:
         """
         Create a new cloud containing the points at the given indices, in the order given. Indices may repeat. Every
         attribute is carried through.

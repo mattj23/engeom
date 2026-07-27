@@ -140,20 +140,20 @@ def test_the_cached_array_is_invalidated_by_a_setter():
     assert data.point_stdev == pytest.approx([0.9, 0.9, 0.9])
 
 
-def test_transform_invalidates_the_cached_points():
+def test_transform_in_place_invalidates_the_cached_points():
     data = MeshData3(triangle_points(), triangle_faces())
     _ = data.points
 
-    data.transform_by(Iso3.from_translation(10.0, 0.0, 0.0))
+    data.transform_in_place(Iso3.from_translation(10.0, 0.0, 0.0))
 
     assert data.points[0] == pytest.approx([10.0, 0.0, 0.0])
 
 
-def test_transform_rotates_the_stored_normals():
+def test_transform_in_place_rotates_the_stored_normals():
     cloud = loaded_cloud_data()
 
     # A quarter turn about +x maps +z onto -y. The angle is in radians.
-    cloud.transform_by(Iso3.from_rotation(numpy.pi / 2.0, 1.0, 0.0, 0.0))
+    cloud.transform_in_place(Iso3.from_rotation(numpy.pi / 2.0, 1.0, 0.0, 0.0))
 
     assert cloud.point_normals[0] == pytest.approx([0.0, -1.0, 0.0], abs=1e-12)
 
@@ -270,29 +270,29 @@ def test_cloud_data_round_trips_through_point_cloud():
 # ================================================================================================
 
 
-def test_cloud_append_unions_the_attributes():
+def test_cloud_append_in_place_unions_the_attributes():
     cloud = loaded_cloud_data()
-    cloud.append(loaded_cloud_data())
+    cloud.append_in_place(loaded_cloud_data())
 
     assert len(cloud) == 6
     assert cloud.point_stdev.shape == (6,)
     assert cloud.point_colors.shape == (6, 3)
 
 
-def test_cloud_append_rejects_a_mismatch_without_modifying_the_target():
+def test_cloud_append_in_place_rejects_a_mismatch_without_modifying_the_target():
     cloud = loaded_cloud_data()
     other = loaded_cloud_data()
     other.set_point_stdev(None)
 
     with pytest.raises(ValueError):
-        cloud.append(other)
+        cloud.append_in_place(other)
 
     assert len(cloud) == 3
     assert cloud.point_stdev == pytest.approx([0.001, 0.002, 0.003])
 
 
-def test_cloud_subset_by_indices_carries_the_attributes():
-    sub = loaded_cloud_data().create_from_indices([2, 0])
+def test_cloud_subset_indices_carries_the_attributes():
+    sub = loaded_cloud_data().create_subset_indices([2, 0])
 
     assert len(sub) == 2
     assert sub.points[0] == pytest.approx([0.0, 1.0, 0.0])
@@ -313,3 +313,78 @@ def test_cloned_is_independent():
 def test_repr_says_what_it_holds():
     assert "MeshData3" in repr(loaded_mesh_data())
     assert "PointCloudData3" in repr(loaded_cloud_data())
+
+
+# ================================================================================================
+# The _in_place / _copy pairs
+#
+# A `_in_place` name only means something next to a `_copy` sibling, so both halves of every pair
+# are checked here: the in-place one mutates the receiver, the copy one does not.
+# ================================================================================================
+
+
+@pytest.mark.parametrize("factory", [loaded_mesh_data, loaded_cloud_data])
+def test_transform_copy_leaves_the_receiver_alone(factory):
+    original = factory()
+    moved = original.transform_copy(Iso3.from_translation(10.0, 0.0, 0.0))
+
+    assert original.points[0] == pytest.approx([0.0, 0.0, 0.0])
+    assert moved.points[0] == pytest.approx([10.0, 0.0, 0.0])
+
+
+@pytest.mark.parametrize("factory", [loaded_mesh_data, loaded_cloud_data])
+def test_scale_in_place_scales_points_and_standard_deviations(factory):
+    item = factory()
+    item.scale_in_place(10.0)
+
+    assert item.points[1] == pytest.approx([10.0, 0.0, 0.0])
+    assert item.point_stdev == pytest.approx([0.01, 0.02, 0.03])
+
+
+@pytest.mark.parametrize("factory", [loaded_mesh_data, loaded_cloud_data])
+def test_scale_copy_leaves_the_receiver_alone(factory):
+    original = factory()
+    scaled = original.scale_copy(10.0)
+
+    assert original.points[1] == pytest.approx([1.0, 0.0, 0.0])
+    assert scaled.points[1] == pytest.approx([10.0, 0.0, 0.0])
+
+
+@pytest.mark.parametrize("factory", [loaded_mesh_data, loaded_cloud_data])
+def test_scale_rejects_zero_and_non_finite_factors(factory):
+    item = factory()
+
+    for bad in (0.0, float("nan"), float("inf")):
+        with pytest.raises(ValueError):
+            item.scale_in_place(bad)
+
+    # The rejected calls must have left it alone.
+    assert item.points[1] == pytest.approx([1.0, 0.0, 0.0])
+
+
+@pytest.mark.parametrize("factory", [loaded_mesh_data, loaded_cloud_data])
+def test_a_negative_scale_flips_the_stored_normals(factory):
+    mirrored = factory().scale_copy(-1.0)
+
+    assert mirrored.point_normals[0] == pytest.approx([0.0, 0.0, -1.0])
+    assert all(s > 0.0 for s in mirrored.point_stdev)
+
+
+def test_mesh_flip_faces_in_place_reverses_the_winding():
+    data = loaded_mesh_data()
+    before = data.faces.copy()
+
+    data.flip_faces_in_place()
+
+    assert numpy.array_equal(data.faces[0], [before[0][1], before[0][0], before[0][2]])
+    assert data.point_normals[0] == pytest.approx([0.0, 0.0, -1.0])
+
+
+def test_mesh_append_in_place_offsets_the_face_indices():
+    data = loaded_mesh_data()
+    data.append_in_place(loaded_mesh_data())
+
+    assert len(data) == 6
+    assert numpy.array_equal(data.faces, [[0, 1, 2], [3, 4, 5]])
+    assert data.point_stdev.shape == (6,)
+    assert data.face_labels.shape == (2,)

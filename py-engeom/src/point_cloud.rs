@@ -404,19 +404,38 @@ impl PointCloudData3 {
 
     // --- Operations ------------------------------------------------------------------------
 
-    fn transform_by(&mut self, iso: &Iso3) {
+    fn transform_in_place(&mut self, iso: &Iso3) {
         self.clear_cached();
         self.inner.transform_in_place(iso.get_inner());
     }
 
-    fn append(&mut self, other: &PointCloudData3) -> PyResult<()> {
+    fn transform_copy(&self, iso: &Iso3) -> Self {
+        Self::from_inner(self.inner.transform_copy(iso.get_inner()))
+    }
+
+    fn scale_in_place(&mut self, scale: f64) -> PyResult<()> {
+        self.clear_cached();
+        self.inner
+            .scale_in_place(scale)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    fn scale_copy(&self, scale: f64) -> PyResult<Self> {
+        let inner = self
+            .inner
+            .scale_copy(scale)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(inner))
+    }
+
+    fn append_in_place(&mut self, other: &PointCloudData3) -> PyResult<()> {
         self.clear_cached();
         self.inner
             .append_in_place(&other.inner)
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
-    fn create_from_indices(&self, indices: Vec<usize>) -> PyResult<Self> {
+    fn create_subset_indices(&self, indices: Vec<usize>) -> PyResult<Self> {
         let inner = self
             .inner
             .create_subset_indices(&indices)
