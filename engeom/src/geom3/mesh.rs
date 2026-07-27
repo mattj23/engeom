@@ -18,8 +18,6 @@ mod section;
 mod uv_mapping;
 
 use crate::common::{IndexMask, PCoords};
-use crate::geom3::IsoExtensions3;
-use crate::io::{deflate_bytes, u_bytes_to_mesh_data};
 use crate::na::SVector;
 use crate::{Iso3, Point2, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
 pub use collisions::MeshCollisionSet;
@@ -29,7 +27,7 @@ pub use half_edge::HalfEdgeMesh;
 pub use nav_structure::MeshNav;
 use parry3d_f64::bounding_volume::Aabb;
 use parry3d_f64::shape::{TriMesh, TriMeshFlags};
-use parry3d_f64::{shape, transformation};
+use parry3d_f64::transformation;
 pub use uv_mapping::UvMapping;
 
 #[cfg(feature = "ply")]
@@ -950,75 +948,25 @@ impl Mesh3 {
 // ===============================================================================================
 // Shape creation methods
 // ===============================================================================================
+//
+// Every one of these is a pass-through to the `MeshData3` constructor of the same name, adding the
+// `is_solid` flag. The tessellations live there because they produce points and faces and nothing
+// else; `is_solid` is a query behavior and belongs only to the accelerated type.
 
 impl Mesh3 {
-    pub fn create_cone(half_height: f64, radius: f64, steps: usize) -> Self {
-        let cone = shape::Cone::new(half_height, radius);
-        let (vertices, faces) = cone.to_trimesh(steps as u32);
-
-        Self::new(vertices, faces, true)
-    }
-
-    pub fn create_capsule(
-        p0: &Point3,
-        p1: &Point3,
-        radius: f64,
-        n_theta: usize,
-        n_phi: usize,
-    ) -> Self {
-        let capsule = shape::Capsule::new(*p0, *p1, radius);
-        let (vertices, faces) = capsule.to_trimesh(n_theta as u32, n_phi as u32);
-
-        Self::new(vertices, faces, true)
-    }
-
-    /// Create a spherical mesh centered at the origin. The `n_theta` and `n_phi` parameters control
-    /// the tessellation density.
-    ///
-    /// # Arguments
-    ///
-    /// * `radius` - Radius of the sphere.
-    /// * `n_theta` - Number of subdivisions around the polar direction.
-    /// * `n_phi` - Number of subdivisions around the azimuthal direction.
-    ///
-    /// returns: Mesh3
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use engeom::Mesh3;
-    /// use approx::assert_relative_eq;
-    ///
-    /// let n_t = 14;
-    /// let n_p = 15;
-    /// let sphere = Mesh3::create_sphere(1.0, n_t, n_p);
-    ///
-    /// assert_eq!(sphere.points().len(), n_t * (n_p - 1) + 2);
-    ///
-    /// // Verify that the vertices are on the surface of the unit sphere.
-    /// for vertex in sphere.points() {
-    ///     let dist_from_origin = vertex.coords.norm();
-    ///     assert_relative_eq!(dist_from_origin, 1.0)
-    /// }
-    /// ```
-    pub fn create_sphere(radius: f64, n_theta: usize, n_phi: usize) -> Self {
-        let sphere = shape::Ball::new(radius);
-        let (vertices, faces) = sphere.to_trimesh(n_theta as u32, n_phi as u32);
-
-        Self::new(vertices, faces, true)
-    }
-
     /// Create a box mesh with the given dimensions, centered at the origin.
+    ///
+    /// See `MeshData3::create_box`.
     ///
     /// # Arguments
     ///
     /// * `length`: the dimension of the box in the x direction
     /// * `width`: the dimension of the box in the y direction
     /// * `height`: the dimension of the box in the z direction
-    /// * `is_solid`: whether the box is solid or hollow, used for some specific distance queries
-    ///   in the underlying parry library
+    /// * `is_solid`: whether distance queries should treat points inside the mesh as being at zero
+    ///   distance
     ///
-    /// returns: Mesh3
+    /// returns: `Mesh3`
     ///
     /// # Examples
     ///
@@ -1034,50 +982,101 @@ impl Mesh3 {
     /// assert_relative_eq!(mesh.aabb().mins.z, -3.0);
     /// ```
     pub fn create_box(length: f64, width: f64, height: f64, is_solid: bool) -> Self {
-        let bx = shape::Cuboid::new(Vector3::new(length / 2.0, width / 2.0, height / 2.0));
-        let (vertices, triangles) = bx.to_trimesh();
-        Self::new(vertices, triangles, is_solid)
+        Self::from_primitive(MeshData3::create_box(length, width, height), is_solid)
     }
 
-    /// Create a cylindrical mesh centered at the origin and aligned with the local `y` axis.
-    /// The `radius` controls the cylinder radius, `height` its full height, and `steps`
-    /// controls the tessellation density around the circumference.
+    /// Create a spherical mesh centered at the origin.
+    ///
+    /// See `MeshData3::create_sphere`.
     ///
     /// # Arguments
     ///
-    /// * `radius` - Radius of the cylinder.
-    /// * `height` - Full height of the cylinder (along the y-axis).
-    /// * `steps` - Number of subdivisions around the cylinder axis.
+    /// * `radius`: radius of the sphere
+    /// * `n_theta`: number of subdivisions around the polar direction
+    /// * `n_phi`: number of subdivisions around the azimuthal direction
     ///
-    /// returns: Mesh3
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use engeom::{Mesh3, Point3};
-    /// use approx::assert_relative_eq;
-    ///
-    /// let cyl = Mesh3::create_cylinder(1.0, 4.0, 16);
-    ///
-    /// assert_relative_eq!(cyl.aabb().mins.z, -1.0);
-    /// assert_relative_eq!(cyl.aabb().maxs.z,  1.0);
-    /// assert_relative_eq!(cyl.aabb().mins.x, -1.0);
-    /// assert_relative_eq!(cyl.aabb().maxs.x,  1.0);
-    /// assert_relative_eq!(cyl.aabb().mins.y, -2.0);
-    /// assert_relative_eq!(cyl.aabb().maxs.y,  2.0);
-    ///
-    /// for vertex in cyl.points() {
-    ///     let proj = Point3::new(vertex.x, 0.0, vertex.z);
-    ///     assert_relative_eq!(proj.coords.norm(), 1.0);
-    /// }
-    /// ```
-    pub fn create_cylinder(radius: f64, height: f64, steps: usize) -> Self {
-        let cyl = shape::Cylinder::new(height / 2.0, radius);
-        let (vertices, faces) = cyl.to_trimesh(steps as u32);
-
-        Self::new(vertices, faces, true)
+    /// returns: `Mesh3`
+    pub fn create_sphere(radius: f64, n_theta: usize, n_phi: usize) -> Self {
+        Self::from_primitive(MeshData3::create_sphere(radius, n_theta, n_phi), true)
     }
 
+    /// Create a cylindrical mesh centered at the origin and aligned with the local `y` axis.
+    ///
+    /// See `MeshData3::create_cylinder`.
+    ///
+    /// # Arguments
+    ///
+    /// * `radius`: radius of the cylinder
+    /// * `height`: full height of the cylinder, along the y axis
+    /// * `steps`: number of subdivisions around the circumference
+    ///
+    /// returns: `Mesh3`
+    pub fn create_cylinder(radius: f64, height: f64, steps: usize) -> Self {
+        Self::from_primitive(MeshData3::create_cylinder(radius, height, steps), true)
+    }
+
+    /// Create a conical mesh centered at the origin and aligned with the local `y` axis, with its
+    /// apex at `+height/2` and its base at `-height/2`.
+    ///
+    /// See `MeshData3::create_cone`.
+    ///
+    /// # Arguments
+    ///
+    /// * `radius`: radius of the base of the cone
+    /// * `height`: full height of the cone, along the y axis
+    /// * `steps`: number of subdivisions around the circumference
+    ///
+    /// returns: `Mesh3`
+    pub fn create_cone(radius: f64, height: f64, steps: usize) -> Self {
+        Self::from_primitive(MeshData3::create_cone(radius, height, steps), true)
+    }
+
+    /// Create a flat, filled circle mesh lying in the XY plane, centered at the origin, with the
+    /// normal pointing along +Z.
+    ///
+    /// See `MeshData3::create_circle`.
+    ///
+    /// # Arguments
+    ///
+    /// * `radius`: radius of the circle
+    /// * `segments`: number of perimeter points, and of triangles. Must be at least 3.
+    ///
+    /// returns: `Mesh3`
+    pub fn create_circle(radius: f64, segments: usize) -> Self {
+        Self::from_primitive(MeshData3::create_circle(radius, segments), false)
+    }
+
+    /// Create a capsule mesh spanning the segment between two points.
+    ///
+    /// See `MeshData3::create_capsule`.
+    pub fn create_capsule(
+        p0: &Point3,
+        p1: &Point3,
+        radius: f64,
+        n_theta: usize,
+        n_phi: usize,
+    ) -> Self {
+        Self::from_primitive(
+            MeshData3::create_capsule(p0, p1, radius, n_theta, n_phi),
+            true,
+        )
+    }
+
+    /// Create a cylindrical mesh spanning the segment between two points.
+    ///
+    /// See `MeshData3::create_cylinder_between`.
+    pub fn create_cylinder_between(p0: &Point3, p1: &Point3, radius: f64, steps: usize) -> Self {
+        Self::from_primitive(
+            MeshData3::create_cylinder_between(p0, p1, radius, steps),
+            true,
+        )
+    }
+
+    /// Create a rectangular beam spanning the segment between two points.
+    ///
+    /// See `MeshData3::create_rect_beam_between`.
+    ///
+    /// returns: `Result<Mesh3>`, failing if `up` is parallel to the segment
     pub fn create_rect_beam_between(
         p0: &Point3,
         p1: &Point3,
@@ -1085,102 +1084,38 @@ impl Mesh3 {
         height: f64,
         up: &Vector3,
     ) -> Result<Self> {
-        let v = *p1 - *p0;
-        let pc = *p0 + v / 2.0;
-        let box_geom = shape::Cuboid::new(Vector3::new(width / 2.0, height / 2.0, v.norm() / 2.0));
-
-        // I think this is OK?
-        let transform = Iso3::from_basis_zy(&v, up, Some(pc))?;
-
-        let (vertices, faces) = box_geom.to_trimesh();
-        let mut mesh = Self::new(vertices, faces, true);
-        mesh.transform_by(&transform);
-        Ok(mesh)
+        let data = MeshData3::create_rect_beam_between(p0, p1, width, height, up)?;
+        Ok(Self::from_primitive(data, true))
     }
 
-    pub fn create_cylinder_between(p0: &Point3, p1: &Point3, radius: f64, steps: usize) -> Self {
-        let v = *p1 - *p0;
-        let pc = *p0 + v / 2.0;
-        let cyl = shape::Cylinder::new(v.norm() / 2.0, radius);
-
-        // I think this is OK?
-        let transform = Iso3::from_basis_yz(&v, &Vector3::z(), Some(pc))
-            .unwrap_or(Iso3::from_basis_yx(&v, &Vector3::x(), Some(pc)).unwrap());
-
-        let (vertices, faces) = cyl.to_trimesh(steps as u32);
-        let mut mesh = Self::new(vertices, faces, true);
-        mesh.transform_by(&transform);
-        mesh
-    }
-
-    /// Create a flat, filled circle mesh lying in the XY plane, centered at the origin, with the
-    /// normal pointing along +Z. The mesh is a triangle fan from the center to `segments` evenly
-    /// spaced perimeter vertices.
+    /// Load a Stanford bunny mesh embedded in the binary with 453 points and 948 faces.
     ///
-    /// # Arguments
-    ///
-    /// * `radius` - Radius of the circle.
-    /// * `segments` - Number of perimeter vertices (and triangles). Must be at least 3.
-    ///
-    /// returns: Mesh3
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use engeom::Mesh3;
-    ///
-    /// let circle = Mesh3::create_circle(1.0, 32);
-    /// assert_eq!(circle.points().len(), 33); // center + 32 perimeter
-    /// assert_eq!(circle.faces().len(), 32);
-    /// ```
-    pub fn create_circle(radius: f64, segments: usize) -> Self {
-        use std::f64::consts::TAU;
-        let mut vertices = Vec::with_capacity(segments + 1);
-        let mut faces = Vec::with_capacity(segments);
-
-        vertices.push(Point3::origin());
-        for i in 0..segments {
-            let angle = TAU * (i as f64) / (segments as f64);
-            vertices.push(Point3::new(radius * angle.cos(), radius * angle.sin(), 0.0));
-        }
-
-        for i in 0..segments {
-            let a = (i + 1) as u32;
-            let b = ((i + 1) % segments + 1) as u32;
-            faces.push([0u32, a, b]);
-        }
-
-        Self::new(vertices, faces, false)
-    }
-
-    /// Load a Stanford bunny mesh embedded in the binary with 453 vertices and 948 faces. This
-    /// mesh has been compressed into the 16-bit micro mesh format. The mesh structure is the same
-    /// as the corresponding `bun_zipper_res3.ply` mesh, but some precision has been lost in the
-    /// conversion. The maximum vertex deviation from the original is 0.00000189 meters.
+    /// See `MeshData3::stanford_bunny_res4`.
     pub fn stanford_bunny_res4() -> Self {
-        let bytes = include_bytes!("../../tests/data/stanford_bun_4.umesh.gz");
-        let data = u_bytes_to_mesh_data(&deflate_bytes(bytes).unwrap()).unwrap();
-        Self::from_data(data, false).unwrap()
+        Self::from_primitive(MeshData3::stanford_bunny_res4(), false)
     }
 
-    /// Load a Stanford bunny mesh embedded in the binary with 1889 vertices and 3851 faces. This
-    /// mesh has been compressed into the 16-bit micro mesh format. The mesh structure is the same
-    /// as the corresponding `bun_zipper_res3.ply` mesh, but some precision has been lost in the
-    /// conversion. The maximum vertex deviation from the original is 0.00000189 meters.
+    /// Load a Stanford bunny mesh embedded in the binary with 1889 points and 3851 faces.
+    ///
+    /// See `MeshData3::stanford_bunny_res3`.
     pub fn stanford_bunny_res3() -> Self {
-        let bytes = include_bytes!("../../tests/data/stanford_bun_3.umesh.gz");
-        let data = u_bytes_to_mesh_data(&deflate_bytes(bytes).unwrap()).unwrap();
-        Self::from_data(data, false).unwrap()
+        Self::from_primitive(MeshData3::stanford_bunny_res3(), false)
     }
 
-    /// Load a Stanford bunny mesh embedded in the binary with 8171 vertices and 16301 faces. This
-    /// mesh has been compressed into the 16-bit micro mesh format. The mesh structure is the same
-    /// as the corresponding `bun_zipper_res2.ply` mesh, but some precision has been lost in the
-    /// conversion. The maximum vertex deviation from the original is 0.00000189 meters.
+    /// Load a Stanford bunny mesh embedded in the binary with 8171 points and 16301 faces.
+    ///
+    /// See `MeshData3::stanford_bunny_res2`.
     pub fn stanford_bunny_res2() -> Self {
-        let bytes = include_bytes!("../../tests/data/stanford_bun_2.umesh.gz");
-        let data = u_bytes_to_mesh_data(&deflate_bytes(bytes).unwrap()).unwrap();
-        Self::from_data(data, false).unwrap()
+        Self::from_primitive(MeshData3::stanford_bunny_res2(), false)
+    }
+
+    /// Accelerate a mesh which came from one of the primitive constructors.
+    ///
+    /// Those always produce at least one face, which is the only way `from_data` can fail, so the
+    /// failure is a bug in the tessellation rather than anything a caller can cause.
+    fn from_primitive(data: MeshData3, is_solid: bool) -> Self {
+        Self::from_data(data, is_solid)
+            .expect("A primitive tessellation always has at least one face")
     }
 }
 

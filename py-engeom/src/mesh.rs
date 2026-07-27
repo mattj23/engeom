@@ -1049,6 +1049,33 @@ impl MeshData3 {
         Self::from_inner(mesh.get_inner().to_data())
     }
 
+    // --- Primitives --------------------------------------------------------------------------
+
+    #[staticmethod]
+    fn create_box(length: f64, width: f64, height: f64) -> Self {
+        Self::from_inner(engeom::MeshData3::create_box(length, width, height))
+    }
+
+    #[staticmethod]
+    fn create_sphere(radius: f64, n_theta: usize, n_phi: usize) -> Self {
+        Self::from_inner(engeom::MeshData3::create_sphere(radius, n_theta, n_phi))
+    }
+
+    #[staticmethod]
+    fn create_cylinder(radius: f64, height: f64, steps: usize) -> Self {
+        Self::from_inner(engeom::MeshData3::create_cylinder(radius, height, steps))
+    }
+
+    #[staticmethod]
+    fn create_cone(radius: f64, height: f64, steps: usize) -> Self {
+        Self::from_inner(engeom::MeshData3::create_cone(radius, height, steps))
+    }
+
+    #[staticmethod]
+    fn create_circle(radius: f64, segments: usize) -> Self {
+        Self::from_inner(engeom::MeshData3::create_circle(radius, segments))
+    }
+
     fn __len__(&self) -> usize {
         self.inner.point_count()
     }

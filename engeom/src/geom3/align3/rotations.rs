@@ -169,6 +169,7 @@ mod tests {
 
     #[test]
     fn test_wpr_rot_mat_round_trip_stress() {
+        // TODO: This will occasionally fail near gimbal lock when ry is around PI/2, fix it
         let mut rnd = RandomGeometry3::new();
         for _ in 0..1000 {
             let m0 = RotationMatrices::from_euler(

@@ -460,6 +460,52 @@ def test_mesh_write_stl_refuses_to_drop_attributes_silently(tmp_path):
     assert Mesh.load_stl(path) is not None
 
 
+# ================================================================================================
+# Primitive constructors
+# ================================================================================================
+
+
+def test_create_cone_uses_the_radius_and_full_height_it_was_given():
+    """The two arguments used to reach parry swapped, so a cone came out with them exchanged."""
+    cone = Mesh.create_cone(radius=2.0, height=10.0, steps=32)
+    aabb = cone.aabb
+
+    assert aabb.min.x == pytest.approx(-2.0)
+    assert aabb.max.x == pytest.approx(2.0)
+    assert aabb.min.y == pytest.approx(-5.0)
+    assert aabb.max.y == pytest.approx(5.0)
+
+
+def test_cone_and_cylinder_agree_on_what_height_means():
+    cone = Mesh.create_cone(radius=1.0, height=6.0, steps=16)
+    cyl = Mesh.create_cylinder(radius=1.0, height=6.0, steps=16)
+
+    assert cone.aabb.max.y == pytest.approx(cyl.aabb.max.y)
+    assert cone.aabb.min.y == pytest.approx(cyl.aabb.min.y)
+
+
+def test_primitives_carry_no_attributes():
+    for mesh in [
+        Mesh.create_box(1.0, 2.0, 3.0),
+        Mesh.create_sphere(1.0, 8, 8),
+        Mesh.create_cylinder(1.0, 2.0, 8),
+        Mesh.create_cone(1.0, 2.0, 8),
+        Mesh.create_circle(1.0, 8),
+    ]:
+        data = MeshData3.from_mesh(mesh)
+        assert data.point_normals is None
+        assert data.point_stdev is None
+        assert data.face_labels is None
+
+
+def test_mesh_data_has_the_primitives_too():
+    data = MeshData3.create_box(2.0, 4.0, 6.0)
+
+    assert data.points.shape[1] == 3
+    assert data.faces.shape[1] == 3
+    assert data.to_mesh().aabb.max.z == pytest.approx(3.0)
+
+
 def test_mesh_scale_copy_rejects_a_zero_factor():
     mesh = Mesh.create_box(1.0, 1.0, 1.0)
 

@@ -14,6 +14,7 @@
 mod attribute_set;
 mod editing;
 mod operations;
+mod primitives;
 mod subsets;
 
 pub use attribute_set::MeshAttrSet3;

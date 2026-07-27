@@ -2949,6 +2949,11 @@ class Mesh:
         Creates a cone with a radius and height. The cone will be centered at the origin and oriented so that the
         point of the cone is located at Y=height/2 and the base is located at Y=-height/2.
 
+        !!! note
+            Before version 0.4.2 the radius and height arguments were swapped on the way into the library, and the
+            height was consumed as a half-height. A cone built with `radius=2, height=10` came out with a radius of
+            10 and a total height of 4.
+
         :param radius: the radius of the base of the cone
         :param height: the size of the cone along the Y-axis
         :param steps: the number of subdivisions to create vertices around the cone. The more steps the smoother the
@@ -4328,6 +4333,67 @@ class MeshData3:
         Copy the buffers and attributes out of an accelerated `Mesh`.
 
         :param mesh: the mesh to copy from.
+        :return: the mesh data.
+        """
+        ...
+
+    @staticmethod
+    def create_box(length: float, width: float, height: float) -> MeshData3:
+        """
+        Create a box mesh with the given dimensions, centered at the origin.
+
+        :param length: the dimension of the box in the x direction.
+        :param width: the dimension of the box in the y direction.
+        :param height: the dimension of the box in the z direction.
+        :return: the mesh data.
+        """
+        ...
+
+    @staticmethod
+    def create_sphere(radius: float, n_theta: int, n_phi: int) -> MeshData3:
+        """
+        Create a spherical mesh centered at the origin.
+
+        :param radius: the radius of the sphere.
+        :param n_theta: the number of subdivisions around the polar direction.
+        :param n_phi: the number of subdivisions around the azimuthal direction.
+        :return: the mesh data.
+        """
+        ...
+
+    @staticmethod
+    def create_cylinder(radius: float, height: float, steps: int) -> MeshData3:
+        """
+        Create a cylindrical mesh centered at the origin and aligned with the local y axis.
+
+        :param radius: the radius of the cylinder.
+        :param height: the full height of the cylinder, along the y axis.
+        :param steps: the number of subdivisions around the circumference.
+        :return: the mesh data.
+        """
+        ...
+
+    @staticmethod
+    def create_cone(radius: float, height: float, steps: int) -> MeshData3:
+        """
+        Create a conical mesh centered at the origin and aligned with the local y axis, with its apex at +height/2
+        and its base at -height/2.
+
+        :param radius: the radius of the base of the cone.
+        :param height: the full height of the cone, along the y axis.
+        :param steps: the number of subdivisions around the circumference.
+        :return: the mesh data.
+        """
+        ...
+
+    @staticmethod
+    def create_circle(radius: float, segments: int) -> MeshData3:
+        """
+        Create a flat, filled circle mesh lying in the XY plane, centered at the origin, with the normal pointing
+        along +Z.
+
+        :param radius: the radius of the circle.
+        :param segments: the number of perimeter points, and of triangles. Must be at least 3.
         :return: the mesh data.
         """
         ...
