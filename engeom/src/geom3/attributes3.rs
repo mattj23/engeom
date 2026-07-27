@@ -5,9 +5,18 @@
 //! It lives here, outside `mesh`, because nothing about the array itself is specific to a mesh. The
 //! attribute set types which own these arrays and know the element counts to validate against are
 //! the ones which belong to a particular container.
+//!
+//! `PointAttrSet3` also lives here. The point domain is common to every container, so it is written
+//! once here and composed by `MeshAttrSet3`, which adds the face domain on top of it. The validation
+//! helpers at the bottom of this file are shared by both for the same reason.
+
+mod point_set;
+
+pub use point_set::PointAttrSet3;
 
 use crate::common::IndexMask;
 use crate::{Iso3, Result, Vector3};
+use std::collections::HashMap;
 
 /// Attribute names which may not be used as keys in the open attribute maps, because they name a
 /// quantity that either already has a typed field or is computed on demand. As a precaution we're
@@ -193,6 +202,115 @@ impl Attr3 {
 /// caller is responsible for having verified that the indices are in bounds.
 fn take_indices<T: Clone>(items: &[T], indices: &[usize]) -> Vec<T> {
     indices.iter().map(|&i| items[i].clone()).collect()
+}
+
+// ===============================================================================================
+// Shared attribute set helpers
+// ===============================================================================================
+//
+// These are used by both `PointAttrSet3` and `MeshAttrSet3`. They live here rather than in either
+// one so that the two cannot drift apart on what counts as a valid attribute or a legal append.
+
+/// Verify that an optional attribute length matches the expected element count.
+pub(crate) fn check_len(actual: Option<usize>, expected: usize, name: &str) -> Result<()> {
+    match actual {
+        Some(n) if n != expected => Err(format!(
+            "Attribute '{name}' has {n} values, but there are {expected} elements in that domain"
+        )
+        .into()),
+        _ => Ok(()),
+    }
+}
+
+/// Verify that a name is not one of the reserved open-map keys.
+pub(crate) fn check_reserved(name: &str) -> Result<()> {
+    if RESERVED_ATTR_NAMES.contains(&name) {
+        return Err(format!(
+            "'{name}' is a reserved attribute name. Quantities which have a typed field or are \
+             computed on demand (normals, colors, standard deviations, labels) must be set through \
+             their own accessor, so that they cannot have two homes which disagree."
+        )
+        .into());
+    }
+
+    Ok(())
+}
+
+/// Verify that a typed attribute is either present on both sides of an append or absent on both.
+pub(crate) fn check_both_or_neither(a: bool, b: bool, name: &str) -> Result<()> {
+    if a != b {
+        let (has, lacks) = if a {
+            ("this", "the other")
+        } else {
+            ("the other", "this")
+        };
+        return Err(format!(
+            "Cannot append: {has} attribute set has '{name}' but {lacks} one does not"
+        )
+        .into());
+    }
+
+    Ok(())
+}
+
+/// Verify that two open maps hold exactly the same set of keys.
+pub(crate) fn check_keys_match(
+    a: &HashMap<String, Attr3>,
+    b: &HashMap<String, Attr3>,
+    domain: &str,
+) -> Result<()> {
+    for name in a.keys() {
+        if !b.contains_key(name) {
+            return Err(format!(
+                "Cannot append: this attribute set has a {domain} attribute '{name}' but the other \
+                 one does not"
+            )
+            .into());
+        }
+    }
+
+    for name in b.keys() {
+        if !a.contains_key(name) {
+            return Err(format!(
+                "Cannot append: the other attribute set has a {domain} attribute '{name}' but this \
+                 one does not"
+            )
+            .into());
+        }
+    }
+
+    Ok(())
+}
+
+/// Verify that two attributes stored under the same name hold the same variant.
+pub(crate) fn check_same_variant(a: &Attr3, b: &Attr3, name: &str) -> Result<()> {
+    if a.kind() != b.kind() {
+        return Err(format!(
+            "Cannot append: attribute '{}' is a {} on this side and a {} on the other",
+            name,
+            a.kind(),
+            b.kind()
+        )
+        .into());
+    }
+
+    Ok(())
+}
+
+/// Select the masked elements of an optional attribute array.
+pub(crate) fn clone_masked<T: Clone>(
+    values: Option<&[T]>,
+    mask: &IndexMask,
+) -> Result<Option<Vec<T>>> {
+    values.map(|v| mask.clone_indices_of(v)).transpose()
+}
+
+/// Append the contents of an optional attribute array onto another, where both are known to be
+/// present or both absent.
+pub(crate) fn extend_option<T: Clone>(target: &mut Option<Vec<T>>, source: Option<&[T]>) {
+    if let (Some(t), Some(s)) = (target.as_mut(), source) {
+        t.extend_from_slice(s);
+    }
 }
 
 #[cfg(test)]
