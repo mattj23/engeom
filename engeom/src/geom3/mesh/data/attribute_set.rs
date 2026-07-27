@@ -255,6 +255,24 @@ impl MeshAttrSet3 {
     pub fn remove_face_attr(&mut self, name: &str) -> Option<Attr3> {
         self.face_attrs.remove(name)
     }
+
+    /// Replace the entire per-point half of this set, leaving the face domain alone.
+    ///
+    /// This exists so that a point-domain set built elsewhere, such as by a reader which handles
+    /// the two domains separately or by a point cloud being turned into a mesh, can be attached
+    /// without going through the typed setters one at a time.
+    ///
+    /// # Arguments
+    ///
+    /// * `points`: the per-point attributes to attach
+    /// * `n_points`: the point count of the owning mesh, which every array in `points` must match
+    ///
+    /// returns: `Result<()>`, leaving the existing attributes untouched on failure
+    pub fn set_points(&mut self, points: PointAttrSet3, n_points: usize) -> Result<()> {
+        points.validate(n_points)?;
+        self.points = points;
+        Ok(())
+    }
 }
 
 // ===============================================================================================

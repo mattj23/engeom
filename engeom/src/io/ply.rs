@@ -48,6 +48,7 @@
 //!   `MeshAttrSet3` has no per-corner domain yet.
 
 use crate::geom3::attributes3::Attr3;
+use crate::geom3::attributes3::PointAttrSet3;
 use crate::geom3::mesh::data::{MeshAttrSet3, MeshData3};
 use crate::{Mesh3, Point3, Result, UnitVec3, Vector3};
 use ply_rs_bw::parser::{Parser, Reader};
@@ -91,6 +92,7 @@ pub fn read_ply_mesh_data<R: BufRead>(source: R) -> Result<MeshData3> {
     let header = scalar_parser.read_header(&mut reader)?;
 
     let mut points: Option<Vec<Point3>> = None;
+    let mut point_attrs = PointAttrSet3::empty();
     let mut attrs = MeshAttrSet3::empty();
     let mut faces: Vec<[u32; 3]> = Vec::new();
 
@@ -100,7 +102,7 @@ pub fn read_ply_mesh_data<R: BufRead>(source: R) -> Result<MeshData3> {
         match name.as_str() {
             "vertex" => {
                 let rows = scalar_parser.read_payload_for_element(&mut reader, def, &header)?;
-                points = Some(read_points(def, &rows, &mut attrs)?);
+                points = Some(read_points(def, &rows, &mut point_attrs)?);
             }
             "face" => {
                 let face_parser = Parser::<FaceRow>::new();
@@ -115,7 +117,72 @@ pub fn read_ply_mesh_data<R: BufRead>(source: R) -> Result<MeshData3> {
     }
 
     let points = points.ok_or("PLY file has no 'vertex' element")?;
+    attrs.set_points(point_attrs, points.len())?;
     MeshData3::new_with_attrs(points, faces, attrs)
+}
+
+/// Read the point data of a PLY file, ignoring any connectivity it declares.
+///
+/// This is the point-domain half of [`read_ply_mesh_data`], and routes the `vertex` element's
+/// properties exactly the same way. It is the reader behind `PointCloudData3::load_ply`.
+///
+/// A `face` element is **not** an error here, but it is reported through the returned flag so that
+/// a caller loading what it believes to be a point cloud can refuse a file which is really a mesh
+/// rather than silently throwing the connectivity away.
+///
+/// # Arguments
+///
+/// * `source`: a buffered reader positioned at the start of the PLY data
+///
+/// returns: `Result<(Vec<Point3>, PointAttrSet3, bool)>` of the points, their attributes, and
+/// whether the file declared any faces
+pub fn read_ply_points<R: BufRead>(source: R) -> Result<(Vec<Point3>, PointAttrSet3, bool)> {
+    let mut reader = Reader::new(source);
+    let scalar_parser = Parser::<ScalarRow>::new();
+    let header = scalar_parser.read_header(&mut reader)?;
+
+    let mut points: Option<Vec<Point3>> = None;
+    let mut attrs = PointAttrSet3::empty();
+    let mut has_faces = false;
+
+    for (name, def) in header.elements.iter() {
+        match name.as_str() {
+            "vertex" => {
+                let rows = scalar_parser.read_payload_for_element(&mut reader, def, &header)?;
+                points = Some(read_points(def, &rows, &mut attrs)?);
+            }
+            // The face payload still has to be consumed to keep the stream in sync, even though
+            // nothing is done with it.
+            "face" => {
+                has_faces = def.count > 0;
+                let face_parser = Parser::<FaceRow>::new();
+                face_parser.read_payload_for_element(&mut reader, def, &header)?;
+            }
+            _ => {
+                let skip_parser = Parser::<SkipRow>::new();
+                skip_parser.read_payload_for_element(&mut reader, def, &header)?;
+            }
+        }
+    }
+
+    let points = points.ok_or("PLY file has no 'vertex' element")?;
+    attrs.validate(points.len())?;
+
+    Ok((points, attrs, has_faces))
+}
+
+/// Load the point data of a PLY file from disk, ignoring any connectivity it declares.
+///
+/// See [`read_ply_points`] for what the returned flag means.
+///
+/// # Arguments
+///
+/// * `path`: the path to the PLY file
+///
+/// returns: `Result<(Vec<Point3>, PointAttrSet3, bool)>`
+pub fn load_ply_points(path: &Path) -> Result<(Vec<Point3>, PointAttrSet3, bool)> {
+    let file = File::open(path)?;
+    read_ply_points(BufReader::new(file))
 }
 
 /// Load a triangle mesh from a PLY file into the accelerated `Mesh3` type.
@@ -232,29 +299,14 @@ pub fn write_ply_mesh_data(path: &Path, mesh: &MeshData3, opts: &PlyWriteOpts) -
 ///
 /// returns: `Result<()>`
 pub fn write_ply_to<W: Write>(out: &mut W, mesh: &MeshData3, opts: &PlyWriteOpts) -> Result<()> {
-    let point_cols = point_columns(mesh);
+    let point_cols = point_columns(mesh.points(), mesh.attrs().points());
     let face_cols = face_columns(mesh);
 
-    let mut header = Header::new();
-    header.encoding = if opts.binary {
-        Encoding::BinaryLittleEndian
-    } else {
-        Encoding::Ascii
-    };
-    header.comments = opts.comments.clone();
-
-    let mut vertex = ElementDef::new("vertex".to_string());
-    vertex.count = mesh.point_count();
-    for (name, col) in point_cols.iter() {
-        vertex.properties.insert(
-            name.clone(),
-            PropertyDef::new(
-                name.clone(),
-                PropertyType::Scalar(col.scalar_type(opts.precision)),
-            ),
-        );
-    }
-    header.elements.insert("vertex".to_string(), vertex);
+    let mut header = new_header(opts);
+    header.elements.insert(
+        "vertex".to_string(),
+        vertex_element(&point_cols, mesh.point_count(), opts),
+    );
 
     let mut face = ElementDef::new("face".to_string());
     face.count = mesh.face_count();
@@ -278,14 +330,7 @@ pub fn write_ply_to<W: Write>(out: &mut W, mesh: &MeshData3, opts: &PlyWriteOpts
 
     let writer = Writer::<Row>::new();
     writer.write_header(out, &header)?;
-
-    let vertex_def = &header.elements["vertex"];
-    let mut row = Row::new();
-    row.cols = point_cols;
-    for i in 0..mesh.point_count() {
-        row.index = i;
-        write_row(&writer, out, &row, vertex_def, header.encoding)?;
-    }
+    write_vertex_rows(&writer, out, &header, point_cols, mesh.point_count())?;
 
     let face_def = &header.elements["face"];
     let mut row = Row::new();
@@ -300,6 +345,112 @@ pub fn write_ply_to<W: Write>(out: &mut W, mesh: &MeshData3, opts: &PlyWriteOpts
             })?;
         }
         write_row(&writer, out, &row, face_def, header.encoding)?;
+    }
+
+    Ok(())
+}
+
+/// Write points and their attributes to a PLY file, as a `vertex` element with no connectivity.
+///
+/// The vertex section is byte-identical to what [`write_ply_mesh_data`] produces for the same
+/// points and attributes; the file simply has no `face` element. This is the writer behind
+/// `PointCloudData3::save_ply`.
+///
+/// # Arguments
+///
+/// * `path`: the path to write to, which is overwritten if it exists
+/// * `points`: the point positions
+/// * `attrs`: the per-point attributes, whose arrays must match the point count
+/// * `opts`: encoding and header options
+///
+/// returns: `Result<()>`
+pub fn write_ply_points(
+    path: &Path,
+    points: &[Point3],
+    attrs: &PointAttrSet3,
+    opts: &PlyWriteOpts,
+) -> Result<()> {
+    let file = File::create(path)?;
+    let mut out = BufWriter::new(file);
+    write_ply_points_to(&mut out, points, attrs, opts)?;
+    out.flush()?;
+    Ok(())
+}
+
+/// Write points and their attributes as PLY to any sink, as a `vertex` element with no
+/// connectivity.
+///
+/// # Arguments
+///
+/// * `out`: the sink to write to
+/// * `points`: the point positions
+/// * `attrs`: the per-point attributes, whose arrays must match the point count
+/// * `opts`: encoding and header options
+///
+/// returns: `Result<()>`
+pub fn write_ply_points_to<W: Write>(
+    out: &mut W,
+    points: &[Point3],
+    attrs: &PointAttrSet3,
+    opts: &PlyWriteOpts,
+) -> Result<()> {
+    attrs.validate(points.len())?;
+
+    let cols = point_columns(points, attrs);
+
+    let mut header = new_header(opts);
+    header.elements.insert(
+        "vertex".to_string(),
+        vertex_element(&cols, points.len(), opts),
+    );
+
+    let writer = Writer::<Row>::new();
+    writer.write_header(out, &header)?;
+    write_vertex_rows(&writer, out, &header, cols, points.len())
+}
+
+/// Start a header carrying the encoding and comments the options ask for.
+fn new_header(opts: &PlyWriteOpts) -> Header {
+    let mut header = Header::new();
+    header.encoding = if opts.binary {
+        Encoding::BinaryLittleEndian
+    } else {
+        Encoding::Ascii
+    };
+    header.comments = opts.comments.clone();
+    header
+}
+
+/// Declare the `vertex` element for a set of columns.
+fn vertex_element(cols: &[(String, Col<'_>)], count: usize, opts: &PlyWriteOpts) -> ElementDef {
+    let mut vertex = ElementDef::new("vertex".to_string());
+    vertex.count = count;
+    for (name, col) in cols.iter() {
+        vertex.properties.insert(
+            name.clone(),
+            PropertyDef::new(
+                name.clone(),
+                PropertyType::Scalar(col.scalar_type(opts.precision)),
+            ),
+        );
+    }
+    vertex
+}
+
+/// Stream the `vertex` payload, one row at a time.
+fn write_vertex_rows<W: Write>(
+    writer: &Writer<Row>,
+    out: &mut W,
+    header: &Header,
+    cols: Vec<(String, Col<'_>)>,
+    count: usize,
+) -> Result<()> {
+    let def = &header.elements["vertex"];
+    let mut row = Row::new();
+    row.cols = cols;
+    for i in 0..count {
+        row.index = i;
+        write_row(writer, out, &row, def, header.encoding)?;
     }
 
     Ok(())
@@ -378,33 +529,36 @@ impl Col<'_> {
 }
 
 /// Build the columns for the `vertex` element, in the order they will be declared.
-fn point_columns(mesh: &MeshData3) -> Vec<(String, Col<'_>)> {
+///
+/// This takes the point buffer and the point-domain attributes rather than a whole container, so
+/// that a mesh and a point cloud produce byte-identical vertex sections.
+fn point_columns<'a>(points: &'a [Point3], attrs: &'a PointAttrSet3) -> Vec<(String, Col<'a>)> {
     let mut cols = Vec::new();
 
     for (name, c) in [("x", 0), ("y", 1), ("z", 2)] {
-        cols.push((name.to_string(), Col::Point(mesh.points(), c)));
+        cols.push((name.to_string(), Col::Point(points, c)));
     }
 
-    if let Some(n) = mesh.point_normals() {
+    if let Some(n) = attrs.normals() {
         for (name, c) in [("nx", 0), ("ny", 1), ("nz", 2)] {
             cols.push((name.to_string(), Col::Unit(n, c)));
         }
     }
 
-    if let Some(colors) = mesh.point_colors() {
+    if let Some(colors) = attrs.colors() {
         for (name, c) in [("red", 0), ("green", 1), ("blue", 2)] {
             cols.push((name.to_string(), Col::Color(colors, c)));
         }
     }
 
-    if let Some(stdev) = mesh.point_stdev() {
+    if let Some(stdev) = attrs.stdev() {
         cols.push(("stdev".to_string(), Col::Scalar(stdev)));
     }
 
-    let mut names: Vec<&str> = mesh.attrs().point_attr_names().collect();
+    let mut names: Vec<&str> = attrs.attr_names().collect();
     names.sort_unstable();
     for name in names {
-        push_open_attr(&mut cols, name, mesh.point_attr(name).unwrap());
+        push_open_attr(&mut cols, name, attrs.attr(name).unwrap());
     }
 
     cols
@@ -650,7 +804,7 @@ impl PropertyAccess for SkipRow {
 fn read_points(
     def: &ElementDef,
     rows: &[ScalarRow],
-    attrs: &mut MeshAttrSet3,
+    attrs: &mut PointAttrSet3,
 ) -> Result<Vec<Point3>> {
     let scalars = scalar_properties(def);
     let columns = transpose(&scalars, rows.iter().map(|r| &r.values), "vertex")?;
@@ -677,25 +831,25 @@ fn read_points(
             })?;
             normals.push(unit);
         }
-        attrs.set_point_normals(Some(normals), n)?;
+        attrs.set_normals(Some(normals), n)?;
     }
 
     if let Some(colors) = take_colors(&columns, n) {
-        attrs.set_point_colors(Some(colors), n)?;
+        attrs.set_colors(Some(colors), n)?;
     }
 
     if let Some(stdev) = take_column(&columns, "stdev").or_else(|| take_column(&columns, "std_dev"))
     {
-        attrs.set_point_stdev(Some(stdev.values.clone()), n)?;
+        attrs.set_stdev(Some(stdev.values.clone()), n)?;
     }
 
     let (composites, taken) = take_composites(&columns);
     for (name, attr) in composites {
-        attrs.insert_point_attr(&name, attr, n)?;
+        attrs.insert_attr(&name, attr, n)?;
     }
 
     for column in remaining(&columns, POINT_CONSUMED, &taken) {
-        attrs.insert_point_attr(&column.name, column.to_attr(), n)?;
+        attrs.insert_attr(&column.name, column.to_attr(), n)?;
     }
 
     Ok(points)
@@ -1581,5 +1735,155 @@ mod tests {
         );
 
         assert!(result.is_err());
+    }
+
+    // ===========================================================================================
+    // Point-only reading and writing
+    // ===========================================================================================
+
+    /// The points and attributes of `loaded_mesh`, without its connectivity.
+    fn loaded_points() -> (Vec<Point3>, PointAttrSet3) {
+        let mesh = loaded_mesh();
+        (mesh.points().to_vec(), mesh.attrs().points().clone())
+    }
+
+    /// Round trip points and their attributes through an in-memory PLY.
+    fn round_trip_points(
+        points: &[Point3],
+        attrs: &PointAttrSet3,
+        binary: bool,
+    ) -> Result<(Vec<Point3>, PointAttrSet3, bool)> {
+        let opts = PlyWriteOpts {
+            binary,
+            ..Default::default()
+        };
+        let mut buffer = Vec::new();
+        write_ply_points_to(&mut buffer, points, attrs, &opts)?;
+        read_ply_points(Cursor::new(buffer))
+    }
+
+    #[test]
+    fn point_round_trip_preserves_every_attribute() -> Result<()> {
+        let (points, attrs) = loaded_points();
+
+        for binary in [true, false] {
+            let (back_points, back_attrs, has_faces) = round_trip_points(&points, &attrs, binary)?;
+
+            assert!(!has_faces, "a point-only file must declare no faces");
+            assert_eq!(back_points.len(), points.len());
+            for (p, q) in points.iter().zip(back_points.iter()) {
+                assert_relative_eq!(p, q, epsilon = 0.0);
+            }
+
+            assert_eq!(back_attrs.colors(), attrs.colors(), "binary = {binary}");
+            assert_eq!(back_attrs.stdev(), attrs.stdev(), "binary = {binary}");
+
+            for (a, b) in back_attrs
+                .normals()
+                .unwrap()
+                .iter()
+                .zip(attrs.normals().unwrap())
+            {
+                assert_relative_eq!(a.into_inner(), b.into_inner(), epsilon = 1.0e-15);
+            }
+
+            let mut names: Vec<&str> = back_attrs.attr_names().collect();
+            let mut expected: Vec<&str> = attrs.attr_names().collect();
+            names.sort_unstable();
+            expected.sort_unstable();
+            assert_eq!(names, expected, "open attribute names differ");
+
+            for name in names {
+                assert_eq!(back_attrs.attr(name), attrs.attr(name), "attr '{name}'");
+            }
+        }
+
+        Ok(())
+    }
+
+    /// The vertex section a point cloud writes has to be identical to the one a mesh writes for the
+    /// same points, or the two readers would not agree on what a file means.
+    #[test]
+    fn the_vertex_section_matches_what_a_mesh_writes() -> Result<()> {
+        let mesh = loaded_mesh();
+        let (points, attrs) = loaded_points();
+        let opts = PlyWriteOpts::default();
+
+        let mut mesh_bytes = Vec::new();
+        write_ply_to(&mut mesh_bytes, &mesh, &opts)?;
+
+        let mut point_bytes = Vec::new();
+        write_ply_points_to(&mut point_bytes, &points, &attrs, &opts)?;
+
+        // The point-only header is a prefix of the mesh header up to where the face element is
+        // declared, and the vertex payload which follows it is byte for byte the same.
+        let split = point_bytes
+            .windows(END_HEADER.len())
+            .position(|w| w == END_HEADER)
+            .expect("the point-only file must have a header")
+            + END_HEADER.len();
+
+        let mesh_split = mesh_bytes
+            .windows(END_HEADER.len())
+            .position(|w| w == END_HEADER)
+            .expect("the mesh file must have a header")
+            + END_HEADER.len();
+
+        let point_payload = &point_bytes[split..];
+        let mesh_payload = &mesh_bytes[mesh_split..mesh_split + point_payload.len()];
+        assert_eq!(point_payload, mesh_payload);
+
+        Ok(())
+    }
+
+    const END_HEADER: &[u8] = b"end_header\n";
+
+    /// A file which really is a mesh has to be distinguishable from a point cloud, so that a caller
+    /// asking for points can refuse rather than silently discard the connectivity.
+    #[test]
+    fn reading_points_reports_whether_the_file_had_faces() -> Result<()> {
+        let mesh = loaded_mesh();
+        let mut buffer = Vec::new();
+        write_ply_to(&mut buffer, &mesh, &PlyWriteOpts::default())?;
+
+        let (points, attrs, has_faces) = read_ply_points(Cursor::new(buffer))?;
+
+        assert!(has_faces);
+        assert_eq!(points.len(), mesh.point_count());
+        assert_eq!(attrs.stdev(), mesh.point_stdev());
+
+        Ok(())
+    }
+
+    /// A mesh file whose `face` element is declared but empty is a point cloud in practice.
+    #[test]
+    fn an_empty_face_element_does_not_count_as_faces() -> Result<()> {
+        let mesh = MeshData3::new(
+            vec![Point3::origin(), Point3::new(1.0, 0.0, 0.0)],
+            Vec::new(),
+        )?;
+
+        let mut buffer = Vec::new();
+        write_ply_to(&mut buffer, &mesh, &PlyWriteOpts::default())?;
+
+        let (points, _, has_faces) = read_ply_points(Cursor::new(buffer))?;
+
+        assert!(!has_faces);
+        assert_eq!(points.len(), 2);
+
+        Ok(())
+    }
+
+    #[test]
+    fn writing_points_rejects_a_mismatched_attribute() {
+        let (points, _) = loaded_points();
+
+        let mut attrs = PointAttrSet3::empty();
+        attrs.set_stdev(Some(vec![0.1]), 1).unwrap();
+
+        let mut buffer = Vec::new();
+        assert!(
+            write_ply_points_to(&mut buffer, &points, &attrs, &PlyWriteOpts::default()).is_err()
+        );
     }
 }
