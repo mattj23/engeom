@@ -434,6 +434,32 @@ def test_a_mesh_subset_carries_its_attributes():
     assert data.point_stdev.shape == (len(data),)
 
 
+def test_mesh_ply_round_trip_keeps_the_attributes(tmp_path):
+    """The old `Mesh.load_ply` discarded every property the file carried; this one does not."""
+    before = attributed_mesh()
+    path = tmp_path / "mesh.ply"
+
+    before.save_ply(path)
+    after = Mesh.load_ply(path)
+
+    data = MeshData3.from_mesh(after)
+    assert data.point_stdev == pytest.approx(0.01)
+    assert numpy.array_equal(
+        data.face_labels, numpy.arange(data.faces.shape[0], dtype=numpy.uint32)
+    )
+
+
+def test_mesh_write_stl_refuses_to_drop_attributes_silently(tmp_path):
+    mesh = attributed_mesh()
+    path = tmp_path / "mesh.stl"
+
+    with pytest.raises(IOError):
+        mesh.write_stl(path)
+
+    mesh.write_stl(path, allow_attribute_loss=True)
+    assert Mesh.load_stl(path) is not None
+
+
 def test_mesh_scale_copy_rejects_a_zero_factor():
     mesh = Mesh.create_box(1.0, 1.0, 1.0)
 

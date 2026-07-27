@@ -1,9 +1,8 @@
 use clap::{Parser, Subcommand};
-use engeom::Result;
 use engeom::io::{
-    load_ply_mesh, read_mesh_stl, read_tc_mesh_file, u_bytes_to_mesh_data, u_mesh_data_to_bytes,
-    write_tc_mesh_file,
+    read_tc_mesh_file, u_bytes_to_mesh_data, u_mesh_data_to_bytes, write_tc_mesh_file,
 };
+use engeom::{Mesh3, Result};
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use std::fs;
@@ -52,8 +51,8 @@ fn cmd_to_tcmesh(input: &Path, output: Option<&Path>, tol: f64) -> Result<()> {
         .map(|e| e.to_lowercase());
 
     let mesh = match ext.as_deref() {
-        Some("stl") => read_mesh_stl(input, true, true)?,
-        Some("ply") => load_ply_mesh(input)?,
+        Some("stl") => Mesh3::load_stl(input, false, true, true)?,
+        Some("ply") => Mesh3::load_ply(input, false)?,
         _ => return Err("Input file must have a .stl or .ply extension".into()),
     };
 
@@ -98,13 +97,13 @@ fn cmd_to_umesh(input: &Path, output: &PathBuf, compress: bool) -> Result<()> {
 
     let (vertices, triangles) = match ext.as_deref() {
         Some("stl") => {
-            let mesh = read_mesh_stl(input, true, true)?;
+            let mesh = Mesh3::load_stl(input, false, true, true)?;
             let verts = mesh.points().to_vec();
             let tris = mesh.faces().to_vec();
             (verts, tris)
         }
         Some("ply") => {
-            let mesh = load_ply_mesh(input)?;
+            let mesh = Mesh3::load_ply(input, false)?;
             let verts = mesh.points().to_vec();
             let tris = mesh.faces().to_vec();
             (verts, tris)

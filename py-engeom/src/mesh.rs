@@ -89,19 +89,34 @@ impl Mesh {
     }
 
     #[staticmethod]
-    #[pyo3(signature=(path, merge_duplicates = false, delete_degenerate = false))]
-    fn load_stl(path: PathBuf, merge_duplicates: bool, delete_degenerate: bool) -> PyResult<Self> {
-        let mesh = engeom::io::read_mesh_stl(&path, merge_duplicates, delete_degenerate)
+    #[pyo3(signature=(path, merge_duplicates = false, delete_degenerate = false, is_solid = false))]
+    fn load_stl(
+        path: PathBuf,
+        merge_duplicates: bool,
+        delete_degenerate: bool,
+        is_solid: bool,
+    ) -> PyResult<Self> {
+        let mesh = engeom::Mesh3::load_stl(&path, is_solid, merge_duplicates, delete_degenerate)
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
         Ok(Self::from_inner(mesh))
     }
 
     #[staticmethod]
-    fn load_ply(path: PathBuf) -> PyResult<Self> {
-        let mesh =
-            engeom::io::load_ply_mesh(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
+    #[pyo3(signature=(path, is_solid = false))]
+    fn load_ply(path: PathBuf, is_solid: bool) -> PyResult<Self> {
+        let mesh = engeom::Mesh3::load_ply(&path, is_solid)
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
         Ok(Self::from_inner(mesh))
+    }
+
+    #[pyo3(signature = (path, binary = true))]
+    fn save_ply(&self, path: PathBuf, binary: bool) -> PyResult<()> {
+        let mut opts = engeom::io::PlyWriteOpts::default();
+        opts.binary = binary;
+        self.inner
+            .save_ply(&path, &opts)
+            .map_err(|e| PyIOError::new_err(e.to_string()))
     }
 
     fn transform_by(&mut self, iso: &Iso3) {
@@ -140,8 +155,13 @@ impl Mesh {
         self.clone()
     }
 
-    fn write_stl(&self, path: PathBuf) -> PyResult<()> {
-        engeom::io::write_mesh_stl(&path, &self.inner)
+    #[pyo3(signature = (path, binary = true, allow_attribute_loss = false))]
+    fn write_stl(&self, path: PathBuf, binary: bool, allow_attribute_loss: bool) -> PyResult<()> {
+        let mut opts = engeom::io::StlWriteOpts::default();
+        opts.binary = binary;
+        opts.allow_attribute_loss = allow_attribute_loss;
+        self.inner
+            .save_stl(&path, &opts)
             .map_err(|e| PyIOError::new_err(e.to_string()))
     }
 

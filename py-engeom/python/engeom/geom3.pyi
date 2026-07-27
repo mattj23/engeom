@@ -2364,7 +2364,8 @@ class Mesh:
         ...
 
     @staticmethod
-    def load_stl(path: str | Path, merge_duplicates: bool = False, delete_degenerate: bool = False) -> Mesh:
+    def load_stl(path: str | Path, merge_duplicates: bool = False, delete_degenerate: bool = False,
+                 is_solid: bool = False) -> Mesh:
         """
         Load a mesh from an STL file. This will return a new mesh object containing the vertices and triangles from the
         file.  Optional parameters can be used to control the behavior of the loader when handling duplicate vertices/
@@ -2378,6 +2379,7 @@ class Mesh:
         :param path: the path to the STL file to load.
         :param merge_duplicates: merge duplicate vertices and triangles. If None, the default behavior is to do nothing
         :param delete_degenerate: delete degenerate triangles. If None, the default behavior is to do nothing
+        :param is_solid: whether distance queries should treat points inside the mesh as being at zero distance
         :return: the mesh object containing the data from the file.
         """
         ...
@@ -2399,15 +2401,26 @@ class Mesh:
         ...
 
     @staticmethod
-    def load_ply(path: str | Path) -> Mesh:
+    def load_ply(path: str | Path, is_solid: bool = False) -> Mesh:
         """
         Loads a PLY (Polygon File Format or Stanford Triangle Format) file and returns its corresponding
-        mesh representation. This method reads and parses the PLY file to construct a Mesh object that
-        contains vertices, edges, and faces.
+        mesh representation.
+
+        Every attribute the file carries is preserved on the mesh. A PLY point cloud, which has no faces, is refused;
+        load those with `PointCloudData3.load_ply`.
 
         :param path: The file path to the PLY file, provided as a string or Path object.
-        :return: A Mesh object constructed from the contents of the PLY file. The mesh includes the geometric structure
-            specified in the file.
+        :param is_solid: whether distance queries should treat points inside the mesh as being at zero distance
+        :return: A Mesh object constructed from the contents of the PLY file.
+        """
+        ...
+
+    def save_ply(self, path: str | Path, binary: bool = True):
+        """
+        Write the mesh to a PLY file, preserving every attribute it carries.
+
+        :param path: the path to write to, which is overwritten if it exists.
+        :param binary: write a binary payload rather than ascii.
         """
         ...
 
@@ -2455,12 +2468,16 @@ class Mesh:
         """
         ...
 
-    def write_stl(self, path: str | Path):
+    def write_stl(self, path: str | Path, binary: bool = True, allow_attribute_loss: bool = False):
         """
-        Write the mesh to an STL file. This will write the vertices and triangles of the mesh to the file in binary
-        format.
+        Write the mesh to an STL file, which carries geometry and nothing else.
+
+        A mesh carrying any attributes at all is refused rather than silently stripped, unless `allow_attribute_loss`
+        is set.
 
         :param path: the path to the STL file to write.
+        :param binary: write the binary encoding rather than ascii.
+        :param allow_attribute_loss: accept the loss of every attribute this mesh carries.
         """
         ...
 

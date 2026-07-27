@@ -21,7 +21,7 @@
 
 use crate::geom3::mesh::MeshData3;
 use crate::geom3::mesh::algorithms::normals::compute_face_normal;
-use crate::{Mesh3, Point3, Result};
+use crate::{Point3, Result};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Seek, Write};
 use std::path::Path;
@@ -94,33 +94,6 @@ pub fn read_stl_mesh_data<R: Read + Seek>(source: &mut R) -> Result<MeshData3> {
         .collect::<Vec<_>>();
 
     MeshData3::new(points, faces)
-}
-
-/// Read an STL file into a `Mesh3`.
-///
-/// This is a temporary bridge for callers which need the accelerated type, and will be replaced by
-/// a conversion from `MeshData3` once that exists. Prefer `load_stl_mesh_data`.
-///
-/// # Arguments
-///
-/// * `path`: the path to the STL file
-/// * `merge_duplicates`: additionally merge points which compare equal as `f64`, which after the
-///   exact weld the reader already performs means only merging `0.0` with `-0.0`
-/// * `delete_degenerate`: drop triangles with zero area or bad topology
-pub fn read_mesh_stl(
-    path: &Path,
-    merge_duplicates: bool,
-    delete_degenerate: bool,
-) -> Result<Mesh3> {
-    let (points, faces, _) = load_stl_mesh_data(path)?.into_parts();
-    Mesh3::new_with_options(
-        points,
-        faces,
-        false,
-        merge_duplicates,
-        delete_degenerate,
-        None,
-    )
 }
 
 // ===============================================================================================
@@ -328,15 +301,6 @@ fn write_ascii<W: Write>(out: &mut W, mesh: &MeshData3, header: &str) -> Result<
 
     writeln!(out, "endsolid {}", header)?;
     Ok(())
-}
-
-/// Write a `Mesh3` to a binary STL file.
-///
-/// This is a temporary bridge for callers holding the accelerated type, and will be replaced by a
-/// conversion to `MeshData3` once that exists. Prefer `write_stl_mesh_data`.
-pub fn write_mesh_stl(path: &Path, mesh: &Mesh3) -> Result<()> {
-    let data = MeshData3::new(mesh.points().to_vec(), mesh.faces().to_vec())?;
-    write_stl_mesh_data(path, &data, &StlWriteOpts::default())
 }
 
 // ===============================================================================================

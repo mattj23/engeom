@@ -3,7 +3,7 @@
 mod common;
 use crate::common::PathPair;
 use engeom::io::{
-    DiffTanModel, Lptf3DsParams, Lptf3Load, load_lptf3_mesh_data, read_mesh_stl, write_tc_mesh_file,
+    DiffTanModel, Lptf3DsParams, Lptf3Load, load_lptf3_mesh_data, write_tc_mesh_file,
 };
 use engeom::{Iso3, Mesh3, Result};
 use serde::{Deserialize, Serialize};
@@ -37,7 +37,12 @@ fn multi_align_lptf3_private() -> Result<()> {
 
 fn run_test_case(manifest: &Manifest, dir: &PathPair) -> Result<()> {
     // Load the reference mesh
-    let mesh = read_mesh_stl(&dir.data().join(&manifest.reference_file), true, false)?;
+    let mesh = Mesh3::load_stl(
+        &dir.data().join(&manifest.reference_file),
+        false,
+        true,
+        false,
+    )?;
 
     // Save the reference mesh to the result directory
     write_tc_mesh_file(&dir.result().join("reference.tcmesh"), &mesh, 1e-5)?;

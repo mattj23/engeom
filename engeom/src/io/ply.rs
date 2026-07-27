@@ -50,7 +50,7 @@
 use crate::geom3::attributes3::Attr3;
 use crate::geom3::attributes3::PointAttrSet3;
 use crate::geom3::mesh::data::{MeshAttrSet3, MeshData3};
-use crate::{Mesh3, Point3, Result, UnitVec3, Vector3};
+use crate::{Point3, Result, UnitVec3, Vector3};
 use ply_rs_bw::parser::{Parser, Reader};
 use ply_rs_bw::ply::{
     BeginList, ElementDef, Encoding, Header, PropertyAccess, PropertyAccessResult, PropertyDef,
@@ -183,26 +183,6 @@ pub fn read_ply_points<R: BufRead>(source: R) -> Result<(Vec<Point3>, PointAttrS
 pub fn load_ply_points(path: &Path) -> Result<(Vec<Point3>, PointAttrSet3, bool)> {
     let file = File::open(path)?;
     read_ply_points(BufReader::new(file))
-}
-
-/// Load a triangle mesh from a PLY file into the accelerated `Mesh3` type.
-///
-/// This is a temporary bridge which exists so that callers written against the old reader keep
-/// working. It will be replaced by the conversion from `MeshData3`, at which point every attribute
-/// the file carried will survive into the mesh instead of being discarded here.
-///
-/// # Arguments
-///
-/// * `path`: the path to the PLY file
-///
-/// returns: `Result<Mesh3>`
-pub fn load_ply_mesh(path: &Path) -> Result<Mesh3> {
-    let data = load_ply_mesh_data(path)?;
-    Ok(Mesh3::new(
-        data.points().to_vec(),
-        data.faces().to_vec(),
-        false,
-    ))
 }
 
 // ===============================================================================================

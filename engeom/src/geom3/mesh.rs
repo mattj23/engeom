@@ -32,6 +32,13 @@ use parry3d_f64::shape::{TriMesh, TriMeshFlags};
 use parry3d_f64::{shape, transformation};
 pub use uv_mapping::UvMapping;
 
+#[cfg(feature = "ply")]
+use crate::io::PlyWriteOpts;
+#[cfg(feature = "stl")]
+use crate::io::StlWriteOpts;
+#[cfg(any(feature = "ply", feature = "stl"))]
+use std::path::Path;
+
 /// A struct that represents a point on the surface of a mesh, including the index of the face
 /// on which it lies, its barycentric coordinates, and the point/normal representation in space.
 /// This representation has no link back to the original mesh, so the face index and barycentric
@@ -411,6 +418,102 @@ impl Mesh3 {
             is_solid,
             uv: None,
         }
+    }
+}
+
+// ===============================================================================================
+// Serialization
+// ===============================================================================================
+//
+// Every one of these goes through `MeshData3`, which is where the format support lives. Loading
+// costs a bounding volume hierarchy build on top of the read, and saving costs a copy of the point
+// and face buffers, for the reason given on `to_data`. Work directly with `MeshData3` when you have
+// no need for the acceleration structure.
+
+impl Mesh3 {
+    /// Load a triangle mesh from a PLY file, preserving every property the file carries.
+    ///
+    /// The file must have a `vertex` element with `x`, `y`, and `z` properties, and a `face`
+    /// element with at least one face. A PLY point cloud is refused, since there is nothing for an
+    /// acceleration structure to be built over; load those with `PointCloudData3::load_ply`.
+    ///
+    /// # Arguments
+    ///
+    /// * `path`: the path to the PLY file
+    /// * `is_solid`: whether distance queries should treat points inside the mesh as being at zero
+    ///   distance
+    ///
+    /// returns: `Result<Mesh3>`
+    #[cfg(feature = "ply")]
+    pub fn load_ply(path: &Path, is_solid: bool) -> Result<Self> {
+        Self::from_data(MeshData3::load_ply(path)?, is_solid)
+    }
+
+    /// Write this mesh to a PLY file, preserving every attribute it carries.
+    ///
+    /// # Arguments
+    ///
+    /// * `path`: the path to write to, which is overwritten if it already exists
+    /// * `opts`: encoding and header options
+    ///
+    /// returns: `Result<()>`
+    #[cfg(feature = "ply")]
+    pub fn save_ply(&self, path: &Path, opts: &PlyWriteOpts) -> Result<()> {
+        self.to_data().save_ply(path, opts)
+    }
+
+    /// Load a triangle mesh from an STL file, in either the ascii or binary encoding.
+    ///
+    /// STL is a triangle soup with no point identity, so the points are recovered by welding on
+    /// exact coordinate equality. See `load_stl_mesh_data` for what that does and does not recover,
+    /// and for the precision the format costs you.
+    ///
+    /// The cleanup options renumber points and drop faces, which is why they are available here and
+    /// not on the PLY path: an STL carries no attributes for the renumbering to invalidate.
+    ///
+    /// # Arguments
+    ///
+    /// * `path`: the path to the STL file
+    /// * `is_solid`: whether distance queries should treat points inside the mesh as being at zero
+    ///   distance
+    /// * `merge_duplicates`: additionally merge points which compare equal as `f64`, which after
+    ///   the exact weld the reader already performs means only merging `0.0` with `-0.0`
+    /// * `delete_degenerate`: drop triangles with zero area or bad topology
+    ///
+    /// returns: `Result<Mesh3>`
+    #[cfg(feature = "stl")]
+    pub fn load_stl(
+        path: &Path,
+        is_solid: bool,
+        merge_duplicates: bool,
+        delete_degenerate: bool,
+    ) -> Result<Self> {
+        let (points, faces, _) = MeshData3::load_stl(path)?.into_parts();
+        Self::new_with_options(
+            points,
+            faces,
+            is_solid,
+            merge_duplicates,
+            delete_degenerate,
+            None,
+        )
+    }
+
+    /// Write this mesh to an STL file, which carries geometry and nothing else.
+    ///
+    /// The default options write binary with no attribute loss permitted, so a mesh carrying any
+    /// attributes at all is refused rather than silently stripped. Set `allow_attribute_loss` to
+    /// accept the loss.
+    ///
+    /// # Arguments
+    ///
+    /// * `path`: the path to write to, which is overwritten if it already exists
+    /// * `opts`: encoding, header, and attribute loss options
+    ///
+    /// returns: `Result<()>`
+    #[cfg(feature = "stl")]
+    pub fn save_stl(&self, path: &Path, opts: &StlWriteOpts) -> Result<()> {
+        self.to_data().save_stl(path, opts)
     }
 }
 
@@ -1502,6 +1605,114 @@ mod tests {
         assert!(mesh.scale_copy(0.0).is_err());
         assert!(mesh.scale_copy(f64::NAN).is_err());
         assert!(mesh.scale_copy(f64::INFINITY).is_err());
+
+        Ok(())
+    }
+
+    // ===========================================================================================
+    // Serialization
+    // ===========================================================================================
+
+    /// A file on disk, removed when the test finishes with it.
+    #[cfg(any(feature = "ply", feature = "stl"))]
+    struct TempFile {
+        path: std::path::PathBuf,
+    }
+
+    #[cfg(any(feature = "ply", feature = "stl"))]
+    impl TempFile {
+        fn new(name: &str, ext: &str) -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "engeom-mesh3-{}-{}.{}",
+                name,
+                std::process::id(),
+                ext
+            ));
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    #[cfg(any(feature = "ply", feature = "stl"))]
+    impl Drop for TempFile {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+
+    /// The whole point of routing through `MeshData3` is that the attributes survive, which the
+    /// deleted shims did not do.
+    #[cfg(feature = "ply")]
+    #[test]
+    fn a_ply_round_trip_keeps_the_attributes_and_the_solid_flag() -> Result<()> {
+        let before = Mesh3::from_data(attributed_data(), false)?;
+        let file = TempFile::new("round-trip", "ply");
+
+        before.save_ply(file.path(), &PlyWriteOpts::default())?;
+        let after = Mesh3::load_ply(file.path(), true)?;
+
+        assert!(after.is_solid());
+        assert_eq!(after.points(), before.points());
+        assert_eq!(after.faces(), before.faces());
+        assert_eq!(after.point_stdev(), before.point_stdev());
+        assert_eq!(after.face_labels(), before.face_labels());
+        assert_eq!(
+            after.point_attr("confidence"),
+            before.point_attr("confidence")
+        );
+
+        Ok(())
+    }
+
+    /// A PLY point cloud has no faces, so there is nothing to accelerate.
+    #[cfg(feature = "ply")]
+    #[test]
+    fn loading_a_point_cloud_ply_as_a_mesh_is_refused() -> Result<()> {
+        use crate::geom3::PointCloudData3;
+
+        let cloud = PointCloudData3::new(vec![Point3::origin(), Point3::new(1.0, 0.0, 0.0)]);
+        let file = TempFile::new("is-a-cloud", "ply");
+        cloud.save_ply(file.path(), &PlyWriteOpts::default())?;
+
+        assert!(Mesh3::load_ply(file.path(), false).is_err());
+
+        Ok(())
+    }
+
+    #[cfg(feature = "stl")]
+    #[test]
+    fn an_stl_round_trip_carries_the_geometry() -> Result<()> {
+        let before = Mesh3::create_box(1.0, 2.0, 3.0, false);
+        let file = TempFile::new("round-trip", "stl");
+
+        before.save_stl(file.path(), &StlWriteOpts::default())?;
+        let after = Mesh3::load_stl(file.path(), false, true, false)?;
+
+        assert_eq!(after.face_count(), before.face_count());
+        assert_relative_eq!(after.aabb().maxs, before.aabb().maxs, epsilon = 1.0e-6);
+
+        Ok(())
+    }
+
+    /// STL carries no attributes, so writing an attributed mesh has to be refused rather than
+    /// silently stripping them.
+    #[cfg(feature = "stl")]
+    #[test]
+    fn saving_stl_refuses_to_drop_attributes_silently() -> Result<()> {
+        let mesh = Mesh3::from_data(attributed_data(), false)?;
+        let file = TempFile::new("lossy", "stl");
+
+        assert!(
+            mesh.save_stl(file.path(), &StlWriteOpts::default())
+                .is_err()
+        );
+
+        let mut opts = StlWriteOpts::default();
+        opts.allow_attribute_loss = true;
+        mesh.save_stl(file.path(), &opts)?;
 
         Ok(())
     }
