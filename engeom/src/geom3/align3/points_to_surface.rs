@@ -1,90 +1,11 @@
 use crate::common::dist;
-use crate::common::kd_tree::{KdTree, KdTreeSearch};
-use crate::common::ransac_tools::ransac_indices;
 use crate::geom3::Alignment3;
 use crate::geom3::align3::jacobian::{copy_jacobian, point_surf_jacobian};
 use crate::geom3::align3::{AlignParams3, AlignSurfMatch3, SurfaceTarget3};
 use crate::na::{Dyn, Matrix, Owned, U1, U6, Vector};
-use crate::{Iso3, Point3, Result};
+use crate::{Point3, Result};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use rayon::prelude::*;
-
-/// Performs a limited form of RANSAC on a set of points to find a rough alignment to the surface
-/// target.
-///
-/// You provide a number of sample points. It will work best if they are roughly evenly spaced, so
-/// consider generating or filtering them with Poisson disk sampling. The RANSAC algorithm will
-/// randomly pick three of these points, then find the three nearest neighbors of each, for a total
-/// of up to nine points (duplicates are removed) in the subsample. The `points_to_surface3`
-/// operation is performed on these subsample points, and if the alignment converges, it iterates
-/// through the entire set of original points, transforming them by the result, and counting the
-/// number of inliers.  Inliers are points that are less than `inlier_threshold` from the target
-/// after transformation.
-///
-/// The transformation with the highest number of inliers is returned.
-///
-/// # Arguments
-///
-/// * `points`: the points to be aligned, in their own local coordinate system
-/// * `target`: the target surface entity which the points will be aligned to
-/// * `params`: the alignment parameters, see [`AlignParams3`] for details
-/// * `inlier_threshold`: the maximum distance between a point and the target that is still
-///   considered an inlier
-/// * `iterations`: the number of iterations of RANSAC to perform
-/// * `ignore_off`: if the surface target can tell if a point does not project directly onto the
-///   surface (such as if it projects onto the ends of a boundary), this flag allows such points
-///   to be weighted 0.0 to prevent their influence on the alignment.
-///
-/// returns: Result<Isometry<f64, Unit<Quaternion<f64>>, 3>, Box<dyn Error, Global>>
-pub fn ransac_points_to_surface3(
-    points: &[Point3],
-    target: &impl SurfaceTarget3,
-    params: &AlignParams3,
-    inlier_threshold: f64,
-    iterations: usize,
-    ignore_off: bool,
-) -> Result<Iso3> {
-    let tree = KdTree::try_new(points)?;
-    let results = ransac_indices::<3>(iterations, points.len())?
-        .par_iter()
-        .map(|i| {
-            let mut local_indices = vec![i[0], i[1], i[2]];
-            for (j, _) in tree.nearest(&points[i[0]], 3) {
-                local_indices.push(j);
-            }
-            for (j, _) in tree.nearest(&points[i[1]], 3) {
-                local_indices.push(j);
-            }
-            for (j, _) in tree.nearest(&points[i[2]], 3) {
-                local_indices.push(j);
-            }
-            // Sort and deduplicate
-            local_indices.sort();
-            local_indices.dedup();
-
-            let local_points = local_indices.iter().map(|&i| points[i]).collect::<Vec<_>>();
-
-            if let Ok(align) =
-                points_to_surface3(&local_points, target, params.clone(), ignore_off, false)
-            {
-                let mut inliers = 0;
-                for test_point in points.iter() {
-                    let m = target.align_surf_closest_to(&(align.full() * test_point));
-                    if dist(&m, test_point) <= inlier_threshold {
-                        inliers += 1;
-                    }
-                }
-
-                Some((*align.full(), inliers))
-            } else {
-                None
-            }
-        })
-        .filter_map(|x| x)
-        .collect::<Vec<_>>();
-    let (best_transform, _) = results.iter().max_by_key(|(_, inliers)| *inliers).unwrap();
-    Ok(*best_transform)
-}
 
 /// Performs a Levenberg-Marquardt minimization to align a set of points to a surface target.
 ///
@@ -250,7 +171,7 @@ mod tests {
     use crate::common::points::{clone_points, mean_point, transform_points};
     use crate::na::{Translation3, UnitQuaternion};
     use crate::tests::engine_blade;
-    use crate::{Mesh3, SelectOp, Selection, Vector3};
+    use crate::{Iso3, Mesh3, SelectOp, Selection, Vector3};
     use approx::assert_relative_eq;
     use std::f64::consts::PI;
 

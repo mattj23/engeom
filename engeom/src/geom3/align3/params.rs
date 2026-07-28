@@ -333,44 +333,38 @@ impl AlignParams3 {
     }
 
     pub fn with_tx(&self, tx: f64) -> AlignParams3 {
-        let mut params = self.clone();
-        params.storage[0] = tx;
-        params
+        self.with_index(0, tx)
     }
 
     pub fn with_ty(&self, ty: f64) -> AlignParams3 {
-        let mut params = self.clone();
-        params.storage[1] = ty;
-        params
+        self.with_index(1, ty)
     }
 
     pub fn with_tz(&self, tz: f64) -> AlignParams3 {
-        let mut params = self.clone();
-        params.storage[2] = tz;
-        params
+        self.with_index(2, tz)
     }
 
     pub fn with_rx(&self, rx: f64) -> AlignParams3 {
-        let mut params = self.clone();
-        params.storage[3] = rx;
-        params
+        self.with_index(3, rx)
     }
 
     pub fn with_ry(&self, ry: f64) -> AlignParams3 {
-        let mut params = self.clone();
-        params.storage[4] = ry;
-        params
+        self.with_index(4, ry)
     }
 
     pub fn with_rz(&self, rz: f64) -> AlignParams3 {
+        self.with_index(5, rz)
+    }
+
+    fn with_index(&self, index: usize, value: f64) -> AlignParams3 {
         let mut params = self.clone();
-        params.storage[5] = rz;
+        params.set_index(index, value);
         params
     }
 
     pub fn with_storage(&self, storage: T3Storage) -> AlignParams3 {
         let mut params = self.clone();
-        params.storage = storage;
+        params.set_storage(storage);
         params
     }
 }
@@ -463,6 +457,29 @@ mod tests {
             params.current_values().transform * test_point,
             epsilon = 1e-8
         );
+    }
+
+    #[test]
+    fn builders_respect_locked_dof() {
+        // The `with_*` builders must enforce the DOF constraints the same way `set_index` and
+        // `set_storage` do, otherwise a locked degree of freedom can be given a nonzero value
+        // through the builder path.
+        let dof = Dof6::new(false, true, true, true, false, true);
+        let params = AlignParams3::new_at_origin(Some(dof));
+
+        assert_eq!(params.with_tx(1.0).tx(), 0.0);
+        assert_eq!(params.with_ry(1.0).ry(), 0.0);
+
+        // The unlocked degrees of freedom still take their values
+        assert_eq!(params.with_ty(1.0).ty(), 1.0);
+        assert_eq!(params.with_rx(1.0).rx(), 1.0);
+
+        // ...and the same holds when the whole storage vector is set at once
+        let all = params.with_storage(T3Storage::new(1.0, 2.0, 3.0, 4.0, 5.0, 6.0));
+        assert_eq!(all.tx(), 0.0);
+        assert_eq!(all.ry(), 0.0);
+        assert_eq!(all.ty(), 2.0);
+        assert_eq!(all.rz(), 6.0);
     }
 
     #[test]

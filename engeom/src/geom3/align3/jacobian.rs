@@ -237,10 +237,10 @@ pub fn point_plane_jacobian_full(p: &Point3, c: &SurfacePoint3, align: &AlignVal
         result[3] = n.dot(&align.drx(c));
     }
     if align.dof.ry {
-        result[4] = n.dot(&align.drx(c));
+        result[4] = n.dot(&align.dry(c));
     }
     if align.dof.rz {
-        result[5] = n.dot(&align.drx(c));
+        result[5] = n.dot(&align.drz(c));
     }
 
     result

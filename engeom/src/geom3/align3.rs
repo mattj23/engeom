@@ -16,7 +16,9 @@ use crate::geom3::{Iso3, Point3, Vector3};
 use crate::na::{SVector, Unit};
 use parry3d_f64::na::{Translation3, UnitQuaternion, Vector6};
 
-type T3Storage = Vector6<f64>;
+/// The storage for the six parameters of a 3D alignment problem, in the order tx, ty, tz, rx, ry,
+/// rz.
+pub type T3Storage = Vector6<f64>;
 
 pub use self::mesh::*;
 pub use self::mesh_to_mesh::mesh_to_mesh_iterative;

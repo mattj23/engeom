@@ -31,7 +31,7 @@ impl<R, const D: usize> Alignment<R, D> {
 
     /// Gets the full transformation, which is a single transformation that brings the test
     /// entity geometry directly to the target geometry. This is a composite of the local origin's
-    /// inverse, the alignment, and the work offset ($W * A * L^{-1}$).
+    /// inverse, the alignment, and the work offset ($O * A * L^{-1}$).
     pub fn full(&self) -> &Isometry<f64, R, D> {
         &self.full
     }
