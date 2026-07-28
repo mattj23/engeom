@@ -1,4 +1,5 @@
 use crate::Result;
+use crate::common::consensus::weights::MagsacWeight;
 use crate::common::dist;
 use crate::geom2::Alignment2;
 use crate::geom2::Point2;
@@ -9,11 +10,25 @@ use crate::geom2::align2::{
 use crate::na::{Dyn, Matrix, Owned, U1, U3, Vector};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 
+/// The residual degrees of freedom for the MAGSAC++ weight function. The residual here is a full
+/// Euclidean point-to-target distance in the plane, so it follows a chi distribution with two
+/// degrees of freedom. (`MagsacWeight` requires at least 2; a point-to-plane residual would be a
+/// one-dimensional projection and would need the weight function extended.)
+const RESIDUAL_DOF: usize = 2;
+
+/// The scale factor that turns a median absolute deviation into a consistent estimate of the
+/// standard deviation of normally distributed data.
+const MAD_TO_SIGMA: f64 = 1.4826;
+
 /// Performs a Levenberg-Marquardt minimization to align a set of 2D points to a surface target.
 ///
 /// The points are repeatedly projected onto their closest position on the target as the solver
 /// moves them, so the correspondences are re-established at every step rather than being fixed up
 /// front.
+///
+/// By default this is a robust alignment: an initial unweighted solve is followed by
+/// [`AlignOptions2::refinement_steps`] rounds of iteratively reweighted least squares using
+/// MAGSAC++ weights. See [`AlignOptions2`] for the weighting and per-point uncertainty controls.
 ///
 /// # Arguments
 ///
@@ -30,20 +45,63 @@ pub fn points_to_surface2(
     params: AlignParams2,
     opts: &AlignOptions2,
 ) -> Result<Alignment2> {
-    let problem = PointsToSurface2::new(points, target, params, opts);
+    if let Some(sigma) = opts.point_sigma {
+        if sigma.len() != points.len() {
+            return Err(format!(
+                "point_sigma has {} entries but there are {} points",
+                sigma.len(),
+                points.len()
+            )
+            .into());
+        }
+        if let Some(i) = sigma.iter().position(|s| !s.is_finite() || *s <= 0.0) {
+            return Err(format!(
+                "point_sigma[{}] is {}, but every entry must be finite and strictly positive",
+                i, sigma[i]
+            )
+            .into());
+        }
+    }
 
+    // The first solve is unweighted. Its residuals are what the sigma_max estimate is drawn from,
+    // since residuals taken before any alignment would describe the initial misplacement rather
+    // than the noise.
+    let mut problem = solve(PointsToSurface2::new(points, target, params, opts))?;
+
+    if opts.refinement_steps > 0
+        && let Some(sigma_max) = resolve_sigma_max(opts, &problem)
+    {
+        let weighting = MagsacWeight::new(sigma_max, RESIDUAL_DOF);
+        for _ in 0..opts.refinement_steps {
+            // If reweighting would leave the problem underdetermined, keep the last good result
+            // rather than solving something rank-deficient.
+            if problem.count_if_reweighted(&weighting) < N_PARAMS {
+                break;
+            }
+            problem.apply_magsac_weights(&weighting);
+            problem = solve(problem)?;
+        }
+    }
+
+    let c = problem.params.current_values();
+    Ok(Alignment2::new(
+        c.transform,
+        c.align,
+        problem.params.local,
+        problem.params.offset,
+        // The geometric residuals, not the weighted/normalized ones the solver minimizes. These
+        // are what a caller wants to inspect: real deviations in the units of the geometry.
+        problem.residuals.clone(),
+    ))
+}
+
+/// The number of free parameters in a 2D alignment (tx, ty, rz).
+const N_PARAMS: usize = 3;
+
+fn solve<T: SurfaceTarget2>(problem: PointsToSurface2<'_, T>) -> Result<PointsToSurface2<'_, T>> {
     let (result, report) = LevenbergMarquardt::new().minimize(problem);
-
     if report.termination.was_successful() {
-        let residuals = result.residuals().unwrap().as_slice().to_vec();
-        let c = result.params.current_values();
-        Ok(Alignment2::new(
-            c.transform,
-            c.align,
-            result.params.local,
-            result.params.offset,
-            residuals,
-        ))
+        Ok(result)
     } else {
         Err(format!(
             "Failed to align points to surface: {:?}",
@@ -51,6 +109,60 @@ pub fn points_to_surface2(
         )
         .into())
     }
+}
+
+/// Determines the MAGSAC++ noise bound, either from the explicit option or by estimating it from
+/// the current residuals. Returns `None` when no usable estimate exists, in which case robust
+/// refinement is skipped.
+fn resolve_sigma_max<T: SurfaceTarget2>(
+    opts: &AlignOptions2,
+    problem: &PointsToSurface2<'_, T>,
+) -> Option<f64> {
+    match opts.sigma_max {
+        Some(s) if s.is_finite() && s > 0.0 => Some(s),
+        Some(_) => None,
+        None => {
+            let normalized = problem.normalized_residuals();
+            estimate_sigma_max(&normalized)
+        }
+    }
+}
+
+/// Estimates a MAGSAC++ `sigma_max` from a set of residuals via the median absolute deviation.
+///
+/// MAD is used rather than the standard deviation because it is insensitive to the gross outliers
+/// the robust weighting exists to suppress: contaminating up to half the data cannot move it
+/// arbitrarily, whereas a single distant point can dominate a standard deviation.
+///
+/// Returns `None` when the spread is zero or non-finite, which happens when the fit is already
+/// essentially exact and there is nothing to reweight.
+fn estimate_sigma_max(residuals: &[f64]) -> Option<f64> {
+    let center = median(residuals)?;
+    let deviations: Vec<f64> = residuals.iter().map(|r| (r - center).abs()).collect();
+    let sigma = MAD_TO_SIGMA * median(&deviations)?;
+
+    if sigma.is_finite() && sigma > 0.0 {
+        Some(sigma)
+    } else {
+        None
+    }
+}
+
+/// The median of a slice of finite values, or `None` if the slice is empty.
+fn median(values: &[f64]) -> Option<f64> {
+    if values.is_empty() {
+        return None;
+    }
+
+    let mut sorted = values.to_vec();
+    sorted.sort_by(|a, b| a.total_cmp(b));
+
+    let n = sorted.len();
+    Some(if n.is_multiple_of(2) {
+        0.5 * (sorted[n / 2 - 1] + sorted[n / 2])
+    } else {
+        sorted[n / 2]
+    })
 }
 
 struct PointsToSurface2<'a, T: SurfaceTarget2> {
@@ -68,11 +180,20 @@ struct PointsToSurface2<'a, T: SurfaceTarget2> {
     /// The closest match on the target for each moved point.
     closest: Vec<AlignSurfMatch2>,
 
-    /// The signed distance from each moved point to its match.
+    /// The signed geometric distance from each moved point to its match, in model units.
     residuals: Vec<f64>,
 
-    /// The weight applied to each point's residual and jacobian row.
-    weights: Vec<f64>,
+    /// The reciprocal of each point's measurement standard deviation, or 1.0 throughout when no
+    /// per-point uncertainty was supplied. Stored inverted so the hot path multiplies.
+    inv_sigma: Vec<f64>,
+
+    /// The weight contributed by the target itself, recomputed whenever the points move.
+    target_weights: Vec<f64>,
+
+    /// The weight contributed by MAGSAC++ reweighting. All 1.0 until the first refinement round,
+    /// and held fixed across a single Levenberg-Marquardt solve so the jacobian stays consistent
+    /// with the residual it differentiates.
+    magsac_weights: Vec<f64>,
 
     ignore_off: bool,
 }
@@ -85,6 +206,11 @@ impl<'a, T: SurfaceTarget2> PointsToSurface2<'a, T> {
         opts: &AlignOptions2,
     ) -> Self {
         let current = params.current_values();
+        let inv_sigma = match opts.point_sigma {
+            Some(s) => s.iter().map(|v| 1.0 / v).collect(),
+            None => vec![1.0; points.len()],
+        };
+
         let mut x = Self {
             points,
             target,
@@ -93,7 +219,9 @@ impl<'a, T: SurfaceTarget2> PointsToSurface2<'a, T> {
             moved: vec![Point2::origin(); points.len()],
             closest: vec![AlignSurfMatch2::default(); points.len()],
             residuals: vec![0.0; points.len()],
-            weights: vec![1.0; points.len()],
+            inv_sigma,
+            target_weights: vec![1.0; points.len()],
+            magsac_weights: vec![1.0; points.len()],
             ignore_off: opts.ignore_off,
         };
 
@@ -102,7 +230,10 @@ impl<'a, T: SurfaceTarget2> PointsToSurface2<'a, T> {
     }
 
     /// Moves the points by the current transform, finds the closest position on the target to
-    /// each, and recomputes the residuals and weights.
+    /// each, and recomputes the geometric residuals and the target-contributed weights.
+    ///
+    /// This deliberately does not touch `magsac_weights`, which must stay fixed for the duration
+    /// of a single solve.
     fn move_points(&mut self) {
         self.current = self.params.current_values();
         let transform = self.current.transform;
@@ -115,7 +246,7 @@ impl<'a, T: SurfaceTarget2> PointsToSurface2<'a, T> {
             // target, adjusted for the direction of the scalar projection.
             self.residuals[i] = dist(&m, &c.point) * c.dn(&m).signum();
 
-            self.weights[i] = if self.ignore_off {
+            self.target_weights[i] = if self.ignore_off {
                 c.weight * f64::from(c.is_on)
             } else {
                 c.weight
@@ -124,6 +255,46 @@ impl<'a, T: SurfaceTarget2> PointsToSurface2<'a, T> {
             self.moved[i] = m;
             self.closest[i] = c;
         }
+    }
+
+    /// The residuals expressed as dimensionless multiples of each point's own standard deviation.
+    /// Identical to the geometric residuals when no per-point uncertainty was supplied.
+    fn normalized_residuals(&self) -> Vec<f64> {
+        self.residuals
+            .iter()
+            .zip(self.inv_sigma.iter())
+            .map(|(r, inv)| r * inv)
+            .collect()
+    }
+
+    /// The factor applied to both the residual and the jacobian row for point `i`.
+    ///
+    /// This folds together two separate things. The `inv_sigma` term scales the residual into
+    /// units of the point's own noise, and being part of the residual definition it must appear
+    /// in the derivative too. The `sqrt` of the weight is the standard way to express a weighted
+    /// least-squares problem to a solver that minimizes a plain sum of squares: the solver sees
+    /// `(sqrt(w) * r)^2`, which is the intended `w * r^2`.
+    fn scale(&self, i: usize) -> f64 {
+        (self.target_weights[i] * self.magsac_weights[i]).sqrt() * self.inv_sigma[i]
+    }
+
+    /// Recomputes the MAGSAC++ weights from the current residuals.
+    fn apply_magsac_weights(&mut self, weighting: &MagsacWeight) {
+        for i in 0..self.points.len() {
+            let r = (self.residuals[i] * self.inv_sigma[i]).abs();
+            self.magsac_weights[i] = weighting.weight(r);
+        }
+    }
+
+    /// How many points would still carry nonzero weight if `weighting` were applied now. Used to
+    /// avoid stepping into a rank-deficient solve.
+    fn count_if_reweighted(&self, weighting: &MagsacWeight) -> usize {
+        (0..self.points.len())
+            .filter(|&i| {
+                let r = (self.residuals[i] * self.inv_sigma[i]).abs();
+                self.target_weights[i] * weighting.weight(r) > 0.0
+            })
+            .count()
     }
 }
 
@@ -144,10 +315,7 @@ impl<T: SurfaceTarget2> LeastSquaresProblem<f64, Dyn, U3> for PointsToSurface2<'
     fn residuals(&self) -> Option<Vector<f64, Dyn, Self::ResidualStorage>> {
         let mut res = Matrix::<f64, Dyn, U1, Self::ResidualStorage>::zeros(self.points.len());
         for i in 0..self.points.len() {
-            // The weights are currently binary, so folding them in directly is the same as
-            // folding in their square root. Step 5 introduces continuous weights, at which point
-            // this must become `sqrt(w)` to keep the effective weight on `r^2` equal to `w`.
-            res[i] = self.residuals[i] * self.weights[i];
+            res[i] = self.residuals[i] * self.scale(i);
         }
 
         Some(res)
@@ -156,7 +324,7 @@ impl<T: SurfaceTarget2> LeastSquaresProblem<f64, Dyn, U3> for PointsToSurface2<'
     fn jacobian(&self) -> Option<Matrix<f64, Dyn, U3, Self::JacobianStorage>> {
         let mut jac = Matrix::<f64, Dyn, U3, Self::JacobianStorage>::zeros(self.points.len());
         for (i, (p, c)) in self.moved.iter().zip(self.closest.iter()).enumerate() {
-            let values = point_surf_jacobian2(p, c, &self.current) * self.weights[i];
+            let values = point_surf_jacobian2(p, c, &self.current) * self.scale(i);
             copy_jacobian(&values, &mut jac, i);
         }
 
@@ -182,6 +350,25 @@ mod tests {
         Curve2::from_points(&to_pts(p), 1e-8, true).unwrap()
     }
 
+    fn rect_curve() -> Curve2 {
+        closed_curve(&[(0.0, 0.0), (5.0, 0.0), (5.0, 1.0), (0.0, 1.0)])
+    }
+
+    fn rect_points() -> Vec<Point2> {
+        to_pts(&[
+            (1.0, 0.0),
+            (2.0, 0.0),
+            (3.0, 0.0),
+            (5.0, 0.25),
+            (5.0, 0.75),
+            (1.0, 1.0),
+            (2.0, 1.0),
+            (3.0, 1.0),
+            (0.0, 0.25),
+            (0.0, 0.75),
+        ])
+    }
+
     /// A closed CCW "stadium" boundary: two horizontal segments joined by semicircular arcs at
     /// each end. Exercises a `Boundary2` target containing genuine `Arc2` elements rather than
     /// only segments.
@@ -199,25 +386,28 @@ mod tests {
         data.try_to_boundary().unwrap()
     }
 
+    fn small_disturbance() -> Iso2 {
+        Iso2::new(crate::Vector2::new(0.05, -0.05), 10.0 * PI / 180.0)
+    }
+
+    /// The largest distance between the aligned points and where they should have landed.
+    fn max_deviation(moved: &[Point2], expected: &[Point2], result: &Alignment2) -> f64 {
+        transform_points(moved, result.full())
+            .iter()
+            .zip(expected.iter())
+            .map(|(a, e)| (a - e).norm())
+            .fold(0.0_f64, f64::max)
+    }
+
+    // ============================================================================================
+    // The unweighted behavior from step 4 must survive the introduction of the robust path.
+    // ============================================================================================
+
     #[test]
     fn curve_recovers_disturbance() -> Result<()> {
-        let curve = closed_curve(&[(0.0, 0.0), (5.0, 0.0), (5.0, 1.0), (0.0, 1.0)]);
-
-        let points = to_pts(&[
-            (1.0, 0.0),
-            (2.0, 0.0),
-            (3.0, 0.0),
-            (5.0, 0.25),
-            (5.0, 0.75),
-            (1.0, 1.0),
-            (2.0, 1.0),
-            (3.0, 1.0),
-            (0.0, 0.25),
-            (0.0, 0.75),
-        ]);
-
-        let disturb = Iso2::new(crate::Vector2::new(0.05, -0.05), 10.0 * PI / 180.0);
-        let moved = transform_points(&points, &disturb);
+        let curve = rect_curve();
+        let disturb = small_disturbance();
+        let moved = transform_points(&rect_points(), &disturb);
 
         let params = AlignParams2::new_at_origin(None);
         let result = points_to_surface2(&moved, &curve, params, &AlignOptions2::default())?;
@@ -234,22 +424,9 @@ mod tests {
     fn curve_recovers_disturbance_at_center() -> Result<()> {
         // Same as above, but rotating about the centroid of the moved points rather than the
         // world origin. The recovered full transform must be identical either way.
-        let curve = closed_curve(&[(0.0, 0.0), (5.0, 0.0), (5.0, 1.0), (0.0, 1.0)]);
-        let points = to_pts(&[
-            (1.0, 0.0),
-            (2.0, 0.0),
-            (3.0, 0.0),
-            (5.0, 0.25),
-            (5.0, 0.75),
-            (1.0, 1.0),
-            (2.0, 1.0),
-            (3.0, 1.0),
-            (0.0, 0.25),
-            (0.0, 0.75),
-        ]);
-
-        let disturb = Iso2::new(crate::Vector2::new(0.05, -0.05), 10.0 * PI / 180.0);
-        let moved = transform_points(&points, &disturb);
+        let curve = rect_curve();
+        let disturb = small_disturbance();
+        let moved = transform_points(&rect_points(), &disturb);
 
         let params = AlignParams2::new_at_center(mean_point(&moved), None);
         let result = points_to_surface2(&moved, &curve, params, &AlignOptions2::default())?;
@@ -286,19 +463,8 @@ mod tests {
 
     #[test]
     fn locked_tx_is_not_recovered() -> Result<()> {
-        let curve = closed_curve(&[(0.0, 0.0), (5.0, 0.0), (5.0, 1.0), (0.0, 1.0)]);
-        let points = to_pts(&[
-            (1.0, 0.0),
-            (2.0, 0.0),
-            (3.0, 0.0),
-            (1.0, 1.0),
-            (2.0, 1.0),
-            (3.0, 1.0),
-            (0.0, 0.25),
-            (0.0, 0.75),
-            (5.0, 0.25),
-            (5.0, 0.75),
-        ]);
+        let curve = rect_curve();
+        let points = rect_points();
 
         // A pure x-translation, which the alignment is forbidden from undoing.
         let disturb = Iso2::translation(0.3, 0.0);
@@ -313,17 +479,266 @@ mod tests {
         assert_eq!(result.full().translation.vector.x, 0.0);
 
         // ...and the disturbance genuinely was not recovered.
-        let recovered = transform_points(&moved, result.full());
-        let max_dev = recovered
-            .iter()
-            .zip(points.iter())
-            .map(|(a, e)| (a - e).norm())
-            .fold(0.0_f64, f64::max);
+        let max_dev = max_deviation(&moved, &points, &result);
         assert!(
             max_dev > 0.1,
             "locked tx should have prevented recovery, max deviation was {max_dev}"
         );
 
         Ok(())
+    }
+
+    // ============================================================================================
+    // Robust weighting
+    // ============================================================================================
+
+    #[test]
+    fn clean_data_recovery_survives_irls() -> Result<()> {
+        // On noiseless data the automatic sigma_max estimate is degenerate (the MAD collapses to
+        // zero once the fit is exact) and refinement is skipped, so an explicit sigma_max is used
+        // here to force every reweighting round to actually run. Robust weighting must not
+        // degrade a case that plain least squares already solves exactly.
+        let curve = rect_curve();
+        let disturb = small_disturbance();
+        let moved = transform_points(&rect_points(), &disturb);
+
+        let opts = AlignOptions2 {
+            sigma_max: Some(0.5),
+            refinement_steps: 4,
+            ..Default::default()
+        };
+
+        let params = AlignParams2::new_at_origin(None);
+        let result = points_to_surface2(&moved, &curve, params, &opts)?;
+
+        assert_relative_eq!(
+            result.full().to_matrix(),
+            disturb.inverse().to_matrix(),
+            epsilon = 1e-10
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn gross_outliers_are_rejected() -> Result<()> {
+        let curve = rect_curve();
+        let expected = rect_points();
+        let disturb = small_disturbance();
+        let mut moved = transform_points(&expected, &disturb);
+
+        // Corrupt 20% of the points by throwing them well away from the target. Their indices are
+        // spread out so the surviving points still constrain all three degrees of freedom.
+        moved[2] += crate::Vector2::new(0.0, -1.5);
+        moved[7] += crate::Vector2::new(0.0, 2.0);
+
+        let params = AlignParams2::new_at_center(mean_point(&moved), None);
+
+        // Plain least squares is dragged off by the outliers.
+        let naive = points_to_surface2(
+            &moved,
+            &curve,
+            params.clone(),
+            &AlignOptions2 {
+                refinement_steps: 0,
+                ..Default::default()
+            },
+        )?;
+
+        // The robust path, with sigma_max estimated automatically from the initial residuals.
+        let robust = points_to_surface2(&moved, &curve, params, &AlignOptions2::default())?;
+
+        // Measure against the eight uncorrupted points only; the two outliers are not supposed to
+        // land anywhere in particular.
+        let clean: Vec<usize> = (0..expected.len()).filter(|i| *i != 2 && *i != 7).collect();
+        let dev_of = |a: &Alignment2| {
+            let t = transform_points(&moved, a.full());
+            clean
+                .iter()
+                .map(|&i| (t[i] - expected[i]).norm())
+                .fold(0.0_f64, f64::max)
+        };
+
+        let naive_dev = dev_of(&naive);
+        let robust_dev = dev_of(&robust);
+
+        assert!(
+            naive_dev > 0.05,
+            "the outliers should have pulled the unweighted fit off, but deviation was {naive_dev}"
+        );
+        assert!(
+            robust_dev < 1e-6,
+            "the robust fit should have rejected the outliers, but deviation was {robust_dev}"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn high_sigma_point_has_less_influence() -> Result<()> {
+        // Isolate the per-point uncertainty mechanism from MAGSAC by disabling refinement, so the
+        // only thing distinguishing the two alignments below is the residual normalization.
+        let curve = rect_curve();
+        let expected = rect_points();
+        let mut moved = expected.clone();
+
+        // Displace a single point off the target. With uniform uncertainty it drags the fit; when
+        // it is declared far noisier than its neighbors it should barely register.
+        let bad = 4;
+        moved[bad] += crate::Vector2::new(0.4, 0.0);
+
+        let params = AlignParams2::new_at_center(mean_point(&moved), None);
+
+        let uniform = points_to_surface2(
+            &moved,
+            &curve,
+            params.clone(),
+            &AlignOptions2 {
+                refinement_steps: 0,
+                ..Default::default()
+            },
+        )?;
+
+        let mut sigma = vec![0.01; moved.len()];
+        sigma[bad] = 10.0;
+        let weighted = points_to_surface2(
+            &moved,
+            &curve,
+            params,
+            &AlignOptions2 {
+                refinement_steps: 0,
+                point_sigma: Some(&sigma),
+                ..Default::default()
+            },
+        )?;
+
+        // The remaining points already sit exactly on the target, so a fit that correctly ignores
+        // the noisy point should leave them alone.
+        let clean: Vec<usize> = (0..expected.len()).filter(|i| *i != bad).collect();
+        let dev_of = |a: &Alignment2| {
+            let t = transform_points(&moved, a.full());
+            clean
+                .iter()
+                .map(|&i| (t[i] - expected[i]).norm())
+                .fold(0.0_f64, f64::max)
+        };
+
+        let uniform_dev = dev_of(&uniform);
+        let weighted_dev = dev_of(&weighted);
+
+        assert!(
+            weighted_dev < uniform_dev * 0.1,
+            "declaring the point noisy should have cut its influence sharply: \
+             uniform deviation {uniform_dev}, weighted deviation {weighted_dev}"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn reported_residuals_are_geometric() -> Result<()> {
+        // The residuals on the result are real distances in model units, not the internally
+        // weighted and normalized values the solver minimizes.
+        let curve = rect_curve();
+        let expected = rect_points();
+        let mut moved = expected.clone();
+        moved[4] += crate::Vector2::new(0.4, 0.0);
+
+        let sigma = vec![0.01; moved.len()];
+        let opts = AlignOptions2 {
+            refinement_steps: 0,
+            point_sigma: Some(&sigma),
+            ..Default::default()
+        };
+
+        let params = AlignParams2::new_at_center(mean_point(&moved), None);
+        let result = points_to_surface2(&moved, &curve, params, &opts)?;
+
+        // With sigma = 0.01 throughout, a normalized residual would be 100x the geometric one, so
+        // this assertion fails loudly if the wrong vector is reported.
+        let largest = result
+            .residuals()
+            .iter()
+            .map(|r| r.abs())
+            .fold(0.0_f64, f64::max);
+        assert!(
+            largest < 1.0,
+            "residuals look normalized rather than geometric, largest was {largest}"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn point_sigma_length_is_validated() {
+        let curve = rect_curve();
+        let points = rect_points();
+        let sigma = vec![0.1; points.len() - 1];
+
+        let opts = AlignOptions2 {
+            point_sigma: Some(&sigma),
+            ..Default::default()
+        };
+
+        let err = points_to_surface2(&points, &curve, AlignParams2::new_at_origin(None), &opts)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("entries"), "unexpected message: {err}");
+    }
+
+    #[test]
+    fn point_sigma_values_are_validated() {
+        let curve = rect_curve();
+        let points = rect_points();
+
+        for bad in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            let mut sigma = vec![0.1; points.len()];
+            sigma[3] = bad;
+
+            let opts = AlignOptions2 {
+                point_sigma: Some(&sigma),
+                ..Default::default()
+            };
+
+            let result =
+                points_to_surface2(&points, &curve, AlignParams2::new_at_origin(None), &opts);
+            assert!(
+                result.is_err(),
+                "sigma value {bad} should have been rejected"
+            );
+        }
+    }
+
+    // ============================================================================================
+    // Supporting pieces
+    // ============================================================================================
+
+    #[test]
+    fn median_handles_both_parities() {
+        assert_eq!(median(&[3.0, 1.0, 2.0]), Some(2.0));
+        assert_eq!(median(&[4.0, 1.0, 3.0, 2.0]), Some(2.5));
+        assert_eq!(median(&[]), None);
+    }
+
+    #[test]
+    fn sigma_estimate_is_robust_to_outliers() {
+        // Eleven values with unit spread, plus one enormous outlier. A standard deviation would
+        // be dominated by the outlier; the MAD-based estimate should barely notice it.
+        let mut values: Vec<f64> = (-5..=5).map(|i| i as f64).collect();
+        let clean = estimate_sigma_max(&values).unwrap();
+
+        values.push(10_000.0);
+        let contaminated = estimate_sigma_max(&values).unwrap();
+
+        assert!(
+            (contaminated - clean).abs() < 0.5 * clean,
+            "outlier moved the estimate too far: {clean} -> {contaminated}"
+        );
+    }
+
+    #[test]
+    fn sigma_estimate_rejects_degenerate_spread() {
+        // Every residual identical means no spread to estimate from.
+        assert_eq!(estimate_sigma_max(&[2.0; 10]), None);
+        assert_eq!(estimate_sigma_max(&[]), None);
     }
 }

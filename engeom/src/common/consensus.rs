@@ -101,7 +101,7 @@
 //! implementation is in `geom2/circle2/fitting.rs`), reusing that primitive's existing
 //! constructors, distance methods, and analytic-jacobian Levenberg-Marquardt problems.
 
-mod weights;
+pub(crate) mod weights;
 
 use crate::Result;
 use crate::common::PCoords;
