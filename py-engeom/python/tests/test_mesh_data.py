@@ -6,6 +6,8 @@ crossing the boundary, the attribute setters accepting and rejecting arrays, the
 round trips, and the bridges to the accelerated types.
 """
 
+from pathlib import Path
+
 import numpy
 import pytest
 
@@ -223,6 +225,27 @@ def test_a_bare_mesh_writes_stl_without_the_flag(tmp_path):
     MeshData3(triangle_points(), triangle_faces()).save_stl(path)
 
     assert MeshData3.load_stl(path).faces.shape == (1, 3)
+
+
+STUD_BOLT_G3D = Path(__file__).parents[3] / "engeom" / "tests" / "data" / "stud-bolt.g3d"
+
+
+def test_mesh_data_loads_a_g3d_file():
+    data = MeshData3.load_g3d(STUD_BOLT_G3D)
+
+    assert data.points.shape == (8565, 3)
+    assert data.faces.shape == (16957, 3)
+    assert data.points[0] == pytest.approx(
+        [3.8822855365478506, -16.53775066421784, -22.36773866300889]
+    )
+    assert numpy.array_equal(data.faces[0], [0, 44, 23])
+
+
+def test_mesh_loads_a_g3d_file():
+    mesh = Mesh3.load_g3d(STUD_BOLT_G3D)
+
+    assert mesh.vertices.shape == (8565, 3)
+    assert mesh.faces.shape == (16957, 3)
 
 
 # ================================================================================================

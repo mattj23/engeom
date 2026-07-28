@@ -110,6 +110,14 @@ impl Mesh3 {
         Ok(Self::from_inner(mesh))
     }
 
+    #[staticmethod]
+    #[pyo3(signature=(path, is_solid = false))]
+    fn load_g3d(path: PathBuf, is_solid: bool) -> PyResult<Self> {
+        let mesh = engeom::Mesh3::load_g3d(&path, is_solid)
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(mesh))
+    }
+
     #[pyo3(signature = (path, binary = true))]
     fn save_ply(&self, path: PathBuf, binary: bool) -> PyResult<()> {
         let mut opts = engeom::io::PlyWriteOpts::default();
@@ -843,6 +851,13 @@ impl MeshData3 {
     fn load_stl(path: PathBuf) -> PyResult<Self> {
         let inner =
             engeom::MeshData3::load_stl(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(inner))
+    }
+
+    #[staticmethod]
+    fn load_g3d(path: PathBuf) -> PyResult<Self> {
+        let inner =
+            engeom::MeshData3::load_g3d(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
         Ok(Self::from_inner(inner))
     }
 

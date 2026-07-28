@@ -2425,6 +2425,20 @@ class Mesh3:
         ...
 
     @staticmethod
+    def load_g3d(path: str | Path, is_solid: bool = False) -> Mesh3:
+        """
+        Load a mesh from a GOM `.g3d` file, the format written by GOM's Atos scanner and GOM/Zeiss Inspect.
+
+        A `.g3d` file can in principle carry several kinds of view (point clouds, scan sections, colored
+        meshes), but only the triangle mesh view is read; any other view present in the file is skipped.
+
+        :param path: the path to the `.g3d` file to load.
+        :param is_solid: whether distance queries should treat points inside the mesh as being at zero distance
+        :return: the mesh loaded from the file.
+        """
+        ...
+
+    @staticmethod
     def load_lptf3(
         file_path: str | Path,
         take_every: int = 1,
@@ -4119,6 +4133,19 @@ class MeshData3:
         identity, so the points are recovered by welding on exact coordinate equality.
 
         :param path: the path to the STL file.
+        :return: the loaded mesh data.
+        """
+        ...
+
+    @staticmethod
+    def load_g3d(path: str | Path) -> MeshData3:
+        """
+        Load a mesh from a GOM `.g3d` file, the format written by GOM's Atos scanner and GOM/Zeiss Inspect.
+
+        A `.g3d` file can in principle carry several kinds of view (point clouds, scan sections, colored
+        meshes), but only the triangle mesh view is read; any other view present in the file is skipped.
+
+        :param path: the path to the `.g3d` file.
         :return: the loaded mesh data.
         """
         ...
