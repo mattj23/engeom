@@ -25,15 +25,15 @@ use crate::geom3::mesh::algorithms;
 use crate::geom3::mesh::algorithms::{
     OffsetOpts, compute_face_offset_points, compute_normal_displaced_points,
 };
+use crate::io::load_g3d_mesh_data;
 use crate::{Point3, Result, UnitVec3};
 use std::fmt;
+use std::path::Path;
 
 #[cfg(feature = "ply")]
 use crate::io::{PlyWriteOpts, load_ply_mesh_data, write_ply_mesh_data};
 #[cfg(feature = "stl")]
 use crate::io::{StlWriteOpts, load_stl_mesh_data, write_stl_mesh_data};
-#[cfg(any(feature = "ply", feature = "stl"))]
-use std::path::Path;
 
 /// A container for the raw data of a triangle mesh: a buffer of points, a buffer of faces indexing
 /// into it, and the per-element attributes attached to either domain.
@@ -193,6 +193,22 @@ impl MeshData3 {
     #[cfg(feature = "stl")]
     pub fn save_stl(&self, path: &Path, opts: &StlWriteOpts) -> Result<()> {
         write_stl_mesh_data(path, self, opts)
+    }
+
+    /// Load a triangle mesh from a GOM `.g3d` file, the format written by GOM's Atos scanner and
+    /// GOM/Zeiss Inspect.
+    ///
+    /// A `.g3d` file can in principle carry several kinds of view (point clouds, scan sections,
+    /// colored meshes), but only the triangle mesh view is read here; any other view present in
+    /// the file is skipped. See [`load_g3d_mesh_data`] for the full format support notes.
+    ///
+    /// # Arguments
+    ///
+    /// * `path`: the path to the `.g3d` file
+    ///
+    /// returns: `Result<MeshData3>`
+    pub fn load_g3d(path: &Path) -> Result<Self> {
+        load_g3d_mesh_data(path)
     }
 }
 

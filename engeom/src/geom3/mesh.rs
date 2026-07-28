@@ -34,7 +34,6 @@ pub use uv_mapping::UvMapping;
 use crate::io::PlyWriteOpts;
 #[cfg(feature = "stl")]
 use crate::io::StlWriteOpts;
-#[cfg(any(feature = "ply", feature = "stl"))]
 use std::path::Path;
 
 /// A struct that represents a point on the surface of a mesh, including the index of the face
@@ -512,6 +511,20 @@ impl Mesh3 {
     #[cfg(feature = "stl")]
     pub fn save_stl(&self, path: &Path, opts: &StlWriteOpts) -> Result<()> {
         self.to_data().save_stl(path, opts)
+    }
+
+    /// Load a triangle mesh from a GOM `.g3d` file, the format written by GOM's Atos scanner and
+    /// GOM/Zeiss Inspect. See [`MeshData3::load_g3d`] for what this does and does not support.
+    ///
+    /// # Arguments
+    ///
+    /// * `path`: the path to the `.g3d` file
+    /// * `is_solid`: whether distance queries should treat points inside the mesh as being at
+    ///   zero distance
+    ///
+    /// returns: `Result<Mesh3>`
+    pub fn load_g3d(path: &Path, is_solid: bool) -> Result<Self> {
+        Self::from_data(MeshData3::load_g3d(path)?, is_solid)
     }
 }
 
