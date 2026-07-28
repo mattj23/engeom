@@ -2,7 +2,7 @@
 //! for different 2D alignment Levenberg-Marquardt problems.
 
 use crate::common::{PCoords, SPCoords};
-use crate::geom2::align2::{AlignValues2, T2Storage};
+use crate::geom2::align2::{AlignStorage2, AlignValues2};
 use parry2d_f64::na::{Dim, Matrix, RawStorageMut, Storage, U3};
 
 /// This is a helper function to calculate the partial derivatives of the parameters for a residual
@@ -23,8 +23,8 @@ pub fn point_surf_jacobian2(
     p: &impl PCoords<2>,
     c: &impl SPCoords<2>,
     align: &AlignValues2,
-) -> T2Storage {
-    let mut result = T2Storage::zeros();
+) -> AlignStorage2 {
+    let mut result = AlignStorage2::zeros();
 
     // We'll grab the sign of the scalar projection, allowing us to know if we're outside or inside
     // the target surface.
@@ -83,7 +83,7 @@ fn val_or_zero(value: f64, condition: bool) -> f64 {
 /// * `row`: The row index in the destination matrix to copy into
 ///
 /// returns: ()
-pub fn copy_jacobian<R, S>(j: &T2Storage, matrix: &mut Matrix<f64, R, U3, S>, row: usize)
+pub fn copy_jacobian<R, S>(j: &AlignStorage2, matrix: &mut Matrix<f64, R, U3, S>, row: usize)
 where
     R: Dim,
     S: RawStorageMut<f64, R, U3> + Storage<f64, R, U3>,
@@ -109,7 +109,7 @@ mod tests {
     /// This must stay in step with the residual computed in `points_to_surface.rs`; the jacobian
     /// is only correct with respect to this exact expression.
     fn residual(p: &Point2, c: &AlignSurfMatch2) -> f64 {
-        dist(p, &c.point) * c.dn(p).signum()
+        dist(p, &c.point) * c.scalar_projection(p).signum()
     }
 
     /// Builds a match sitting at `p + offset`, with its normal aimed back along the offset either
@@ -128,14 +128,14 @@ mod tests {
     /// re-establishes correspondences between steps, but within a single linearization the match
     /// is a fixed position on the stationary target.
     fn numeric(params: &AlignParams2, p_local: &Point2, c: &AlignSurfMatch2, index: usize) -> f64 {
-        let stored = params.get_storage();
+        let stored = params.storage();
         let mut w0 = params.clone();
         let mut w1 = params.clone();
         w0.set_index(index, stored[index] - NUMERIC_EPS);
         w1.set_index(index, stored[index] + NUMERIC_EPS);
 
-        let p0 = w0.current_values().transform * p_local;
-        let p1 = w1.current_values().transform * p_local;
+        let p0 = w0.compute_values().transform * p_local;
+        let p1 = w1.compute_values().transform * p_local;
 
         (residual(&p1, c) - residual(&p0, c)) / (2.0 * NUMERIC_EPS)
     }
@@ -145,11 +145,11 @@ mod tests {
         // The test point sits one unit in +x from its match, so the deviation direction is +x.
         // Translating in +x pulls it further away, translating in +y slides it across, and
         // rotating about the origin moves it perpendicular to the deviation.
-        let params = AlignParams2::new_at_origin(None);
+        let params = AlignParams2::from_origin(None);
         let p = Point2::new(1.0, 0.0);
         let c = make_match(&p, Vector2::new(-1.0, 0.0), false);
 
-        let j = point_surf_jacobian2(&p, &c, &params.current_values());
+        let j = point_surf_jacobian2(&p, &c, &params.compute_values());
 
         assert_relative_eq!(j.x, 1.0, epsilon = 1e-10);
         assert_relative_eq!(j.y, 0.0, epsilon = 1e-10);
@@ -160,11 +160,11 @@ mod tests {
     fn flipped_normal_flips_the_sign() {
         // Same geometry, but with the target normal pointing away from the test point, which puts
         // the point on the negative side and reverses every partial.
-        let params = AlignParams2::new_at_origin(None);
+        let params = AlignParams2::from_origin(None);
         let p = Point2::new(1.0, 0.0);
         let c = make_match(&p, Vector2::new(-1.0, 0.0), true);
 
-        let j = point_surf_jacobian2(&p, &c, &params.current_values());
+        let j = point_surf_jacobian2(&p, &c, &params.compute_values());
 
         assert_relative_eq!(j.x, -1.0, epsilon = 1e-10);
     }
@@ -172,11 +172,11 @@ mod tests {
     #[test]
     fn locked_dof_zeroes_its_column() {
         let dof = crate::geom2::align2::Dof3::new(false, true, false);
-        let params = AlignParams2::new_at_origin(Some(dof));
+        let params = AlignParams2::from_origin(Some(dof));
         let p = Point2::new(1.0, 2.0);
         let c = make_match(&p, Vector2::new(-0.5, -0.3), false);
 
-        let j = point_surf_jacobian2(&p, &c, &params.current_values());
+        let j = point_surf_jacobian2(&p, &c, &params.compute_values());
 
         assert_eq!(j.x, 0.0);
         assert_eq!(j.z, 0.0);
@@ -201,7 +201,7 @@ mod tests {
                 .with_storage(rg.vector(PI));
 
             let p_local = rg.point(10.0);
-            let p = params.current_values().transform * p_local;
+            let p = params.compute_values().transform * p_local;
 
             // A deviation with a guaranteed non-trivial magnitude, so the match never degenerates
             // onto the test point.
@@ -214,7 +214,7 @@ mod tests {
                 numeric(&params, &p_local, &c, 2),
             ];
 
-            let j = point_surf_jacobian2(&p, &c, &params.current_values());
+            let j = point_surf_jacobian2(&p, &c, &params.compute_values());
 
             assert_relative_eq!(j.x, expected[0], epsilon = 1e-5);
             assert_relative_eq!(j.y, expected[1], epsilon = 1e-5);

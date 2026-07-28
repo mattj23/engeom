@@ -1,7 +1,7 @@
 //! This module contains the parameterization of the 2D alignment problem
 
 use crate::common::PCoords;
-use crate::geom2::align2::{Dof3, T2Storage};
+use crate::geom2::align2::{AlignStorage2, Dof3};
 use crate::na::{Matrix2, Translation2, UnitComplex};
 use crate::{Iso2, Point2, Vector2};
 
@@ -127,7 +127,7 @@ pub struct AlignParams2 {
     pub offset: Iso2,
 
     /// The storage for the three parameters
-    storage: T2Storage,
+    storage: AlignStorage2,
 }
 
 impl AlignParams2 {
@@ -159,7 +159,7 @@ impl AlignParams2 {
             local,
             dof,
             offset,
-            storage: T2Storage::zeros(),
+            storage: AlignStorage2::zeros(),
         }
     }
 
@@ -181,7 +181,7 @@ impl AlignParams2 {
     /// * `local`: the local origin $L$, defined in the same space as the test entity's geometry.
     /// * `dof`: Optional constraint on the degrees of freedom. If `None` is provided, all degrees
     ///   of freedom will be active.
-    pub fn new_at_local(local: Iso2, dof: Option<Dof3>) -> Self {
+    pub fn from_local(local: Iso2, dof: Option<Dof3>) -> Self {
         Self::new(AlignOrigin2::Local(local), Some(local), dof)
     }
 
@@ -200,7 +200,7 @@ impl AlignParams2 {
     /// * `center`: The point around which the test entity(s) will be rotated.
     /// * `dof`: Optional constraint on the degrees of freedom. If `None` is provided, all degrees
     ///   of freedom will be active.
-    pub fn new_at_center(center: Point2, dof: Option<Dof3>) -> Self {
+    pub fn from_center(center: Point2, dof: Option<Dof3>) -> Self {
         let local = Iso2::translation(center.x, center.y);
         Self::new(AlignOrigin2::Local(local), Some(local), dof)
     }
@@ -216,7 +216,7 @@ impl AlignParams2 {
     ///   of freedom will be active.
     ///
     /// returns: AlignParams2
-    pub fn new_at_origin(dof: Option<Dof3>) -> Self {
+    pub fn from_origin(dof: Option<Dof3>) -> Self {
         Self::new(AlignOrigin2::Origin, None, dof)
     }
 
@@ -230,15 +230,20 @@ impl AlignParams2 {
         self.storage[2]
     }
 
-    /// Get the stored isometry without the working transformation. If the problem has converged,
-    /// this is the final result.
-    pub fn final_result(&self) -> Iso2 {
-        self.current_values().transform
+    /// Computes the full transformation $O * A * L^{-1}$ that brings the test geometry into the
+    /// target's coordinate system, including the local origin and the working offset. If the
+    /// problem has converged, this is the final result of the alignment.
+    ///
+    /// This is a convenience wrapper over [`AlignParams2::compute_values`] for callers that only
+    /// need the transform; it does the same work, so prefer `compute_values` if you also need the
+    /// partial derivative directions.
+    pub fn compute_transform(&self) -> Iso2 {
+        self.compute_values().transform
     }
 
-    /// Calculate the current alignment values, including the full transform, the translation
+    /// Computes the current alignment values, including the full transform, the translation
     /// directions, and the rotation partial derivative matrix
-    pub fn current_values(&self) -> AlignValues2 {
+    pub fn compute_values(&self) -> AlignValues2 {
         let align = align_from_storage(&self.storage);
         let transform = self.offset * align * self.local.inverse();
 
@@ -259,7 +264,7 @@ impl AlignParams2 {
         }
     }
 
-    pub fn get_storage(&self) -> T2Storage {
+    pub fn storage(&self) -> AlignStorage2 {
         self.storage
     }
 
@@ -275,7 +280,7 @@ impl AlignParams2 {
         }
     }
 
-    pub fn set_storage(&mut self, storage: T2Storage) {
+    pub fn set_storage(&mut self, storage: AlignStorage2) {
         self.storage = storage;
         self.enforce_constraint();
     }
@@ -303,7 +308,7 @@ impl AlignParams2 {
         params
     }
 
-    pub fn with_storage(&self, storage: T2Storage) -> AlignParams2 {
+    pub fn with_storage(&self, storage: AlignStorage2) -> AlignParams2 {
         let mut params = self.clone();
         params.set_storage(storage);
         params
@@ -311,7 +316,7 @@ impl AlignParams2 {
 }
 
 /// Composes the `tx`, `ty`, `rz` parameters into the alignment isometry `A`.
-fn align_from_storage(p: &T2Storage) -> Iso2 {
+fn align_from_storage(p: &AlignStorage2) -> Iso2 {
     Iso2::from_parts(Translation2::new(p.x, p.y), UnitComplex::new(p.z))
 }
 
@@ -332,13 +337,13 @@ mod tests {
 
     #[test]
     fn rotation_around_origin() {
-        let params = AlignParams2::new_at_origin(None).with_rz(PI / 2.0);
+        let params = AlignParams2::from_origin(None).with_rz(PI / 2.0);
         let test_point = Point2::new(1.0, 2.0);
         let expected = Point2::new(-2.0, 1.0);
 
         assert_relative_eq!(
             expected,
-            params.current_values().transform * test_point,
+            params.compute_values().transform * test_point,
             epsilon = 1e-8
         );
     }
@@ -346,14 +351,14 @@ mod tests {
     #[test]
     fn rotation_around_center() {
         let rc = Point2::new(1.0, 0.0);
-        let params = AlignParams2::new_at_center(rc, None).with_rz(PI / 2.0);
+        let params = AlignParams2::from_center(rc, None).with_rz(PI / 2.0);
 
         let test_point = Point2::new(2.0, 2.0);
         let expected = Point2::new(-1.0, 1.0);
 
         assert_relative_eq!(
             expected,
-            params.current_values().transform * test_point,
+            params.compute_values().transform * test_point,
             epsilon = 1e-8
         );
     }
@@ -363,14 +368,14 @@ mod tests {
         // A local origin whose axes are rotated 90 degrees from world: local +x points in world
         // +y, local +y points in world -x.
         let local = Iso2::rotation(PI / 2.0);
-        let params = AlignParams2::new_at_local(local, None).with_tx(1.0);
+        let params = AlignParams2::from_local(local, None).with_tx(1.0);
 
         let test_point = Point2::new(1.0, 2.0);
         let expected = Point2::new(1.0, 3.0);
 
         assert_relative_eq!(
             expected,
-            params.current_values().transform * test_point,
+            params.compute_values().transform * test_point,
             epsilon = 1e-8
         );
     }
@@ -378,13 +383,13 @@ mod tests {
     #[test]
     fn builders_respect_locked_dof() {
         let dof = Dof3::new(false, true, true);
-        let params = AlignParams2::new_at_origin(Some(dof));
+        let params = AlignParams2::from_origin(Some(dof));
 
         assert_eq!(params.with_tx(1.0).tx(), 0.0);
         assert_eq!(params.with_ty(1.0).ty(), 1.0);
         assert_eq!(params.with_rz(1.0).rz(), 1.0);
 
-        let all = params.with_storage(T2Storage::new(1.0, 2.0, 3.0));
+        let all = params.with_storage(AlignStorage2::new(1.0, 2.0, 3.0));
         assert_eq!(all.tx(), 0.0);
         assert_eq!(all.ty(), 2.0);
         assert_eq!(all.rz(), 3.0);
@@ -397,8 +402,8 @@ mod tests {
 
     #[test]
     fn partials_of_translations_at_zero() {
-        let params = AlignParams2::new_at_origin(None);
-        let current = params.current_values();
+        let params = AlignParams2::from_origin(None);
+        let current = params.compute_values();
 
         assert_relative_eq!(current.dtx, Vector2::x_axis(), epsilon = 1e-12);
         assert_relative_eq!(current.dty, Vector2::y_axis(), epsilon = 1e-12);
@@ -406,12 +411,12 @@ mod tests {
 
     #[test]
     fn partials_of_translations_with_rotation() {
-        let params = AlignParams2::new_at_origin(None).with_rz(0.3);
+        let params = AlignParams2::from_origin(None).with_rz(0.3);
         let test_point = Point2::new(1.0, 2.0);
 
         let exp_x = finite_diff(&params, &test_point, 0);
         let exp_y = finite_diff(&params, &test_point, 1);
-        let c = params.current_values();
+        let c = params.compute_values();
 
         // Because translations are applied after rotation, the direction vectors don't change
         // when the rotation parameter is nonzero.
@@ -435,7 +440,7 @@ mod tests {
             let exp_x = finite_diff(&params, &test_point, 0);
             let exp_y = finite_diff(&params, &test_point, 1);
 
-            let c = params.current_values();
+            let c = params.compute_values();
             assert_relative_eq!(exp_x, c.dtx, epsilon = 1e-6);
             assert_relative_eq!(exp_y, c.dty, epsilon = 1e-6);
         }
@@ -450,8 +455,8 @@ mod tests {
 
     #[test]
     fn partials_of_rotation_at_zero() {
-        let params = AlignParams2::new_at_origin(None);
-        let current = params.current_values();
+        let params = AlignParams2::from_origin(None);
+        let current = params.compute_values();
         let p_local = Point2::new(1.0, 2.0);
         let p = current.transform * p_local;
 
@@ -467,7 +472,7 @@ mod tests {
             let working = rg.iso2(10.0);
             let params = AlignParams2::new(AlignOrigin2::Local(local), Some(working), None)
                 .with_storage(rg.vector(PI));
-            let c = params.current_values();
+            let c = params.compute_values();
 
             // The test point in the test entity's space
             let test_point = rg.point(10.0);
@@ -493,7 +498,7 @@ mod tests {
     fn finite_diff(params: &AlignParams2, point: &Point2, index: usize) -> Vector2 {
         let mut w0 = params.clone();
         let mut w1 = params.clone();
-        let stored = params.get_storage();
+        let stored = params.storage();
 
         let eps = if index < 2 {
             TRANS_EPSILON
@@ -504,8 +509,8 @@ mod tests {
         w0.set_index(index, stored[index] - eps);
         w1.set_index(index, stored[index] + eps);
 
-        let p0 = w0.current_values().transform * point;
-        let p1 = w1.current_values().transform * point;
+        let p0 = w0.compute_values().transform * point;
+        let p1 = w1.compute_values().transform * point;
 
         (p1 - p0) / (2.0 * eps)
     }

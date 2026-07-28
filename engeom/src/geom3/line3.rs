@@ -281,6 +281,18 @@ mod tests {
 
     #[test]
     fn stress_intersect_plane_result_on_plane() {
+        // TODO: this test fails intermittently and needs to be made deterministic.
+        //
+        // `RandomGeometry3::new()` draws from the unseeded thread RNG, so every run samples
+        // different geometry. When a sampled line comes out nearly parallel to the plane,
+        // `intersect_plane` returns a very large `t`, and evaluating `line.at(t)` amplifies
+        // floating-point error enough that the resulting point sits further than `1e-10` off the
+        // plane. The intersection math isn't wrong; the absolute tolerance just isn't reachable in
+        // the near-degenerate case.
+        //
+        // Two candidate fixes: switch to `RandomGeometry3::from_seed(...)` so failures are
+        // reproducible, and/or scale the tolerance with `t` (or reject near-parallel samples)
+        // so the assertion reflects the conditioning of the problem.
         let mut rg = RandomGeometry3::new();
 
         for _ in 0..500 {

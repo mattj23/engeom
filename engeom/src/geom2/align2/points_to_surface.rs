@@ -1,4 +1,5 @@
 use crate::Result;
+use crate::common::SPCoords;
 use crate::common::consensus::weights::MagsacWeight;
 use crate::common::dist;
 use crate::geom2::Alignment2;
@@ -87,7 +88,7 @@ pub fn points_to_surface2(
         }
     }
 
-    let c = problem.params.current_values();
+    let c = problem.params.compute_values();
     Ok(Alignment2::new(
         c.transform,
         c.align,
@@ -207,7 +208,7 @@ struct PointsToSurface2<'a, T: SurfaceTarget2> {
     /// with the residual it differentiates.
     magsac_weights: Vec<f64>,
 
-    ignore_off: bool,
+    ignore_off_target: bool,
 }
 
 impl<'a, T: SurfaceTarget2> PointsToSurface2<'a, T> {
@@ -217,7 +218,7 @@ impl<'a, T: SurfaceTarget2> PointsToSurface2<'a, T> {
         params: AlignParams2,
         opts: &AlignOptions2,
     ) -> Self {
-        let current = params.current_values();
+        let current = params.compute_values();
         let test_sigma = match opts.point_sigma {
             Some(s) => s.to_vec(),
             None => vec![0.0; points.len()],
@@ -235,7 +236,7 @@ impl<'a, T: SurfaceTarget2> PointsToSurface2<'a, T> {
             inv_sigma: vec![1.0; points.len()],
             target_weights: vec![1.0; points.len()],
             magsac_weights: vec![1.0; points.len()],
-            ignore_off: opts.ignore_off,
+            ignore_off_target: opts.ignore_off_target,
         };
 
         x.move_points();
@@ -252,18 +253,18 @@ impl<'a, T: SurfaceTarget2> PointsToSurface2<'a, T> {
     /// This deliberately does not touch `magsac_weights`, which must stay fixed for the duration
     /// of a single solve.
     fn move_points(&mut self) {
-        self.current = self.params.current_values();
+        self.current = self.params.compute_values();
         let transform = self.current.transform;
 
         for i in 0..self.points.len() {
             let m = transform * self.points[i];
-            let c = self.target.align_surf_closest_to(&m);
+            let c = self.target.find_align_match(&m);
 
             // The residual is the distance between the test point and the closest point on the
             // target, adjusted for the direction of the scalar projection.
-            self.residuals[i] = dist(&m, &c.point) * c.dn(&m).signum();
+            self.residuals[i] = dist(&m, &c.point) * c.scalar_projection(&m).signum();
 
-            self.target_weights[i] = if self.ignore_off {
+            self.target_weights[i] = if self.ignore_off_target {
                 c.weight * f64::from(c.is_on)
             } else {
                 c.weight
@@ -343,7 +344,7 @@ impl<T: SurfaceTarget2> LeastSquaresProblem<f64, Dyn, U3> for PointsToSurface2<'
     }
 
     fn params(&self) -> Vector<f64, U3, Self::ParameterStorage> {
-        self.params.get_storage()
+        self.params.storage()
     }
 
     fn residuals(&self) -> Option<Vector<f64, Dyn, Self::ResidualStorage>> {
@@ -443,7 +444,7 @@ mod tests {
         let disturb = small_disturbance();
         let moved = transform_points(&rect_points(), &disturb);
 
-        let params = AlignParams2::new_at_origin(None);
+        let params = AlignParams2::from_origin(None);
         let result = points_to_surface2(&moved, &curve, params, &AlignOptions2::default())?;
 
         assert_relative_eq!(
@@ -462,7 +463,7 @@ mod tests {
         let disturb = small_disturbance();
         let moved = transform_points(&rect_points(), &disturb);
 
-        let params = AlignParams2::new_at_center(mean_point(&moved), None);
+        let params = AlignParams2::from_center(mean_point(&moved), None);
         let result = points_to_surface2(&moved, &curve, params, &AlignOptions2::default())?;
 
         assert_relative_eq!(
@@ -481,7 +482,7 @@ mod tests {
         let disturb = Iso2::new(crate::Vector2::new(0.03, -0.02), 5.0 * PI / 180.0);
         let moved = transform_points(&points, &disturb);
 
-        let params = AlignParams2::new_at_center(mean_point(&moved), None);
+        let params = AlignParams2::from_center(mean_point(&moved), None);
         let result = points_to_surface2(&moved, &boundary, params, &AlignOptions2::default())?;
 
         // The sampled points sit on the theoretical boundary, so the alignment should recover the
@@ -505,7 +506,7 @@ mod tests {
         let moved = transform_points(&points, &disturb);
 
         let dof = Dof3::new(false, true, true);
-        let params = AlignParams2::new_at_origin(Some(dof));
+        let params = AlignParams2::from_origin(Some(dof));
         let result = points_to_surface2(&moved, &curve, params, &AlignOptions2::default())?;
 
         // With `local` and `offset` both identity, the full transform is exactly the alignment
@@ -542,7 +543,7 @@ mod tests {
             ..Default::default()
         };
 
-        let params = AlignParams2::new_at_origin(None);
+        let params = AlignParams2::from_origin(None);
         let result = points_to_surface2(&moved, &curve, params, &opts)?;
 
         assert_relative_eq!(
@@ -565,7 +566,7 @@ mod tests {
         moved[2] += crate::Vector2::new(0.0, -1.5);
         moved[7] += crate::Vector2::new(0.0, 2.0);
 
-        let params = AlignParams2::new_at_center(mean_point(&moved), None);
+        let params = AlignParams2::from_center(mean_point(&moved), None);
 
         // Plain least squares is dragged off by the outliers.
         let naive = points_to_surface2(
@@ -620,7 +621,7 @@ mod tests {
         let bad = 4;
         moved[bad] += crate::Vector2::new(0.4, 0.0);
 
-        let params = AlignParams2::new_at_center(mean_point(&moved), None);
+        let params = AlignParams2::from_center(mean_point(&moved), None);
 
         let uniform = points_to_surface2(
             &moved,
@@ -674,8 +675,8 @@ mod tests {
     struct WithSigma<'a>(&'a Curve2, f64);
 
     impl SurfaceTarget2 for WithSigma<'_> {
-        fn align_surf_closest_to(&self, p: &Point2) -> AlignSurfMatch2 {
-            self.0.align_surf_closest_to(p).with_sigma(self.1)
+        fn find_align_match(&self, p: &Point2) -> AlignSurfMatch2 {
+            self.0.find_align_match(p).with_sigma(self.1)
         }
     }
 
@@ -704,7 +705,7 @@ mod tests {
             .map(|s| (s * s + target_sigma * target_sigma).sqrt())
             .collect();
 
-        let params = AlignParams2::new_at_center(mean_point(&moved), None);
+        let params = AlignParams2::from_center(mean_point(&moved), None);
 
         fn opts(sigma: &[f64]) -> AlignOptions2<'_> {
             AlignOptions2 {
@@ -750,7 +751,7 @@ mod tests {
         // divide by zero when a match reports no uncertainty.
         let curve = rect_curve();
         let moved = rect_points();
-        let params = AlignParams2::new_at_center(mean_point(&moved), None);
+        let params = AlignParams2::from_center(mean_point(&moved), None);
 
         let with = points_to_surface2(
             &moved,
@@ -797,7 +798,7 @@ mod tests {
             ..Default::default()
         };
 
-        let params = AlignParams2::new_at_center(mean_point(&moved), None);
+        let params = AlignParams2::from_center(mean_point(&moved), None);
         let result = points_to_surface2(&moved, &curve, params, &opts)?;
 
         // With sigma = 0.01 throughout, a normalized residual would be 100x the geometric one, so
@@ -826,7 +827,7 @@ mod tests {
             ..Default::default()
         };
 
-        let err = points_to_surface2(&points, &curve, AlignParams2::new_at_origin(None), &opts)
+        let err = points_to_surface2(&points, &curve, AlignParams2::from_origin(None), &opts)
             .unwrap_err()
             .to_string();
         assert!(err.contains("entries"), "unexpected message: {err}");
@@ -847,7 +848,7 @@ mod tests {
             };
 
             let result =
-                points_to_surface2(&points, &curve, AlignParams2::new_at_origin(None), &opts);
+                points_to_surface2(&points, &curve, AlignParams2::from_origin(None), &opts);
             assert!(
                 result.is_err(),
                 "sigma value {bad} should have been rejected"

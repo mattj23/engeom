@@ -20,7 +20,7 @@ pub struct AlignOptions2<'a> {
     /// If the surface target can tell that a point does not project directly onto the target
     /// (such as when it projects past the end of an open curve or boundary), setting this flag
     /// weights such points at 0.0 to prevent their influence on the alignment.
-    pub ignore_off: bool,
+    pub ignore_off_target: bool,
 
     /// The number of iteratively reweighted refinement rounds to perform after the initial
     /// unweighted solve. Zero disables robust weighting entirely.
@@ -62,7 +62,7 @@ pub struct AlignOptions2<'a> {
 impl Default for AlignOptions2<'_> {
     fn default() -> Self {
         Self {
-            ignore_off: false,
+            ignore_off_target: false,
             refinement_steps: 4,
             sigma_max: None,
             point_sigma: None,

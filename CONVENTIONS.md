@@ -22,6 +22,9 @@ For now, these are the guidelines for user-facing structs that represent some co
 - Shorter names are better, but they should accurately represent the concept. An example of where I _failed_ at this was the `Curve2`/`Curve3` entities, which should probably have names that reference that they are polylines, not curves.
 - If it is possible that a similar concept exists in a different number of dimensions, use the suffix `2` or `3` in the entity name, _even if `engeom` does not implement a version for the other dimension_.  Only entities that are conceptually identical across dimensions _or_ are a generic implementation from which the 2D/3D versions are derived should be named without a dimension number suffix.
 
+> [!NOTE]
+> **Known exception: the `Dof` family.** `Dof3` (in `geom2::align2`) and `Dof6` (in `geom3::align3`) are numbered by their degree-of-freedom count, not by dimension. This collides visually with the suffix rule above: `Dof3` lives in the 2D module but its `3` refers to `tx`/`ty`/`rz`. The count is the more useful thing to convey for these types, so the exception stands deliberately. Note to future self: don't get clever and "fix" `Dof3` to `Dof2`.
+
 ## General Conventions for Function Names
 
 These conventions apply to the naming of all functions, including trait and struct implementations.
@@ -65,6 +68,8 @@ It makes sense to reverse the input vs method naming convention in certain cases
 A method that takes `&self` and returns a new, modified `Self` (as opposed to mutating in place) gets a bare past-participle name: `rotated`, `reversed`, `normalized`, `transformed_by`.
 
 Where a verb doesn't have a natural participle, try to find a different name that reads correctly both grammatically and semantically.
+
+This rule is aimed at *operations* on an entity, such as geometric transformations. It does **not** apply to builder-style field overrides on configuration/parameter types, where the standard Rust `with_<field>` idiom is preferred: `AlignParams2::with_tx(1.0)`, `AlignSurfMatch2::with_sigma(0.05)`. Forcing those into participle form produces names that read poorly and diverge from what Rust users expect.
 
 Tentatively, on heavy objects which will primarily use modify-in-place operations, I'm considering using a `_copy` suffix to make expensive operations distinguishable with a quick glance.
 

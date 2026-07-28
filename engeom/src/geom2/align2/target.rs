@@ -19,7 +19,7 @@ pub struct AlignSurfMatch2 {
 
     /// Whether the closest point actually lies on the target's interior, as opposed to having
     /// clamped to an open target's endpoint. Always `true` for a closed target. See the target's
-    /// own `align_surf_closest_to` implementation for the exact clamping rule.
+    /// own `find_align_match` implementation for the exact clamping rule.
     pub is_on: bool,
 
     /// A scalar weight for the correspondence, in `[0, 1]`, independent of `is_on`. A target may
@@ -67,13 +67,6 @@ impl AlignSurfMatch2 {
             ..self.clone()
         }
     }
-
-    /// The signed distance from `point` to this match's own point, measured along this match's
-    /// normal. Positive when `point` is on the side the normal points toward.
-    pub fn dn(&self, point: &impl PCoords<2>) -> f64 {
-        let v = point.coords() - self.point.coords();
-        v.dot(&self.normal.into_inner())
-    }
 }
 
 impl PCoords<2> for AlignSurfMatch2 {
@@ -114,11 +107,11 @@ impl Default for AlignSurfMatch2 {
 /// is a bare polyline with no attributes to draw from, and a `Boundary2` is analytic geometry for
 /// which measurement uncertainty isn't meaningful.
 pub trait SurfaceTarget2: Sync + Send {
-    fn align_surf_closest_to(&self, p: &Point2) -> AlignSurfMatch2;
+    fn find_align_match(&self, p: &Point2) -> AlignSurfMatch2;
 }
 
 impl SurfaceTarget2 for Curve2 {
-    fn align_surf_closest_to(&self, p: &Point2) -> AlignSurfMatch2 {
+    fn find_align_match(&self, p: &Point2) -> AlignSurfMatch2 {
         let station = self.at_closest_to_point(p);
         let sp = station.surface_point();
 
@@ -139,7 +132,7 @@ fn is_curve_endpoint(station: &CurveStation2, curve: &Curve2) -> bool {
 }
 
 impl SurfaceTarget2 for Boundary2 {
-    fn align_surf_closest_to(&self, p: &Point2) -> AlignSurfMatch2 {
+    fn find_align_match(&self, p: &Point2) -> AlignSurfMatch2 {
         let (_, m) = self.at_closest_to_point(p);
 
         // As with `Curve2`, every `BoundaryElement2::closest_to_point` implementation clamps
@@ -166,7 +159,7 @@ mod tests {
     #[test]
     fn curve_closed_normal_points_outward() {
         let curve = ccw_square_curve(true);
-        let m = curve.align_surf_closest_to(&Point2::new(1.0, -5.0));
+        let m = curve.find_align_match(&Point2::new(1.0, -5.0));
         assert_relative_eq!(
             m.normal.into_inner(),
             Vector2::new(0.0, -1.0),
@@ -180,7 +173,7 @@ mod tests {
         // The closest point to (0.0, -5.0) is the seam vertex (0,0)/(0,2)... rather pick a point
         // whose closest station is exactly the shared start/end vertex of a closed curve.
         let curve = ccw_square_curve(true);
-        let m = curve.align_surf_closest_to(&Point2::new(-5.0, 0.0));
+        let m = curve.find_align_match(&Point2::new(-5.0, 0.0));
         assert!(m.is_on);
     }
 
@@ -188,18 +181,18 @@ mod tests {
     fn curve_open_end_is_not_on() {
         let curve = ccw_square_curve(false);
         // Past the first vertex (0,0) of the open curve
-        let m = curve.align_surf_closest_to(&Point2::new(-5.0, -5.0));
+        let m = curve.find_align_match(&Point2::new(-5.0, -5.0));
         assert!(!m.is_on);
 
         // Past the last vertex (0,2) of the open curve
-        let m = curve.align_surf_closest_to(&Point2::new(-5.0, 7.0));
+        let m = curve.find_align_match(&Point2::new(-5.0, 7.0));
         assert!(!m.is_on);
     }
 
     #[test]
     fn curve_open_interior_is_on() {
         let curve = ccw_square_curve(false);
-        let m = curve.align_surf_closest_to(&Point2::new(1.0, -5.0));
+        let m = curve.find_align_match(&Point2::new(1.0, -5.0));
         assert!(m.is_on);
     }
 
@@ -224,7 +217,7 @@ mod tests {
     #[test]
     fn boundary_closed_normal_points_outward() {
         let boundary = ccw_square_boundary(true);
-        let m = boundary.align_surf_closest_to(&Point2::new(1.0, -5.0));
+        let m = boundary.find_align_match(&Point2::new(1.0, -5.0));
         assert_relative_eq!(
             m.normal.into_inner(),
             Vector2::new(0.0, -1.0),
@@ -236,17 +229,17 @@ mod tests {
     #[test]
     fn boundary_open_end_is_not_on() {
         let boundary = ccw_square_boundary(false);
-        let m = boundary.align_surf_closest_to(&Point2::new(-5.0, -5.0));
+        let m = boundary.find_align_match(&Point2::new(-5.0, -5.0));
         assert!(!m.is_on);
 
-        let m = boundary.align_surf_closest_to(&Point2::new(-5.0, 7.0));
+        let m = boundary.find_align_match(&Point2::new(-5.0, 7.0));
         assert!(!m.is_on);
     }
 
     #[test]
     fn boundary_open_interior_is_on() {
         let boundary = ccw_square_boundary(false);
-        let m = boundary.align_surf_closest_to(&Point2::new(1.0, -5.0));
+        let m = boundary.find_align_match(&Point2::new(1.0, -5.0));
         assert!(m.is_on);
     }
 }

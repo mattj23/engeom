@@ -41,7 +41,7 @@ mod target;
 use parry2d_f64::na::Vector3;
 
 /// The storage for the three parameters of a 2D alignment problem, in the order tx, ty, rz.
-pub type T2Storage = Vector3<f64>;
+pub type AlignStorage2 = Vector3<f64>;
 
 pub use self::options::*;
 pub use self::params::*;
