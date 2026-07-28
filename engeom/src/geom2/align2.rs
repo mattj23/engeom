@@ -15,6 +15,22 @@
 //!   optionally the target's own measurement uncertainty there.
 //! - [`points_to_surface2`] runs the solver, with behavior controlled by [`AlignOptions2`].
 //!
+//! # Reporting
+//!
+//! The solver returns an [`crate::geom2::AlignOutcome2`], which carries the alignment plus a
+//! record of how every solve that contributed to it terminated. An `Err` is reserved for the case
+//! where there is no answer at all: rejected arguments, or an initial solve that broke down.
+//!
+//! Everything short of that is reported rather than raised, because there is still a real
+//! alignment to return. In particular, a solve that exhausts its evaluation budget leaves behind
+//! the best parameters it found, which is a usable result whose convergence simply was not proven
+//! (see [`crate::common::SolveQuality`]). That is a routine outcome here rather than a failure:
+//! the correspondences are re-established every time the parameters change, so the objective is
+//! only piecewise smooth, and near the solution a point close to a corner can flip between two
+//! matches indefinitely without the convergence criteria ever being met. Similarly, a refinement
+//! round that breaks down is rolled back to the previous round's result and the reason recorded on
+//! the outcome, since refinement is an improvement on an alignment that was already usable.
+//!
 //! # Robustness
 //!
 //! The alignment is robust by default. An initial unweighted solve is followed by several rounds

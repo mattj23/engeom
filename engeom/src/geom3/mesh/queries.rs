@@ -267,7 +267,6 @@ impl Mesh3 {
             SplitResult::Positive => SplitResult::Positive,
         })
     }
-
 }
 
 #[cfg(test)]

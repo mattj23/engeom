@@ -24,7 +24,7 @@ pub mod vec_f64;
 mod voxel_downsample;
 
 use crate::na::{Point, SVector, Unit};
-pub use align::DistMode;
+pub use align::{DistMode, RefinementHalt, SolveQuality, TerminationReason};
 pub use angles::*;
 pub use average::Averager;
 pub use consensus::{ConsensusFit, ConsensusModel, Magsac};

@@ -57,7 +57,25 @@ pub struct AlignOptions2<'a> {
     /// Every entry must be finite and strictly positive. For a mesh-derived point set this is
     /// what `Mesh3::point_stdev` provides in 3D.
     pub point_sigma: Option<&'a [f64]>,
+
+    /// The Levenberg-Marquardt evaluation budget, expressed as a multiplier on the parameter
+    /// count: each solve is allowed `patience * (n + 1)` function evaluations before it gives up.
+    ///
+    /// A solve which exhausts its budget is not treated as a failure. It reports
+    /// [`crate::common::SolveQuality::Unconverged`] on the result and the alignment is kept, since
+    /// the parameters left behind are the best the solver found. Raising this is worth trying if
+    /// that happens on a problem you expect to converge cleanly, but note that a points-to-surface
+    /// alignment re-establishes its correspondences on every step, so an unconverged result near a
+    /// corner or an edge is often a correspondence flipping back and forth rather than a budget
+    /// that was too small. In that case more patience will not help.
+    ///
+    /// Must be greater than zero.
+    pub patience: usize,
 }
+
+/// The `levenberg_marquardt` crate's own default patience, restated here so that
+/// [`AlignOptions2::default`] does not silently drift if the crate changes it.
+const DEFAULT_PATIENCE: usize = 100;
 
 impl Default for AlignOptions2<'_> {
     fn default() -> Self {
@@ -66,6 +84,7 @@ impl Default for AlignOptions2<'_> {
             refinement_steps: 4,
             sigma_max: None,
             point_sigma: None,
+            patience: DEFAULT_PATIENCE,
         }
     }
 }

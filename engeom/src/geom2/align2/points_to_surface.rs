@@ -1,13 +1,14 @@
 use crate::Result;
 use crate::common::SPCoords;
+use crate::common::align::{RefinementHalt, SolveQuality, TerminationReason};
 use crate::common::consensus::weights::MagsacWeight;
 use crate::common::dist;
-use crate::geom2::Alignment2;
 use crate::geom2::Point2;
 use crate::geom2::align2::jacobian::{copy_jacobian, point_surf_jacobian2};
 use crate::geom2::align2::{
     AlignOptions2, AlignParams2, AlignSurfMatch2, AlignValues2, SurfaceTarget2,
 };
+use crate::geom2::{AlignOutcome2, Alignment2};
 use crate::na::{Dyn, Matrix, Owned, U1, U3, Vector};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 
@@ -31,6 +32,20 @@ const MAD_TO_SIGMA: f64 = 1.4826;
 /// [`AlignOptions2::refinement_steps`] rounds of iteratively reweighted least squares using
 /// MAGSAC++ weights. See [`AlignOptions2`] for the weighting and per-point uncertainty controls.
 ///
+/// # Failure
+///
+/// An `Err` means there is no usable answer at all: the arguments were rejected, or the initial
+/// solve broke down numerically. Everything softer than that is reported on the returned
+/// [`AlignOutcome2`] rather than raised as an error, because in each case there is still a real
+/// alignment to hand back:
+///
+/// * A solve which exhausts its evaluation budget leaves behind the best parameters it found, so
+///   the alignment is kept and the outcome reports [`crate::common::SolveQuality::Unconverged`].
+/// * A refinement round which breaks down is rolled back, and the alignment from the last round
+///   that succeeded is returned with [`RefinementHalt::SolveFailed`] recorded on the outcome.
+///
+/// Callers who do not care about any of this can finish with `?.into_alignment()`.
+///
 /// # Arguments
 ///
 /// * `points`: the 2D points to be aligned, in their own local coordinate system
@@ -39,13 +54,106 @@ const MAD_TO_SIGMA: f64 = 1.4826;
 /// * `params`: the alignment parameters, see [`AlignParams2`] for details
 /// * `opts`: options controlling weighting and filtering, see [`AlignOptions2`]
 ///
-/// returns: Result<Alignment<Unit<Complex<f64>>, 2>, Box<dyn Error, Global>>
+/// returns: Result<AlignOutcome<Unit<Complex<f64>>, 2>, Box<dyn Error, Global>>
 pub fn points_to_surface2(
     points: &[Point2],
     target: &impl SurfaceTarget2,
     params: AlignParams2,
     opts: &AlignOptions2,
-) -> Result<Alignment2> {
+) -> Result<AlignOutcome2> {
+    validate(points, opts)?;
+
+    let lm = LevenbergMarquardt::<f64>::new().with_patience(opts.patience);
+
+    // The first solve is unweighted. Its residuals are what the sigma_max estimate is drawn from,
+    // since residuals taken before any alignment would describe the initial misplacement rather
+    // than the noise.
+    let (mut problem, termination) =
+        solve(&lm, PointsToSurface2::new(points, target, params, opts));
+
+    // This is the one place a solve failure is fatal. There is no earlier result to fall back to,
+    // so there is nothing to report.
+    if !SolveQuality::from_termination(&termination).is_usable() {
+        return Err(format!("Failed to align points to surface: {termination:?}").into());
+    }
+
+    let mut solves = vec![termination];
+    let mut halt = None;
+
+    if opts.refinement_steps > 0 {
+        match resolve_sigma_max(opts, &problem) {
+            None => halt = Some(RefinementHalt::NoNoiseEstimate),
+            Some(sigma_max) => {
+                let weighting = MagsacWeight::new(sigma_max, RESIDUAL_DOF);
+
+                for _ in 0..opts.refinement_steps {
+                    // The matches have moved since the last refresh, so any target-side
+                    // uncertainty is re-read before it feeds the reweighting.
+                    problem.refresh_inv_sigma();
+
+                    // If reweighting would leave the problem underdetermined, keep the last good
+                    // result rather than solving something rank-deficient.
+                    let weighted = problem.count_if_reweighted(&weighting);
+                    if weighted < N_PARAMS {
+                        halt = Some(RefinementHalt::Underdetermined {
+                            weighted,
+                            params: N_PARAMS,
+                        });
+                        break;
+                    }
+
+                    // Refinement improves on an alignment which is already usable, so a round
+                    // which breaks down costs nothing as long as its parameters can be discarded.
+                    // `AlignParams2` is a pair of isometries and a 3-vector, so keeping a copy of
+                    // the last good state is cheaper than the solve it protects.
+                    let last_good = problem.params.clone();
+
+                    problem.apply_magsac_weights(&weighting);
+                    let (next, termination) = solve(&lm, problem);
+                    problem = next;
+
+                    if !SolveQuality::from_termination(&termination).is_usable() {
+                        problem.restore(last_good);
+                        halt = Some(RefinementHalt::SolveFailed(termination));
+                        break;
+                    }
+
+                    solves.push(termination);
+                }
+            }
+        }
+    }
+
+    let c = problem.params.compute_values();
+    let alignment = Alignment2::new(
+        c.transform,
+        c.align,
+        problem.params.local,
+        problem.params.offset,
+        // The geometric residuals, not the weighted/normalized ones the solver minimizes. These
+        // are what a caller wants to inspect: real deviations in the units of the geometry.
+        problem.residuals.clone(),
+    );
+
+    Ok(AlignOutcome2::new(alignment, solves, halt))
+}
+
+/// The number of free parameters in a 2D alignment (tx, ty, rz).
+const N_PARAMS: usize = 3;
+
+/// Checks the arguments which the solver cannot recover from. These are caller mistakes rather
+/// than difficult data, so they are raised as errors instead of being reported on the outcome.
+fn validate(points: &[Point2], opts: &AlignOptions2) -> Result<()> {
+    if opts.patience == 0 {
+        return Err("patience must be greater than zero".into());
+    }
+
+    if let Some(s) = opts.sigma_max
+        && (!s.is_finite() || s <= 0.0)
+    {
+        return Err(format!("sigma_max is {s}, but must be finite and strictly positive").into());
+    }
+
     if let Some(sigma) = opts.point_sigma {
         if sigma.len() != points.len() {
             return Err(format!(
@@ -64,72 +172,34 @@ pub fn points_to_surface2(
         }
     }
 
-    // The first solve is unweighted. Its residuals are what the sigma_max estimate is drawn from,
-    // since residuals taken before any alignment would describe the initial misplacement rather
-    // than the noise.
-    let mut problem = solve(PointsToSurface2::new(points, target, params, opts))?;
-
-    if opts.refinement_steps > 0
-        && let Some(sigma_max) = resolve_sigma_max(opts, &problem)
-    {
-        let weighting = MagsacWeight::new(sigma_max, RESIDUAL_DOF);
-        for _ in 0..opts.refinement_steps {
-            // The matches have moved since the last refresh, so any target-side uncertainty is
-            // re-read before it feeds the reweighting.
-            problem.refresh_inv_sigma();
-
-            // If reweighting would leave the problem underdetermined, keep the last good result
-            // rather than solving something rank-deficient.
-            if problem.count_if_reweighted(&weighting) < N_PARAMS {
-                break;
-            }
-            problem.apply_magsac_weights(&weighting);
-            problem = solve(problem)?;
-        }
-    }
-
-    let c = problem.params.compute_values();
-    Ok(Alignment2::new(
-        c.transform,
-        c.align,
-        problem.params.local,
-        problem.params.offset,
-        // The geometric residuals, not the weighted/normalized ones the solver minimizes. These
-        // are what a caller wants to inspect: real deviations in the units of the geometry.
-        problem.residuals.clone(),
-    ))
+    Ok(())
 }
 
-/// The number of free parameters in a 2D alignment (tx, ty, rz).
-const N_PARAMS: usize = 3;
-
-fn solve<T: SurfaceTarget2>(problem: PointsToSurface2<'_, T>) -> Result<PointsToSurface2<'_, T>> {
-    let (result, report) = LevenbergMarquardt::new().minimize(problem);
-    if report.termination.was_successful() {
-        Ok(result)
-    } else {
-        Err(format!(
-            "Failed to align points to surface: {:?}",
-            report.termination
-        )
-        .into())
-    }
+/// Runs a single Levenberg-Marquardt solve, returning the problem in whatever state the solver
+/// left it along with how it terminated.
+///
+/// Classifying the termination is deliberately left to the caller: whether a given outcome is
+/// fatal depends on whether there is an earlier result to fall back to.
+fn solve<'a, T: SurfaceTarget2>(
+    lm: &LevenbergMarquardt<f64>,
+    problem: PointsToSurface2<'a, T>,
+) -> (PointsToSurface2<'a, T>, TerminationReason) {
+    let (result, report) = lm.minimize(problem);
+    (result, report.termination)
 }
 
 /// Determines the MAGSAC++ noise bound, either from the explicit option or by estimating it from
-/// the current residuals. Returns `None` when no usable estimate exists, in which case robust
-/// refinement is skipped.
+/// the current residuals. Returns `None` when the residual spread is too degenerate to estimate
+/// from, in which case robust refinement is skipped.
+///
+/// An explicit `sigma_max` is validated up front by `validate`, so it is trusted here.
 fn resolve_sigma_max<T: SurfaceTarget2>(
     opts: &AlignOptions2,
     problem: &PointsToSurface2<'_, T>,
 ) -> Option<f64> {
     match opts.sigma_max {
-        Some(s) if s.is_finite() && s > 0.0 => Some(s),
-        Some(_) => None,
-        None => {
-            let normalized = problem.normalized_residuals();
-            estimate_sigma_max(&normalized)
-        }
+        Some(s) => Some(s),
+        None => estimate_sigma_max(&problem.normalized_residuals()),
     }
 }
 
@@ -275,6 +345,17 @@ impl<'a, T: SurfaceTarget2> PointsToSurface2<'a, T> {
         }
     }
 
+    /// Puts the problem back to a previous set of parameters, discarding whatever the solver left
+    /// behind, and recomputes the matches and residuals to match.
+    ///
+    /// Used to roll back a refinement round which broke down. The stale weights are left alone
+    /// because a rolled-back round is the end of the refinement loop, and the reported residuals
+    /// are the geometric ones which `move_points` has just rebuilt.
+    fn restore(&mut self, params: AlignParams2) {
+        self.params = params;
+        self.move_points();
+    }
+
     /// Recomputes the combined uncertainty scale from the test points' own standard deviations
     /// and whatever uncertainty the target reported at each current match.
     ///
@@ -371,7 +452,7 @@ impl<T: SurfaceTarget2> LeastSquaresProblem<f64, Dyn, U3> for PointsToSurface2<'
 mod tests {
     use super::*;
     use crate::common::points::{mean_point, transform_points};
-    use crate::geom2::align2::Dof3;
+    use crate::geom2::align2::{AlignStorage2, Dof3};
     use crate::geom2::{Boundary2, BoundaryData2, BoundaryEditor};
     use crate::{Curve2, Iso2};
     use approx::assert_relative_eq;
@@ -426,8 +507,8 @@ mod tests {
     }
 
     /// The largest distance between the aligned points and where they should have landed.
-    fn max_deviation(moved: &[Point2], expected: &[Point2], result: &Alignment2) -> f64 {
-        transform_points(moved, result.full())
+    fn max_deviation(moved: &[Point2], expected: &[Point2], result: &AlignOutcome2) -> f64 {
+        transform_points(moved, result.alignment().full())
             .iter()
             .zip(expected.iter())
             .map(|(a, e)| (a - e).norm())
@@ -448,7 +529,7 @@ mod tests {
         let result = points_to_surface2(&moved, &curve, params, &AlignOptions2::default())?;
 
         assert_relative_eq!(
-            result.full().to_matrix(),
+            result.alignment().full().to_matrix(),
             disturb.inverse().to_matrix(),
             epsilon = 1e-10
         );
@@ -467,7 +548,7 @@ mod tests {
         let result = points_to_surface2(&moved, &curve, params, &AlignOptions2::default())?;
 
         assert_relative_eq!(
-            result.full().to_matrix(),
+            result.alignment().full().to_matrix(),
             disturb.inverse().to_matrix(),
             epsilon = 1e-10
         );
@@ -489,7 +570,7 @@ mod tests {
         // disturbance almost exactly. The tolerance is looser than the curve case because the
         // points are a chordal approximation of the arcs, not exact positions on them.
         assert_relative_eq!(
-            result.full().to_matrix(),
+            result.alignment().full().to_matrix(),
             disturb.inverse().to_matrix(),
             epsilon = 1e-6
         );
@@ -511,7 +592,7 @@ mod tests {
 
         // With `local` and `offset` both identity, the full transform is exactly the alignment
         // transform, so a locked tx must leave the x translation at precisely zero.
-        assert_eq!(result.full().translation.vector.x, 0.0);
+        assert_eq!(result.alignment().full().translation.vector.x, 0.0);
 
         // ...and the disturbance genuinely was not recovered.
         let max_dev = max_deviation(&moved, &points, &result);
@@ -529,10 +610,11 @@ mod tests {
 
     #[test]
     fn clean_data_recovery_survives_irls() -> Result<()> {
-        // On noiseless data the automatic sigma_max estimate is degenerate (the MAD collapses to
-        // zero once the fit is exact) and refinement is skipped, so an explicit sigma_max is used
-        // here to force every reweighting round to actually run. Robust weighting must not
-        // degrade a case that plain least squares already solves exactly.
+        // An explicit sigma_max is used instead of the automatic estimate because on noiseless
+        // data that estimate is drawn from residuals at the 1e-16 level, which is not a meaningful
+        // noise bound. A realistic one keeps every point a solid inlier so all four reweighting
+        // rounds run against sensible weights. Robust weighting must not degrade a case that plain
+        // least squares already solves exactly.
         let curve = rect_curve();
         let disturb = small_disturbance();
         let moved = transform_points(&rect_points(), &disturb);
@@ -547,7 +629,7 @@ mod tests {
         let result = points_to_surface2(&moved, &curve, params, &opts)?;
 
         assert_relative_eq!(
-            result.full().to_matrix(),
+            result.alignment().full().to_matrix(),
             disturb.inverse().to_matrix(),
             epsilon = 1e-10
         );
@@ -585,8 +667,8 @@ mod tests {
         // Measure against the eight uncorrupted points only; the two outliers are not supposed to
         // land anywhere in particular.
         let clean: Vec<usize> = (0..expected.len()).filter(|i| *i != 2 && *i != 7).collect();
-        let dev_of = |a: &Alignment2| {
-            let t = transform_points(&moved, a.full());
+        let dev_of = |a: &AlignOutcome2| {
+            let t = transform_points(&moved, a.alignment().full());
             clean
                 .iter()
                 .map(|&i| (t[i] - expected[i]).norm())
@@ -649,8 +731,8 @@ mod tests {
         // The remaining points already sit exactly on the target, so a fit that correctly ignores
         // the noisy point should leave them alone.
         let clean: Vec<usize> = (0..expected.len()).filter(|i| *i != bad).collect();
-        let dev_of = |a: &Alignment2| {
-            let t = transform_points(&moved, a.full());
+        let dev_of = |a: &AlignOutcome2| {
+            let t = transform_points(&moved, a.alignment().full());
             clean
                 .iter()
                 .map(|&i| (t[i] - expected[i]).norm())
@@ -731,12 +813,16 @@ mod tests {
             &opts(&combined),
         )?;
 
-        assert_relative_eq!(a.full().to_matrix(), b.full().to_matrix(), epsilon = 1e-9);
+        assert_relative_eq!(
+            a.alignment().full().to_matrix(),
+            b.alignment().full().to_matrix(),
+            epsilon = 1e-9
+        );
 
         // Guard against the comparison passing because the target sigma did nothing at all: with
         // only the test-side sigma, the result must differ from both of the above.
         let c = points_to_surface2(&moved, &WithSigma(&curve, 0.0), params, &opts(&split))?;
-        let delta = (c.full().to_matrix() - a.full().to_matrix()).norm();
+        let delta = (c.alignment().full().to_matrix() - a.alignment().full().to_matrix()).norm();
         assert!(
             delta > 1e-6,
             "target sigma had no effect on the alignment (delta {delta})"
@@ -767,15 +853,15 @@ mod tests {
         )?;
 
         for a in [&with, &without] {
-            for r in a.residuals() {
+            for r in a.alignment().residuals() {
                 assert!(r.is_finite(), "residual was not finite: {r}");
             }
         }
 
         // A uniform sigma is a global scale on the objective, so the minimizer is unchanged.
         assert_relative_eq!(
-            with.full().to_matrix(),
-            without.full().to_matrix(),
+            with.alignment().full().to_matrix(),
+            without.alignment().full().to_matrix(),
             epsilon = 1e-9
         );
 
@@ -804,6 +890,7 @@ mod tests {
         // With sigma = 0.01 throughout, a normalized residual would be 100x the geometric one, so
         // this assertion fails loudly if the wrong vector is reported.
         let largest = result
+            .alignment()
             .residuals()
             .iter()
             .map(|r| r.abs())
@@ -853,6 +940,214 @@ mod tests {
                 result.is_err(),
                 "sigma value {bad} should have been rejected"
             );
+        }
+    }
+
+    // ============================================================================================
+    // Reporting: what survives as a result, and what is genuinely an error
+    // ============================================================================================
+
+    #[test]
+    fn exhausted_budget_is_reported_not_raised() -> Result<()> {
+        // A patience of 1 allows only `1 * (3 + 1)` function evaluations, far too few to converge.
+        // The solver still leaves behind the best parameters it found, so this must come back as a
+        // usable (if unproven) alignment rather than an error.
+        let curve = rect_curve();
+        let moved = transform_points(&rect_points(), &small_disturbance());
+
+        let opts = AlignOptions2 {
+            patience: 1,
+            ..Default::default()
+        };
+
+        let outcome = points_to_surface2(&moved, &curve, AlignParams2::from_origin(None), &opts)?;
+
+        assert_eq!(outcome.quality(), SolveQuality::Unconverged);
+        assert!(!outcome.converged());
+        assert!(
+            outcome.solves().contains(&TerminationReason::LostPatience),
+            "expected a LostPatience among {:?}",
+            outcome.solves()
+        );
+
+        // The alignment itself must still be real geometry, not garbage.
+        let t = outcome.alignment().full().to_matrix();
+        assert!(t.iter().all(|v| v.is_finite()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn converged_alignment_reports_converged() -> Result<()> {
+        // The same problem with the default budget converges, and every refinement round it ran
+        // must be accounted for on the outcome.
+        let curve = rect_curve();
+        let moved = transform_points(&rect_points(), &small_disturbance());
+
+        let opts = AlignOptions2 {
+            sigma_max: Some(0.5),
+            refinement_steps: 4,
+            ..Default::default()
+        };
+
+        let outcome = points_to_surface2(&moved, &curve, AlignParams2::from_origin(None), &opts)?;
+
+        assert!(outcome.converged());
+        assert_eq!(outcome.quality(), SolveQuality::Converged);
+        assert_eq!(outcome.refinement_rounds(), 4);
+        assert_eq!(outcome.solves().len(), 5);
+        assert_eq!(outcome.halt(), None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn degenerate_noise_estimate_halts_refinement() -> Result<()> {
+        // Points already sitting exactly on the target drive every residual to a hard zero, so
+        // the median absolute deviation collapses and there is no noise scale to estimate from.
+        // Refinement is skipped, which is a normal outcome and must be visible rather than silent.
+        //
+        // Note that merely *converging* to a near-exact fit is not enough to trigger this: a
+        // disturbed-then-recovered fit leaves residuals at the 1e-16 level which still have a
+        // nonzero spread, and refinement runs all of its rounds against that.
+        let curve = rect_curve();
+        let moved = rect_points();
+
+        let outcome = points_to_surface2(
+            &moved,
+            &curve,
+            AlignParams2::from_origin(None),
+            &AlignOptions2::default(),
+        )?;
+
+        assert_eq!(outcome.halt(), Some(&RefinementHalt::NoNoiseEstimate));
+        assert_eq!(outcome.refinement_rounds(), 0);
+        assert!(outcome.converged());
+
+        Ok(())
+    }
+
+    #[test]
+    fn underdetermined_reweighting_halts_refinement() -> Result<()> {
+        // Scaling the points about their centroid leaves a deviation no rigid transform can
+        // remove, so every residual stays large. Paired with a tiny noise bound, MAGSAC drives
+        // every weight to zero and the next solve would be rank-deficient.
+        let curve = rect_curve();
+        let expected = rect_points();
+        let center = mean_point(&expected);
+        let moved: Vec<Point2> = expected
+            .iter()
+            .map(|p| center + (p - center) * 1.5)
+            .collect();
+
+        let opts = AlignOptions2 {
+            sigma_max: Some(1e-6),
+            ..Default::default()
+        };
+
+        let outcome = points_to_surface2(
+            &moved,
+            &curve,
+            AlignParams2::from_center(center, None),
+            &opts,
+        )?;
+
+        assert_eq!(
+            outcome.halt(),
+            Some(&RefinementHalt::Underdetermined {
+                weighted: 0,
+                params: N_PARAMS
+            })
+        );
+        assert_eq!(outcome.refinement_rounds(), 0);
+
+        // The unweighted result is still there to use.
+        assert!(
+            outcome
+                .alignment()
+                .residuals()
+                .iter()
+                .all(|r| r.is_finite())
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn failed_initial_solve_is_an_error() {
+        // With no points there are no residuals, so the solver has nothing to work with and there
+        // is no earlier result to fall back to. This is the one case that must still be an `Err`.
+        let curve = rect_curve();
+        let result = points_to_surface2(
+            &[],
+            &curve,
+            AlignParams2::from_origin(None),
+            &AlignOptions2::default(),
+        );
+
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Failed to align"), "unexpected message: {err}");
+    }
+
+    #[test]
+    fn restore_rolls_back_params_and_residuals() {
+        // The rollback a broken refinement round depends on. Moving the parameters must move the
+        // residuals with them, and putting the parameters back must put the residuals back too.
+        let curve = rect_curve();
+        let moved = transform_points(&rect_points(), &small_disturbance());
+        let opts = AlignOptions2::default();
+
+        let mut problem =
+            PointsToSurface2::new(&moved, &curve, AlignParams2::from_origin(None), &opts);
+
+        let good = problem.params.clone();
+        let good_storage = good.storage();
+        let good_residuals = problem.residuals.clone();
+
+        // Throw the problem somewhere else entirely, standing in for what a broken solve leaves.
+        problem
+            .params
+            .set_storage(AlignStorage2::new(9.0, -4.0, 1.2));
+        problem.move_points();
+        assert_ne!(problem.residuals, good_residuals);
+
+        problem.restore(good);
+        assert_eq!(problem.params.storage(), good_storage);
+        assert_eq!(problem.residuals, good_residuals);
+    }
+
+    #[test]
+    fn patience_is_validated() {
+        let curve = rect_curve();
+        let points = rect_points();
+
+        let opts = AlignOptions2 {
+            patience: 0,
+            ..Default::default()
+        };
+
+        let err = points_to_surface2(&points, &curve, AlignParams2::from_origin(None), &opts)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("patience"), "unexpected message: {err}");
+    }
+
+    #[test]
+    fn sigma_max_is_validated() {
+        // An explicit noise bound that cannot be used is a caller mistake, so it is rejected
+        // rather than quietly turning refinement off.
+        let curve = rect_curve();
+        let points = rect_points();
+
+        for bad in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            let opts = AlignOptions2 {
+                sigma_max: Some(bad),
+                ..Default::default()
+            };
+
+            let result =
+                points_to_surface2(&points, &curve, AlignParams2::from_origin(None), &opts);
+            assert!(result.is_err(), "sigma_max {bad} should have been rejected");
         }
     }
 
