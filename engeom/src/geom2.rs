@@ -29,6 +29,7 @@ pub type Iso2 = parry2d_f64::na::Isometry2<f64>;
 pub type SvdBasis2 = SvdBasis<2>;
 pub type Ray2 = parry2d_f64::query::Ray;
 pub type Align2 = crate::common::align::Align<UnitComplex<f64>, 2>;
+pub type Alignment2 = crate::common::align::Alignment<UnitComplex<f64>, 2>;
 pub type KdTree2 = crate::common::kd_tree::KdTree<2>;
 
 /// A point in 2D space paired with a unit normal direction, representing a position on a
