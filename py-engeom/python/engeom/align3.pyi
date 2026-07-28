@@ -121,7 +121,7 @@ class Alignment3:
     """
 
     @property
-    def full(self) -> Iso3:
+    def full_transform(self) -> Iso3:
         """
         The full transformation from the test entity's space to the target's space.
 
@@ -131,10 +131,15 @@ class Alignment3:
         ...
 
     @property
-    def alignment(self) -> Iso3:
+    def local_transform(self) -> Iso3:
         """
         The alignment transformation $A$ produced by the six optimized parameters
-        (`tx`, `ty`, `tz`, `rx`, `ry`, `rz`) expressed about the local origin.
+        (`tx`, `ty`, `tz`, `rx`, `ry`, `rz`), expressed in the frame of the local origin.
+
+        This is not the transformation to apply to the test geometry; use `full_transform` for
+        that. Reading $O * A * L^{-1}$ right to left, $L^{-1}$ puts a point into the local
+        origin's frame, $A$ moves it while it is there, and $O$ maps it back out, so $A$ is only
+        meaningful applied to local-frame coordinates.
         """
         ...
 

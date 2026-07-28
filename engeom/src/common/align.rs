@@ -203,16 +203,25 @@ impl<R, const D: usize> Alignment<R, D> {
         }
     }
 
-    /// Gets the full transformation, which is a single transformation that brings the test
-    /// entity geometry directly to the target geometry. This is a composite of the local origin's
+    /// Gets the full transformation, which is a single transformation that brings the test entity
+    /// geometry directly to the target geometry. This is a composite of the local origin's
     /// inverse, the alignment, and the work offset ($O * A * L^{-1}$).
-    pub fn full(&self) -> &Isometry<f64, R, D> {
+    ///
+    /// This is the one to apply to the test geometry once the alignment is finished. Contrast it
+    /// with [`Alignment::local_transform`], which is the same motion stripped of its framing.
+    pub fn full_transform(&self) -> &Isometry<f64, R, D> {
         &self.full
     }
 
-    /// Gets the alignment transformation, which is the transformation about the origin that is
-    /// produced by the tx, ty, tz, rx, ry, rz parameters adjusted by the alignment algorithm.
-    pub fn alignment(&self) -> &Isometry<f64, R, D> {
+    /// Gets the alignment transformation $A$, which is the motion produced by the optimized
+    /// parameters (tx, ty, tz, rx, ry, rz) expressed in the frame of the local origin.
+    ///
+    /// This is *not* the transformation to apply to the test geometry. Reading
+    /// $O * A * L^{-1}$ right to left, $L^{-1}$ puts a point into the local origin's frame, $A$
+    /// moves it while it is there, and $O$ maps it back out, so $A$ is only meaningful applied to
+    /// local-frame coordinates. Use [`Alignment::full_transform`] to move geometry, and this to
+    /// inspect what the parameters actually did about the origin you chose.
+    pub fn local_transform(&self) -> &Isometry<f64, R, D> {
         &self.alignment
     }
 

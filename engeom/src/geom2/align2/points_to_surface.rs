@@ -508,7 +508,7 @@ mod tests {
 
     /// The largest distance between the aligned points and where they should have landed.
     fn max_deviation(moved: &[Point2], expected: &[Point2], result: &AlignOutcome2) -> f64 {
-        transform_points(moved, result.alignment().full())
+        transform_points(moved, result.alignment().full_transform())
             .iter()
             .zip(expected.iter())
             .map(|(a, e)| (a - e).norm())
@@ -529,7 +529,7 @@ mod tests {
         let result = points_to_surface2(&moved, &curve, params, &AlignOptions2::default())?;
 
         assert_relative_eq!(
-            result.alignment().full().to_matrix(),
+            result.alignment().full_transform().to_matrix(),
             disturb.inverse().to_matrix(),
             epsilon = 1e-10
         );
@@ -548,7 +548,7 @@ mod tests {
         let result = points_to_surface2(&moved, &curve, params, &AlignOptions2::default())?;
 
         assert_relative_eq!(
-            result.alignment().full().to_matrix(),
+            result.alignment().full_transform().to_matrix(),
             disturb.inverse().to_matrix(),
             epsilon = 1e-10
         );
@@ -570,7 +570,7 @@ mod tests {
         // disturbance almost exactly. The tolerance is looser than the curve case because the
         // points are a chordal approximation of the arcs, not exact positions on them.
         assert_relative_eq!(
-            result.alignment().full().to_matrix(),
+            result.alignment().full_transform().to_matrix(),
             disturb.inverse().to_matrix(),
             epsilon = 1e-6
         );
@@ -592,7 +592,10 @@ mod tests {
 
         // With `local` and `offset` both identity, the full transform is exactly the alignment
         // transform, so a locked tx must leave the x translation at precisely zero.
-        assert_eq!(result.alignment().full().translation.vector.x, 0.0);
+        assert_eq!(
+            result.alignment().full_transform().translation.vector.x,
+            0.0
+        );
 
         // ...and the disturbance genuinely was not recovered.
         let max_dev = max_deviation(&moved, &points, &result);
@@ -629,7 +632,7 @@ mod tests {
         let result = points_to_surface2(&moved, &curve, params, &opts)?;
 
         assert_relative_eq!(
-            result.alignment().full().to_matrix(),
+            result.alignment().full_transform().to_matrix(),
             disturb.inverse().to_matrix(),
             epsilon = 1e-10
         );
@@ -668,7 +671,7 @@ mod tests {
         // land anywhere in particular.
         let clean: Vec<usize> = (0..expected.len()).filter(|i| *i != 2 && *i != 7).collect();
         let dev_of = |a: &AlignOutcome2| {
-            let t = transform_points(&moved, a.alignment().full());
+            let t = transform_points(&moved, a.alignment().full_transform());
             clean
                 .iter()
                 .map(|&i| (t[i] - expected[i]).norm())
@@ -732,7 +735,7 @@ mod tests {
         // the noisy point should leave them alone.
         let clean: Vec<usize> = (0..expected.len()).filter(|i| *i != bad).collect();
         let dev_of = |a: &AlignOutcome2| {
-            let t = transform_points(&moved, a.alignment().full());
+            let t = transform_points(&moved, a.alignment().full_transform());
             clean
                 .iter()
                 .map(|&i| (t[i] - expected[i]).norm())
@@ -814,15 +817,17 @@ mod tests {
         )?;
 
         assert_relative_eq!(
-            a.alignment().full().to_matrix(),
-            b.alignment().full().to_matrix(),
+            a.alignment().full_transform().to_matrix(),
+            b.alignment().full_transform().to_matrix(),
             epsilon = 1e-9
         );
 
         // Guard against the comparison passing because the target sigma did nothing at all: with
         // only the test-side sigma, the result must differ from both of the above.
         let c = points_to_surface2(&moved, &WithSigma(&curve, 0.0), params, &opts(&split))?;
-        let delta = (c.alignment().full().to_matrix() - a.alignment().full().to_matrix()).norm();
+        let delta = (c.alignment().full_transform().to_matrix()
+            - a.alignment().full_transform().to_matrix())
+        .norm();
         assert!(
             delta > 1e-6,
             "target sigma had no effect on the alignment (delta {delta})"
@@ -860,8 +865,8 @@ mod tests {
 
         // A uniform sigma is a global scale on the objective, so the minimizer is unchanged.
         assert_relative_eq!(
-            with.alignment().full().to_matrix(),
-            without.alignment().full().to_matrix(),
+            with.alignment().full_transform().to_matrix(),
+            without.alignment().full_transform().to_matrix(),
             epsilon = 1e-9
         );
 
@@ -971,7 +976,7 @@ mod tests {
         );
 
         // The alignment itself must still be real geometry, not garbage.
-        let t = outcome.alignment().full().to_matrix();
+        let t = outcome.alignment().full_transform().to_matrix();
         assert!(t.iter().all(|v| v.is_finite()));
 
         Ok(())

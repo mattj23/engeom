@@ -77,6 +77,14 @@ pub struct AlignOptions2<'a> {
 /// [`AlignOptions2::default`] does not silently drift if the crate changes it.
 const DEFAULT_PATIENCE: usize = 100;
 
+impl<'a> AlignOptions2<'a> {
+    pub fn no_refine() -> Self {
+        let mut x = Self::default();
+        x.refinement_steps = 0;
+        x
+    }
+}
+
 impl Default for AlignOptions2<'_> {
     fn default() -> Self {
         Self {

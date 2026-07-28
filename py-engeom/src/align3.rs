@@ -210,15 +210,20 @@ impl Alignment3 {
     /// system. This is the composite $O * A * L^{-1}$ and is what you typically apply to the test
     /// geometry after alignment completes.
     #[getter]
-    pub fn full(&self) -> Iso3 {
-        Iso3::from_inner(*self.inner.full())
+    pub fn full_transform(&self) -> Iso3 {
+        Iso3::from_inner(*self.inner.full_transform())
     }
 
-    /// The alignment transformation $A$, which is the transformation produced by the six
-    /// optimized parameters (`tx`, `ty`, `tz`, `rx`, `ry`, `rz`) about the local origin.
+    /// The alignment transformation $A$, which is the motion produced by the six optimized
+    /// parameters (`tx`, `ty`, `tz`, `rx`, `ry`, `rz`) expressed in the frame of the local origin.
+    ///
+    /// This is not the transformation to apply to the test geometry; use `full_transform` for
+    /// that. Reading $O * A * L^{-1}$ right to left, $L^{-1}$ puts a point into the local origin's
+    /// frame, $A$ moves it while it is there, and $O$ maps it back out, so $A$ is only meaningful
+    /// applied to local-frame coordinates.
     #[getter]
-    pub fn alignment(&self) -> Iso3 {
-        Iso3::from_inner(*self.inner.alignment())
+    pub fn local_transform(&self) -> Iso3 {
+        Iso3::from_inner(*self.inner.local_transform())
     }
 
     /// The local origin transformation $L$ that was used during alignment.

@@ -190,7 +190,7 @@ mod tests {
         let to_align = transform_points(&points, &disturb);
         let result = points_to_surface3(&to_align, &mesh, params, false, false)?;
 
-        assert_relative_eq!(disturb.inverse(), result.full(), epsilon = 1e-8);
+        assert_relative_eq!(disturb.inverse(), result.full_transform(), epsilon = 1e-8);
         Ok(())
     }
 
@@ -213,7 +213,7 @@ mod tests {
         let params = AlignParams3::new_at_center(mean_point(&to_align), None);
         let result = points_to_surface3(&to_align, &mesh, params, false, false)?;
 
-        let aligned = transform_points(&to_align, result.full());
+        let aligned = transform_points(&to_align, result.full_transform());
 
         let max_deviation = aligned
             .iter()
