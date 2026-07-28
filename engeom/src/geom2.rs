@@ -94,7 +94,7 @@ impl Manifold1Pos2 {
     /// this position. The surface point normal will be pointing to the right (clockwise) of the
     /// manifold direction.
     pub fn surface_point(&self) -> SurfacePoint2 {
-        SurfacePoint2::new(self.point, self.direction)
+        SurfacePoint2::new(self.point, self.normal)
     }
 
     /// Returns a line representing the tangent direction of the manifold at this position. The

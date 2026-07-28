@@ -2,8 +2,8 @@
 
 use crate::common::PCoords;
 use crate::geom2::align2::{Dof3, T2Storage};
-use crate::{Iso2, Point2, Vector2};
 use crate::na::{Matrix2, Translation2, UnitComplex};
+use crate::{Iso2, Point2, Vector2};
 
 // The skew-symmetric generator of a 2D rotation: d/dtheta R(theta) = R(theta) * SK2 = SK2 *
 // R(theta), since 2D rotation matrices always commute with each other and with their own

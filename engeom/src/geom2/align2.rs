@@ -5,6 +5,7 @@ mod jacobian;
 mod params;
 mod points_to_curve;
 mod rc_params2;
+mod target;
 
 use crate::geom2::Iso2;
 use parry2d_f64::na::Vector3;
@@ -13,6 +14,7 @@ use parry2d_f64::na::Vector3;
 pub type T2Storage = Vector3<f64>;
 
 pub use self::params::*;
+pub use self::target::*;
 pub use points_to_curve::points_to_curve;
 pub use rc_params2::RcParams2;
 
