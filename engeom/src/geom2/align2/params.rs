@@ -310,10 +310,7 @@ impl AlignParams2 {
     }
 }
 
-/// Composes the `tx`, `ty`, `rz` parameters into the alignment isometry `A`. This is deliberately
-/// separate from the crate's older, unrelated `iso2_from_param`/`param_from_iso2` free functions,
-/// which belong to the pre-`AlignParams2` generation of 2D alignment tooling and are slated for
-/// removal.
+/// Composes the `tx`, `ty`, `rz` parameters into the alignment isometry `A`.
 fn align_from_storage(p: &T2Storage) -> Iso2 {
     Iso2::from_parts(Translation2::new(p.x, p.y), UnitComplex::new(p.z))
 }

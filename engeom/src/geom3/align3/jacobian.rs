@@ -206,15 +206,21 @@ pub fn point_surf_jacobian(
     // The rotations will be the dot product of the deviation direction and the partial differential
     // rotation directions.
     //
-    // TODO: these should be evaluated at the test point `p`, not the closest point `c`. The
-    // residual derivative is `dir . (dp/dr)`, and it is `p` that the parameters move; `c` is a
-    // fixed position on the stationary target. Because the rotational velocity field is linear in
-    // position, evaluating at `c` introduces an error of order `|p - c|`, i.e. the residual
-    // itself. It vanishes at convergence, so the alignment still lands in the right place, but
-    // the jacobian is inexact while real deviation remains. The 2D counterpart
-    // (`geom2::align2::jacobian::point_surf_jacobian2`) has already been corrected to use `p`;
-    // this should be brought in line during the 3D overhaul, along with a stress test comparing
-    // the analytic jacobian against a finite-difference estimate away from convergence.
+    // These are evaluated at the closest point `c` rather than the test point `p`, even though
+    // the residual's derivative nominally calls for `p` (it is `p` that the parameters move, `c`
+    // being a fixed position on the stationary target). The two are exactly equal, so the choice
+    // is immaterial:
+    //
+    // `pre_rot`'s rotation part is the inverse of `offset`'s rotation and each `m_dr*` is
+    // `offset`'s rotation times an Euler partial, so the translation cancels in the difference
+    // and `dr(p) - dr(c) = post_rot * E * post_rot^-1 * (p - c)`. `euler_partials` builds every
+    // `E` as `Q * SK * Q'` for some rotation `Q`, which is skew-symmetric, and conjugating by
+    // `post_rot` keeps it so. Since `v' * S * v == 0` for any skew-symmetric `S`, and `dir` is
+    // parallel to `p - c`, the difference contributes exactly zero.
+    //
+    // The 2D counterpart in `geom2::align2::jacobian` uses `p` instead, purely because it reads
+    // more directly as the derivative; its `stress_against_numeric` test confirms both forms
+    // agree against a finite-difference estimate far from convergence.
     result[3] = val_or_zero(align.drx(c).dot(&dir), align.dof.rx);
     result[4] = val_or_zero(align.dry(c).dot(&dir), align.dof.ry);
     result[5] = val_or_zero(align.drz(c).dot(&dir), align.dof.rz);
