@@ -1,9 +1,70 @@
 //! This module contains common implementations for computing the values of the Jacobian matrix
 //! for different 2D alignment Levenberg-Marquardt problems.
 
-use crate::geom2::align2::{RcParams2, T2Storage};
+use crate::common::{PCoords, SPCoords};
+use crate::geom2::align2::{AlignValues2, RcParams2, T2Storage};
 use crate::geom2::{Point2, SurfacePoint2, Vector2};
 use parry2d_f64::na::{Dim, Matrix, RawStorageMut, Storage, U3};
+
+/// This is a helper function to calculate the partial derivatives of the parameters for a residual
+/// distance between a test point and a surface point on a target entity.
+///
+/// This is the 2D counterpart of `geom3::align3::jacobian::point_surf_jacobian`, and is
+/// deliberately structured identically to it.
+///
+/// # Arguments
+///
+/// * `p`: the test point, transformed into the target entity's coordinate system
+/// * `c`: the closest point on the target surface
+/// * `align`: the current alignment values, allowing for fast access of the direction vectors
+///   associated with the different partial differentials.
+///
+/// returns: Matrix<f64, Const<3>, Const<1>, ArrayStorage<f64, 3, 1>>
+pub fn point_surf_jacobian2(
+    p: &impl PCoords<2>,
+    c: &impl SPCoords<2>,
+    align: &AlignValues2,
+) -> T2Storage {
+    let mut result = T2Storage::zeros();
+
+    // We'll grab the sign of the scalar projection, allowing us to know if we're outside or inside
+    // the target surface.
+    let sign = c.scalar_projection(p).signum();
+
+    // First, we want to calculate the deviation direction. If the magnitude of the deviation is
+    // close to zero, we'll use the surface normal instead, as the two will converge as the point
+    // approaches the surface.
+    let dev = p.coords() - c.coords();
+    let dir = if dev.norm_squared() < 1e-16 {
+        c.normal().into_inner()
+    } else {
+        dev.normalize() * sign
+    };
+
+    // The translations will be the dot product of the deviation direction and the partial
+    // differential translation directions. For instance, if the translation is going across the
+    // surface, there's no real penalty because we're staying equidistant.
+    result[0] = val_or_zero(align.dtx.dot(&dir), align.dof.tx);
+    result[1] = val_or_zero(align.dty.dot(&dir), align.dof.ty);
+
+    // The rotation will be the dot product of the deviation direction and the partial differential
+    // rotation direction.
+    //
+    // Note that this is evaluated at the *test* point `p`, not at the closest point `c`. The
+    // residual is `dir . (dp/drz)`, and it is `p` that the parameters actually move; `c` is a
+    // fixed position on the stationary target. Because the rotational velocity field is linear in
+    // position, evaluating at `c` instead would introduce an error of order `|p - c|`, which is
+    // the residual itself. That error vanishes at convergence, which is why the two agree once
+    // the alignment has settled, but it makes the jacobian inexact while there is still real
+    // deviation to remove.
+    result[2] = val_or_zero(align.drz(p).dot(&dir), align.dof.rz);
+
+    result
+}
+
+fn val_or_zero(value: f64, condition: bool) -> f64 {
+    if condition { value } else { 0.0 }
+}
 
 /// This is a helper function for computing the partial derivatives of the parameters (a single row
 /// of the Jacobian matrix) for a distance function approximated by a 2d test point and its closest

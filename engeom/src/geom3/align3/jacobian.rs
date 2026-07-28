@@ -205,6 +205,16 @@ pub fn point_surf_jacobian(
 
     // The rotations will be the dot product of the deviation direction and the partial differential
     // rotation directions.
+    //
+    // TODO: these should be evaluated at the test point `p`, not the closest point `c`. The
+    // residual derivative is `dir . (dp/dr)`, and it is `p` that the parameters move; `c` is a
+    // fixed position on the stationary target. Because the rotational velocity field is linear in
+    // position, evaluating at `c` introduces an error of order `|p - c|`, i.e. the residual
+    // itself. It vanishes at convergence, so the alignment still lands in the right place, but
+    // the jacobian is inexact while real deviation remains. The 2D counterpart
+    // (`geom2::align2::jacobian::point_surf_jacobian2`) has already been corrected to use `p`;
+    // this should be brought in line during the 3D overhaul, along with a stress test comparing
+    // the analytic jacobian against a finite-difference estimate away from convergence.
     result[3] = val_or_zero(align.drx(c).dot(&dir), align.dof.rx);
     result[4] = val_or_zero(align.dry(c).dot(&dir), align.dof.ry);
     result[5] = val_or_zero(align.drz(c).dot(&dir), align.dof.rz);

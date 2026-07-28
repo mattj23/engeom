@@ -2,8 +2,10 @@
 //! Levenberg-Marquardt algorithm.
 
 mod jacobian;
+mod options;
 mod params;
 mod points_to_curve;
+mod points_to_surface;
 mod rc_params2;
 mod target;
 
@@ -13,7 +15,9 @@ use parry2d_f64::na::Vector3;
 /// The storage for the three parameters of a 2D alignment problem, in the order tx, ty, rz.
 pub type T2Storage = Vector3<f64>;
 
+pub use self::options::*;
 pub use self::params::*;
+pub use self::points_to_surface::points_to_surface2;
 pub use self::target::*;
 pub use points_to_curve::points_to_curve;
 pub use rc_params2::RcParams2;
