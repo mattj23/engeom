@@ -1,12 +1,8 @@
 pub mod jacobian;
 mod mesh;
-mod mesh_overlap;
-mod mesh_to_mesh;
 mod multi_mesh;
 pub mod multi_param;
 mod params;
-mod point_stability;
-mod points_to_cloud;
 mod points_to_surface;
 mod rotations;
 
@@ -18,40 +14,76 @@ use parry3d_f64::na::{Translation3, UnitQuaternion, Vector6};
 
 /// The storage for the six parameters of a 3D alignment problem, in the order tx, ty, tz, rx, ry,
 /// rz.
-pub type T3Storage = Vector6<f64>;
+pub type AlignStorage3 = Vector6<f64>;
 
 pub use self::mesh::*;
-pub use self::mesh_to_mesh::mesh_to_mesh_iterative;
 pub use self::multi_mesh::{
     MMOpts, MulMeshAlignPoint, multi_mesh_adjustment, multi_mesh_adjustment_with_points,
 };
 pub use self::params::*;
-pub use self::point_stability::{StabilityResult, point_stability, point_stability_reduce};
-pub use self::points_to_cloud::points_to_cloud;
 pub use self::points_to_surface::*;
 pub use self::rotations::RotationMatrices;
 
+/// The result of projecting a single point onto a [`SurfaceTarget3`], used as the correspondence
+/// for that point during an alignment.
 #[derive(Debug, Clone)]
 pub struct AlignSurfMatch3 {
+    /// The closest point on the target to the query point
     pub point: Point3,
+
+    /// The outward-facing normal of the target at `point`
     pub normal: UnitVec3,
+
+    /// Whether the closest point actually lies on the target's interior, as opposed to having
+    /// clamped to an edge or an end of a bounded target. See the target's own `find_align_match`
+    /// implementation for the exact clamping rule.
     pub is_on: bool,
-    pub weight: f32,
+
+    /// A scalar weight for the correspondence, in `[0, 1]`, independent of `is_on`. A target may
+    /// use this to de-weight regions of itself that it considers less reliable.
+    ///
+    /// This is a statement of intent ("care about this correspondence less"), distinct from
+    /// [`AlignSurfMatch3::sigma`], which is a statement about measurement noise.
+    pub weight: f64,
+
+    /// The measurement uncertainty of the target at `point`, as a standard deviation in the units
+    /// of the geometry. Zero means the target is treated as exact, which is the default and is
+    /// correct for nominal/theoretical geometry.
+    ///
+    /// A target built from measured data should report the uncertainty interpolated to `point`,
+    /// since the match rarely lands exactly on a vertex. `Mesh3::point_stdev` is the data source
+    /// for a measured mesh. The alignment combines this with the test point's own uncertainty in
+    /// quadrature, `sqrt(test^2 + target^2)`, which is the variance of the difference of two
+    /// independent measurements.
+    ///
+    /// This is treated as **isotropic**. Real scanner uncertainty is usually one-dimensional
+    /// (depth along the sensor axis), and the statistically correct contribution to a residual
+    /// measured along direction `d` would be `sigma * |u . d|` for an uncertainty axis `u`.
+    /// Nothing currently records `u`, so the isotropic treatment stands in for it. Note that the
+    /// approximation only ever under-trusts a point: on a surface at grazing incidence, depth
+    /// noise displaces the point along the surface rather than through it, so its true
+    /// normal-direction uncertainty is smaller than the scalar suggests.
+    pub sigma: f64,
 }
 
 impl AlignSurfMatch3 {
-    pub fn new(point: Point3, normal: UnitVec3, is_on: bool, weight: f32) -> Self {
+    pub fn new(point: Point3, normal: UnitVec3, is_on: bool, weight: f64) -> Self {
         Self {
             point,
             normal,
             is_on,
             weight,
+            sigma: 0.0,
         }
     }
 
-    pub fn dn(&self, point: &impl PCoords<3>) -> f64 {
-        let v = point.coords() - self.point.coords();
-        v.dot(&self.normal.into_inner())
+    /// Returns a copy of this match carrying the given target-side measurement uncertainty. See
+    /// [`AlignSurfMatch3::sigma`] for the semantics and the isotropy caveat.
+    pub fn with_sigma(&self, sigma: f64) -> Self {
+        Self {
+            sigma,
+            ..self.clone()
+        }
     }
 }
 
@@ -74,12 +106,24 @@ impl Default for AlignSurfMatch3 {
             normal: Vector3::x_axis(),
             is_on: false,
             weight: 0.0,
+            sigma: 0.0,
         }
     }
 }
 
+/// A stationary 3D entity that a set of points can be aligned to, by projecting each point onto
+/// its closest position on the target.
+///
+/// This takes `&Point3` rather than `&impl PCoords<3>` so that the trait remains object-safe,
+/// allowing `Box<dyn SurfaceTarget3>` / `Vec<Box<dyn SurfaceTarget3>>` for cases (such as
+/// multi-entity alignment) where the set of targets isn't known at compile time. Every call site
+/// already holds a concrete, already-transformed point, so nothing is lost in generality.
+///
+/// A target derived from measured rather than nominal geometry should populate
+/// [`AlignSurfMatch3::sigma`] via [`AlignSurfMatch3::with_sigma`], interpolating its own
+/// uncertainty to the match position.
 pub trait SurfaceTarget3: Sync + Send {
-    fn align_surf_closest_to(&self, p: &impl PCoords<3>) -> AlignSurfMatch3;
+    fn find_align_match(&self, p: &Point3) -> AlignSurfMatch3;
 }
 
 /// A struct that handles constraints on degrees of freedom in R^3 space. Each dimension is
@@ -132,17 +176,11 @@ pub enum SampleMode {
     Poisson(f64),
 }
 
-pub fn iso3_from_param(p: &T3Storage) -> Iso3 {
+pub fn iso3_from_param(p: &AlignStorage3) -> Iso3 {
     Iso3::from_parts(
         Translation3::new(p.x, p.y, p.z),
         UnitQuaternion::from_euler_angles(p.w, p.a, p.b),
     )
-}
-
-pub fn param_from_iso3(t: &Iso3) -> T3Storage {
-    let v = t.translation.vector;
-    let e = t.rotation.euler_angles();
-    T3Storage::new(v.x, v.y, v.z, e.0, e.1, e.2)
 }
 
 /// This function returns 0.0 if the distance `d` is greater than the `threshold`, otherwise it
@@ -184,7 +222,7 @@ pub struct RcParams3 {
     shift1: Iso3,
 
     /// The storage for the 6 parameters
-    x: T3Storage,
+    x: AlignStorage3,
 
     /// The currently active transformation computed from the parameters `x`
     transform: Iso3,
@@ -204,7 +242,7 @@ impl RcParams3 {
     pub fn from_initial(initial: &Iso3, rc: &Point3) -> Self {
         let rc_d = initial * rc;
         let rotations = RotationMatrices::from_rotation(&initial.rotation);
-        let x = T3Storage::new(0.0, 0.0, 0.0, rotations.r.x, rotations.r.y, rotations.r.z);
+        let x = AlignStorage3::new(0.0, 0.0, 0.0, rotations.r.x, rotations.r.y, rotations.r.z);
 
         let mut item = Self {
             rc: *rc,
@@ -229,7 +267,7 @@ impl RcParams3 {
         &self.current_rc
     }
 
-    pub fn set(&mut self, x: &T3Storage) {
+    pub fn set(&mut self, x: &AlignStorage3) {
         self.x = *x;
         self.compute();
     }
@@ -239,7 +277,7 @@ impl RcParams3 {
         self.compute();
     }
 
-    pub fn x(&self) -> &T3Storage {
+    pub fn x(&self) -> &AlignStorage3 {
         &self.x
     }
 
@@ -279,7 +317,7 @@ mod tests {
 
     #[test]
     fn iso3_tx() {
-        let storage = T3Storage::new(1.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        let storage = AlignStorage3::new(1.0, 0.0, 0.0, 0.0, 0.0, 0.0);
         let t = iso3_from_param(&storage);
         let p = Point3::new(1.0, 0.0, 0.0);
         let p2 = t * p;
@@ -288,7 +326,7 @@ mod tests {
 
     #[test]
     fn iso3_ty() {
-        let storage = T3Storage::new(0.0, 1.0, 0.0, 0.0, 0.0, 0.0);
+        let storage = AlignStorage3::new(0.0, 1.0, 0.0, 0.0, 0.0, 0.0);
         let t = iso3_from_param(&storage);
         let p = Point3::new(0.0, 1.0, 0.0);
         let p2 = t * p;
@@ -297,7 +335,7 @@ mod tests {
 
     #[test]
     fn iso3_tz() {
-        let storage = T3Storage::new(0.0, 0.0, 1.0, 0.0, 0.0, 0.0);
+        let storage = AlignStorage3::new(0.0, 0.0, 1.0, 0.0, 0.0, 0.0);
         let t = iso3_from_param(&storage);
         let p = Point3::new(0.0, 0.0, 1.0);
         let p2 = t * p;
@@ -306,7 +344,7 @@ mod tests {
 
     #[test]
     fn iso3_rx() {
-        let storage = T3Storage::new(0.0, 0.0, 0.0, FRAC_PI_2, 0.0, 0.0);
+        let storage = AlignStorage3::new(0.0, 0.0, 0.0, FRAC_PI_2, 0.0, 0.0);
         let t = iso3_from_param(&storage);
         let p = Point3::new(0.0, 1.0, 0.0);
         let test = t * p;
@@ -316,7 +354,7 @@ mod tests {
 
     #[test]
     fn iso3_ry() {
-        let storage = T3Storage::new(0.0, 0.0, 0.0, 0.0, FRAC_PI_2, 0.0);
+        let storage = AlignStorage3::new(0.0, 0.0, 0.0, 0.0, FRAC_PI_2, 0.0);
         let t = iso3_from_param(&storage);
         let p = Point3::new(0.0, 0.0, 1.0);
         let test = t * p;
@@ -326,7 +364,7 @@ mod tests {
 
     #[test]
     fn iso3_rz() {
-        let storage = T3Storage::new(0.0, 0.0, 0.0, 0.0, 0.0, FRAC_PI_2);
+        let storage = AlignStorage3::new(0.0, 0.0, 0.0, 0.0, 0.0, FRAC_PI_2);
         let t = iso3_from_param(&storage);
         let p = Point3::new(1.0, 0.0, 0.0);
         let test = t * p;
@@ -348,22 +386,6 @@ mod tests {
             let ex = if *x > threshold { 0.0 } else { 1.0 };
             let w = distance_weight(*x, threshold);
             assert_relative_eq!(w, ex, epsilon = 1e-10);
-        }
-    }
-
-    #[test]
-    fn iso3_param_round_trips_stress_test() {
-        // TODO: this occasionally fails, example below:
-        //    left  = [[3.0108963663174476e-6, -1.2327278198220881e-8, 0.9999999999954668, 0.0], [-0.32356926448936574, 0.9462044869249132, 9.858976486587512e-7, 0.0], [-0.9462044869206364, -0.32356926449086754, 2.844934923163303e-6, 0.0], [-5.899380734978497, 9.85736577970243, 6.7499828422385235, 1.0]]
-        //    right = [[3.0110050298175206e-6, -1.2327723120098e-8, 0.9999999999954671, 0.0], [-0.32356926448905665, 0.9462044869250195, 9.859332298078893e-7, 0.0], [-0.9462044869207423, -0.32356926449055856, 2.845037597110772e-6, 0.0], [-5.899380734978497, 9.85736577970243, 6.7499828422385235, 1.0]]
-
-        let mut rg = RandomGeometry3::new();
-        for _ in 0..10000 {
-            let t = rg.iso3(10.0);
-            let p = param_from_iso3(&t);
-            let t2 = iso3_from_param(&p);
-
-            assert_relative_eq!(t.to_matrix(), t2.to_matrix(), epsilon = 1e-10);
         }
     }
 

@@ -30,18 +30,18 @@
 //! - [`NearMeshWeight`] - applies a weight to points that are close to (and similarly oriented as)
 //!   a second reference mesh, based on distance and normal angle thresholds.
 
+use crate::common::IndexMask;
 use crate::common::kd_tree::KdTreeSearch;
 use crate::common::points::{dist, mean_point};
 use crate::common::vec_f64::mean_and_stdev;
-use crate::common::{IndexMask, PCoords};
 use crate::geom3::align3::{AlignSurfMatch3, SurfaceTarget3};
 use crate::geom3::mesh::MeshSurfPoint;
-use crate::{Iso3, KdTree3, Mesh3, SelectOp, Selection, SvdBasis3, To2D};
+use crate::{Iso3, KdTree3, Mesh3, Point3, SelectOp, Selection, SvdBasis3, To2D};
 use parry2d_f64::transformation::convex_hull;
 use std::f64::consts::PI;
 
 impl SurfaceTarget3 for Mesh3 {
-    fn align_surf_closest_to(&self, p: &impl PCoords<3>) -> AlignSurfMatch3 {
+    fn find_align_match(&self, p: &Point3) -> AlignSurfMatch3 {
         let m = self.surf_closest_to(p);
         AlignSurfMatch3::new(m.point(), m.normal(), true, 1.0)
     }

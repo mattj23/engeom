@@ -1,7 +1,7 @@
 use crate::conversions::array_to_points3;
 use crate::geom3::{Iso3, Point3};
 use crate::mesh::Mesh3;
-use engeom::geom3::align3::{AlignOrigin, Dof6 as InnerDof6};
+use engeom::geom3::align3::{AlignOrigin3, Dof6 as InnerDof6};
 use numpy::ndarray::Array1;
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
@@ -130,15 +130,15 @@ impl AlignParams3 {
             (Some(p), None) => {
                 let p = *p.get_inner();
                 (
-                    AlignOrigin::Center(p),
+                    AlignOrigin3::Center(p),
                     engeom::Iso3::translation(p.x, p.y, p.z),
                 )
             }
             (None, Some(o)) => {
                 let t = *o.get_inner();
-                (AlignOrigin::Local(t), t)
+                (AlignOrigin3::Local(t), t)
             }
-            (None, None) => (AlignOrigin::Origin, engeom::Iso3::identity()),
+            (None, None) => (AlignOrigin3::Origin, engeom::Iso3::identity()),
         };
 
         let offset = offset.map(|o| *o.get_inner()).unwrap_or(frame);

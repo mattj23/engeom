@@ -1,7 +1,7 @@
 //! This module has an abstraction to help manage optimization parameters for multiple relative
 //! entities
 
-use crate::geom3::align3::{RcParams3, T3Storage};
+use crate::geom3::align3::{AlignStorage3, RcParams3};
 use crate::geom3::{Iso3, Point3};
 use parry3d_f64::na::{DVector, Dyn, Matrix, Owned};
 
@@ -111,7 +111,7 @@ impl ParamHandler {
         matrix: &mut Jacobian,
         row: usize,
         cloud_index: usize,
-        values: &T3Storage,
+        values: &AlignStorage3,
     ) {
         if cloud_index != self.static_i {
             let start_col = self.p_index(cloud_index) * 6;

@@ -1,6 +1,5 @@
 mod airfoil2;
 mod align3;
-pub mod alignments;
 mod boundary2;
 mod bounding;
 mod common;

@@ -1,3 +1,4 @@
+use crate::common::SPCoords;
 use crate::common::dist;
 use crate::geom3::Alignment3;
 use crate::geom3::align3::jacobian::{copy_jacobian, point_surf_jacobian};
@@ -34,7 +35,7 @@ pub fn points_to_surface3(
 
     if report.termination.was_successful() {
         let residuals = result.residuals().unwrap().as_slice().to_vec();
-        let c = result.params.current_values();
+        let c = result.params.compute_values();
         let align = Alignment3::new(
             c.transform,
             c.align,
@@ -91,7 +92,7 @@ impl<'a, T: SurfaceTarget3> PointsToSurface<'a, T> {
     /// Internally, this moves the points and computes the closest surface point on the mesh to
     /// each.
     fn move_points(&mut self) {
-        let current = self.params.current_values();
+        let current = self.params.compute_values();
         let indices = (0..self.points.len()).collect::<Vec<_>>();
 
         if self.parallel {
@@ -99,7 +100,7 @@ impl<'a, T: SurfaceTarget3> PointsToSurface<'a, T> {
                 .par_iter()
                 .map(|&i| {
                     let m = current.transform * self.points[i];
-                    let c = self.target.align_surf_closest_to(&m);
+                    let c = self.target.find_align_match(&m);
                     (i, m, c)
                 })
                 .collect::<Vec<_>>();
@@ -110,7 +111,7 @@ impl<'a, T: SurfaceTarget3> PointsToSurface<'a, T> {
         } else {
             for (i, &j) in indices.iter().enumerate() {
                 let m = current.transform * self.points[j];
-                let c = self.target.align_surf_closest_to(&m);
+                let c = self.target.find_align_match(&m);
                 self.moved[i] = m;
                 self.closest[i] = c;
             }
@@ -119,7 +120,7 @@ impl<'a, T: SurfaceTarget3> PointsToSurface<'a, T> {
         for (i, (p, c)) in self.moved.iter().zip(self.closest.iter()).enumerate() {
             // The residual is the distance between the test point and the closest point on the
             // mesh surface, adjusted for the direction of the scalar projection.
-            self.residuals[i] = dist(p, &c.point) * c.dn(p).signum();
+            self.residuals[i] = dist(p, &c.point) * c.scalar_projection(p).signum();
 
             self.weights[i] = c.weight as f64;
 
@@ -141,7 +142,7 @@ impl<'a, T: SurfaceTarget3> LeastSquaresProblem<f64, Dyn, U6> for PointsToSurfac
     }
 
     fn params(&self) -> Vector<f64, U6, Self::ParameterStorage> {
-        self.params.get_storage()
+        self.params.storage()
     }
 
     fn residuals(&self) -> Option<Vector<f64, Dyn, Self::ResidualStorage>> {
@@ -154,7 +155,7 @@ impl<'a, T: SurfaceTarget3> LeastSquaresProblem<f64, Dyn, U6> for PointsToSurfac
     }
 
     fn jacobian(&self) -> Option<Matrix<f64, Dyn, U6, Self::JacobianStorage>> {
-        let current = self.params.current_values();
+        let current = self.params.compute_values();
         let mut jac = Matrix::<f64, Dyn, U6, Self::JacobianStorage>::zeros(self.points.len());
         for (i, (p, c)) in self.moved.iter().zip(self.closest.iter()).enumerate() {
             let values = point_surf_jacobian(p, c, &current) * self.weights[i];
@@ -186,7 +187,7 @@ mod tests {
             UnitQuaternion::from_euler_angles(PI / 8.0, PI / 12.0, PI / 16.0),
         );
 
-        let params = AlignParams3::new_at_origin(None);
+        let params = AlignParams3::from_origin(None);
         let to_align = transform_points(&points, &disturb);
         let result = points_to_surface3(&to_align, &mesh, params, false, false)?;
 
@@ -210,7 +211,7 @@ mod tests {
 
         let to_align = transform_points(&expected_points, &disturb);
 
-        let params = AlignParams3::new_at_center(mean_point(&to_align), None);
+        let params = AlignParams3::from_center(mean_point(&to_align), None);
         let result = points_to_surface3(&to_align, &mesh, params, false, false)?;
 
         let aligned = transform_points(&to_align, result.full_transform());

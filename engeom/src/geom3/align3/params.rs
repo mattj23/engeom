@@ -1,7 +1,7 @@
 //! This module contains the parameterization of the alignment problem
 
 use crate::common::PCoords;
-use crate::geom3::align3::{Dof6, T3Storage, iso3_from_param};
+use crate::geom3::align3::{AlignStorage3, Dof6, iso3_from_param};
 use crate::na::{Matrix3, UnitQuaternion};
 use crate::{Iso3, Point3, Vector3};
 
@@ -80,7 +80,8 @@ impl AlignValues3 {
 }
 
 /// This is a mechanism of defining a local origin for the test entity.
-pub enum AlignOrigin {
+#[derive(Clone, Copy, Debug)]
+pub enum AlignOrigin3 {
     /// The local origin is the origin of the coordinate system that the test entity(s) geometry
     Origin,
 
@@ -147,7 +148,7 @@ pub struct AlignParams3 {
     pub offset: Iso3,
 
     /// The storage for the six parameters
-    storage: T3Storage,
+    storage: AlignStorage3,
 }
 
 impl AlignParams3 {
@@ -165,11 +166,11 @@ impl AlignParams3 {
     ///   of freedom will be active.
     ///
     /// returns: AlignParams3
-    pub fn new(local: AlignOrigin, offset: Option<Iso3>, dof: Option<Dof6>) -> Self {
+    pub fn new(local: AlignOrigin3, offset: Option<Iso3>, dof: Option<Dof6>) -> Self {
         let local = match local {
-            AlignOrigin::Origin => Iso3::identity(),
-            AlignOrigin::Center(p) => Iso3::translation(p.x, p.y, p.z),
-            AlignOrigin::Local(t) => t,
+            AlignOrigin3::Origin => Iso3::identity(),
+            AlignOrigin3::Center(p) => Iso3::translation(p.x, p.y, p.z),
+            AlignOrigin3::Local(t) => t,
         };
 
         let working = offset.unwrap_or_else(Iso3::identity);
@@ -179,7 +180,7 @@ impl AlignParams3 {
             local,
             dof,
             offset: working,
-            storage: T3Storage::default(),
+            storage: AlignStorage3::default(),
         }
     }
 
@@ -202,9 +203,9 @@ impl AlignParams3 {
     /// * `local`: the local origin $L$, defined in the same space as the test entity's geometry.
     /// * `dof`: Optional constraint on the degrees of freedom. If `None` is provided, all degrees
     ///   of freedom will be active.
-    pub fn new_at_local(local: Iso3, dof: Option<Dof6>) -> Self {
+    pub fn from_local(local: Iso3, dof: Option<Dof6>) -> Self {
         let working = local;
-        Self::new(AlignOrigin::Local(local), Some(working), dof)
+        Self::new(AlignOrigin3::Local(local), Some(working), dof)
     }
 
     /// Creates an `AlignParams3` which applies its rotations to the test entity(s) around a given
@@ -222,10 +223,10 @@ impl AlignParams3 {
     /// * `center`: The point around which the test entity(s) will be rotated.
     /// * `dof`: Optional constraint on the degrees of freedom. If `None` is provided, all degrees
     ///   of freedom will be active.
-    pub fn new_at_center(center: Point3, dof: Option<Dof6>) -> Self {
+    pub fn from_center(center: Point3, dof: Option<Dof6>) -> Self {
         let local = Iso3::translation(center.x, center.y, center.z);
         let working = local;
-        Self::new(AlignOrigin::Local(local), Some(working), dof)
+        Self::new(AlignOrigin3::Local(local), Some(working), dof)
     }
 
     /// Creates an `AlignParams3` with the local and working transformations set to the identity.
@@ -239,8 +240,8 @@ impl AlignParams3 {
     ///   of freedom will be active.
     ///
     /// returns: AlignParams3
-    pub fn new_at_origin(dof: Option<Dof6>) -> Self {
-        Self::new(AlignOrigin::Origin, None, dof)
+    pub fn from_origin(dof: Option<Dof6>) -> Self {
+        Self::new(AlignOrigin3::Origin, None, dof)
     }
 
     pub fn tx(&self) -> f64 {
@@ -264,13 +265,13 @@ impl AlignParams3 {
 
     /// Get the stored isometry without the working transformation. If the problem has converged,
     /// this is the final result.
-    pub fn final_result(&self) -> Iso3 {
-        self.current_values().transform
+    pub fn compute_transform(&self) -> Iso3 {
+        self.compute_values().transform
     }
 
     /// Calculate the current alignment values, including the full transform, the translation
     /// directions, and the rotation partial derivative matrices
-    pub fn current_values(&self) -> AlignValues3 {
+    pub fn compute_values(&self) -> AlignValues3 {
         let align = iso3_from_param(&self.storage);
         let transform = self.offset * align * self.local.inverse();
 
@@ -297,7 +298,7 @@ impl AlignParams3 {
         }
     }
 
-    pub fn get_storage(&self) -> T3Storage {
+    pub fn storage(&self) -> AlignStorage3 {
         self.storage
     }
 
@@ -322,7 +323,7 @@ impl AlignParams3 {
         }
     }
 
-    pub fn set_storage(&mut self, storage: T3Storage) {
+    pub fn set_storage(&mut self, storage: AlignStorage3) {
         self.storage = storage;
         self.enforce_constraint();
     }
@@ -362,7 +363,7 @@ impl AlignParams3 {
         params
     }
 
-    pub fn with_storage(&self, storage: T3Storage) -> AlignParams3 {
+    pub fn with_storage(&self, storage: AlignStorage3) -> AlignParams3 {
         let mut params = self.clone();
         params.set_storage(storage);
         params
@@ -415,7 +416,7 @@ mod tests {
     use super::*;
     use crate::common::random_geometry::RandomGeometry3;
     use crate::geom3::IsoExtensions3;
-    use crate::geom3::align3::params::{AlignOrigin, AlignParams3};
+    use crate::geom3::align3::params::{AlignOrigin3, AlignParams3};
     use crate::na::{Rotation, Rotation3, UnitQuaternion};
     use crate::{Iso3, Point3, Vector3};
     use approx::assert_relative_eq;
@@ -432,13 +433,13 @@ mod tests {
     fn rotation_around_origin() {
         // Checks that the transformation occurs around the origin when the rotation center is set
         // to the origin.
-        let params = AlignParams3::new_at_origin(None).with_rz(PI / 2.0);
+        let params = AlignParams3::from_origin(None).with_rz(PI / 2.0);
         let test_point = Point3::new(1.0, 2.0, 3.0);
         let expected = Point3::new(-2.0, 1.0, 3.0);
 
         assert_relative_eq!(
             expected,
-            params.current_values().transform * test_point,
+            params.compute_values().transform * test_point,
             epsilon = 1e-8
         );
     }
@@ -447,14 +448,14 @@ mod tests {
     fn rotation_around_center() {
         // Checks that the transformation occurs around the rotation center when it is nonzero
         let rc = Point3::new(1.0, 0.0, 0.0);
-        let params = AlignParams3::new_at_center(rc, None).with_rz(PI / 2.0);
+        let params = AlignParams3::from_center(rc, None).with_rz(PI / 2.0);
 
         let test_point = Point3::new(2.0, 2.0, 3.0);
         let expected = Point3::new(-1.0, 1.0, 3.0);
 
         assert_relative_eq!(
             expected,
-            params.current_values().transform * test_point,
+            params.compute_values().transform * test_point,
             epsilon = 1e-8
         );
     }
@@ -465,7 +466,7 @@ mod tests {
         // `set_storage` do, otherwise a locked degree of freedom can be given a nonzero value
         // through the builder path.
         let dof = Dof6::new(false, true, true, true, false, true);
-        let params = AlignParams3::new_at_origin(Some(dof));
+        let params = AlignParams3::from_origin(Some(dof));
 
         assert_eq!(params.with_tx(1.0).tx(), 0.0);
         assert_eq!(params.with_ry(1.0).ry(), 0.0);
@@ -475,7 +476,7 @@ mod tests {
         assert_eq!(params.with_rx(1.0).rx(), 1.0);
 
         // ...and the same holds when the whole storage vector is set at once
-        let all = params.with_storage(T3Storage::new(1.0, 2.0, 3.0, 4.0, 5.0, 6.0));
+        let all = params.with_storage(AlignStorage3::new(1.0, 2.0, 3.0, 4.0, 5.0, 6.0));
         assert_eq!(all.tx(), 0.0);
         assert_eq!(all.ry(), 0.0);
         assert_eq!(all.ty(), 2.0);
@@ -490,14 +491,14 @@ mod tests {
             None,
         )
         .unwrap();
-        let params = AlignParams3::new_at_local(local, None).with_tx(1.0);
+        let params = AlignParams3::from_local(local, None).with_tx(1.0);
 
         let test_point = Point3::new(1.0, 2.0, 3.0);
         let expected = Point3::new(1.0, 1.0, 3.0);
 
         assert_relative_eq!(
             expected,
-            params.current_values().transform * test_point,
+            params.compute_values().transform * test_point,
             epsilon = 1e-8
         );
     }
@@ -509,8 +510,8 @@ mod tests {
 
     #[test]
     fn partials_of_translations_at_zero() {
-        let params = AlignParams3::new_at_origin(None);
-        let current = params.current_values();
+        let params = AlignParams3::from_origin(None);
+        let current = params.compute_values();
 
         assert_relative_eq!(current.dtx, Vector3::x_axis(), epsilon = 1e-12);
         assert_relative_eq!(current.dty, Vector3::y_axis(), epsilon = 1e-12);
@@ -519,7 +520,7 @@ mod tests {
 
     #[test]
     fn partials_of_translations_with_rotations() {
-        let params = AlignParams3::new_at_origin(None)
+        let params = AlignParams3::from_origin(None)
             .with_rx(0.1)
             .with_ry(0.2)
             .with_rz(0.3);
@@ -528,7 +529,7 @@ mod tests {
         let exp_x = finite_diff(&params, &test_point, 0);
         let exp_y = finite_diff(&params, &test_point, 1);
         let exp_z = finite_diff(&params, &test_point, 2);
-        let c = params.current_values();
+        let c = params.compute_values();
 
         // Because translations are applied after rotations, the direction vectors don't change
         // when rotation parameters are applied
@@ -550,7 +551,7 @@ mod tests {
         for _ in 0..1000 {
             let local = rg.iso3(10.0);
             let working = rg.iso3(10.0);
-            let params = AlignParams3::new(AlignOrigin::Local(local), Some(working), None)
+            let params = AlignParams3::new(AlignOrigin3::Local(local), Some(working), None)
                 .with_storage(rg.vector(PI));
 
             let test_point = rg.point(10.0);
@@ -558,7 +559,7 @@ mod tests {
             let exp_y = finite_diff(&params, &test_point, 1);
             let exp_z = finite_diff(&params, &test_point, 2);
 
-            let c = params.current_values();
+            let c = params.compute_values();
             assert_relative_eq!(exp_x, c.dtx, epsilon = 1e-6);
             assert_relative_eq!(exp_y, c.dty, epsilon = 1e-6);
             assert_relative_eq!(exp_z, c.dtz, epsilon = 1e-6);
@@ -573,8 +574,8 @@ mod tests {
 
     #[test]
     fn partials_of_rotation_at_zero() {
-        let params = AlignParams3::new_at_origin(None);
-        let current = params.current_values();
+        let params = AlignParams3::from_origin(None);
+        let current = params.compute_values();
         let p_local = Point3::new(1.0, 2.0, 3.0);
         let p = current.transform * p_local;
 
@@ -667,9 +668,9 @@ mod tests {
         for _ in 0..1000 {
             let local = rg.iso3(10.0);
             let working = rg.iso3(10.0);
-            let params = AlignParams3::new(AlignOrigin::Local(local), Some(working), None)
+            let params = AlignParams3::new(AlignOrigin3::Local(local), Some(working), None)
                 .with_storage(rg.vector(PI));
-            let c = params.current_values();
+            let c = params.compute_values();
 
             // The test point in the test entity's space
             let test_point = rg.point(10.0);
@@ -752,7 +753,7 @@ mod tests {
     fn finite_diff(params: &AlignParams3, point: &Point3, index: usize) -> Vector3 {
         let mut w0 = params.clone();
         let mut w1 = params.clone();
-        let stored = params.get_storage();
+        let stored = params.storage();
 
         let eps = if index < 3 {
             TRANS_EPSILON
@@ -763,8 +764,8 @@ mod tests {
         w0.set_index(index, stored[index] - eps);
         w1.set_index(index, stored[index] + eps);
 
-        let p0 = w0.current_values().transform * point;
-        let p1 = w1.current_values().transform * point;
+        let p0 = w0.compute_values().transform * point;
+        let p1 = w1.compute_values().transform * point;
 
         (p1 - p0) / (2.0 * eps)
     }

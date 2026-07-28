@@ -1,7 +1,7 @@
 use std::f64::consts::TAU;
 
+use crate::common::transform_points;
 use crate::common::triangulation::ParallelBuilder;
-use crate::common::{PCoords, transform_points};
 use crate::geom2::Boundary2;
 use crate::geom3::IsoExtensions3;
 use crate::geom3::align3::{AlignSurfMatch3, SurfaceTarget3};
@@ -75,9 +75,7 @@ impl ExtrudedBoundary3 {
 }
 
 impl SurfaceTarget3 for ExtrudedBoundary3 {
-    fn align_surf_closest_to(&self, p: &impl PCoords<3>) -> AlignSurfMatch3 {
-        let p = Point3::from(p.coords());
-
+    fn find_align_match(&self, p: &Point3) -> AlignSurfMatch3 {
         // First we want to bring the test point into the local coordinates of the start isometry
         // so we can work with the 2D boundary.
         let lp3 = self.start_inv * p;
@@ -182,9 +180,7 @@ impl RevolvedBoundary3 {
 }
 
 impl SurfaceTarget3 for RevolvedBoundary3 {
-    fn align_surf_closest_to(&self, p: &impl PCoords<3>) -> AlignSurfMatch3 {
-        let p = Point3::from(p.coords());
-
+    fn find_align_match(&self, p: &Point3) -> AlignSurfMatch3 {
         // Transform to local coordinates where the rotation axis is Y and the profile starts
         // in the X-Y half-plane (positive X)
         let lp3 = self.start_inv * p;
@@ -238,17 +234,17 @@ mod tests {
     fn extruded_points_off() {
         let target = open_extruded();
 
-        assert!(!target.align_surf_closest_to(&p(2.0, 0.0, 0.5)).is_on);
-        assert!(!target.align_surf_closest_to(&p(0.0, 2.0, 0.5)).is_on);
-        assert!(!target.align_surf_closest_to(&p(0.0, 0.0, -1.0)).is_on);
-        assert!(!target.align_surf_closest_to(&p(0.0, 0.0, 2.0)).is_on);
+        assert!(!target.find_align_match(&p(2.0, 0.0, 0.5)).is_on);
+        assert!(!target.find_align_match(&p(0.0, 2.0, 0.5)).is_on);
+        assert!(!target.find_align_match(&p(0.0, 0.0, -1.0)).is_on);
+        assert!(!target.find_align_match(&p(0.0, 0.0, 2.0)).is_on);
     }
 
     #[test]
     fn extruded_points_on() {
         let target = open_extruded();
-        assert!(target.align_surf_closest_to(&p(0.5, 0.1, 0.5)).is_on);
-        assert!(target.align_surf_closest_to(&p(0.1, 0.5, 0.5)).is_on);
+        assert!(target.find_align_match(&p(0.5, 0.1, 0.5)).is_on);
+        assert!(target.find_align_match(&p(0.1, 0.5, 0.5)).is_on);
     }
 
     #[test]
@@ -282,7 +278,7 @@ mod tests {
                 let t = iso * Point3::from(*t);
                 let e = iso * Point3::from(*e);
 
-                let c = target.align_surf_closest_to(&t);
+                let c = target.find_align_match(&t);
                 assert_relative_eq!(c.point, e, epsilon = 1.0e-6);
 
                 if let Some(n) = n {
@@ -306,28 +302,28 @@ mod tests {
     fn revolved_points_on() {
         let full = open_revolved(TAU);
         // Front, side, and back of the cylinder mid-height
-        assert!(full.align_surf_closest_to(&p(2.0, 0.5, 0.0)).is_on);
-        assert!(full.align_surf_closest_to(&p(0.0, 0.5, 2.0)).is_on);
-        assert!(full.align_surf_closest_to(&p(-2.0, 0.5, 0.0)).is_on);
+        assert!(full.find_align_match(&p(2.0, 0.5, 0.0)).is_on);
+        assert!(full.find_align_match(&p(0.0, 0.5, 2.0)).is_on);
+        assert!(full.find_align_match(&p(-2.0, 0.5, 0.0)).is_on);
 
         let half = open_revolved(std::f64::consts::PI);
         // phi=0 and phi=PI/2 are within [0, PI]
-        assert!(half.align_surf_closest_to(&p(2.0, 0.5, 0.0)).is_on);
-        assert!(half.align_surf_closest_to(&p(0.0, 0.5, 2.0)).is_on);
+        assert!(half.find_align_match(&p(2.0, 0.5, 0.0)).is_on);
+        assert!(half.find_align_match(&p(0.0, 0.5, 2.0)).is_on);
     }
 
     #[test]
     fn revolved_points_off() {
         let full = open_revolved(TAU);
         // Off at the open profile ends (above and below the height range)
-        assert!(!full.align_surf_closest_to(&p(2.0, -1.0, 0.0)).is_on);
-        assert!(!full.align_surf_closest_to(&p(2.0, 2.0, 0.0)).is_on);
+        assert!(!full.find_align_match(&p(2.0, -1.0, 0.0)).is_on);
+        assert!(!full.find_align_match(&p(2.0, 2.0, 0.0)).is_on);
 
         let half = open_revolved(std::f64::consts::PI);
         // phi = atan2(-2, 0) = -PI/2, rem_euclid = 3*PI/2 > PI: off angular sweep
-        assert!(!half.align_surf_closest_to(&p(0.0, 0.5, -2.0)).is_on);
+        assert!(!half.find_align_match(&p(0.0, 0.5, -2.0)).is_on);
         // phi slightly greater than PI is off the half sweep
-        assert!(!half.align_surf_closest_to(&p(-1.0, 0.5, -0.1)).is_on);
+        assert!(!half.find_align_match(&p(-1.0, 0.5, -0.1)).is_on);
     }
 
     #[test]
@@ -373,7 +369,7 @@ mod tests {
                 let t = iso * Point3::from(*t);
                 let e = iso * Point3::from(*e);
 
-                let c = target.align_surf_closest_to(&t);
+                let c = target.find_align_match(&t);
                 assert_relative_eq!(c.point, e, epsilon = 1.0e-6);
 
                 if let Some(n) = n {
