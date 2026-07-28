@@ -33,10 +33,10 @@ pub struct AlignOptions2<'a> {
     /// the closest the alignment gets to being free of a hand-tuned threshold, and is a good
     /// default when the noise scale isn't known ahead of time.
     ///
-    /// The units depend on `point_sigma`. When per-point uncertainty is supplied the residuals
-    /// are dimensionless multiples of each point's own standard deviation, so this is a count of
-    /// sigmas and a value around `3.0` is a sensible explicit choice. Otherwise it is in the same
-    /// units as the geometry.
+    /// The units depend on whether any uncertainty is in play. When `point_sigma` is supplied, or
+    /// the target reports its own uncertainty, the residuals are dimensionless multiples of each
+    /// point's combined standard deviation, so this is a count of sigmas and a value around `3.0`
+    /// is a sensible explicit choice. Otherwise it is in the same units as the geometry.
     ///
     /// Note that points beyond roughly `3 * sigma_max` receive zero weight, so this is an upper
     /// bound on plausible noise rather than the noise scale itself.
@@ -49,6 +49,10 @@ pub struct AlignOptions2<'a> {
     /// weighted, so that a point the sensor reports as three times noisier contributes one ninth
     /// as much to the squared cost. This is the statistically correct weighting for known
     /// heteroscedastic noise, and it also makes `sigma_max` dimensionless.
+    ///
+    /// If the target also reports uncertainty at the match position (see
+    /// `AlignSurfMatch2::sigma`), the two combine in quadrature as `sqrt(test^2 + target^2)`,
+    /// which is the standard deviation of the difference of two independent measurements.
     ///
     /// Every entry must be finite and strictly positive. For a mesh-derived point set this is
     /// what `Mesh3::point_stdev` provides in 3D.

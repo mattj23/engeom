@@ -73,6 +73,10 @@ pub fn points_to_surface2(
     {
         let weighting = MagsacWeight::new(sigma_max, RESIDUAL_DOF);
         for _ in 0..opts.refinement_steps {
+            // The matches have moved since the last refresh, so any target-side uncertainty is
+            // re-read before it feeds the reweighting.
+            problem.refresh_inv_sigma();
+
             // If reweighting would leave the problem underdetermined, keep the last good result
             // rather than solving something rank-deficient.
             if problem.count_if_reweighted(&weighting) < N_PARAMS {
@@ -183,8 +187,16 @@ struct PointsToSurface2<'a, T: SurfaceTarget2> {
     /// The signed geometric distance from each moved point to its match, in model units.
     residuals: Vec<f64>,
 
-    /// The reciprocal of each point's measurement standard deviation, or 1.0 throughout when no
-    /// per-point uncertainty was supplied. Stored inverted so the hot path multiplies.
+    /// Each test point's own measurement standard deviation, or 0.0 when none was supplied.
+    test_sigma: Vec<f64>,
+
+    /// The reciprocal of each point's combined test-and-target standard deviation, or 1.0 where
+    /// there is no uncertainty information at all. Stored inverted so the hot path multiplies.
+    ///
+    /// Like `magsac_weights`, this is held fixed across a single Levenberg-Marquardt solve and
+    /// refreshed between them. The target's contribution depends on which match a point found, so
+    /// recomputing it inside the solve would make the true residual derivative pick up a
+    /// `d(sigma)/d(params)` term that the analytic jacobian does not model.
     inv_sigma: Vec<f64>,
 
     /// The weight contributed by the target itself, recomputed whenever the points move.
@@ -206,9 +218,9 @@ impl<'a, T: SurfaceTarget2> PointsToSurface2<'a, T> {
         opts: &AlignOptions2,
     ) -> Self {
         let current = params.current_values();
-        let inv_sigma = match opts.point_sigma {
-            Some(s) => s.iter().map(|v| 1.0 / v).collect(),
-            None => vec![1.0; points.len()],
+        let test_sigma = match opts.point_sigma {
+            Some(s) => s.to_vec(),
+            None => vec![0.0; points.len()],
         };
 
         let mut x = Self {
@@ -219,13 +231,18 @@ impl<'a, T: SurfaceTarget2> PointsToSurface2<'a, T> {
             moved: vec![Point2::origin(); points.len()],
             closest: vec![AlignSurfMatch2::default(); points.len()],
             residuals: vec![0.0; points.len()],
-            inv_sigma,
+            test_sigma,
+            inv_sigma: vec![1.0; points.len()],
             target_weights: vec![1.0; points.len()],
             magsac_weights: vec![1.0; points.len()],
             ignore_off: opts.ignore_off,
         };
 
         x.move_points();
+
+        // The target's uncertainty isn't known until the points have found their matches, so the
+        // combined scale is resolved once here rather than in the field initializer above.
+        x.refresh_inv_sigma();
         x
     }
 
@@ -257,8 +274,25 @@ impl<'a, T: SurfaceTarget2> PointsToSurface2<'a, T> {
         }
     }
 
+    /// Recomputes the combined uncertainty scale from the test points' own standard deviations
+    /// and whatever uncertainty the target reported at each current match.
+    ///
+    /// The two are independent measurements of position, so the variance of their difference is
+    /// the sum of their variances and the standard deviations combine in quadrature. Where
+    /// neither side reports any uncertainty the scale falls back to 1.0, leaving the residual as
+    /// a plain geometric distance.
+    fn refresh_inv_sigma(&mut self) {
+        for i in 0..self.points.len() {
+            let test = self.test_sigma[i];
+            let target = self.closest[i].sigma;
+            let combined = (test * test + target * target).sqrt();
+
+            self.inv_sigma[i] = if combined > 0.0 { 1.0 / combined } else { 1.0 };
+        }
+    }
+
     /// The residuals expressed as dimensionless multiples of each point's own standard deviation.
-    /// Identical to the geometric residuals when no per-point uncertainty was supplied.
+    /// Identical to the geometric residuals when no uncertainty was supplied on either side.
     fn normalized_residuals(&self) -> Vec<f64> {
         self.residuals
             .iter()
@@ -629,6 +663,119 @@ mod tests {
             weighted_dev < uniform_dev * 0.1,
             "declaring the point noisy should have cut its influence sharply: \
              uniform deviation {uniform_dev}, weighted deviation {weighted_dev}"
+        );
+
+        Ok(())
+    }
+
+    /// Wraps a target so that every match it produces reports a fixed measurement uncertainty.
+    /// Neither `Curve2` nor `Boundary2` carries per-vertex uncertainty today, so this stands in
+    /// for a target built from measured data.
+    struct WithSigma<'a>(&'a Curve2, f64);
+
+    impl SurfaceTarget2 for WithSigma<'_> {
+        fn align_surf_closest_to(&self, p: &Point2) -> AlignSurfMatch2 {
+            self.0.align_surf_closest_to(p).with_sigma(self.1)
+        }
+    }
+
+    #[test]
+    fn target_sigma_combines_in_quadrature() -> Result<()> {
+        // Two runs that should be mathematically indistinguishable: splitting the uncertainty
+        // across the test points and the target, versus putting the quadrature sum entirely on
+        // the test points. If the combination rule is wrong in any way other than a global scale,
+        // these diverge.
+        //
+        // The per-point uncertainty deliberately varies, because a uniform sigma is only a global
+        // scale on the objective and would leave the minimizer unchanged, making the comparison
+        // vacuous.
+        let curve = rect_curve();
+        let expected = rect_points();
+        let mut moved = expected.clone();
+        moved[4] += crate::Vector2::new(0.4, 0.0);
+        moved[1] += crate::Vector2::new(0.0, -0.2);
+
+        let target_sigma = 0.04;
+        let split: Vec<f64> = (0..moved.len())
+            .map(|i| if i == 4 { 0.5 } else { 0.01 })
+            .collect();
+        let combined: Vec<f64> = split
+            .iter()
+            .map(|s| (s * s + target_sigma * target_sigma).sqrt())
+            .collect();
+
+        let params = AlignParams2::new_at_center(mean_point(&moved), None);
+
+        fn opts(sigma: &[f64]) -> AlignOptions2<'_> {
+            AlignOptions2 {
+                refinement_steps: 0,
+                point_sigma: Some(sigma),
+                ..Default::default()
+            }
+        }
+
+        // Uncertainty split between the test points and the target...
+        let a = points_to_surface2(
+            &moved,
+            &WithSigma(&curve, target_sigma),
+            params.clone(),
+            &opts(&split),
+        )?;
+
+        // ...versus the same total placed entirely on the test points.
+        let b = points_to_surface2(
+            &moved,
+            &WithSigma(&curve, 0.0),
+            params.clone(),
+            &opts(&combined),
+        )?;
+
+        assert_relative_eq!(a.full().to_matrix(), b.full().to_matrix(), epsilon = 1e-9);
+
+        // Guard against the comparison passing because the target sigma did nothing at all: with
+        // only the test-side sigma, the result must differ from both of the above.
+        let c = points_to_surface2(&moved, &WithSigma(&curve, 0.0), params, &opts(&split))?;
+        let delta = (c.full().to_matrix() - a.full().to_matrix()).norm();
+        assert!(
+            delta > 1e-6,
+            "target sigma had no effect on the alignment (delta {delta})"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn target_sigma_alone_is_enough() -> Result<()> {
+        // Target uncertainty must work without any test-side `point_sigma` at all, and must not
+        // divide by zero when a match reports no uncertainty.
+        let curve = rect_curve();
+        let moved = rect_points();
+        let params = AlignParams2::new_at_center(mean_point(&moved), None);
+
+        let with = points_to_surface2(
+            &moved,
+            &WithSigma(&curve, 0.05),
+            params.clone(),
+            &AlignOptions2::default(),
+        )?;
+        let without = points_to_surface2(
+            &moved,
+            &WithSigma(&curve, 0.0),
+            params,
+            &AlignOptions2::default(),
+        )?;
+
+        for a in [&with, &without] {
+            for r in a.residuals() {
+                assert!(r.is_finite(), "residual was not finite: {r}");
+            }
+        }
+
+        // A uniform sigma is a global scale on the objective, so the minimizer is unchanged.
+        assert_relative_eq!(
+            with.full().to_matrix(),
+            without.full().to_matrix(),
+            epsilon = 1e-9
         );
 
         Ok(())

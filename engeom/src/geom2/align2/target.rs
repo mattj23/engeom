@@ -24,7 +24,28 @@ pub struct AlignSurfMatch2 {
 
     /// A scalar weight for the correspondence, in `[0, 1]`, independent of `is_on`. A target may
     /// use this to de-weight regions of itself that it considers less reliable.
+    ///
+    /// This is a statement of intent ("care about this correspondence less"), distinct from
+    /// [`AlignSurfMatch2::sigma`], which is a statement about measurement noise.
     pub weight: f64,
+
+    /// The measurement uncertainty of the target at `point`, as a standard deviation in the units
+    /// of the geometry. Zero means the target is treated as exact, which is the default and is
+    /// correct for nominal/theoretical geometry.
+    ///
+    /// A target built from measured data should report the uncertainty interpolated to `point`,
+    /// since the match rarely lands exactly on a vertex. The alignment combines this with the
+    /// test point's own uncertainty in quadrature, `sqrt(test^2 + target^2)`, which is the
+    /// variance of the difference of two independent measurements.
+    ///
+    /// This is treated as **isotropic**. Real scanner uncertainty is usually one-dimensional
+    /// (depth along the sensor axis), and the statistically correct contribution to a residual
+    /// measured along direction `d` would be `sigma * |u . d|` for an uncertainty axis `u`.
+    /// Nothing currently records `u`, so the isotropic treatment stands in for it. Note that the
+    /// approximation only ever under-trusts a point: on a surface at grazing incidence, depth
+    /// noise displaces the point along the surface rather than through it, so its true
+    /// normal-direction uncertainty is smaller than the scalar suggests.
+    pub sigma: f64,
 }
 
 impl AlignSurfMatch2 {
@@ -34,6 +55,16 @@ impl AlignSurfMatch2 {
             normal,
             is_on,
             weight,
+            sigma: 0.0,
+        }
+    }
+
+    /// Returns a copy of this match carrying the given target-side measurement uncertainty. See
+    /// [`AlignSurfMatch2::sigma`] for the semantics and the isotropy caveat.
+    pub fn with_sigma(&self, sigma: f64) -> Self {
+        Self {
+            sigma,
+            ..self.clone()
         }
     }
 
@@ -64,6 +95,7 @@ impl Default for AlignSurfMatch2 {
             normal: Vector2::x_axis(),
             is_on: false,
             weight: 0.0,
+            sigma: 0.0,
         }
     }
 }
@@ -75,6 +107,12 @@ impl Default for AlignSurfMatch2 {
 /// allowing `Box<dyn SurfaceTarget2>` / `Vec<Box<dyn SurfaceTarget2>>` for cases (such as a future
 /// multi-entity alignment) where the set of targets isn't known at compile time. Every call site
 /// already holds a concrete, already-transformed point, so nothing is lost in generality.
+///
+/// A target derived from measured rather than nominal geometry should populate
+/// [`AlignSurfMatch2::sigma`] via [`AlignSurfMatch2::with_sigma`], interpolating its own
+/// uncertainty to the match position. Neither `Curve2` nor `Boundary2` does so today: a `Curve2`
+/// is a bare polyline with no attributes to draw from, and a `Boundary2` is analytic geometry for
+/// which measurement uncertainty isn't meaningful.
 pub trait SurfaceTarget2: Sync + Send {
     fn align_surf_closest_to(&self, p: &Point2) -> AlignSurfMatch2;
 }
