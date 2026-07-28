@@ -435,7 +435,7 @@ impl Mesh3 {
     }
 
     #[pyo3(signature=(plane, tol = None))]
-    fn section(&self, plane: Plane3, tol: Option<f64>) -> PyResult<Vec<Curve3>> {
+    fn section_with_plane(&self, plane: Plane3, tol: Option<f64>) -> PyResult<Vec<Curve3>> {
         let results = self
             .inner
             .section_with_plane(plane.get_inner(), tol)

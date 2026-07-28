@@ -2,10 +2,9 @@
 
 use super::{Mesh3, MeshSurfPoint};
 use crate::common::PCoords;
-use crate::common::indices::chained_indices;
 use crate::common::points::dist;
-use crate::{Curve3, Iso3, Plane3, Point3, Result, SurfacePoint3};
-use parry3d_f64::query::{IntersectResult, PointProjection, PointQueryWithLocation, SplitResult};
+use crate::{Iso3, Plane3, Point3, Result, SurfacePoint3};
+use parry3d_f64::query::{PointProjection, PointQueryWithLocation, SplitResult};
 use parry3d_f64::shape::TrianglePointLocation;
 use std::f64::consts::PI;
 
@@ -269,38 +268,6 @@ impl Mesh3 {
         })
     }
 
-    /// Perform a section of the mesh with a plane, returning a list of `Curve3` objects that
-    /// trace the intersection of the mesh with the plane.
-    ///
-    /// # Arguments
-    ///
-    /// * `plane`: the plane used to section the mesh
-    /// * `tol`: the tolerance used for the intersection and for the construction of the curves,
-    ///   defaults to 1.0e-6
-    ///
-    /// returns: Result<Vec<Curve3, Global>, Box<dyn Error, Global>>
-    pub fn section(&self, plane: &Plane3, tol: Option<f64>) -> Result<Vec<Curve3>> {
-        let tol = tol.unwrap_or(1.0e-6);
-        let mut collected = Vec::new();
-        let result = self
-            .shape
-            .intersection_with_local_plane(&plane.normal, plane.d, tol);
-
-        if let IntersectResult::Intersect(pline) = result {
-            let chains = chained_indices(pline.indices());
-            for chain in chains.iter() {
-                let points = chain
-                    .iter()
-                    .map(|&i| pline.vertices()[i as usize])
-                    .collect::<Vec<_>>();
-                if let Ok(curve) = Curve3::from_points(&points, tol) {
-                    collected.push(curve);
-                }
-            }
-        }
-
-        Ok(collected)
-    }
 }
 
 #[cfg(test)]
@@ -552,63 +519,6 @@ mod tests {
         }
 
         Ok(())
-    }
-
-    #[test]
-    fn section_unit_cylinder_in_xz_plane_creates_one_circle_curve() {
-        use std::f64::consts::TAU;
-
-        let mesh = Mesh3::create_cylinder(1.0, 2.0, 256);
-        let plane = Plane3::xz();
-
-        let curves = mesh.section(&plane, Some(1.0e-10)).unwrap();
-        assert_eq!(curves.len(), 1);
-
-        let curve = &curves[0];
-        assert!(curve.count() >= 3);
-
-        for vertex in curve.vertices() {
-            assert_relative_eq!(vertex.y, 0.0, epsilon = 1.0e-12);
-
-            let radius = (vertex.x * vertex.x + vertex.z * vertex.z).sqrt();
-            // The tolerance has to be high enough to account for the fact that the cylinder
-            // faces have a diagonal in them and where they pass through y=0 is halfway between
-            // the arc endpoints formed by the vertices that were deliberately placed at the radius
-            assert_relative_eq!(radius, 1.0, epsilon = 1.0e-4);
-        }
-
-        assert_relative_eq!(curve.length(), TAU, epsilon = 1.0e-2);
-    }
-
-    #[test]
-    fn section_two_unit_cylinder_in_xy_plane_creates_two_circles_curves() {
-        use std::f64::consts::TAU;
-
-        let mut mesh = Mesh3::create_cylinder(1.0, 2.0, 256);
-        mesh.transform_by(&Iso3::translation(0.0, 0.0, -2.0));
-        let mut m1 = Mesh3::create_cylinder(1.0, 2.0, 256);
-        m1.transform_by(&Iso3::translation(0.0, 0.0, 2.0));
-
-        mesh.append(&m1).unwrap();
-
-        let plane = Plane3::xz();
-
-        let curves = mesh.section(&plane, Some(1.0e-10)).unwrap();
-        assert_eq!(curves.len(), 2);
-
-        for curve in curves.iter() {
-            assert!(curve.count() >= 3);
-            assert_relative_eq!(curve.length(), TAU, epsilon = 1.0e-2);
-
-            let expected_center = if curve.vertices()[0].z > 0.0 {
-                Point3::new(0.0, 0.0, 2.0)
-            } else {
-                Point3::new(0.0, 0.0, -2.0)
-            };
-            for vertex in curve.vertices() {
-                assert_relative_eq!(dist(&expected_center, vertex), 1.0, epsilon = 1.0e-4);
-            }
-        }
     }
 
     fn manual_closest_point_on_triangle(a: Point3, b: Point3, c: Point3, p: Point3) -> Point3 {

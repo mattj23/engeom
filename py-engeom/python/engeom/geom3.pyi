@@ -2709,7 +2709,7 @@ class Mesh3:
         """
         ...
 
-    def section(self, plane: Plane3, tol: float | None = None) -> List[Curve3]:
+    def section_with_plane(self, plane: Plane3, tol: float | None = None) -> List[Curve3]:
         """
         Calculate and return the intersection curves between the mesh and a plane.
 
