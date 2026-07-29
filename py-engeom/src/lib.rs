@@ -179,6 +179,7 @@ fn register_common_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     let child = PyModule::new(parent_module.py(), "_common")?;
 
     child.add_class::<common::AngleInterval>()?;
+    child.add_class::<common::IndexMask>()?;
     child.add_function(wrap_pyfunction!(common::angle_in_direction, &child)?)?;
     child.add_function(wrap_pyfunction!(common::shortest_angle_between, &child)?)?;
     child.add_function(wrap_pyfunction!(common::angle_signed_pi, &child)?)?;
