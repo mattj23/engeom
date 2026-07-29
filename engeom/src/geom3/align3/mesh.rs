@@ -43,8 +43,31 @@ use std::f64::consts::PI;
 impl SurfaceTarget3 for Mesh3 {
     fn find_align_match(&self, p: &Point3) -> AlignSurfMatch3 {
         let m = self.surf_closest_to(p);
-        AlignSurfMatch3::new(m.point(), m.normal(), true, 1.0)
+        let match_ = AlignSurfMatch3::new(m.point(), m.normal(), true, 1.0);
+
+        match self.point_stdev() {
+            Some(stdev) => match_.with_sigma(interpolated_stdev(self, &m, stdev)),
+            None => match_,
+        }
     }
+}
+
+/// Interpolates a mesh's per-vertex standard deviation to the position of a surface match, using
+/// the barycentric coordinates the projection already produced.
+///
+/// The interpolation is linear in the standard deviation rather than in the variance. Combining
+/// the three vertex variances as `sum(bc_i^2 * var_i)` would be right if the interpolated point
+/// were an *average of independent measurements of the same quantity*, but it isn't: it is a
+/// position on a surface which is uncertain by roughly the local noise level everywhere. That
+/// form would claim the centroid of a face is `1/sqrt(3)` times as uncertain as its corners,
+/// which is not true of a scanned surface. Linear interpolation keeps sigma continuous across
+/// faces and equal to the vertex value at each vertex, which is the behavior wanted here.
+fn interpolated_stdev(mesh: &Mesh3, m: &MeshSurfPoint, stdev: &[f64]) -> f64 {
+    let face = mesh.faces()[m.face_index as usize];
+    m.bc.iter()
+        .zip(face.iter())
+        .map(|(w, &v)| w * stdev[v as usize])
+        .sum()
 }
 
 // ===============================================================================================

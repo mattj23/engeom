@@ -1,7 +1,66 @@
+//! This module contains the tools for aligning 3D geometry using the Levenberg-Marquardt
+//! algorithm.
+//!
+//! # Structure
+//!
+//! An alignment has three pieces:
+//!
+//! - [`AlignParams3`] holds the parameters being optimized (`tx`, `ty`, `tz`, `rx`, `ry`, `rz`)
+//!   and expresses them as a transformation about an arbitrary local origin, with an optional
+//!   working offset. This is what gives the caller control over the center of rotation, the
+//!   directions the translation parameters act along, and which degrees of freedom ([`Dof6`]) are
+//!   free to move at all.
+//! - [`SurfaceTarget3`] is the stationary entity being aligned to. It is implemented for `Mesh3`,
+//!   `ExtrudedBoundary3`, and `RevolvedBoundary3`, and reports an [`AlignSurfMatch3`] for any
+//!   query point: the closest position, its normal, whether the projection actually landed on the
+//!   target's interior, and optionally the target's own measurement uncertainty there.
+//! - [`points_to_surface3`] runs the solver, with behavior controlled by [`AlignOptions3`].
+//!
+//! # Reporting
+//!
+//! The solver returns an [`crate::geom3::AlignOutcome3`], which carries the alignment plus a
+//! record of how every solve that contributed to it terminated. An `Err` is reserved for the case
+//! where there is no answer at all: rejected arguments, or an initial solve that broke down.
+//!
+//! Everything short of that is reported rather than raised, because there is still a real
+//! alignment to return. In particular, a solve that exhausts its evaluation budget leaves behind
+//! the best parameters it found, which is a usable result whose convergence simply was not proven
+//! (see [`crate::common::SolveQuality`]). That is a routine outcome here rather than a failure:
+//! the correspondences are re-established every time the parameters change, so the objective is
+//! only piecewise smooth, and near the solution a point close to an edge or a corner can flip
+//! between two matches indefinitely without the convergence criteria ever being met. Similarly, a
+//! refinement round that breaks down is rolled back to the previous round's result and the reason
+//! recorded on the outcome, since refinement is an improvement on an alignment that was already
+//! usable.
+//!
+//! # Robustness
+//!
+//! The alignment is robust by default. An initial unweighted solve is followed by several rounds
+//! of iteratively reweighted least-squares using MAGSAC++ noise-marginalized weights, with the
+//! weights held fixed inside each solve so the analytic jacobian stays consistent with the
+//! residual it differentiates. The noise bound can be supplied explicitly or estimated from the
+//! data via the median absolute deviation. Measurement uncertainty on either the test points or
+//! the target combines in quadrature and normalizes the residuals into units of sigma;
+//! `Mesh3::point_stdev` is the data source for both sides.
+//!
+//! # Relationship to `align2`
+//!
+//! [`crate::geom2::align2`] is the reference implementation of this design and this module mirrors
+//! it. The two are deliberately structural mirrors rather than a shared generic: 3D needs three
+//! Euler angles whose partial derivatives require a gimbal correction that 2D has no analogue
+//! for, and its parameter storage is twice the size.
+//!
+//! # Older machinery
+//!
+//! [`RcParams3`] and [`RotationMatrices`] are a previous generation of the parameterization,
+//! retained only because `multi_mesh` still depends on them. New work should use
+//! [`AlignParams3`].
+
 pub mod jacobian;
 mod mesh;
 mod multi_mesh;
 pub mod multi_param;
+mod options;
 mod params;
 mod points_to_surface;
 mod rotations;
@@ -20,6 +79,7 @@ pub use self::mesh::*;
 pub use self::multi_mesh::{
     MMOpts, MulMeshAlignPoint, multi_mesh_adjustment, multi_mesh_adjustment_with_points,
 };
+pub use self::options::*;
 pub use self::params::*;
 pub use self::points_to_surface::*;
 pub use self::rotations::RotationMatrices;
