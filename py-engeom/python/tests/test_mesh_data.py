@@ -473,14 +473,14 @@ def test_mesh_ply_round_trip_keeps_the_attributes(tmp_path):
     )
 
 
-def test_mesh_write_stl_refuses_to_drop_attributes_silently(tmp_path):
+def test_mesh_save_stl_refuses_to_drop_attributes_silently(tmp_path):
     mesh = attributed_mesh()
     path = tmp_path / "mesh.stl"
 
     with pytest.raises(IOError):
-        mesh.write_stl(path)
+        mesh.save_stl(path)
 
-    mesh.write_stl(path, allow_attribute_loss=True)
+    mesh.save_stl(path, allow_attribute_loss=True)
     assert Mesh3.load_stl(path) is not None
 
 

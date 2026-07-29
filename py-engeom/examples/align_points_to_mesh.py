@@ -17,7 +17,7 @@ def main():
     # We're going to grab a sub-mesh consisting of the faces that are rougly pointed towards +Y and then generate
     # points from it using a poisson disk sample with radius of 2mm. Note that the sample points include mesh normals,
     # so the 3d coordinates are in `sample_points[:, :3]`.
-    sub_mesh = mesh.face_select_none().facing(0, 1, 0, math.pi / 4, "add").to_mesh()
+    sub_mesh = mesh.face_select().facing(0, 1, 0, math.pi / 4, "add").to_mesh()
     sample_points = sub_mesh.sample_poisson(2)
 
     # We'll clone the points and move them away from the original mesh to have the alignment do something. In

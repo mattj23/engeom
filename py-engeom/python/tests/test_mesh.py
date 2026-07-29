@@ -201,7 +201,7 @@ def test_face_filter_handle_mask_round_trip():
     mask[3] = True
     mask[4] = True
 
-    handle = m.face_select_none().by_mask(mask, "add")
+    handle = m.face_select().by_mask(mask, "add")
 
     assert handle.collect_indices() == [3, 4]
     assert handle.to_mask() == mask
@@ -210,7 +210,7 @@ def test_face_filter_handle_mask_round_trip():
 
 def test_face_filter_handle_to_mask_does_not_consume_the_handle():
     m = Mesh3.create_box(1.0, 1.0, 1.0)
-    handle = m.face_select_all()
+    handle = m.face_select("all")
 
     first = handle.to_mask()
 
@@ -222,8 +222,8 @@ def test_filter_above_plane_splits_a_box():
     m = Mesh3.create_box(2.0, 2.0, 2.0)
     plane = Plane3(0.0, 0.0, 1.0, 0.0)
 
-    any_above = m.face_select_none().above_plane(plane, False, "add").collect_indices()
-    all_above = m.face_select_none().above_plane(plane, True, "add").collect_indices()
+    any_above = m.face_select().above_plane(plane, False, "add").collect_indices()
+    all_above = m.face_select().above_plane(plane, True, "add").collect_indices()
 
     # Requiring every vertex is strictly stronger than requiring one.
     assert set(all_above) <= set(any_above)
@@ -234,8 +234,8 @@ def test_filter_vertices_near_point():
     m = Mesh3.create_box(2.0, 2.0, 2.0)
     corner = m.points[0]
 
-    near = m.face_select_none().vertices_near_point(*corner, 0.1, False, "add").collect_indices()
-    far = m.face_select_none().vertices_near_point(*corner, 100.0, True, "add").collect_indices()
+    near = m.face_select().vertices_near_point(*corner, 0.1, False, "add").collect_indices()
+    far = m.face_select().vertices_near_point(*corner, 100.0, True, "add").collect_indices()
 
     assert 0 < len(near) < m.face_count
     assert len(far) == m.face_count
@@ -245,13 +245,13 @@ def test_filter_expand_dilates_and_erodes():
     m = Mesh3.create_sphere(1.0, 20, 20)
     seed = IndexMask.from_indices([0], m.face_count)
 
-    grown = m.face_select_none().by_mask(seed, "add").expand("add").to_mask()
+    grown = m.face_select().by_mask(seed, "add").expand("add").to_mask()
     assert grown.count_true() > 1
     assert (grown & seed) == seed  # dilation keeps what it started with
 
     # Erosion needs a border to eat into. A closed sphere has none when everything is selected, so
     # erode the dilated patch instead, which does.
-    eroded = m.face_select_none().by_mask(grown, "add").expand("remove").to_mask()
+    eroded = m.face_select().by_mask(grown, "add").expand("remove").to_mask()
     assert eroded.count_true() < grown.count_true()
 
 
@@ -259,7 +259,7 @@ def test_filter_expand_remove_on_a_closed_mesh_selection_is_a_no_op():
     """Erosion works from the unselected side, so a fully selected closed mesh has nothing to erode."""
     m = Mesh3.create_sphere(1.0, 20, 20)
 
-    eroded = m.face_select_all().expand("remove").collect_indices()
+    eroded = m.face_select("all").expand("remove").collect_indices()
 
     assert len(eroded) == m.face_count
 
@@ -268,9 +268,9 @@ def test_filter_expand_n_matches_repeated_expand():
     m = Mesh3.create_sphere(1.0, 20, 20)
     seed = IndexMask.from_indices([0], m.face_count)
 
-    once_twice = (m.face_select_none().by_mask(seed, "add")
+    once_twice = (m.face_select().by_mask(seed, "add")
                   .expand("add").expand("add").collect_indices())
-    n_two = (m.face_select_none().by_mask(seed, "add")
+    n_two = (m.face_select().by_mask(seed, "add")
              .expand_n(2, "add").collect_indices())
 
     assert once_twice == n_two
@@ -280,9 +280,9 @@ def test_filter_expand_respects_the_exclude_mask():
     m = Mesh3.create_sphere(1.0, 20, 20)
     seed = IndexMask.from_indices([0], m.face_count)
 
-    free = m.face_select_none().by_mask(seed, "add").expand("add").to_mask()
+    free = m.face_select().by_mask(seed, "add").expand("add").to_mask()
     # Exclude everything the unrestricted expansion would have reached, minus the seed itself.
-    blocked = m.face_select_none().by_mask(seed, "add").expand("add", exclude=free - seed).to_mask()
+    blocked = m.face_select().by_mask(seed, "add").expand("add", exclude=free - seed).to_mask()
 
     assert blocked == seed
 
@@ -290,7 +290,7 @@ def test_filter_expand_respects_the_exclude_mask():
 def test_filter_expand_rejects_a_mask_of_the_wrong_length():
     m = Mesh3.create_box(1.0, 1.0, 1.0)
     with pytest.raises(ValueError):
-        m.face_select_all().expand("add", exclude=IndexMask(3))
+        m.face_select("all").expand("add", exclude=IndexMask(3))
 
 
 def test_filter_faces_overlap_finds_a_coincident_copy():
@@ -299,8 +299,80 @@ def test_filter_faces_overlap_finds_a_coincident_copy():
     apart = Mesh3.create_box(2.0, 2.0, 2.0)
     apart.transform_in_place(Iso3.from_translation(50.0, 0.0, 0.0))
 
-    on_top = m.face_select_none().faces_overlap(same, 0.1, 0.1, "add").collect_indices()
-    nowhere = m.face_select_none().faces_overlap(apart, 0.1, 0.1, "add").collect_indices()
+    on_top = m.face_select().faces_overlap(same, 0.1, 0.1, "add").collect_indices()
+    nowhere = m.face_select().faces_overlap(apart, 0.1, 0.1, "add").collect_indices()
 
     assert len(on_top) == m.face_count
     assert nowhere == []
+
+
+def test_mesh_face_select_seeds():
+    m = Mesh3.create_box(1.0, 1.0, 1.0)
+
+    assert m.face_select().collect_indices() == []
+    assert m.face_select("none").collect_indices() == []
+    assert m.face_select("all").collect_indices() == list(range(m.face_count))
+
+
+def test_mesh_face_select_accepts_a_mask():
+    m = Mesh3.create_box(1.0, 1.0, 1.0)
+    mask = IndexMask.from_indices([1, 4, 9], m.face_count)
+
+    assert m.face_select(mask).collect_indices() == [1, 4, 9]
+
+
+def test_mesh_face_select_rejects_a_bad_seed():
+    m = Mesh3.create_box(1.0, 1.0, 1.0)
+
+    with pytest.raises(ValueError):
+        m.face_select("everything")
+    # A mask sized to the points would otherwise be zipped against the faces silently.
+    with pytest.raises(ValueError):
+        m.face_select(m.point_mask(True))
+
+
+def test_mesh_measure_deviations_signs_and_shape():
+    m = Mesh3.create_box(2.0, 2.0, 2.0, is_solid=False)
+    points = numpy.array([[0.0, 0.0, 2.0], [0.0, 0.0, 0.5]])
+
+    values = m.measure_deviations(points, "point")
+
+    assert values.shape == (2,)
+    assert values[0] == pytest.approx(1.0, abs=1e-12)
+    assert values[1] < 0.0
+
+
+@pytest.mark.parametrize("mode", ["point", "plane"])
+def test_mesh_measure_deviations_matches_the_single_point_measurement(mode):
+    """The bulk and single-point paths share a direction helper in the core, so they must agree."""
+    m = Mesh3.create_box(2.0, 2.0, 2.0)
+    points = numpy.array([
+        [0.0, 0.0, 3.0],
+        [0.0, 0.0, -3.0],
+        [5.0, 5.0, 5.0],
+        [0.1, -0.2, 0.05],
+    ])
+
+    bulk = m.measure_deviations(points, mode)
+    single = [m.measure_point_deviation(*p, mode).value for p in points]
+
+    assert numpy.allclose(bulk, single, atol=1e-15)
+
+
+def test_mesh_measure_deviations_rejects_an_unknown_mode():
+    m = Mesh3.create_box(1.0, 1.0, 1.0)
+    with pytest.raises(ValueError):
+        m.measure_deviations(numpy.array([[0.0, 0.0, 5.0]]), "surface")
+
+
+def test_mesh_distance_and_face_closest_to():
+    m = Mesh3.create_box(2.0, 2.0, 2.0, is_solid=False)
+
+    assert m.distance_closest_to(0.0, 0.0, 2.0) == pytest.approx(1.0, abs=1e-12)
+    # The distance is unsigned, unlike measure_deviations.
+    assert m.distance_closest_to(0.0, 0.0, 0.5) > 0.0
+
+    face = m.face_closest_to(0.0, 0.0, 5.0)
+    assert 0 <= face < m.face_count
+    # That face has to be one of the two on the +Z side.
+    assert numpy.allclose(m.compute_face_normals()[face], [0.0, 0.0, 1.0])

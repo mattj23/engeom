@@ -293,9 +293,9 @@ def test_index_mask_operators_reject_mismatched_lengths(op):
             _ = left - right
 
 
-def test_index_mask_copy_is_independent():
+def test_index_mask_cloned_is_independent():
     original = IndexMask.from_indices([1, 3], 8)
-    duplicate = original.copy()
+    duplicate = original.cloned()
     duplicate[5] = True
 
     assert list(original.to_indices()) == [1, 3]

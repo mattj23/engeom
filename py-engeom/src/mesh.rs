@@ -3,15 +3,13 @@ use crate::common::{IndexMask, deviation_mode_from_str, select_op_from_str};
 use crate::conversions::{
     array_to_colors, array_to_faces, array_to_points3, array_to_unit_vectors3, array_to_vec,
     colors_to_array, faces_to_array, labels_to_array, points_to_array, scalars_to_array,
-    unit_vectors_to_array, vectors_to_array,
+    unit_vectors_to_array,
 };
 use crate::geom3::{Curve3, Iso3, Plane3, Point3, SurfacePoint3, Vector3};
 use crate::metrology::Distance3;
 use crate::point_cloud::lptf3_load_from_args;
 use engeom::Selection;
-use engeom::common::DistMode;
 use engeom::common::SplitResult;
-use engeom::common::points::dist;
 use engeom::geom3::align3::{GAPParams, generate_alignment_points};
 use engeom::io::{deflate_bytes, u_bytes_to_mesh_data};
 use numpy::ndarray::{Array1, Array2, ArrayD};
@@ -172,6 +170,16 @@ impl Mesh3 {
         Point3::from_inner(self.inner.point_closest_to(&p))
     }
 
+    fn distance_closest_to(&self, x: f64, y: f64, z: f64) -> f64 {
+        let p = engeom::Point3::new(x, y, z);
+        self.inner.distance_closest_to(&p)
+    }
+
+    fn face_closest_to(&self, x: f64, y: f64, z: f64) -> u32 {
+        let p = engeom::Point3::new(x, y, z);
+        self.inner.face_closest_to(&p)
+    }
+
     fn append_in_place(&mut self, other: &Mesh3) -> PyResult<()> {
         self.clear_cached();
         self.inner
@@ -184,7 +192,7 @@ impl Mesh3 {
     }
 
     #[pyo3(signature = (path, binary = true, allow_attribute_loss = false))]
-    fn write_stl(&self, path: PathBuf, binary: bool, allow_attribute_loss: bool) -> PyResult<()> {
+    fn save_stl(&self, path: PathBuf, binary: bool, allow_attribute_loss: bool) -> PyResult<()> {
         let mut opts = engeom::io::StlWriteOpts::default();
         opts.binary = binary;
         opts.allow_attribute_loss = allow_attribute_loss;
@@ -204,7 +212,7 @@ impl Mesh3 {
     }
 
     #[pyo3(signature = (path, tol, allow_attribute_loss = false))]
-    fn write_tcmesh(&self, path: PathBuf, tol: f64, allow_attribute_loss: bool) -> PyResult<()> {
+    fn save_tcmesh(&self, path: PathBuf, tol: f64, allow_attribute_loss: bool) -> PyResult<()> {
         engeom::io::write_tc_mesh_file(&path, &self.inner.to_data(), tol, allow_attribute_loss)
             .map_err(|e| PyIOError::new_err(e.to_string()))
     }
@@ -421,18 +429,19 @@ impl Mesh3 {
         Ok((result.into_pyarray(py), result_type.into_pyarray(py)))
     }
 
-    #[getter]
-    fn face_normals<'py>(&mut self, py: Python<'py>) -> PyResult<&Bound<'py, PyArray2<f64>>> {
+    /// A method rather than a property, matching `compute_point_normals` and the core name. Both
+    /// are derived quantities which can fail, and a property which raises reads badly.
+    fn compute_face_normals<'py>(
+        &mut self,
+        py: Python<'py>,
+    ) -> PyResult<&Bound<'py, PyArray2<f64>>> {
         if self.face_normals.is_none() {
             let normals = self
                 .inner
                 .compute_face_normals()
-                .map_err(|e| PyValueError::new_err(e.to_string()))?
-                .into_iter()
-                .map(|n| n.into_inner())
-                .collect::<Vec<_>>();
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
-            let array = vectors_to_array(&normals);
+            let array = unit_vectors_to_array(&normals);
             self.face_normals = Some(array.into_pyarray(py).unbind());
         }
 
@@ -515,7 +524,7 @@ impl Mesh3 {
         }
     }
 
-    fn deviation<'py>(
+    fn measure_deviations<'py>(
         &self,
         py: Python<'py>,
         points: PyReadonlyArray2<'py, f64>,
@@ -523,20 +532,8 @@ impl Mesh3 {
     ) -> PyResult<Bound<'py, PyArray1<f64>>> {
         let mode = deviation_mode_from_str(mode)?;
         let points = array_to_points3(&points.as_array())?;
-        let mut result = Array1::zeros(points.len());
-
-        for (i, point) in points.iter().enumerate() {
-            let closest = self.inner.surface_closest_to(point);
-            let normal_dev = closest.sp.scalar_projection(point);
-
-            result[i] = match mode {
-                // Copy the sign of the normal deviation
-                DistMode::ToPoint => dist(&closest.sp.point, point) * normal_dev.signum(),
-                DistMode::ToPlane => normal_dev,
-            }
-        }
-
-        Ok(result.into_pyarray(py))
+        let values = self.inner.measure_deviations(&points, mode);
+        Ok(scalars_to_array(&values).into_pyarray(py))
     }
 
     fn measure_point_deviation(
@@ -618,23 +615,47 @@ impl Mesh3 {
         Ok(results.into_iter().map(Curve3::from_inner).collect())
     }
 
-    fn face_select_all<'py>(
+    /// Start a face filter. `start` is either the token `"none"` or `"all"`, or an `IndexMask` over
+    /// the faces, covering the three ways the core `Selection` enum can seed a filter.
+    #[pyo3(signature = (start = None))]
+    fn face_select<'py>(
         slf: PyRef<Self>,
         py: Python<'py>,
+        start: Option<&Bound<'py, PyAny>>,
     ) -> PyResult<Bound<'py, FaceFilterHandle>> {
-        let indices = slf.inner.face_select(Selection::All).collect_indices();
-        FaceFilterHandle {
-            mesh: slf.into(),
-            indices,
-        }
-        .into_pyobject(py)
-    }
+        let selection = match start {
+            None => Selection::None,
+            Some(value) => {
+                if let Ok(mask) = value.extract::<PyRef<'_, IndexMask>>() {
+                    Selection::Mask(mask.get_inner().clone())
+                } else {
+                    match value.extract::<String>()?.as_str() {
+                        "none" => Selection::None,
+                        "all" => Selection::All,
+                        other => {
+                            return Err(PyValueError::new_err(format!(
+                                "Invalid face selection start '{other}', expected 'none', 'all', \
+                                 or an IndexMask"
+                            )));
+                        }
+                    }
+                }
+            }
+        };
 
-    fn face_select_none<'py>(
-        slf: PyRef<Self>,
-        py: Python<'py>,
-    ) -> PyResult<Bound<'py, FaceFilterHandle>> {
-        let indices = slf.inner.face_select(Selection::None).collect_indices();
+        // A mask of the wrong length would otherwise reach the core and be zipped against the face
+        // buffer, silently selecting the wrong faces rather than complaining.
+        if let Selection::Mask(mask) = &selection
+            && mask.len() != slf.inner.face_count()
+        {
+            return Err(PyValueError::new_err(format!(
+                "Mask length {} does not match the mesh's face count {}",
+                mask.len(),
+                slf.inner.face_count()
+            )));
+        }
+
+        let indices = slf.inner.face_select(selection).collect_indices();
         FaceFilterHandle {
             mesh: slf.into(),
             indices,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Tuple, Iterable, List, TypeVar, Iterator, Any
+from typing import Tuple, Iterable, List, Literal, TypeVar, Iterator, Any
 
 import numpy
 from numpy.typing import NDArray
@@ -2486,7 +2486,7 @@ class Mesh3:
         """
         ...
 
-    def write_stl(self, path: str | Path, binary: bool = True, allow_attribute_loss: bool = False):
+    def save_stl(self, path: str | Path, binary: bool = True, allow_attribute_loss: bool = False):
         """
         Write the mesh to an STL file, which carries geometry and nothing else.
 
@@ -2513,7 +2513,7 @@ class Mesh3:
         """
         ...
 
-    def write_tcmesh(self, path: str | Path, tol: float, allow_attribute_loss: bool = False):
+    def save_tcmesh(self, path: str | Path, tol: float, allow_attribute_loss: bool = False):
         """
         Write the mesh to a tolerance-compressed mesh (.tcmesh) file. The tolerance controls the
         maximum allowable round-trip position error for any vertex: a smaller tolerance produces a
@@ -2721,12 +2721,12 @@ class Mesh3:
         """
         ...
 
-    @property
-    def face_normals(self) -> NDArray[float]:
+    def compute_face_normals(self) -> NDArray[float]:
         """
-        Will return an immutable view of the face normals of the mesh as a numpy array of shape (m, 3), where m is the
-        number of triangles in the mesh.
-        :return: a numpy array of shape (m, 3) containing the normals of the triangles of the mesh.
+        Compute the unit normal of every face. The result is cached, so repeated access does not recompute it.
+
+        :return: a numpy array of shape (m, 3) containing one unit normal per face.
+        :raises ValueError: if any face is degenerate and so has no well-defined normal.
         """
         ...
 
@@ -2769,7 +2769,7 @@ class Mesh3:
         """
         ...
 
-    def deviation(self, points: NDArray[float], mode: engeom.DeviationMode) -> NDArray[float]:
+    def measure_deviations(self, points: NDArray[float], mode: engeom.DeviationMode) -> NDArray[float]:
         """
         Calculate the deviation between a set of points and their respective closest points on the mesh surface.
         There are two possible modes of computing the distance, specified by the deviation-mode string (``"point"``
@@ -2852,21 +2852,15 @@ class Mesh3:
         """
         ...
 
-    def face_select_none(self) -> FaceFilterHandle:
+    def face_select(self, start: Literal["none", "all"] | IndexMask | None = None) -> FaceFilterHandle:
         """
-        Start a filter operation on the faces of the mesh beginning with no faces selected. This will return a filter
-        object that can be used to further add or remove faces from the selection.
+        Start a filter operation on the faces of the mesh. This returns a filter handle which can be used to add or
+        remove faces from the selection while holding an immutable reference to the mesh.
 
+        :param start: the initial selection. Either the token ``"none"`` (the default) or ``"all"``, or an
+            `IndexMask` over the mesh's faces to start from an arbitrary selection.
         :return: a filter object for the triangles of the mesh.
-        """
-        ...
-
-    def face_select_all(self) -> FaceFilterHandle:
-        """
-        Start a filter operation on the faces of the mesh beginning with all faces selected. This will return a filter
-        object that can be used to further add or remove faces from the selection.
-
-        :return: a filter object for the triangles of the mesh.
+        :raises ValueError: if `start` is neither a recognized token nor a mask of the mesh's face count.
         """
         ...
 
@@ -3077,6 +3071,32 @@ class Mesh3:
         :param y: the y coordinate of the point to find the closest point to
         :param z: the z coordinate of the point to find the closest point to
         :return: a `Point3` object containing the closest point and normal
+        """
+        ...
+
+    def distance_closest_to(self, x: float, y: float, z: float) -> float:
+        """
+        Find the distance from a point in space to the closest point on the mesh surface.
+
+        If the mesh is solid, a point inside it has a distance of zero. Otherwise the distance is to the nearest
+        surface regardless of which side the point is on, and is never negative. For a signed value, use
+        `measure_deviations` or `measure_point_deviation`.
+
+        :param x: the x coordinate of the point.
+        :param y: the y coordinate of the point.
+        :param z: the z coordinate of the point.
+        :return: the distance to the closest point on the mesh.
+        """
+        ...
+
+    def face_closest_to(self, x: float, y: float, z: float) -> int:
+        """
+        Find the index of the face carrying the closest point on the mesh surface to a given point in space.
+
+        :param x: the x coordinate of the point.
+        :param y: the y coordinate of the point.
+        :param z: the z coordinate of the point.
+        :return: the index of the closest face.
         """
         ...
 
@@ -3310,7 +3330,7 @@ class FaceFilterHandle:
     """
     A class that acts as a handle to a filtering (selection/deselection) operation of faces on a mesh.
 
-    A filtering operation is started using the `face_select_all` or `face_select_none` methods on a `Mesh3` object, and
+    A filtering operation is started using the `face_select` method on a `Mesh3` object, and
     then further filtering operations can be done on the handle to select or deselect faces based on various criteria.
 
     Once finished, the handle can be finalized into a list of the final indices of the triangles that passed the filter,

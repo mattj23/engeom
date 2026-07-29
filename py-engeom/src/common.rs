@@ -300,7 +300,9 @@ impl IndexMask {
     /// Return an independent copy of this mask. Because a mask is mutable, assigning one to
     /// another name aliases it rather than duplicating it, and this is the way to get a version
     /// which can be modified without disturbing the original.
-    fn copy(&self) -> Self {
+    ///
+    /// Named to match `Mesh3.cloned` and `MeshData3.cloned`.
+    fn cloned(&self) -> Self {
         self.clone()
     }
 
