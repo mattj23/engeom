@@ -746,6 +746,14 @@ impl Circle2 {
             .intersection_interval(other.inner)
             .map(AngleInterval::from_inner)
     }
+
+    fn transformed_by(&self, iso: &Iso2) -> Self {
+        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
+    }
+
+    fn resized_by(&self, delta: f64) -> Self {
+        Self::from_inner(self.inner.resized_by(delta))
+    }
 }
 
 /// Build a `Magsac` consensus configuration from the optional overrides exposed to Python, leaving
@@ -2134,6 +2142,7 @@ enum Transformable2 {
     Pnt(Point2),
     Sp(SurfacePoint2),
     Seg(Segment2),
+    Circle(Circle2),
 }
 
 #[pyclass(from_py_object, module = "engeom.geom2")]
@@ -2276,6 +2285,9 @@ impl Iso2 {
             }
             Transformable2::Seg(other) => {
                 Segment2::from_inner(other.inner.transformed_by(&self.inner)).into_bound_py_any(py)
+            }
+            Transformable2::Circle(other) => {
+                Circle2::from_inner(other.inner.transformed_by(&self.inner)).into_bound_py_any(py)
             }
         }
     }

@@ -8,7 +8,7 @@ from engeom.common import AngleDir, AngleInterval
 
 from engeom import geom3
 
-Transformable2 = TypeVar("Transformable2", Vector2, Point2, Iso2, SurfacePoint2, Segment2)
+Transformable2 = TypeVar("Transformable2", Vector2, Point2, Iso2, SurfacePoint2, Segment2, Circle2)
 PointOrVec2 = TypeVar("PointOrVec2", Point2, Vector2)
 
 
@@ -1423,6 +1423,27 @@ class Circle2:
 
         :param other: the other circle to intersect with.
         :return: the angular interval of the intersection, or ``None``.
+        """
+        ...
+
+    def transformed_by(self, iso: Iso2) -> Circle2:
+        """
+        Create a copy of this circle with its center moved by an isometry. The radius is unchanged.
+
+        :param iso: the isometry to transform the circle by.
+        :return: a new ``Circle2``.
+        """
+        ...
+
+    def resized_by(self, delta: float) -> Circle2:
+        """
+        Create a copy of this circle with ``delta`` added to its radius. The center is unchanged.
+
+        A positive ``delta`` grows the circle and a negative one shrinks it. The result is not
+        clamped, so a large enough negative ``delta`` will produce a zero or negative radius.
+
+        :param delta: the amount to add to the circle's radius.
+        :return: a new ``Circle2``.
         """
         ...
 

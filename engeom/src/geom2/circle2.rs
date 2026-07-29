@@ -11,6 +11,7 @@ use crate::{AngleDir, AngleInterval, IntervalOps, SurfacePoint2, UnitVec2};
 use crate::{Arc2, Result};
 use serde::{Deserialize, Serialize};
 use std::f64::consts::FRAC_PI_2;
+use std::ops;
 
 mod fitting;
 
@@ -590,6 +591,67 @@ impl Circle2 {
         let theta = self.angle_of_point(p);
         self.at_angle(theta)
     }
+
+    /// Returns a new circle with its center moved by the given isometry, without modifying the
+    /// original. The radius is unaffected.
+    ///
+    /// # Arguments
+    ///
+    /// * `iso`: the isometry to transform the circle by
+    ///
+    /// returns: Circle2
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::{Circle2, Iso2, Vector2};
+    /// use approx::assert_relative_eq;
+    ///
+    /// let c = Circle2::new(1.0, 0.0, 2.0);
+    /// let moved = c.transformed_by(&Iso2::translation(0.0, 3.0));
+    ///
+    /// assert_relative_eq!(moved.x(), 1.0);
+    /// assert_relative_eq!(moved.y(), 3.0);
+    /// assert_relative_eq!(moved.r(), 2.0);
+    /// ```
+    pub fn transformed_by(&self, iso: &Iso2) -> Self {
+        Self {
+            center: iso * self.center,
+            radius: self.radius,
+        }
+    }
+
+    /// Returns a new circle with its radius changed by `delta`, without modifying the original.
+    /// The center is unaffected.
+    ///
+    /// A positive `delta` grows the circle and a negative one shrinks it. The result is not
+    /// clamped, so a large enough negative `delta` will produce a zero or negative radius.
+    ///
+    /// # Arguments
+    ///
+    /// * `delta`: the amount to add to the circle's radius
+    ///
+    /// returns: Circle2
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::Circle2;
+    /// use approx::assert_relative_eq;
+    ///
+    /// let c = Circle2::new(1.0, 2.0, 3.0);
+    /// let bigger = c.resized_by(0.5);
+    ///
+    /// assert_relative_eq!(bigger.x(), 1.0);
+    /// assert_relative_eq!(bigger.y(), 2.0);
+    /// assert_relative_eq!(bigger.r(), 3.5);
+    /// ```
+    pub fn resized_by(&self, delta: f64) -> Self {
+        Self {
+            center: self.center,
+            radius: self.radius + delta,
+        }
+    }
 }
 
 impl Circle2 {
@@ -647,6 +709,34 @@ pub fn intersection_line_circle(line: &impl LineOps2, circle: &Circle2) -> Vec<f
 impl PCoords<2> for Circle2 {
     fn coords(&self) -> SVector<f64, 2> {
         self.center.coords
+    }
+}
+
+impl ops::Mul<Circle2> for Iso2 {
+    type Output = Circle2;
+    fn mul(self, rhs: Circle2) -> Circle2 {
+        rhs.transformed_by(&self)
+    }
+}
+
+impl ops::Mul<&Circle2> for Iso2 {
+    type Output = Circle2;
+    fn mul(self, rhs: &Circle2) -> Circle2 {
+        rhs.transformed_by(&self)
+    }
+}
+
+impl ops::Mul<Circle2> for &Iso2 {
+    type Output = Circle2;
+    fn mul(self, rhs: Circle2) -> Circle2 {
+        rhs.transformed_by(self)
+    }
+}
+
+impl ops::Mul<&Circle2> for &Iso2 {
+    type Output = Circle2;
+    fn mul(self, rhs: &Circle2) -> Circle2 {
+        rhs.transformed_by(self)
     }
 }
 
@@ -842,6 +932,40 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn stress_transformed_by() {
+        let mut rng = RandomGeometry2::new();
+
+        for _ in 0..1000 {
+            let original = rng.circle2(5.0, 0.5, 2.0);
+            let iso = rng.iso2(10.0);
+            let moved = original.transformed_by(&iso);
+
+            assert_relative_eq!(moved.center, iso * original.center, epsilon = 1.0e-10);
+            assert_relative_eq!(moved.r(), original.r(), epsilon = 1.0e-10);
+
+            // A point on the original perimeter must map onto the transformed perimeter
+            let p = iso * original.point_at_angle(rng.angle_sym_pi());
+            assert_relative_eq!(moved.distance_to(&p), 0.0, epsilon = 1.0e-10);
+
+            // The multiplication operator is an alias for `transformed_by`
+            let by_mul = iso * original;
+            assert_relative_eq!(by_mul.center, moved.center, epsilon = 1.0e-12);
+            assert_relative_eq!(by_mul.r(), moved.r(), epsilon = 1.0e-12);
+        }
+    }
+
+    #[test_case(3.0, 0.5, 3.5)]
+    #[test_case(3.0, -0.5, 2.5)]
+    #[test_case(3.0, 0.0, 3.0)]
+    fn resized_by_changes_radius_only(r: f64, delta: f64, expected: f64) {
+        let c = Circle2::new(1.0, 2.0, r);
+        let result = c.resized_by(delta);
+
+        assert_relative_eq!(result.center, c.center, epsilon = 1.0e-12);
+        assert_relative_eq!(result.r(), expected, epsilon = 1.0e-12);
     }
 
     fn make_sample_circle_points(c: &Circle2, n: usize, sigma: Option<f64>) -> Vec<Point2> {

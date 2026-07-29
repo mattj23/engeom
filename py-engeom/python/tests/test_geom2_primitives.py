@@ -5,7 +5,7 @@ import math
 
 import pytest
 import numpy
-from engeom.geom2 import Vector2, Point2, SurfacePoint2, Segment2, Arc2, Iso2
+from engeom.geom2 import Vector2, Point2, SurfacePoint2, Segment2, Arc2, Circle2, Iso2
 
 
 def test_vector_mul_scalar():
@@ -194,3 +194,30 @@ def test_arc2_to_points_includes_endpoints():
     assert points[0, 1] == pytest.approx(a.a.y)
     assert points[-1, 0] == pytest.approx(a.b.x)
     assert points[-1, 1] == pytest.approx(a.b.y)
+
+
+def test_circle2_transformed_by():
+    c = Circle2(1.0, 0.0, 2.0)
+    iso = Iso2(0.0, 3.0, math.pi / 2)
+    moved = c.transformed_by(iso)
+    expected = iso @ c.center
+    assert moved.center.x == pytest.approx(expected.x)
+    assert moved.center.y == pytest.approx(expected.y)
+    assert moved.r == pytest.approx(2.0)
+
+    # The matmul operator is an alias for transformed_by
+    by_op = iso @ c
+    assert by_op.center.x == pytest.approx(moved.center.x)
+    assert by_op.center.y == pytest.approx(moved.center.y)
+    assert by_op.r == pytest.approx(moved.r)
+
+
+def test_circle2_resized_by():
+    c = Circle2(1.0, 2.0, 3.0)
+    bigger = c.resized_by(0.5)
+    smaller = c.resized_by(-0.5)
+    assert bigger.center.x == pytest.approx(1.0)
+    assert bigger.center.y == pytest.approx(2.0)
+    assert bigger.r == pytest.approx(3.5)
+    assert smaller.r == pytest.approx(2.5)
+    assert c.r == pytest.approx(3.0)
