@@ -77,7 +77,7 @@ else:
             :return: The PyVista `vtkActor` representing the sphere.
             """
             mesh = Mesh3.create_sphere(sphere.r, n_theta, n_phi)
-            mesh.transform_by(Iso3.from_translation(*sphere.center))
+            mesh.transform_in_place(Iso3.from_translation(*sphere.center))
             return self.mesh(mesh, color=color, opacity=opacity)
 
         def circle(
@@ -102,7 +102,7 @@ else:
             :param face_opacity: Opacity of the filled face (0.0–1.0). If `None`, the default PyVista opacity is used.
             """
             mesh = Mesh3.create_circle(circle.r, n)
-            mesh.transform_by(circle.iso)
+            mesh.transform_in_place(circle.iso)
             actors = []
             if edge_color is not None:
                 theta = numpy.linspace(0, 2 * numpy.pi, n + 1)

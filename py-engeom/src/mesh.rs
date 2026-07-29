@@ -127,13 +127,13 @@ impl Mesh3 {
             .map_err(|e| PyIOError::new_err(e.to_string()))
     }
 
-    fn transform_by(&mut self, iso: &Iso3) {
-        self.inner.transform_by(iso.get_inner());
+    fn transform_in_place(&mut self, iso: &Iso3) {
+        self.inner.transform_in_place(iso.get_inner());
         self.clear_cached()
     }
 
-    fn new_transformed_by(&self, iso: &Iso3) -> Self {
-        Self::from_inner(self.inner.new_transformed_by(iso.get_inner()))
+    fn transform_copy(&self, iso: &Iso3) -> Self {
+        Self::from_inner(self.inner.transform_copy(iso.get_inner()))
     }
 
     fn surface_closest_to(&self, x: f64, y: f64, z: f64) -> SurfacePoint3 {
@@ -152,10 +152,10 @@ impl Mesh3 {
         Point3::from_inner(self.inner.point_closest_to(&p))
     }
 
-    fn append(&mut self, other: &Mesh3) -> PyResult<()> {
+    fn append_in_place(&mut self, other: &Mesh3) -> PyResult<()> {
         self.clear_cached();
         self.inner
-            .append(&other.inner)
+            .append_in_place(&other.inner)
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
@@ -217,8 +217,8 @@ impl Mesh3 {
         Ok(Self::from_inner(inner))
     }
 
-    fn new_offset_vertices(&self, offset: f64) -> Self {
-        Self::from_inner(self.inner.new_offset_vertices(offset))
+    fn offset_vertices_copy(&self, offset: f64) -> Self {
+        Self::from_inner(self.inner.offset_vertices_copy(offset))
     }
 
     fn get_patch_boundaries(&self) -> PyResult<Vec<Curve3>> {

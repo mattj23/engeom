@@ -109,7 +109,7 @@ impl SimpleViewer {
         for i in 2..points.len() {
             let next_mesh =
                 crate::Mesh3::create_cylinder_between(&points[i - 1], &points[i], thickness, 6);
-            mesh.append(&next_mesh)?
+            mesh.append_in_place(&next_mesh)?
         }
 
         let cpu_mesh = mesh.to_cpu_mesh();

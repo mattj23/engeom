@@ -2547,7 +2547,7 @@ class Mesh3:
         """
         ...
 
-    def new_offset_vertices(self, offset: float) -> Mesh3:
+    def offset_vertices_copy(self, offset: float) -> Mesh3:
         """
         Create a new mesh with the same structure, but in which the vertices have been offset by the specified amount
         along their normal directions. The vertex normals are calculated through the same method as `vertex_normals`,
@@ -2556,7 +2556,7 @@ class Mesh3:
         :return: a new mesh with the vertices offset
         """
 
-    def transform_by(self, iso: Iso3):
+    def transform_in_place(self, iso: Iso3):
         """
         Transforms the vertices of the mesh by an isometry. This will modify the mesh in place.  Any copies made of
         the vertices will no longer match the mesh after this operation.
@@ -2564,7 +2564,7 @@ class Mesh3:
         """
         ...
 
-    def new_transformed_by(self, iso: Iso3) -> Mesh3:
+    def transform_copy(self, iso: Iso3) -> Mesh3:
         """
         Returns a new mesh with all vertices transformed by the given isometry, leaving the
         original unchanged.
@@ -2573,7 +2573,7 @@ class Mesh3:
         """
         ...
 
-    def append(self, other: Mesh3):
+    def append_in_place(self, other: Mesh3):
         """
         Append another mesh to this mesh. This will add the vertices and triangles from the other mesh to this mesh,
         changing this one and leaving the other one unmodified.

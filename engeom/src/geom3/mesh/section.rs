@@ -287,11 +287,11 @@ mod tests {
     #[test]
     fn two_unit_cylinders_in_xz_plane_create_two_circle_curves() {
         let mut mesh = Mesh3::create_cylinder(1.0, 2.0, 256);
-        mesh.transform_by(&Iso3::translation(0.0, 0.0, -2.0));
+        mesh.transform_in_place(&Iso3::translation(0.0, 0.0, -2.0));
         let mut m1 = Mesh3::create_cylinder(1.0, 2.0, 256);
-        m1.transform_by(&Iso3::translation(0.0, 0.0, 2.0));
+        m1.transform_in_place(&Iso3::translation(0.0, 0.0, 2.0));
 
-        mesh.append(&m1).unwrap();
+        mesh.append_in_place(&m1).unwrap();
 
         let plane = Plane3::xz();
 

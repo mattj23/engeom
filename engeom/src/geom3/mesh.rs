@@ -622,16 +622,16 @@ impl Mesh3 {
     ///
     /// Any stored point normals and `Vector` attributes are rotated with the geometry. Because
     /// those hold directions rather than positions, only the rotation component has any effect.
-    pub fn transform_by(&mut self, transform: &Iso3) {
+    pub fn transform_in_place(&mut self, transform: &Iso3) {
         self.shape.transform_vertices(transform);
         self.attrs.transform_in_place(transform);
     }
 
     /// Returns a new mesh with all vertices transformed by the given isometry, leaving the
     /// original unchanged.
-    pub fn new_transformed_by(&self, transform: &Iso3) -> Self {
+    pub fn transform_copy(&self, transform: &Iso3) -> Self {
         let mut result = self.clone();
-        result.transform_by(transform);
+        result.transform_in_place(transform);
         result
     }
 
@@ -669,7 +669,7 @@ impl Mesh3 {
         result.attrs.scale_in_place(scale);
 
         if scale < 0.0 {
-            result.flip_normals();
+            result.flip_normals_in_place();
         }
 
         Ok(result)
@@ -688,7 +688,7 @@ impl Mesh3 {
     /// * `offset`: The distance to offset each vertex along its normal.
     ///
     /// returns: Mesh3
-    pub fn new_offset_vertices(&self, offset: f64) -> Self {
+    pub fn offset_vertices_copy(&self, offset: f64) -> Self {
         // These are already normalized
         let normals = self.get_vertex_normals();
 
@@ -706,7 +706,7 @@ impl Mesh3 {
     ///
     /// Any stored point normals are negated to match, since the direction the surface faces has
     /// changed.
-    pub fn flip_normals(&mut self) {
+    pub fn flip_normals_in_place(&mut self) {
         self.shape.reverse();
         self.attrs.flip_in_place();
     }
@@ -756,7 +756,7 @@ impl Mesh3 {
     /// * `other`: the mesh to append
     ///
     /// returns: `Result<()>`
-    pub fn append(&mut self, other: &Mesh3) -> Result<()> {
+    pub fn append_in_place(&mut self, other: &Mesh3) -> Result<()> {
         // For now, both meshes must have an empty UV mapping
         if self.uv.is_some() || other.uv.is_some() {
             return Err("Cannot append meshes with UV mappings".into());
@@ -1170,11 +1170,11 @@ mod tests {
     }
 
     #[test]
-    fn new_offset_vertices_preserves_spherical_radius() {
+    fn offset_vertices_copy_preserves_spherical_radius() {
         let radius = 1.0;
         let offset = 0.1;
         let mesh = Mesh3::create_sphere(radius, 100, 100);
-        let offset_mesh = mesh.new_offset_vertices(offset);
+        let offset_mesh = mesh.offset_vertices_copy(offset);
 
         assert_eq!(mesh.points().len(), offset_mesh.points().len());
 
@@ -1278,7 +1278,7 @@ mod tests {
 
         // A quarter turn about +z, which maps +x onto +y, plus a translation.
         let iso = Iso3::new(Vector3::new(10.0, 0.0, 0.0), Vector3::z() * FRAC_PI_2);
-        mesh.transform_by(&iso);
+        mesh.transform_in_place(&iso);
 
         assert_relative_eq!(
             mesh.points()[1],
@@ -1334,7 +1334,7 @@ mod tests {
     #[test]
     fn flipping_negates_the_stored_normals() -> Result<()> {
         let mut mesh = Mesh3::from_data(attributed_data(), false)?;
-        mesh.flip_normals();
+        mesh.flip_normals_in_place();
 
         assert_relative_eq!(
             mesh.point_normals().unwrap()[0].into_inner(),
@@ -1350,7 +1350,7 @@ mod tests {
         let mut mesh = Mesh3::from_data(attributed_data(), false)?;
         let other = Mesh3::from_data(attributed_data(), false)?;
 
-        mesh.append(&other)?;
+        mesh.append_in_place(&other)?;
 
         assert_eq!(mesh.point_count(), 6);
         assert_eq!(mesh.face_count(), 2);
@@ -1375,7 +1375,7 @@ mod tests {
         bare_data.set_point_stdev(None)?;
         let other = Mesh3::from_data(bare_data, false)?;
 
-        assert!(mesh.append(&other).is_err());
+        assert!(mesh.append_in_place(&other).is_err());
 
         assert_eq!(mesh.point_count(), 3);
         assert_eq!(mesh.face_count(), 1);
@@ -1390,7 +1390,7 @@ mod tests {
         let other = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let n = mesh.point_count();
 
-        mesh.append(&other)?;
+        mesh.append_in_place(&other)?;
         assert_eq!(mesh.point_count(), n * 2);
 
         Ok(())
