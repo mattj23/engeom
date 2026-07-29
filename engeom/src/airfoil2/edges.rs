@@ -612,11 +612,11 @@ fn refine_from_edge_circle(
 
     let fake = Inscribed::new(*edge_circle, a.b, b.b);
     let fake_camber_line = (if fake.camber_point().normal.dot(&working.clip.direction) < 0.0 {
-        fake.camber_point().new_reversed()
+        fake.camber_point().reversed()
     } else {
         fake.camber_point()
     })
-    .new_shifted(-edge_circle.r() * 0.1);
+    .shifted(-edge_circle.r() * 0.1);
 
     let test_line = Line2::new(fake_camber_line.point, fake.contact_dir());
     let test_line = if test_line.direction.dot(&working.last()?.contact_dir()) < 0.0 {

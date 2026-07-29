@@ -445,7 +445,7 @@ class SurfacePoint2:
         """
         ...
 
-    def new_shifted(self, distance: float) -> SurfacePoint2:
+    def shifted(self, distance: float) -> SurfacePoint2:
         """
         Shift the surface point by a given distance along the normal vector. The position of the surface point is
         affected, but the normal vector is not.

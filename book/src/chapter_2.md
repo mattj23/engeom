@@ -509,7 +509,7 @@ Returns a new surface point displaced from the original along the normal directi
 use engeom::{Point3, SurfacePoint3, Vector3};
 
 let sp      = SurfacePoint3::new_normalize(Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 1.0, 0.0));
-let shifted = sp.new_shifted(2.0); // point moves to (0, 2, 0), normal unchanged
+let shifted = sp.shifted(2.0); // point moves to (0, 2, 0), normal unchanged
 ```
 
 #### Scaling (Python only)

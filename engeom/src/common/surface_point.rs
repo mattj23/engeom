@@ -70,7 +70,7 @@ impl<const D: usize> SurfacePoint<D> {
     }
 
     /// Returns a new surface point with the same point but with the normal reversed
-    pub fn new_reversed(&self) -> Self {
+    pub fn reversed(&self) -> Self {
         Self::new(self.point, -self.normal)
     }
 
@@ -109,11 +109,11 @@ impl<const D: usize> SurfacePoint<D> {
     ///
     /// let sp = SurfacePoint2::new_normalize(Point2::new(0.0, 0.0), Vector2::new(0.0, 1.0));
     ///
-    /// let shifted = sp.new_shifted(2.0);
+    /// let shifted = sp.shifted(2.0);
     /// assert_relative_eq!(shifted.point, Point2::new(0.0, 2.0), epsilon = 1e-6);
     /// assert_relative_eq!(shifted.normal.into_inner(), Vector2::new(0.0, 1.0), epsilon = 1e-6);
     /// ```
-    pub fn new_shifted(&self, offset: f64) -> Self {
+    pub fn shifted(&self, offset: f64) -> Self {
         let new_point = self.point + self.normal.as_ref() * offset;
         Self::new(new_point, self.normal)
     }
@@ -342,7 +342,7 @@ mod tests {
     #[test]
     fn reversed_flips_normal_keeps_point() {
         let sp = sp2(1.0, 2.0, 0.0, 1.0);
-        let rev = sp.new_reversed();
+        let rev = sp.reversed();
         assert_relative_eq!(rev.point, sp.point);
         assert_relative_eq!(
             rev.normal.into_inner(),
@@ -354,7 +354,7 @@ mod tests {
     #[test]
     fn reversed_twice_is_identity() {
         let sp = sp3(1.0, 2.0, 3.0, 1.0, 1.0, 0.0);
-        let twice = sp.new_reversed().new_reversed();
+        let twice = sp.reversed().reversed();
         assert_relative_eq!(twice.point, sp.point);
         assert_relative_eq!(
             twice.normal.into_inner(),
@@ -387,9 +387,9 @@ mod tests {
     }
 
     #[test]
-    fn new_shifted_moves_point_keeps_normal() {
+    fn shifted_moves_point_keeps_normal() {
         let sp = sp2(0.0, 0.0, 0.0, 1.0); // normal = +y
-        let shifted = sp.new_shifted(4.0);
+        let shifted = sp.shifted(4.0);
         assert_relative_eq!(shifted.point, Point2::new(0.0, 4.0), epsilon = 1e-12);
         assert_relative_eq!(
             shifted.normal.into_inner(),
@@ -399,9 +399,9 @@ mod tests {
     }
 
     #[test]
-    fn new_shifted_negative_offset() {
+    fn shifted_negative_offset() {
         let sp = sp2(0.0, 5.0, 0.0, 1.0); // normal = +y, point at (0, 5)
-        let shifted = sp.new_shifted(-3.0);
+        let shifted = sp.shifted(-3.0);
         assert_relative_eq!(shifted.point, Point2::new(0.0, 2.0), epsilon = 1e-12);
     }
 

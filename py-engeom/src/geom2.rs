@@ -447,7 +447,7 @@ impl SurfacePoint2 {
     }
 
     fn reversed(&self) -> Self {
-        Self::from_inner(self.inner.new_reversed())
+        Self::from_inner(self.inner.reversed())
     }
 
     fn transformed_by(&self, iso: Iso2) -> Self {
@@ -501,8 +501,8 @@ impl SurfacePoint2 {
         Self::from_inner(self.inner.rot_normal(angle))
     }
 
-    fn new_shifted(&self, distance: f64) -> Self {
-        Self::from_inner(self.inner.new_shifted(distance))
+    fn shifted(&self, distance: f64) -> Self {
+        Self::from_inner(self.inner.shifted(distance))
     }
 
     fn to_line(&self) -> Line2 {
