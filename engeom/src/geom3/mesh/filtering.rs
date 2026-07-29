@@ -439,11 +439,19 @@ impl TriangleFilter<'_> {
                 continue;
             }
 
-            // Check that the angle to the centroid is within the angle tolerance
-            let v_to_centroid = (mp.point() - centroid).normalize();
-            let a_to_centroid = face_normal.angle(&v_to_centroid);
-            if a_to_centroid > angle_tol && a_to_centroid < (PI - angle_tol) {
-                continue;
+            // Check that the angle to the centroid is within the angle tolerance.
+            //
+            // A centroid which already lies on the other surface has no meaningful direction to its
+            // own projection: the difference is floating point residue, and normalizing it produces
+            // a direction made of rounding noise which lands perpendicular to the normal about as
+            // often as not. Zero separation is the strongest agreement there is, so it passes
+            // without the test. This mirrors the guard in `Mesh3::measure_point_deviation`.
+            let v_to_centroid = mp.point() - centroid;
+            if v_to_centroid.norm() > 1e-6 {
+                let a_to_centroid = face_normal.angle(&v_to_centroid.normalize());
+                if a_to_centroid > angle_tol && a_to_centroid < (PI - angle_tol) {
+                    continue;
+                }
             }
 
             // What's the area of the triangle formed by the projected points?
@@ -682,6 +690,7 @@ impl<'a> MeshNearCheck<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Iso3;
     use crate::SelectOp::Add;
     use std::f64::consts::PI;
 
@@ -701,5 +710,37 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    /// Two copies of the same mesh in the same place overlap completely. This used to select
+    /// nothing, because the direction from a face centroid to its own projection is floating point
+    /// residue, and normalizing it produced a direction perpendicular to the face normal.
+    #[test]
+    fn faces_overlap_accepts_a_coincident_copy() {
+        let mesh = Mesh3::create_box(2.0, 2.0, 2.0, true);
+        let same = Mesh3::create_box(2.0, 2.0, 2.0, true);
+
+        let selected = mesh
+            .face_select(Selection::None)
+            .faces_overlap(&same, 0.1, 0.1, Add)
+            .collect_indices();
+
+        assert_eq!(selected.len(), mesh.faces().len());
+    }
+
+    /// The separated case still has to be rejected, so the guard above did not simply disable the
+    /// direction test.
+    #[test]
+    fn faces_overlap_rejects_a_mesh_which_is_far_away() {
+        let mesh = Mesh3::create_box(2.0, 2.0, 2.0, true);
+        let mut apart = Mesh3::create_box(2.0, 2.0, 2.0, true);
+        apart.transform_in_place(&Iso3::translation(50.0, 0.0, 0.0));
+
+        let selected = mesh
+            .face_select(Selection::None)
+            .faces_overlap(&apart, 0.1, 0.1, Add)
+            .collect_indices();
+
+        assert!(selected.is_empty());
     }
 }

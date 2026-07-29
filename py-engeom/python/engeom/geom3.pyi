@@ -3317,6 +3317,84 @@ class FaceFilterHandle:
     or used to directly create a new mesh containing only the filtered triangles.
     """
 
+    def above_plane(self, plane: Plane3, all_vertices: bool, mode: engeom.SelectOp) -> FaceFilterHandle:
+        """
+        Select faces by their position relative to a plane, testing each face's vertices against the plane's positive
+        half-space.
+
+        :param plane: the plane to test against.
+        :param all_vertices: if True, all three vertices must lie above the plane; if False, one is enough.
+        :param mode: whether to add the matching faces, remove them, or keep only them.
+        :return: the same handle, to allow chaining.
+        """
+        ...
+
+    def vertices_near_point(
+            self,
+            x: float,
+            y: float,
+            z: float,
+            max_dist: float,
+            all_vertices: bool,
+            mode: engeom.SelectOp
+    ) -> FaceFilterHandle:
+        """
+        Select faces by the distance of their vertices from a test point.
+
+        :param x: the x coordinate of the test point.
+        :param y: the y coordinate of the test point.
+        :param z: the z coordinate of the test point.
+        :param max_dist: the maximum allowable distance between the point and a vertex.
+        :param all_vertices: if True, all three vertices must be within the distance; if False, one is enough.
+        :param mode: whether to add the matching faces, remove them, or keep only them.
+        :return: the same handle, to allow chaining.
+        """
+        ...
+
+    def expand(self, mode: engeom.SelectOp, exclude: IndexMask | None = None) -> FaceFilterHandle:
+        """
+        Grow or shrink the selection by one row of faces along its border, where a face is a neighbor if it shares a
+        vertex with a selected face. With `"add"` this dilates the selection, with `"remove"` it erodes it, and with
+        `"keep"` it does nothing.
+
+        :param mode: whether to dilate (`"add"`) or erode (`"remove"`) the selection.
+        :param exclude: an optional face mask marking a region the expansion may not enter, or which may not erode.
+        :return: the same handle, to allow chaining.
+        :raises ValueError: if the exclude mask length does not match the mesh's face count.
+        """
+        ...
+
+    def expand_n(self, n: int, mode: engeom.SelectOp, exclude: IndexMask | None = None) -> FaceFilterHandle:
+        """
+        Apply `expand` `n` times in a row.
+
+        :param n: the number of times to expand.
+        :param mode: whether to dilate (`"add"`) or erode (`"remove"`) the selection.
+        :param exclude: an optional face mask marking a region the expansion may not enter, or which may not erode.
+        :return: the same handle, to allow chaining.
+        :raises ValueError: if the exclude mask length does not match the mesh's face count.
+        """
+        ...
+
+    def faces_overlap(
+            self,
+            other: Mesh3,
+            angle_tol: float,
+            distance_tol: float,
+            mode: engeom.SelectOp
+    ) -> FaceFilterHandle:
+        """
+        Select faces which lie on top of the other mesh, meaning their vertices all project onto it within the
+        distance tolerance and their normal agrees with the other surface's normal there.
+
+        :param other: the mesh to test against.
+        :param angle_tol: the maximum angle, in radians, between the face normal and the direction to its projection.
+        :param distance_tol: the maximum distance a vertex may be from the other mesh.
+        :param mode: whether to add the matching faces, remove them, or keep only them.
+        :return: the same handle, to allow chaining.
+        """
+        ...
+
     def by_mask(self, mask: IndexMask, mode: engeom.SelectOp) -> FaceFilterHandle:
         """
         Modify the selection directly with a face mask.
@@ -4664,6 +4742,82 @@ class MeshData3:
 
         :param radius: the radius of the circle.
         :param segments: the number of perimeter points, and of triangles. Must be at least 3.
+        :return: the mesh data.
+        """
+        ...
+
+    @staticmethod
+    def create_capsule(p0: Point3, p1: Point3, radius: float, n_theta: int, n_phi: int) -> MeshData3:
+        """
+        Create a capsule mesh, a cylinder with a hemispherical cap on each end, spanning the segment between two
+        points.
+
+        :param p0: one end of the segment.
+        :param p1: the other end of the segment.
+        :param radius: the radius of the cylinder and of the caps.
+        :param n_theta: the number of subdivisions around the circumference.
+        :param n_phi: the number of subdivisions over each cap.
+        :return: the mesh data.
+        """
+        ...
+
+    @staticmethod
+    def create_cylinder_between(p0: Point3, p1: Point3, radius: float, steps: int) -> MeshData3:
+        """
+        Create a cylindrical mesh spanning the segment between two points.
+
+        :param p0: one end of the segment.
+        :param p1: the other end of the segment.
+        :param radius: the radius of the cylinder.
+        :param steps: the number of subdivisions around the circumference.
+        :return: the mesh data.
+        """
+        ...
+
+    @staticmethod
+    def create_rect_beam_between(
+            p0: Point3,
+            p1: Point3,
+            width: float,
+            height: float,
+            up: Vector3 | None = None
+    ) -> MeshData3:
+        """
+        Create a rectangular beam spanning the segment between two points.
+
+        :param p0: one end of the segment.
+        :param p1: the other end of the segment.
+        :param width: the dimension of the cross section across the `up` direction.
+        :param height: the dimension of the cross section along the `up` direction.
+        :param up: the direction taken as up for the cross section, defaulting to +Z.
+        :return: the mesh data.
+        :raises ValueError: if `up` is parallel to the segment, leaving the cross section undetermined.
+        """
+        ...
+
+    @staticmethod
+    def stanford_bunny_res4() -> MeshData3:
+        """
+        Load the Stanford bunny embedded in the binary at resolution 4, with 453 points and 948 faces.
+
+        :return: the mesh data.
+        """
+        ...
+
+    @staticmethod
+    def stanford_bunny_res3() -> MeshData3:
+        """
+        Load the Stanford bunny embedded in the binary at resolution 3, with 1889 points and 3851 faces.
+
+        :return: the mesh data.
+        """
+        ...
+
+    @staticmethod
+    def stanford_bunny_res2() -> MeshData3:
+        """
+        Load the Stanford bunny embedded in the binary at resolution 2.
+
         :return: the mesh data.
         """
         ...

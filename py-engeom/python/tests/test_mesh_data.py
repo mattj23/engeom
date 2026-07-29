@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy
 import pytest
 
-from engeom.geom3 import Iso3, Mesh3, MeshData3, Point3, PointCloud, PointCloudData3
+from engeom.geom3 import Iso3, Mesh3, MeshData3, Point3, PointCloud, PointCloudData3, Vector3
 from engeom.common import IndexMask
 
 
@@ -787,3 +787,46 @@ def test_mesh_data_compute_point_normals_reports_a_point_with_no_normal():
 
     with pytest.raises(ValueError):
         data.compute_point_normals()
+
+
+# ---------------------------------------------------------------------------
+# Primitive parity with Mesh3
+# ---------------------------------------------------------------------------
+
+def test_mesh_data_capsule_and_cylinder_between():
+    p0, p1 = Point3(0.0, 0.0, 0.0), Point3(0.0, 0.0, 10.0)
+
+    capsule = MeshData3.create_capsule(p0, p1, 1.0, 16, 8)
+    cylinder = MeshData3.create_cylinder_between(p0, p1, 1.0, 16)
+
+    assert capsule.face_count > 0
+    assert cylinder.face_count > 0
+    # The capsule adds two hemispherical caps, so it is the larger of the two.
+    assert capsule.face_count > cylinder.face_count
+
+
+def test_mesh_data_rect_beam_between():
+    beam = MeshData3.create_rect_beam_between(
+        Point3(0.0, 0.0, 0.0), Point3(10.0, 0.0, 0.0), 2.0, 4.0
+    )
+
+    assert beam.face_count == 12  # a box is 12 triangles
+    lengths = beam.points.max(axis=0) - beam.points.min(axis=0)
+    assert numpy.allclose(sorted(lengths), [2.0, 4.0, 10.0])
+
+
+def test_mesh_data_rect_beam_rejects_an_up_along_the_segment():
+    with pytest.raises(ValueError):
+        MeshData3.create_rect_beam_between(
+            Point3(0.0, 0.0, 0.0), Point3(0.0, 0.0, 10.0), 2.0, 4.0, up=Vector3(0.0, 0.0, 1.0)
+        )
+
+
+@pytest.mark.parametrize("name", ["stanford_bunny_res2", "stanford_bunny_res3", "stanford_bunny_res4"])
+def test_mesh_data_bunnies_match_the_accelerated_type(name):
+    """Both types read the same embedded asset, so the buffers must be identical."""
+    data = getattr(MeshData3, name)()
+    mesh = getattr(Mesh3, name)()
+
+    assert numpy.allclose(data.points, mesh.points)
+    assert numpy.array_equal(data.faces, mesh.faces)

@@ -1,7 +1,8 @@
 import numpy
 import pytest
 from numpy import linalg
-from engeom.geom3 import Mesh3, Iso3
+from engeom.geom3 import Mesh3, Iso3, Plane3
+from engeom.common import IndexMask
 
 
 def test_mesh_offset_points_copy():
@@ -215,3 +216,91 @@ def test_face_filter_handle_to_mask_does_not_consume_the_handle():
 
     assert first.all()
     assert handle.collect_indices() == list(range(m.face_count))
+
+
+def test_filter_above_plane_splits_a_box():
+    m = Mesh3.create_box(2.0, 2.0, 2.0)
+    plane = Plane3(0.0, 0.0, 1.0, 0.0)
+
+    any_above = m.face_select_none().above_plane(plane, False, "add").collect_indices()
+    all_above = m.face_select_none().above_plane(plane, True, "add").collect_indices()
+
+    # Requiring every vertex is strictly stronger than requiring one.
+    assert set(all_above) <= set(any_above)
+    assert len(all_above) < len(any_above)
+
+
+def test_filter_vertices_near_point():
+    m = Mesh3.create_box(2.0, 2.0, 2.0)
+    corner = m.points[0]
+
+    near = m.face_select_none().vertices_near_point(*corner, 0.1, False, "add").collect_indices()
+    far = m.face_select_none().vertices_near_point(*corner, 100.0, True, "add").collect_indices()
+
+    assert 0 < len(near) < m.face_count
+    assert len(far) == m.face_count
+
+
+def test_filter_expand_dilates_and_erodes():
+    m = Mesh3.create_sphere(1.0, 20, 20)
+    seed = IndexMask.from_indices([0], m.face_count)
+
+    grown = m.face_select_none().by_mask(seed, "add").expand("add").to_mask()
+    assert grown.count_true() > 1
+    assert (grown & seed) == seed  # dilation keeps what it started with
+
+    # Erosion needs a border to eat into. A closed sphere has none when everything is selected, so
+    # erode the dilated patch instead, which does.
+    eroded = m.face_select_none().by_mask(grown, "add").expand("remove").to_mask()
+    assert eroded.count_true() < grown.count_true()
+
+
+def test_filter_expand_remove_on_a_closed_mesh_selection_is_a_no_op():
+    """Erosion works from the unselected side, so a fully selected closed mesh has nothing to erode."""
+    m = Mesh3.create_sphere(1.0, 20, 20)
+
+    eroded = m.face_select_all().expand("remove").collect_indices()
+
+    assert len(eroded) == m.face_count
+
+
+def test_filter_expand_n_matches_repeated_expand():
+    m = Mesh3.create_sphere(1.0, 20, 20)
+    seed = IndexMask.from_indices([0], m.face_count)
+
+    once_twice = (m.face_select_none().by_mask(seed, "add")
+                  .expand("add").expand("add").collect_indices())
+    n_two = (m.face_select_none().by_mask(seed, "add")
+             .expand_n(2, "add").collect_indices())
+
+    assert once_twice == n_two
+
+
+def test_filter_expand_respects_the_exclude_mask():
+    m = Mesh3.create_sphere(1.0, 20, 20)
+    seed = IndexMask.from_indices([0], m.face_count)
+
+    free = m.face_select_none().by_mask(seed, "add").expand("add").to_mask()
+    # Exclude everything the unrestricted expansion would have reached, minus the seed itself.
+    blocked = m.face_select_none().by_mask(seed, "add").expand("add", exclude=free - seed).to_mask()
+
+    assert blocked == seed
+
+
+def test_filter_expand_rejects_a_mask_of_the_wrong_length():
+    m = Mesh3.create_box(1.0, 1.0, 1.0)
+    with pytest.raises(ValueError):
+        m.face_select_all().expand("add", exclude=IndexMask(3))
+
+
+def test_filter_faces_overlap_finds_a_coincident_copy():
+    m = Mesh3.create_box(2.0, 2.0, 2.0)
+    same = Mesh3.create_box(2.0, 2.0, 2.0)
+    apart = Mesh3.create_box(2.0, 2.0, 2.0)
+    apart.transform_in_place(Iso3.from_translation(50.0, 0.0, 0.0))
+
+    on_top = m.face_select_none().faces_overlap(same, 0.1, 0.1, "add").collect_indices()
+    nowhere = m.face_select_none().faces_overlap(apart, 0.1, 0.1, "add").collect_indices()
+
+    assert len(on_top) == m.face_count
+    assert nowhere == []

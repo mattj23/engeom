@@ -922,6 +922,111 @@ impl FaceFilterHandle {
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
+    fn above_plane<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        py: Python<'py>,
+        plane: &Plane3,
+        all_vertices: bool,
+        mode: &str,
+    ) -> PyResult<Bound<'py, Self>> {
+        let op = select_op_from_str(mode)?;
+        let temp = slf.mesh.bind(py).borrow();
+        let i = slf.indices.clone();
+        slf.indices = temp
+            .inner
+            .face_select(Selection::Indices(i))
+            .above_plane(plane.get_inner(), all_vertices, op)
+            .collect_indices();
+        slf.into_pyobject(py)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn vertices_near_point<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        py: Python<'py>,
+        x: f64,
+        y: f64,
+        z: f64,
+        max_dist: f64,
+        all_vertices: bool,
+        mode: &str,
+    ) -> PyResult<Bound<'py, Self>> {
+        let op = select_op_from_str(mode)?;
+        let point = engeom::Point3::new(x, y, z);
+        let temp = slf.mesh.bind(py).borrow();
+        let i = slf.indices.clone();
+        slf.indices = temp
+            .inner
+            .face_select(Selection::Indices(i))
+            .vertices_near_point(&point, max_dist, all_vertices, op)
+            .collect_indices();
+        slf.into_pyobject(py)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[pyo3(signature = (mode, exclude = None))]
+    fn expand<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        py: Python<'py>,
+        mode: &str,
+        exclude: Option<&IndexMask>,
+    ) -> PyResult<Bound<'py, Self>> {
+        let op = select_op_from_str(mode)?;
+        let temp = slf.mesh.bind(py).borrow();
+        let i = slf.indices.clone();
+        slf.indices = temp
+            .inner
+            .face_select(Selection::Indices(i))
+            .expand(exclude.map(|m| m.get_inner()), op)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?
+            .collect_indices();
+        slf.into_pyobject(py)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[pyo3(signature = (n, mode, exclude = None))]
+    fn expand_n<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        py: Python<'py>,
+        n: usize,
+        mode: &str,
+        exclude: Option<&IndexMask>,
+    ) -> PyResult<Bound<'py, Self>> {
+        let op = select_op_from_str(mode)?;
+        let temp = slf.mesh.bind(py).borrow();
+        let i = slf.indices.clone();
+        slf.indices = temp
+            .inner
+            .face_select(Selection::Indices(i))
+            .expand_n(n, exclude.map(|m| m.get_inner()), op)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?
+            .collect_indices();
+        slf.into_pyobject(py)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn faces_overlap<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        py: Python<'py>,
+        other: PyRef<Mesh3>,
+        angle_tol: f64,
+        distance_tol: f64,
+        mode: &str,
+    ) -> PyResult<Bound<'py, Self>> {
+        let op = select_op_from_str(mode)?;
+        let temp = slf.mesh.bind(py).borrow();
+        let i = slf.indices.clone();
+        slf.indices = temp
+            .inner
+            .face_select(Selection::Indices(i))
+            .faces_overlap(&other.inner, angle_tol, distance_tol, op)
+            .collect_indices();
+        slf.into_pyobject(py)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
     fn by_mask<'py>(
         mut slf: PyRefMut<'py, Self>,
         py: Python<'py>,
@@ -1486,6 +1591,63 @@ impl MeshData3 {
     #[staticmethod]
     fn create_circle(radius: f64, segments: usize) -> Self {
         Self::from_inner(engeom::MeshData3::create_circle(radius, segments))
+    }
+
+    #[staticmethod]
+    fn create_capsule(p0: Point3, p1: Point3, radius: f64, n_theta: usize, n_phi: usize) -> Self {
+        Self::from_inner(engeom::MeshData3::create_capsule(
+            p0.get_inner(),
+            p1.get_inner(),
+            radius,
+            n_theta,
+            n_phi,
+        ))
+    }
+
+    #[staticmethod]
+    fn create_cylinder_between(p0: Point3, p1: Point3, radius: f64, steps: usize) -> Self {
+        Self::from_inner(engeom::MeshData3::create_cylinder_between(
+            p0.get_inner(),
+            p1.get_inner(),
+            radius,
+            steps,
+        ))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (p0, p1, width, height, up = None))]
+    fn create_rect_beam_between(
+        p0: Point3,
+        p1: Point3,
+        width: f64,
+        height: f64,
+        up: Option<Vector3>,
+    ) -> PyResult<Self> {
+        let up = up.map_or(engeom::Vector3::z(), |v| *v.get_inner());
+        let inner = engeom::MeshData3::create_rect_beam_between(
+            p0.get_inner(),
+            p1.get_inner(),
+            width,
+            height,
+            &up,
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(inner))
+    }
+
+    #[staticmethod]
+    fn stanford_bunny_res4() -> Self {
+        Self::from_inner(engeom::MeshData3::stanford_bunny_res4())
+    }
+
+    #[staticmethod]
+    fn stanford_bunny_res3() -> Self {
+        Self::from_inner(engeom::MeshData3::stanford_bunny_res3())
+    }
+
+    #[staticmethod]
+    fn stanford_bunny_res2() -> Self {
+        Self::from_inner(engeom::MeshData3::stanford_bunny_res2())
     }
 
     fn __len__(&self) -> usize {
