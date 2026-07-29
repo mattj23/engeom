@@ -2898,7 +2898,7 @@ class Mesh3:
         """
         ...
 
-    def get_patch_boundaries(self) -> List[Curve3]:
+    def patch_boundaries(self) -> List[Curve3]:
         """
         Extract the boundary loops of the mesh's surface patches, each returned as a closed
         ``Curve3``.

@@ -201,7 +201,7 @@ impl Mesh3 {
     #[getter]
     fn vertex_normals<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArray2<f64>> {
         if self.vertex_normals.is_none() {
-            let normals = self.inner.get_vertex_normals();
+            let normals = self.inner.compute_vertex_normals();
             let array = vectors_to_array(&normals);
             self.vertex_normals = Some(array.into_pyarray(py).unbind());
         }
@@ -221,11 +221,11 @@ impl Mesh3 {
         Self::from_inner(self.inner.offset_vertices_copy(offset))
     }
 
-    fn get_patch_boundaries(&self) -> PyResult<Vec<Curve3>> {
+    fn patch_boundaries(&self) -> PyResult<Vec<Curve3>> {
         // TODO: Is this actually used? What's the difference between it and `boundary_curves`?
         let boundaries = self
             .inner
-            .get_patch_boundary_points()
+            .compute_patch_boundary_points()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         let mut result = Vec::new();
@@ -268,7 +268,7 @@ impl Mesh3 {
         if self.face_normals.is_none() {
             let normals = self
                 .inner
-                .get_face_normals()
+                .compute_face_normals()
                 .map_err(|e| PyValueError::new_err(e.to_string()))?
                 .into_iter()
                 .map(|n| n.into_inner())
@@ -284,7 +284,7 @@ impl Mesh3 {
     fn boundary_curves(&self) -> PyResult<Vec<Curve3>> {
         let edges = self
             .inner
-            .calc_edges()
+            .compute_edges()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         let mut curves = Vec::new();
@@ -382,7 +382,7 @@ impl Mesh3 {
     fn boundary_first_flatten<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
         let edges = self
             .inner
-            .calc_edges()
+            .compute_edges()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         let values = edges
@@ -479,7 +479,7 @@ impl Mesh3 {
     fn separate_patches(&self) -> PyResult<Vec<Self>> {
         let patch_groups = self
             .inner
-            .get_patches(None)
+            .compute_patches(None)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let mut results = Vec::with_capacity(patch_groups.len());
         for mask in patch_groups.iter() {

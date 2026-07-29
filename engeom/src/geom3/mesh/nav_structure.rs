@@ -246,7 +246,7 @@ impl<'a> MeshNav<'a> {
     ///   indices must be a valid edge that exists in one of the mesh's faces.
     ///
     /// returns: Result<IndexMask, Box<dyn Error, Global>>
-    pub fn get_patch_inside_loop(&self, vertex_loop: &[u32]) -> Result<IndexMask> {
+    pub fn compute_patch_inside_loop(&self, vertex_loop: &[u32]) -> Result<IndexMask> {
         let mut outside = IndexMask::new(self.mesh.faces().len(), false);
         let mut inside = IndexMask::new(self.mesh.faces().len(), false);
         let mut working = HashSet::with_hasher(default());
@@ -381,7 +381,7 @@ mod tests {
         let mut working = boundary_loops[0].clone();
         working.reverse();
 
-        let inner = nav.get_patch_inside_loop(&working).unwrap();
+        let inner = nav.compute_patch_inside_loop(&working).unwrap();
         assert_eq!(
             inner.count_true(),
             4960,

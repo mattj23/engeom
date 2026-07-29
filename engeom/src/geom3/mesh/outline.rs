@@ -65,7 +65,7 @@ impl Mesh3 {
             }
         }
 
-        let vert_normals = self.get_vertex_normals();
+        let vert_normals = self.compute_vertex_normals();
         let mut edges = Vec::new();
         for k in working {
             let k0 = k[0];

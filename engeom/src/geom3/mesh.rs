@@ -690,7 +690,7 @@ impl Mesh3 {
     /// returns: Mesh3
     pub fn offset_vertices_copy(&self, offset: f64) -> Self {
         // These are already normalized
-        let normals = self.get_vertex_normals();
+        let normals = self.compute_vertex_normals();
 
         let updated = self
             .points()
@@ -717,7 +717,7 @@ impl Mesh3 {
 // ===============================================================================================
 
 impl Mesh3 {
-    pub fn calc_edges(&self) -> Result<MeshEdges<'_>> {
+    pub fn compute_edges(&self) -> Result<MeshEdges<'_>> {
         MeshEdges::new(self)
     }
 
@@ -865,7 +865,7 @@ impl Mesh3 {
     /// * `mask`:
     ///
     /// returns: Result<Vec<IndexMask, Global>, Box<dyn Error, Global>>
-    pub fn get_patches(&self, mask: Option<&IndexMask>) -> Result<Vec<IndexMask>> {
+    pub fn compute_patches(&self, mask: Option<&IndexMask>) -> Result<Vec<IndexMask>> {
         let nav = self.nav();
         nav.patches(mask)
     }
@@ -875,7 +875,7 @@ impl Mesh3 {
     /// function will not work on non-manifold meshes.
     ///
     /// returns: Result<Vec<Vec<usize, Global>, Global>>
-    pub fn get_patch_boundary_points(&self) -> Result<Vec<Vec<Point3>>> {
+    pub fn compute_patch_boundary_points(&self) -> Result<Vec<Vec<Point3>>> {
         let edges = MeshEdges::new(self)?;
 
         let mut b_loops = Vec::new();
@@ -891,33 +891,27 @@ impl Mesh3 {
         Ok(b_loops)
     }
 
-    pub fn get_face_normals(&self) -> Result<Vec<UnitVec3>> {
-        let mut result = Vec::new();
-        for t in self.shape.triangles() {
-            if let Some(n) = t.normal() {
-                result.push(n);
-            } else {
-                return Err("Failed to get normal".into());
-            }
-        }
-
-        Ok(result)
-    }
-
-    /// Calculates and returns the areas of all triangular faces in the shape.
+    /// Compute the unit normal of every face, from the winding of its three points.
     ///
-    /// This function iterates over all the triangles in the shape, computes the area
-    /// of each triangle using the `area` method, and collects the results into a vector.
-    pub fn get_face_areas(&self) -> Vec<f64> {
-        self.shape.triangles().map(|t| t.area()).collect::<Vec<_>>()
+    /// returns: `Result<Vec<UnitVec3>>`, one normal per face, failing on a face which has no
+    /// well-defined normal because its points are coincident or collinear
+    pub fn compute_face_normals(&self) -> Result<Vec<UnitVec3>> {
+        algorithms::compute_face_normals(self.points(), self.faces())
     }
 
-    /// Calculates and returns the centroid of all triangular faces in the mesh.
-    pub fn get_face_centers(&self) -> Vec<Point3> {
-        self.shape
-            .triangles()
-            .map(|t| t.center())
-            .collect::<Vec<_>>()
+    /// Compute the area of every face.
+    ///
+    /// returns: `Result<Vec<f64>>`, one area per face. A degenerate face has an area of zero rather
+    /// than being an error.
+    pub fn compute_face_areas(&self) -> Result<Vec<f64>> {
+        algorithms::compute_face_areas(self.points(), self.faces())
+    }
+
+    /// Compute the centroid of every face, which is the mean of its three points.
+    ///
+    /// returns: `Result<Vec<Point3>>`, one centroid per face
+    pub fn compute_face_centers(&self) -> Result<Vec<Point3>> {
+        algorithms::compute_face_centers(self.points(), self.faces())
     }
 
     /// Compute smooth per-vertex normals by averaging the normals of all adjacent triangles
@@ -931,7 +925,7 @@ impl Mesh3 {
     /// vertices will point along the diagonals, since each vertex will have some faces where it
     /// touches two triangles and may have some faces where it touches only one triangle, making
     /// the weights uneven.
-    pub fn get_vertex_normals(&self) -> Vec<Vector3> {
+    pub fn compute_vertex_normals(&self) -> Vec<Vector3> {
         let mut sums: Vec<Vector3> = vec![Vector3::new(0.0, 0.0, 0.0); self.shape.vertices().len()];
         let mut weights = vec![0.0; self.shape.vertices().len()];
 
@@ -1144,7 +1138,7 @@ mod tests {
     #[test]
     fn vertex_normals_match_vertex_count_and_are_normalized() {
         let mesh = stanford_bun_4();
-        let normals = mesh.get_vertex_normals();
+        let normals = mesh.compute_vertex_normals();
 
         assert_eq!(normals.len(), mesh.points().len());
 

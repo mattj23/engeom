@@ -310,6 +310,29 @@ impl MeshData3 {
         algorithms::compute_point_normals(&self.points, &self.faces)
     }
 
+    /// Compute the unit normal of every face, from the winding of its three points.
+    ///
+    /// returns: `Result<Vec<UnitVec3>>`, one normal per face, failing on a face which has no
+    /// well-defined normal because its points are coincident or collinear
+    pub fn compute_face_normals(&self) -> Result<Vec<UnitVec3>> {
+        algorithms::compute_face_normals(&self.points, &self.faces)
+    }
+
+    /// Compute the area of every face.
+    ///
+    /// returns: `Result<Vec<f64>>`, one area per face. A degenerate face has an area of zero rather
+    /// than being an error.
+    pub fn compute_face_areas(&self) -> Result<Vec<f64>> {
+        algorithms::compute_face_areas(&self.points, &self.faces)
+    }
+
+    /// Compute the centroid of every face, which is the mean of its three points.
+    ///
+    /// returns: `Result<Vec<Point3>>`, one centroid per face
+    pub fn compute_face_centers(&self) -> Result<Vec<Point3>> {
+        algorithms::compute_face_centers(&self.points, &self.faces)
+    }
+
     /// Offset this mesh's surface by `distance` in place, leaving its faces and attributes alone.
     ///
     /// Only the point positions change, so the topology and every per-element attribute survive
