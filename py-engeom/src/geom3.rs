@@ -2066,6 +2066,14 @@ impl Curve3 {
         Self::from_inner(self.inner.new_transformed_by(iso.get_inner()))
     }
 
+    fn to_2d(&self) -> PyResult<crate::geom2::Curve2> {
+        let c = self
+            .inner
+            .to_2d()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(crate::geom2::Curve2::from_inner(c))
+    }
+
     #[staticmethod]
     fn load_tccurve3(path: PathBuf) -> PyResult<Self> {
         let curve = engeom::io::read_tc_curve3_file(&path)

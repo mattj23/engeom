@@ -7,7 +7,7 @@ import numpy
 from numpy.typing import NDArray
 import engeom
 from typing import Callable
-from engeom.geom2 import Vector2, Point2, SurfacePoint2, SplineProjection
+from engeom.geom2 import Vector2, Point2, SurfacePoint2, SplineProjection, Curve2
 from engeom.common import IndexMask
 
 import metrology
@@ -3728,6 +3728,22 @@ class Curve3:
 
         :param iso: the isometry to transform the curve by.
         :return: a new curve object with the transformed vertices.
+        """
+        ...
+
+    def to_2d(self) -> Curve2:
+        """
+        Convert the curve to a 2D curve by dropping the z-coordinate of all vertices, effectively
+        projecting the curve into the x-y plane. The tolerance of this curve is preserved, and the
+        resulting curve will be considered closed if its first and last vertices end up within that
+        tolerance of each other.
+
+        Beware that this operation can fail, raising a `ValueError`, because the projection may
+        bring vertices closer together than the tolerance. The de-duplication which follows may
+        leave fewer than two distinct points, for instance when this curve is parallel to the z
+        axis.
+
+        :return: a new `Curve2` object representing the curve projected into the x-y plane.
         """
         ...
 
