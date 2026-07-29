@@ -5,7 +5,7 @@ use crate::Result;
 use bitvec::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IndexMask {
     mask: BitVec,
 }
@@ -315,6 +315,12 @@ impl IndexMask {
 
     /// Returns true if all bits are set to false
     pub fn is_empty(&self) -> bool {
+        // A zero length mask has no true bits, and also has no raw chunks to check, so it has to
+        // be handled before the chunk arithmetic below underflows on it.
+        if self.mask.is_empty() {
+            return true;
+        }
+
         // First, we'll check the full usize elements
         let last_chunk = self.mask.as_raw_slice().len() - 1;
         if self.mask.as_raw_slice()[0..last_chunk]
@@ -376,6 +382,26 @@ mod tests {
     fn empty_mask_starting_zero() {
         let mask = IndexMask::new(1000, false);
         assert!(mask.is_empty());
+    }
+
+    #[test]
+    fn zero_length_mask_is_empty() {
+        let mask = IndexMask::new(0, false);
+        assert!(mask.is_empty());
+        assert_eq!(mask.len(), 0);
+        assert!(mask.to_indices().is_empty());
+    }
+
+    #[test]
+    fn equality_compares_length_and_bits() {
+        let a = IndexMask::try_from_indices(&[1, 3], 8).unwrap();
+        let b = IndexMask::try_from_indices(&[1, 3], 8).unwrap();
+        let different_bits = IndexMask::try_from_indices(&[1, 4], 8).unwrap();
+        let different_len = IndexMask::try_from_indices(&[1, 3], 9).unwrap();
+
+        assert_eq!(a, b);
+        assert_ne!(a, different_bits);
+        assert_ne!(a, different_len);
     }
 
     #[test]
@@ -537,8 +563,8 @@ mod tests {
                 vec[idx] = val;
             }
 
-            for i in 0..len {
-                assert_eq!(mask.get(i), vec[i], "Mismatch at index {}", i);
+            for (i, &v) in vec.iter().enumerate() {
+                assert_eq!(mask.get(i), v, "Mismatch at index {}", i);
             }
         }
 
@@ -550,17 +576,17 @@ mod tests {
             let mut vec = vec![false; len];
 
             for _ in 0..10 {
-                for i in 0..len {
+                for (i, v) in vec.iter_mut().enumerate() {
                     let val = rng.random_bool(0.5);
                     mask.set(i, val);
-                    vec[i] = val;
+                    *v = val;
                 }
                 mask.not_mut();
-                for i in 0..len {
-                    vec[i] = !vec[i];
+                for v in vec.iter_mut() {
+                    *v = !*v;
                 }
-                for i in 0..len {
-                    assert_eq!(mask.get(i), vec[i], "Mismatch after flip at index {}", i);
+                for (i, &v) in vec.iter().enumerate() {
+                    assert_eq!(mask.get(i), v, "Mismatch after flip at index {}", i);
                 }
             }
         }
@@ -572,10 +598,10 @@ mod tests {
             let mut mask = IndexMask::new(len, false);
             let mut vec = vec![false; len];
 
-            for i in 0..len {
+            for (i, v) in vec.iter_mut().enumerate() {
                 let val = rng.random_bool(0.3);
                 mask.set(i, val);
-                vec[i] = val;
+                *v = val;
             }
 
             let mask_indices = mask.to_indices();
@@ -611,10 +637,10 @@ mod tests {
             let mut mask = IndexMask::new(len, false);
             let mut vec = vec![false; len];
 
-            for i in 0..len {
+            for (i, v) in vec.iter_mut().enumerate() {
                 let val = rng.random_bool(0.3);
                 mask.set(i, val);
-                vec[i] = val;
+                *v = val;
             }
 
             let mut mask_indices = Vec::new();
@@ -661,13 +687,8 @@ mod tests {
 
                 mask0.and_mut(&mask1).unwrap();
 
-                for i in 0..len {
-                    assert_eq!(
-                        mask0.get(i),
-                        expected[i],
-                        "Mismatch after OR at index {}",
-                        i
-                    );
+                for (i, &exp) in expected.iter().enumerate() {
+                    assert_eq!(mask0.get(i), exp, "Mismatch after OR at index {}", i);
                 }
             }
         }
@@ -702,13 +723,8 @@ mod tests {
 
                 mask0.or_mut(&mask1).unwrap();
 
-                for i in 0..len {
-                    assert_eq!(
-                        mask0.get(i),
-                        expected[i],
-                        "Mismatch after OR at index {}",
-                        i
-                    );
+                for (i, &exp) in expected.iter().enumerate() {
+                    assert_eq!(mask0.get(i), exp, "Mismatch after OR at index {}", i);
                 }
             }
         }

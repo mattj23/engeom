@@ -37,12 +37,12 @@ pub fn ransac_indices<const N: usize>(
     for _ in 0..group_count {
         working.clear();
         let mut indices = [0; N];
-        for i in 0..N {
+        for slot in indices.iter_mut() {
             loop {
                 let j = rng.random_range(0..index_count);
                 if !working.contains(&j) {
                     working.insert(j);
-                    indices[i] = j;
+                    *slot = j;
                     break;
                 }
             }

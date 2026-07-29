@@ -179,10 +179,10 @@ mod tests {
     #[test]
     fn tmax_fwd() -> Result<()> {
         let mut data = quick();
-        assert_eq!(check_tmax_fwd(&data)?, false);
+        assert!(!check_tmax_fwd(&data)?);
 
         data.reverse_order();
-        assert_eq!(check_tmax_fwd(&data)?, true);
+        assert!(check_tmax_fwd(&data)?);
 
         Ok(())
     }
@@ -191,10 +191,10 @@ mod tests {
     fn dir_fwd() -> Result<()> {
         let mut data = quick();
         let v = Vector2::x();
-        assert_eq!(check_dir_fwd(&data, v)?, true);
+        assert!(check_dir_fwd(&data, v)?);
 
         data.reverse_order();
-        assert_eq!(check_dir_fwd(&data, v)?, false);
+        assert!(!check_dir_fwd(&data, v)?);
         Ok(())
     }
 
@@ -202,10 +202,10 @@ mod tests {
     fn dir_upper() -> Result<()> {
         let mut data = quick();
         let v = Vector2::y();
-        assert_eq!(check_dir_upper(&data, v)?, false);
+        assert!(!check_dir_upper(&data, v)?);
 
         data.reverse_order();
-        assert_eq!(check_dir_upper(&data, v)?, true);
+        assert!(check_dir_upper(&data, v)?);
         Ok(())
     }
 }

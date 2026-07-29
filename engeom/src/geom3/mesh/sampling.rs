@@ -1,4 +1,4 @@
-use super::{Mesh, MeshSurfPoint};
+use super::{Mesh3, MeshSurfPoint};
 use crate::common::points::dist;
 use crate::common::poisson_disk::sample_poisson_disk_all;
 use crate::common::{IndexMask, linear_space};
@@ -8,7 +8,7 @@ fn bc_to_point(bc: [f64; 3], a: &Point3, b: &Point3, c: &Point3) -> Point3 {
     (a.coords * bc[0] + b.coords * bc[1] + c.coords * bc[2]).into()
 }
 
-impl Mesh {
+impl Mesh3 {
     pub fn sample_uniform(&self, n: usize) -> Vec<SurfacePoint3> {
         let mut cumulative_areas = Vec::new();
         let mut total_area = 0.0;
@@ -79,9 +79,9 @@ impl Mesh {
                 continue;
             }
 
-            let a = self.vertices()[vert[0] as usize];
-            let b = self.vertices()[vert[1] as usize];
-            let c = self.vertices()[vert[2] as usize];
+            let a = self.points()[vert[0] as usize];
+            let b = self.points()[vert[1] as usize];
+            let c = self.points()[vert[2] as usize];
             let face_index = face_i as u32;
 
             if dist(&a, &b) < max_spacing
@@ -146,7 +146,7 @@ impl Mesh {
     // pub fn sample_alignment_points(
     //     &self,
     //     max_spacing: f64,
-    //     reference: &Mesh,
+    //     reference: &Mesh3,
     //     iso: &Iso3,
     // ) -> Vec<SurfacePoint3> {
     //     let surf_points = self.sample_poisson(max_spacing);
@@ -265,7 +265,7 @@ mod tests {
 
     #[test]
     fn check_kiddo_bug() {
-        let mesh = Mesh::create_sphere(100.0, 300, 300);
+        let mesh = Mesh3::create_sphere(100.0, 300, 300);
         let r = 5.0;
         let sampled = mesh.sample_poisson(r, None);
 
@@ -280,7 +280,7 @@ mod tests {
 
     #[test]
     fn sample_poisson_index_mask_restricts_to_masked_faces() {
-        let mesh = Mesh::create_sphere(100.0, 30, 30);
+        let mesh = Mesh3::create_sphere(100.0, 30, 30);
         let n_faces = mesh.faces().len();
 
         // Mask only the first half of the faces

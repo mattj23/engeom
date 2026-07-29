@@ -57,6 +57,13 @@ class Distance2:
         """
         ...
 
+    def reversed(self) -> Distance2:
+        """
+        Return a new distance with the ``a`` and ``b`` points swapped and the direction inverted.
+        :return: a new distance with the endpoints and direction reversed.
+        """
+        ...
+
     def to_3d(self, iso: Iso3) -> Distance3:
         """
         Convert this 2D distance to a 3D distance by adding a zero Z component to the points and direction and then
@@ -122,6 +129,13 @@ class Distance3:
         Get a center surface point, located halfway between the `a` and `b` points and with a normal facing the
         `direction` vector.
         :return: the center surface point
+        """
+        ...
+
+    def reversed(self) -> Distance3:
+        """
+        Return a new distance with the ``a`` and ``b`` points swapped and the direction inverted.
+        :return: a new distance with the endpoints and direction reversed.
         """
         ...
 

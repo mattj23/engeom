@@ -84,6 +84,11 @@ impl InscribedVec {
         self.items.len()
     }
 
+    /// Returns `true` if the collection contains no inscribed circles.
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
     /// Create a new collection by taking ownership of a Vec of inscribed circles. The order is
     /// preserved exactly as it's received.
     pub fn new(items: Vec<Inscribed>) -> Self {
@@ -246,7 +251,7 @@ impl InscribedVec {
         let v = rot90(Ccw) * (last.p1 - last.p0);
         let line = Line2::new_normalize(mid_point(&last.p1, &last.p0), v);
         Ok(if facing.dot(&line.direction) < 0.0 {
-            line.new_reversed()
+            line.reversed()
         } else {
             line
         })
@@ -265,12 +270,12 @@ impl InscribedVec {
 
         Ok((
             if t0.direction.dot(&clip.direction) < 0.0 {
-                t0.new_reversed()
+                t0.reversed()
             } else {
                 t0
             },
             if t1.direction.dot(&clip.direction) < 0.0 {
-                t1.new_reversed()
+                t1.reversed()
             } else {
                 t1
             },
@@ -312,7 +317,7 @@ impl<'a> SectionInput<'a> {
         let cr = (b.c.r() - a.c.r()) * f + a.c.r();
 
         // Now find the measured circle
-        let line = Line2::from(&cp.rot_normal_90(Ccw));
+        let line = Line2::from(&cp.normal_rotated_90(Ccw));
         let circle = self.try_inscribed(&line)?;
 
         // If the circle is larger than either of its neighbors, we'll add it (we want to try to

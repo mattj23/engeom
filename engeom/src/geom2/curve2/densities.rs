@@ -21,7 +21,7 @@ impl Curve2 {
     /// To transform an X position in the `Series1` domain back to a line in the original space,
     /// create a line at (x, 0) with a normal (0, 1) and transform it by the result of the
     /// `.to_iso_from_y()` method. Or, if you are using a `Line2` for the original line, use the
-    /// `.new_parallel(x)` method directly.
+    /// `.offset_by(x)` method directly.
     ///
     /// # Arguments
     ///

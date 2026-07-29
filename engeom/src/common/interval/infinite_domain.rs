@@ -56,7 +56,12 @@ impl IntervalOps for Interval {
     }
 
     fn is_empty(&self) -> bool {
-        !(self.min < self.max)
+        // Intentionally `!(min < max)` rather than `min >= max`: a NaN bound makes `min < max`
+        // false, so this treats a NaN interval as empty. `min >= max` would report it non-empty.
+        #[allow(clippy::neg_cmp_op_on_partial_ord)]
+        {
+            !(self.min < self.max)
+        }
     }
 
     fn new_containing(&self, other: &Self) -> Self {

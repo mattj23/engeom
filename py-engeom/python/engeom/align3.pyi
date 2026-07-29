@@ -1,6 +1,6 @@
 from __future__ import annotations
 import numpy
-from .geom3 import Mesh, Iso3, Point3
+from .geom3 import Mesh3, Iso3, Point3
 
 
 class Dof6:
@@ -55,17 +55,14 @@ class AlignParams3:
     Parameters for a 3-D rigid-body alignment problem.
 
     An `AlignParams3` encodes:
-    - A *local origin* $L$ — the point/orientation around which rotation happens and relative
+    - A *local origin* $L$ - the point/orientation around which rotation happens and relative
       to which translation directions are defined.
-    - A *working offset* $O$ — an additional transformation applied after the alignment step,
+    - A *working offset* $O$ - an additional transformation applied after the alignment step,
       typically used to encode an initial guess.
     - A `Dof6` constraint that locks selected degrees of freedom.
 
     The full transformation applied to the test geometry is $O * A * L^{-1}$, where $A$ is
     the alignment transformation produced by the six optimized parameters.
-
-    Use the factory class methods (`at_origin`, `at_center`, `at_local`, `new`) instead of
-    constructing this class directly.
     """
 
     @property
@@ -83,74 +80,35 @@ class AlignParams3:
         """The working offset transformation $O$."""
         ...
 
-    @staticmethod
-    def at_origin(dof: Dof6 | None = None) -> AlignParams3:
-        """
-        Create an `AlignParams3` with the local origin and working offset at the world origin.
-
-        Use this when the test geometry is already near the origin and a good starting position,
-        and you are not concerned about the numerical stability of rotations.
-
-        :param dof: Optional `Dof6` constraint. If `None`, all six degrees of freedom are active.
-        """
-        ...
-
-    @staticmethod
-    def at_center(x: float, y: float, z: float, dof: Dof6 | None = None) -> AlignParams3:
-        """
-        Create an `AlignParams3` that rotates the test entity around a given center point.
-
-        The local origin $L$ is placed at `center` with cardinal directions aligned to the world
-        axes, and the working offset is set to match. Translations (`tx`, `ty`, `tz`) still act
-        along the world axes; rotations happen around `center`.
-
-        Use this when the test geometry is already in a good starting position but you want to
-        provide an explicit rotation center for numerical stability (e.g. the geometry is far
-        from the world origin).
-
-        :param x: The X coordinate of the center point.
-        :param y: The Y coordinate of the center point.
-        :param z: The Z coordinate of the center point.
-        :param dof: Optional `Dof6` constraint. If `None`, all six degrees of freedom are active.
-        """
-        ...
-
-    @staticmethod
-    def at_local(local: Iso3, dof: Dof6 | None = None) -> AlignParams3:
-        """
-        Create an `AlignParams3` whose transformation is expressed at a given local origin.
-
-        Both the local origin $L$ and the working offset $O$ are set to `local`. The physical
-        interpretation is that `tx`, `ty`, `tz` translate along the local origin's axes, and
-        `rx`, `ry`, `rz` rotate around the local origin's center point and axes. Any DOF
-        constraints refer to those same local axes.
-
-        Use this when the test geometry is already in a good starting position and you need full
-        control over translation directions and rotation axes — for example when applying DOF
-        constraints along an arbitrary direction.
-
-        :param local: The `Iso3` defining the local origin.
-        :param dof: Optional `Dof6` constraint. If `None`, all six degrees of freedom are active.
-        """
-        ...
-
-    @staticmethod
-    def new(
-        local: Iso3 | Point3 | None = None,
+    def __init__(
+        self,
+        center: Point3 | None = None,
+        local: Iso3 | None = None,
         offset: Iso3 | None = None,
         dof: Dof6 | None = None,
-    ) -> AlignParams3:
+    ) -> None:
         """
-        Create an `AlignParams3` with full, explicit control over all three components.
+        Create an `AlignParams3` describing how a 3-D alignment is parameterized.
 
-        This is the most flexible constructor. The simpler factory methods (`at_origin`,
-        `at_center`, `at_local`) cover the common cases and should be preferred.
+        The local origin $L$ is selected by supplying at most one of `center` or `local`:
 
-        :param local: `Iso3` defining the local origin $L$, a `Point3` defining the desired center of rotation, or
-            `None` to use the world origin.
-        :param offset: `Iso3` working offset $O$ applied after the alignment step. Pass `None`
-            to use the identity.
+        - `center`: rotations happen about this point, and translations act along the world axes.
+        - `local`: rotations happen about, and translations act along, the axes of this full
+          `Iso3` frame. Use this for full control over the rotation center and translation
+          directions, for example when applying DOF constraints along an arbitrary direction.
+        - neither: the world origin is used, for geometry already near the origin where the
+          numerical stability of rotations is not a concern.
+
+        If `offset` is not given, it defaults to the local origin frame, so the test geometry
+        starts in place and the alignment happens about that origin. Only pass an explicit
+        `offset` (including the identity) if you specifically need the raw $O * A * L^{-1}$
+        behavior where the geometry is displaced by $L^{-1}$ before alignment.
+
+        :param center: Optional `Point3` rotation center. Mutually exclusive with `local`.
+        :param local: Optional `Iso3` local origin frame. Mutually exclusive with `center`.
+        :param offset: Optional `Iso3` working offset $O$. Defaults to the local origin frame.
         :param dof: Optional `Dof6` constraint. If `None`, all six degrees of freedom are active.
+        :raises ValueError: if both `center` and `local` are supplied.
         """
         ...
 
@@ -163,7 +121,7 @@ class Alignment3:
     """
 
     @property
-    def full(self) -> Iso3:
+    def full_transform(self) -> Iso3:
         """
         The full transformation from the test entity's space to the target's space.
 
@@ -173,10 +131,15 @@ class Alignment3:
         ...
 
     @property
-    def alignment(self) -> Iso3:
+    def local_transform(self) -> Iso3:
         """
         The alignment transformation $A$ produced by the six optimized parameters
-        (`tx`, `ty`, `tz`, `rx`, `ry`, `rz`) expressed about the local origin.
+        (`tx`, `ty`, `tz`, `rx`, `ry`, `rz`), expressed in the frame of the local origin.
+
+        This is not the transformation to apply to the test geometry; use `full_transform` for
+        that. Reading $O * A * L^{-1}$ right to left, $L^{-1}$ puts a point into the local
+        origin's frame, $A$ moves it while it is there, and $O$ maps it back out, so $A$ is only
+        meaningful applied to local-frame coordinates.
         """
         ...
 
@@ -208,19 +171,110 @@ class Alignment3:
         ...
 
 
+class AlignOutcome3:
+    """
+    The full outcome of a 3-D alignment: the `Alignment3` itself, plus a record of how the solves
+    which produced it terminated.
+
+    An alignment is only ever returned when it is usable, so receiving one of these already means
+    there is a real answer to work with. What it adds is the ability to tell a proven convergence
+    from a merely plausible one, and to see whether robust refinement ran to completion.
+    """
+
+    @property
+    def alignment(self) -> Alignment3:
+        """The alignment which was produced."""
+        ...
+
+    @property
+    def quality(self) -> str:
+        """
+        The quality of the weakest solve that contributed to the result.
+
+        ``"converged"`` means every contributing solve met a convergence criterion.
+        ``"unconverged"`` means at least one ran out of its evaluation budget, so the parameters
+        are the best the solver found but convergence was never demonstrated. The alignment is
+        valid geometry either way.
+
+        An unconverged result is routine rather than alarming here: the correspondences are
+        re-established every time the parameters change, so near the solution a point close to an
+        edge can flip between two matches indefinitely without the criteria ever being satisfied.
+        Raising `patience` will not help in that case.
+        """
+        ...
+
+    @property
+    def converged(self) -> bool:
+        """Whether every solve that contributed to the result met a convergence criterion."""
+        ...
+
+    @property
+    def refinement_rounds(self) -> int:
+        """The number of robust refinement rounds which completed and contributed to the result."""
+        ...
+
+    @property
+    def solves(self) -> list[str]:
+        """
+        How each contributing solve terminated, beginning with the initial solve and followed by
+        one entry per completed refinement round.
+
+        Values are ``"converged(ftol)"``, ``"converged(xtol)"``, ``"converged(ftol,xtol)"``,
+        ``"residuals_zero"``, ``"orthogonal"``, or ``"lost_patience"``. A solve that broke down
+        never appears here, because its result is rolled back rather than kept; see `halt`.
+        """
+        ...
+
+    @property
+    def halt(self) -> str | None:
+        """
+        Why robust refinement stopped before completing every requested round, or ``None`` if it
+        ran them all.
+
+        ``"no_noise_estimate"`` means the residual spread collapsed and there was nothing left to
+        reweight. ``"underdetermined(...)"`` means reweighting would have left fewer weighted
+        points than free parameters. ``"solve_failed(...)"`` means a refinement round broke down
+        and was rolled back to the previous round's result.
+        """
+        ...
+
+
 def points_to_mesh(
     points: numpy.ndarray,
-    mesh: Mesh,
+    mesh: Mesh3,
     params: AlignParams3,
-) -> Alignment3:
+    ignore_off_target: bool = False,
+    refinement_steps: int = 4,
+    sigma_max: float | None = None,
+    point_sigma: numpy.ndarray | list[float] | None = None,
+    patience: int = 100,
+) -> AlignOutcome3:
     """
-    Align a set of 3-D points to a mesh surface using an iterative least-squares solver.
+    Align a set of 3-D points to a mesh surface, repeatedly projecting them onto their closest
+    position on the surface as the solver moves them.
+
+    By default this is a robust alignment: an initial unweighted solve followed by
+    ``refinement_steps`` rounds of iteratively reweighted least squares using MAGSAC++ weights.
+    Pass ``refinement_steps=0`` for a plain unweighted least-squares alignment.
 
     :param points: An ``(N, 3)`` ``float64`` numpy array of test points.
-    :param mesh: The target `Mesh` surface.
+    :param mesh: The target `Mesh3` surface. If it carries per-vertex ``point_stdev``, that
+        uncertainty is used automatically, interpolated to each match position.
     :param params: An `AlignParams3` that controls the local origin, working offset, and DOF
         constraints for the alignment.
-    :returns: An `Alignment3` containing the resulting transformation and residuals.
-    :raises ValueError: if the solver fails to converge or the inputs are invalid.
+    :param ignore_off_target: Weight points at 0.0 when they do not project onto the surface.
+    :param refinement_steps: Rounds of robust reweighting after the initial solve. Zero disables
+        robust weighting entirely.
+    :param sigma_max: The MAGSAC++ upper noise bound. When ``None`` it is estimated from the
+        residuals of the initial solve via the median absolute deviation. In units of sigma when
+        any uncertainty is supplied, otherwise in the units of the geometry.
+    :param point_sigma: Optional per-point standard deviations, one per input point. Combines in
+        quadrature with any uncertainty the mesh reports. Every entry must be finite and positive.
+    :param patience: The Levenberg-Marquardt evaluation budget, as a multiplier on the parameter
+        count. Must be greater than zero.
+    :returns: An `AlignOutcome3` carrying the alignment and how the solves terminated.
+    :raises ValueError: only when there is no answer at all, meaning the arguments were rejected
+        or the initial solve broke down. A solve that merely exhausts its evaluation budget
+        returns normally with ``quality == "unconverged"``.
     """
     ...

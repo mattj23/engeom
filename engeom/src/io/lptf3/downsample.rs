@@ -1,5 +1,5 @@
-use crate::io::lptf3::{Lptf3Loader, expand_colors};
-use crate::{Point3, PointCloud, Result, SurfacePoint3, UnitVec3, Vector3};
+use crate::io::lptf3::Lptf3Loader;
+use crate::{Point3, Result, SurfacePoint3, UnitVec3, Vector3};
 use rayon::prelude::*;
 use std::path::Path;
 
@@ -7,32 +7,19 @@ use std::path::Path;
 pub struct Lptf3DsParams {
     pub take_every: u32,
     pub look_scale: f64,
-    pub weight_sigma: f64,
+    pub weight_scale: f64,
     pub max_move: f64,
 }
 
 impl Lptf3DsParams {
-    pub fn new(take_every: u32, look_scale: f64, weight_sigma: f64, max_move: f64) -> Self {
+    pub fn new(take_every: u32, look_scale: f64, weight_scale: f64, max_move: f64) -> Self {
         Self {
             take_every,
             look_scale,
-            weight_sigma,
+            weight_scale,
             max_move,
         }
     }
-}
-
-pub fn load_lptf3_downfilter(file_path: &Path, params: Lptf3DsParams) -> Result<PointCloud> {
-    let downsampled = load_downsample_filter_lptf3(file_path, params)?;
-    let final_points = downsampled.rows.into_iter().flatten().collect::<Vec<_>>();
-
-    let c = if let Some(colors) = downsampled.colors {
-        let final_colors = colors.into_iter().flatten().collect::<Vec<_>>();
-        Some(expand_colors(&final_colors))
-    } else {
-        None
-    };
-    PointCloud::try_new(final_points, None, c, None)
 }
 
 pub struct Lptf3Downsampled {
@@ -84,7 +71,7 @@ pub fn load_downsample_filter_lptf3(
     // The number of rows to look forward and backwards when sampling the point cloud.
     let look_rows = (params.take_every as f64 * params.look_scale.abs()).ceil() as i32;
     let look_dist = look_rows as f64 * loader.y_translation * 1.25;
-    let weight_sigma = params.weight_sigma * look_dist;
+    let weight_sigma = params.weight_scale * look_dist;
 
     let working_indices = (0..row_data.len())
         .filter(|&i| !row_data[i].is_empty())
@@ -135,7 +122,7 @@ pub fn load_downsample_filter_lptf3(
         .collect::<Vec<_>>();
 
     // Get everything back in order
-    combined.sort_by(|(row_i1, _, _), (row_i2, _, _)| row_i1.cmp(row_i2));
+    combined.sort_by_key(|(row_i1, _, _)| *row_i1);
     let mut final_rows = Vec::with_capacity(combined.len());
     let mut final_row_colors = Vec::with_capacity(combined.len());
     for (_, row_points, row_colors) in combined {

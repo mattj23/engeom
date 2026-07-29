@@ -1,5 +1,5 @@
 use crate::geom3::Iso3;
-use crate::mesh::Mesh;
+use crate::mesh::Mesh3;
 use crate::point_cloud::PointCloud;
 use engeom::sensors::SimulatedPointSensor;
 use pyo3::{PyResult, pyclass, pymethods};
@@ -51,8 +51,8 @@ impl LaserProfile {
 
     fn get_points(
         &self,
-        target: &Mesh,
-        obstruction: Option<&Mesh>,
+        target: &Mesh3,
+        obstruction: Option<&Mesh3>,
         iso: &Iso3,
     ) -> PyResult<PointCloud> {
         let (cloud, _) = self.inner.get_points(
@@ -116,8 +116,8 @@ impl PanningLaserProfile {
 
     fn get_points(
         &self,
-        target: &Mesh,
-        obstruction: Option<&Mesh>,
+        target: &Mesh3,
+        obstruction: Option<&Mesh3>,
         iso: &Iso3,
     ) -> PyResult<PointCloud> {
         let (cloud, _) = self.inner.get_points(

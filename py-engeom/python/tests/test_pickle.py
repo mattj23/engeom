@@ -1,6 +1,29 @@
 import pickle
-from engeom.geom2 import Vector2, Point2, SurfacePoint2, Circle2, Segment2, Arc2
-from engeom.geom3 import Vector3, Point3, SurfacePoint3, Plane3, Line3, Sphere3, Circle3
+from engeom.geom2 import (
+    Vector2,
+    Point2,
+    SurfacePoint2,
+    Circle2,
+    Segment2,
+    Arc2,
+    Line2,
+    CubicSpline2,
+    Iso2,
+)
+from engeom.geom3 import (
+    Vector3,
+    Point3,
+    SurfacePoint3,
+    Plane3,
+    Line3,
+    Sphere3,
+    Circle3,
+    Cylinder3,
+    Cone3,
+    Segment3,
+    CubicSpline3,
+    Iso3,
+)
 
 
 def test_pickle_vector2():
@@ -22,6 +45,12 @@ def test_pickle_surface_point2():
     pickled_sp = pickle.dumps(sp)
     unpickled_sp = pickle.loads(pickled_sp)
     assert sp == unpickled_sp
+
+
+def test_pickle_line2():
+    line = Line2(1.0, 2.0, 3.0, 4.0)
+    unpickled = pickle.loads(pickle.dumps(line))
+    assert line == unpickled
 
 
 def test_pickle_circle2():
@@ -79,6 +108,12 @@ def test_pickle_line3():
     assert line == unpickled
 
 
+def test_pickle_segment3():
+    s = Segment3(1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
+    unpickled = pickle.loads(pickle.dumps(s))
+    assert s == unpickled
+
+
 def test_pickle_sphere3():
     sphere = Sphere3(1.0, 2.0, 3.0, 4.0)
     unpickled = pickle.loads(pickle.dumps(sphere))
@@ -89,3 +124,51 @@ def test_pickle_circle3():
     circle = Circle3(1.0, 2.0, 3.0, 0.0, 0.0, 1.0, 5.0)
     unpickled = pickle.loads(pickle.dumps(circle))
     assert circle == unpickled
+
+
+def test_pickle_cylinder3():
+    cylinder = Cylinder3(1.0, 2.0, 3.0, 0.0, 0.0, 1.0, 4.0, 5.0)
+    unpickled = pickle.loads(pickle.dumps(cylinder))
+    assert cylinder == unpickled
+
+
+def test_pickle_cone3():
+    cone = Cone3(1.0, 2.0, 3.0, 0.0, 0.0, 1.0, 5.0, 4.0)
+    unpickled = pickle.loads(pickle.dumps(cone))
+    assert cone == unpickled
+
+
+def test_pickle_cubic_spline2():
+    spline = CubicSpline2(0.0, 0.0, 1.0, 1.0, 2.0, 1.0, 3.0, 0.0)
+    unpickled = pickle.loads(pickle.dumps(spline))
+    assert spline == unpickled
+
+
+def test_pickle_cubic_spline3():
+    spline = CubicSpline3(0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 2.0, 1.0, 0.0, 3.0, 0.0, 0.0)
+    unpickled = pickle.loads(pickle.dumps(spline))
+    assert spline == unpickled
+
+
+def test_pickle_iso2():
+    iso = Iso2(1.0, 2.0, 0.5)
+    unpickled = pickle.loads(pickle.dumps(iso))
+    assert iso == unpickled
+
+
+def test_pickle_iso2_identity():
+    iso = Iso2.identity()
+    unpickled = pickle.loads(pickle.dumps(iso))
+    assert iso == unpickled
+
+
+def test_pickle_iso3():
+    iso = Iso3.from_quaternion(1.0, 2.0, 3.0, 0.1, 0.2, 0.3, 0.5)
+    unpickled = pickle.loads(pickle.dumps(iso))
+    assert iso == unpickled
+
+
+def test_pickle_iso3_identity():
+    iso = Iso3.identity()
+    unpickled = pickle.loads(pickle.dumps(iso))
+    assert iso == unpickled

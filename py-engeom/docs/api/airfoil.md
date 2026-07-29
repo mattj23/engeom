@@ -1,3 +1,0 @@
-# Airfoil Module
-
-::: engeom.airfoil 

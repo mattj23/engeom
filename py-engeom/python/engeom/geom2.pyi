@@ -4,11 +4,11 @@ from typing import Callable, Iterable, Tuple, TypeVar, Iterator, Any, List
 
 from numpy.typing import NDArray
 from engeom.engeom import ResampleEnum, VecDot
-from engeom.common import AngleDir
+from engeom.common import AngleDir, AngleInterval
 
 from engeom import geom3
 
-Transformable2 = TypeVar("Transformable2", Vector2, Point2, Iso2, SurfacePoint2)
+Transformable2 = TypeVar("Transformable2", Vector2, Point2, Iso2, SurfacePoint2, Segment2, Circle2)
 PointOrVec2 = TypeVar("PointOrVec2", Point2, Vector2)
 
 
@@ -383,22 +383,22 @@ class SurfacePoint2:
         """
         ...
 
-    def shift_orthogonal(self, distance: float) -> SurfacePoint2:
+    def shifted_orthogonal(self, distance: float) -> SurfacePoint2:
         """
-        Shift the surface point by a distance orthogonal to the normal vector. The direction of travel is the surface
-        point's normal vector rotated 90 degrees clockwise. For instance, if the normal vector is (0, 1), a positive
-        distance will move the point to the right and a negative distance will move the point to the left.
+        Return a new surface point shifted by a distance orthogonal to the normal vector. The direction of travel is the
+        surface point's normal vector rotated 90 degrees clockwise. For instance, if the normal vector is (0, 1), a
+        positive distance will move the point to the right and a negative distance will move the point to the left.
 
         :param distance: the distance to shift the surface point.
         :return: a new surface point shifted by the given distance.
         """
         ...
 
-    def rot_normal(self, angle: float) -> SurfacePoint2:
+    def normal_rotated(self, angle: float) -> SurfacePoint2:
         """
-        Rotate the normal vector of the surface point by a given angle in radians and return a new surface point. The
-        position of the surface point is not affected. The angle is positive for counter-clockwise rotation and negative
-        for clockwise rotation.
+        Return a new surface point with its normal vector rotated by a given angle in radians. The position of the
+        surface point is not affected. The angle is positive for counter-clockwise rotation and negative for clockwise
+        rotation.
 
         :param angle: the angle to rotate the normal vector by.
         :return: a new surface point with the rotated normal vector.
@@ -437,15 +437,15 @@ class SurfacePoint2:
         """
         ...
 
-    def offset(self, offset: Vector2) -> SurfacePoint2:
+    def transformed_by(self, iso: Iso2) -> SurfacePoint2:
         """
-        Offset the surface point by a given vector. The normal vector is not affected.
-        :param offset: the vector to offset the surface point by.
-        :return: a new surface point with the position offset by the given vector.
+        Transform the surface point by an isometry, moving its position and rotating its normal.
+        :param iso: the isometry to apply to the surface point.
+        :return: a new surface point transformed by the given isometry.
         """
         ...
 
-    def new_shifted(self, distance: float) -> SurfacePoint2:
+    def shifted(self, distance: float) -> SurfacePoint2:
         """
         Shift the surface point by a given distance along the normal vector. The position of the surface point is
         affected, but the normal vector is not.
@@ -460,6 +460,18 @@ class SurfacePoint2:
         whose direction is the surface point's normal vector.
 
         :return: a ``Line2`` through this surface point.
+        """
+        ...
+
+    def slerp(self, other: SurfacePoint2, t: float) -> SurfacePoint2:
+        """
+        Spherically interpolate between this surface point and another by parameter `t`. The
+        position is linearly interpolated and the normal is spherically interpolated so that it
+        remains unit length.
+
+        :param other: the surface point to interpolate towards.
+        :param t: the interpolation parameter, where 0.0 returns this point and 1.0 returns `other`.
+        :return: a new surface point interpolated between this one and `other`.
         """
         ...
 
@@ -493,6 +505,76 @@ class Iso2:
     def identity() -> Iso2:
         """
         Create the identity isometry.
+        """
+        ...
+
+    @staticmethod
+    def from_array(matrix: NDArray[float]) -> Iso2:
+        """
+        Try to create an isometry from a 3x3 homogeneous transformation matrix. Raises a `ValueError` if the matrix
+        does not represent a valid isometry (no shear or scale).
+        :param matrix: a numpy array of shape (3, 3) containing the matrix values.
+        :return: the isometry represented by the matrix.
+        """
+        ...
+
+    @staticmethod
+    def from_rotation_about(point: Point2, angle: float) -> Iso2:
+        """
+        Create an isometry representing a rotation around an arbitrary point by a given angle, rather than around
+        the origin as with the `Iso2` constructor. Positive angles rotate counter-clockwise.
+        :param point: the point in the plane that the isometry will rotate around.
+        :param angle: the angle to rotate by, in radians.
+        :return: the isometry representing the rotation.
+        """
+        ...
+
+    @staticmethod
+    def from_basis_x(e0: Vector2, origin: Point2 | None = None) -> Iso2:
+        """
+        Try to create an isometry from a single basis vector and an optional origin. The vector becomes the x-axis
+        of the isometry (after being normalized to unit length), and the y-axis is the x-axis rotated 90 degrees
+        counter-clockwise. Raises a `ValueError` if the vector cannot be normalized.
+
+        Unlike the 3D `from_basis_xy`/`from_basis_xz`/etc. family, a single vector fully determines a 2D isometry's
+        rotation, since there is only one rotational degree of freedom.
+        :param e0: the vector that will become the x-axis, will be normalized automatically.
+        :param origin: an optional origin point for the isometry, defaults to the world origin if omitted.
+        :return: the isometry defined by the basis vector and origin.
+        """
+        ...
+
+    @staticmethod
+    def from_basis_y(e1: Vector2, origin: Point2 | None = None) -> Iso2:
+        """
+        Try to create an isometry from a single basis vector and an optional origin. The vector becomes the y-axis
+        of the isometry (after being normalized to unit length), and the x-axis is the y-axis rotated 90 degrees
+        clockwise. Raises a `ValueError` if the vector cannot be normalized.
+
+        Unlike the 3D `from_basis_xy`/`from_basis_xz`/etc. family, a single vector fully determines a 2D isometry's
+        rotation, since there is only one rotational degree of freedom.
+        :param e1: the vector that will become the y-axis, will be normalized automatically.
+        :param origin: an optional origin point for the isometry, defaults to the world origin if omitted.
+        :return: the isometry defined by the basis vector and origin.
+        """
+        ...
+
+    def flipped(self) -> Iso2:
+        """
+        Return a copy of the isometry rotated 180 degrees in-plane around its own origin.
+
+        This is a rotation, not a mirror/reflection: the origin's location is unchanged, but both the x-axis and
+        y-axis directions are reversed together. A 2D isometry cannot represent a reflection (determinant -1), only
+        proper rotations, and a 180 degree turn about the implicit out-of-plane axis is the only one that flips both
+        in-plane axes at once.
+        """
+        ...
+
+    @property
+    def origin(self) -> Point2:
+        """
+        The world-space location of the isometry's origin.
+        :return: a Point2 at the isometry's translation.
         """
         ...
 
@@ -737,6 +819,15 @@ class CurveStation2:
         ...
 
     @property
+    def fraction(self) -> float:
+        """
+        Get the fractional position of the station between the previous vertex and the next vertex
+        on the curve, in the range [0, 1].
+        :return: the fraction between the previous and next vertex.
+        """
+        ...
+
+    @property
     def length_along(self) -> float:
         """
         Get the length along the curve to the station, starting at the first vertex of the curve.
@@ -921,7 +1012,7 @@ class Curve2:
         """
         ...
 
-    def max_distance_in_direction(self, surf_point: SurfacePoint2) -> float:
+    def max_dist_in_direction(self, surf_point: SurfacePoint2) -> float:
         """
         Find the maximum scalar projection of all vertices of the curve onto a surface point.
         :param surf_point: the direction to find the furthest point in.
@@ -1119,38 +1210,42 @@ class Circle2:
         ...
 
     @staticmethod
-    def fitting(points: NDArray[float], guess: Circle2 | None = None, sigma: float | None = None) -> Circle2:
+    def from_fit(points: NDArray[float], weights: NDArray[float] | None = None) -> Circle2:
         """
-        Fit a circle to a set of points using an unconstrained Levenberg-Marquardt minimization of the sum of
-        squared errors between the points and the boundary of the circle.
+        Fit a circle to a set of points by ordinary least squares. A closed-form algebraic
+        (Kåsa-style) estimate provides the initial guess, which is then refined against the true
+        geometric radial residuals with a weighted Levenberg-Marquardt minimization.
 
-        The initial guess is used to provide a starting point for the optimization. If no guess is provided, the
-        unit circle will be used.
-
-        The sigma parameter is used to weight the points in the optimization. If no sigma is provided, all points
-        will be weighted equally, otherwise points beyond `sigma` standard deviations from the mean will be
-        assigned a weight of 0.0.
-        :param points: the points to fit the circle to.
-        :param guess: an optional initial guess for the circle. If None, the unit circle will be used.
-        :param sigma: an optional standard deviation to use for weighting the points. If None, all points will be
-        weighted equally.
+        This is not robust to gross outliers; for that, use `from_consensus`.
+        :param points: the points to fit the circle to, as an (n, 2) array.
+        :param weights: if provided, a length-n array of weights to multiply each point's residual
+            by. If None, all points are weighted equally.
         :return: a new `Circle2` object representing the fitted circle.
+        :raises ValueError: if there are fewer than three points, or they are collinear.
         """
         ...
 
     @staticmethod
-    def ransac(points: NDArray[float], tol: float, iterations: int | None = None, min_r: float | None = None,
-               max_r: float | None = None) -> Circle2:
+    def from_consensus(points: NDArray[float], sigma_max: float, min_r: float | None = None,
+                       max_r: float | None = None, max_iterations: int | None = None,
+                       refinement_steps: int | None = None, confidence: float | None = None,
+                       seed: int | None = None) -> Circle2:
         """
-        Fit a circle to a set of points using the RANSAC algorithm. The algorithm will randomly sample points from the
-        input set and fit a circle to them, then check how many points are within the given tolerance of the fitted
-        circle. The best fitting circle will be returned.
+        Fit a circle to a set of points robustly using the MAGSAC++ consensus algorithm. Unlike a fixed-threshold
+        RANSAC, this takes an upper bound on the inlier noise (`sigma_max`) rather than a hard inlier/outlier
+        threshold, and refines each candidate with noise-marginalized iteratively reweighted least squares. It is
+        substantially less sensitive to `sigma_max` than RANSAC is to its threshold, as long as `sigma_max` is not
+        chosen smaller than the actual noise.
 
         :param points: the points to fit the circle to.
-        :param tol: the tolerance for the RANSAC algorithm.
-        :param iterations: the number of iterations to run. If None, a default value of 500 will be used.
+        :param sigma_max: the upper bound on the expected inlier noise, in the same units as the points.
         :param min_r: the minimum radius of the circle. If None, no minimum will be enforced.
         :param max_r: the maximum radius of the circle. If None, no maximum will be enforced.
+        :param max_iterations: the maximum number of minimal-sample iterations. If None, a default of 500 is used.
+        :param refinement_steps: the number of iteratively reweighted refinement steps per candidate. If None, a
+            default of 4 is used.
+        :param confidence: the probability used for adaptive termination. If None, a default of 0.99 is used.
+        :param seed: an optional fixed RNG seed for reproducible sampling. If None, a random seed is used.
         :return: a new `Circle2` object representing the fitted circle.
         """
         ...
@@ -1203,6 +1298,16 @@ class Circle2:
         """
         ...
 
+    def contained_points(self, points: NDArray[float]) -> NDArray[float]:
+        """
+        Filter an array of points, returning only the ones which lie at or inside the boundary of
+        the circle. The original order of the points is preserved.
+
+        :param points: a numpy array of shape (n, 2) of points to test.
+        :return: a new numpy array of shape (m, 2) containing the points inside the circle.
+        """
+        ...
+
     def tangent_points_to(self, point: Point2) -> List[Point2]:
         """
         Get the tangent points on the circle from a given point outside the circle.
@@ -1237,7 +1342,7 @@ class Circle2:
         ...
 
     @staticmethod
-    def tangent_to_corner(corner: Point2, d0: Vector2, d1: Vector2, radius: float) -> Circle2:
+    def from_tangent_to_corner(corner: Point2, d0: Vector2, d1: Vector2, radius: float) -> Circle2:
         """
         Create a circle tangent to the corner formed by two lines. The corner is defined by a point
         and two direction vectors. Raises ``ValueError`` if the directions are collinear.
@@ -1251,7 +1356,7 @@ class Circle2:
         ...
 
     @staticmethod
-    def tangent_and_point(tangent: Line2, point: Point2) -> Circle2:
+    def from_tangent_and_point(tangent: Line2, point: Point2) -> Circle2:
         """
         Create a circle tangent to a line and passing through a point.
 
@@ -1294,11 +1399,61 @@ class Circle2:
 
     def line_direction(self, line: Line2) -> AngleDir:
         """
-        Determine whether the circle center is on the clockwise (``Cw``) or counter-clockwise
-        (``Ccw``) side of a line.
+        Determine whether the circle center is on the clockwise (``"cw"``) or counter-clockwise
+        (``"ccw"``) side of a line.
 
         :param line: the reference line.
-        :return: ``AngleDir.Cw`` or ``AngleDir.Ccw``.
+        :return: ``"cw"`` or ``"ccw"``.
+        """
+        ...
+
+    def at_angle(self, angle: float) -> Manifold1Pos2:
+        """
+        Return the manifold position (point, tangent direction, normal, and arc length) at the
+        given angle around the circle.
+
+        :param angle: the angle, in radians.
+        :return: the manifold position at that angle.
+        """
+        ...
+
+    def at_closest_to_point(self, p: Point2) -> Manifold1Pos2:
+        """
+        Project ``p`` onto the circle's perimeter and return the manifold position there.
+
+        :param p: the point to project.
+        :return: the manifold position of the closest point on the perimeter.
+        """
+        ...
+
+    def intersection_interval(self, other: Circle2) -> AngleInterval | None:
+        """
+        Return the angular interval, measured on this circle, spanned by its intersection with
+        ``other``. Returns ``None`` if the circles do not intersect.
+
+        :param other: the other circle to intersect with.
+        :return: the angular interval of the intersection, or ``None``.
+        """
+        ...
+
+    def transformed_by(self, iso: Iso2) -> Circle2:
+        """
+        Create a copy of this circle with its center moved by an isometry. The radius is unchanged.
+
+        :param iso: the isometry to transform the circle by.
+        :return: a new ``Circle2``.
+        """
+        ...
+
+    def resized_by(self, delta: float) -> Circle2:
+        """
+        Create a copy of this circle with ``delta`` added to its radius. The center is unchanged.
+
+        A positive ``delta`` grows the circle and a negative one shrinks it. The result is not
+        clamped, so a large enough negative ``delta`` will produce a zero or negative radius.
+
+        :param delta: the amount to add to the circle's radius.
+        :return: a new ``Circle2``.
         """
         ...
 
@@ -1355,6 +1510,42 @@ class Line2:
         :param dx: x-component of the direction vector (will be normalized).
         :param dy: y-component of the direction vector (will be normalized).
         :return: a new ``Line2`` with a unit-length direction.
+        """
+        ...
+
+    @staticmethod
+    def from_fit(points: NDArray[float], weights: NDArray[float] | None = None) -> Line2:
+        """
+        Fit a line to a set of points using singular value decomposition, resulting in a
+        least-squares fitting. The resulting parameterized line will have its ``t=0`` sitting at
+        the center of the SVD result.
+
+        :param points: the points to fit the line to, as an (n, 2) array.
+        :param weights: if provided, a length-n array of weights to multiply each point's
+            residual by. If None, all points are weighted equally.
+        :return: a new ``Line2`` fitted to the points.
+        :raises ValueError: if the singular value decomposition fails (e.g. too few points).
+        """
+        ...
+
+    @staticmethod
+    def from_consensus(points: NDArray[float], sigma_max: float, max_iterations: int | None = None,
+                       refinement_steps: int | None = None, confidence: float | None = None,
+                       seed: int | None = None) -> Line2:
+        """
+        Fit a line to a set of points robustly using the MAGSAC++ consensus algorithm, rejecting gross outliers.
+        Unlike a fixed-threshold RANSAC, this takes an upper bound on the inlier noise (`sigma_max`) rather than a
+        hard inlier/outlier threshold, and refines each candidate with noise-marginalized iteratively reweighted
+        least squares.
+
+        :param points: the points to fit the line to.
+        :param sigma_max: the upper bound on the expected inlier noise, in the same units as the points.
+        :param max_iterations: the maximum number of minimal-sample iterations. If None, a default of 500 is used.
+        :param refinement_steps: the number of iteratively reweighted refinement steps per candidate. If None, a
+            default of 4 is used.
+        :param confidence: the probability used for adaptive termination. If None, a default of 0.99 is used.
+        :param seed: an optional fixed RNG seed for reproducible sampling. If None, a random seed is used.
+        :return: a new ``Line2`` object representing the fitted line.
         """
         ...
 
@@ -1445,7 +1636,13 @@ class Line2:
         """
         ...
 
-    def new_parallel(self, delta_n: float) -> Line2:
+    def reversed(self) -> Line2:
+        """
+        Return a new line with the same origin, but with the direction inverted.
+        """
+        ...
+
+    def offset_by(self, delta_n: float) -> Line2:
         """
         Return a new line parallel to this one, with the origin shifted by ``delta_n`` along the
         normal direction. A positive ``delta_n`` moves the line to the right of the direction of
@@ -1456,7 +1653,18 @@ class Line2:
         """
         ...
 
-    def new_shifted_along(self, delta_t: float) -> Line2:
+    def rotated(self, angle: float) -> Line2:
+        """
+        Return a copy of this line rotated about its own origin by ``angle`` radians. The origin
+        is unchanged and the direction is rotated counter-clockwise (a positive ``angle`` rotates
+        from the +x axis toward the +y axis); the direction's magnitude is preserved.
+
+        :param angle: the rotation angle in radians, counter-clockwise positive.
+        :return: a new rotated ``Line2``.
+        """
+        ...
+
+    def shifted_origin(self, delta_t: float) -> Line2:
         """
         Return a new line with the origin shifted by ``delta_t`` along the direction vector.
 
@@ -1465,12 +1673,80 @@ class Line2:
         """
         ...
 
-    def new_transformed_by(self, iso: Iso2) -> Line2:
+    def transformed_by(self, iso: Iso2) -> Line2:
         """
         Return a new line with both origin and direction transformed by the given isometry.
 
         :param iso: the isometry to apply.
         :return: a new transformed ``Line2``.
+        """
+        ...
+
+    def slerp(self, other: Line2, t: float) -> Line2:
+        """
+        Return a new line whose origin and direction are spherically interpolated between this
+        line and ``other`` by parameter ``t``.
+
+        :param other: the line to interpolate towards.
+        :param t: the interpolation parameter, where 0.0 returns this line and 1.0 returns ``other``.
+        :return: a new interpolated ``Line2``.
+        """
+        ...
+
+    def projected_parameter(self, p: Point2) -> float:
+        """
+        Return the parameter ``t`` at which ``p`` projects onto this line's direction, measured
+        from the origin. Unlike ``scalar_project``, this projects onto the raw (possibly
+        non-unit-length) direction vector.
+
+        :param p: the point to project.
+        :return: the projection parameter.
+        """
+        ...
+
+    def projected_point(self, p: Point2) -> Point2:
+        """
+        Return the point on the line at the projected parameter of ``p``. Equivalent to
+        ``self.at(self.projected_parameter(p))``.
+
+        :param p: the point to project.
+        :return: the projected point on the line.
+        """
+        ...
+
+    def orthogonal(self) -> Vector2:
+        """
+        Return the direction vector rotated -90 degrees, typically used as a normal.
+        """
+        ...
+
+    def signed_projection_dist(self, point: Point2) -> float:
+        """
+        Return the signed perpendicular distance from ``point`` to this line, measured against
+        the ``orthogonal`` direction. Positive values indicate the point is to the right of the
+        direction of travel; negative values indicate the left.
+
+        :param point: the query point.
+        :return: the signed distance.
+        """
+        ...
+
+    def intersection_params(self, other: Line2) -> tuple[float, float] | None:
+        """
+        Return the pair of parameters ``(t_self, t_other)`` at which this line and ``other``
+        intersect, or ``None`` if the two directions are parallel.
+
+        :param other: the other line to intersect with.
+        :return: the intersection parameters, or ``None``.
+        """
+        ...
+
+    def winding_direction(self, point: Point2) -> AngleDir:
+        """
+        Determine the direction that the line winds around ``point``.
+
+        :param point: the reference point.
+        :return: ``"cw"`` or ``"ccw"``.
         """
         ...
 
@@ -1683,6 +1959,124 @@ class CubicSpline2:
         """
         ...
 
+    def line_at(self, t: float) -> Line2:
+        """
+        Return the position and derivative direction of the curve at parameter `t` in the form of
+        a parameterized line.
+
+        :param t: the curve parameter.
+        :return: a `Line2` through the curve's position at `t`, in the direction of the derivative.
+        """
+        ...
+
+    def derivative_roots(self) -> Tuple[List[float], List[float]]:
+        """
+        Returns the real roots of the derivative of each component of the curve, as an
+        `(x_roots, y_roots)` tuple where each is a list of 0, 1, or 2 parameter values, sorted
+        ascending. Roots are not filtered to `[0, 1]`.
+
+        :return: the per-axis derivative roots.
+        """
+        ...
+
+    def find_cusp(self) -> float | None:
+        """
+        Returns the parameter `t` of a cusp if one exists in `[0, 1]`, otherwise `None`. A cusp is
+        a point where the velocity vector vanishes (`B'(t) = 0`).
+
+        :return: the parameter of the cusp, or `None`.
+        """
+        ...
+
+    def find_curvature_zeros(self) -> List[float]:
+        """
+        Returns parameter values in `[0, 1]` where the curve's curvature is zero, as a list of 0,
+        1, or 2 parameter values.
+
+        :return: the curvature-zero parameters.
+        """
+        ...
+
+    def find_curvature_maxima(self) -> List[Tuple[float, float]]:
+        """
+        Returns every local maximum of the curvature over `[0, 1]`, each as a `(t, curvature)`
+        tuple, ordered by ascending `t`.
+
+        :return: a list of `(t, curvature)` tuples, one per local maximum.
+        """
+        ...
+
+    def compute_bounds(self) -> Tuple[Point2, Point2]:
+        """
+        Returns the corners `(min, max)` of the tight axis-aligned bounding box of the curve over
+        the parameter range `[0, 1]`.
+
+        :return: a `(min, max)` tuple of points.
+        """
+        ...
+
+    def arc_length_between(self, t0: float, t1: float) -> float:
+        """
+        Returns the arc length of the curve over the parameter range `[t0, t1]`.
+
+        :param t0: the start parameter.
+        :param t1: the end parameter.
+        :return: the arc length between the two parameters.
+        """
+        ...
+
+    def arc_length(self) -> float:
+        """
+        Returns the total arc length of the curve over the parameter range `[0, 1]`.
+        """
+        ...
+
+    def split(self, t: float) -> Tuple[CubicSpline2, CubicSpline2]:
+        """
+        Splits the curve at parameter `t` using de Casteljau's algorithm, returning the left and
+        right sub-curves. Concatenating the left and right curves reproduces the original.
+
+        :param t: the parameter at which to split, expected to be in `[0, 1]`.
+        :return: a `(left, right)` tuple of the two sub-curves.
+        """
+        ...
+
+    def try_split(self, t: float) -> Tuple[CubicSpline2, CubicSpline2] | None:
+        """
+        Splits the curve at parameter `t`, returning `None` if `t` is not in `[0, 1]`.
+
+        :param t: the parameter at which to split.
+        :return: a `(left, right)` tuple of the two sub-curves, or `None`.
+        """
+        ...
+
+    @property
+    def aabb(self) -> Aabb2:
+        """
+        Get the axis-aligned bounding box of the curve, computed on demand.
+        :return: the axis-aligned bounding box of the curve.
+        """
+        ...
+
+    def transformed_by(self, iso: Iso2) -> CubicSpline2:
+        """
+        Return a new curve with all four control points transformed by the given isometry.
+
+        :param iso: the isometry to apply.
+        :return: a new transformed `CubicSpline2`.
+        """
+        ...
+
+    def find_inflections(self) -> List[float]:
+        """
+        Returns the parameter values of any inflection points of the curve, as a list of 0, 1, or
+        2 parameter values. In 2D, an inflection point is where the signed curvature crosses zero.
+        Roots are not filtered to `[0, 1]`.
+
+        :return: the inflection parameters.
+        """
+        ...
+
 
 class SplineProjection:
     """
@@ -1779,6 +2173,43 @@ class Segment2:
         """
         ...
 
+    @staticmethod
+    def from_fit(points: NDArray[float], weights: NDArray[float] | None = None) -> Segment2:
+        """
+        Fit a segment to a set of points by ordinary least squares. An infinite line is fit to the points, and the
+        segment's endpoints are set to the extreme projections of the points onto that line, so the segment spans
+        exactly the range covered by the input.
+
+        This is not robust to gross outliers; for that, use `from_consensus`.
+        :param points: the points to fit the segment to, as an (n, 2) array.
+        :param weights: if provided, a length-n array of weights to multiply each point's residual by. Weights bias
+            the fitted line only; the endpoints are still the extreme projections of every point. If None, all
+            points are weighted equally.
+        :return: a new ``Segment2`` object representing the fitted segment.
+        :raises ValueError: if there are fewer than two distinct points.
+        """
+        ...
+
+    @staticmethod
+    def from_consensus(points: NDArray[float], sigma_max: float, max_iterations: int | None = None,
+                       refinement_steps: int | None = None, confidence: float | None = None,
+                       seed: int | None = None) -> Segment2:
+        """
+        Fit a segment to a set of points robustly using the MAGSAC++ consensus algorithm. A robust infinite line is
+        estimated (rejecting gross outliers), and the segment's endpoints are set to the extreme projections of the
+        *inlier* points onto that line, so outliers influence neither the line nor the segment's extent.
+
+        :param points: the points to fit the segment to.
+        :param sigma_max: the upper bound on the expected inlier noise, in the same units as the points.
+        :param max_iterations: the maximum number of minimal-sample iterations. If None, a default of 500 is used.
+        :param refinement_steps: the number of iteratively reweighted refinement steps per candidate. If None, a
+            default of 4 is used.
+        :param confidence: the probability used for adaptive termination. If None, a default of 0.99 is used.
+        :param seed: an optional fixed RNG seed for reproducible sampling. If None, a random seed is used.
+        :return: a new ``Segment2`` object representing the fitted segment.
+        """
+        ...
+
     @property
     def a(self) -> Point2:
         """
@@ -1824,6 +2255,82 @@ class Segment2:
         """
         Convert the segment to an infinite line passing through its two endpoints.
         :return: a Line2 passing through the segment's endpoints.
+        """
+        ...
+
+    def transformed_by(self, iso: Iso2) -> Segment2:
+        """
+        Return a new segment with both endpoints transformed by the given isometry.
+        :param iso: the isometry to apply.
+        :return: a new transformed Segment2.
+        """
+        ...
+
+    def at(self, t: float) -> Point2:
+        """
+        Return the point at parameter t, where t=0 is the first endpoint and t=1 is the second.
+        :param t: the parameter value.
+        :return: the point on the segment at t.
+        """
+        ...
+
+    def reversed(self) -> Segment2:
+        """
+        Return a new segment with the endpoints reversed.
+        :return: a new Segment2 with a and b swapped.
+        """
+        ...
+
+    def scalar_projection(self, other: Point2) -> float:
+        """
+        Calculate the scalar projection of a point onto the segment, where 0.0 represents the
+        first endpoint and 1.0 represents the second endpoint. The result can be any finite value,
+        including negative ones or ones greater than one.
+        :param other: the point to project onto the segment.
+        :return: the scalar projection parameter.
+        """
+        ...
+
+    def closest_point(self, other: Point2) -> Point2:
+        """
+        Return the closest point on the segment to the given point, clamped to the segment's
+        endpoints.
+        :param other: the point to find the closest location to.
+        :return: the closest point on the segment.
+        """
+        ...
+
+    def offset_by(self, d: float) -> Segment2:
+        """
+        Create a new segment shifted by distance d in the direction of the segment's normal
+        vector. The normal vector is the direction vector rotated 90 degrees clockwise.
+        :param d: the distance to shift the segment along its normal vector.
+        :return: a new shifted Segment2.
+        """
+        ...
+
+    def normal(self) -> Vector2:
+        """
+        Return the unit normal of the segment: the direction vector rotated 90 degrees clockwise.
+        :return: the unit normal vector.
+        """
+        ...
+
+    def at_t(self, t: float) -> Manifold1Pos2:
+        """
+        Return the manifold position (point, tangent direction, normal, and arc length) at
+        parameter t, where t=0 is the first endpoint and t=1 is the second.
+        :param t: the parameter value.
+        :return: the manifold position at t.
+        """
+        ...
+
+    def intersects_other(self, other: Segment2) -> bool:
+        """
+        Determine whether this segment intersects another segment, considering only the bounded
+        extent of both segments (not their infinite line extensions).
+        :param other: the other segment to test against.
+        :return: True if the segments intersect, False otherwise.
         """
         ...
 
@@ -1919,13 +2426,147 @@ class Arc2:
         """
         ...
 
-    def make_points(self, tol: float) -> NDArray:
+    def to_points(self, tol: float) -> NDArray:
         """
         Sample the arc into a sequence of points such that the maximum deviation between any chord
         and the true arc is at most ``tol``.
 
         :param tol: the maximum allowable chordal deviation.
         :return: an ``(n, 2)`` array of points along the arc, including both endpoints.
+        """
+        ...
+
+    @staticmethod
+    def from_circle(circle: Circle2, angle0: float, angle: float) -> Arc2:
+        """
+        Create an arc from a circle, a start angle, and a sweep angle.
+
+        :param circle: the circle of which the arc is a part.
+        :param angle0: the angle in radians (with respect to the x-axis) at which the arc starts.
+        :param angle: the angle in radians which the arc sweeps through, beginning at ``angle0``.
+            A positive value indicates a counter-clockwise sweep, while a negative value indicates
+            a clockwise sweep.
+        :return: a new ``Arc2``.
+        """
+        ...
+
+    @staticmethod
+    def from_ends(start: Point2, end: Point2, center: Point2, clockwise: bool) -> Arc2:
+        """
+        Create an arc from a start point, an end point, a center point, and a winding direction.
+
+        :param start: the starting point of the arc, on the perimeter of the circle.
+        :param end: the ending point of the arc, on the perimeter of the circle.
+        :param center: the center point of the arc.
+        :param clockwise: whether the arc sweeps clockwise (True) or counter-clockwise (False)
+            from ``start`` to ``end``.
+        :return: a new ``Arc2``.
+        :raises ValueError: if ``start`` and ``center`` are not consistent with ``end`` and
+            ``center`` being equidistant.
+        """
+        ...
+
+    @staticmethod
+    def from_point_angle(center: Point2, radius: float, point: Point2, angle: float) -> Arc2:
+        """
+        Create an arc from a center point, a radius, a point on the perimeter, and an included
+        angle starting at the point.
+
+        :param center: the arc center point.
+        :param radius: the arc radius.
+        :param point: a point on the perimeter of the arc at which the arc starting point should
+            be located.
+        :param angle: the angle in radians which the arc sweeps through, beginning at the point.
+            A positive value indicates a counter-clockwise sweep, while a negative value indicates
+            a clockwise sweep.
+        :return: a new ``Arc2``.
+        """
+        ...
+
+    @staticmethod
+    def from_3_points(p0: Point2, p1: Point2, p2: Point2) -> Arc2:
+        """
+        Create an arc from three points. The arc will begin at the first point, pass through the
+        second point, and end at the third point.
+
+        :param p0: the starting point of the arc.
+        :param p1: a point on the arc, between the start and end points.
+        :param p2: the ending point of the arc.
+        :return: a new ``Arc2``.
+        """
+        ...
+
+    def length(self) -> float:
+        """
+        Return the arc length: the radius times the absolute value of the sweep angle.
+        """
+        ...
+
+    def point_at_angle(self, angle: float) -> Point2:
+        """
+        Return the point on the arc's circle at ``angle0 + angle``.
+
+        :param angle: the angle, in radians, measured from the arc's start angle.
+        :return: the point at that angle.
+        """
+        ...
+
+    def point_at_fraction(self, fraction: float) -> Point2:
+        """
+        Return the point at the given fraction of the arc's sweep, where 0.0 is the start and 1.0
+        is the end.
+
+        :param fraction: the fraction of the sweep angle.
+        :return: the point at that fraction.
+        """
+        ...
+
+    def point_at_length(self, length: float) -> Point2:
+        """
+        Return the point at the given arc length from the start of the arc.
+
+        :param length: the arc length from the start.
+        :return: the point at that arc length.
+        """
+        ...
+
+    def is_ccw(self) -> bool:
+        """Return whether the arc sweeps counter-clockwise (a positive sweep angle)."""
+        ...
+
+    def angle_interval(self) -> AngleInterval:
+        """
+        Return the angular interval spanned by the arc, starting at ``angle0`` and extending for
+        ``angle`` radians.
+        """
+        ...
+
+    def is_theta_on_arc(self, theta: float) -> bool:
+        """
+        Return whether the given absolute angle, in radians, falls within the arc's angular span.
+
+        :param theta: the angle to test, in radians.
+        :return: True if the angle is on the arc, False otherwise.
+        """
+        ...
+
+    def theta_to_fraction(self, theta: float) -> float:
+        """
+        Convert an absolute angle, in radians, to the fraction of the arc's sweep at which it
+        occurs, where 0.0 is the start and 1.0 is the end.
+
+        :param theta: the angle to convert, in radians.
+        :return: the fraction of the sweep at that angle.
+        """
+        ...
+
+    def at_fraction(self, fraction: float) -> Point2:
+        """
+        Return the point at the given fraction of the arc's sweep. Equivalent to
+        ``point_at_fraction``.
+
+        :param fraction: the fraction of the sweep angle.
+        :return: the point at that fraction.
         """
         ...
 
@@ -2398,13 +3039,13 @@ def fit_boundary_to_surface_points(
     distances from each sample to its nearest location on the boundary, weighted by the dot product of the sample normal
     with the boundary normal. The ``weight_mode`` parameter controls how the dot product is applied:
 
-    * ``VecDot.AsIs``     : raw dot product (can downweight or negate antiparallel samples).
-    * ``VecDot.Abs``      : absolute value (de-weights orthogonal normals, ignores direction).
-    * ``VecDot.ClampPos`` : clamped to ``[0, 1]`` (ignores samples facing away from boundary).
+    * ``"as_is"``     : raw dot product (can downweight or negate antiparallel samples).
+    * ``"abs"``       : absolute value (de-weights orthogonal normals, ignores direction).
+    * ``"clamp_pos"`` : clamped to ``[0, 1]`` (ignores samples facing away from boundary).
 
-    I suggest that you use ``VecDot.ClampPos`` if you know that the boundary normal and the surface point normals are
+    I suggest that you use ``"clamp_pos"`` if you know that the boundary normal and the surface point normals are
     definitely facing the correct directions and want to take advantage of the additional filtering.  Otherwise, I
-    recommend using ``VecDot.Abs`` if you aren't sure that the boundary will be facing the correct way, since it won't
+    recommend using ``"abs"`` if you aren't sure that the boundary will be facing the correct way, since it won't
     penalize the optimizer for "flipping" the boundary normal during optimization.
 
     :param points: a numpy array of shape ``(N, 4)`` with columns ``[x, y, nx, ny]``.

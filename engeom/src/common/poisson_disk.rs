@@ -53,7 +53,7 @@ mod tests {
     use crate::common::kd_tree::KdTree;
     use crate::na::Point;
     use rand;
-    use rand::{Rng, RngExt};
+    use rand::RngExt;
 
     #[test]
     fn stress_test_poisson_disk() {

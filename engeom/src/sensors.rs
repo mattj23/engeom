@@ -3,7 +3,7 @@
 pub mod camera;
 mod laser_profile;
 
-use crate::{Iso3, Mesh, PointCloud};
+use crate::{Iso3, Mesh3, PointCloud};
 
 pub use laser_profile::{LaserProfile, LaserProfileGeom, PanningLaserProfile};
 
@@ -50,8 +50,8 @@ pub trait SimulatedPointSensor {
     /// returns: (PointCloud, Option<Vec<f64, Global>>)
     fn get_points(
         &self,
-        target: &Mesh,
-        obstruction: Option<&Mesh>,
+        target: &Mesh3,
+        obstruction: Option<&Mesh3>,
         iso: &Iso3,
     ) -> (PointCloud, Option<Vec<f64>>);
 }

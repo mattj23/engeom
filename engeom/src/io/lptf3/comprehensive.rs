@@ -1,8 +1,8 @@
 use crate::common::{DiscreteDomain, IndexMask};
 use crate::io::lptf3::{Lptf3Loader, Lptf3UncertaintyModel};
-use crate::io::{Lptf3DsParams, Lptf3Load, load_lptf3_mesh};
+use crate::io::{Lptf3DsParams, Lptf3Load, load_lptf3_mesh_data};
 use crate::sensors::LaserProfileGeom;
-use crate::{Mesh, Point3, PointCloud, Result, SurfacePoint3, UnitVec3};
+use crate::{Mesh3, Point3, PointCloud, Result, SurfacePoint3, UnitVec3};
 use parry3d_f64::query::{Ray, RayCast};
 use rayon::prelude::*;
 use std::path::Path;
@@ -31,9 +31,12 @@ pub fn load_lptf3_comprehensive(
     bad_edge_count: usize,
     ray_check: Option<(&LaserProfileGeom, f64)>,
 ) -> Result<PointCloud> {
+    // This mesh is used only as a query surface, to get a normal at every point and to check
+    // whether a point is occluded from the detector, so it carries no attributes of its own.
     let base_params = Lptf3Load::SmoothSample(Lptf3DsParams::new(8, 1.5, 1.0, 1.0));
-    let half_mesh = load_lptf3_mesh(file_path, base_params)?;
-    let mesh = Mesh::try_from(&half_mesh)?;
+    let (base_points, base_faces, _) =
+        load_lptf3_mesh_data(file_path, base_params, None)?.into_parts();
+    let mesh = Mesh3::new(base_points, base_faces, false);
 
     let mut loader = Lptf3Loader::new(file_path, None, false)?;
 
@@ -108,8 +111,7 @@ pub fn load_lptf3_comprehensive(
 
                 if let Some((rc, offset)) = ray_check {
                     let detector = Point3::new(0.0, frame.y_pos + rc.detector_y, rc.detector_z);
-                    let ray_point =
-                        SurfacePoint3::new_normalize(p, detector - p).new_shifted(offset);
+                    let ray_point = SurfacePoint3::new_normalize(p, detector - p).shifted(offset);
                     let ray = Ray::from(&ray_point);
                     let intersect = mesh.tri_mesh().cast_local_ray(&ray, f64::INFINITY, false);
                     if intersect.is_some() {
@@ -117,7 +119,7 @@ pub fn load_lptf3_comprehensive(
                     }
                 }
 
-                let mp = mesh.surf_closest_to(&p);
+                let mp = mesh.surface_closest_to(&p);
                 points.push(p);
                 normals.push(mp.sp.normal);
 

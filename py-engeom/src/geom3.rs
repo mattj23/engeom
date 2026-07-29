@@ -1,3 +1,4 @@
+use crate::bounding::Aabb3;
 use crate::common::Resample;
 use crate::conversions::{
     array_to_points3, array_to_vectors3, dvec_from_array, dvec_to_array, points_to_array,
@@ -455,11 +456,11 @@ impl SurfacePoint3 {
     }
 
     fn reversed(&self) -> Self {
-        Self::from_inner(self.inner.new_reversed())
+        Self::from_inner(self.inner.reversed())
     }
 
-    fn transformed(&self, iso: Iso3) -> Self {
-        Self::from_inner(self.inner.transformed(iso.get_inner()))
+    fn transformed_by(&self, iso: Iso3) -> Self {
+        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
     }
 
     fn __repr__(&self) -> String {
@@ -507,15 +508,19 @@ impl SurfacePoint3 {
     }
 
     fn get_plane(&self) -> Plane3 {
-        Plane3::from_inner(engeom::Plane3::from(&self.inner))
+        Plane3::from_inner(engeom::Plane3::from_surface_point(&self.inner))
     }
 
-    fn new_shifted(&self, offset: f64) -> Self {
-        Self::from_inner(self.inner.new_shifted(offset))
+    fn shifted(&self, offset: f64) -> Self {
+        Self::from_inner(self.inner.shifted(offset))
     }
 
     fn to_2d(&self) -> SurfacePoint2 {
         SurfacePoint2::from_inner(self.inner.to_2d())
+    }
+
+    fn slerp(&self, other: &Self, t: f64) -> Self {
+        Self::from_inner(self.inner.slerp(&other.inner, t))
     }
 }
 
@@ -606,15 +611,70 @@ impl Plane3 {
 
     #[staticmethod]
     fn from_point_normal(px: f64, py: f64, pz: f64, nx: f64, ny: f64, nz: f64) -> PyResult<Self> {
-        let v = engeom::Vector3::new(nx, ny, nz);
-        let normal = engeom::UnitVec3::try_new(v, 1.0e-6)
+        let point = engeom::Point3::new(px, py, pz);
+        let normal = engeom::UnitVec3::try_new(engeom::Vector3::new(nx, ny, nz), 1.0e-6)
             .ok_or_else(|| PyValueError::new_err("Invalid normal vector"))?;
-        let d = normal.dot(&engeom::Vector3::new(px, py, pz));
-        Ok(Self::from_inner(engeom::Plane3::new(normal, d)))
+        Ok(Self::from_inner(engeom::Plane3::from_point_normal(
+            &point, &normal,
+        )))
     }
 
-    fn inverted_normal(&self) -> Self {
-        Self::from_inner(self.inner.inverted_normal())
+    #[staticmethod]
+    fn from_3_points(p1: Point3, p2: Point3, p3: Point3) -> PyResult<Self> {
+        engeom::Plane3::from_3_points(p1.get_inner(), p2.get_inner(), p3.get_inner())
+            .map(Self::from_inner)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[staticmethod]
+    fn from_surface_point(surface_point: &SurfacePoint3) -> Self {
+        Self::from_inner(engeom::Plane3::from_surface_point(
+            surface_point.get_inner(),
+        ))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(points, weights=None))]
+    fn from_fit<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        weights: Option<PyReadonlyArray1<'py, f64>>,
+    ) -> PyResult<Self> {
+        let points = array_to_points3(&points.as_array())?;
+        let plane = match weights {
+            Some(weights) => {
+                engeom::Plane3::from_fit(&points, Some(weights.as_array().as_slice().unwrap()))
+            }
+            None => engeom::Plane3::from_fit(&points, None),
+        }
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(plane))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(points, sigma_max, max_iterations=None, refinement_steps=None, confidence=None, seed=None))]
+    fn from_consensus<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        sigma_max: f64,
+        max_iterations: Option<usize>,
+        refinement_steps: Option<usize>,
+        confidence: Option<f64>,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        let points = array_to_points3(&points.as_array())?;
+        let options = magsac_options(
+            sigma_max,
+            max_iterations,
+            refinement_steps,
+            confidence,
+            seed,
+        );
+        let result = engeom::Plane3::from_consensus(&points, sigma_max, Some(options))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(result))
+    }
+
+    fn normal_reversed(&self) -> Self {
+        Self::from_inner(self.inner.normal_reversed())
     }
 
     fn signed_distance_to_point(&self, point: Point3) -> f64 {
@@ -637,12 +697,12 @@ impl Plane3 {
         Vector3::from_inner(self.inner.project_vector(v.get_inner()))
     }
 
-    fn new_parallel(&self, shift: f64) -> Self {
-        Self::from_inner(self.inner.new_parallel(shift))
+    fn offset_by(&self, shift: f64) -> Self {
+        Self::from_inner(self.inner.offset_by(shift))
     }
 
-    fn intersection_distance(&self, sp: &SurfacePoint3) -> Option<f64> {
-        self.inner.intersection_distance(sp.get_inner())
+    fn intersect_distance(&self, sp: &SurfacePoint3) -> Option<f64> {
+        self.inner.intersect_distance(sp.get_inner())
     }
 
     #[getter]
@@ -674,6 +734,10 @@ impl Plane3 {
         self.inner
             .intersect_plane(&other.inner)
             .map(Line3::from_inner)
+    }
+
+    fn transformed_by(&self, iso: &Iso3) -> Self {
+        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
     }
 }
 
@@ -710,6 +774,69 @@ impl Line3 {
     #[staticmethod]
     fn from_points(p1: Point3, p2: Point3) -> Self {
         Self::from_inner(engeom::Line3::from_points(p1.get_inner(), p2.get_inner()))
+    }
+
+    #[staticmethod]
+    fn new_normalize(ox: f64, oy: f64, oz: f64, dx: f64, dy: f64, dz: f64) -> Self {
+        Self::from_inner(engeom::Line3::new_normalize(
+            engeom::Point3::new(ox, oy, oz),
+            engeom::Vector3::new(dx, dy, dz),
+        ))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(points, weights=None))]
+    fn from_fit<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        weights: Option<PyReadonlyArray1<'py, f64>>,
+    ) -> PyResult<Self> {
+        let points = array_to_points3(&points.as_array())?;
+        let line = match weights {
+            Some(weights) => {
+                engeom::Line3::from_fit(&points, Some(weights.as_array().as_slice().unwrap()))
+            }
+            None => engeom::Line3::from_fit(&points, None),
+        }
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(line))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(points, sigma_max, max_iterations=None, refinement_steps=None, confidence=None, seed=None))]
+    fn from_consensus<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        sigma_max: f64,
+        max_iterations: Option<usize>,
+        refinement_steps: Option<usize>,
+        confidence: Option<f64>,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        let points = array_to_points3(&points.as_array())?;
+        let options = magsac_options(
+            sigma_max,
+            max_iterations,
+            refinement_steps,
+            confidence,
+            seed,
+        );
+        let result = engeom::Line3::from_consensus(&points, sigma_max, Some(options))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(result))
+    }
+
+    #[staticmethod]
+    fn x_axis() -> Self {
+        Self::from_inner(engeom::Line3::x_axis())
+    }
+
+    #[staticmethod]
+    fn y_axis() -> Self {
+        Self::from_inner(engeom::Line3::y_axis())
+    }
+
+    #[staticmethod]
+    fn z_axis() -> Self {
+        Self::from_inner(engeom::Line3::z_axis())
     }
 
     fn __repr__(&self) -> String {
@@ -783,6 +910,206 @@ impl Line3 {
     fn normalized(&self) -> Line3 {
         Line3::from_inner(self.inner.normalized())
     }
+
+    fn reversed(&self) -> Line3 {
+        Line3::from_inner(self.inner.reversed())
+    }
+
+    fn shifted_origin(&self, delta_t: f64) -> Line3 {
+        Line3::from_inner(self.inner.shifted_origin(delta_t))
+    }
+
+    fn slerp(&self, other: &Line3, t: f64) -> Line3 {
+        Line3::from_inner(self.inner.slerp(&other.inner, t))
+    }
+
+    fn transformed_by(&self, iso: &Iso3) -> Line3 {
+        Line3::from_inner(self.inner.transformed_by(iso.get_inner()))
+    }
+
+    fn intersect_sphere(&self, sphere: &Sphere3) -> Vec<f64> {
+        self.inner.intersect_sphere(sphere.get_inner())
+    }
+
+    fn intersect_circle(&self, circle: &Circle3) -> Option<f64> {
+        self.inner.intersect_circle(circle.get_inner())
+    }
+}
+
+// ================================================================================================
+// Segment3
+// ================================================================================================
+
+#[pyclass(from_py_object, module = "engeom.geom3")]
+#[derive(Clone, Debug)]
+pub struct Segment3 {
+    inner: engeom::geom3::Segment3,
+}
+
+impl Segment3 {
+    pub fn get_inner(&self) -> &engeom::geom3::Segment3 {
+        &self.inner
+    }
+
+    pub fn from_inner(inner: engeom::geom3::Segment3) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl Segment3 {
+    #[new]
+    fn new(x0: f64, y0: f64, z0: f64, x1: f64, y1: f64, z1: f64) -> PyResult<Self> {
+        let p0 = engeom::Point3::new(x0, y0, z0);
+        let p1 = engeom::Point3::new(x1, y1, z1);
+        Ok(Self {
+            inner: engeom::geom3::Segment3::new(&p0, &p1)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?,
+        })
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(points, weights=None))]
+    fn from_fit<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        weights: Option<PyReadonlyArray1<'py, f64>>,
+    ) -> PyResult<Self> {
+        let points = array_to_points3(&points.as_array())?;
+        let result = match weights {
+            Some(weights) => engeom::geom3::Segment3::from_fit(
+                &points,
+                Some(weights.as_array().as_slice().unwrap()),
+            ),
+            None => engeom::geom3::Segment3::from_fit(&points, None),
+        }
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(result))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(points, sigma_max, max_iterations=None, refinement_steps=None, confidence=None, seed=None))]
+    fn from_consensus<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        sigma_max: f64,
+        max_iterations: Option<usize>,
+        refinement_steps: Option<usize>,
+        confidence: Option<f64>,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        let points = array_to_points3(&points.as_array())?;
+        let options = magsac_options(
+            sigma_max,
+            max_iterations,
+            refinement_steps,
+            confidence,
+            seed,
+        );
+        let result = engeom::geom3::Segment3::from_consensus(&points, sigma_max, Some(options))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(result))
+    }
+
+    fn __getstate__(&self) -> (f64, f64, f64, f64, f64, f64) {
+        (
+            self.inner.a.x,
+            self.inner.a.y,
+            self.inner.a.z,
+            self.inner.b.x,
+            self.inner.b.y,
+            self.inner.b.z,
+        )
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64, f64, f64, f64, f64) {
+        (
+            self.inner.a.x,
+            self.inner.a.y,
+            self.inner.a.z,
+            self.inner.b.x,
+            self.inner.b.y,
+            self.inner.b.z,
+        )
+    }
+
+    fn __setstate__(&mut self, state: (f64, f64, f64, f64, f64, f64)) {
+        let p0 = engeom::Point3::new(state.0, state.1, state.2);
+        let p1 = engeom::Point3::new(state.3, state.4, state.5);
+        self.inner =
+            engeom::geom3::Segment3::new(&p0, &p1).expect("Invalid segment points in __setstate__");
+    }
+
+    fn __eq__(&self, other: &Self) -> bool {
+        self.inner.a == other.inner.a && self.inner.b == other.inner.b
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Segment3({}, {}, {}, {}, {}, {})",
+            self.inner.a.x,
+            self.inner.a.y,
+            self.inner.a.z,
+            self.inner.b.x,
+            self.inner.b.y,
+            self.inner.b.z,
+        )
+    }
+
+    #[getter]
+    fn a(&self) -> Point3 {
+        Point3::from_inner(self.inner.a)
+    }
+
+    #[getter]
+    fn b(&self) -> Point3 {
+        Point3::from_inner(self.inner.b)
+    }
+
+    #[getter]
+    fn direction(&self) -> Vector3 {
+        Vector3::from_inner(self.inner.dir())
+    }
+
+    #[getter]
+    fn length(&self) -> f64 {
+        self.inner.length()
+    }
+
+    #[getter]
+    fn aabb(&self) -> Aabb3 {
+        Aabb3::from_inner(self.inner.aabb())
+    }
+
+    fn to_line(&self) -> Line3 {
+        Line3::from_inner(self.inner.to_line())
+    }
+
+    fn transformed_by(&self, iso: &Iso3) -> Self {
+        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
+    }
+
+    fn at(&self, t: f64) -> Point3 {
+        Point3::from_inner(self.inner.at(t))
+    }
+
+    fn reversed(&self) -> Self {
+        Self::from_inner(self.inner.reversed())
+    }
+
+    fn scalar_projection(&self, other: Point3) -> f64 {
+        self.inner.scalar_projection(other.get_inner())
+    }
+
+    fn closest_point(&self, other: Point3) -> Point3 {
+        Point3::from_inner(self.inner.closest_point(other.get_inner()))
+    }
+
+    fn at_t(&self, t: f64) -> Manifold1Pos3 {
+        Manifold1Pos3::from_inner(self.inner.at_t(t))
+    }
+
+    fn closest_to_point(&self, point: Point3) -> Manifold1Pos3 {
+        Manifold1Pos3::from_inner(self.inner.closest_to_point(point.get_inner()))
+    }
 }
 
 // ================================================================================================
@@ -810,13 +1137,69 @@ impl Sphere3 {
     #[new]
     fn new(cx: f64, cy: f64, cz: f64, radius: f64) -> Self {
         Self::from_inner(engeom::Sphere3::new(
-            engeom::Point3::new(cx, cy, cz),
+            &engeom::Point3::new(cx, cy, cz),
             radius,
         ))
     }
 
+    #[staticmethod]
+    fn from_4_points(p0: &Point3, p1: &Point3, p2: &Point3, p3: &Point3) -> PyResult<Self> {
+        engeom::Sphere3::from_4_points(
+            p0.get_inner(),
+            p1.get_inner(),
+            p2.get_inner(),
+            p3.get_inner(),
+        )
+        .map(Self::from_inner)
+        .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(points, weights=None))]
+    fn from_fit<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        weights: Option<PyReadonlyArray1<'py, f64>>,
+    ) -> PyResult<Self> {
+        let points = array_to_points3(&points.as_array())?;
+        let result = match weights {
+            Some(weights) => {
+                engeom::Sphere3::from_fit(&points, Some(weights.as_array().as_slice().unwrap()))
+            }
+            None => engeom::Sphere3::from_fit(&points, None),
+        }
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(result))
+    }
+
+    #[staticmethod]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature=(points, sigma_max, min_r=None, max_r=None, max_iterations=None, refinement_steps=None, confidence=None, seed=None))]
+    fn from_consensus<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        sigma_max: f64,
+        min_r: Option<f64>,
+        max_r: Option<f64>,
+        max_iterations: Option<usize>,
+        refinement_steps: Option<usize>,
+        confidence: Option<f64>,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        let points = array_to_points3(&points.as_array())?;
+        let options = magsac_options(
+            sigma_max,
+            max_iterations,
+            refinement_steps,
+            confidence,
+            seed,
+        );
+        let result =
+            engeom::Sphere3::from_consensus(&points, sigma_max, min_r, max_r, Some(options))
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(result))
+    }
+
     fn __repr__(&self) -> String {
-        let c = self.inner.center();
+        let c = self.inner.center;
         format!(
             "Sphere3(center=({}, {}, {}), radius={})",
             c.x,
@@ -827,17 +1210,17 @@ impl Sphere3 {
     }
 
     fn __getnewargs__(&self) -> (f64, f64, f64, f64) {
-        let c = self.inner.center();
+        let c = self.inner.center;
         (c.x, c.y, c.z, self.inner.r())
     }
 
     fn __getstate__(&self) -> (f64, f64, f64, f64) {
-        let c = self.inner.center();
+        let c = self.inner.center;
         (c.x, c.y, c.z, self.inner.r())
     }
 
     fn __setstate__(&mut self, state: (f64, f64, f64, f64)) {
-        self.inner = engeom::Sphere3::new(engeom::Point3::new(state.0, state.1, state.2), state.3);
+        self.inner = engeom::Sphere3::new(&engeom::Point3::new(state.0, state.1, state.2), state.3);
     }
 
     fn __eq__(&self, other: &Sphere3) -> bool {
@@ -846,7 +1229,7 @@ impl Sphere3 {
 
     #[getter]
     fn center(&self) -> Point3 {
-        Point3::from_inner(self.inner.center())
+        Point3::from_inner(self.inner.center)
     }
 
     #[getter]
@@ -870,6 +1253,16 @@ impl Sphere3 {
         self.inner
             .intersect_sphere(&other.inner)
             .map(Circle3::from_inner)
+    }
+
+    fn transformed_by(&self, iso: &Iso3) -> Self {
+        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
+    }
+
+    fn intersect_ray(&self, line: &Line3) -> Option<SurfacePoint3> {
+        self.inner
+            .intersect_ray(line.get_inner())
+            .map(SurfacePoint3::from_inner)
     }
 }
 
@@ -940,6 +1333,27 @@ impl Circle3 {
     }
 }
 
+/// Build a `Magsac` consensus configuration from the optional overrides exposed to Python, leaving
+/// any unset value at the library default.
+fn magsac_options(
+    sigma_max: f64,
+    max_iterations: Option<usize>,
+    refinement_steps: Option<usize>,
+    confidence: Option<f64>,
+    seed: Option<u64>,
+) -> engeom::common::consensus::Magsac {
+    let mut options = engeom::common::consensus::Magsac::new(sigma_max);
+    options.max_iterations = max_iterations;
+    if let Some(steps) = refinement_steps {
+        options.refinement_steps = steps;
+    }
+    if let Some(confidence) = confidence {
+        options.confidence = confidence;
+    }
+    options.seed = seed;
+    options
+}
+
 #[pymethods]
 impl Circle3 {
     #[new]
@@ -947,14 +1361,91 @@ impl Circle3 {
         let center = engeom::Point3::new(cx, cy, cz);
         let normal = engeom::UnitVec3::try_new(engeom::Vector3::new(nx, ny, nz), 1.0e-6)
             .ok_or_else(|| PyValueError::new_err("Invalid normal vector"))?;
-        engeom::geom3::Circle3::from_point_normal(&center, &normal, radius)
-            .map(Circle3::from_inner)
-            .map_err(|e| PyValueError::new_err(e.to_string()))
+        Ok(Circle3::from_inner(engeom::geom3::Circle3::new(
+            center, normal, radius,
+        )))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(points, weights=None))]
+    fn from_fit<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        weights: Option<PyReadonlyArray1<'py, f64>>,
+    ) -> PyResult<Self> {
+        let points = array_to_points3(&points.as_array())?;
+        let result = match weights {
+            Some(weights) => engeom::geom3::Circle3::from_fit(
+                &points,
+                Some(weights.as_array().as_slice().unwrap()),
+            ),
+            None => engeom::geom3::Circle3::from_fit(&points, None),
+        }
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(result))
+    }
+
+    #[staticmethod]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature=(points, sigma_max, min_r=None, max_r=None, max_iterations=None, refinement_steps=None, confidence=None, seed=None))]
+    fn from_consensus<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        sigma_max: f64,
+        min_r: Option<f64>,
+        max_r: Option<f64>,
+        max_iterations: Option<usize>,
+        refinement_steps: Option<usize>,
+        confidence: Option<f64>,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        let points = array_to_points3(&points.as_array())?;
+        let options = magsac_options(
+            sigma_max,
+            max_iterations,
+            refinement_steps,
+            confidence,
+            seed,
+        );
+        let result =
+            engeom::geom3::Circle3::from_consensus(&points, sigma_max, min_r, max_r, Some(options))
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(result))
+    }
+
+    #[staticmethod]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature=(points, sigma_max, min_r=None, max_r=None, max_iterations=None, refinement_steps=None, confidence=None, seed=None))]
+    fn from_consensus_planar<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        sigma_max: f64,
+        min_r: Option<f64>,
+        max_r: Option<f64>,
+        max_iterations: Option<usize>,
+        refinement_steps: Option<usize>,
+        confidence: Option<f64>,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        let points = array_to_points3(&points.as_array())?;
+        let options = magsac_options(
+            sigma_max,
+            max_iterations,
+            refinement_steps,
+            confidence,
+            seed,
+        );
+        let result = engeom::geom3::Circle3::from_consensus_planar(
+            &points,
+            sigma_max,
+            min_r,
+            max_r,
+            Some(options),
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(result))
     }
 
     fn __repr__(&self) -> String {
-        let c = self.inner.center();
-        let n = self.inner.normal();
+        let c = self.inner.center;
+        let n = self.inner.normal;
         format!(
             "Circle3(center=({}, {}, {}), normal=({}, {}, {}), radius={})",
             c.x,
@@ -968,14 +1459,14 @@ impl Circle3 {
     }
 
     fn __getnewargs__(&self) -> (f64, f64, f64, f64, f64, f64, f64) {
-        let c = self.inner.center();
-        let n = self.inner.normal();
+        let c = self.inner.center;
+        let n = self.inner.normal;
         (c.x, c.y, c.z, n.x, n.y, n.z, self.inner.r())
     }
 
     fn __getstate__(&self) -> (f64, f64, f64, f64, f64, f64, f64) {
-        let c = self.inner.center();
-        let n = self.inner.normal();
+        let c = self.inner.center;
+        let n = self.inner.normal;
         (c.x, c.y, c.z, n.x, n.y, n.z, self.inner.r())
     }
 
@@ -984,8 +1475,7 @@ impl Circle3 {
         let normal =
             engeom::UnitVec3::try_new(engeom::Vector3::new(state.3, state.4, state.5), 1.0e-6)
                 .ok_or_else(|| PyValueError::new_err("Invalid normal vector"))?;
-        self.inner = engeom::geom3::Circle3::from_point_normal(&center, &normal, state.6)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        self.inner = engeom::geom3::Circle3::new(center, normal, state.6);
         Ok(())
     }
 
@@ -1000,12 +1490,12 @@ impl Circle3 {
 
     #[getter]
     fn center(&self) -> Point3 {
-        Point3::from_inner(self.inner.center())
+        Point3::from_inner(self.inner.center)
     }
 
     #[getter]
     fn normal(&self) -> Vector3 {
-        Vector3::from_inner(self.inner.normal().into_inner())
+        Vector3::from_inner(self.inner.normal.into_inner())
     }
 
     #[getter]
@@ -1013,68 +1503,397 @@ impl Circle3 {
         Plane3::from_inner(self.inner.plane())
     }
 
-    #[getter]
-    fn iso(&self) -> Iso3 {
-        Iso3::from_inner(*self.inner.iso())
+    fn closest_point(&self, test_point: Point3) -> Option<SurfacePoint3> {
+        self.inner
+            .closest_point(test_point.get_inner())
+            .map(SurfacePoint3::from_inner)
     }
 
-    fn at_angle(&self, angle: f64) -> Manifold1Pos3 {
-        Manifold1Pos3::from_inner(self.inner.at_angle(angle))
+    fn intersect_plane(&self, plane: &Plane3) -> Vec<Point3> {
+        self.inner
+            .intersect_plane(&plane.inner)
+            .into_iter()
+            .map(Point3::from_inner)
+            .collect()
     }
 
-    fn closest_angle(&self, test_point: Point3) -> f64 {
-        self.inner.closest_angle(test_point.get_inner())
-    }
-
-    fn closest_position(&self, test_point: Point3) -> Manifold1Pos3 {
-        Manifold1Pos3::from_inner(self.inner.closest_position(test_point.get_inner()))
-    }
-
-    fn intersect_plane(&self, plane: &Plane3) -> Vec<f64> {
-        self.inner.intersect_plane(&plane.inner)
-    }
-
-    fn max_extent_angle(&self, dx: f64, dy: f64, dz: f64) -> PyResult<f64> {
+    fn max_extent_point(&self, dx: f64, dy: f64, dz: f64) -> PyResult<Point3> {
         let dir = engeom::Vector3::new(dx, dy, dz);
         self.inner
-            .max_extent_angle(&dir)
+            .max_extent_point(&dir)
+            .map(Point3::from_inner)
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
-    fn set_zero_angle(&mut self, angle: f64) {
-        self.inner.set_zero_angle(angle);
-    }
-
     fn flip_normal(&mut self) {
-        self.inner.flip_normal();
+        self.inner = self.inner.normal_reversed();
     }
 
-    fn new_flipped_normal(&self) -> Self {
-        Circle3::from_inner(self.inner.new_flipped_normal())
+    fn normal_reversed(&self) -> Self {
+        Circle3::from_inner(self.inner.normal_reversed())
     }
 
-    fn at_angles<'py>(
-        &self,
-        py: Python<'py>,
-        angles: PyReadonlyArray1<'_, f64>,
-    ) -> Bound<'py, PyArray2<f64>> {
-        let angles = angles.as_array();
-        let n = angles.len();
-        let mut result = Array2::zeros((n, 9));
-        for (i, &angle) in angles.iter().enumerate() {
-            let m = self.inner.at_angle(angle);
-            let normal = (m.point - self.inner.center()).normalize();
-            result[[i, 0]] = m.point.x;
-            result[[i, 1]] = m.point.y;
-            result[[i, 2]] = m.point.z;
-            result[[i, 3]] = normal.x;
-            result[[i, 4]] = normal.y;
-            result[[i, 5]] = normal.z;
-            result[[i, 6]] = m.direction.x;
-            result[[i, 7]] = m.direction.y;
-            result[[i, 8]] = m.direction.z;
-        }
-        result.into_pyarray(py)
+    fn transformed_by(&self, iso: &Iso3) -> Self {
+        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
+    }
+
+    #[staticmethod]
+    fn from_3_points(p0: Point3, p1: Point3, p2: Point3) -> PyResult<Self> {
+        engeom::geom3::Circle3::from_3_points(p0.get_inner(), p1.get_inner(), p2.get_inner())
+            .map(Self::from_inner)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+}
+
+// ================================================================================================
+// Cylinder3
+// ================================================================================================
+
+#[pyclass(from_py_object, module = "engeom.geom3")]
+#[derive(Clone, Debug)]
+pub struct Cylinder3 {
+    inner: engeom::geom3::Cylinder3,
+}
+
+impl Cylinder3 {
+    pub fn get_inner(&self) -> &engeom::geom3::Cylinder3 {
+        &self.inner
+    }
+
+    pub fn from_inner(inner: engeom::geom3::Cylinder3) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl Cylinder3 {
+    #[new]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        cx: f64,
+        cy: f64,
+        cz: f64,
+        dx: f64,
+        dy: f64,
+        dz: f64,
+        radius: f64,
+        length: f64,
+    ) -> PyResult<Self> {
+        let center = engeom::Point3::new(cx, cy, cz);
+        let direction = engeom::UnitVec3::try_new(engeom::Vector3::new(dx, dy, dz), 1.0e-6)
+            .ok_or_else(|| PyValueError::new_err("Invalid direction vector"))?;
+        Ok(Self::from_inner(engeom::geom3::Cylinder3::new(
+            center, direction, radius, length,
+        )))
+    }
+
+    #[staticmethod]
+    fn from_points(p0: Point3, p1: Point3, radius: f64) -> PyResult<Self> {
+        engeom::geom3::Cylinder3::from_points(p0.get_inner(), p1.get_inner(), radius)
+            .map(Self::from_inner)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    fn __repr__(&self) -> String {
+        let c = self.inner.center;
+        let d = self.inner.direction;
+        format!(
+            "Cylinder3(center=({}, {}, {}), direction=({}, {}, {}), radius={}, length={})",
+            c.x,
+            c.y,
+            c.z,
+            d.x,
+            d.y,
+            d.z,
+            self.inner.r(),
+            self.inner.length
+        )
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn __getnewargs__(&self) -> (f64, f64, f64, f64, f64, f64, f64, f64) {
+        let c = self.inner.center;
+        let d = self.inner.direction;
+        (
+            c.x,
+            c.y,
+            c.z,
+            d.x,
+            d.y,
+            d.z,
+            self.inner.r(),
+            self.inner.length,
+        )
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn __getstate__(&self) -> (f64, f64, f64, f64, f64, f64, f64, f64) {
+        let c = self.inner.center;
+        let d = self.inner.direction;
+        (
+            c.x,
+            c.y,
+            c.z,
+            d.x,
+            d.y,
+            d.z,
+            self.inner.r(),
+            self.inner.length,
+        )
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn __setstate__(&mut self, state: (f64, f64, f64, f64, f64, f64, f64, f64)) -> PyResult<()> {
+        let center = engeom::Point3::new(state.0, state.1, state.2);
+        let direction =
+            engeom::UnitVec3::try_new(engeom::Vector3::new(state.3, state.4, state.5), 1.0e-6)
+                .ok_or_else(|| PyValueError::new_err("Invalid direction vector"))?;
+        self.inner = engeom::geom3::Cylinder3::new(center, direction, state.6, state.7);
+        Ok(())
+    }
+
+    fn __eq__(&self, other: &Cylinder3) -> bool {
+        self.inner == other.inner
+    }
+
+    #[getter]
+    fn center(&self) -> Point3 {
+        Point3::from_inner(self.inner.center)
+    }
+
+    #[getter]
+    fn direction(&self) -> Vector3 {
+        Vector3::from_inner(self.inner.direction.into_inner())
+    }
+
+    #[getter]
+    fn r(&self) -> f64 {
+        self.inner.r()
+    }
+
+    #[getter]
+    fn length(&self) -> f64 {
+        self.inner.length
+    }
+
+    fn a(&self) -> Point3 {
+        Point3::from_inner(self.inner.a())
+    }
+
+    fn b(&self) -> Point3 {
+        Point3::from_inner(self.inner.b())
+    }
+
+    fn axis(&self) -> Line3 {
+        Line3::from_inner(self.inner.axis())
+    }
+
+    fn start_cap(&self) -> Circle3 {
+        Circle3::from_inner(self.inner.start_cap())
+    }
+
+    fn end_cap(&self) -> Circle3 {
+        Circle3::from_inner(self.inner.end_cap())
+    }
+
+    fn volume(&self) -> f64 {
+        self.inner.volume()
+    }
+
+    fn lateral_area(&self) -> f64 {
+        self.inner.lateral_area()
+    }
+
+    fn contains_point(&self, test_point: Point3) -> bool {
+        self.inner.contains_point(test_point.get_inner())
+    }
+
+    fn transformed_by(&self, iso: &Iso3) -> Self {
+        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
+    }
+
+    fn reversed(&self) -> Self {
+        Self::from_inner(self.inner.reversed())
+    }
+
+    fn closest_point(&self, test_point: Point3, infinite: bool) -> Option<SurfacePoint3> {
+        self.inner
+            .closest_point(test_point.get_inner(), infinite)
+            .map(SurfacePoint3::from_inner)
+    }
+}
+
+// ================================================================================================
+// Cone3
+// ================================================================================================
+
+#[pyclass(from_py_object, module = "engeom.geom3")]
+#[derive(Clone, Debug)]
+pub struct Cone3 {
+    inner: engeom::geom3::Cone3,
+}
+
+impl Cone3 {
+    pub fn get_inner(&self) -> &engeom::geom3::Cone3 {
+        &self.inner
+    }
+
+    pub fn from_inner(inner: engeom::geom3::Cone3) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl Cone3 {
+    #[new]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        tx: f64,
+        ty: f64,
+        tz: f64,
+        dx: f64,
+        dy: f64,
+        dz: f64,
+        height: f64,
+        radius: f64,
+    ) -> PyResult<Self> {
+        let tip = engeom::Point3::new(tx, ty, tz);
+        let direction = engeom::UnitVec3::try_new(engeom::Vector3::new(dx, dy, dz), 1.0e-6)
+            .ok_or_else(|| PyValueError::new_err("Invalid direction vector"))?;
+        Ok(Self::from_inner(engeom::geom3::Cone3::new(
+            tip, direction, height, radius,
+        )))
+    }
+
+    #[staticmethod]
+    fn from_points(tip: Point3, base_center: Point3, radius: f64) -> PyResult<Self> {
+        engeom::geom3::Cone3::from_points(tip.get_inner(), base_center.get_inner(), radius)
+            .map(Self::from_inner)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    fn __repr__(&self) -> String {
+        let t = self.inner.tip;
+        let d = self.inner.direction;
+        format!(
+            "Cone3(tip=({}, {}, {}), direction=({}, {}, {}), height={}, radius={})",
+            t.x,
+            t.y,
+            t.z,
+            d.x,
+            d.y,
+            d.z,
+            self.inner.height,
+            self.inner.r()
+        )
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn __getnewargs__(&self) -> (f64, f64, f64, f64, f64, f64, f64, f64) {
+        let t = self.inner.tip;
+        let d = self.inner.direction;
+        (
+            t.x,
+            t.y,
+            t.z,
+            d.x,
+            d.y,
+            d.z,
+            self.inner.height,
+            self.inner.r(),
+        )
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn __getstate__(&self) -> (f64, f64, f64, f64, f64, f64, f64, f64) {
+        let t = self.inner.tip;
+        let d = self.inner.direction;
+        (
+            t.x,
+            t.y,
+            t.z,
+            d.x,
+            d.y,
+            d.z,
+            self.inner.height,
+            self.inner.r(),
+        )
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn __setstate__(&mut self, state: (f64, f64, f64, f64, f64, f64, f64, f64)) -> PyResult<()> {
+        let tip = engeom::Point3::new(state.0, state.1, state.2);
+        let direction =
+            engeom::UnitVec3::try_new(engeom::Vector3::new(state.3, state.4, state.5), 1.0e-6)
+                .ok_or_else(|| PyValueError::new_err("Invalid direction vector"))?;
+        self.inner = engeom::geom3::Cone3::new(tip, direction, state.6, state.7);
+        Ok(())
+    }
+
+    fn __eq__(&self, other: &Cone3) -> bool {
+        self.inner == other.inner
+    }
+
+    #[getter]
+    fn tip(&self) -> Point3 {
+        Point3::from_inner(self.inner.tip)
+    }
+
+    #[getter]
+    fn direction(&self) -> Vector3 {
+        Vector3::from_inner(self.inner.direction.into_inner())
+    }
+
+    #[getter]
+    fn height(&self) -> f64 {
+        self.inner.height
+    }
+
+    #[getter]
+    fn r(&self) -> f64 {
+        self.inner.r()
+    }
+
+    fn base_center(&self) -> Point3 {
+        Point3::from_inner(self.inner.base_center())
+    }
+
+    fn axis(&self) -> Line3 {
+        Line3::from_inner(self.inner.axis())
+    }
+
+    fn base(&self) -> Circle3 {
+        Circle3::from_inner(self.inner.base())
+    }
+
+    fn half_angle(&self) -> f64 {
+        self.inner.half_angle()
+    }
+
+    fn slant_height(&self) -> f64 {
+        self.inner.slant_height()
+    }
+
+    fn volume(&self) -> f64 {
+        self.inner.volume()
+    }
+
+    fn lateral_area(&self) -> f64 {
+        self.inner.lateral_area()
+    }
+
+    fn contains_point(&self, test_point: Point3) -> bool {
+        self.inner.contains_point(test_point.get_inner())
+    }
+
+    fn transformed_by(&self, iso: &Iso3) -> Self {
+        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
+    }
+
+    fn closest_point(&self, test_point: Point3, infinite: bool) -> Option<SurfacePoint3> {
+        self.inner
+            .closest_point(test_point.get_inner(), infinite)
+            .map(SurfacePoint3::from_inner)
     }
 }
 
@@ -1247,6 +2066,14 @@ impl Curve3 {
         Self::from_inner(self.inner.new_transformed_by(iso.get_inner()))
     }
 
+    fn to_2d(&self) -> PyResult<crate::geom2::Curve2> {
+        let c = self
+            .inner
+            .to_2d()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(crate::geom2::Curve2::from_inner(c))
+    }
+
     #[staticmethod]
     fn load_tccurve3(path: PathBuf) -> PyResult<Self> {
         let curve = engeom::io::read_tc_curve3_file(&path)
@@ -1286,6 +2113,7 @@ enum Transformable3 {
     Line(Line3),
     Sphere(Sphere3),
     Circle(Circle3),
+    Seg(Segment3),
 }
 
 #[pyclass(from_py_object, module = "engeom.geom3")]
@@ -1372,10 +2200,24 @@ impl Iso3 {
             array[i] = *value;
         }
 
-        let inner = engeom::Iso3::try_from_array(&array)
+        let inner = engeom::Iso3::from_array(&array)
             .map_err(|e| PyValueError::new_err(format!("Error creating Iso3: {}", e)))?;
 
         Ok(Self { inner })
+    }
+
+    fn __getnewargs__<'py>(&self, py: Python<'py>) -> (Bound<'py, PyArray2<f64>>,) {
+        (self.as_numpy(py),)
+    }
+
+    fn __getstate__(&self) -> (f64, f64, f64, f64, f64, f64, f64) {
+        self.to_quaternion()
+    }
+
+    fn __setstate__(&mut self, state: (f64, f64, f64, f64, f64, f64, f64)) {
+        let translation = Translation3::new(state.0, state.1, state.2);
+        let quat = Quaternion::new(state.6, state.3, state.4, state.5);
+        self.inner = engeom::Iso3::from_parts(translation, UnitQuaternion::from_quaternion(quat));
     }
 
     #[staticmethod]
@@ -1393,6 +2235,14 @@ impl Iso3 {
         Self {
             inner: engeom::Iso3::rotation(rot_vec),
         }
+    }
+
+    #[staticmethod]
+    fn from_rot_axis(axis: &Line3, angle: f64) -> PyResult<Self> {
+        let inner = engeom::Iso3::from_rot_axis(axis.get_inner(), angle)
+            .map_err(|e| PyValueError::new_err(format!("Error creating Iso3: {}", e)))?;
+
+        Ok(Self { inner })
     }
 
     fn inverse(&self) -> Self {
@@ -1453,23 +2303,23 @@ impl Iso3 {
                 Point3::from_inner(self.inner * other.inner).into_bound_py_any(py)
             }
             Transformable3::Plane(other) => {
-                Plane3::from_inner(other.inner.new_transformed_by(&self.inner))
-                    .into_bound_py_any(py)
+                Plane3::from_inner(other.inner.transformed_by(&self.inner)).into_bound_py_any(py)
             }
             Transformable3::Sp(other) => {
-                SurfacePoint3::from_inner(other.inner.transformed(&self.inner))
+                SurfacePoint3::from_inner(other.inner.transformed_by(&self.inner))
                     .into_bound_py_any(py)
             }
             Transformable3::Line(other) => {
-                Line3::from_inner(other.inner.new_transformed_by(&self.inner)).into_bound_py_any(py)
+                Line3::from_inner(other.inner.transformed_by(&self.inner)).into_bound_py_any(py)
             }
             Transformable3::Sphere(other) => {
-                Sphere3::from_inner(other.inner.new_transformed_by(&self.inner))
-                    .into_bound_py_any(py)
+                Sphere3::from_inner(other.inner.transformed_by(&self.inner)).into_bound_py_any(py)
             }
             Transformable3::Circle(other) => {
-                Circle3::from_inner(other.inner.new_transformed_by(&self.inner))
-                    .into_bound_py_any(py)
+                Circle3::from_inner(other.inner.transformed_by(&self.inner)).into_bound_py_any(py)
+            }
+            Transformable3::Seg(other) => {
+                Segment3::from_inner(other.inner.transformed_by(&self.inner)).into_bound_py_any(py)
             }
         }
     }
@@ -1504,21 +2354,21 @@ impl Iso3 {
         }
     }
 
-    fn flip_around_x(&self) -> Self {
+    fn flipped_around_x(&self) -> Self {
         Self {
-            inner: self.inner.flip_around_x(),
+            inner: self.inner.flipped_around_x(),
         }
     }
 
-    fn flip_around_y(&self) -> Self {
+    fn flipped_around_y(&self) -> Self {
         Self {
-            inner: self.inner.flip_around_y(),
+            inner: self.inner.flipped_around_y(),
         }
     }
 
-    fn flip_around_z(&self) -> Self {
+    fn flipped_around_z(&self) -> Self {
         Self {
-            inner: self.inner.flip_around_z(),
+            inner: self.inner.flipped_around_z(),
         }
     }
 
@@ -1537,7 +2387,7 @@ impl Iso3 {
     #[staticmethod]
     #[pyo3(signature=(e0, e1, origin=None))]
     fn from_basis_xy(e0: &Vector3, e1: &Vector3, origin: Option<Point3>) -> PyResult<Iso3> {
-        let iso = engeom::Iso3::try_from_basis_xy(
+        let iso = engeom::Iso3::from_basis_xy(
             e0.get_inner(),
             e1.get_inner(),
             origin.map(|p| *p.get_inner()),
@@ -1550,7 +2400,7 @@ impl Iso3 {
     #[staticmethod]
     #[pyo3(signature=(e0, e2, origin=None))]
     fn from_basis_xz(e0: &Vector3, e2: &Vector3, origin: Option<Point3>) -> PyResult<Iso3> {
-        let iso = engeom::Iso3::try_from_basis_xz(
+        let iso = engeom::Iso3::from_basis_xz(
             e0.get_inner(),
             e2.get_inner(),
             origin.map(|p| *p.get_inner()),
@@ -1563,7 +2413,7 @@ impl Iso3 {
     #[staticmethod]
     #[pyo3(signature=(e1, e2, origin=None))]
     fn from_basis_yz(e1: &Vector3, e2: &Vector3, origin: Option<Point3>) -> PyResult<Iso3> {
-        let iso = engeom::Iso3::try_from_basis_yz(
+        let iso = engeom::Iso3::from_basis_yz(
             e1.get_inner(),
             e2.get_inner(),
             origin.map(|p| *p.get_inner()),
@@ -1576,7 +2426,7 @@ impl Iso3 {
     #[staticmethod]
     #[pyo3(signature=(e1, e0, origin=None))]
     fn from_basis_yx(e1: &Vector3, e0: &Vector3, origin: Option<Point3>) -> PyResult<Iso3> {
-        let iso = engeom::Iso3::try_from_basis_yx(
+        let iso = engeom::Iso3::from_basis_yx(
             e1.get_inner(),
             e0.get_inner(),
             origin.map(|p| *p.get_inner()),
@@ -1589,7 +2439,7 @@ impl Iso3 {
     #[staticmethod]
     #[pyo3(signature=(e2, e0, origin=None))]
     fn from_basis_zx(e2: &Vector3, e0: &Vector3, origin: Option<Point3>) -> PyResult<Iso3> {
-        let iso = engeom::Iso3::try_from_basis_zx(
+        let iso = engeom::Iso3::from_basis_zx(
             e2.get_inner(),
             e0.get_inner(),
             origin.map(|p| *p.get_inner()),
@@ -1602,7 +2452,7 @@ impl Iso3 {
     #[staticmethod]
     #[pyo3(signature=(e2, e1, origin=None))]
     fn from_basis_zy(e2: &Vector3, e1: &Vector3, origin: Option<Point3>) -> PyResult<Iso3> {
-        let iso = engeom::Iso3::try_from_basis_zy(
+        let iso = engeom::Iso3::from_basis_zy(
             e2.get_inner(),
             e1.get_inner(),
             origin.map(|p| *p.get_inner()),
@@ -1658,6 +2508,12 @@ impl Iso3 {
 // CubicSpline3
 // ================================================================================================
 
+/// Filters a fixed-size `[f64; 2]` root array (where unused slots are `NaN`) down to a `Vec`
+/// containing only the finite values, for a cleaner Python-side result than a NaN-padded tuple.
+fn finite_roots(roots: [f64; 2]) -> Vec<f64> {
+    roots.into_iter().filter(|v| !v.is_nan()).collect()
+}
+
 #[pyclass(from_py_object, module = "engeom.geom3")]
 #[derive(Clone, Debug)]
 pub struct CubicSpline3 {
@@ -1679,6 +2535,8 @@ type CubicSpline3State = (f64, f64, f64, f64, f64, f64, f64, f64, f64, f64, f64,
 #[pymethods]
 impl CubicSpline3 {
     #[new]
+    // Four control points as flat coordinates; the signature mirrors the Python API.
+    #[allow(clippy::too_many_arguments)]
     fn new(
         x0: f64,
         y0: f64,
@@ -1822,6 +2680,85 @@ impl CubicSpline3 {
     fn project_point(&self, point: Point3) -> SplineProjection {
         let queries = engeom::common::cubic_spline::CubicSplineQueries::from(&self.inner);
         SplineProjection::from_inner(queries.project_point(point.get_inner()))
+    }
+
+    /// Return the position and derivative direction of the curve at parameter `t` in the form of
+    /// a parameterized line.
+    fn line_at(&self, t: f64) -> Line3 {
+        Line3::from_inner(self.inner.line_at(t))
+    }
+
+    /// Returns the real roots of the derivative of each component of the curve, as a tuple of
+    /// `(x_roots, y_roots, z_roots)` where each is a list of 0, 1, or 2 parameter values.
+    fn derivative_roots(&self) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
+        let roots = self.inner.derivative_roots();
+        (
+            finite_roots(roots[0]),
+            finite_roots(roots[1]),
+            finite_roots(roots[2]),
+        )
+    }
+
+    /// Returns the parameter `t` of a cusp if one exists in `[0, 1]`, otherwise `None`.
+    fn find_cusp(&self) -> Option<f64> {
+        self.inner.find_cusp()
+    }
+
+    /// Returns parameter values in `[0, 1]` where the curve's curvature is zero, as a list of 0,
+    /// 1, or 2 parameter values.
+    fn find_curvature_zeros(&self) -> Vec<f64> {
+        finite_roots(self.inner.find_curvature_zeros())
+    }
+
+    /// Returns every local maximum of the curvature over `[0, 1]`, each as a `(t, curvature)`
+    /// tuple, ordered by ascending `t`.
+    fn find_curvature_maxima(&self) -> Vec<(f64, f64)> {
+        self.inner
+            .find_curvature_maxima()
+            .into_iter()
+            .map(|v| (v.t, v.value))
+            .collect()
+    }
+
+    /// Returns the corners `(min, max)` of the tight axis-aligned bounding box of the curve over
+    /// the parameter range `[0, 1]`.
+    fn compute_bounds(&self) -> (Point3, Point3) {
+        let (lo, hi) = self.inner.compute_bounds();
+        (Point3::from_inner(lo), Point3::from_inner(hi))
+    }
+
+    /// Returns the arc length of the curve over the parameter range `[t0, t1]`.
+    fn arc_length_between(&self, t0: f64, t1: f64) -> f64 {
+        self.inner.arc_length_between(t0, t1)
+    }
+
+    /// Returns the total arc length of the curve over the parameter range `[0, 1]`.
+    fn arc_length(&self) -> f64 {
+        self.inner.arc_length()
+    }
+
+    /// Splits the curve at parameter `t` using de Casteljau's algorithm, returning the left and
+    /// right sub-curves.
+    fn split(&self, t: f64) -> (Self, Self) {
+        let (left, right) = self.inner.split(t);
+        (Self::from_inner(left), Self::from_inner(right))
+    }
+
+    /// Splits the curve at parameter `t`, returning `None` if `t` is not in `[0, 1]`.
+    fn try_split(&self, t: f64) -> Option<(Self, Self)> {
+        self.inner
+            .try_split(t)
+            .map(|(left, right)| (Self::from_inner(left), Self::from_inner(right)))
+    }
+
+    /// Returns the axis-aligned bounding box of the curve, computed on demand.
+    #[getter]
+    fn aabb(&self) -> Aabb3 {
+        Aabb3::from_inner(self.inner.aabb())
+    }
+
+    fn transformed_by(&self, iso: &Iso3) -> Self {
+        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
     }
 }
 

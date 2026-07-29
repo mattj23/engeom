@@ -7,6 +7,7 @@ mod circle2;
 mod cubic_spline2;
 mod curve2;
 pub mod hull;
+mod iso2;
 mod line2;
 pub mod polyline2;
 mod segment2;
@@ -24,12 +25,20 @@ use std::ops;
 pub type Point2 = parry2d_f64::na::Point2<f64>;
 pub type Vector2 = parry2d_f64::na::Vector2<f64>;
 pub type UnitVec2 = parry2d_f64::na::Unit<Vector2>;
-pub type SurfacePoint2 = SurfacePoint<2>;
 pub type Iso2 = parry2d_f64::na::Isometry2<f64>;
 pub type SvdBasis2 = SvdBasis<2>;
 pub type Ray2 = parry2d_f64::query::Ray;
-pub type Align2 = crate::common::align::Align<UnitComplex<f64>, 2>;
+pub type Alignment2 = crate::common::align::Alignment<UnitComplex<f64>, 2>;
+pub type AlignOutcome2 = crate::common::align::AlignOutcome<UnitComplex<f64>, 2>;
 pub type KdTree2 = crate::common::kd_tree::KdTree<2>;
+
+/// A point in 2D space paired with a unit normal direction, representing a position on a
+/// 1-manifold (line, curve, etc...) embedded in 2D space. Mathematically this is identical to a
+/// parameterized line or ray with unit speed, but represents a different conceptual entity and so
+/// has different semantics.
+///
+/// This is one of `engeom`'s 2D geometric primitives.
+pub type SurfacePoint2 = SurfacePoint<2>;
 
 pub use self::aabb2::Aabb2;
 pub use self::angles2::{directed_angle, rot90, rot270, signed_angle};
@@ -38,6 +47,7 @@ pub use self::boundary2::*;
 pub use self::circle2::Circle2;
 pub use self::cubic_spline2::CubicSpline2;
 pub use self::curve2::{Curve2, CurvePartitioner2, CurveStation2};
+pub use self::iso2::IsoExtensions2;
 pub use self::line2::{Line2, LineOps2, intersect_lines, intersect_rays, intersection_param};
 pub use self::segment2::Segment2;
 
@@ -84,7 +94,7 @@ impl Manifold1Pos2 {
     /// this position. The surface point normal will be pointing to the right (clockwise) of the
     /// manifold direction.
     pub fn surface_point(&self) -> SurfacePoint2 {
-        SurfacePoint2::new(self.point, self.direction)
+        SurfacePoint2::new(self.point, self.normal)
     }
 
     /// Returns a line representing the tangent direction of the manifold at this position. The
@@ -128,15 +138,11 @@ impl PCoords<2> for Manifold1Pos2 {
     }
 }
 
-pub trait HasBounds2 {
-    fn aabb(&self) -> &Aabb2;
-}
-
 impl ops::Mul<SurfacePoint2> for Iso2 {
     type Output = SurfacePoint2;
 
     fn mul(self, rhs: SurfacePoint2) -> Self::Output {
-        rhs.transformed(&self)
+        rhs.transformed_by(&self)
     }
 }
 
@@ -144,7 +150,7 @@ impl ops::Mul<SurfacePoint2> for &Iso2 {
     type Output = SurfacePoint2;
 
     fn mul(self, rhs: SurfacePoint2) -> Self::Output {
-        rhs.transformed(self)
+        rhs.transformed_by(self)
     }
 }
 
@@ -152,7 +158,7 @@ impl ops::Mul<&SurfacePoint2> for &Iso2 {
     type Output = SurfacePoint2;
 
     fn mul(self, rhs: &SurfacePoint2) -> Self::Output {
-        rhs.transformed(self)
+        rhs.transformed_by(self)
     }
 }
 
@@ -160,7 +166,7 @@ impl ops::Mul<&SurfacePoint2> for Iso2 {
     type Output = SurfacePoint2;
 
     fn mul(self, rhs: &SurfacePoint2) -> Self::Output {
-        rhs.transformed(&self)
+        rhs.transformed_by(&self)
     }
 }
 
@@ -203,10 +209,10 @@ impl LineOps2 for SurfacePoint2 {
 }
 
 impl SurfacePoint2 {
-    /// Shift a surface point in the direction orthogonal to its normal (sideways) by the given
-    /// distance. The direction of travel is the surface point's normal vector rotated by 90 degrees
-    /// in the *clockwise* direction. If the normal is pointing up, a positive distance will move
-    /// the point to the right, and a negative distance will move the point to the left.
+    /// Returns a new surface point shifted in the direction orthogonal to its normal (sideways) by
+    /// the given distance. The direction of travel is the surface point's normal vector rotated by
+    /// 90 degrees in the *clockwise* direction. If the normal is pointing up, a positive distance
+    /// will move the point to the right, and a negative distance will move the point to the left.
     ///
     /// # Arguments
     ///
@@ -221,17 +227,18 @@ impl SurfacePoint2 {
     /// use engeom::SurfacePoint2;
     ///
     /// let sp = SurfacePoint2::new_normalize([0.0, 0.0].into(), [0.0, 1.0].into());
-    /// let shifted = sp.shift_orthogonal(1.0);
+    /// let shifted = sp.shifted_orthogonal(1.0);
     /// assert_relative_eq!(shifted.point, [1.0, 0.0].into(), epsilon = 1e-6);
     /// ```
-    pub fn shift_orthogonal(&self, distance: f64) -> Self {
+    pub fn shifted_orthogonal(&self, distance: f64) -> Self {
         let shift = rot90(Cw) * self.normal.into_inner() * distance;
         Self::new(self.point + shift, self.normal)
     }
 
-    /// Rotate the normal vector of a surface point by the given angle. The angle is in radians and
-    /// is measured counterclockwise from the positive x-axis. If the normal is pointing up, a
-    /// positive angle will rotate it to the left, and a negative angle will rotate it to the right.
+    /// Returns a new surface point with its normal vector rotated by the given angle. The angle is
+    /// in radians and is measured counterclockwise from the positive x-axis. If the normal is
+    /// pointing up, a positive angle will rotate it to the left, and a negative angle will rotate
+    /// it to the right.
     ///
     /// # Arguments
     ///
@@ -246,18 +253,18 @@ impl SurfacePoint2 {
     /// use engeom::{SurfacePoint2, Vector2, UnitVec2};
     ///
     /// let sp = SurfacePoint2::new_normalize([0.0, 0.0].into(), [0.0, 1.0].into());
-    /// let rotated = sp.rot_normal(std::f64::consts::PI / 2.0);
+    /// let rotated = sp.normal_rotated(std::f64::consts::PI / 2.0);
     /// let expected = UnitVec2::new_normalize(Vector2::new(-1.0, 0.0));
     /// assert_relative_eq!(rotated.normal, expected, epsilon = 1e-6);
     /// ```
-    pub fn rot_normal(&self, angle: f64) -> Self {
+    pub fn normal_rotated(&self, angle: f64) -> Self {
         let n = Iso2::rotation(angle) * self.normal.into_inner();
         Self::new_normalize(self.point, n)
     }
 
-    /// Rotate the normal vector of a surface point by 90 degrees in the given direction. If the
-    /// normal is pointing up, rotating it clockwise will make it point to the right, and rotating
-    /// it counterclockwise will make it point to the left.
+    /// Returns a new surface point with its normal vector rotated by 90 degrees in the given
+    /// direction. If the normal is pointing up, rotating it clockwise will make it point to the
+    /// right, and rotating it counterclockwise will make it point to the left.
     ///
     /// # Arguments
     ///
@@ -272,11 +279,11 @@ impl SurfacePoint2 {
     /// use engeom::{SurfacePoint2, AngleDir, Vector2, UnitVec2};
     ///
     /// let sp = SurfacePoint2::new_normalize([0.0, 0.0].into(), [0.0, 1.0].into());
-    /// let rotated = sp.rot_normal_90(AngleDir::Cw);
+    /// let rotated = sp.normal_rotated_90(AngleDir::Cw);
     /// let expected = UnitVec2::new_normalize(Vector2::new(1.0, 0.0));
     /// assert_relative_eq!(rotated.normal, expected, epsilon = 1e-6);
     /// ```
-    pub fn rot_normal_90(&self, dir: AngleDir) -> Self {
+    pub fn normal_rotated_90(&self, dir: AngleDir) -> Self {
         Self::new_normalize(self.point, rot90(dir) * self.normal.into_inner())
     }
 }
@@ -285,99 +292,7 @@ impl SurfacePoint2 {
 pub mod tests {
     use super::*;
     use approx::assert_relative_eq;
-    use rand::distr::{Distribution, Uniform};
-    use rand::rngs::StdRng;
-    use rand::{Rng, RngExt, SeedableRng};
     use std::f64::consts::PI;
-
-    enum RngSource {
-        Seeded(StdRng),
-        Thread,
-    }
-
-    pub struct RandomGeometry2 {
-        rng: RngSource,
-    }
-
-    impl Default for RandomGeometry2 {
-        fn default() -> Self {
-            Self::new()
-        }
-    }
-
-    impl RandomGeometry2 {
-        pub fn new() -> Self {
-            Self {
-                rng: RngSource::Thread,
-            }
-        }
-
-        pub fn from_seed(seed: u64) -> Self {
-            Self {
-                rng: RngSource::Seeded(StdRng::seed_from_u64(seed)),
-            }
-        }
-
-        pub fn f64(&mut self, lo: f64, hi: f64) -> f64 {
-            let u = Uniform::new(lo, hi).unwrap();
-            match &mut self.rng {
-                RngSource::Seeded(r) => u.sample(r),
-                RngSource::Thread => u.sample(&mut rand::rng()),
-            }
-        }
-
-        pub fn bool(&mut self) -> bool {
-            match &mut self.rng {
-                RngSource::Seeded(r) => r.random_bool(0.5),
-                RngSource::Thread => rand::rng().random_bool(0.5),
-            }
-        }
-
-        pub fn f64_sym(&mut self, hi: f64) -> f64 {
-            self.f64(-hi, hi)
-        }
-
-        pub fn point(&mut self, limit: f64) -> Point2 {
-            Point2::new(self.f64(-limit, limit), self.f64(-limit, limit))
-        }
-
-        pub fn vector2(&mut self, limit: f64) -> Vector2 {
-            Vector2::new(self.f64(-limit, limit), self.f64(-limit, limit))
-        }
-
-        pub fn unit_vec2(&mut self) -> UnitVec2 {
-            UnitVec2::new_normalize(Vector2::new(
-                self.angle_sym_pi().cos(),
-                self.angle_sym_pi().sin(),
-            ))
-        }
-
-        pub fn iso2(&mut self, t: f64) -> Iso2 {
-            Iso2::new(self.vector2(t), self.angle_sym_pi())
-        }
-
-        pub fn angle_sym_pi(&mut self) -> f64 {
-            self.f64(-PI, PI)
-        }
-
-        pub fn angle_sym_2pi(&mut self) -> f64 {
-            self.f64(-2.0 * PI, 2.0 * PI)
-        }
-
-        pub fn angle_pos_2pi(&mut self) -> f64 {
-            self.f64(0.0, 2.0 * PI)
-        }
-
-        pub fn positive(&mut self, limit: f64) -> f64 {
-            self.f64(0.0, limit)
-        }
-
-        pub fn circle2(&mut self, center_limit: f64, r_min: f64, r_max: f64) -> Circle2 {
-            let c = self.point(center_limit);
-            let r = self.f64(r_min, r_max);
-            Circle2::new(c.x, c.y, r)
-        }
-    }
 
     #[test]
     fn iso2_only_rotates_vector() {

@@ -9,7 +9,7 @@ In `engeom`, an isometry encodes two things:
 - A **rotation**: how much to rotate, and around which axis
 - A **translation**: how far to move after rotating
 
-Isometries are equivalent to 4x4 homogeneous transformation matrices, but with the constraint that the matrix must
+Isometries are equivalent to homogeneous transformation matrices, but with the constraint that the matrix must
 represent a valid rigid-body transformation (no shear, no scale). In practice this means they are more numerically
 stable than raw matrices because the rotation component is stored as a unit quaternion (3D) or unit complex number
 (2D), which is easy to keep normalized.
@@ -86,9 +86,15 @@ id3 = Iso3.identity()
 
 A 2D isometry is fully specified by an x translation, a y translation, and a rotation angle in radians.
 
+The `from_*` constructors below come from the `IsoExtensions2` trait (`engeom::geom2`), which must be in scope to use
+them. `from_translation` and `from_rotation` forward to nalgebra's `Iso2::translation` and `Iso2::rotation`; they exist
+so that the whole constructor family follows engeom's `from_<description>` naming convention, and because nalgebra uses
+the name `translation` for both a constructor and the isometry's `translation` field.
+
 **Rust:**
 
 ```rust
+use engeom::geom2::IsoExtensions2;
 use engeom::{Iso2, Vector2};
 use std::f64::consts::PI;
 
@@ -96,15 +102,20 @@ use std::f64::consts::PI;
 let iso = Iso2::new(Vector2::new(1.0, 2.0), PI / 4.0);
 
 // Translation only
-let t = Iso2::translation(1.0, 2.0);
+let t = Iso2::from_translation(1.0, 2.0);
 
 // Rotation only
-let r = Iso2::rotation(PI / 4.0);
+let r = Iso2::from_rotation(PI / 4.0);
+
+// From a 3x3 homogeneous matrix (row-major), from the `IsoExtensions2` trait
+let array = [1.0, 0.0, 1.0, 0.0, 1.0, 2.0, 0.0, 0.0, 1.0];
+let m = Iso2::from_array(&array).unwrap();
 ```
 
 **Python:**
 
 ```python
+import numpy as np
 from math import pi
 from engeom.geom2 import Iso2
 
@@ -113,6 +124,70 @@ iso = Iso2(1, 2, pi / 4)
 
 # Identity
 i0 = Iso2.identity()
+
+# From a 3x3 homogeneous matrix (raises an exception if not a valid isometry)
+m = np.array([[1, 0, 1],
+              [0, 1, 2],
+              [0, 0, 1]], dtype=np.float64)
+i1 = Iso2.from_array(m)
+```
+
+### 2D Isometries from an Arbitrary Rotation Point
+
+`Iso2::from_rotation` always rotates around the origin. To rotate around an arbitrary point, such as the center of a
+fitted circle, use `from_rotation_about`, provided by the `IsoExtensions2` trait (`engeom::geom2`). In 2D the axis of
+rotation is always perpendicular to the plane, so unlike the 3D `from_rot_axis` (which needs a `Line3` to describe an
+arbitrary direction), it is fully specified by a single point.
+
+**Rust:**
+
+```rust
+use engeom::geom2::IsoExtensions2;
+use engeom::{Iso2, Point2};
+use std::f64::consts::PI;
+
+let center = Point2::new(1.0, 1.0);
+let iso = Iso2::from_rotation_about(&center, PI / 2.0);
+```
+
+**Python:**
+
+```python
+from math import pi
+from engeom.geom2 import Iso2, Point2
+
+center = Point2(1, 1)
+iso = Iso2.from_rotation_about(center, pi / 2)
+```
+
+### 2D Isometries from a Basis Vector
+
+A 2D isometry's rotation is a single degree of freedom, so unlike the 3D `from_basis_xy`/`from_basis_xz`/etc. family
+(which needs two vectors to pin down all three axes), a single vector is enough to fully determine the frame: the
+second axis is always a fixed 90 degree turn away from the first. `from_basis_x` treats the vector as the local
+x-axis; `from_basis_y` treats it as the local y-axis.
+
+**Rust:**
+
+```rust
+use engeom::geom2::IsoExtensions2;
+use engeom::{Iso2, Point2, Vector2};
+
+let e0 = Vector2::new(1.0, 1.0); // will become the X axis
+let origin = Some(Point2::new(1.0, 2.0));
+
+let frame = Iso2::from_basis_x(&e0, origin).unwrap();
+```
+
+**Python:**
+
+```python
+from engeom.geom2 import Iso2, Vector2, Point2
+
+e0 = Vector2(1, 1)  # will become the X axis
+origin = Point2(1, 2)
+
+frame = Iso2.from_basis_x(e0, origin=origin)
 ```
 
 ### 3D Isometries
@@ -122,18 +197,22 @@ construction paths are available.
 
 **Rust:**
 
-In nalgebra, `Iso3::new` takes a translation vector and an axis-angle vector. The axis-angle vector's direction is
-the rotation axis and its magnitude is the rotation angle in radians.
+Rotations are encoded as an axis-angle vector, whose direction is the rotation axis and whose magnitude is the
+rotation angle in radians. `Iso3::new` (from nalgebra) takes a translation vector and an axis-angle vector together,
+while `from_translation` and `from_rotation` (from the `IsoExtensions3` trait) each build one component on its own.
+The latter two forward to nalgebra's `Iso3::translation` and `Iso3::rotation`, under names that follow engeom's
+`from_<description>` convention.
 
 ```rust
+use engeom::geom3::IsoExtensions3;
 use engeom::{Iso3, Vector3};
 use std::f64::consts::PI;
 
 // Translate by (1, 2, 3) with no rotation
-let t = Iso3::translation(1.0, 2.0, 3.0);
+let t = Iso3::from_translation(1.0, 2.0, 3.0);
 
 // Rotate by π/4 around the x-axis (axis-angle encoding)
-let r = Iso3::rotation(Vector3::x() * (PI / 4.0));
+let r = Iso3::from_rotation(&(Vector3::x() * (PI / 4.0)));
 
 // Combine translation and rotation directly
 let iso = Iso3::new(Vector3::new(1.0, 2.0, 3.0), Vector3::x() * (PI / 4.0));
@@ -176,6 +255,35 @@ m = np.array([[1, 0, 0, 1],
 i3 = Iso3(m)
 ```
 
+### 3D Isometries from an Arbitrary Rotation Axis
+
+`from_rx`, `from_ry`, and `from_rz` only rotate around the principal axes as they pass through the origin. To rotate
+around an arbitrary axis, such as one derived from a fitted cylinder or a measured hinge line, use `from_rot_axis`,
+which takes a `Line3` and an angle. The line's direction does not need to be normalized, and the axis does not need
+to pass through the origin.
+
+**Rust:**
+
+```rust
+use engeom::geom3::IsoExtensions3;
+use engeom::{Iso3, Line3, Point3, Vector3};
+use std::f64::consts::PI;
+
+let axis = Line3::new(Point3::new(1.0, 1.0, 0.0), Vector3::z());
+let iso = Iso3::from_rot_axis(&axis, PI / 2.0).unwrap();
+```
+
+**Python:**
+
+```python
+from math import pi
+from engeom.geom3 import Iso3, Line3
+
+# A line through (1, 1, 0) pointing along the z-axis
+axis = Line3(1, 1, 0, 0, 0, 1)
+iso = Iso3.from_rot_axis(axis, pi / 2)
+```
+
 ### 3D Isometries from Basis Vectors
 
 A common need in metrology is to construct a coordinate frame from two measured directions: for example, the normal
@@ -192,7 +300,7 @@ The full set of variants is: `from_basis_xy`, `from_basis_xz`, `from_basis_yx`, 
 
 **Rust:**
 
-In Rust these are provided by the `IsoExtensions3` trait and are prefixed with `try_`, returning a `Result`.
+In Rust these are provided by the `IsoExtensions3` trait and return a `Result`.
 
 ```rust
 use engeom::geom3::IsoExtensions3;
@@ -203,12 +311,12 @@ let e0 = Vector3::new(1.0, 1.0, 0.0); // will become the X axis
 let e1 = Vector3::new(0.0, 1.0, 0.0); // Y axis derived from this
 let origin = Some(Point3::new(1.0, 2.0, 3.0));
 
-let frame = Iso3::try_from_basis_xy(&e0, &e1, origin).unwrap();
+let frame = Iso3::from_basis_xy(&e0, &e1, origin).unwrap();
 ```
 
 **Python:**
 
-In Python the methods are static methods on `Iso3`, without the `try_` prefix. They raise a `ValueError` if the
+In Python the methods are static methods on `Iso3`. They raise a `ValueError` if the
 vectors are parallel. The `origin` argument is an optional `Point3`.
 
 ```python
@@ -232,10 +340,11 @@ The inverse of an isometry undoes the transformation. If \\( T \\) maps points f
 **Rust:**
 
 ```rust
+use engeom::geom3::IsoExtensions3;
 use engeom::{Iso3, Vector3};
 use std::f64::consts::PI;
 
-let iso = Iso3::rotation(Vector3::x() * (PI / 4.0));
+let iso = Iso3::from_rotation(&(Vector3::x() * (PI / 4.0)));
 let inv = iso.inverse();
 ```
 
@@ -249,6 +358,59 @@ iso = Iso3.from_rotation(pi / 4, 1, 0, 0)
 inv = iso.inverse()
 ```
 
+## Flipping an Isometry 180 Degrees
+
+Sometimes a coordinate frame needs to be turned around without moving its origin, for example when a measured
+feature's direction convention is the opposite of what a downstream calculation expects. This is a 180-degree
+**rotation**, not a mirror/reflection: the origin stays put, and the axes that reverse do so in pairs so that the
+result is still a proper rigid-body transformation.
+
+In 3D, `IsoExtensions3` provides `flipped_around_x`, `flipped_around_y`, and `flipped_around_z`, each of which keeps
+one axis fixed and reverses the other two.
+
+In 2D there is only one such operation: `IsoExtensions2::flipped` keeps the origin fixed and reverses both the x-axis
+and y-axis together, since the only axis a proper 180-degree rotation can turn around in the plane is the implicit
+axis perpendicular to it. There is no 2D equivalent of `flipped_around_x`/`flipped_around_y`, because reversing only
+one in-plane axis is a reflection (determinant -1), which `Iso2` cannot represent at all.
+
+**Rust:**
+
+```rust
+use engeom::geom3::IsoExtensions3;
+use engeom::{Iso3, Vector3};
+use std::f64::consts::PI;
+
+let iso3 = Iso3::from_rotation(&(Vector3::x() * (PI / 4.0)));
+let flipped3 = iso3.flipped_around_z();
+```
+
+```rust
+use engeom::geom2::IsoExtensions2;
+use engeom::Iso2;
+use std::f64::consts::PI;
+
+let iso2 = Iso2::from_rotation(PI / 4.0);
+let flipped2 = iso2.flipped();
+```
+
+**Python:**
+
+```python
+from math import pi
+from engeom.geom3 import Iso3
+
+iso3 = Iso3.from_rotation(pi / 4, 1, 0, 0)
+flipped3 = iso3.flipped_around_z()
+```
+
+```python
+from math import pi
+from engeom.geom2 import Iso2
+
+iso2 = Iso2(0, 0, pi / 4)
+flipped2 = iso2.flipped()
+```
+
 ## Composing Isometries
 
 Isometries can be composed by multiplication. The result is a single isometry equivalent to applying the right-hand
@@ -260,11 +422,12 @@ than translating then rotating.
 **Rust:**
 
 ```rust
+use engeom::geom3::IsoExtensions3;
 use engeom::{Iso3, Vector3};
 use std::f64::consts::PI;
 
-let r = Iso3::rotation(Vector3::x() * (PI / 4.0));
-let t = Iso3::translation(1.0, 2.0, 3.0);
+let r = Iso3::from_rotation(&(Vector3::x() * (PI / 4.0)));
+let t = Iso3::from_translation(1.0, 2.0, 3.0);
 
 // Rotate first, then translate
 let rt = t * r;

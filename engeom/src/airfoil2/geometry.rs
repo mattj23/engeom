@@ -237,7 +237,7 @@ mod tests {
 
     fn af_curve_known_ccw() -> Curve2 {
         let donor = airfoil_curve();
-        Curve2::from_points_ccw(&donor.points(), donor.tol(), true).unwrap()
+        Curve2::from_points_ccw(donor.points(), donor.tol(), true).unwrap()
     }
 
     fn basic_geom(section: &Curve2) -> Result<(Vec<Inscribed>, AfEdge, AfEdge)> {
@@ -305,7 +305,7 @@ mod tests {
         let circles = OrientUpperLower::Curvature.apply(circles)?;
 
         let result = fit_auto_edge(&input, circles, true)?;
-        let result = fit_auto_edge(&input, result.circles, false)?;
+        let _result = fit_auto_edge(&input, result.circles, false)?;
 
         Ok(())
     }

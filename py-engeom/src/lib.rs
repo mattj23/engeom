@@ -1,6 +1,5 @@
 mod airfoil2;
 mod align3;
-pub mod alignments;
 mod boundary2;
 mod bounding;
 mod common;
@@ -85,12 +84,16 @@ fn register_geom3(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_class::<geom3::Plane3>()?;
     child.add_class::<geom3::SurfacePoint3>()?;
     child.add_class::<geom3::Line3>()?;
+    child.add_class::<geom3::Segment3>()?;
     child.add_class::<geom3::Sphere3>()?;
     child.add_class::<geom3::Manifold1Pos3>()?;
     child.add_class::<geom3::Circle3>()?;
+    child.add_class::<geom3::Cylinder3>()?;
+    child.add_class::<geom3::Cone3>()?;
 
-    // Mesh, curves, other complex geometries
-    child.add_class::<mesh::Mesh>()?;
+    // Mesh3, curves, other complex geometries
+    child.add_class::<mesh::Mesh3>()?;
+    child.add_class::<mesh::MeshData3>()?;
     child.add_class::<mesh::MeshCollisionSet>()?;
     child.add_class::<mesh::FaceFilterHandle>()?;
     child.add_class::<geom3::Curve3>()?;
@@ -100,7 +103,7 @@ fn register_geom3(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_class::<geom2::SplineProjection>()?;
     child.add_function(wrap_pyfunction!(geom3::fit_spline_to_points, &child)?)?;
     child.add_class::<point_cloud::PointCloud>()?;
-    child.add_class::<point_cloud::Lptf3Load>()?;
+    child.add_class::<point_cloud::PointCloudData3>()?;
 
     // Bounding and tools
     child.add_class::<bounding::Aabb3>()?;
@@ -117,6 +120,7 @@ fn register_align3_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_class::<align3::Dof6>()?;
     child.add_class::<align3::AlignParams3>()?;
     child.add_class::<align3::Alignment3>()?;
+    child.add_class::<align3::AlignOutcome3>()?;
     child.add_function(wrap_pyfunction!(align3::points_to_mesh, &child)?)?;
     parent_module.add_submodule(&child)
 }
@@ -174,7 +178,8 @@ fn register_sensor_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
 fn register_common_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     let child = PyModule::new(parent_module.py(), "_common")?;
 
-    child.add_class::<common::AngleDir>()?;
+    child.add_class::<common::AngleInterval>()?;
+    child.add_class::<common::IndexMask>()?;
     child.add_function(wrap_pyfunction!(common::angle_in_direction, &child)?)?;
     child.add_function(wrap_pyfunction!(common::shortest_angle_between, &child)?)?;
     child.add_function(wrap_pyfunction!(common::angle_signed_pi, &child)?)?;
@@ -215,10 +220,7 @@ fn py_engeom(m: &Bound<'_, PyModule>) -> PyResult<()> {
     register_common_module(m)?;
 
     // Common features and primitives
-    m.add_class::<common::DeviationMode>()?;
     m.add_class::<common::Resample>()?;
-    m.add_class::<common::SelectOp>()?;
-    m.add_class::<common::VecDot>()?;
 
     Ok(())
 }

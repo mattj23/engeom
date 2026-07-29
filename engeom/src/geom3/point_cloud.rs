@@ -1,13 +1,15 @@
+mod data;
 mod normal_estimation;
 
 use crate::common::kd_tree::{KdTreeSearch, MatchedTree};
 use crate::common::points::dist;
-use crate::{Iso3, KdTree3, Mesh, Point3, Result, SurfacePoint3, UnitVec3};
+use crate::{Iso3, KdTree3, Mesh3, Point3, Result, SurfacePoint3, UnitVec3};
 use uuid::Uuid;
 
 use crate::common::IndexMask;
 use crate::common::poisson_disk::sample_poisson_disk_all;
 use crate::geom3::Aabb3;
+pub use data::PointCloudData3;
 pub use normal_estimation::{NormalEstimates, estimate_by_neighborhood};
 
 pub trait PointCloudOverlap<TOther> {
@@ -400,7 +402,7 @@ impl<'a> PointCloudKdTree<'a> {
     }
 }
 
-impl PointCloudOverlap<Mesh> for PointCloudKdTree<'_> {
+impl PointCloudOverlap<Mesh3> for PointCloudKdTree<'_> {
     /// Find the indices of points in this point cloud that "overlap" with a mesh by looking for
     /// reciprocity in the closest point in each direction.
     ///
@@ -419,7 +421,7 @@ impl PointCloudOverlap<Mesh> for PointCloudKdTree<'_> {
     ///   considered overlapping
     ///
     /// returns: Vec<usize, Global>
-    fn overlap_by_reciprocity(&self, mesh: &Mesh, max_distance: f64) -> Vec<usize> {
+    fn overlap_by_reciprocity(&self, mesh: &Mesh3, max_distance: f64) -> Vec<usize> {
         let mut result = Vec::new();
         for (i, p_this) in self.cloud.points.iter().enumerate() {
             // Find the closest point in the mesh

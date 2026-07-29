@@ -2,8 +2,9 @@
     Tests of basic geometric elements (planes, circles, spheres, lines, etc.) in geom3 module.
 """
 import math
+import numpy as np
 import pytest
-from engeom.geom3 import Vector3, Point3, SurfacePoint3, Plane3, Line3, Sphere3, Circle3, Iso3, Manifold1Pos3
+from engeom.geom3 import Vector3, Point3, SurfacePoint3, Plane3, Line3, Segment3, Sphere3, Circle3, Iso3
 
 
 # ==============================================================================
@@ -54,9 +55,9 @@ def test_plane3_normal_property_type():
     assert isinstance(plane.normal, Vector3)
 
 
-def test_plane3_inverted_normal():
+def test_plane3_normal_reversed():
     plane = Plane3(0, 0, 1, 0)
-    inv = plane.inverted_normal()
+    inv = plane.normal_reversed()
     assert inv.c == pytest.approx(-1.0)
 
 
@@ -96,26 +97,26 @@ def test_plane3_project_point():
 def test_plane3_shifted():
     # Shift XY plane by +3 → plane at z=3
     plane = Plane3.xy()
-    shifted = plane.new_parallel(3.0)
+    shifted = plane.offset_by(3.0)
     assert isinstance(shifted, Plane3)
     # Point at z=3 should now be on the plane (distance ~0)
     assert shifted.distance_to_point(Point3(0, 0, 3)) == pytest.approx(0.0, abs=1e-6)
 
 
-def test_plane3_intersection_distance():
+def test_plane3_intersect_distance():
     # Surface point at z=5 pointing along +Z, intersects XY plane 5 units behind it
     plane = Plane3.xy()
     sp = SurfacePoint3(0, 0, 5, 0, 0, 1)
-    dist = plane.intersection_distance(sp)
+    dist = plane.intersect_distance(sp)
     assert dist is not None
     assert dist == pytest.approx(-5.0)
 
 
-def test_plane3_intersection_distance_parallel_returns_none():
+def test_plane3_intersect_distance_parallel_returns_none():
     # Surface point normal is parallel to XY plane, no intersection
     plane = Plane3.xy()
     sp = SurfacePoint3(0, 0, 1, 1, 0, 0)
-    assert plane.intersection_distance(sp) is None
+    assert plane.intersect_distance(sp) is None
 
 
 def test_plane3_intersect_plane_returns_line3():
@@ -132,6 +133,90 @@ def test_plane3_intersect_parallel_planes_returns_none():
     p1 = Plane3(0, 0, 1, 0)
     p2 = Plane3(0, 0, 1, -3)
     assert p1.intersect_plane(p2) is None
+
+
+def test_plane3_from_point_normal():
+    plane = Plane3.from_point_normal(0, 0, 3, 0, 0, 1)
+    assert isinstance(plane, Plane3)
+    assert plane.c == pytest.approx(1.0)
+    assert plane.d == pytest.approx(3.0)
+
+
+def test_plane3_from_point_normal_zero_normal_raises():
+    with pytest.raises(ValueError):
+        Plane3.from_point_normal(0, 0, 0, 0, 0, 0)
+
+
+def test_plane3_from_3_points():
+    plane = Plane3.from_3_points(Point3(0, 0, 0), Point3(1, 0, 0), Point3(0, 1, 0))
+    assert isinstance(plane, Plane3)
+    assert plane.c == pytest.approx(1.0)
+    assert plane.d == pytest.approx(0.0, abs=1e-6)
+
+
+def test_plane3_from_3_points_collinear_raises():
+    with pytest.raises(ValueError):
+        Plane3.from_3_points(Point3(0, 0, 0), Point3(1, 0, 0), Point3(2, 0, 0))
+
+
+def test_plane3_from_surface_point():
+    sp = SurfacePoint3(1, 2, 3, 0, 0, 1)
+    plane = Plane3.from_surface_point(sp)
+    assert isinstance(plane, Plane3)
+    assert plane.c == pytest.approx(1.0)
+    assert plane.d == pytest.approx(3.0)
+
+
+def test_plane3_from_fit_recovers_plane():
+    points = np.array(
+        [[0.0, 0.0, 5.0], [1.0, 0.0, 5.0], [0.0, 1.0, 5.0], [1.0, 1.0, 5.0]]
+    )
+    plane = Plane3.from_fit(points)
+    assert isinstance(plane, Plane3)
+    assert abs(plane.c) == pytest.approx(1.0)
+    assert plane.distance_to_point(Point3(0.5, 0.5, 5.0)) == pytest.approx(0.0, abs=1e-6)
+
+
+def test_plane3_from_fit_uniform_weights_match_unweighted():
+    points = np.array(
+        [[0.0, 0.0, 5.0], [1.0, 0.3, 5.2], [0.2, 1.0, 4.8], [1.0, 1.0, 5.1]]
+    )
+    unweighted = Plane3.from_fit(points)
+    uniform = Plane3.from_fit(points, np.ones(len(points)))
+    assert uniform.a == pytest.approx(unweighted.a)
+    assert uniform.b == pytest.approx(unweighted.b)
+    assert uniform.c == pytest.approx(unweighted.c)
+    assert uniform.d == pytest.approx(unweighted.d)
+
+
+def test_plane3_from_fit_heavily_weighted_point_pulls_plane_toward_it():
+    # A mostly-flat cluster at z=0 plus one outlier point; in the limit of a very large weight
+    # on the outlier, the least-squares fit is forced to pass through it almost exactly.
+    points = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [0.3, 0.7, 0.0],
+            [0.8, 0.2, 0.0],
+            [3.0, 3.0, 2.0],
+        ]
+    )
+    outlier = Point3(3.0, 3.0, 2.0)
+
+    unweighted = Plane3.from_fit(points)
+    weights = np.ones(len(points))
+    weights[-1] = 1000.0
+    weighted = Plane3.from_fit(points, weights)
+
+    assert weighted.distance_to_point(outlier) < unweighted.distance_to_point(outlier)
+    assert weighted.distance_to_point(outlier) == pytest.approx(0.0, abs=1e-2)
+
+
+def test_plane3_from_fit_insufficient_points_raises():
+    with pytest.raises(ValueError):
+        Plane3.from_fit(np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]))
 
 
 # ==============================================================================
@@ -227,6 +312,113 @@ def test_line3_normalized():
     assert length == pytest.approx(1.0)
 
 
+def test_line3_from_fit_recovers_axis_aligned_line():
+    points = np.array(
+        [[0.0, 1.0, 2.0], [1.0, 1.0, 2.0], [2.0, 1.0, 2.0], [3.0, 1.0, 2.0]]
+    )
+    line = Line3.from_fit(points)
+    assert isinstance(line, Line3)
+    assert line.origin.y == pytest.approx(1.0)
+    assert line.origin.z == pytest.approx(2.0)
+    direction = line.normalized().direction
+    assert abs(direction.x) == pytest.approx(1.0)
+    assert direction.y == pytest.approx(0.0, abs=1e-6)
+    assert direction.z == pytest.approx(0.0, abs=1e-6)
+
+
+def test_line3_from_fit_weighted_pulls_toward_heavier_points():
+    points = np.array(
+        [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 10.0, 0.0], [1.0, 10.0, 0.0]]
+    )
+    weights = np.array([1.0, 1.0, 100.0, 100.0])
+    line = Line3.from_fit(points, weights)
+    assert line.origin.y > 5.0
+
+
+def test_line3_from_fit_single_point_raises():
+    with pytest.raises(ValueError):
+        Line3.from_fit(np.array([[0.0, 0.0, 0.0]]))
+
+
+# ==============================================================================
+# Segment3 tests
+# ==============================================================================
+
+def test_segment3_construction():
+    s = Segment3(0, 0, 0, 1, 2, 2)
+    assert s.a.x == pytest.approx(0.0)
+    assert s.a.y == pytest.approx(0.0)
+    assert s.a.z == pytest.approx(0.0)
+    assert s.b.x == pytest.approx(1.0)
+    assert s.b.y == pytest.approx(2.0)
+    assert s.b.z == pytest.approx(2.0)
+
+
+def test_segment3_construction_coincident_points_raises():
+    with pytest.raises(ValueError):
+        Segment3(1, 1, 1, 1, 1, 1)
+
+
+def test_segment3_length():
+    s = Segment3(0, 0, 0, 1, 2, 2)
+    assert s.length == pytest.approx(3.0)
+
+
+def test_segment3_direction():
+    s = Segment3(0, 0, 0, 1, 2, 2)
+    assert s.direction.x == pytest.approx(1.0)
+    assert s.direction.y == pytest.approx(2.0)
+    assert s.direction.z == pytest.approx(2.0)
+
+
+def test_segment3_aabb():
+    s = Segment3(1, -1, 3, -2, 4, 0)
+    assert s.aabb.min.x == pytest.approx(-2.0)
+    assert s.aabb.min.y == pytest.approx(-1.0)
+    assert s.aabb.min.z == pytest.approx(0.0)
+    assert s.aabb.max.x == pytest.approx(1.0)
+    assert s.aabb.max.y == pytest.approx(4.0)
+    assert s.aabb.max.z == pytest.approx(3.0)
+
+
+def test_segment3_to_line():
+    s = Segment3(1, 2, 3, 4, 5, 6)
+    line = s.to_line()
+    assert isinstance(line, Line3)
+    assert line.distance_to(s.a) == pytest.approx(0.0, abs=1e-6)
+    assert line.distance_to(s.b) == pytest.approx(0.0, abs=1e-6)
+
+
+def test_segment3_pickle_roundtrip():
+    import pickle
+    s = Segment3(1, 2, 3, 4, 5, 6)
+    s2 = pickle.loads(pickle.dumps(s))
+    assert s == s2
+
+
+def test_segment3_transformed_by():
+    s = Segment3(0, 0, 0, 1, 0, 0)
+    iso = Iso3.from_translation(1, 2, 3)
+    moved = s.transformed_by(iso)
+    assert moved.a.x == pytest.approx(1.0)
+    assert moved.a.y == pytest.approx(2.0)
+    assert moved.a.z == pytest.approx(3.0)
+    assert moved.b.x == pytest.approx(2.0)
+    assert moved.b.y == pytest.approx(2.0)
+    assert moved.b.z == pytest.approx(3.0)
+
+
+def test_iso3_matmul_segment3_returns_segment3():
+    result = Iso3.identity() @ Segment3(0, 0, 0, 1, 0, 0)
+    assert isinstance(result, Segment3)
+
+
+def test_iso3_matmul_segment3_matches_transformed_by():
+    s = Segment3(0, 0, 0, 1, 2, 3)
+    iso = Iso3.from_rz(math.pi / 2)
+    assert (iso @ s) == s.transformed_by(iso)
+
+
 # ==============================================================================
 # Sphere3 tests
 # ==============================================================================
@@ -299,6 +491,30 @@ def test_sphere3_intersect_sphere_no_overlap_returns_none():
     assert s1.intersect_sphere(s2) is None
 
 
+def test_sphere3_from_4_points():
+    # Sphere at (1, 2, 3), radius 2
+    s = Sphere3(1, 2, 3, 2)
+    p0 = Point3(3, 2, 3)
+    p1 = Point3(-1, 2, 3)
+    p2 = Point3(1, 4, 3)
+    p3 = Point3(1, 2, 5)
+    result = Sphere3.from_4_points(p0, p1, p2, p3)
+    assert isinstance(result, Sphere3)
+    assert result.center.x == pytest.approx(1.0)
+    assert result.center.y == pytest.approx(2.0)
+    assert result.center.z == pytest.approx(3.0)
+    assert result.r == pytest.approx(2.0)
+
+
+def test_sphere3_from_4_coplanar_points_raises():
+    p0 = Point3(0, 0, 0)
+    p1 = Point3(1, 0, 0)
+    p2 = Point3(0, 1, 0)
+    p3 = Point3(1, 1, 0)
+    with pytest.raises(ValueError):
+        Sphere3.from_4_points(p0, p1, p2, p3)
+
+
 # ==============================================================================
 # Circle3 tests
 # ==============================================================================
@@ -333,58 +549,47 @@ def test_circle3_zero_normal_raises():
         Circle3(0, 0, 0, 0, 0, 0, 3)
 
 
-def test_circle3_at_angle_returns_surface_point():
+def test_circle3_closest_point_returns_surface_point():
     c = Circle3(0, 0, 0, 0, 0, 1, 3)
-    sp = c.at_angle(0.0)
-    assert isinstance(sp, Manifold1Pos3)
+    sp = c.closest_point(Point3(3, 0, 5))
+    assert isinstance(sp, SurfacePoint3)
 
 
-def test_circle3_at_angle_point_on_circumference():
-    # Circle at origin in XY plane, radius 3; point should be on the circumference
+def test_circle3_closest_point_on_circumference():
+    # Circle at origin in XY plane, radius 3; closest point should be on the circumference
     c = Circle3(0, 0, 0, 0, 0, 1, 3)
-    sp = c.at_angle(0.0)
+    sp = c.closest_point(Point3(3, 0, 5))
     dist = math.sqrt(sp.point.x**2 + sp.point.y**2 + sp.point.z**2)
     assert dist == pytest.approx(3.0)
 
 
-def test_circle3_at_angle_full_revolution():
-    # angle=0 and angle=2π should give the same point
+def test_circle3_closest_point_none_on_axis():
+    # A point directly above the center, along the normal, is equidistant from every point on
+    # the circle.
     c = Circle3(0, 0, 0, 0, 0, 1, 3)
-    sp0 = c.at_angle(0.0)
-    sp2pi = c.at_angle(2 * math.pi)
-    assert sp0.point.x == pytest.approx(sp2pi.point.x)
-    assert sp0.point.y == pytest.approx(sp2pi.point.y)
-    assert sp0.point.z == pytest.approx(sp2pi.point.z)
-
-
-def test_circle3_closest_position():
-    c = Circle3(0, 0, 0, 0, 0, 1, 3)
-    sp = c.closest_position(Point3(3, 0, 5))
-    assert isinstance(sp, Manifold1Pos3)
-    dist = math.sqrt(sp.point.x**2 + sp.point.y**2 + sp.point.z**2)
-    assert dist == pytest.approx(3.0)
+    assert c.closest_point(Point3(0, 0, 5)) is None
 
 
 def test_circle3_intersect_plane_two_intersections():
     # Circle in XY plane at origin, radius 3; YZ plane cuts through it at two points
     c = Circle3(0, 0, 0, 0, 0, 1, 3)
-    angles = c.intersect_plane(Plane3.yz())
-    assert len(angles) == 2
+    points = c.intersect_plane(Plane3.yz())
+    assert len(points) == 2
 
 
 def test_circle3_intersect_plane_no_intersection():
     # Circle in XY plane at origin, radius 1; plane at z=5 doesn't intersect
     c = Circle3(0, 0, 0, 0, 0, 1, 1)
     plane = Plane3(0, 0, 1, -5)
-    angles = c.intersect_plane(plane)
-    assert len(angles) == 0
+    points = c.intersect_plane(plane)
+    assert len(points) == 0
 
 
-def test_circle3_intersect_plane_angles_are_floats():
+def test_circle3_intersect_plane_points_are_point3():
     c = Circle3(0, 0, 0, 0, 0, 1, 3)
-    angles = c.intersect_plane(Plane3.yz())
-    for a in angles:
-        assert isinstance(a, float)
+    points = c.intersect_plane(Plane3.yz())
+    for p in points:
+        assert isinstance(p, Point3)
 
 
 # ==============================================================================

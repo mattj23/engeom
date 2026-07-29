@@ -3,10 +3,9 @@
 mod common;
 use crate::common::PathPair;
 use engeom::io::{
-    DiffTanModel, Lptf3DsParams, Lptf3Load, load_lptf3_mesh_uncertainty, read_mesh_stl,
-    write_tc_mesh_file,
+    DiffTanModel, Lptf3DsParams, Lptf3Load, load_lptf3_mesh_data, write_tc_mesh_file,
 };
-use engeom::{Iso3, Mesh, Result};
+use engeom::{Iso3, Mesh3, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -38,10 +37,20 @@ fn multi_align_lptf3_private() -> Result<()> {
 
 fn run_test_case(manifest: &Manifest, dir: &PathPair) -> Result<()> {
     // Load the reference mesh
-    let mesh = read_mesh_stl(&dir.data().join(&manifest.reference_file), true, false)?;
+    let mesh = Mesh3::load_stl(
+        &dir.data().join(&manifest.reference_file),
+        false,
+        true,
+        false,
+    )?;
 
     // Save the reference mesh to the result directory
-    write_tc_mesh_file(&dir.result().join("reference.tcmesh"), &mesh, 1e-5)?;
+    write_tc_mesh_file(
+        &dir.result().join("reference.tcmesh"),
+        &mesh.to_data(),
+        1e-5,
+        false,
+    )?;
 
     for item in manifest.items.iter() {
         let params = Lptf3DsParams::new(8, 1.0, 1.0, 0.010 * 25.4);
@@ -49,11 +58,20 @@ fn run_test_case(manifest: &Manifest, dir: &PathPair) -> Result<()> {
         let model = DiffTanModel::new(230.0, 80.0, 0.00037716);
 
         let file_path = dir.data().join(&item.file_name);
-        let (mesh_data, uncert) = load_lptf3_mesh_uncertainty(&file_path, load, &model)?;
-        let mesh = Mesh::try_from(&mesh_data)?;
+        let mesh_data = load_lptf3_mesh_data(&file_path, load, Some(&model))?;
+
+        // The uncertainty model was supplied, so the standard deviations must have landed on the
+        // mesh with one value per point.
+        let stdev = mesh_data
+            .point_stdev()
+            .ok_or("Loaded mesh is missing its point standard deviations")?;
+        assert_eq!(stdev.len(), mesh_data.point_count());
+
+        let (points, faces, _) = mesh_data.into_parts();
+        let mesh = Mesh3::new(points, faces, false);
 
         let output_path = dir.result().join(&item.file_name).with_extension("tcmesh");
-        write_tc_mesh_file(&output_path, &mesh, 1e-5)?;
+        write_tc_mesh_file(&output_path, &mesh.to_data(), 1e-5, false)?;
         break;
     }
 

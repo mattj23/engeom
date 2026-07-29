@@ -2,16 +2,18 @@ use crate::common::Line;
 use crate::common::points::dist;
 use crate::geom3::circle3::Circle3;
 use crate::geom3::plane3::Plane3;
-use crate::geom3::sphere3::Sphere3;
+use crate::geom3::sphere3::{Sphere3, solve_sphere_quadratic};
 use crate::{Iso3, Point3, Vector3};
 use std::ops;
 
 /// A parameterized line in 3D space: `P(t) = origin + t * direction`.
 ///
-/// This is the three-dimensional specialization of the dimension-generic
-/// [`Line`](crate::common::Line); see that type for the shared constructors and queries (`new`,
-/// `new_normalize`, `from_points`, `at`, `closest_point`, `distance_to`, `transform_by`, and so
-/// on). The methods defined directly on `Line3` here are the ones that only make sense in 3D.
+/// This is one of `engeom`'s 3D geometric primitives.
+///
+/// This is the three-dimensional specialization of the dimension-generic [`Line`](Line); see that
+/// type for the shared constructors and queries (`new`, `new_normalize`, `from_points`, `at`,
+/// `closest_point`, `distance_to`, `transformed_by`, and so on). The methods defined directly on
+/// `Line3` here are the ones that only make sense in 3D.
 ///
 /// The direction is not required to be normalized; use `new_normalize` for unit-speed
 /// parameterization where `t` equals unit length.
@@ -41,7 +43,7 @@ impl Line3 {
     /// Intersects the line with a sphere, returning 0, 1, or 2 parameters `t` at which the line
     /// meets the sphere surface.
     pub fn intersect_sphere(&self, sphere: &Sphere3) -> Vec<f64> {
-        solve_sphere_quadratic(&self.origin, &self.direction, &sphere.center(), sphere.r())
+        solve_sphere_quadratic(&self.origin, &self.direction, &sphere.center, sphere.r())
     }
 
     /// Intersect the line with the plane of a circle and check if the intersection point is within
@@ -91,7 +93,7 @@ impl Line3 {
     pub fn intersect_circle(&self, circle: &Circle3) -> Option<f64> {
         if let Some(t) = self.intersect_plane(&circle.plane()) {
             let p = self.at(t);
-            if dist(&p, &circle.center()) <= circle.r() {
+            if dist(&p, &circle.center) <= circle.r() {
                 Some(t)
             } else {
                 None
@@ -102,56 +104,39 @@ impl Line3 {
     }
 }
 
-/// Solve `|origin + t*dir - center|² = r²` for t, returning the real roots.
-fn solve_sphere_quadratic(origin: &Point3, dir: &Vector3, center: &Point3, r: f64) -> Vec<f64> {
-    let d = origin - center;
-    let a = dir.norm_squared();
-    let b = 2.0 * d.dot(dir);
-    let c = d.norm_squared() - r * r;
-    let discriminant = b * b - 4.0 * a * c;
-    if discriminant < -1e-10 {
-        vec![]
-    } else if discriminant.abs() <= 1e-10 {
-        vec![-b / (2.0 * a)]
-    } else {
-        let sq = discriminant.sqrt();
-        vec![(-b - sq) / (2.0 * a), (-b + sq) / (2.0 * a)]
-    }
-}
-
 impl ops::Mul<Line3> for Iso3 {
     type Output = Line3;
     fn mul(self, rhs: Line3) -> Line3 {
-        rhs.new_transformed_by(&self)
+        rhs.transformed_by(&self)
     }
 }
 
 impl ops::Mul<&Line3> for Iso3 {
     type Output = Line3;
     fn mul(self, rhs: &Line3) -> Line3 {
-        rhs.new_transformed_by(&self)
+        rhs.transformed_by(&self)
     }
 }
 
 impl ops::Mul<Line3> for &Iso3 {
     type Output = Line3;
     fn mul(self, rhs: Line3) -> Line3 {
-        rhs.new_transformed_by(self)
+        rhs.transformed_by(self)
     }
 }
 
 impl ops::Mul<&Line3> for &Iso3 {
     type Output = Line3;
     fn mul(self, rhs: &Line3) -> Line3 {
-        rhs.new_transformed_by(self)
+        rhs.transformed_by(self)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::random_geometry::RandomGeometry3;
     use crate::geom3::sphere3::Sphere3;
-    use crate::geom3::tests::RandomGeometry3;
     use crate::{Plane3, UnitVec3};
     use approx::assert_relative_eq;
 
@@ -195,7 +180,7 @@ mod tests {
 
     #[test]
     fn scalar_project_perpendicular_offset() {
-        // Point directly above the origin — projection is at t=0
+        // Point directly above the origin - projection is at t=0
         let line = x_axis_line();
         let pt = Point3::new(0.0, 3.0, 0.0);
         assert_relative_eq!(line.scalar_project(&pt), 0.0, epsilon = 1e-12);
@@ -257,7 +242,7 @@ mod tests {
         for _ in 0..500 {
             let iso = rg.iso3(10.0);
             let line = Line3::new(iso * Point3::origin(), iso.rotation * Vector3::x());
-            let pt = rg.point3(10.0);
+            let pt = rg.point(10.0);
             let cp = line.closest_point(&pt);
             // Vector from closest point to test point must be perpendicular to direction
             assert_relative_eq!((pt - cp).dot(&line.direction), 0.0, epsilon = 1e-10);
@@ -296,12 +281,24 @@ mod tests {
 
     #[test]
     fn stress_intersect_plane_result_on_plane() {
+        // TODO: this test fails intermittently and needs to be made deterministic.
+        //
+        // `RandomGeometry3::new()` draws from the unseeded thread RNG, so every run samples
+        // different geometry. When a sampled line comes out nearly parallel to the plane,
+        // `intersect_plane` returns a very large `t`, and evaluating `line.at(t)` amplifies
+        // floating-point error enough that the resulting point sits further than `1e-10` off the
+        // plane. The intersection math isn't wrong; the absolute tolerance just isn't reachable in
+        // the near-degenerate case.
+        //
+        // Two candidate fixes: switch to `RandomGeometry3::from_seed(...)` so failures are
+        // reproducible, and/or scale the tolerance with `t` (or reject near-parallel samples)
+        // so the assertion reflects the conditioning of the problem.
         let mut rg = RandomGeometry3::new();
 
         for _ in 0..500 {
             let iso = rg.iso3(10.0);
             let origin = iso * Point3::origin();
-            let dir = rg.vector3(2.0);
+            let dir = rg.vector(2.0);
             let line = Line3::new(origin, dir);
             let plane = Plane3::new(UnitVec3::new_normalize(iso.rotation * Vector3::z()), 2.0);
 
@@ -317,13 +314,13 @@ mod tests {
 
     #[test]
     fn line_through_sphere_two_intersections() {
-        let sphere = Sphere3::new(Point3::origin(), 3.0);
+        let sphere = Sphere3::new(&Point3::origin(), 3.0);
         let line = Line3::new(Point3::new(0.0, 0.0, -10.0), Vector3::z());
         let ts = line.intersect_sphere(&sphere);
         assert_eq!(ts.len(), 2);
         for &t in &ts {
             assert_relative_eq!(
-                (line.at(t) - sphere.center()).norm(),
+                (line.at(t) - sphere.center).norm(),
                 sphere.r(),
                 epsilon = 1e-10
             );
@@ -340,20 +337,20 @@ mod tests {
 
     #[test]
     fn line_misses_sphere() {
-        let sphere = Sphere3::new(Point3::origin(), 1.0);
+        let sphere = Sphere3::new(&Point3::origin(), 1.0);
         let line = Line3::new(Point3::new(5.0, 0.0, 0.0), Vector3::z());
         assert!(line.intersect_sphere(&sphere).is_empty());
     }
 
     #[test]
     fn line_tangent_to_sphere() {
-        let sphere = Sphere3::new(Point3::origin(), 1.0);
+        let sphere = Sphere3::new(&Point3::origin(), 1.0);
         // Line at x=1, y=0 along Z is tangent to sphere
         let line = Line3::new(Point3::new(1.0, 0.0, 0.0), Vector3::z());
         let ts = line.intersect_sphere(&sphere);
         assert_eq!(ts.len(), 1);
         let pt = line.at(ts[0]);
-        assert_relative_eq!((pt - sphere.center()).norm(), sphere.r(), epsilon = 1e-10);
+        assert_relative_eq!((pt - sphere.center).norm(), sphere.r(), epsilon = 1e-10);
         assert_relative_eq!(pt.z, 0.0, epsilon = 1e-10);
     }
 
@@ -361,11 +358,11 @@ mod tests {
     fn stress_intersect_sphere_points_on_surface() {
         let mut rg = RandomGeometry3::new();
         for _ in 0..1000 {
-            let sphere = Sphere3::new(rg.point3(2.0), rg.f64(0.1, 3.0));
-            let line = Line3::new(rg.point3(3.0), rg.vector3(2.0));
+            let sphere = Sphere3::new(&rg.point(2.0), rg.f64(0.1, 3.0));
+            let line = Line3::new(rg.point(3.0), rg.vector(2.0));
 
             for &t in &line.intersect_sphere(&sphere) {
-                let dist = (line.at(t) - sphere.center()).norm();
+                let dist = (line.at(t) - sphere.center).norm();
                 assert_relative_eq!(dist, sphere.r(), epsilon = 1e-8);
             }
         }
@@ -376,8 +373,8 @@ mod tests {
         let mut rg = RandomGeometry3::new();
         for _ in 0..500 {
             let iso = rg.iso3(10.0);
-            let plane = Plane3::xy().new_transformed_by(&iso);
-            let line = Line3::new(rg.point3(10.0), rg.vector3(1.0));
+            let plane = Plane3::xy().transformed_by(&iso);
+            let line = Line3::new(rg.point(10.0), rg.vector(1.0));
             if let Some(proj) = line.project_onto_plane(&plane) {
                 assert_relative_eq!(
                     plane.signed_distance_to_point(&proj.origin).abs(),
@@ -393,8 +390,8 @@ mod tests {
         let mut rg = RandomGeometry3::new();
         for _ in 0..500 {
             let iso = rg.iso3(10.0);
-            let plane = Plane3::xy().new_transformed_by(&iso);
-            let line = Line3::new(rg.point3(10.0), rg.vector3(1.0));
+            let plane = Plane3::xy().transformed_by(&iso);
+            let line = Line3::new(rg.point(10.0), rg.vector(1.0));
             if let Some(proj) = line.project_onto_plane(&plane) {
                 // projected direction must be perpendicular to the plane normal
                 assert_relative_eq!(plane.normal.dot(&proj.direction), 0.0, epsilon = 1e-10);
@@ -421,13 +418,13 @@ mod tests {
     }
 
     #[test]
-    fn new_transformed_by_isometry_preserves_point_on_line() {
+    fn transformed_by_isometry_preserves_point_on_line() {
         let mut rg = RandomGeometry3::new();
 
         for _ in 0..500 {
-            let original = Line3::new(rg.point3(10.0), rg.vector3(1.0));
+            let original = Line3::new(rg.point(10.0), rg.vector(1.0));
             let iso = rg.iso3(10.0);
-            let transformed = original.new_transformed_by(&iso);
+            let transformed = original.transformed_by(&iso);
 
             for t in [-3.0, -1.0, -0.001, 0.0, 0.001, 1.0, 3.0] {
                 let p0 = original.at(t);

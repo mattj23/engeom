@@ -5,7 +5,7 @@ import numpy
 from .common import LabelPlace
 from engeom.geom2 import Curve2, Circle2, Aabb2, Point2, Vector2, SurfacePoint2, Arc2, Segment2, Boundary2, \
     CubicSpline2
-from engeom.geom3 import Vector3, Mesh, Point3, Iso3, Line3
+from engeom.geom3 import Vector3, Mesh3, Point3, Iso3, Line3
 from engeom.metrology import Distance2
 
 PlotCoords = Union[Point2, Vector2, Iterable[float]]
@@ -97,7 +97,7 @@ else:
             self.view = view
             self.helper = helper
 
-        def mesh_edge_point_in_dir(self, view_x: float, view_y: float, mesh: Mesh) -> Point3:
+        def mesh_edge_point_in_dir(self, view_x: float, view_y: float, mesh: Mesh3) -> Point3:
             """ A quick and rough method for finding a point on the visual perimeter of a mesh in a 2d viewport
             direction to label something without the arrow overlapping the actual mesh. There's probably a better way
             to do this."""
@@ -254,7 +254,7 @@ else:
 
         def mesh_outline(
                 self, mesh:
-                Mesh,
+                Mesh3,
                 visible_kwargs: dict | None = None,
                 hidden_kwargs: dict | None = None,
                 no_hidden=False,
@@ -281,7 +281,7 @@ else:
             assert visible_kwargs is not None
             assert hidden_kwargs is not None
 
-            points, edge_types = mesh.visual_outline(self.view.inverse() @ Vector3.z_axis(), max_edge_len, corner_angle)
+            points, edge_types = mesh.compute_visual_outline(self.view.inverse() @ Vector3.z_axis(), max_edge_len, corner_angle)
             p0s = self.view.transform_points(points[:, :3])
             p1s = self.view.transform_points(points[:, 3:])
             for edge_type, (p0, p1) in zip(edge_types, zip(p0s, p1s)):
@@ -470,7 +470,7 @@ else:
             # direction.
             offset_dir = distance.direction if distance.value >= 0 else -distance.direction
             center = SurfacePoint2(*distance.center.point, *offset_dir)
-            center = center.shift_orthogonal(side_shift)
+            center = center.shifted_orthogonal(side_shift)
             leader_a = center.projection(distance.a)
             leader_b = center.projection(distance.b)
 

@@ -2,31 +2,41 @@
 //! less than u16::MAX vertices and discretizes the positions to 1/u16::MAX increments in an
 //! axis-aligned bounding box of a size specified.
 use crate::geom3::Aabb3;
-use crate::{Mesh, Point3, Result};
+use crate::{MeshData3, Point3, Result};
 
-/// Serialize a [`Mesh`] into the micro mesh binary format.
+/// Serialize a [`MeshData3`] into the micro mesh binary format.
 ///
-/// This is a convenience wrapper around [`u_mesh_data_to_bytes`] that operates directly on a
-/// [`Mesh`] object. The mesh must have fewer than [`u16::MAX`] vertices.
+/// This is a convenience wrapper around [`u_buffers_to_bytes`] that operates directly on a
+/// [`MeshData3`] object. The mesh must have fewer than [`u16::MAX`] points.
+///
+/// The format carries geometry and nothing else, so a mesh with attributes is refused unless the
+/// caller accepts the loss.
+///
+/// # Arguments
+///
+/// * `mesh`: the mesh to serialize
+/// * `allow_attribute_loss`: accept the loss of every attribute the mesh carries
 ///
 /// # Errors
 ///
-/// Returns an error if the mesh has more than [`u16::MAX`] vertices.
-pub fn u_mesh_to_bytes(mesh: &Mesh) -> Result<Vec<u8>> {
-    u_mesh_data_to_bytes(mesh.vertices(), mesh.faces())
+/// Returns an error if the mesh has more than [`u16::MAX`] points, or if it carries attributes and
+/// the loss was not accepted.
+pub fn u_mesh_data_to_bytes(mesh: &MeshData3, allow_attribute_loss: bool) -> Result<Vec<u8>> {
+    mesh.check_attribute_loss("the micro mesh format", allow_attribute_loss)?;
+    u_buffers_to_bytes(mesh.points(), mesh.faces())
 }
 
-/// Deserialize a [`Mesh`] from a micro mesh binary buffer.
+/// Deserialize a [`MeshData3`] from a micro mesh binary buffer.
 ///
-/// This is a convenience wrapper around [`u_bytes_to_mesh_data`] that constructs and returns a
-/// [`Mesh`] directly.
+/// This is a convenience wrapper around [`u_bytes_to_buffers`] that constructs and returns a
+/// [`MeshData3`] directly. The result carries no attributes, because the format stores none.
 ///
 /// # Errors
 ///
 /// Returns an error if the byte buffer is malformed or too short to be read.
-pub fn u_bytes_to_mesh(bytes: &[u8]) -> Result<Mesh> {
-    let (vertices, triangles) = u_bytes_to_mesh_data(bytes)?;
-    Ok(Mesh::new(vertices, triangles, false))
+pub fn u_bytes_to_mesh_data(bytes: &[u8]) -> Result<MeshData3> {
+    let (points, faces) = u_bytes_to_buffers(bytes)?;
+    MeshData3::new(points, faces)
 }
 
 /// Deserialize raw vertex and triangle data from a micro mesh binary buffer.
@@ -41,7 +51,7 @@ pub fn u_bytes_to_mesh(bytes: &[u8]) -> Result<Mesh> {
 /// # Errors
 ///
 /// Returns an error if the byte buffer is malformed or too short to be read.
-pub fn u_bytes_to_mesh_data(bytes: &[u8]) -> Result<(Vec<Point3>, Vec<[u32; 3]>)> {
+pub fn u_bytes_to_buffers(bytes: &[u8]) -> Result<(Vec<Point3>, Vec<[u32; 3]>)> {
     let mut reader = ByteRead::new(bytes);
 
     // Read the bounding box
@@ -93,7 +103,7 @@ pub fn u_bytes_to_mesh_data(bytes: &[u8]) -> Result<(Vec<Point3>, Vec<[u32; 3]>)
 /// # Errors
 ///
 /// Returns an error if `vertices` contains more than [`u16::MAX`] entries.
-pub fn u_mesh_data_to_bytes(vertices: &[Point3], triangles: &[[u32; 3]]) -> Result<Vec<u8>> {
+pub fn u_buffers_to_bytes(vertices: &[Point3], triangles: &[[u32; 3]]) -> Result<Vec<u8>> {
     // Check if the number of vertices is less than u16::MAX
     if vertices.len() > u16::MAX as usize {
         return Err("Mesh has too many vertices for the small format".into());

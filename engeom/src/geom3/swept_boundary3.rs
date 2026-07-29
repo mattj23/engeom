@@ -1,11 +1,11 @@
 use std::f64::consts::TAU;
 
+use crate::common::transform_points;
 use crate::common::triangulation::ParallelBuilder;
-use crate::common::{PCoords, transform_points};
 use crate::geom2::Boundary2;
 use crate::geom3::IsoExtensions3;
 use crate::geom3::align3::{AlignSurfMatch3, SurfaceTarget3};
-use crate::{Iso3, Mesh, Point2, Point3, Result, To2D, To3D, UnitVec3, Vector3};
+use crate::{Iso3, Mesh3, Point2, Point3, Result, To2D, To3D, UnitVec3, Vector3};
 
 /// An `ExtrudedBoundary3` is a means of representing a surface in 3D space using a 2D [`Boundary2`]
 /// entity and an arbitrary 3D position, direction, and length. The surface is the set of all points
@@ -52,7 +52,7 @@ impl ExtrudedBoundary3 {
         }
     }
 
-    pub fn to_mesh(&self, tol: f64) -> Result<Mesh> {
+    pub fn to_mesh(&self, tol: f64) -> Result<Mesh3> {
         let points = self.shape.to_points(tol)?.to_3d();
         let mut builder = ParallelBuilder::new(points.len(), false);
 
@@ -65,7 +65,7 @@ impl ExtrudedBoundary3 {
 
         let (points, faces) = builder.take();
 
-        Ok(Mesh::new(points, faces, false))
+        Ok(Mesh3::new(points, faces, false))
     }
 
     pub fn transform_by(&mut self, iso: &Iso3) {
@@ -75,9 +75,7 @@ impl ExtrudedBoundary3 {
 }
 
 impl SurfaceTarget3 for ExtrudedBoundary3 {
-    fn align_surf_closest_to(&self, p: &impl PCoords<3>) -> AlignSurfMatch3 {
-        let p = Point3::from(p.coords());
-
+    fn find_align_match(&self, p: &Point3) -> AlignSurfMatch3 {
         // First we want to bring the test point into the local coordinates of the start isometry
         // so we can work with the 2D boundary.
         let lp3 = self.start_inv * p;
@@ -144,7 +142,7 @@ impl RevolvedBoundary3 {
         }
     }
 
-    pub fn to_mesh(&self, tol: f64) -> Result<Mesh> {
+    pub fn to_mesh(&self, tol: f64) -> Result<Mesh3> {
         let points = self.shape.to_points(tol)?.to_3d();
 
         // Find the largest radius
@@ -172,7 +170,7 @@ impl RevolvedBoundary3 {
 
         let (points, faces) = builder.take();
 
-        Ok(Mesh::new(points, faces, false))
+        Ok(Mesh3::new(points, faces, false))
     }
 
     pub fn transform_by(&mut self, iso: &Iso3) {
@@ -182,9 +180,7 @@ impl RevolvedBoundary3 {
 }
 
 impl SurfaceTarget3 for RevolvedBoundary3 {
-    fn align_surf_closest_to(&self, p: &impl PCoords<3>) -> AlignSurfMatch3 {
-        let p = Point3::from(p.coords());
-
+    fn find_align_match(&self, p: &Point3) -> AlignSurfMatch3 {
         // Transform to local coordinates where the rotation axis is Y and the profile starts
         // in the X-Y half-plane (positive X)
         let lp3 = self.start_inv * p;
@@ -218,8 +214,8 @@ impl SurfaceTarget3 for RevolvedBoundary3 {
 mod tests {
     use super::*;
     use crate::Vector3;
+    use crate::common::random_geometry::RandomGeometry3;
     use crate::geom2::{BoundaryData2, BoundaryEditor};
-    use crate::geom3::tests::RandomGeometry3;
     use approx::assert_relative_eq;
 
     fn open_extruded() -> ExtrudedBoundary3 {
@@ -238,20 +234,17 @@ mod tests {
     fn extruded_points_off() {
         let target = open_extruded();
 
-        assert_eq!(false, target.align_surf_closest_to(&p(2.0, 0.0, 0.5)).is_on);
-        assert_eq!(false, target.align_surf_closest_to(&p(0.0, 2.0, 0.5)).is_on);
-        assert_eq!(
-            false,
-            target.align_surf_closest_to(&p(0.0, 0.0, -1.0)).is_on
-        );
-        assert_eq!(false, target.align_surf_closest_to(&p(0.0, 0.0, 2.0)).is_on);
+        assert!(!target.find_align_match(&p(2.0, 0.0, 0.5)).is_on);
+        assert!(!target.find_align_match(&p(0.0, 2.0, 0.5)).is_on);
+        assert!(!target.find_align_match(&p(0.0, 0.0, -1.0)).is_on);
+        assert!(!target.find_align_match(&p(0.0, 0.0, 2.0)).is_on);
     }
 
     #[test]
     fn extruded_points_on() {
         let target = open_extruded();
-        assert_eq!(true, target.align_surf_closest_to(&p(0.5, 0.1, 0.5)).is_on);
-        assert_eq!(true, target.align_surf_closest_to(&p(0.1, 0.5, 0.5)).is_on);
+        assert!(target.find_align_match(&p(0.5, 0.1, 0.5)).is_on);
+        assert!(target.find_align_match(&p(0.1, 0.5, 0.5)).is_on);
     }
 
     #[test]
@@ -279,13 +272,13 @@ mod tests {
             data.add_seg_xy(0.0, 0.0);
             data.add_seg_xy(0.0, 1.0);
             let b = data.try_to_boundary().unwrap();
-            let target = ExtrudedBoundary3::new(b, iso.clone(), 1.0);
+            let target = ExtrudedBoundary3::new(b, iso, 1.0);
 
             for (t, e, n) in pairs.iter() {
                 let t = iso * Point3::from(*t);
                 let e = iso * Point3::from(*e);
 
-                let c = target.align_surf_closest_to(&t);
+                let c = target.find_align_match(&t);
                 assert_relative_eq!(c.point, e, epsilon = 1.0e-6);
 
                 if let Some(n) = n {
@@ -309,28 +302,28 @@ mod tests {
     fn revolved_points_on() {
         let full = open_revolved(TAU);
         // Front, side, and back of the cylinder mid-height
-        assert_eq!(true, full.align_surf_closest_to(&p(2.0, 0.5, 0.0)).is_on);
-        assert_eq!(true, full.align_surf_closest_to(&p(0.0, 0.5, 2.0)).is_on);
-        assert_eq!(true, full.align_surf_closest_to(&p(-2.0, 0.5, 0.0)).is_on);
+        assert!(full.find_align_match(&p(2.0, 0.5, 0.0)).is_on);
+        assert!(full.find_align_match(&p(0.0, 0.5, 2.0)).is_on);
+        assert!(full.find_align_match(&p(-2.0, 0.5, 0.0)).is_on);
 
         let half = open_revolved(std::f64::consts::PI);
         // phi=0 and phi=PI/2 are within [0, PI]
-        assert_eq!(true, half.align_surf_closest_to(&p(2.0, 0.5, 0.0)).is_on);
-        assert_eq!(true, half.align_surf_closest_to(&p(0.0, 0.5, 2.0)).is_on);
+        assert!(half.find_align_match(&p(2.0, 0.5, 0.0)).is_on);
+        assert!(half.find_align_match(&p(0.0, 0.5, 2.0)).is_on);
     }
 
     #[test]
     fn revolved_points_off() {
         let full = open_revolved(TAU);
         // Off at the open profile ends (above and below the height range)
-        assert_eq!(false, full.align_surf_closest_to(&p(2.0, -1.0, 0.0)).is_on);
-        assert_eq!(false, full.align_surf_closest_to(&p(2.0, 2.0, 0.0)).is_on);
+        assert!(!full.find_align_match(&p(2.0, -1.0, 0.0)).is_on);
+        assert!(!full.find_align_match(&p(2.0, 2.0, 0.0)).is_on);
 
         let half = open_revolved(std::f64::consts::PI);
         // phi = atan2(-2, 0) = -PI/2, rem_euclid = 3*PI/2 > PI: off angular sweep
-        assert_eq!(false, half.align_surf_closest_to(&p(0.0, 0.5, -2.0)).is_on);
+        assert!(!half.find_align_match(&p(0.0, 0.5, -2.0)).is_on);
         // phi slightly greater than PI is off the half sweep
-        assert_eq!(false, half.align_surf_closest_to(&p(-1.0, 0.5, -0.1)).is_on);
+        assert!(!half.find_align_match(&p(-1.0, 0.5, -0.1)).is_on);
     }
 
     #[test]
@@ -341,6 +334,8 @@ mod tests {
         // Profile: open segment (1,0)→(1,1) in 2D, revolved fully (TAU) around the Y axis.
         // Rotation axis is Y; X is radial; Z is the other radial axis.
         // Note: off-surface points project onto the nearest profile point (not the query y).
+        // Test table of (query, expected-point, expected-normal) triples.
+        #[allow(clippy::type_complexity)]
         let pairs: Vec<([f64; 3], [f64; 3], Option<[f64; 3]>)> = vec![
             // +X side, mid-height
             ([2.0, 0.5, 0.0], [1.0, 0.5, 0.0], Some([1.0, 0.0, 0.0])),
@@ -368,13 +363,13 @@ mod tests {
             let mut data = BoundaryData2::new_open_xy(1.0, 0.0);
             data.add_seg_xy(1.0, 1.0);
             let b = data.try_to_boundary().unwrap();
-            let target = RevolvedBoundary3::new(b, iso.clone(), TAU);
+            let target = RevolvedBoundary3::new(b, iso, TAU);
 
             for (t, e, n) in pairs.iter() {
                 let t = iso * Point3::from(*t);
                 let e = iso * Point3::from(*e);
 
-                let c = target.align_surf_closest_to(&t);
+                let c = target.find_align_match(&t);
                 assert_relative_eq!(c.point, e, epsilon = 1.0e-6);
 
                 if let Some(n) = n {

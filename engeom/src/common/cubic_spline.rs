@@ -24,7 +24,7 @@ mod queries;
 
 use crate::common::{Line, solve_quadratic_real_roots};
 pub use fitting::{SplineBuildFn, SplineFitResult, fit_spline_to_points};
-use parry3d_f64::na::{Point, SVector, Unit};
+use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector, Unit};
 pub use queries::CubicSplineQueries;
 use serde::{Deserialize, Serialize};
 
@@ -59,6 +59,9 @@ impl<T> SplineValue<T> {
 /// four control points:
 ///
 /// `B(t) = (1 - t)^3 P0 + 3 (1 - t)^2 t P1 + 3 (1 - t) t^2 P2 + t^3 P3`
+///
+/// `CubicSpline<D>` is the base for `CubicSpline2` and `CubicSpline3`, which are two of `engeom`'s
+/// geometric primitives.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CubicSpline<const D: usize> {
     pub p0: Point<f64, D>,
@@ -361,7 +364,7 @@ impl<const D: usize> CubicSpline<D> {
                 if !(0.0..=1.0).contains(&t) {
                     continue;
                 }
-                if self.derivative(t).norm_squared() <= eps_sq && best.map_or(true, |b| t < b) {
+                if self.derivative(t).norm_squared() <= eps_sq && best.is_none_or(|b| t < b) {
                     best = Some(t);
                 }
             }
@@ -883,6 +886,16 @@ impl<const D: usize> CubicSpline<D> {
         perp1.norm().max(perp2.norm())
     }
 
+    /// Returns a new curve with all four control points transformed by the given isometry.
+    pub fn transformed_by<R: AbstractRotation<f64, D>>(&self, iso: &Isometry<f64, R, D>) -> Self {
+        Self {
+            p0: iso * self.p0,
+            p1: iso * self.p1,
+            p2: iso * self.p2,
+            p3: iso * self.p3,
+        }
+    }
+
     /// Consumes the curve and builds its [`CubicSplineQueries`] acceleration structure, ready for
     /// repeated spatial queries such as closest-point projection.
     ///
@@ -906,12 +919,12 @@ const ARC_LENGTH_PANELS: usize = 16;
 const GAUSS_LEGENDRE_10: [(f64, f64); 10] = [
     (-0.973_906_528_517_171_7, 0.066_671_344_308_688_1),
     (-0.865_063_366_688_984_5, 0.149_451_349_150_580_6),
-    (-0.679_409_568_299_024_4, 0.219_086_362_515_982_0),
+    (-0.679_409_568_299_024_4, 0.219_086_362_515_982),
     (-0.433_395_394_129_247_2, 0.269_266_719_309_996_3),
     (-0.148_874_338_981_631_2, 0.295_524_224_714_752_9),
     (0.148_874_338_981_631_2, 0.295_524_224_714_752_9),
     (0.433_395_394_129_247_2, 0.269_266_719_309_996_3),
-    (0.679_409_568_299_024_4, 0.219_086_362_515_982_0),
+    (0.679_409_568_299_024_4, 0.219_086_362_515_982),
     (0.865_063_366_688_984_5, 0.149_451_349_150_580_6),
     (0.973_906_528_517_171_7, 0.066_671_344_308_688_1),
 ];
@@ -1177,9 +1190,9 @@ mod tests {
             Point3::new(3.0, 0.0, 0.0),
         );
         let roots = c.derivative_roots();
-        for dim in 0..3 {
-            assert!(roots[dim][0].is_nan(), "dim {} slot 0", dim);
-            assert!(roots[dim][1].is_nan(), "dim {} slot 1", dim);
+        for (dim, root) in roots.iter().enumerate() {
+            assert!(root[0].is_nan(), "dim {} slot 0", dim);
+            assert!(root[1].is_nan(), "dim {} slot 1", dim);
         }
     }
 

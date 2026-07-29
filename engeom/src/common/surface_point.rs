@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::common::PCoords;
+use crate::common::{Line, PCoords};
 use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector, Unit};
 use serde::{Deserialize, Serialize};
 
@@ -10,6 +10,9 @@ use approx::{AbsDiffEq, RelativeEq};
 /// manifold) in n-dimensional space. It is defined by a point and a normal vector. Mathematically,
 /// a `SurfacePoint` is identical to a parameterized line or a ray with a unit direction. It also
 /// uniquely defines half-spaces (so a plane in 3D and a half-space line in 2D).
+///
+/// `SurfacePoint<D>` is the base for `SurfacePoint2` and `SurfacePoint3`, which are two of
+/// `engeom`'s geometric primitives.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct SurfacePoint<const D: usize> {
     pub point: Point<f64, D>,
@@ -67,12 +70,12 @@ impl<const D: usize> SurfacePoint<D> {
     }
 
     /// Returns a new surface point with the same point but with the normal reversed
-    pub fn new_reversed(&self) -> Self {
+    pub fn reversed(&self) -> Self {
         Self::new(self.point, -self.normal)
     }
 
     /// Returns a new surface point transformed by the given isometry
-    pub fn transformed<R>(&self, t: &Isometry<f64, R, D>) -> Self
+    pub fn transformed_by<R>(&self, t: &Isometry<f64, R, D>) -> Self
     where
         R: AbstractRotation<f64, D>,
     {
@@ -106,13 +109,32 @@ impl<const D: usize> SurfacePoint<D> {
     ///
     /// let sp = SurfacePoint2::new_normalize(Point2::new(0.0, 0.0), Vector2::new(0.0, 1.0));
     ///
-    /// let shifted = sp.new_shifted(2.0);
+    /// let shifted = sp.shifted(2.0);
     /// assert_relative_eq!(shifted.point, Point2::new(0.0, 2.0), epsilon = 1e-6);
     /// assert_relative_eq!(shifted.normal.into_inner(), Vector2::new(0.0, 1.0), epsilon = 1e-6);
     /// ```
-    pub fn new_shifted(&self, offset: f64) -> Self {
+    pub fn shifted(&self, offset: f64) -> Self {
         let new_point = self.point + self.normal.as_ref() * offset;
         Self::new(new_point, self.normal)
+    }
+
+    /// Returns a `Line<D>` with the same origin as this surface point and a unit direction equal
+    /// to the surface point's normal.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::{Point2, SurfacePoint2, Vector2};
+    /// use approx::assert_relative_eq;
+    ///
+    /// let sp = SurfacePoint2::new_normalize(Point2::new(1.0, 2.0), Vector2::new(0.0, 3.0));
+    /// let line = sp.as_line();
+    ///
+    /// assert_relative_eq!(line.origin, sp.point, epsilon = 1e-12);
+    /// assert_relative_eq!(line.direction, sp.normal.into_inner(), epsilon = 1e-12);
+    /// ```
+    pub fn as_line(&self) -> Line<D> {
+        Line::new(self.point, self.normal.into_inner())
     }
 
     /// Performs spherical linear interpolation from this surface point to another one.
@@ -320,7 +342,7 @@ mod tests {
     #[test]
     fn reversed_flips_normal_keeps_point() {
         let sp = sp2(1.0, 2.0, 0.0, 1.0);
-        let rev = sp.new_reversed();
+        let rev = sp.reversed();
         assert_relative_eq!(rev.point, sp.point);
         assert_relative_eq!(
             rev.normal.into_inner(),
@@ -332,7 +354,7 @@ mod tests {
     #[test]
     fn reversed_twice_is_identity() {
         let sp = sp3(1.0, 2.0, 3.0, 1.0, 1.0, 0.0);
-        let twice = sp.new_reversed().new_reversed();
+        let twice = sp.reversed().reversed();
         assert_relative_eq!(twice.point, sp.point);
         assert_relative_eq!(
             twice.normal.into_inner(),
@@ -365,9 +387,9 @@ mod tests {
     }
 
     #[test]
-    fn new_shifted_moves_point_keeps_normal() {
+    fn shifted_moves_point_keeps_normal() {
         let sp = sp2(0.0, 0.0, 0.0, 1.0); // normal = +y
-        let shifted = sp.new_shifted(4.0);
+        let shifted = sp.shifted(4.0);
         assert_relative_eq!(shifted.point, Point2::new(0.0, 4.0), epsilon = 1e-12);
         assert_relative_eq!(
             shifted.normal.into_inner(),
@@ -377,9 +399,9 @@ mod tests {
     }
 
     #[test]
-    fn new_shifted_negative_offset() {
+    fn shifted_negative_offset() {
         let sp = sp2(0.0, 5.0, 0.0, 1.0); // normal = +y, point at (0, 5)
-        let shifted = sp.new_shifted(-3.0);
+        let shifted = sp.shifted(-3.0);
         assert_relative_eq!(shifted.point, Point2::new(0.0, 2.0), epsilon = 1e-12);
     }
 

@@ -239,10 +239,10 @@ pub fn signed_compliment_2pi(radians: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::linear_space;
+
     use crate::{Circle2, Iso2};
     use approx::assert_relative_eq;
-    use rand::{Rng, RngExt};
+    use rand::RngExt;
     use test_case::test_case;
 
     #[test]

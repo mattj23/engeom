@@ -36,7 +36,7 @@ mod fitting;
 use crate::common::PCoords;
 use crate::common::points::dist;
 use crate::geom2::{Aabb2, Manifold1Pos2};
-use crate::{Iso2, Point2, Result};
+use crate::{Point2, Result};
 use parry2d_f64::bounding_volume::BoundingVolume;
 use std::ops::Deref;
 
@@ -167,6 +167,10 @@ impl Boundary2 {
         self.elements.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.elements.is_empty()
+    }
+
     pub fn to_points(&self, tol: f64) -> Result<Vec<Point2>> {
         let mut points = vec![self.elements[0].at_start().point];
         for e in self.elements.iter() {
@@ -250,8 +254,8 @@ impl Boundary2 {
 mod tests {
     use super::*;
     use crate::Vector2;
+    use crate::common::random_geometry::RandomGeometry2;
     use approx::assert_relative_eq;
-    use rand::RngExt;
     use std::f64::consts::PI;
 
     fn simple_data() -> BoundaryData2 {
@@ -337,9 +341,9 @@ mod tests {
     fn stress_boundary_length_closest_round_trip() {
         let data = simple_data();
         let boundary = data.try_to_boundary().unwrap();
-        let mut rng = rand::rng();
+        let mut rng = RandomGeometry2::new();
         for _ in 0..1000 {
-            let l = rng.random_range(0.0..boundary.length());
+            let l = rng.positive(boundary.length());
             let m = boundary.at_length(l).unwrap();
             let l2 = boundary.at_closest_to_point(&m.point).1.l;
             assert_relative_eq!(l, l2, epsilon = 1e-6);

@@ -1,7 +1,7 @@
 //! This module has a struct that provides quick lookups of associations between faces and
 //! edges in a triangular mesh.
 
-use crate::Mesh;
+use crate::Mesh3;
 use crate::Result;
 use crate::common::IndexMask;
 use crate::geom3::mesh::edges::edge_key;
@@ -10,13 +10,13 @@ use parry3d_f64::utils::hashmap::HashMap;
 use parry3d_f64::utils::hashset::HashSet;
 
 pub struct MeshNav<'a> {
-    pub mesh: &'a Mesh,
+    pub mesh: &'a Mesh3,
     pub face_to_edges: Vec<[[u32; 2]; 3]>,
     pub edge_to_faces: HashMap<[u32; 2], Vec<u32>>,
 }
 
 impl<'a> MeshNav<'a> {
-    pub fn new(mesh: &'a Mesh) -> Self {
+    pub fn new(mesh: &'a Mesh3) -> Self {
         let mut face_to_edges = Vec::new();
         let mut edge_to_faces: HashMap<[u32; 2], Vec<u32>> = HashMap::with_hasher(default());
 
@@ -246,7 +246,7 @@ impl<'a> MeshNav<'a> {
     ///   indices must be a valid edge that exists in one of the mesh's faces.
     ///
     /// returns: Result<IndexMask, Box<dyn Error, Global>>
-    pub fn get_patch_inside_loop(&self, vertex_loop: &[u32]) -> Result<IndexMask> {
+    pub fn compute_patch_inside_loop(&self, vertex_loop: &[u32]) -> Result<IndexMask> {
         let mut outside = IndexMask::new(self.mesh.faces().len(), false);
         let mut inside = IndexMask::new(self.mesh.faces().len(), false);
         let mut working = HashSet::with_hasher(default());
@@ -301,7 +301,7 @@ mod tests {
     use crate::raster2::{Point2I, RasterMapping, RasterMask};
     use crate::{Point2, To2D, To3D};
 
-    fn make_fixture() -> (RasterMask, RasterMapping, Mesh) {
+    fn make_fixture() -> (RasterMask, RasterMapping, Mesh3) {
         let mapping = RasterMapping::new(Point2::new(0.0, 0.0), (100, 100), 1.0, None);
         let mask = mapping.make_mask();
         let filled = mask.not();
@@ -311,16 +311,16 @@ mod tests {
             .map(|pi| mapping.point_of_image_point_i(*pi).to_3d())
             .collect::<Vec<_>>();
 
-        let mesh = Mesh::new(vertices, faces, false);
+        let mesh = Mesh3::new(vertices, faces, false);
         (mask, mapping, mesh)
     }
 
-    fn faces_from_mask(mask: &RasterMask, mapping: &RasterMapping, mesh: &Mesh) -> IndexMask {
+    fn faces_from_mask(mask: &RasterMask, mapping: &RasterMapping, mesh: &Mesh3) -> IndexMask {
         let mut indices = IndexMask::new(mesh.faces().len(), false);
         for (i, face) in mesh.faces().iter().enumerate() {
-            let v0 = mapping.image_index_of(&mesh.vertices()[face[0] as usize].to_2d());
-            let v1 = mapping.image_index_of(&mesh.vertices()[face[1] as usize].to_2d());
-            let v2 = mapping.image_index_of(&mesh.vertices()[face[2] as usize].to_2d());
+            let v0 = mapping.image_index_of(&mesh.points()[face[0] as usize].to_2d());
+            let v1 = mapping.image_index_of(&mesh.points()[face[1] as usize].to_2d());
+            let v2 = mapping.image_index_of(&mesh.points()[face[2] as usize].to_2d());
             if mask.get_point(v0) || mask.get_point(v1) || mask.get_point(v2) {
                 indices.set(i, true);
             }
@@ -381,7 +381,7 @@ mod tests {
         let mut working = boundary_loops[0].clone();
         working.reverse();
 
-        let inner = nav.get_patch_inside_loop(&working).unwrap();
+        let inner = nav.compute_patch_inside_loop(&working).unwrap();
         assert_eq!(
             inner.count_true(),
             4960,

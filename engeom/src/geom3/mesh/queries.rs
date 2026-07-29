@@ -1,15 +1,14 @@
 //! Distance queries and measurements on meshes
 
-use super::{Mesh, MeshSurfPoint};
-use crate::common::PCoords;
-use crate::common::indices::chained_indices;
+use super::{Mesh3, MeshSurfPoint};
 use crate::common::points::dist;
-use crate::{Curve3, Iso3, Plane3, Point3, Result, SurfacePoint3};
-use parry3d_f64::query::{IntersectResult, PointProjection, PointQueryWithLocation, SplitResult};
+use crate::common::{IndexMask, PCoords};
+use crate::{Iso3, Plane3, Point3, Result, SurfacePoint3};
+use parry3d_f64::query::{PointProjection, PointQueryWithLocation, SplitResult};
 use parry3d_f64::shape::TrianglePointLocation;
 use std::f64::consts::PI;
 
-impl Mesh {
+impl Mesh3 {
     /// This is an extremely simple closest distance query that returns only the scalar distance
     /// from the mesh to the point. It does not return any information about the face or which
     /// side of the corresponding face normal the point is on.  It will always return a single
@@ -82,7 +81,7 @@ impl Mesh {
     /// * `point`: the test point to seek the closest surface point to
     ///
     /// returns: MeshSurfPoint
-    pub fn surf_closest_to(&self, point: &impl PCoords<3>) -> MeshSurfPoint {
+    pub fn surface_closest_to(&self, point: &impl PCoords<3>) -> MeshSurfPoint {
         let point = Point3::from(point.coords());
         let result = self
             .shape
@@ -191,33 +190,36 @@ impl Mesh {
         }
     }
 
-    /// Return the indices of the points in the given list that project onto the mesh within the
-    /// given distance tolerance and angle tolerance.  An optional transform can be provided to
-    /// transform the points before projecting them onto the mesh.
+    /// Find which of the given points project onto the mesh within the given distance and angle
+    /// tolerances.
+    ///
+    /// The returned mask is indexed by **the given `points` slice**, not by the mesh's own points
+    /// or faces, and so has the same length as `points`.
     ///
     /// # Arguments
     ///
-    /// * `points`:
-    /// * `max_dist`:
-    /// * `max_angle`:
-    /// * `transform`:
+    /// * `points`: the points to test
+    /// * `max_dist`: the furthest a point may be from the mesh and still be kept
+    /// * `max_angle`: the largest angle allowed between the point's direction of approach and the
+    ///   surface normal at its projection
+    /// * `transform`: an optional transform applied to each point before it is projected
     ///
-    /// returns: Vec<usize, Global>
-    pub fn indices_in_tol(
+    /// returns: `IndexMask` over `points`, set where the point is within tolerance of the mesh
+    pub fn find_points_in_tol(
         &self,
         points: &[Point3],
         max_dist: f64,
         max_angle: f64,
         transform: Option<&Iso3>,
-    ) -> Vec<usize> {
+    ) -> IndexMask {
         // TODO: Needs test coverage
-        let mut result = Vec::new();
+        let mut result = IndexMask::new(points.len(), false);
         for (i, point) in points.iter().enumerate() {
             if self
                 .project_with_tol(point, max_dist, max_angle, transform)
                 .is_some()
             {
-                result.push(i);
+                result.set(i, true);
             }
         }
         result
@@ -233,71 +235,54 @@ impl Mesh {
     /// The returned meshes are newly constructed from the split triangle meshes and are not
     /// solid.
     ///
+    /// # Attributes
+    ///
+    /// The cut introduces new points along the plane and re-triangulates the faces it crosses, and
+    /// `parry3d` gives no mapping from the result back to the original. There is therefore no
+    /// correct value to carry any attribute forward with, so a mesh which has any is refused unless
+    /// the caller says the loss is acceptable.
+    ///
+    /// Note that `Negative` and `Positive` mean the plane missed the mesh entirely, so nothing is
+    /// rebuilt and nothing would have been lost. The check still runs, because whether the plane
+    /// intersects is not something the caller can be expected to know in advance, and an operation
+    /// which silently kept the attributes on one path and dropped them on another would be worse
+    /// than one which is consistent.
+    ///
     /// # Arguments
     ///
     /// * `plane`: the plane used to split the mesh
+    /// * `allow_attribute_loss`: accept the loss of every attribute this mesh carries
     ///
     /// # Returns
     ///
-    /// A `SplitResult<Mesh>` describing how the mesh relates to the plane.
-    pub fn split(&self, plane: &Plane3) -> SplitResult<Mesh> {
+    /// A `SplitResult<Mesh3>` describing how the mesh relates to the plane.
+    pub fn split(&self, plane: &Plane3, allow_attribute_loss: bool) -> Result<SplitResult<Mesh3>> {
+        self.check_attribute_loss("a plane split", allow_attribute_loss)?;
+
         let result = self.shape.local_split(&plane.normal, plane.d, 1.0e-6);
-        match result {
+        Ok(match result {
             SplitResult::Pair(a, b) => {
-                let mesh_a = Mesh::new_take_trimesh(a, false);
-                let mesh_b = Mesh::new_take_trimesh(b, false);
+                let mesh_a = Mesh3::from_trimesh(a, false);
+                let mesh_b = Mesh3::from_trimesh(b, false);
                 SplitResult::Pair(mesh_a, mesh_b)
             }
             SplitResult::Negative => SplitResult::Negative,
             SplitResult::Positive => SplitResult::Positive,
-        }
-    }
-
-    /// Perform a section of the mesh with a plane, returning a list of `Curve3` objects that
-    /// trace the intersection of the mesh with the plane.
-    ///
-    /// # Arguments
-    ///
-    /// * `plane`: the plane used to section the mesh
-    /// * `tol`: the tolerance used for the intersection and for the construction of the curves,
-    ///   defaults to 1.0e-6
-    ///
-    /// returns: Result<Vec<Curve3, Global>, Box<dyn Error, Global>>
-    pub fn section(&self, plane: &Plane3, tol: Option<f64>) -> Result<Vec<Curve3>> {
-        let tol = tol.unwrap_or(1.0e-6);
-        let mut collected = Vec::new();
-        let result = self
-            .shape
-            .intersection_with_local_plane(&plane.normal, plane.d, tol);
-
-        if let IntersectResult::Intersect(pline) = result {
-            let chains = chained_indices(pline.indices());
-            for chain in chains.iter() {
-                let points = chain
-                    .iter()
-                    .map(|&i| pline.vertices()[i as usize])
-                    .collect::<Vec<_>>();
-                if let Ok(curve) = Curve3::from_points(&points, tol) {
-                    collected.push(curve);
-                }
-            }
-        }
-
-        Ok(collected)
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geom3::Mesh;
+    use crate::geom3::Mesh3;
     use crate::tests::stanford_bun_4;
     use approx::assert_relative_eq;
     use parry3d_f64::na::Vector3;
 
     #[test]
     fn distance_closest_to_unit_box_face() {
-        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+        let mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let point = Point3::new(1.5, 0.0, 0.0);
 
         let distance = mesh.distance_closest_to(&point);
@@ -309,7 +294,7 @@ mod tests {
 
     #[test]
     fn distance_closest_to_unit_box_edge() {
-        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+        let mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let point = Point3::new(1.5, 1.5, 0.0);
 
         let distance = mesh.distance_closest_to(&point);
@@ -321,7 +306,7 @@ mod tests {
 
     #[test]
     fn distance_closest_to_unit_box_corner_vertex() {
-        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+        let mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let point = Point3::new(1.5, 1.5, 1.5);
 
         let distance = mesh.distance_closest_to(&point);
@@ -333,14 +318,14 @@ mod tests {
 
     #[test]
     fn closest_to_matches_brute_force_on_unit_box() {
-        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+        let mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let eps = 1.0e-12;
 
         for (face_index, face) in mesh.faces().iter().enumerate() {
             let face_index = face_index as u32;
-            let a = mesh.vertices()[face[0] as usize];
-            let b = mesh.vertices()[face[1] as usize];
-            let c = mesh.vertices()[face[2] as usize];
+            let a = mesh.points()[face[0] as usize];
+            let b = mesh.points()[face[1] as usize];
+            let c = mesh.points()[face[2] as usize];
 
             let centroid = Point3::from((a.coords + b.coords + c.coords) / 3.0);
             let normal = mesh.tri_mesh().triangle(face_index).normal().unwrap();
@@ -374,10 +359,10 @@ mod tests {
                         );
 
                         // Check the closest surface
-                        let closest_surf = mesh.surf_closest_to(&query);
+                        let closest_surf = mesh.surface_closest_to(&query);
                         assert!(
                             brute.iter().any(|(id, _)| *id == closest_surf.face_index),
-                            "surf_closest_to returned face {} for query {:?}, but brute force found {:?}",
+                            "surface_closest_to returned face {} for query {:?}, but brute force found {:?}",
                             closest_surf.face_index,
                             query,
                             brute.iter().map(|(id, _)| *id).collect::<Vec<_>>()
@@ -409,9 +394,9 @@ mod tests {
 
         for (face_id, face) in mesh.faces().iter().enumerate() {
             let face_id = face_id as u32;
-            let a = mesh.vertices()[face[0] as usize];
-            let b = mesh.vertices()[face[1] as usize];
-            let c = mesh.vertices()[face[2] as usize];
+            let a = mesh.points()[face[0] as usize];
+            let b = mesh.points()[face[1] as usize];
+            let c = mesh.points()[face[2] as usize];
 
             let expected_normal = mesh.tri_mesh().triangle(face_id).normal().unwrap();
 
@@ -444,7 +429,7 @@ mod tests {
 
     #[test]
     fn check_brute_force_closest_edge() {
-        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+        let mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let point = Point3::new(1.5, 1.5, 0.0);
 
         let results = brute_force_closest(&point, &mesh);
@@ -456,7 +441,7 @@ mod tests {
 
     #[test]
     fn check_brute_force_closest_face() {
-        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+        let mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let point = Point3::new(0.33, 0.0, 0.51);
 
         let results = brute_force_closest(&point, &mesh);
@@ -466,14 +451,14 @@ mod tests {
         }
     }
 
-    fn brute_force_closest(query_point: &Point3, mesh: &Mesh) -> Vec<(u32, Point3)> {
+    fn brute_force_closest(query_point: &Point3, mesh: &Mesh3) -> Vec<(u32, Point3)> {
         let mut closest: Vec<(u32, Point3)> = Vec::new();
         let mut best_dist = f64::INFINITY;
 
         for (face_index, face) in mesh.faces().iter().enumerate() {
-            let a = mesh.vertices()[face[0] as usize];
-            let b = mesh.vertices()[face[1] as usize];
-            let c = mesh.vertices()[face[2] as usize];
+            let a = mesh.points()[face[0] as usize];
+            let b = mesh.points()[face[1] as usize];
+            let c = mesh.points()[face[2] as usize];
 
             let closest_point = manual_closest_point_on_triangle(a, b, c, *query_point);
             let dist = dist(&closest_point, query_point);
@@ -490,103 +475,52 @@ mod tests {
         closest
     }
     #[test]
-    fn split_unit_box_through_center_yields_two_nonempty_parts() {
-        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+    fn split_unit_box_through_center_yields_two_nonempty_parts() -> Result<()> {
+        let mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let plane = Plane3::yz();
 
-        match mesh.split(&plane) {
+        match mesh.split(&plane, false)? {
             SplitResult::Pair(negative, positive) => {
                 assert!(!negative.faces().is_empty());
                 assert!(!positive.faces().is_empty());
 
-                for vertex in negative.vertices() {
+                for vertex in negative.points() {
                     assert!(vertex.x <= 1.0e-12);
                 }
-                for vertex in positive.vertices() {
+                for vertex in positive.points() {
                     assert!(vertex.x >= -1.0e-12);
                 }
             }
             _ => panic!("expected mesh to split into two parts"),
         }
+
+        Ok(())
     }
 
     #[test]
-    fn split_unit_box_with_plane_outside_returns_positive_side() {
-        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+    fn split_unit_box_with_plane_outside_returns_positive_side() -> Result<()> {
+        let mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let plane = Plane3::new(Vector3::x_axis(), -2.0);
 
-        match mesh.split(&plane) {
+        match mesh.split(&plane, false)? {
             SplitResult::Positive => {}
             _ => panic!("expected whole mesh on positive side"),
         }
+
+        Ok(())
     }
 
     #[test]
-    fn split_unit_box_with_plane_outside_returns_negative_side() {
-        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+    fn split_unit_box_with_plane_outside_returns_negative_side() -> Result<()> {
+        let mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let plane = Plane3::new(Vector3::x_axis(), 2.0);
 
-        match mesh.split(&plane) {
+        match mesh.split(&plane, false)? {
             SplitResult::Negative => {}
             _ => panic!("expected whole mesh on negative side"),
         }
-    }
 
-    #[test]
-    fn section_unit_cylinder_in_xz_plane_creates_one_circle_curve() {
-        use std::f64::consts::TAU;
-
-        let mesh = Mesh::create_cylinder(1.0, 2.0, 256);
-        let plane = Plane3::xz();
-
-        let curves = mesh.section(&plane, Some(1.0e-10)).unwrap();
-        assert_eq!(curves.len(), 1);
-
-        let curve = &curves[0];
-        assert!(curve.count() >= 3);
-
-        for vertex in curve.vertices() {
-            assert_relative_eq!(vertex.y, 0.0, epsilon = 1.0e-12);
-
-            let radius = (vertex.x * vertex.x + vertex.z * vertex.z).sqrt();
-            // The tolerance has to be high enough to account for the fact that the cylinder
-            // faces have a diagonal in them and where they pass through y=0 is halfway between
-            // the arc endpoints formed by the vertices that were deliberately placed at the radius
-            assert_relative_eq!(radius, 1.0, epsilon = 1.0e-4);
-        }
-
-        assert_relative_eq!(curve.length(), TAU, epsilon = 1.0e-2);
-    }
-
-    #[test]
-    fn section_two_unit_cylinder_in_xy_plane_creates_two_circles_curves() {
-        use std::f64::consts::TAU;
-
-        let mut mesh = Mesh::create_cylinder(1.0, 2.0, 256);
-        mesh.transform_by(&Iso3::translation(0.0, 0.0, -2.0));
-        let mut m1 = Mesh::create_cylinder(1.0, 2.0, 256);
-        m1.transform_by(&Iso3::translation(0.0, 0.0, 2.0));
-
-        mesh.append(&mut m1).unwrap();
-
-        let plane = Plane3::xz();
-
-        let curves = mesh.section(&plane, Some(1.0e-10)).unwrap();
-        assert_eq!(curves.len(), 2);
-
-        for curve in curves.iter() {
-            assert!(curve.count() >= 3);
-            assert_relative_eq!(curve.length(), TAU, epsilon = 1.0e-2);
-
-            let expected_center = if curve.vertices()[0].z > 0.0 {
-                Point3::new(0.0, 0.0, 2.0)
-            } else {
-                Point3::new(0.0, 0.0, -2.0)
-            };
-            for vertex in curve.vertices() {
-                assert_relative_eq!(dist(&expected_center, vertex), 1.0, epsilon = 1.0e-4);
-            }
-        }
+        Ok(())
     }
 
     fn manual_closest_point_on_triangle(a: Point3, b: Point3, c: Point3, p: Point3) -> Point3 {

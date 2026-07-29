@@ -1,9 +1,9 @@
 //! Construction methods for `BoundaryData2`
 
 use crate::common::PCoords;
+use crate::geom2::BoundaryData2;
 use crate::geom2::boundary2::data::{BData, BoundaryAddData};
-use crate::geom2::{BoundaryData2, Segment2};
-use crate::{AngleDir, Arc2, Circle2, Line2, Point2, Result};
+use crate::{AngleDir, Circle2, Line2, Point2, Result};
 
 // ===============================================================================================
 //  Common boundary construction tools
@@ -77,7 +77,7 @@ pub trait BoundaryEditor: BoundaryAddData {
             // First we'll find the circle at the tangent of the corner
             let v0 = last_point.coords() - c0.coords();
             let v1 = c1.coords() - c0.coords();
-            let c = Circle2::new_tangent_to_corner(c0, &v0, &v1, radius)?;
+            let c = Circle2::from_tangent_to_corner(c0, &v0, &v1, radius)?;
 
             // Now we need to find the two tangent endpoints
             let l0 = Line2::from_points(&last_point, c0).normalized();
@@ -199,7 +199,7 @@ impl<'a> BCursor<'a> {
 
 impl BoundaryAddData for BCursor<'_> {
     fn add_data(&mut self, data: BData) -> u32 {
-        let next_id = if self.data.len() == 0 {
+        let next_id = if self.data.is_empty() {
             self.data.insert_first(data).unwrap()
         } else {
             self.data.insert_after(self.node_id, data).unwrap()
@@ -210,7 +210,7 @@ impl BoundaryAddData for BCursor<'_> {
     }
 
     fn last_point(&self) -> Option<Point2> {
-        if self.data.len() == 0 {
+        if self.data.is_empty() {
             if self.data.is_closed() {
                 None
             } else {

@@ -57,13 +57,13 @@ pub use geom2::{
 
 // Extremely common 3D types
 pub use geom3::{
-    Curve3, CurveStation3, Iso3, KdTree3, Line3, Manifold1Pos3, Mesh, Plane3, Point3, PointCloud,
-    PointCloudFeatures, PointCloudKdTree, PointCloudOverlap, Sphere3, SurfacePoint3, SvdBasis3,
-    UnitVec3, Vector3,
+    Curve3, CurveStation3, Iso3, KdTree3, Line3, Manifold1Pos3, Mesh3, MeshData3, Plane3, Point3,
+    PointCloud, PointCloudData3, PointCloudFeatures, PointCloudKdTree, PointCloudOverlap, Sphere3,
+    SurfacePoint3, SvdBasis3, UnitVec3, Vector3,
 };
 
 // Extremely common conversion tools
-pub use common::{To2D, To3D, TransformBy};
+pub use common::{To2D, To3D};
 
 /// General purpose option for how to handle the result of a dot product between directional
 /// vectors.
@@ -146,51 +146,43 @@ pub enum Smoothing {
     Cubic(f64),
 }
 
-/// General purpose options for fitting data to a model
-#[derive(Debug, Clone, Copy)]
-pub enum BestFit {
-    /// Use all samples and perform a least-squares minimization
-    All,
-
-    /// De-weight samples based on their standard deviation from the mean
-    Gaussian(f64),
-}
-
 #[cfg(test)]
 pub mod tests {
-    use crate::io::{deflate_bytes, read_tc_curve2_from, u_bytes_to_mesh, u_bytes_to_mesh_data};
-    use crate::na::{Translation3, UnitQuaternion};
-    use crate::{Curve2, Iso3, Mesh, Point3, Vector3};
-    use rand::distr::Uniform;
-    use std::f64::consts::PI;
+    use crate::io::{deflate_bytes, read_tc_curve2_from, u_bytes_to_mesh_data};
+
+    use crate::{Curve2, Mesh3};
 
     /// Load a mesh with the stanford bunny reconstruction at resolution 4. The vertices are within
     /// 0.00000189 of the original ply file.
-    pub fn stanford_bun_4() -> Mesh {
+    pub fn stanford_bun_4() -> Mesh3 {
         let bytes = include_bytes!("../tests/data/stanford_bun_4.umesh.gz");
-        u_bytes_to_mesh(&deflate_bytes(bytes).unwrap()).unwrap()
+        let data = u_bytes_to_mesh_data(&deflate_bytes(bytes).unwrap()).unwrap();
+        Mesh3::from_data(data, false).unwrap()
     }
 
     /// Load a mesh with the stanford bunny reconstruction at resolution 2. The vertices are within
     /// 0.00000189 of the original ply file.
-    pub fn stanford_bun_2() -> Mesh {
+    pub fn stanford_bun_2() -> Mesh3 {
         let bytes = include_bytes!("../tests/data/stanford_bun_2.umesh.gz");
-        u_bytes_to_mesh(&deflate_bytes(bytes).unwrap()).unwrap()
+        let data = u_bytes_to_mesh_data(&deflate_bytes(bytes).unwrap()).unwrap();
+        Mesh3::from_data(data, false).unwrap()
     }
 
     /// Load a mesh with the stanford bunny reconstruction at resolution 3. The vertices are within
     /// 0.00000189 of the original ply file.
-    pub fn stanford_bun_3() -> Mesh {
+    pub fn stanford_bun_3() -> Mesh3 {
         let bytes = include_bytes!("../tests/data/stanford_bun_3.umesh.gz");
-        u_bytes_to_mesh(&deflate_bytes(bytes).unwrap()).unwrap()
+        let data = u_bytes_to_mesh_data(&deflate_bytes(bytes).unwrap()).unwrap();
+        Mesh3::from_data(data, false).unwrap()
     }
 
     /// Load a mesh of a small engine blade. The mesh has 21795 vertices and 43586 faces. Dimensions
     /// are in millimeters. The mesh has been processed externally to remove mesh errors and should
     /// be watertight.
-    pub fn engine_blade() -> Mesh {
+    pub fn engine_blade() -> Mesh3 {
         let bytes = include_bytes!("../tests/data/engine-blade.umesh.gz");
-        u_bytes_to_mesh(&deflate_bytes(bytes).unwrap()).unwrap()
+        let data = u_bytes_to_mesh_data(&deflate_bytes(bytes).unwrap()).unwrap();
+        Mesh3::from_data(data, false).unwrap()
     }
 
     pub fn airfoil_curve() -> Curve2 {

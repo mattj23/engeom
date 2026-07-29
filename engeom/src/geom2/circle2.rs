@@ -4,28 +4,24 @@ use crate::common::{Intersection, PCoords, signed_compliment_2pi};
 use crate::geom2::aabb2::circle_aabb2;
 use crate::geom2::line2::intersect_lines;
 use crate::geom2::{
-    Aabb2, HasBounds2, Iso2, LineOps2, Manifold1Pos2, Point2, Segment2, Vector2, rot90,
-    signed_angle,
+    Aabb2, Iso2, LineOps2, Manifold1Pos2, Point2, Segment2, Vector2, rot90, signed_angle,
 };
-use crate::geom3::Vector3;
 use crate::na::SVector;
-use crate::stats::{compute_mean, compute_st_dev};
-use crate::{AngleDir, AngleInterval, BestFit, IntervalOps, Line2, SurfacePoint2, UnitVec2};
+use crate::{AngleDir, AngleInterval, IntervalOps, SurfacePoint2, UnitVec2};
 use crate::{Arc2, Result};
-use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
-use parry2d_f64::na::{Dyn, Matrix, Owned, U1, U3, Vector};
-use parry2d_f64::shape::Ball;
-use rand::SeedableRng;
-use rand::distr::{Distribution, Uniform};
-use rand::prelude::StdRng;
 use serde::{Deserialize, Serialize};
 use std::f64::consts::FRAC_PI_2;
+use std::ops;
 
+mod fitting;
+
+/// A circle in 2D space, defined by a center point and a radius.
+///
+/// This is one of `engeom`'s 2D geometric primitives.
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct Circle2 {
     pub center: Point2,
-    pub ball: Ball,
-    aabb: Aabb2,
+    pub radius: f64,
 }
 
 //=============================================================================================
@@ -78,127 +74,7 @@ impl Circle2 {
     /// assert_eq!(circle.r(), 3.0);
     /// ```
     pub fn from_point(center: Point2, r: f64) -> Circle2 {
-        let aabb = circle_aabb2(&center, r);
-        Circle2 {
-            center,
-            ball: Ball::new(r),
-            aabb,
-        }
-    }
-
-    /// Attempt to create a fitting circle from the given points and an initial guess. The fitting
-    /// is an unconstrained Levenberg-Marquardt minimization of the sum of squared errors between
-    /// the points and the boundary of the circle.
-    ///
-    /// The initial guess is used to provide an initial estimate of the circle's center and radius,
-    /// for best results this should at least be in the general vicinity of the test points.
-    ///
-    /// The mode parameter controls the fitting algorithm. The `BestFit::All` mode will weight all
-    /// points equally, while the `BestFit::Gaussian(sigma)` mode will assign zero weights to
-    /// points beyond `sigma` standard deviations from the mean.
-    ///
-    /// # Arguments
-    ///
-    /// * `points`: the points to be fit to the circle
-    /// * `guess`: an initial guess for the circle's center and radius
-    /// * `mode`: the fitting mode to use
-    ///
-    /// returns: Result<Circle2, Box<dyn Error, Global>>
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use engeom::{Circle2, Point2};
-    /// use engeom::BestFit::All;
-    /// use approx::assert_relative_eq;
-    ///
-    /// let points = vec![
-    ///     Point2::new(-1.0, 0.0),
-    ///     Point2::new(0.0, 1.0),
-    ///     Point2::new(1.0, 0.0),
-    ///     Point2::new(0.0, -1.0),
-    /// ];
-    ///
-    /// let guess = Circle2::new(-1.0, 1.0, 0.1);
-    /// let circle = Circle2::new_fitting_circle(&points, &guess, All).unwrap();
-    /// assert_relative_eq!(circle.x(), 0.0);
-    /// assert_relative_eq!(circle.y(), 0.0);
-    /// assert_relative_eq!(circle.r(), 1.0);
-    /// ```
-    pub fn new_fitting_circle(
-        points: &[Point2],
-        guess: &Circle2,
-        mode: BestFit,
-    ) -> Result<Circle2> {
-        fit_circle(points, guess, mode)
-    }
-
-    /// Given a set of points, attempt to fit a circle to them using the RANSAC algorithm.
-    ///
-    /// # Arguments
-    ///
-    /// * `points`: a slice of points to fit the circle to
-    /// * `tol`: The tolerance to use for the RANSAC algorithm. If a point is within this distance
-    ///   of the circle's perimeter, it is considered an inlier.
-    /// * `iterations`: An optional number of iterations to run the RANSAC algorithm. If not
-    ///   provided, the default is 500.
-    /// * `min_r`: An optional minimum radius for the circle. If provided, the circle's radius must
-    ///   be greater than or equal to this value to be considered a valid candidate.
-    /// * `max_r`: An optional maximum radius for the circle. If provided, the circle's radius must
-    ///   be less than or equal to this value to be considered a valid candidate.
-    ///
-    /// returns: Result<Circle2, Box<dyn Error, Global>>
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
-    pub fn new_ransac(
-        points: &[Point2],
-        tol: f64,
-        iterations: Option<usize>,
-        min_r: Option<f64>,
-        max_r: Option<f64>,
-    ) -> Result<Circle2> {
-        let iterations = iterations.unwrap_or(500);
-        let min_r = min_r.unwrap_or(0.0);
-        let max_r = max_r.unwrap_or(f64::INFINITY);
-
-        let mut best_count = 0;
-        let mut best_circle = None;
-
-        let mut rng = StdRng::seed_from_u64(24601);
-        let u = Uniform::new(0, points.len())?;
-
-        let n = iterations.max(10);
-        for _ in 0..n {
-            let i0 = u.sample(&mut rng);
-            let i1 = u.sample(&mut rng);
-            let i2 = u.sample(&mut rng);
-
-            if let Ok(c) = Circle2::from_3_points(&points[i0], &points[i1], &points[i2]) {
-                // Check that the circle is smaller than that of the last station
-                if c.r() > max_r || c.r() < min_r {
-                    continue;
-                }
-
-                // Count the number of inliers
-                let mut count = 0;
-                for p in points {
-                    if c.distance_to(p).abs() < tol {
-                        count += 1;
-                    }
-                }
-
-                if count > best_count {
-                    best_count = count;
-                    best_circle = Some(c);
-                }
-            }
-        }
-
-        best_circle.ok_or("Failed to find a single valid RANSAC circle candidate".into())
+        Circle2 { center, radius: r }
     }
 
     /// Attempt to create a fitting circle from three points. Will return an `Err` if the points
@@ -283,12 +159,12 @@ impl Circle2 {
     /// let d1 = Vector2::new(0.0, 1.0); // Vertical line upwards
     /// let radius = 1.0;
     ///
-    /// let circle = Circle2::new_tangent_to_corner(&corner, &d0, &d1, radius).unwrap();
+    /// let circle = Circle2::from_tangent_to_corner(&corner, &d0, &d1, radius).unwrap();
     /// assert_relative_eq!(circle.x(), 2.0);
     /// assert_relative_eq!(circle.y(), 2.0);
     /// assert_relative_eq!(circle.r(), radius);
     /// ```
-    pub fn new_tangent_to_corner(
+    pub fn from_tangent_to_corner(
         corner: &impl PCoords<2>,
         d0: &Vector2,
         d1: &Vector2,
@@ -314,8 +190,8 @@ impl Circle2 {
             -radius
         };
 
-        let a1 = a.shift_orthogonal(da);
-        let b1 = b.shift_orthogonal(db);
+        let a1 = a.shifted_orthogonal(da);
+        let b1 = b.shifted_orthogonal(db);
 
         let ts = intersect_lines(&a1, &b1);
         if let Some((t_a, _t_b)) = ts {
@@ -340,7 +216,7 @@ impl Circle2 {
     /// ```
     ///
     /// ```
-    pub fn new_tangent_and_point(tangent: &impl LineOps2, point: &impl PCoords<2>) -> Self {
+    pub fn from_tangent_and_point(tangent: &impl LineOps2, point: &impl PCoords<2>) -> Self {
         let iso = tangent.to_iso_from_y().inverse();
         let p = iso * Point2::from(point.coords());
 
@@ -367,7 +243,7 @@ impl Circle2 {
 
     /// Returns the radius of the circle
     pub fn r(&self) -> f64 {
-        self.ball.radius
+        self.radius
     }
 
     /// Returns the point on the circle's perimeter at the given angle (referenced as a
@@ -393,7 +269,7 @@ impl Circle2 {
     /// assert_relative_eq!(p.y, 1.0);
     /// ```
     pub fn point_at_angle(&self, angle: f64) -> Point2 {
-        let v = Vector2::new(self.ball.radius, 0.0);
+        let v = Vector2::new(self.radius, 0.0);
         let t = Iso2::rotation(angle);
         self.center + (t * v)
     }
@@ -426,7 +302,7 @@ impl Circle2 {
             None
         } else {
             let n = v.normalize();
-            Some(self.center + (n * self.ball.radius))
+            Some(self.center + (n * self.radius))
         }
     }
 
@@ -498,14 +374,14 @@ impl Circle2 {
             return result;
         }
 
-        let r_sum = self.ball.radius + other.ball.radius;
+        let r_sum = self.radius + other.radius;
         if d > r_sum {
             // Circles are too far apart
             return result;
         }
 
         let v = (other.center - self.center).normalize();
-        let a = (self.ball.radius.powi(2) - other.ball.radius.powi(2) + d.powi(2)) / (2.0 * d);
+        let a = (self.radius.powi(2) - other.radius.powi(2) + d.powi(2)) / (2.0 * d);
         let p2 = self.center + (v * a);
 
         if (d - r_sum).abs() < TOL {
@@ -514,7 +390,7 @@ impl Circle2 {
             return result;
         }
 
-        let h = (self.ball.radius.powi(2) - a.powi(2)).sqrt();
+        let h = (self.radius.powi(2) - a.powi(2)).sqrt();
         let n = Iso2::rotation(FRAC_PI_2) * v;
         result.push(p2 + (n * h));
         result.push(p2 - (n * h));
@@ -523,7 +399,7 @@ impl Circle2 {
 
     /// Create a full arc of the circle, starting at zero and extending for 2π radians.
     pub fn to_arc(&self) -> Arc2 {
-        Arc2::new(*self, 0.0, 2.0 * std::f64::consts::PI)
+        Arc2::from_circle(*self, 0.0, 2.0 * std::f64::consts::PI)
     }
 
     /// Create a partial arc of the circle, starting at `angle0` and extending for `angle` radians.
@@ -541,7 +417,7 @@ impl Circle2 {
     ///
     /// ```
     pub fn to_partial_arc(&self, angle0: f64, angle: f64) -> Arc2 {
-        Arc2::new(*self, angle0, angle)
+        Arc2::from_circle(*self, angle0, angle)
     }
 
     /// Computes the distance from the test point to the outer perimeter of the circle. If the
@@ -569,12 +445,44 @@ impl Circle2 {
     /// assert_eq!(d2, 1.0);
     /// ```
     pub fn distance_to(&self, point: &impl PCoords<2>) -> f64 {
-        dist(&self.center, point) - self.ball.radius
+        dist(&self.center, point) - self.radius
     }
 
     /// Returns `true` if the point lies at or inside the boundary of the circle.
     pub fn contains_point(&self, point: &impl PCoords<2>) -> bool {
         self.distance_to(point) <= 0.0
+    }
+
+    /// Returns a new `Vec` containing copies of only the points which lie at or inside the
+    /// boundary of the circle, in their original order. Points are tested with `contains_point`.
+    ///
+    /// # Arguments
+    ///
+    /// * `points`: the test points to filter
+    ///
+    /// returns: Vec<Point2>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::{Circle2, Point2};
+    ///
+    /// let c = Circle2::new(0.0, 0.0, 1.0);
+    /// let points = vec![
+    ///     Point2::new(0.0, 0.0),
+    ///     Point2::new(2.0, 0.0),
+    ///     Point2::new(0.5, 0.5),
+    /// ];
+    ///
+    /// let inside = c.contained_points(&points);
+    /// assert_eq!(inside, vec![Point2::new(0.0, 0.0), Point2::new(0.5, 0.5)]);
+    /// ```
+    pub fn contained_points(&self, points: &[impl PCoords<2>]) -> Vec<Point2> {
+        points
+            .iter()
+            .filter(|p| self.contains_point(*p))
+            .map(|p| Point2::from(p.coords()))
+            .collect()
     }
 
     /// Compute and return the two tangent points on the circle from a given point. If the point is
@@ -605,11 +513,11 @@ impl Circle2 {
     pub fn tangent_points_to(&self, point: &impl PCoords<2>) -> Option<(Point2, Point2)> {
         let dv = point.coords() - self.center.coords;
         let d = dv.norm();
-        if d <= self.ball.radius {
+        if d <= self.radius {
             return None;
         }
 
-        let angle = f64::asin(self.ball.radius / d);
+        let angle = f64::asin(self.radius / d);
         let d1 = self.r() * f64::sin(angle);
         let e0 = self.r() * f64::cos(angle);
 
@@ -649,15 +557,12 @@ impl Circle2 {
         if dist(&self.center, &other.center) < 1.0e-10 {
             // If the circles are concentric, there will be no outer tangents
             None
-        } else if (self.ball.radius - other.ball.radius).abs() < 1.0e-10 {
+        } else if (self.radius - other.radius).abs() < 1.0e-10 {
             // If the circles have the same radius, the outer tangent method must be computed
             // by a simpler, special case
-            let s = Segment2::try_new(&self.center, &other.center).unwrap();
-            Some((
-                s.with_offset(self.ball.radius),
-                s.with_offset(-self.ball.radius),
-            ))
-        } else if self.ball.radius > other.ball.radius {
+            let s = Segment2::new(&self.center, &other.center).unwrap();
+            Some((s.offset_by(self.radius), s.offset_by(-self.radius)))
+        } else if self.radius > other.radius {
             if let Some((seg0, seg1)) = other.outer_tangents_to(self) {
                 // Swap the segments and reverse them
                 Some((seg1.reversed(), seg0.reversed()))
@@ -673,10 +578,10 @@ impl Circle2 {
             let proxy = Circle2::new(other.x(), other.y(), other.r() - self.r());
             // p0 is in the negative half space and p1 is in the positive half space
             let (p0, p1) = proxy.tangent_points_to(&self.center).unwrap();
-            let s0 = Segment2::try_new(&self.center, &p0).unwrap();
-            let s1 = Segment2::try_new(&self.center, &p1).unwrap();
+            let s0 = Segment2::new(&self.center, &p0).unwrap();
+            let s1 = Segment2::new(&self.center, &p1).unwrap();
 
-            Some((s0.with_offset(-self.r()), s1.with_offset(self.r())))
+            Some((s0.offset_by(-self.r()), s1.offset_by(self.r())))
         }
     }
 
@@ -718,11 +623,74 @@ impl Circle2 {
         let theta = self.angle_of_point(p);
         self.at_angle(theta)
     }
+
+    /// Returns a new circle with its center moved by the given isometry, without modifying the
+    /// original. The radius is unaffected.
+    ///
+    /// # Arguments
+    ///
+    /// * `iso`: the isometry to transform the circle by
+    ///
+    /// returns: Circle2
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::{Circle2, Iso2, Vector2};
+    /// use engeom::geom2::IsoExtensions2;
+    /// use approx::assert_relative_eq;
+    ///
+    /// let c = Circle2::new(1.0, 0.0, 2.0);
+    /// let moved = c.transformed_by(&Iso2::from_translation(0.0, 3.0));
+    ///
+    /// assert_relative_eq!(moved.x(), 1.0);
+    /// assert_relative_eq!(moved.y(), 3.0);
+    /// assert_relative_eq!(moved.r(), 2.0);
+    /// ```
+    pub fn transformed_by(&self, iso: &Iso2) -> Self {
+        Self {
+            center: iso * self.center,
+            radius: self.radius,
+        }
+    }
+
+    /// Returns a new circle with its radius changed by `delta`, without modifying the original.
+    /// The center is unaffected.
+    ///
+    /// A positive `delta` grows the circle and a negative one shrinks it. The result is not
+    /// clamped, so a large enough negative `delta` will produce a zero or negative radius.
+    ///
+    /// # Arguments
+    ///
+    /// * `delta`: the amount to add to the circle's radius
+    ///
+    /// returns: Circle2
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::Circle2;
+    /// use approx::assert_relative_eq;
+    ///
+    /// let c = Circle2::new(1.0, 2.0, 3.0);
+    /// let bigger = c.resized_by(0.5);
+    ///
+    /// assert_relative_eq!(bigger.x(), 1.0);
+    /// assert_relative_eq!(bigger.y(), 2.0);
+    /// assert_relative_eq!(bigger.r(), 3.5);
+    /// ```
+    pub fn resized_by(&self, delta: f64) -> Self {
+        Self {
+            center: self.center,
+            radius: self.radius + delta,
+        }
+    }
 }
 
-impl HasBounds2 for Circle2 {
-    fn aabb(&self) -> &Aabb2 {
-        &self.aabb
+impl Circle2 {
+    /// Returns the axis-aligned bounding box of the circle, computed on demand.
+    pub fn aabb(&self) -> Aabb2 {
+        circle_aabb2(&self.center, self.radius)
     }
 }
 
@@ -748,11 +716,11 @@ pub fn intersection_line_circle(line: &impl LineOps2, circle: &Circle2) -> Vec<f
 
     let d = dist(&circle.center, &line.projected_point(&circle.center));
 
-    if (d - circle.ball.radius).abs() < 1.0e-10 {
+    if (d - circle.radius).abs() < 1.0e-10 {
         // If the distance from the center to the line is equal to the radius, then there is one
         // single intersection point at the tangency point
         vec![tc]
-    } else if d > circle.ball.radius {
+    } else if d > circle.radius {
         // If the distance from the center to the line is greater than the radius, then there
         // are no intersection points
         Vec::new()
@@ -760,7 +728,7 @@ pub fn intersection_line_circle(line: &impl LineOps2, circle: &Circle2) -> Vec<f
         // There are two intersection points. The distance from the tangency point to the
         // intersection points is the height of a right triangle with hypotenuse `r` and base
         // `d`.
-        let h = (circle.ball.radius.powi(2) - d.powi(2)).sqrt();
+        let h = (circle.radius.powi(2) - d.powi(2)).sqrt();
 
         // We can't simply add and subtract `h` from `tc` because the line may not be
         // normalized, so we need to scale the value `h` by the norm of the line's direction
@@ -774,6 +742,34 @@ pub fn intersection_line_circle(line: &impl LineOps2, circle: &Circle2) -> Vec<f
 impl PCoords<2> for Circle2 {
     fn coords(&self) -> SVector<f64, 2> {
         self.center.coords
+    }
+}
+
+impl ops::Mul<Circle2> for Iso2 {
+    type Output = Circle2;
+    fn mul(self, rhs: Circle2) -> Circle2 {
+        rhs.transformed_by(&self)
+    }
+}
+
+impl ops::Mul<&Circle2> for Iso2 {
+    type Output = Circle2;
+    fn mul(self, rhs: &Circle2) -> Circle2 {
+        rhs.transformed_by(&self)
+    }
+}
+
+impl ops::Mul<Circle2> for &Iso2 {
+    type Output = Circle2;
+    fn mul(self, rhs: Circle2) -> Circle2 {
+        rhs.transformed_by(self)
+    }
+}
+
+impl ops::Mul<&Circle2> for &Iso2 {
+    type Output = Circle2;
+    fn mul(self, rhs: &Circle2) -> Circle2 {
+        rhs.transformed_by(self)
     }
 }
 
@@ -799,146 +795,14 @@ impl Intersection<&Segment2, Vec<Point2>> for Circle2 {
     }
 }
 
-type Residuals = Matrix<f64, Dyn, U1, Owned<f64, Dyn, U1>>;
-
-fn fit_circle(points: &[Point2], initial: &Circle2, mode: BestFit) -> Result<Circle2> {
-    let problem = CircleFit::new(points, mode, initial);
-    let (result, report) = LevenbergMarquardt::new().minimize(problem);
-
-    if report.termination.was_successful() {
-        Ok(result.circle)
-    } else {
-        let text = format!("Failed to fit circle: {:?}", report.termination);
-        Err(text.into())
-    }
-}
-
-struct CircleFit<'a> {
-    /// The points to be fit to the circle.
-    points: &'a [Point2],
-
-    /// The best fitting mode
-    mode: BestFit,
-
-    /// The parameters being fit
-    x: Vector3,
-
-    /// The current active circle
-    circle: Circle2,
-
-    /// The active base residuals
-    base_residuals: Residuals,
-
-    /// The active weights
-    weights: Residuals,
-}
-
-impl<'a> CircleFit<'a> {
-    fn new(points: &'a [Point2], mode: BestFit, initial: &Circle2) -> Self {
-        let x = Vector3::new(initial.center.x, initial.center.y, initial.r());
-        let circle = *initial;
-
-        // Compute the residuals
-        let mut base_residuals = Residuals::zeros(points.len());
-        compute_residuals_mut(points, &circle, &mut base_residuals);
-
-        // Compute the weights
-        let mut weights = Residuals::zeros(points.len());
-        compute_weights_mut(&base_residuals, &mut weights, mode);
-
-        Self {
-            points,
-            mode,
-            x,
-            circle,
-            base_residuals,
-            weights,
-        }
-    }
-}
-
-fn compute_residuals_mut(points: &[Point2], circle: &Circle2, residuals: &mut Residuals) {
-    for (i, p) in points.iter().enumerate() {
-        residuals[i] = circle.distance_to(p)
-    }
-}
-
-fn compute_weights_mut(residuals: &Residuals, weights: &mut Residuals, mode: BestFit) {
-    match mode {
-        BestFit::All => {
-            weights.fill(1.0);
-        }
-        BestFit::Gaussian(sigma) => {
-            let mean = compute_mean(residuals.as_slice()).expect("Empty slice");
-            let std = compute_st_dev(residuals.as_slice()).expect("Empty slice");
-
-            for (i, r) in residuals.iter().enumerate() {
-                // How many standard deviations are we from the mean?
-                let d = (r - mean).abs() / std;
-                if d > sigma {
-                    weights[i] = 0.0;
-                } else {
-                    weights[i] = 1.0;
-                }
-            }
-        }
-    }
-}
-
-impl LeastSquaresProblem<f64, Dyn, U3> for CircleFit<'_> {
-    type ResidualStorage = Owned<f64, Dyn, U1>;
-    type JacobianStorage = Owned<f64, Dyn, U3>;
-    type ParameterStorage = Owned<f64, U3>;
-
-    fn set_params(&mut self, x: &Vector<f64, U3, Self::ParameterStorage>) {
-        self.x = *x;
-        self.circle = Circle2::new(x[0], x[1], x[2]);
-        compute_residuals_mut(self.points, &self.circle, &mut self.base_residuals);
-        compute_weights_mut(&self.base_residuals, &mut self.weights, self.mode);
-    }
-
-    fn params(&self) -> Vector<f64, U3, Self::ParameterStorage> {
-        self.x
-    }
-
-    fn residuals(&self) -> Option<Vector<f64, Dyn, Self::ResidualStorage>> {
-        let mut res = Residuals::zeros(self.points.len());
-        for i in 0..self.points.len() {
-            res[i] = self.base_residuals[i] * self.weights[i];
-        }
-
-        Some(res)
-    }
-
-    fn jacobian(&self) -> Option<Matrix<f64, Dyn, U3, Self::JacobianStorage>> {
-        let mut jac = Matrix::<f64, Dyn, U3, Self::JacobianStorage>::zeros(self.points.len());
-        for (i, p) in self.points.iter().enumerate() {
-            // Find the vector from the center of the circle to the point
-            let v = p - self.circle.center;
-
-            // Normalize it
-            let n = v.normalize();
-
-            // Fill in the jacobian for this row
-            jac[(i, 0)] = -n.x * self.weights[i];
-            jac[(i, 1)] = -n.y * self.weights[i];
-            jac[(i, 2)] = -self.weights[i];
-        }
-
-        Some(jac)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::RngExt;
 
-    use crate::geom2::{Line2, Ray2};
+    use crate::geom2::Ray2;
     use approx::assert_relative_eq;
 
-    use crate::geom2::tests::RandomGeometry2;
-    use rand_distr::Normal;
+    use crate::common::random_geometry::RandomGeometry2;
     use std::f64::consts::PI;
     use test_case::test_case;
 
@@ -947,31 +811,26 @@ mod tests {
         let corner = Point2::new(1.0, 1.0);
         let v0 = Vector2::new(-1.0, 0.0);
         let v1 = Vector2::new(0.0, -1.0);
-        let circle = Circle2::new_tangent_to_corner(&corner, &v0, &v1, 1.0).unwrap();
+        let circle = Circle2::from_tangent_to_corner(&corner, &v0, &v1, 1.0).unwrap();
         assert_relative_eq!(circle.center, Point2::new(0.0, 0.0), epsilon = 1.0e-8);
         assert_relative_eq!(circle.r(), 1.0, epsilon = 1.0e-8);
     }
 
     #[test]
     fn stress_tangent_lines() {
-        let mut rng = rand::rng();
+        let mut rng = RandomGeometry2::new();
 
         for _ in 0..1000 {
-            let expected = Circle2::new(
-                rng.random_range(-5.0..5.0),
-                rng.random_range(-5.0..5.0),
-                rng.random_range(0.5..2.0),
-            );
-            // let expected = Circle2::new(0.0, 0.0, 1.0);
+            let expected = rng.circle2(5.0, 0.5, 2.0);
 
-            let tr = rng.random_range(0.01..5.0) + expected.r();
-            let tv = Iso2::rotation(rng.random_range(-PI..PI)) * Vector2::new(tr, 0.0);
+            let tr = rng.f64(0.01, 5.0) + expected.r();
+            let tv = Iso2::rotation(rng.angle_sym_pi()) * Vector2::new(tr, 0.0);
             let tc = expected.center + tv;
 
             let (p0, p1) = expected.tangent_points_to(&tc).unwrap();
 
             let result =
-                Circle2::new_tangent_to_corner(&tc, &(p0 - tc), &(p1 - tc), expected.r()).unwrap();
+                Circle2::from_tangent_to_corner(&tc, &(p0 - tc), &(p1 - tc), expected.r()).unwrap();
 
             assert_relative_eq!(expected.center, result.center, epsilon = 1.0e-8);
             assert_relative_eq!(expected.r(), result.r(), epsilon = 1.0e-8);
@@ -982,6 +841,8 @@ mod tests {
     #[test_case((1.0, 0.0, 1.0), Some(((0.0, -1.0, 1.0, -1.0), (0.0, 1.0, 1.0, 1.0))))]
     #[test_case((2.0, 2.0, 3.0), Some(((-1.0, 0.0, -1.0, 2.0), (0.0, -1.0, 2.0, -1.0))))]
     #[test_case((0.5, 0.5, 0.5), Some(((0.0, 1.0, 0.5, 1.0), (1.0, 0.0, 1.0, 0.5))))]
+    // Tuple shape is dictated by the `test_case` rows below.
+    #[allow(clippy::type_complexity)]
     fn outer_tangencies(
         c: (f64, f64, f64),
         e: Option<((f64, f64, f64, f64), (f64, f64, f64, f64))>,
@@ -1065,18 +926,6 @@ mod tests {
     }
 
     #[test]
-    fn least_squares_fit() -> Result<()> {
-        let expected = Circle2::new(2.0, 3.0, 1.0);
-        let samples = make_sample_circle_points(&expected, 500, Some(0.01));
-        let guess = Circle2::new(0.0, 0.0, 1.0);
-        let result = Circle2::new_fitting_circle(&samples, &guess, BestFit::All)?;
-
-        assert_relative_eq!(result.center, expected.center, epsilon = 3.0e-3);
-        assert_relative_eq!(result.r(), expected.r(), epsilon = 3.0e-3);
-        Ok(())
-    }
-
-    #[test]
     fn ransac_fit() -> Result<()> {
         let expected = Circle2::new(2.0, 3.0, 1.2);
         let decoy = Circle2::new(0.0, 0.0, 1.0);
@@ -1087,7 +936,7 @@ mod tests {
         ]
         .concat();
 
-        let result = Circle2::new_ransac(&samples, 0.005, None, None, None)?;
+        let result = Circle2::from_consensus(&samples, 0.005, None, None, None)?;
 
         assert_relative_eq!(result.center, expected.center, epsilon = 3.0e-3);
         assert_relative_eq!(result.r(), expected.r(), epsilon = 3.0e-3);
@@ -1106,10 +955,10 @@ mod tests {
 
             let line = match random.bool() {
                 true => m.direction_line(),
-                false => m.direction_line().new_reversed(),
+                false => m.direction_line().reversed(),
             };
 
-            let result = Circle2::new_tangent_and_point(&line, &p);
+            let result = Circle2::from_tangent_and_point(&line, &p);
 
             assert_relative_eq!(result.center, c.center, epsilon = 1.0e-5);
             assert_relative_eq!(result.r(), c.r(), epsilon = 1.0e-5);
@@ -1118,15 +967,86 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn stress_transformed_by() {
+        let mut rng = RandomGeometry2::new();
+
+        for _ in 0..1000 {
+            let original = rng.circle2(5.0, 0.5, 2.0);
+            let iso = rng.iso2(10.0);
+            let moved = original.transformed_by(&iso);
+
+            assert_relative_eq!(moved.center, iso * original.center, epsilon = 1.0e-10);
+            assert_relative_eq!(moved.r(), original.r(), epsilon = 1.0e-10);
+
+            // A point on the original perimeter must map onto the transformed perimeter
+            let p = iso * original.point_at_angle(rng.angle_sym_pi());
+            assert_relative_eq!(moved.distance_to(&p), 0.0, epsilon = 1.0e-10);
+
+            // The multiplication operator is an alias for `transformed_by`
+            let by_mul = iso * original;
+            assert_relative_eq!(by_mul.center, moved.center, epsilon = 1.0e-12);
+            assert_relative_eq!(by_mul.r(), moved.r(), epsilon = 1.0e-12);
+        }
+    }
+
+    #[test]
+    fn contained_points_keeps_inside_and_boundary_in_order() {
+        let c = Circle2::new(1.0, 1.0, 1.0);
+        let points = vec![
+            Point2::new(1.0, 1.0),  // center, inside
+            Point2::new(5.0, 5.0),  // far outside
+            Point2::new(2.0, 1.0),  // exactly on the boundary, counts as inside
+            Point2::new(1.0, -1.0), // outside
+            Point2::new(1.5, 1.0),  // inside
+        ];
+
+        let result = c.contained_points(&points);
+        assert_eq!(
+            result,
+            vec![
+                Point2::new(1.0, 1.0),
+                Point2::new(2.0, 1.0),
+                Point2::new(1.5, 1.0)
+            ]
+        );
+    }
+
+    #[test]
+    fn contained_points_matches_contains_point() {
+        let mut rng = RandomGeometry2::new();
+        let c = rng.circle2(5.0, 0.5, 2.0);
+        let points = (0..500).map(|_| rng.point(8.0)).collect::<Vec<_>>();
+
+        let expected = points
+            .iter()
+            .filter(|p| c.contains_point(*p))
+            .copied()
+            .collect::<Vec<_>>();
+
+        assert_eq!(c.contained_points(&points), expected);
+    }
+
+    #[test_case(3.0, 0.5, 3.5)]
+    #[test_case(3.0, -0.5, 2.5)]
+    #[test_case(3.0, 0.0, 3.0)]
+    fn resized_by_changes_radius_only(r: f64, delta: f64, expected: f64) {
+        let c = Circle2::new(1.0, 2.0, r);
+        let result = c.resized_by(delta);
+
+        assert_relative_eq!(result.center, c.center, epsilon = 1.0e-12);
+        assert_relative_eq!(result.r(), expected, epsilon = 1.0e-12);
+    }
+
     fn make_sample_circle_points(c: &Circle2, n: usize, sigma: Option<f64>) -> Vec<Point2> {
         let mut points = Vec::with_capacity(n);
         let angle_step = 2.0 * PI / (n as f64);
-        let mut rng = rand::rng();
+        let mut rng = RandomGeometry2::new();
 
         for i in 0..n {
             let angle = angle_step * i as f64;
             let r = if let Some(sigma) = sigma {
-                Normal::new(0.0, sigma).unwrap().sample(&mut rng)
+                rng.gaussian_f64(0.0, sigma)
             } else {
                 0.0
             } + c.r();

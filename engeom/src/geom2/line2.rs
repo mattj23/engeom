@@ -11,10 +11,12 @@ use std::ops;
 
 /// A parameterized line in 2D space: `P(t) = origin + t * direction`.
 ///
-/// This is the two-dimensional specialization of the dimension-generic
-/// [`Line`](crate::common::Line); see that type for the shared constructors and queries (`new`,
-/// `new_normalize`, `from_points`, `at`, `closest_point`, `distance_to`, `transform_by`, and so
-/// on). The methods defined directly on `Line2` here are the ones that only make sense in 2D.
+/// This is one of `engeom`'s 2D geometric primitives.
+///
+/// This is the two-dimensional specialization of the dimension-generic [`Line`](Line); see that
+/// type for the shared constructors and queries (`new`, `new_normalize`, `from_points`, `at`,
+/// `closest_point`, `distance_to`, `transformed_by`, and so on). The methods defined directly on
+/// `Line2` here are the ones that only make sense in 2D.
 ///
 /// The direction is not required to be normalized; use `new_normalize` for unit-speed
 /// parameterization where `t` equals unit length.
@@ -46,12 +48,12 @@ impl Line2 {
     /// use approx::assert_relative_eq;
     ///
     /// let l0 = Line2::new(Point2::new(0.0, 0.0), Vector2::new(0.0, 1.0));
-    /// let l1 = l0.new_parallel(1.0);
+    /// let l1 = l0.offset_by(1.0);
     ///
     /// assert_relative_eq!(l1.origin, Point2::new(1.0, 0.0), epsilon = 1e-6);
     /// assert_relative_eq!(l1.direction, Vector2::new(0.0, 1.0), epsilon = 1e-6);
     /// ```
-    pub fn new_parallel(&self, delta_n: f64) -> Self {
+    pub fn offset_by(&self, delta_n: f64) -> Self {
         let n = self.normal().into_inner();
         Self::new(self.origin + n * delta_n, self.direction)
     }
@@ -74,13 +76,13 @@ impl Line2 {
     /// use std::f64::consts::FRAC_PI_2;
     ///
     /// let l0 = Line2::new(Point2::new(1.0, 2.0), Vector2::new(3.0, 0.0));
-    /// let l1 = l0.new_rotated(FRAC_PI_2);
+    /// let l1 = l0.rotated(FRAC_PI_2);
     ///
     /// // The origin is fixed and the direction rotates 90 degrees CCW, keeping its length.
     /// assert_relative_eq!(l1.origin, Point2::new(1.0, 2.0), epsilon = 1e-12);
     /// assert_relative_eq!(l1.direction, Vector2::new(0.0, 3.0), epsilon = 1e-12);
     /// ```
-    pub fn new_rotated(&self, angle: f64) -> Self {
+    pub fn rotated(&self, angle: f64) -> Self {
         let (s, c) = angle.sin_cos();
         let d = self.direction;
         let rotated = Vector2::new(c * d.x - s * d.y, s * d.x + c * d.y);
@@ -138,28 +140,28 @@ impl LineOps2 for Line2 {
 impl ops::Mul<Line2> for Iso2 {
     type Output = Line2;
     fn mul(self, rhs: Line2) -> Line2 {
-        rhs.new_transformed_by(&self)
+        rhs.transformed_by(&self)
     }
 }
 
 impl ops::Mul<&Line2> for Iso2 {
     type Output = Line2;
     fn mul(self, rhs: &Line2) -> Line2 {
-        rhs.new_transformed_by(&self)
+        rhs.transformed_by(&self)
     }
 }
 
 impl ops::Mul<Line2> for &Iso2 {
     type Output = Line2;
     fn mul(self, rhs: Line2) -> Line2 {
-        rhs.new_transformed_by(self)
+        rhs.transformed_by(self)
     }
 }
 
 impl ops::Mul<&Line2> for &Iso2 {
     type Output = Line2;
     fn mul(self, rhs: &Line2) -> Line2 {
-        rhs.new_transformed_by(self)
+        rhs.transformed_by(self)
     }
 }
 
@@ -393,7 +395,7 @@ mod tests {
     fn line2_rotated_keeps_origin_and_rotates_direction() {
         use std::f64::consts::FRAC_PI_2;
         let line = Line2::new(Point2::new(1.0, 2.0), Vector2::new(3.0, 0.0));
-        let rotated = line.new_rotated(FRAC_PI_2);
+        let rotated = line.rotated(FRAC_PI_2);
         // Origin is unchanged.
         assert_relative_eq!(rotated.origin, Point2::new(1.0, 2.0), epsilon = 1e-12);
         // Direction rotates 90 degrees CCW, preserving magnitude.
@@ -405,7 +407,7 @@ mod tests {
     fn line2_rotated_full_turn_is_identity() {
         use std::f64::consts::TAU;
         let line = Line2::new(Point2::new(-2.0, 1.5), Vector2::new(1.0, -2.0));
-        let rotated = line.new_rotated(TAU);
+        let rotated = line.rotated(TAU);
         assert_relative_eq!(rotated.origin, line.origin, epsilon = 1e-12);
         assert_relative_eq!(rotated.direction, line.direction, epsilon = 1e-12);
     }
@@ -443,8 +445,8 @@ mod tests {
     }
 
     #[test]
-    fn line2_transform_by_preserves_points_on_line() {
-        use crate::geom2::tests::RandomGeometry2;
+    fn line2_transformed_by_preserves_points_on_line() {
+        use crate::common::random_geometry::RandomGeometry2;
         let mut rg = RandomGeometry2::new();
         for _ in 0..200 {
             let line = Line2::new(rg.point(10.0), {
@@ -452,7 +454,7 @@ mod tests {
                 Vector2::new(a.cos(), a.sin())
             });
             let iso = Iso2::new(rg.point(10.0).coords, rg.angle_sym_pi());
-            let transformed = line.new_transformed_by(&iso);
+            let transformed = line.transformed_by(&iso);
             for t in [-2.0, 0.0, 1.0, 3.0] {
                 assert_relative_eq!(iso * line.at(t), transformed.at(t), epsilon = 1e-10);
             }
@@ -463,10 +465,8 @@ mod tests {
     fn line2_iso_mul_operator() {
         let line = Line2::new(Point2::new(1.0, 0.0), Vector2::x());
         let iso = Iso2::new(Vector2::new(0.0, 5.0), 0.0);
-        let t1 = iso * line.clone();
-        let t2 = &iso * &line;
+        let t1 = iso * line;
         assert_relative_eq!(t1.origin(), Point2::new(1.0, 5.0), epsilon = 1e-12);
-        assert_relative_eq!(t2.origin(), Point2::new(1.0, 5.0), epsilon = 1e-12);
     }
 
     #[test]

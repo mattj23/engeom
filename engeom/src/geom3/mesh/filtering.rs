@@ -2,15 +2,16 @@
 
 use crate::common::points::{dist, mean_point, triangle_area};
 use crate::common::{IndexMask, PCoords};
-use crate::{Mesh, Point3, SelectOp, Selection, SurfacePoint3, UnitVec3, Vector3};
+use crate::geom3::mesh::MeshData3;
+use crate::geom3::mesh::algorithms::subsets::{compact_by_masks, compute_unique_point_mask};
+use crate::{Mesh3, Point3, SelectOp, Selection, SurfacePoint3, UnitVec3, Vector3};
 use crate::{Plane3, Result};
-use itertools::Itertools;
 use parry3d_f64::query::PointQuery;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::f64::consts::PI;
 
 pub struct TriangleFilter<'a> {
-    mesh: &'a Mesh,
+    mesh: &'a Mesh3,
     mask: IndexMask,
 }
 
@@ -63,9 +64,12 @@ impl TriangleFilter<'_> {
         self.mask
     }
 
-    /// Create a new mesh from the filtered indices
-    pub fn create_mesh(self) -> Mesh {
-        self.mesh.create_from_mask(&self.mask).unwrap()
+    /// Create a new mesh from the filtered faces, carrying every attribute across.
+    ///
+    /// returns: `Result<Mesh3>`, failing if the selection is empty, since a mesh needs at least one
+    /// face to build an acceleration structure over
+    pub fn into_mesh(self) -> Result<Mesh3> {
+        self.mesh.extract_subset_faces(&self.mask)
     }
 
     /// Perform a direct mask operation on the current selection. This will modify the currently
@@ -257,7 +261,7 @@ impl TriangleFilter<'_> {
     /// ```
     pub fn near_mesh(
         self,
-        other: &Mesh,
+        other: &Mesh3,
         all_points: bool,
         distance_tol: f64,
         planar_tol: Option<f64>,
@@ -332,17 +336,17 @@ impl TriangleFilter<'_> {
         let vert_mask = match mode {
             // If we're adding new faces, we'll start with the vertices that are part of triangles
             // that are currently selected by the filter
-            SelectOp::Add => self.mesh.unique_vertex_mask(&self.mask),
+            SelectOp::Add => self.mesh.compute_unique_point_mask(&self.mask),
 
             // If we're removing or keeping faces, we start with the vertices that are part of
             // triangles that are NOT currently selected by the filter
             SelectOp::Remove | SelectOp::KeepOnly => {
                 let mut flipped = self.mask.clone();
                 flipped.not_mut();
-                self.mesh.unique_vertex_mask(&flipped)
+                self.mesh.compute_unique_point_mask(&flipped)
             }
         }
-        .expect("Failed to create vertex mask from face mask, was the face mask valid?");
+        .expect("Failed to create point mask from face mask, was the face mask valid?");
 
         // Now we'll check the triangles in the check mask, and if they contain any of the vertices
         // in the vertex mask, we'll add them to the pass list
@@ -385,7 +389,7 @@ impl TriangleFilter<'_> {
 
     pub fn faces_overlap(
         self,
-        other: &Mesh,
+        other: &Mesh3,
         angle_tol: f64,
         distance_tol: f64,
         mode: SelectOp,
@@ -393,7 +397,7 @@ impl TriangleFilter<'_> {
         // Project every vertex onto the other mesh
         let projected: Vec<Option<Point3>> = self
             .mesh
-            .vertices()
+            .points()
             .iter()
             .map(|v| {
                 other
@@ -430,16 +434,24 @@ impl TriangleFilter<'_> {
             // Check that the centroid falls on a triangle of the other mesh with a normal
             // facing the same direction
             let centroid = mean_point(&[tri.a, tri.b, tri.c]);
-            let mp = other.surf_closest_to(&centroid);
+            let mp = other.surface_closest_to(&centroid);
             if mp.normal().angle(&face_normal) > PI * 0.45 {
                 continue;
             }
 
-            // Check that the angle to the centroid is within the angle tolerance
-            let v_to_centroid = (mp.point() - centroid).normalize();
-            let a_to_centroid = face_normal.angle(&v_to_centroid);
-            if a_to_centroid > angle_tol && a_to_centroid < (PI - angle_tol) {
-                continue;
+            // Check that the angle to the centroid is within the angle tolerance.
+            //
+            // A centroid which already lies on the other surface has no meaningful direction to its
+            // own projection: the difference is floating point residue, and normalizing it produces
+            // a direction made of rounding noise which lands perpendicular to the normal about as
+            // often as not. Zero separation is the strongest agreement there is, so it passes
+            // without the test. This mirrors the guard in `Mesh3::measure_point_deviation`.
+            let v_to_centroid = mp.point() - centroid;
+            if v_to_centroid.norm() > 1e-6 {
+                let a_to_centroid = face_normal.angle(&v_to_centroid.normalize());
+                if a_to_centroid > angle_tol && a_to_centroid < (PI - angle_tol) {
+                    continue;
+                }
             }
 
             // What's the area of the triangle formed by the projected points?
@@ -469,15 +481,17 @@ impl TriangleFilter<'_> {
     }
 }
 
-impl Mesh {
+impl Mesh3 {
     /// Create a new mask with the same length as the number of faces in the mesh, initialized to
     /// the specified value.
-    pub fn new_face_mask(&self, value: bool) -> IndexMask {
+    pub fn face_mask(&self, value: bool) -> IndexMask {
         IndexMask::new(self.faces().len(), value)
     }
 
-    pub fn new_vertex_mask(&self, value: bool) -> IndexMask {
-        IndexMask::new(self.vertices().len(), value)
+    /// Create a new mask with the same length as the number of points in the mesh, initialized to
+    /// the specified value.
+    pub fn point_mask(&self, value: bool) -> IndexMask {
+        IndexMask::new(self.points().len(), value)
     }
 
     /// Start an operation to filter the faces of the mesh. This function will return a filter
@@ -512,165 +526,93 @@ impl Mesh {
         TriangleFilter { mesh: self, mask }
     }
 
-    /// Extract vertices and faces from the mesh based on a mask of face indices. This is a step
+    /// Extract points and faces from the mesh based on a mask of face indices. This is a step
     /// towards creating a new mesh, but can be used independently.  To directly construct a new
-    /// mesh, use `create_from_mask` instead.
+    /// mesh, use `extract_subset_faces` instead, which also carries the attributes across.
     ///
     /// # Arguments
     ///
-    /// * `mask`: a mask of face indices that will be used to filter the vertices and faces. Must
+    /// * `mask`: a mask of face indices that will be used to filter the points and faces. Must
     ///   have the same length as the number of faces in the mesh, or the function will return an
     ///   error.
     ///
-    /// returns: Result<(Vec<OPoint<f64, Const<3>>, Global>, Vec<[u32; 3], Global>), Box<dyn Error, Global>>
-    pub fn faces_verts_from_mask(&self, mask: &IndexMask) -> Result<(Vec<Point3>, Vec<[u32; 3]>)> {
-        let vertex_mask = self.unique_vertex_mask(mask)?;
-
-        // The map_back array will map the old vertex indices to the new ones
-        let mut map_back = vec![u32::MAX; self.vertices().len()];
-        let mut new_verts = Vec::new();
-
-        for (new_i, old_i) in vertex_mask.iter_true().enumerate() {
-            map_back[old_i] = new_i as u32;
-            new_verts.push(self.vertices()[old_i]);
-        }
-
-        let mut new_faces = Vec::new();
-        for i in mask.iter_true() {
-            let t = self.faces()[i];
-            new_faces.push([
-                map_back[t[0] as usize],
-                map_back[t[1] as usize],
-                map_back[t[2] as usize],
-            ]);
-        }
-
-        Ok((new_verts, new_faces))
+    /// returns: `Result<(Vec<Point3>, Vec<[u32; 3]>)>`
+    pub fn compute_points_and_faces_from_mask(
+        &self,
+        mask: &IndexMask,
+    ) -> Result<(Vec<Point3>, Vec<[u32; 3]>)> {
+        let point_mask = self.compute_unique_point_mask(mask)?;
+        compact_by_masks(self.points(), self.faces(), &point_mask, mask)
     }
 
-    /// Create a new mesh from a mask of face indices. This function will extract the vertices and
-    /// faces from the mesh based on the mask, and then create a new mesh with those vertices and
-    /// faces. The mask must have the same length as the number of faces in the mesh, or the
-    /// function will return an error.
+    /// Create a new mesh from a mask of face indices.
+    ///
+    /// Only points referenced by a surviving face are kept, so any point the selection orphans is
+    /// dropped. The surviving points are renumbered and the faces re-indexed to match.
+    ///
+    /// **Every attribute is carried through**, in both domains, selected by the same masks the
+    /// geometry was. The result is not solid regardless of what this mesh was, since a subset of a
+    /// closed surface generally is not closed.
     ///
     /// # Arguments
     ///
     /// * `mask`: a mask of face indices to be part of the new mesh. Must have the same length as
     ///   the number of faces in the mesh, or the function will return an error.
     ///
-    /// returns: Result<Mesh, Box<dyn Error, Global>>
-    pub fn create_from_mask(&self, mask: &IndexMask) -> Result<Self> {
-        let (new_verts, new_faces) = self.faces_verts_from_mask(mask)?;
-        Ok(Self::new(new_verts, new_faces, false))
+    /// returns: `Result<Mesh3>`, failing if the mask is the wrong length or selects no faces
+    pub fn extract_subset_faces(&self, mask: &IndexMask) -> Result<Self> {
+        let point_mask = self.compute_unique_point_mask(mask)?;
+        let (points, faces) = compact_by_masks(self.points(), self.faces(), &point_mask, mask)?;
+        let attrs = self.attrs.subset(&point_mask, mask)?;
+
+        let mut result = Self::from_data(MeshData3::new_with_attrs(points, faces, attrs)?, false)?;
+        result.uv = None;
+        Ok(result)
     }
 
-    /// Create a new mesh from a list of triangle indices. The indices correspond with elements in
-    /// the `triangles()` slice. This function will iterate through the triangle indices,
-    /// taking the three vertices associated with each index and marking them for inclusion in the
-    /// new mesh. Then it will recreate the triangles, remapping them to the new vertex indices.
+    /// Create a new mesh from a list of face indices. The indices correspond with elements in the
+    /// `faces()` slice.
+    ///
+    /// This is `extract_subset_faces` with the selection given as indices rather than a mask, and
+    /// behaves identically: orphaned points are dropped, the survivors are renumbered, and every
+    /// attribute is carried through. Because the selection becomes a mask, the faces of the result
+    /// are in ascending index order regardless of the order the indices were given in, and a
+    /// repeated index selects its face once rather than duplicating it.
     ///
     /// # Arguments
     ///
-    /// * `indices`: A slice of usize values that correspond to the indices of the triangles in the
-    ///   original mesh. There cannot be any duplicate indices, or the function will return a
-    ///   non-manifold mesh.
+    /// * `indices`: the indices of the faces to keep, each of which must be less than the face
+    ///   count
     ///
-    /// returns: Mesh
+    /// returns: `Result<Mesh3>`
     ///
     /// # Examples
     ///
     /// ```
     /// use std::f64::consts::PI;
-    /// use engeom::{Mesh, Vector3, SelectOp, Selection};
-    /// let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+    /// use engeom::{Mesh3, Vector3, SelectOp, Selection};
+    /// let mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
     /// let indices = mesh.face_select(Selection::None)
     ///     .facing(&Vector3::z(), PI / 2.0, SelectOp::Add)
     ///     .collect_indices();
-    /// let new_mesh = mesh.create_from_indices(&indices);
+    /// let new_mesh = mesh.extract_subset_faces_from_indices(&indices).unwrap();
     ///
     /// assert_eq!(new_mesh.faces().len(), 2);
-    /// assert_eq!(new_mesh.vertices().len(), 4);
+    /// assert_eq!(new_mesh.points().len(), 4);
     /// ```
-    pub fn create_from_indices(&self, indices: &[usize]) -> Self {
-        let to_keep = self.unique_vertices(indices);
-        // The map_back array will map the old vertex indices to the new ones
-        let map_back: HashMap<u32, u32> = to_keep
-            .iter()
-            .enumerate()
-            .map(|(i, v)| (*v, i as u32))
-            .collect();
-
-        let vertices: Vec<Point3> = to_keep
-            .iter()
-            .map(|i| self.vertices()[*i as usize])
-            .collect();
-
-        let triangles = indices
-            .iter()
-            .map(|i| {
-                let t = self.faces()[*i];
-                [map_back[&t[0]], map_back[&t[1]], map_back[&t[2]]]
-            })
-            .collect_vec();
-
-        Self::new(vertices, triangles, false)
+    pub fn extract_subset_faces_from_indices(&self, indices: &[usize]) -> Result<Self> {
+        let mask = IndexMask::try_from_indices(indices, self.faces().len())?;
+        self.extract_subset_faces(&mask)
     }
 
-    fn face_mask_matches(&self, face_mask: &IndexMask) -> bool {
-        face_mask.len() == self.faces().len()
-    }
-
-    fn check_face_mask(&self, face_mask: &IndexMask) -> Result<()> {
-        if !self.face_mask_matches(face_mask) {
-            Err("Face mask length does not match the number of faces in the mesh".into())
-        } else {
-            Ok(())
-        }
-    }
-
-    /// Using a mask of face indices, this function will create a vertex mask that contains only
-    /// the vertices that are used in the triangles specified by the face mask.
-    ///
-    /// # Arguments
-    ///
-    /// * `face_mask`: a mask of face indices that will be used to filter the vertices. Must have
-    ///   the same length as the number of faces in the mesh, or the function will return an error.
-    ///
-    /// returns: Result<IndexMask, Box<dyn Error, Global>>
-    fn unique_vertex_mask(&self, face_mask: &IndexMask) -> Result<IndexMask> {
-        self.check_face_mask(face_mask)?;
-
-        let mut vertex_mask = IndexMask::new(self.vertices().len(), false);
-        for i in face_mask.iter_true() {
-            let t = self.faces()[i];
-            vertex_mask.set(t[0] as usize, true);
-            vertex_mask.set(t[1] as usize, true);
-            vertex_mask.set(t[2] as usize, true);
-        }
-
-        Ok(vertex_mask)
-    }
-
-    fn unique_vertices(&self, triangle_indices: &[usize]) -> Vec<u32> {
-        let mut to_save = HashSet::new();
-        for i in triangle_indices {
-            let t = self.faces()[*i];
-            to_save.insert(t[0]);
-            to_save.insert(t[1]);
-            to_save.insert(t[2]);
-        }
-
-        // Now we can sort them in order
-        let mut keep_order = to_save.iter().copied().collect_vec();
-        keep_order.sort_unstable();
-
-        keep_order
+    pub fn compute_unique_point_mask(&self, face_mask: &IndexMask) -> Result<IndexMask> {
+        compute_unique_point_mask(self.faces(), face_mask, self.points().len())
     }
 }
 
 struct MeshNearCheck<'a> {
-    this_mesh: &'a Mesh,
-    ref_mesh: &'a Mesh,
+    this_mesh: &'a Mesh3,
+    ref_mesh: &'a Mesh3,
     checked: HashMap<u32, bool>,
     distance_tol: f64,
     planar_tol: Option<f64>,
@@ -679,8 +621,8 @@ struct MeshNearCheck<'a> {
 
 impl<'a> MeshNearCheck<'a> {
     fn new(
-        this_mesh: &'a Mesh,
-        ref_mesh: &'a Mesh,
+        this_mesh: &'a Mesh3,
+        ref_mesh: &'a Mesh3,
         distance_tol: f64,
         planar_tol: Option<f64>,
         angle_tol: Option<f64>,
@@ -704,7 +646,7 @@ impl<'a> MeshNearCheck<'a> {
         if let Some(&checked) = self.checked.get(&vertex_index) {
             checked
         } else {
-            let p = self.this_mesh.vertices()[vertex_index as usize];
+            let p = self.this_mesh.points()[vertex_index as usize];
 
             let is_ok = if let Some((prj, ri, _loc)) =
                 self.ref_mesh.project_with_max_dist(&p, self.distance_tol)
@@ -748,22 +690,57 @@ impl<'a> MeshNearCheck<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Iso3;
     use crate::SelectOp::Add;
     use std::f64::consts::PI;
 
     #[test]
-    fn test_triangles_facing() {
-        let mesh = Mesh::create_box(1.0, 1.0, 1.0, false);
+    fn test_triangles_facing() -> Result<()> {
+        let mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let selection = mesh
             .face_select(Selection::None)
             .facing(&Vector3::z(), PI / 2.0, Add);
 
-        let new_mesh = selection.create_mesh();
+        let new_mesh = selection.into_mesh()?;
         assert_eq!(new_mesh.faces().len(), 2);
 
         for t in new_mesh.tri_mesh().triangles() {
             let n = t.normal().unwrap();
             assert!(n.dot(&Vector3::z()) > 0.0);
         }
+
+        Ok(())
+    }
+
+    /// Two copies of the same mesh in the same place overlap completely. This used to select
+    /// nothing, because the direction from a face centroid to its own projection is floating point
+    /// residue, and normalizing it produced a direction perpendicular to the face normal.
+    #[test]
+    fn faces_overlap_accepts_a_coincident_copy() {
+        let mesh = Mesh3::create_box(2.0, 2.0, 2.0, true);
+        let same = Mesh3::create_box(2.0, 2.0, 2.0, true);
+
+        let selected = mesh
+            .face_select(Selection::None)
+            .faces_overlap(&same, 0.1, 0.1, Add)
+            .collect_indices();
+
+        assert_eq!(selected.len(), mesh.faces().len());
+    }
+
+    /// The separated case still has to be rejected, so the guard above did not simply disable the
+    /// direction test.
+    #[test]
+    fn faces_overlap_rejects_a_mesh_which_is_far_away() {
+        let mesh = Mesh3::create_box(2.0, 2.0, 2.0, true);
+        let mut apart = Mesh3::create_box(2.0, 2.0, 2.0, true);
+        apart.transform_in_place(&Iso3::translation(50.0, 0.0, 0.0));
+
+        let selected = mesh
+            .face_select(Selection::None)
+            .faces_overlap(&apart, 0.1, 0.1, Add)
+            .collect_indices();
+
+        assert!(selected.is_empty());
     }
 }

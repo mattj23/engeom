@@ -364,7 +364,7 @@ impl RelativeEq for AngleInterval {
 
 #[cfg(test)]
 pub mod tests {
-    use super::*;
+
     use crate::common::interval::angle_domain::AngleInterval;
     use crate::common::{angle_to_2pi, linear_space, signed_compliment_2pi};
     use crate::{IntervalOps, Iso2, Vector2};

@@ -52,7 +52,7 @@ pub fn estimate_by_neighborhood(
         .collect::<Vec<_>>();
 
     // Put everything in order by index.
-    combined.sort_by(|a, b| a.0.cmp(&b.0));
+    combined.sort_by_key(|a| a.0);
 
     let mut normals = Vec::with_capacity(points.len());
     let mut confidence = Vec::with_capacity(points.len());

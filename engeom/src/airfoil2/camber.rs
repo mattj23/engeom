@@ -54,11 +54,9 @@ pub fn extract_inscribed_circles(input: &SectionInput) -> Result<Vec<Inscribed>>
     working.pop();
 
     // Now we gather the circles in the back half
-    let start_line = input
-        .crossing_line(&ref_line.new_reversed())
-        .ok_or_else(|| {
-            "Failed to find a crossing line for the reversed reference line".to_string()
-        })?;
+    let start_line = input.crossing_line(&ref_line.reversed()).ok_or_else(|| {
+        "Failed to find a crossing line for the reversed reference line".to_string()
+    })?;
     working.extend(extract_half_circles(input, &start_line)?);
 
     Ok(working.take_vec())
@@ -78,7 +76,7 @@ pub fn extract_inscribed_circles(input: &SectionInput) -> Result<Vec<Inscribed>>
 /// returns: Result<Vec<Inscribed, Global>, Box<dyn Error, Global>>
 fn extract_half_circles(input: &SectionInput, line: &Line2) -> Result<InscribedVec> {
     let mut results = InscribedVec::empty();
-    let mut working_line = line.clone();
+    let mut working_line = *line;
 
     loop {
         let circle = input.inscribed_from_crossing(&working_line);
@@ -193,7 +191,7 @@ mod tests {
     use super::*;
     use crate::curve2;
     use crate::tests::airfoil_curve;
-    use approx::{assert_abs_diff_eq, assert_relative_eq};
+    use approx::assert_abs_diff_eq;
 
     fn len_dist(curve: &Curve2, inscribed: &Inscribed) -> (f64, f64) {
         let m = curve.at_closest_to_point(&inscribed.c);

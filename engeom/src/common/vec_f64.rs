@@ -34,7 +34,7 @@ pub fn mean_value(values: &[f64]) -> f64 {
 ///
 /// * `values`: the slice of f64 values to summarize
 ///
-/// returns: `Option<(f64, f64)>` — `Some((mean, stdev))` or `None`
+/// returns: `Option<(f64, f64)>` - `Some((mean, stdev))` or `None`
 ///
 /// # Examples
 ///

@@ -6,7 +6,7 @@ use crate::common::PCoords;
 use crate::common::ransac_tools::ransac_indices;
 
 impl Line2 {
-    pub fn try_new_ransac(
+    pub fn from_ransac(
         points: &[impl PCoords<2>],
         threshold: f64,
         iterations: Option<usize>,

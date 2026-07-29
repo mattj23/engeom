@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import List
 from numpy.typing import NDArray
-from engeom.geom3 import Mesh
+from engeom.geom3 import Mesh3
 
 
 class ScalarRaster:
@@ -51,9 +51,9 @@ class ScalarRaster:
         """
         ...
 
-    def build_depth_mesh(self) -> Mesh:
+    def build_depth_mesh(self) -> Mesh3:
         """
         Build a 3D mesh representation of the raster grid.
-        :return: A Mesh object representing the raster grid in 3D space.
+        :return: A Mesh3 object representing the raster grid in 3D space.
         """
         ...

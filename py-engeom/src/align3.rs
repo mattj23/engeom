@@ -1,11 +1,11 @@
 use crate::conversions::array_to_points3;
 use crate::geom3::{Iso3, Point3};
-use crate::mesh::Mesh;
-use engeom::geom3::align3::{AlignOrigin, Dof6 as InnerDof6};
+use crate::mesh::Mesh3;
+use engeom::geom3::align3::{AlignOrigin3, Dof6 as InnerDof6};
 use numpy::ndarray::Array1;
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
-use pyo3::{Bound, FromPyObject, PyResult, Python, pyclass, pyfunction, pymethods};
+use pyo3::{Bound, PyResult, Python, pyclass, pyfunction, pymethods};
 
 // ================================================================================================
 // Dof6
@@ -72,12 +72,6 @@ impl From<Dof6> for InnerDof6 {
 // ================================================================================================
 // AlignParams3
 // ================================================================================================
-#[derive(FromPyObject)]
-pub enum AlignOrigin3 {
-    Point(Point3),
-    Origin(Iso3),
-}
-
 #[pyclass(from_py_object, module = "engeom.align3")]
 #[derive(Clone, Debug)]
 pub struct AlignParams3 {
@@ -96,64 +90,64 @@ impl AlignParams3 {
 
 #[pymethods]
 impl AlignParams3 {
-    /// Create an `AlignParams3` with the local and working transformations set to the identity.
+    /// Create an `AlignParams3` describing how a 3D alignment is parameterized.
     ///
-    /// Use this when the test geometry is already in a good starting position and is close enough
-    /// to the world origin that numerical stability of rotations is not a concern.
+    /// The local origin $L$ is selected by supplying at most one of `center` or `local`:
     ///
+    /// - `center`: rotations happen about this point, and translations act along the world axes.
+    /// - `local`: rotations happen about, and translations act along, the axes of this full
+    ///   `Iso3` frame. Use this when you want full control over the rotation center and the
+    ///   directions of translation, for example when applying DOF constraints along an arbitrary
+    ///   direction.
+    /// - neither: the world origin is used. Use this when the test geometry is already close to
+    ///   the origin and numerical stability of rotations is not a concern.
+    ///
+    /// Supplying both `center` and `local` raises a `ValueError`.
+    ///
+    /// If `offset` is not given, it defaults to the local origin frame, so the test geometry
+    /// starts in place and the alignment happens about that origin. Only pass an explicit
+    /// `offset` (including the identity) if you specifically need the raw `O * A * L^-1`
+    /// behavior where the geometry is displaced by `L^-1` before alignment.
+    ///
+    /// :param center: Optional `Point3` rotation center. Mutually exclusive with `local`.
+    /// :param local: Optional `Iso3` local origin frame. Mutually exclusive with `center`.
+    /// :param offset: Optional `Iso3` working offset $O$. Defaults to the local origin frame.
     /// :param dof: Optional `Dof6` constraint. If `None`, all six degrees of freedom are active.
-    #[staticmethod]
-    #[pyo3(signature = (dof=None))]
-    pub fn at_origin(dof: Option<Dof6>) -> Self {
-        Self::from_inner(engeom::geom3::align3::AlignParams3::new_at_origin(
-            dof.map(Into::into),
-        ))
-    }
-
-    #[staticmethod]
-    #[pyo3(signature = (x, y, z, dof=None))]
-    pub fn at_center(x: f64, y: f64, z: f64, dof: Option<Dof6>) -> Self {
-        Self::from_inner(engeom::geom3::align3::AlignParams3::new_at_center(
-            engeom::Point3::new(x, y, z),
-            dof.map(Into::into),
-        ))
-    }
-
-    /// Create an `AlignParams3` whose transformation is applied at a given local origin.
-    ///
-    /// Both the local origin $L$ and the working offset $O$ are set to `local`. The physical
-    /// interpretation is that `tx`, `ty`, `tz` translate along the local origin's axes and
-    /// `rx`, `ry`, `rz` rotate around the local origin's center point and axes. Any DOF
-    /// constraints refer to those same local axes.
-    ///
-    /// Use this when the test geometry is already in a good starting position and you want full
-    /// control over the direction of translation and the center/axes of rotation — for example
-    /// when applying DOF constraints in an arbitrary direction.
-    ///
-    /// :param local: The `Iso3` defining the local origin.
-    /// :param dof: Optional `Dof6` constraint. If `None`, all six degrees of freedom are active.
-    #[staticmethod]
-    #[pyo3(signature = (local, dof=None))]
-    pub fn at_local(local: &Iso3, dof: Option<Dof6>) -> Self {
-        Self::from_inner(engeom::geom3::align3::AlignParams3::new_at_local(
-            *local.get_inner(),
-            dof.map(Into::into),
-        ))
-    }
-
-    #[staticmethod]
-    #[pyo3(signature = (local=None, offset=None, dof=None))]
-    pub fn new(local: Option<AlignOrigin3>, offset: Option<&Iso3>, dof: Option<Dof6>) -> Self {
-        let origin = match local {
-            Some(AlignOrigin3::Point(p)) => AlignOrigin::Center(*p.get_inner()),
-            Some(AlignOrigin3::Origin(o)) => AlignOrigin::Local(*o.get_inner()),
-            None => AlignOrigin::Origin,
+    #[new]
+    #[pyo3(signature = (center=None, local=None, offset=None, dof=None))]
+    pub fn new(
+        center: Option<&Point3>,
+        local: Option<&Iso3>,
+        offset: Option<&Iso3>,
+        dof: Option<Dof6>,
+    ) -> PyResult<Self> {
+        let (origin, frame) = match (center, local) {
+            (Some(_), Some(_)) => {
+                return Err(PyValueError::new_err(
+                    "Supply at most one of `center` or `local`, not both",
+                ));
+            }
+            (Some(p), None) => {
+                let p = *p.get_inner();
+                (
+                    AlignOrigin3::Center(p),
+                    engeom::Iso3::translation(p.x, p.y, p.z),
+                )
+            }
+            (None, Some(o)) => {
+                let t = *o.get_inner();
+                (AlignOrigin3::Local(t), t)
+            }
+            (None, None) => (AlignOrigin3::Origin, engeom::Iso3::identity()),
         };
-        Self::from_inner(engeom::geom3::align3::AlignParams3::new(
+
+        let offset = offset.map(|o| *o.get_inner()).unwrap_or(frame);
+
+        Ok(Self::from_inner(engeom::geom3::align3::AlignParams3::new(
             origin,
-            offset.map(|o| *o.get_inner()),
+            Some(offset),
             dof.map(Into::into),
-        ))
+        )))
     }
 
     /// The degrees-of-freedom constraint currently active on this alignment.
@@ -216,15 +210,20 @@ impl Alignment3 {
     /// system. This is the composite $O * A * L^{-1}$ and is what you typically apply to the test
     /// geometry after alignment completes.
     #[getter]
-    pub fn full(&self) -> Iso3 {
-        Iso3::from_inner(*self.inner.full())
+    pub fn full_transform(&self) -> Iso3 {
+        Iso3::from_inner(*self.inner.full_transform())
     }
 
-    /// The alignment transformation $A$, which is the transformation produced by the six
-    /// optimized parameters (`tx`, `ty`, `tz`, `rx`, `ry`, `rz`) about the local origin.
+    /// The alignment transformation $A$, which is the motion produced by the six optimized
+    /// parameters (`tx`, `ty`, `tz`, `rx`, `ry`, `rz`) expressed in the frame of the local origin.
+    ///
+    /// This is not the transformation to apply to the test geometry; use `full_transform` for
+    /// that. Reading $O * A * L^{-1}$ right to left, $L^{-1}$ puts a point into the local origin's
+    /// frame, $A$ moves it while it is there, and $O$ maps it back out, so $A$ is only meaningful
+    /// applied to local-frame coordinates.
     #[getter]
-    pub fn alignment(&self) -> Iso3 {
-        Iso3::from_inner(*self.inner.alignment())
+    pub fn local_transform(&self) -> Iso3 {
+        Iso3::from_inner(*self.inner.local_transform())
     }
 
     /// The local origin transformation $L$ that was used during alignment.
@@ -266,28 +265,186 @@ impl Alignment3 {
 }
 
 // ================================================================================================
+// AlignOutcome3
+// ================================================================================================
+
+/// How a single Levenberg-Marquardt solve ended, classified by whether its result can be used.
+///
+/// `"converged"` means a convergence criterion was met. `"unconverged"` means the solver ran out
+/// of its evaluation budget, so the parameters are the best it found but convergence was never
+/// demonstrated; the alignment is still valid geometry. A solve that broke down entirely is never
+/// reported here, because its result is discarded rather than returned.
+fn quality_str(q: engeom::common::SolveQuality) -> &'static str {
+    match q {
+        engeom::common::SolveQuality::Converged => "converged",
+        engeom::common::SolveQuality::Unconverged => "unconverged",
+        engeom::common::SolveQuality::Failed => "failed",
+    }
+}
+
+/// How a single Levenberg-Marquardt solve terminated, as a stable snake_case string rather than
+/// the solver crate's `Debug` formatting.
+fn termination_str(t: &engeom::common::TerminationReason) -> String {
+    use engeom::common::TerminationReason as T;
+    match t {
+        T::Converged { ftol, xtol } => match (ftol, xtol) {
+            (true, true) => "converged(ftol,xtol)".to_string(),
+            (true, false) => "converged(ftol)".to_string(),
+            (false, true) => "converged(xtol)".to_string(),
+            (false, false) => "converged".to_string(),
+        },
+        T::ResidualsZero => "residuals_zero".to_string(),
+        T::Orthogonal => "orthogonal".to_string(),
+        T::LostPatience => "lost_patience".to_string(),
+        T::Numerical(s) => format!("numerical({s})"),
+        T::User(s) => format!("user({s})"),
+        T::NoImprovementPossible(s) => format!("no_improvement_possible({s})"),
+        T::NoParameters => "no_parameters".to_string(),
+        T::NoResiduals => "no_residuals".to_string(),
+        T::WrongDimensions(s) => format!("wrong_dimensions({s})"),
+    }
+}
+
+/// Why robust refinement stopped before completing every requested round.
+fn halt_str(h: &engeom::common::RefinementHalt) -> String {
+    match h {
+        engeom::common::RefinementHalt::NoNoiseEstimate => "no_noise_estimate".to_string(),
+        engeom::common::RefinementHalt::Underdetermined { weighted, params } => {
+            format!("underdetermined({weighted} weighted points, {params} parameters)")
+        }
+        engeom::common::RefinementHalt::SolveFailed(t) => {
+            format!("solve_failed({})", termination_str(t))
+        }
+    }
+}
+
+/// The full outcome of a 3-D alignment: the `Alignment3` itself, plus a record of how the solves
+/// which produced it terminated.
+///
+/// This is only ever returned, never accepted as an argument, so unlike the other classes here it
+/// does not implement `from_py_object`. It cannot: the termination reasons it carries come from
+/// the underlying solver crate and are not `Clone`.
+#[pyclass(module = "engeom.align3")]
+#[derive(Debug)]
+pub struct AlignOutcome3 {
+    inner: engeom::geom3::AlignOutcome3,
+}
+
+impl AlignOutcome3 {
+    pub fn from_inner(inner: engeom::geom3::AlignOutcome3) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl AlignOutcome3 {
+    /// The alignment which was produced.
+    #[getter]
+    pub fn alignment(&self) -> Alignment3 {
+        Alignment3::from_inner(self.inner.alignment().clone())
+    }
+
+    /// The quality of the weakest solve that contributed to the result, as `"converged"` or
+    /// `"unconverged"`. See the module documentation for why an unconverged result is still usable.
+    #[getter]
+    pub fn quality(&self) -> &'static str {
+        quality_str(self.inner.quality())
+    }
+
+    /// Whether every solve that contributed to the result met a convergence criterion.
+    #[getter]
+    pub fn converged(&self) -> bool {
+        self.inner.converged()
+    }
+
+    /// The number of robust refinement rounds which completed and contributed to the result.
+    #[getter]
+    pub fn refinement_rounds(&self) -> usize {
+        self.inner.refinement_rounds()
+    }
+
+    /// How each contributing solve terminated, as a list of strings, beginning with the initial
+    /// solve and followed by one entry per completed refinement round.
+    #[getter]
+    pub fn solves(&self) -> Vec<String> {
+        self.inner.solves().iter().map(termination_str).collect()
+    }
+
+    /// Why robust refinement stopped early, or `None` if it ran every round it was asked to.
+    #[getter]
+    pub fn halt(&self) -> Option<String> {
+        self.inner.halt().map(halt_str)
+    }
+
+    pub fn __repr__(&self) -> String {
+        format!(
+            "AlignOutcome3(quality={}, refinement_rounds={}, halt={:?})",
+            self.quality(),
+            self.refinement_rounds(),
+            self.halt()
+        )
+    }
+}
+
+// ================================================================================================
 // Functions
 // ================================================================================================
 
+/// Align a set of 3-D points to a mesh by repeatedly projecting them onto their closest position
+/// on the surface as the solver moves them.
+///
+/// By default this is a robust alignment: an initial unweighted solve followed by
+/// `refinement_steps` rounds of iteratively reweighted least squares using MAGSAC++ weights. Pass
+/// `refinement_steps=0` for a plain unweighted least-squares alignment.
+///
+/// A `ValueError` is raised only when there is no answer at all: the arguments were rejected, or
+/// the initial solve broke down. A solve that merely exhausts its evaluation budget returns
+/// normally with `quality == "unconverged"` on the outcome.
+///
+/// :param points: an `(n, 3)` array of the points to align, in their own coordinate system.
+/// :param mesh: the stationary `Mesh3` to align to. If it carries per-vertex `point_stdev`, that
+///     uncertainty is used automatically, interpolated to each match position.
+/// :param params: an `AlignParams3` describing how the alignment is parameterized.
+/// :param ignore_off_target: weight points at 0.0 when they do not project onto the surface.
+/// :param refinement_steps: rounds of robust reweighting after the initial solve.
+/// :param sigma_max: the MAGSAC++ upper noise bound. Estimated from the data when `None`.
+/// :param point_sigma: optional per-point standard deviations, one per input point. Combines in
+///     quadrature with any uncertainty the mesh reports.
+/// :param patience: the Levenberg-Marquardt evaluation budget, as a multiplier on the parameter
+///     count.
 #[pyfunction]
-#[pyo3(signature = (points, mesh, params))]
+#[pyo3(signature = (points, mesh, params, ignore_off_target=false, refinement_steps=4,
+                    sigma_max=None, point_sigma=None, patience=100))]
+#[allow(clippy::too_many_arguments)]
 pub fn points_to_mesh(
     points: PyReadonlyArray2<'_, f64>,
-    mesh: &Mesh,
+    mesh: &Mesh3,
     params: AlignParams3,
-) -> PyResult<Alignment3> {
+    ignore_off_target: bool,
+    refinement_steps: usize,
+    sigma_max: Option<f64>,
+    point_sigma: Option<Vec<f64>>,
+    patience: usize,
+) -> PyResult<AlignOutcome3> {
     let points = array_to_points3(&points.as_array())?;
+
+    let opts = engeom::geom3::align3::AlignOptions3 {
+        ignore_off_target,
+        refinement_steps,
+        sigma_max,
+        point_sigma: point_sigma.as_deref(),
+        patience,
+    };
 
     let result = engeom::geom3::align3::points_to_surface3(
         &points,
         mesh.get_inner(),
         params.get_inner().clone(),
-        false,
-        true,
+        &opts,
     );
 
     match result {
-        Ok(align) => Ok(Alignment3::from_inner(align)),
+        Ok(outcome) => Ok(AlignOutcome3::from_inner(outcome)),
         Err(e) => Err(PyValueError::new_err(e.to_string())),
     }
 }

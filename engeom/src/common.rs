@@ -1,6 +1,7 @@
 pub mod align;
 mod angles;
 pub mod average;
+pub mod consensus;
 mod convert_2d_3d;
 pub mod cubic_spline;
 mod discrete_domain;
@@ -13,6 +14,7 @@ pub mod kd_tree;
 mod line;
 pub mod points;
 pub mod poisson_disk;
+pub mod random_geometry;
 pub mod ransac_tools;
 mod segment;
 pub mod surface_point;
@@ -22,9 +24,10 @@ pub mod vec_f64;
 mod voxel_downsample;
 
 use crate::na::{Point, SVector, Unit};
-pub use align::DistMode;
+pub use align::{DistMode, RefinementHalt, SolveQuality, TerminationReason};
 pub use angles::*;
 pub use average::Averager;
+pub use consensus::{ConsensusFit, ConsensusModel, Magsac};
 pub use convert_2d_3d::{To2D, To3D};
 pub use discrete_domain::{DiscreteDomain, linear_space};
 pub use domain_map::DomainMap;
@@ -52,11 +55,6 @@ pub trait Project<TEntity, TResult> {
 /// A trait for intersecting an entity with another entity
 pub trait Intersection<TOther, TResult> {
     fn intersection(&self, other: TOther) -> TResult;
-}
-
-/// A trait for transforming an entity by another entity
-pub trait TransformBy<T, TOut> {
-    fn transform_by(&self, transform: &T) -> TOut;
 }
 
 /// A generic trait for points or point-like structures in D-dimensional space which provides a

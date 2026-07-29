@@ -282,7 +282,7 @@ impl<'a> MultiMeshProblem<'a> {
                 let t = self.params.relative_transform(h.mesh_i, h.ref_i);
 
                 let moved = h.mp.new_transformed_by(&t);
-                let closest = ref_mesh.mesh.surf_closest_to(&moved.point());
+                let closest = ref_mesh.mesh.surface_closest_to(&moved.point());
 
                 // TODO: Uncertainties here for closest
 
@@ -297,7 +297,7 @@ impl<'a> MultiMeshProblem<'a> {
                 //         let peak = 1.0 / (2.0 * PI * (sd + hsd)).sqrt();
                 //         (peak, sp)
                 //     }
-                //     None => (1.0, ref_mesh.surf_closest_to(&moved.point).sp),
+                //     None => (1.0, ref_mesh.surface_closest_to(&moved.point).sp),
                 // };
 
                 // Calculate the different weights
@@ -385,7 +385,7 @@ impl<'a> LeastSquaresProblem<f64, Dyn, Dyn> for MultiMeshProblem<'a> {
     }
 }
 
-// fn un_cert(point: &Point3, target: &Mesh, by_vertex: &[f64]) -> (f64, SurfacePoint3) {
+// fn un_cert(point: &Point3, target: &Mesh3, by_vertex: &[f64]) -> (f64, SurfacePoint3) {
 //     let (prj, (fi, tpl)) = target
 //         .tri_mesh()
 //         .project_local_point_and_get_location(point, false);

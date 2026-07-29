@@ -226,7 +226,7 @@ pub fn ball_pivot_with_centers_2d(
         // };
 
         if results.len() > completed.len() * 3 {
-            if let BallPivotEnd::EndOnIndex(end_index) = end {
+            if let BallPivotEnd::EndOnIndex(_end_index) = end {
                 // println!("Should have ended on {}", end_index);
                 // println!("Total: {}", points.len());
             }
@@ -376,7 +376,7 @@ pub fn ball_pivot_fill_gaps_2d(
             let v1 = p1 - centers[i];
             // let angle = directed_angle(&v0, &v1, pivot_direction.opposite());
             let angle = signed_angle(&v0, &v1);
-            let arc = Arc2::circle_point_angle(centers[i], radius, p0, angle);
+            let arc = Arc2::from_point_angle(centers[i], radius, p0, angle);
 
             // How many times do we need to break it up?
             let n = (arc.length() / max_spacing).ceil() as usize;

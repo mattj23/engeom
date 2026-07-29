@@ -116,3 +116,82 @@ pub fn array_to_faces(array: &ArrayView2<'_, u32>) -> PyResult<Vec<[u32; 3]>> {
         .map(|row| [row[0], row[1], row[2]])
         .collect())
 }
+
+// ================================================================================================
+// Per-element attribute arrays
+// ================================================================================================
+
+/// Convert 8-bit RGB triples into an Nx3 numpy array.
+pub fn colors_to_array(colors: &[[u8; 3]]) -> Array2<u8> {
+    let mut array = Array2::zeros((colors.len(), 3));
+    for (i, color) in colors.iter().enumerate() {
+        for j in 0..3 {
+            array[[i, j]] = color[j];
+        }
+    }
+    array
+}
+
+/// Convert an Nx3 numpy array into 8-bit RGB triples.
+pub fn array_to_colors(array: &ArrayView2<'_, u8>) -> PyResult<Vec<[u8; 3]>> {
+    let shape = array.shape();
+    if shape.len() != 2 || shape[1] != 3 {
+        return Err(PyValueError::new_err("Expected Nx3 array of RGB colors"));
+    }
+
+    Ok(array
+        .rows()
+        .into_iter()
+        .map(|row| [row[0], row[1], row[2]])
+        .collect())
+}
+
+/// Convert an Nx3 numpy array into unit vectors, normalizing each row.
+///
+/// A row of zero length has no direction and is rejected rather than being silently turned into an
+/// arbitrary one.
+pub fn array_to_unit_vectors3(array: &ArrayView2<'_, f64>) -> PyResult<Vec<engeom::UnitVec3>> {
+    let shape = array.shape();
+    if shape.len() != 2 || shape[1] != 3 {
+        return Err(PyValueError::new_err("Expected Nx3 array of directions"));
+    }
+
+    array
+        .rows()
+        .into_iter()
+        .enumerate()
+        .map(|(i, row)| {
+            let v = Vector3::new(row[0], row[1], row[2]);
+            engeom::UnitVec3::try_new(v, 1.0e-12).ok_or_else(|| {
+                PyValueError::new_err(format!(
+                    "Row {i} has zero length, which cannot be a direction"
+                ))
+            })
+        })
+        .collect()
+}
+
+/// Convert unit vectors into an Nx3 numpy array.
+pub fn unit_vectors_to_array(vectors: &[engeom::UnitVec3]) -> Array2<f64> {
+    let inner = vectors.iter().map(|v| v.into_inner()).collect::<Vec<_>>();
+    vectors_to_array(&inner)
+}
+
+/// Convert a slice of scalars into a 1D numpy array.
+pub fn scalars_to_array(values: &[f64]) -> Array1<f64> {
+    Array1::from_iter(values.iter().copied())
+}
+
+/// Convert a slice of unsigned labels into a 1D numpy array.
+pub fn labels_to_array(values: &[u32]) -> Array1<u32> {
+    Array1::from_iter(values.iter().copied())
+}
+
+/// Copy a 1D numpy array into a `Vec`, rejecting a non-contiguous view rather than silently
+/// reading the wrong elements.
+pub fn array_to_vec<T: numpy::Element + Copy>(array: &PyReadonlyArray1<'_, T>) -> PyResult<Vec<T>> {
+    Ok(array
+        .as_slice()
+        .map_err(|e| PyValueError::new_err(e.to_string()))?
+        .to_vec())
+}

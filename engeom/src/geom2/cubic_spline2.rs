@@ -1,10 +1,20 @@
 use crate::AngleDir::Cw;
 use crate::common::cubic_spline::CubicSpline;
 use crate::common::solve_quadratic_real_roots;
-use crate::geom2::rot90;
+use crate::geom2::{Aabb2, rot90};
 use crate::na::SVector;
 use crate::{Circle2, UnitVec2};
 
+/// A cubic Bézier curve in 2D space, defined by four control points.
+///
+/// This is one of `engeom`'s 2D geometric primitives.
+///
+/// This is the two-dimensional specialization of the dimension-generic
+/// [`CubicSpline`](CubicSpline); see that type for the shared constructors and queries (`new`,
+/// `position`, `derivative`, `tangent`, `curvature`, `split`, `polyline`, and so on). The methods
+/// defined directly on `CubicSpline2` here (`normal`, `curvature_circle`, `find_inflections`) are
+/// the ones that only make sense in 2D. `aabb` is a 2D-specific convenience wrapper over the
+/// generic [`compute_bounds`](CubicSpline::compute_bounds).
 pub type CubicSpline2 = CubicSpline<2>;
 
 impl CubicSpline2 {
@@ -12,6 +22,12 @@ impl CubicSpline2 {
     /// tangent vector rotated clockwise by 90 degrees.
     pub fn normal(&self, t: f64) -> UnitVec2 {
         rot90(Cw) * self.tangent(t)
+    }
+
+    /// Returns the axis-aligned bounding box of the curve, computed on demand.
+    pub fn aabb(&self) -> Aabb2 {
+        let (lo, hi) = self.compute_bounds();
+        Aabb2::new(lo, hi)
     }
 
     /// Returns the circle of curvature (osculating circle) tangent to the curve at parameter `t`:
@@ -183,5 +199,14 @@ mod tests {
             Point2::new(0.0, 0.0),
         );
         assert!(c.curvature_circle(0.5).is_none());
+    }
+
+    #[test]
+    fn aabb_matches_compute_bounds() {
+        let c = sample_2d();
+        let (lo, hi) = c.compute_bounds();
+        let aabb = c.aabb();
+        assert_relative_eq!(aabb.mins, lo, epsilon = 1e-12);
+        assert_relative_eq!(aabb.maxs, hi, epsilon = 1e-12);
     }
 }

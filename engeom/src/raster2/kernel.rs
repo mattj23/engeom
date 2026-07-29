@@ -434,6 +434,7 @@ mod tests {
         result
     }
 
+    #[allow(dead_code)] // retained test helper
     fn striped_target() -> DMatrix<f64> {
         // Create a striped target matrix with some values
         let mut target = DMatrix::zeros(400, 600);

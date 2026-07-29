@@ -94,8 +94,8 @@ pub fn fit_square_edge(
 ) -> Result<AfEdgeFit> {
     // TODO: Can we refine the stack of inscribed circles?
     let working = EdgeWork::new(input, circles, at_front)?;
-    let p0 = working.last()?.p0.clone();
-    let p1 = working.last()?.p1.clone();
+    let p0 = working.last()?.p0;
+    let p1 = working.last()?.p1;
 
     // To find the initial, we'll find how far the farthest point is from the end clipping line
     // and add that vector to p0 and p1
@@ -148,8 +148,8 @@ pub fn fit_rounded_square_edge(
 ) -> Result<AfEdgeFit> {
     // TODO: Can we refine the stack of inscribed circles?
     let working = EdgeWork::new(input, circles, at_front)?;
-    let p0 = working.last()?.p0.clone();
-    let p1 = working.last()?.p1.clone();
+    let p0 = working.last()?.p0;
+    let p1 = working.last()?.p1;
 
     // To find the initial, we'll find how far the farthest point is from the end clipping line
     // and add that vector to p0 and p1
@@ -209,8 +209,8 @@ pub fn fit_sharp_edge(
     at_front: bool,
 ) -> Result<AfEdgeFit> {
     let working = EdgeWork::new(input, circles, at_front)?;
-    let p0 = working.last()?.p0.clone();
-    let p1 = working.last()?.p1.clone();
+    let p0 = working.last()?.p0;
+    let p1 = working.last()?.p1;
 
     // To find the initial, we'll find how far the farthest point is from the end clipping line
     // and add that vector to p0 and p1
@@ -257,8 +257,8 @@ pub fn fit_full_round_edge(
 ) -> Result<AfEdgeFit> {
     // TODO: Can we refine the stack of inscribed circles?
     let working = EdgeWork::new(input, circles, at_front)?;
-    let p0 = working.last()?.p0.clone();
-    let p1 = working.last()?.p1.clone();
+    let p0 = working.last()?.p0;
+    let p1 = working.last()?.p1;
     let wind_line = Line2::new(p0, working.clip.direction);
     let wind_dir = wind_line.winding_direction(&working.clip.origin);
 
@@ -333,7 +333,7 @@ pub fn fit_blended_round_edge(
     let initial = DVector::from(vec![initial_c.x, initial_c.y, initial_r]);
 
     // Prep geometry that gets moved into the builder function
-    let clip = working.clip.clone();
+    let clip = working.clip;
     let (t0, t1) = working.last_tangents()?;
 
     let builder: BndBuildFn = Box::new(move |params: &DVector| {
@@ -346,9 +346,9 @@ pub fn fit_blended_round_edge(
         // Now we construct the boundary
         // -----------------------------------------------------------
         let mut bdata = BoundaryData2::new_open(p0);
-        bdata.add_arc(&arc0.center(), &arc0.at_end(), wind_dir.is_cw());
+        bdata.add_arc(&arc0.center, &arc0.at_end(), wind_dir.is_cw());
         bdata.add_arc(&center, &arc1.at_end(), wind_dir.is_cw());
-        bdata.add_arc(&arc1.center(), &p1, wind_dir.is_cw());
+        bdata.add_arc(&arc1.center, &p1, wind_dir.is_cw());
         bdata.try_to_boundary()
     });
 
@@ -398,7 +398,7 @@ pub fn fit_spline_max_k(
 ) -> Result<(AfEdgeFit, CubicSpline2)> {
     let mut working = EdgeWork::new(input, circles, at_front)?;
     let (t0, t1) = working.last_tangents()?;
-    let clip = working.clip.clone();
+    let clip = working.clip;
 
     let mut stack = InscribedVec::new(vec![working.last()?.clone()]);
 
@@ -416,7 +416,7 @@ pub fn fit_spline_max_k(
         }
 
         // Find the halfway point and get a new inscribed circle
-        let l = half_line(&last_circle, &clip.direction, &fittings.last().unwrap());
+        let l = half_line(last_circle, &clip.direction, fittings.last().unwrap());
         stack.refine_and_push(input.try_inscribed(&l).unwrap(), input);
 
         let clip = stack.end_clip_line()?;
@@ -431,8 +431,8 @@ pub fn fit_spline_max_k(
             break;
         }
 
-        let this_circle = fit.circle.clone();
-        let last_circle = last_fit.circle.clone();
+        let this_circle = fit.circle;
+        let last_circle = last_fit.circle;
         fittings.push(fit);
 
         let circle_error = dist(&this_circle, &last_circle);
@@ -462,9 +462,9 @@ pub fn fit_spline_max_k(
 fn half_line(inscribed: &Inscribed, clip_dir: &Vector2, last_result: &SfResult) -> Line2 {
     let l0 = Line2::new(inscribed.center(), *clip_dir);
     let l1 = last_result.end_line();
-    let l = l0.new_slerp_to(&l1, 0.5).new_rotated(PI / 2.0);
+    let l = l0.slerp(&l1, 0.5).rotated(PI / 2.0);
     if l.direction.dot(&inscribed.contact_dir()) < 0.0 {
-        l.new_reversed()
+        l.reversed()
     } else {
         l
     }
@@ -475,6 +475,7 @@ struct SfResult {
     t_max_k: f64,
     circle: Circle2,
     residuals: DVector,
+    #[allow(dead_code)] // computed and stored but not yet consumed
     avg_residual: f64,
 }
 
@@ -506,8 +507,8 @@ fn spline_fit(
         })
         .collect::<Vec<_>>();
 
-    let t0 = t0.clone();
-    let t1 = t1.clone();
+    let t0 = *t0;
+    let t1 = *t1;
 
     // First stage simplified spline fit, constrained to existing tangent direction
     let build0: SplineBuildFn<2> = Box::new(move |params: &DVector| {
@@ -534,8 +535,8 @@ fn spline_fit(
         let i0 = Iso2::from(clip_v * params[0]);
         let i1 = Iso2::from(clip_v * params[1]);
 
-        let ts0 = (i0 * t0).new_rotated(params[4]);
-        let ts1 = (i1 * t1).new_rotated(params[5]);
+        let ts0 = (i0 * t0).rotated(params[4]);
+        let ts1 = (i1 * t1).rotated(params[5]);
         let p1 = ts0.at(params[2]);
         let p2 = ts1.at(params[3]);
         Ok(CubicSpline2::new(ts0.origin, p1, p2, ts1.origin()))
@@ -568,8 +569,8 @@ fn spline_fit(
     // Now we have to compute the residuals
     let query = spline.into_query();
     let back_ref = if stack.len() > 1 {
-        let p0s = stack.iter().map(|c| c.p0.clone()).collect::<Vec<_>>();
-        let p1s = stack.iter().map(|c| c.p1.clone()).collect::<Vec<_>>();
+        let p0s = stack.iter().map(|c| c.p0).collect::<Vec<_>>();
+        let p1s = stack.iter().map(|c| c.p1).collect::<Vec<_>>();
         Some((
             Curve2::from_points(&p0s, 1e-12, false)?,
             Curve2::from_points(&p1s, 1e-12, false)?,
@@ -633,20 +634,20 @@ fn refine_from_edge_circle(
     let (a, b) = working
         .last()?
         .c
-        .outer_tangents_to(&edge_circle)
+        .outer_tangents_to(edge_circle)
         .ok_or("Failed to find outer tangents between last inscribed circle and edge circle")?;
 
-    let fake = Inscribed::new(edge_circle.clone(), a.b, b.b);
+    let fake = Inscribed::new(*edge_circle, a.b, b.b);
     let fake_camber_line = (if fake.camber_point().normal.dot(&working.clip.direction) < 0.0 {
-        fake.camber_point().new_reversed()
+        fake.camber_point().reversed()
     } else {
         fake.camber_point()
     })
-    .new_shifted(-edge_circle.r() * 0.1);
+    .shifted(-edge_circle.r() * 0.1);
 
     let test_line = Line2::new(fake_camber_line.point, fake.contact_dir());
     let test_line = if test_line.direction.dot(&working.last()?.contact_dir()) < 0.0 {
-        test_line.new_reversed()
+        test_line.reversed()
     } else {
         test_line
     };
@@ -660,25 +661,25 @@ fn refine_from_edge_circle(
 }
 
 fn end_arcs(t0: &Line2, t1: &Line2, clip: &Line2, center: &Point2, radius: f64) -> (Arc2, Arc2) {
-    let t0s = t0.new_parallel(t0.signed_projection_dist(&clip.origin).signum() * radius);
-    let t1s = t1.new_parallel(t1.signed_projection_dist(&clip.origin).signum() * radius);
+    let t0s = t0.offset_by(t0.signed_projection_dist(&clip.origin).signum() * radius);
+    let t1s = t1.offset_by(t1.signed_projection_dist(&clip.origin).signum() * radius);
 
     // We get the blend arcs. Arc0 goes from p0 to the leading edge circle, and arc1 goes from
     // p1 to the leading edge circle. We need to keep the order of endpoints right when we
     // actuallyh build the boundary
     (
-        blend_arc(&t0s, &center, radius),
-        blend_arc(&t1s, &center, radius),
+        blend_arc(&t0s, center, radius),
+        blend_arc(&t1s, center, radius),
     )
 }
 
 fn blend_arc(shifted_tangent: &Line2, le_center: &Point2, le_radius: f64) -> Arc2 {
-    let base_circle = Circle2::new_tangent_and_point(shifted_tangent, le_center);
+    let base_circle = Circle2::from_tangent_and_point(shifted_tangent, le_center);
     let v0 = shifted_tangent.origin - base_circle.center;
     let v1 = le_center - base_circle.center;
     let theta0 = base_circle.angle_of_point(&shifted_tangent.origin);
     let theta = signed_angle(&v0, &v1);
-    Arc2::circle_angles(
+    Arc2::new(
         base_circle.center,
         le_radius + base_circle.r(),
         theta0,
@@ -704,7 +705,7 @@ impl EdgeWork {
     /// Get the contact points `p0` and `p1` of the last inscribed circle, returned in that order
     fn last_points(&self) -> Result<(Point2, Point2)> {
         let c = self.last()?;
-        Ok((c.p0.clone(), c.p1.clone()))
+        Ok((c.p0, c.p1))
     }
 
     /// Get the tangent lines at the contact points `p0` and `p1` (in that order) of the last
@@ -715,12 +716,10 @@ impl EdgeWork {
 
     /// The maximum scalar projection of the fit points on the clipping line
     fn clip_max_scalar(&self) -> f64 {
-        let d_max = self
-            .fit_points
+        self.fit_points
             .iter()
             .map(|p| self.clip.scalar_project(p))
-            .fold(0.0f64, |a, b| a.max(b));
-        d_max
+            .fold(0.0f64, |a, b| a.max(b))
     }
 
     fn new(input: &SectionInput, circles: Vec<Inscribed>, at_front: bool) -> Result<Self> {
@@ -764,7 +763,7 @@ impl EdgeWork {
 mod tests {
     use super::*;
     use crate::common::fill_gaps;
-    use crate::{Circle2, Curve2, Line2, Result, curve2};
+    use crate::{Circle2, Curve2, Result, curve2};
     use approx::assert_relative_eq;
 
     macro_rules! inscribed_vec {

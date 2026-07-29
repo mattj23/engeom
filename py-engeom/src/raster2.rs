@@ -1,4 +1,4 @@
-use crate::mesh::Mesh;
+use crate::mesh::Mesh3;
 use engeom::raster2::Point2I;
 use pyo3::prelude::*;
 
@@ -45,11 +45,11 @@ impl ScalarRaster {
         Ok(Self::from_inner(raster))
     }
 
-    fn build_depth_mesh(&self) -> PyResult<Mesh> {
+    fn build_depth_mesh(&self) -> PyResult<Mesh3> {
         let inner = self
             .inner
             .build_depth_mesh()
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
-        Ok(Mesh::from_inner(inner))
+        Ok(Mesh3::from_inner(inner))
     }
 }

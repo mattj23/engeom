@@ -1,8 +1,10 @@
 mod binary_mesh;
+mod g3d;
 mod lptf3;
 mod micro_mesh;
 mod ply;
 mod point_cloud;
+mod stl;
 pub mod tol_compress;
 pub use tol_compress::curve::*;
 pub use tol_compress::mesh::*;
@@ -10,6 +12,7 @@ pub use tol_compress::mesh::*;
 use crate::{Point3, Result, Vector3};
 pub use binary_mesh::*;
 use flate2::read::GzDecoder;
+pub use g3d::*;
 pub use lptf3::*;
 pub use micro_mesh::*;
 pub use point_cloud::*;
@@ -22,82 +25,7 @@ use std::path::Path;
 pub use ply::*;
 
 #[cfg(feature = "stl")]
-use stl_io;
-
-#[cfg(feature = "stl")]
-use crate::geom3::Mesh;
-
-#[cfg(feature = "stl")]
-pub fn read_mesh_stl(path: &Path, merge_duplicates: bool, delete_degenerate: bool) -> Result<Mesh> {
-    let mut file = OpenOptions::new().read(true).open(path)?;
-    let mesh = stl_io::read_stl(&mut file)?;
-
-    let vertices = mesh
-        .vertices
-        .iter()
-        .map(|v| Point3::new(v[0] as f64, v[1] as f64, v[2] as f64))
-        .collect::<Vec<_>>();
-
-    let triangles = mesh
-        .faces
-        .iter()
-        .map(|f| {
-            [
-                f.vertices[0] as u32,
-                f.vertices[1] as u32,
-                f.vertices[2] as u32,
-            ]
-        })
-        .collect::<Vec<_>>();
-
-    Mesh::new_with_options(
-        vertices,
-        triangles,
-        false,
-        merge_duplicates,
-        delete_degenerate,
-        None,
-    )
-}
-
-#[cfg(feature = "stl")]
-pub fn write_mesh_stl(path: &Path, mesh: &Mesh) -> Result<()> {
-    let mut faces = Vec::new();
-    for triangle in mesh.tri_mesh().triangles() {
-        if let Some(normal) = triangle.normal() {
-            let vertices = [
-                stl_io::Vertex::new([
-                    triangle.a.x as f32,
-                    triangle.a.y as f32,
-                    triangle.a.z as f32,
-                ]),
-                stl_io::Vertex::new([
-                    triangle.b.x as f32,
-                    triangle.b.y as f32,
-                    triangle.b.z as f32,
-                ]),
-                stl_io::Vertex::new([
-                    triangle.c.x as f32,
-                    triangle.c.y as f32,
-                    triangle.c.z as f32,
-                ]),
-            ];
-            faces.push(stl_io::Triangle {
-                normal: stl_io::Normal::new([normal.x as f32, normal.y as f32, normal.z as f32]),
-                vertices,
-            });
-        }
-    }
-
-    if path.exists() {
-        std::fs::remove_file(path)?;
-    }
-
-    let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
-
-    stl_io::write_stl(&mut file, faces.iter())?;
-    Ok(())
-}
+pub use stl::*;
 
 // TODO: create a separate module for point clouds, including binary versions
 

@@ -1,6 +1,6 @@
-//! Mesh collision detection and distance checks
+//! Mesh3 collision detection and distance checks
 
-use crate::{Iso3, Mesh, Result};
+use crate::{Iso3, Mesh3, Result};
 use parry3d_f64::query::intersection_test;
 use std::cmp::PartialEq;
 use std::collections::{HashMap, HashSet};
@@ -12,7 +12,7 @@ enum MeshType {
 }
 
 struct MeshItem {
-    mesh: Mesh,
+    mesh: Mesh3,
     mesh_type: MeshType,
 }
 
@@ -47,18 +47,18 @@ impl MeshCollisionSet {
         self.exceptions.contains(&(lower, upper))
     }
 
-    fn add_mesh(&mut self, mesh: Mesh, mesh_type: MeshType) -> usize {
+    fn add_mesh(&mut self, mesh: Mesh3, mesh_type: MeshType) -> usize {
         let id = self.meshes.len();
         self.meshes.insert(id, MeshItem { mesh, mesh_type });
 
         id
     }
 
-    pub fn add_stationary(&mut self, mesh: Mesh) -> usize {
+    pub fn add_stationary(&mut self, mesh: Mesh3) -> usize {
         self.add_mesh(mesh, MeshType::Stationary)
     }
 
-    pub fn add_moving(&mut self, mesh: Mesh) -> usize {
+    pub fn add_moving(&mut self, mesh: Mesh3) -> usize {
         self.add_mesh(mesh, MeshType::Moving)
     }
 
@@ -150,13 +150,13 @@ impl MeshCollisionSet {
 mod tests {
     use super::*;
     use crate::Iso3;
-    use crate::geom3::Mesh;
+    use crate::geom3::Mesh3;
 
     #[test]
     fn collision_set() {
         let mut set = MeshCollisionSet::new();
-        let mesh1 = Mesh::create_box(1.0, 1.0, 1.0, true);
-        let mesh2 = Mesh::create_box(1.0, 1.0, 1.0, true);
+        let mesh1 = Mesh3::create_box(1.0, 1.0, 1.0, true);
+        let mesh2 = Mesh3::create_box(1.0, 1.0, 1.0, true);
 
         let _id1 = set.add_stationary(mesh1);
         let id2 = set.add_moving(mesh2);
@@ -170,8 +170,8 @@ mod tests {
     #[test]
     fn collision_set_exception_skips() {
         let mut set = MeshCollisionSet::new();
-        let mesh1 = Mesh::create_box(1.0, 1.0, 1.0, true);
-        let mesh2 = Mesh::create_box(1.0, 1.0, 1.0, true);
+        let mesh1 = Mesh3::create_box(1.0, 1.0, 1.0, true);
+        let mesh2 = Mesh3::create_box(1.0, 1.0, 1.0, true);
 
         let id1 = set.add_stationary(mesh1);
         let id2 = set.add_moving(mesh2);
@@ -186,8 +186,8 @@ mod tests {
     #[test]
     fn collision_set_misses() {
         let mut set = MeshCollisionSet::new();
-        let mesh1 = Mesh::create_box(1.0, 1.0, 1.0, true);
-        let mesh2 = Mesh::create_box(1.0, 1.0, 1.0, true);
+        let mesh1 = Mesh3::create_box(1.0, 1.0, 1.0, true);
+        let mesh2 = Mesh3::create_box(1.0, 1.0, 1.0, true);
 
         let _id1 = set.add_stationary(mesh1);
         let id2 = set.add_moving(mesh2);

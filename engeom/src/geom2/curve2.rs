@@ -19,7 +19,6 @@ mod queries;
 mod utilities;
 
 pub use partitioning::CurvePartitioner2;
-pub use utilities::*;
 
 /// Construct a `Result<Curve2>` from any number of `(x, y)` tuples.
 ///
@@ -663,8 +662,8 @@ impl Curve2 {
         let mut new_points = Vec::with_capacity(self.count());
 
         for i in 0..self.count() - 1 {
-            let seg = Segment2::try_new(&self.vtx(i), &self.vtx(i + 1))?;
-            new_segments.push(seg.with_offset(offset));
+            let seg = Segment2::new(&self.vtx(i), &self.vtx(i + 1))?;
+            new_segments.push(seg.offset_by(offset));
         }
 
         // Special case for the first vertex if the curve is closed
@@ -866,7 +865,11 @@ impl Curve2 {
             }
         }
 
-        Some(Arc2::three_points(self.vtx(i0), self.vtx(i1), self.vtx(i2)))
+        Some(Arc2::from_3_points(
+            self.vtx(i0),
+            self.vtx(i1),
+            self.vtx(i2),
+        ))
     }
 }
 
@@ -890,7 +893,7 @@ impl Intersection<&Circle2, Vec<Point2>> for Curve2 {
 
         // TODO: We should be able to use the bvh to prune the segments we need to check
         for i in 0..self.count() - 1 {
-            if let Ok(seg) = Segment2::try_new(&self.vtx(i), &self.vtx(i + 1)) {
+            if let Ok(seg) = Segment2::new(&self.vtx(i), &self.vtx(i + 1)) {
                 for p in other.intersection(&seg) {
                     points.push(p);
                 }

@@ -1,37 +1,19 @@
 from __future__ import annotations
-from enum import Enum
+from typing import Literal
 
-type ResampleEnum = Resample_Count | Resample_Spacing | Resample_MaxSpacing
+type ResampleEnum = Resample.Count | Resample.Spacing | Resample.MaxSpacing
 
-class VecDot(Enum):
-    """
-    Controls how certain algorithms use the results of a dot product between two direction vectors.
-    """
+VecDot = Literal["as_is", "abs", "clamp_pos"]
+"""Controls how algorithms use a dot product between two direction vectors: ``"as_is"`` (raw value,
+can be negative), ``"abs"`` (absolute value), or ``"clamp_pos"`` (clamped to zero from below)."""
 
-    AsIs = 0
-    """ Use the raw dot product value as-is (can be negative for anti-parallel normals). """
+DeviationMode = Literal["point", "plane"]
+"""How deviation between a point and another geometry is measured: ``"point"`` (direct distance to
+the closest point) or ``"plane"`` (distance to the tangent plane at the closest point)."""
 
-    Abs = 1
-    """ Use the absolute value of the dot product (de-weights orthogonal normals, ignores direction). """
+SelectOp = Literal["add", "remove", "keep"]
+"""A selection operation applied to a set: ``"add"``, ``"remove"``, or ``"keep"`` (keep only)."""
 
-    ClampPos = 2
-    """ Clamp to zero from below (only weight samples whose normal faces the same way as the boundary). """
-
-
-class DeviationMode(Enum):
-    """
-    Represents the different methods of calculating deviation between a point and another geometry.
-    """
-    Point = 0
-    Plane = 1
-
-class SelectOp(Enum):
-    """
-    A common enum to describe different types of selection operations.
-    """
-    Add=0
-    Remove=1
-    Keep=2
 
 class Resample:
     """

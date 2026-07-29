@@ -1,13 +1,16 @@
+use crate::boundary2::Manifold1Pos2;
 use crate::bounding::Aabb2;
-use crate::common::{AngleDir, Resample};
+use crate::common::{AngleInterval, Resample, angle_dir_from_str, angle_dir_to_str};
 use crate::conversions::{
     array_to_points2, array_to_vectors2, dvec_from_array, dvec_to_array, points_to_array,
     vectors_to_array,
 };
-use engeom::geom2::HasBounds2;
-use engeom::{BestFit, To3D};
+use engeom::To3D;
+use engeom::geom2::IsoExtensions2;
 use numpy::ndarray::{Array1, Array2};
-use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
+use numpy::{
+    IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods,
+};
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::PyAnyMethods;
 use pyo3::types::PyIterator;
@@ -25,14 +28,18 @@ enum Vector2OrPoint2 {
 
 /// Returns an isometry representing a 90-degree rotation in the given direction.
 #[pyfunction]
-pub fn rot90(dir: AngleDir) -> Iso2 {
-    Iso2::from_inner(engeom::geom2::rot90(dir.into()))
+pub fn rot90(dir: &str) -> PyResult<Iso2> {
+    Ok(Iso2::from_inner(engeom::geom2::rot90(angle_dir_from_str(
+        dir,
+    )?)))
 }
 
 /// Returns an isometry representing a 270-degree rotation in the given direction.
 #[pyfunction]
-pub fn rot270(dir: AngleDir) -> Iso2 {
-    Iso2::from_inner(engeom::geom2::rot270(dir.into()))
+pub fn rot270(dir: &str) -> PyResult<Iso2> {
+    Ok(Iso2::from_inner(engeom::geom2::rot270(angle_dir_from_str(
+        dir,
+    )?)))
 }
 
 /// Returns the signed angle from `v1` to `v2` in radians, in the range (-π, π].
@@ -44,8 +51,12 @@ pub fn signed_angle(v1: &Vector2, v2: &Vector2) -> f64 {
 
 /// Returns the angle from `v1` to `v2` measured in the given direction, in radians, in [0, 2π].
 #[pyfunction]
-pub fn directed_angle(v1: &Vector2, v2: &Vector2, direction: AngleDir) -> f64 {
-    engeom::geom2::directed_angle(v1.get_inner(), v2.get_inner(), direction.into())
+pub fn directed_angle(v1: &Vector2, v2: &Vector2, direction: &str) -> PyResult<f64> {
+    Ok(engeom::geom2::directed_angle(
+        v1.get_inner(),
+        v2.get_inner(),
+        angle_dir_from_str(direction)?,
+    ))
 }
 
 // ================================================================================================
@@ -436,11 +447,11 @@ impl SurfacePoint2 {
     }
 
     fn reversed(&self) -> Self {
-        Self::from_inner(self.inner.new_reversed())
+        Self::from_inner(self.inner.reversed())
     }
 
-    fn transformed(&self, iso: Iso2) -> Self {
-        Self::from_inner(self.inner.transformed(iso.get_inner()))
+    fn transformed_by(&self, iso: Iso2) -> Self {
+        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
     }
 
     fn __mul__(&self, other: f64) -> Self {
@@ -482,20 +493,24 @@ impl SurfacePoint2 {
         self.inner.planar_distance(other.get_inner())
     }
 
-    fn shift_orthogonal(&self, distance: f64) -> Self {
-        Self::from_inner(self.inner.shift_orthogonal(distance))
+    fn shifted_orthogonal(&self, distance: f64) -> Self {
+        Self::from_inner(self.inner.shifted_orthogonal(distance))
     }
 
-    fn rot_normal(&self, angle: f64) -> Self {
-        Self::from_inner(self.inner.rot_normal(angle))
+    fn normal_rotated(&self, angle: f64) -> Self {
+        Self::from_inner(self.inner.normal_rotated(angle))
     }
 
-    fn new_shifted(&self, distance: f64) -> Self {
-        Self::from_inner(self.inner.new_shifted(distance))
+    fn shifted(&self, distance: f64) -> Self {
+        Self::from_inner(self.inner.shifted(distance))
     }
 
     fn to_line(&self) -> Line2 {
         Line2::from_inner(engeom::geom2::Line2::from(&self.inner))
+    }
+
+    fn slerp(&self, other: &Self, t: f64) -> Self {
+        Self::from_inner(self.inner.slerp(&other.inner, t))
     }
 }
 
@@ -574,7 +589,7 @@ impl Circle2 {
 
     #[getter]
     fn aabb(&self) -> Aabb2 {
-        Aabb2::from_inner(*self.inner.aabb())
+        Aabb2::from_inner(self.inner.aabb())
     }
 
     fn point_at_angle(&self, angle: f64) -> Point2 {
@@ -607,6 +622,16 @@ impl Circle2 {
         self.inner.contains_point(&[x, y])
     }
 
+    fn contained_points<'py>(
+        &self,
+        py: Python<'py>,
+        points: PyReadonlyArray2<'py, f64>,
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let points = array_to_points2(&points.as_array())?;
+        let result = self.inner.contained_points(&points);
+        Ok(points_to_array(&result).into_pyarray(py))
+    }
+
     fn tangent_points_to(&self, point: &Point2) -> Option<(Point2, Point2)> {
         let pts = self
             .inner
@@ -616,42 +641,50 @@ impl Circle2 {
     }
 
     #[staticmethod]
-    #[pyo3(signature=(points, guess=None, sigma=None))]
-    fn fitting<'py>(
+    #[pyo3(signature=(points, weights=None))]
+    fn from_fit<'py>(
         points: PyReadonlyArray2<'py, f64>,
-        guess: Option<Circle2>,
-        sigma: Option<f64>,
+        weights: Option<PyReadonlyArray1<'py, f64>>,
     ) -> PyResult<Self> {
         let points = array_to_points2(&points.as_array())?;
-        let guess = if let Some(c) = guess {
-            *c.get_inner()
-        } else {
-            engeom::Circle2::new(0.0, 0.0, 1.0)
-        };
-
-        let mode = if let Some(s) = sigma {
-            BestFit::Gaussian(s)
-        } else {
-            BestFit::All
-        };
-
-        let circle = engeom::Circle2::new_fitting_circle(&points, &guess, mode)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let circle = match weights {
+            Some(weights) => {
+                engeom::Circle2::from_fit(&points, Some(weights.as_array().as_slice().unwrap()))
+            }
+            None => engeom::Circle2::from_fit(&points, None),
+        }
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(circle))
     }
 
     #[staticmethod]
-    #[pyo3(signature=(points, tol, iterations=None, min_r=None, max_r=None))]
-    fn ransac<'py>(
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature=(points, sigma_max, min_r=None, max_r=None, max_iterations=None, refinement_steps=None, confidence=None, seed=None))]
+    fn from_consensus<'py>(
         points: PyReadonlyArray2<'py, f64>,
-        tol: f64,
-        iterations: Option<usize>,
+        sigma_max: f64,
         min_r: Option<f64>,
         max_r: Option<f64>,
+        max_iterations: Option<usize>,
+        refinement_steps: Option<usize>,
+        confidence: Option<f64>,
+        seed: Option<u64>,
     ) -> PyResult<Self> {
         let points = array_to_points2(&points.as_array())?;
-        let result = engeom::Circle2::new_ransac(&points, tol, iterations, min_r, max_r)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        let mut options = engeom::common::consensus::Magsac::new(sigma_max);
+        options.max_iterations = max_iterations;
+        if let Some(steps) = refinement_steps {
+            options.refinement_steps = steps;
+        }
+        if let Some(confidence) = confidence {
+            options.confidence = confidence;
+        }
+        options.seed = seed;
+
+        let result =
+            engeom::Circle2::from_consensus(&points, sigma_max, min_r, max_r, Some(options))
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(result))
     }
 
@@ -668,13 +701,13 @@ impl Circle2 {
     }
 
     #[staticmethod]
-    fn tangent_to_corner(
+    fn from_tangent_to_corner(
         corner: &Point2,
         d0: &Vector2,
         d1: &Vector2,
         radius: f64,
     ) -> PyResult<Self> {
-        engeom::Circle2::new_tangent_to_corner(
+        engeom::Circle2::from_tangent_to_corner(
             corner.get_inner(),
             d0.get_inner(),
             d1.get_inner(),
@@ -685,8 +718,8 @@ impl Circle2 {
     }
 
     #[staticmethod]
-    fn tangent_and_point(tangent: &Line2, point: &Point2) -> Self {
-        Self::from_inner(engeom::Circle2::new_tangent_and_point(
+    fn from_tangent_and_point(tangent: &Line2, point: &Point2) -> Self {
+        Self::from_inner(engeom::Circle2::from_tangent_and_point(
             tangent.get_inner(),
             point.get_inner(),
         ))
@@ -706,9 +739,52 @@ impl Circle2 {
         Arc2::from_inner(self.inner.to_partial_arc(angle0, angle))
     }
 
-    fn line_direction(&self, line: &Line2) -> AngleDir {
-        self.inner.line_direction(line.get_inner()).into()
+    fn line_direction(&self, line: &Line2) -> &'static str {
+        angle_dir_to_str(self.inner.line_direction(line.get_inner()))
     }
+
+    fn at_angle(&self, angle: f64) -> Manifold1Pos2 {
+        Manifold1Pos2::from_inner(self.inner.at_angle(angle))
+    }
+
+    fn at_closest_to_point(&self, p: &Point2) -> Manifold1Pos2 {
+        Manifold1Pos2::from_inner(self.inner.at_closest_to_point(p.get_inner()))
+    }
+
+    fn intersection_interval(&self, other: &Circle2) -> Option<AngleInterval> {
+        self.inner
+            .intersection_interval(other.inner)
+            .map(AngleInterval::from_inner)
+    }
+
+    fn transformed_by(&self, iso: &Iso2) -> Self {
+        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
+    }
+
+    fn resized_by(&self, delta: f64) -> Self {
+        Self::from_inner(self.inner.resized_by(delta))
+    }
+}
+
+/// Build a `Magsac` consensus configuration from the optional overrides exposed to Python, leaving
+/// any unset value at the library default.
+fn magsac_options(
+    sigma_max: f64,
+    max_iterations: Option<usize>,
+    refinement_steps: Option<usize>,
+    confidence: Option<f64>,
+    seed: Option<u64>,
+) -> engeom::common::consensus::Magsac {
+    let mut options = engeom::common::consensus::Magsac::new(sigma_max);
+    options.max_iterations = max_iterations;
+    if let Some(steps) = refinement_steps {
+        options.refinement_steps = steps;
+    }
+    if let Some(confidence) = confidence {
+        options.confidence = confidence;
+    }
+    options.seed = seed;
+    options
 }
 
 // ================================================================================================
@@ -806,6 +882,47 @@ impl Line2 {
         ))
     }
 
+    #[staticmethod]
+    #[pyo3(signature=(points, weights=None))]
+    fn from_fit<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        weights: Option<PyReadonlyArray1<'py, f64>>,
+    ) -> PyResult<Self> {
+        let points = array_to_points2(&points.as_array())?;
+        let line = match weights {
+            Some(weights) => engeom::geom2::Line2::from_fit(
+                &points,
+                Some(weights.as_array().as_slice().unwrap()),
+            ),
+            None => engeom::geom2::Line2::from_fit(&points, None),
+        }
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(line))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(points, sigma_max, max_iterations=None, refinement_steps=None, confidence=None, seed=None))]
+    fn from_consensus<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        sigma_max: f64,
+        max_iterations: Option<usize>,
+        refinement_steps: Option<usize>,
+        confidence: Option<f64>,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        let points = array_to_points2(&points.as_array())?;
+        let options = magsac_options(
+            sigma_max,
+            max_iterations,
+            refinement_steps,
+            confidence,
+            seed,
+        );
+        let result = engeom::geom2::Line2::from_consensus(&points, sigma_max, Some(options))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(result))
+    }
+
     #[getter]
     fn origin(&self) -> Point2 {
         Point2::from_inner(self.inner.origin)
@@ -849,16 +966,58 @@ impl Line2 {
         Self::from_inner(self.inner.normalized())
     }
 
-    fn new_parallel(&self, delta_n: f64) -> Self {
-        Self::from_inner(self.inner.new_parallel(delta_n))
+    fn reversed(&self) -> Self {
+        Self::from_inner(self.inner.reversed())
     }
 
-    fn new_shifted_along(&self, delta_t: f64) -> Self {
-        Self::from_inner(self.inner.new_shifted_origin(delta_t))
+    fn offset_by(&self, delta_n: f64) -> Self {
+        Self::from_inner(self.inner.offset_by(delta_n))
     }
 
-    fn new_transformed_by(&self, iso: &Iso2) -> Self {
-        Self::from_inner(self.inner.new_transformed_by(iso.get_inner()))
+    fn rotated(&self, angle: f64) -> Self {
+        Self::from_inner(self.inner.rotated(angle))
+    }
+
+    fn shifted_origin(&self, delta_t: f64) -> Self {
+        Self::from_inner(self.inner.shifted_origin(delta_t))
+    }
+
+    fn transformed_by(&self, iso: &Iso2) -> Self {
+        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
+    }
+
+    fn slerp(&self, other: &Self, t: f64) -> Self {
+        Self::from_inner(self.inner.slerp(&other.inner, t))
+    }
+
+    fn projected_parameter(&self, p: &Point2) -> f64 {
+        use engeom::geom2::LineOps2;
+        self.inner.projected_parameter(p.get_inner())
+    }
+
+    fn projected_point(&self, p: &Point2) -> Point2 {
+        use engeom::geom2::LineOps2;
+        Point2::from_inner(self.inner.projected_point(p.get_inner()))
+    }
+
+    fn orthogonal(&self) -> Vector2 {
+        use engeom::geom2::LineOps2;
+        Vector2::from_inner(self.inner.orthogonal())
+    }
+
+    fn signed_projection_dist(&self, point: &Point2) -> f64 {
+        use engeom::geom2::LineOps2;
+        self.inner.signed_projection_dist(point.get_inner())
+    }
+
+    fn intersection_params(&self, other: &Line2) -> Option<(f64, f64)> {
+        use engeom::geom2::LineOps2;
+        self.inner.intersection_params(&other.inner)
+    }
+
+    fn winding_direction(&self, point: &Point2) -> &'static str {
+        use engeom::geom2::LineOps2;
+        angle_dir_to_str(self.inner.winding_direction(point.get_inner()))
     }
 
     fn to_iso_from_x(&self) -> Iso2 {
@@ -903,9 +1062,50 @@ impl Segment2 {
         let p0 = engeom::Point2::new(x0, y0);
         let p1 = engeom::Point2::new(x1, y1);
         Ok(Self {
-            inner: engeom::geom2::Segment2::try_new(&p0, &p1)
+            inner: engeom::geom2::Segment2::new(&p0, &p1)
                 .map_err(|e| PyValueError::new_err(e.to_string()))?,
         })
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(points, weights=None))]
+    fn from_fit<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        weights: Option<PyReadonlyArray1<'py, f64>>,
+    ) -> PyResult<Self> {
+        let points = array_to_points2(&points.as_array())?;
+        let result = match weights {
+            Some(weights) => engeom::geom2::Segment2::from_fit(
+                &points,
+                Some(weights.as_array().as_slice().unwrap()),
+            ),
+            None => engeom::geom2::Segment2::from_fit(&points, None),
+        }
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(result))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(points, sigma_max, max_iterations=None, refinement_steps=None, confidence=None, seed=None))]
+    fn from_consensus<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        sigma_max: f64,
+        max_iterations: Option<usize>,
+        refinement_steps: Option<usize>,
+        confidence: Option<f64>,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        let points = array_to_points2(&points.as_array())?;
+        let options = magsac_options(
+            sigma_max,
+            max_iterations,
+            refinement_steps,
+            confidence,
+            seed,
+        );
+        let result = engeom::geom2::Segment2::from_consensus(&points, sigma_max, Some(options))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(result))
     }
 
     fn __getstate__(&self) -> (f64, f64, f64, f64) {
@@ -929,8 +1129,8 @@ impl Segment2 {
     fn __setstate__(&mut self, state: (f64, f64, f64, f64)) {
         let p0 = engeom::Point2::new(state.0, state.1);
         let p1 = engeom::Point2::new(state.2, state.3);
-        self.inner = engeom::geom2::Segment2::try_new(&p0, &p1)
-            .expect("Invalid segment points in __setstate__");
+        self.inner =
+            engeom::geom2::Segment2::new(&p0, &p1).expect("Invalid segment points in __setstate__");
     }
 
     fn __eq__(&self, other: &Self) -> bool {
@@ -961,7 +1161,7 @@ impl Segment2 {
 
     #[getter]
     fn length(&self) -> f64 {
-        self.inner.length
+        self.inner.length()
     }
 
     #[getter]
@@ -972,11 +1172,53 @@ impl Segment2 {
     fn to_line(&self) -> Line2 {
         Line2::from_inner(self.inner.to_line())
     }
+
+    fn transformed_by(&self, iso: &Iso2) -> Self {
+        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
+    }
+
+    fn at(&self, t: f64) -> Point2 {
+        Point2::from_inner(self.inner.at(t))
+    }
+
+    fn reversed(&self) -> Self {
+        Self::from_inner(self.inner.reversed())
+    }
+
+    fn scalar_projection(&self, other: &Point2) -> f64 {
+        self.inner.scalar_projection(other.get_inner())
+    }
+
+    fn closest_point(&self, other: &Point2) -> Point2 {
+        Point2::from_inner(self.inner.closest_point(other.get_inner()))
+    }
+
+    fn offset_by(&self, d: f64) -> Self {
+        Self::from_inner(self.inner.offset_by(d))
+    }
+
+    fn normal(&self) -> Vector2 {
+        Vector2::from_inner(self.inner.normal().into_inner())
+    }
+
+    fn at_t(&self, t: f64) -> Manifold1Pos2 {
+        Manifold1Pos2::from_inner(self.inner.at_t(t))
+    }
+
+    fn intersects_other(&self, other: &Self) -> bool {
+        self.inner.intersects_other(&other.inner)
+    }
 }
 
 // ================================================================================================
 // CubicSpline2
 // ================================================================================================
+
+/// Filters a fixed-size `[f64; 2]` root array (where unused slots are `NaN`) down to a `Vec`
+/// containing only the finite values, for a cleaner Python-side result than a NaN-padded tuple.
+fn finite_roots(roots: [f64; 2]) -> Vec<f64> {
+    roots.into_iter().filter(|v| !v.is_nan()).collect()
+}
 
 #[pyclass(from_py_object, module = "engeom.geom2")]
 #[derive(Clone, Debug)]
@@ -999,6 +1241,8 @@ type CubicSpline2State = (f64, f64, f64, f64, f64, f64, f64, f64);
 #[pymethods]
 impl CubicSpline2 {
     #[new]
+    // Four control points as flat coordinates; the signature mirrors the Python API.
+    #[allow(clippy::too_many_arguments)]
     fn new(x0: f64, y0: f64, x1: f64, y1: f64, x2: f64, y2: f64, x3: f64, y3: f64) -> Self {
         Self {
             inner: engeom::geom2::CubicSpline2::new(
@@ -1132,6 +1376,87 @@ impl CubicSpline2 {
     fn project_point(&self, point: Point2) -> SplineProjection {
         let queries = engeom::common::cubic_spline::CubicSplineQueries::from(&self.inner);
         SplineProjection::from_inner(queries.project_point(point.get_inner()))
+    }
+
+    /// Return the position and derivative direction of the curve at parameter `t` in the form of
+    /// a parameterized line.
+    fn line_at(&self, t: f64) -> Line2 {
+        Line2::from_inner(self.inner.line_at(t))
+    }
+
+    /// Returns the real roots of the derivative of each component of the curve, as a tuple of
+    /// `(x_roots, y_roots)` where each is a list of 0, 1, or 2 parameter values.
+    fn derivative_roots(&self) -> (Vec<f64>, Vec<f64>) {
+        let roots = self.inner.derivative_roots();
+        (finite_roots(roots[0]), finite_roots(roots[1]))
+    }
+
+    /// Returns the parameter `t` of a cusp if one exists in `[0, 1]`, otherwise `None`.
+    fn find_cusp(&self) -> Option<f64> {
+        self.inner.find_cusp()
+    }
+
+    /// Returns parameter values in `[0, 1]` where the curve's curvature is zero, as a list of 0,
+    /// 1, or 2 parameter values.
+    fn find_curvature_zeros(&self) -> Vec<f64> {
+        finite_roots(self.inner.find_curvature_zeros())
+    }
+
+    /// Returns every local maximum of the curvature over `[0, 1]`, each as a `(t, curvature)`
+    /// tuple, ordered by ascending `t`.
+    fn find_curvature_maxima(&self) -> Vec<(f64, f64)> {
+        self.inner
+            .find_curvature_maxima()
+            .into_iter()
+            .map(|v| (v.t, v.value))
+            .collect()
+    }
+
+    /// Returns the corners `(min, max)` of the tight axis-aligned bounding box of the curve over
+    /// the parameter range `[0, 1]`.
+    fn compute_bounds(&self) -> (Point2, Point2) {
+        let (lo, hi) = self.inner.compute_bounds();
+        (Point2::from_inner(lo), Point2::from_inner(hi))
+    }
+
+    /// Returns the arc length of the curve over the parameter range `[t0, t1]`.
+    fn arc_length_between(&self, t0: f64, t1: f64) -> f64 {
+        self.inner.arc_length_between(t0, t1)
+    }
+
+    /// Returns the total arc length of the curve over the parameter range `[0, 1]`.
+    fn arc_length(&self) -> f64 {
+        self.inner.arc_length()
+    }
+
+    /// Splits the curve at parameter `t` using de Casteljau's algorithm, returning the left and
+    /// right sub-curves.
+    fn split(&self, t: f64) -> (Self, Self) {
+        let (left, right) = self.inner.split(t);
+        (Self::from_inner(left), Self::from_inner(right))
+    }
+
+    /// Splits the curve at parameter `t`, returning `None` if `t` is not in `[0, 1]`.
+    fn try_split(&self, t: f64) -> Option<(Self, Self)> {
+        self.inner
+            .try_split(t)
+            .map(|(left, right)| (Self::from_inner(left), Self::from_inner(right)))
+    }
+
+    /// Returns the axis-aligned bounding box of the curve, computed on demand.
+    #[getter]
+    fn aabb(&self) -> Aabb2 {
+        Aabb2::from_inner(self.inner.aabb())
+    }
+
+    fn transformed_by(&self, iso: &Iso2) -> Self {
+        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
+    }
+
+    /// Returns the parameter values of any inflection points of the curve, as a list of 0, 1, or
+    /// 2 parameter values. Roots are not filtered to `[0, 1]`.
+    fn find_inflections(&self) -> Vec<f64> {
+        finite_roots(self.inner.find_inflections())
     }
 }
 
@@ -1300,36 +1625,36 @@ impl Arc2 {
     fn __repr__(&self) -> String {
         format!(
             "Arc2({}, {}, {}, {}, {})",
-            self.inner.center().x,
-            self.inner.center().y,
-            self.inner.radius(),
-            self.inner.angle0(),
-            self.inner.angle(),
+            self.inner.center.x,
+            self.inner.center.y,
+            self.inner.radius,
+            self.inner.angle0,
+            self.inner.angle,
         )
     }
 
     fn __getstate__(&self) -> (f64, f64, f64, f64, f64) {
         (
-            self.inner.center().x,
-            self.inner.center().y,
-            self.inner.radius(),
-            self.inner.angle0(),
-            self.inner.angle(),
+            self.inner.center.x,
+            self.inner.center.y,
+            self.inner.radius,
+            self.inner.angle0,
+            self.inner.angle,
         )
     }
 
     fn __getnewargs__(&self) -> (f64, f64, f64, f64, f64) {
         (
-            self.inner.center().x,
-            self.inner.center().y,
-            self.inner.radius(),
-            self.inner.angle0(),
-            self.inner.angle(),
+            self.inner.center.x,
+            self.inner.center.y,
+            self.inner.radius,
+            self.inner.angle0,
+            self.inner.angle,
         )
     }
 
     fn __setstate__(&mut self, state: (f64, f64, f64, f64, f64)) {
-        self.inner = engeom::Arc2::circle_angles(
+        self.inner = engeom::Arc2::new(
             engeom::Point2::new(state.0, state.1),
             state.2,
             state.3,
@@ -1338,47 +1663,42 @@ impl Arc2 {
     }
 
     fn __eq__(&self, other: &Self) -> bool {
-        self.inner.center() == other.inner.center()
-            && self.inner.radius() == other.inner.radius()
-            && self.inner.angle0() == other.inner.angle0()
-            && self.inner.angle() == other.inner.angle()
+        self.inner.center == other.inner.center
+            && self.inner.radius == other.inner.radius
+            && self.inner.angle0 == other.inner.angle0
+            && self.inner.angle == other.inner.angle
     }
 
     #[new]
     fn new(x: f64, y: f64, r: f64, start_radians: f64, sweep_radians: f64) -> Self {
         Self {
-            inner: engeom::Arc2::circle_angles(
-                engeom::Point2::new(x, y),
-                r,
-                start_radians,
-                sweep_radians,
-            ),
+            inner: engeom::Arc2::new(engeom::Point2::new(x, y), r, start_radians, sweep_radians),
         }
     }
 
     #[getter]
     fn center(&self) -> Point2 {
-        Point2::from_inner(self.inner.center())
+        Point2::from_inner(self.inner.center)
     }
 
     #[getter]
     fn r(&self) -> f64 {
-        self.inner.radius()
+        self.inner.radius
     }
 
     #[getter]
     fn angle0(&self) -> f64 {
-        self.inner.angle0()
+        self.inner.angle0
     }
 
     #[getter]
     fn angle(&self) -> f64 {
-        self.inner.angle()
+        self.inner.angle
     }
 
     #[getter]
     fn aabb(&self) -> Aabb2 {
-        Aabb2::from_inner(*self.inner.aabb())
+        Aabb2::from_inner(self.inner.aabb())
     }
 
     #[getter]
@@ -1396,9 +1716,86 @@ impl Arc2 {
         Circle2::from_inner(self.inner.circle())
     }
 
-    fn make_points<'py>(&self, py: Python<'py>, tol: f64) -> Bound<'py, PyArray2<f64>> {
-        let points = self.inner.make_points(tol);
+    fn to_points<'py>(&self, py: Python<'py>, tol: f64) -> Bound<'py, PyArray2<f64>> {
+        use engeom::geom2::BoundaryElement2;
+        let points = self.inner.to_points(tol);
         points_to_array(&points).into_pyarray(py)
+    }
+
+    #[staticmethod]
+    fn from_circle(circle: &Circle2, angle0: f64, angle: f64) -> Self {
+        Self::from_inner(engeom::Arc2::from_circle(
+            *circle.get_inner(),
+            angle0,
+            angle,
+        ))
+    }
+
+    #[staticmethod]
+    fn from_ends(start: &Point2, end: &Point2, center: &Point2, clockwise: bool) -> PyResult<Self> {
+        engeom::Arc2::from_ends(
+            start.get_inner(),
+            end.get_inner(),
+            center.get_inner(),
+            clockwise,
+        )
+        .map(Self::from_inner)
+        .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[staticmethod]
+    fn from_point_angle(center: &Point2, radius: f64, point: &Point2, angle: f64) -> Self {
+        Self::from_inner(engeom::Arc2::from_point_angle(
+            *center.get_inner(),
+            radius,
+            *point.get_inner(),
+            angle,
+        ))
+    }
+
+    #[staticmethod]
+    fn from_3_points(p0: &Point2, p1: &Point2, p2: &Point2) -> Self {
+        Self::from_inner(engeom::Arc2::from_3_points(
+            *p0.get_inner(),
+            *p1.get_inner(),
+            *p2.get_inner(),
+        ))
+    }
+
+    fn length(&self) -> f64 {
+        self.inner.length()
+    }
+
+    fn point_at_angle(&self, angle: f64) -> Point2 {
+        Point2::from_inner(self.inner.point_at_angle(angle))
+    }
+
+    fn point_at_fraction(&self, fraction: f64) -> Point2 {
+        Point2::from_inner(self.inner.point_at_fraction(fraction))
+    }
+
+    fn point_at_length(&self, length: f64) -> Point2 {
+        Point2::from_inner(self.inner.point_at_length(length))
+    }
+
+    fn is_ccw(&self) -> bool {
+        self.inner.is_ccw()
+    }
+
+    fn angle_interval(&self) -> AngleInterval {
+        AngleInterval::from_inner(self.inner.angle_interval())
+    }
+
+    fn is_theta_on_arc(&self, theta: f64) -> bool {
+        self.inner.is_theta_on_arc(theta)
+    }
+
+    fn theta_to_fraction(&self, theta: f64) -> f64 {
+        self.inner.theta_to_fraction(theta)
+    }
+
+    fn at_fraction(&self, fraction: f64) -> Point2 {
+        Point2::from_inner(self.inner.at_fraction(fraction))
     }
 }
 
@@ -1754,6 +2151,8 @@ enum Transformable2 {
     Vec(Vector2),
     Pnt(Point2),
     Sp(SurfacePoint2),
+    Seg(Segment2),
+    Circle(Circle2),
 }
 
 #[pyclass(from_py_object, module = "engeom.geom2")]
@@ -1780,11 +2179,84 @@ impl Iso2 {
         Self { inner }
     }
 
+    fn __getstate__(&self) -> (f64, f64, f64) {
+        (
+            self.inner.translation.x,
+            self.inner.translation.y,
+            self.inner.rotation.angle(),
+        )
+    }
+
+    fn __getnewargs__(&self) -> (f64, f64, f64) {
+        self.__getstate__()
+    }
+
+    fn __setstate__(&mut self, state: (f64, f64, f64)) {
+        self.inner = engeom::Iso2::translation(state.0, state.1) * engeom::Iso2::rotation(state.2);
+    }
+
+    fn __eq__(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+
     #[staticmethod]
     fn identity() -> Self {
         Self {
             inner: engeom::Iso2::identity(),
         }
+    }
+
+    #[staticmethod]
+    fn from_array(matrix: PyReadonlyArray2<'_, f64>) -> PyResult<Self> {
+        if matrix.shape().len() != 2 || matrix.shape()[0] != 3 || matrix.shape()[1] != 3 {
+            return Err(PyValueError::new_err("Expected 3x3 matrix"));
+        }
+
+        let mut array = [0.0; 9];
+        for (i, value) in matrix.as_array().iter().enumerate() {
+            array[i] = *value;
+        }
+
+        let inner = engeom::Iso2::from_array(&array)
+            .map_err(|e| PyValueError::new_err(format!("Error creating Iso2: {}", e)))?;
+
+        Ok(Self { inner })
+    }
+
+    #[staticmethod]
+    fn from_rotation_about(point: &Point2, angle: f64) -> Self {
+        Self {
+            inner: engeom::Iso2::from_rotation_about(point.get_inner(), angle),
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(e0, origin=None))]
+    fn from_basis_x(e0: &Vector2, origin: Option<Point2>) -> PyResult<Self> {
+        let inner = engeom::Iso2::from_basis_x(e0.get_inner(), origin.map(|p| *p.get_inner()))
+            .map_err(|e| PyValueError::new_err(format!("Error creating Iso2: {}", e)))?;
+
+        Ok(Self { inner })
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(e1, origin=None))]
+    fn from_basis_y(e1: &Vector2, origin: Option<Point2>) -> PyResult<Self> {
+        let inner = engeom::Iso2::from_basis_y(e1.get_inner(), origin.map(|p| *p.get_inner()))
+            .map_err(|e| PyValueError::new_err(format!("Error creating Iso2: {}", e)))?;
+
+        Ok(Self { inner })
+    }
+
+    fn flipped(&self) -> Self {
+        Self {
+            inner: self.inner.flipped(),
+        }
+    }
+
+    #[getter]
+    fn origin(&self) -> Point2 {
+        Point2::from_inner(self.inner.origin())
     }
 
     fn inverse(&self) -> Self {
@@ -1818,8 +2290,14 @@ impl Iso2 {
                 Point2::from_inner(self.inner * other.inner).into_bound_py_any(py)
             }
             Transformable2::Sp(other) => {
-                SurfacePoint2::from_inner(other.inner.transformed(&self.inner))
+                SurfacePoint2::from_inner(other.inner.transformed_by(&self.inner))
                     .into_bound_py_any(py)
+            }
+            Transformable2::Seg(other) => {
+                Segment2::from_inner(other.inner.transformed_by(&self.inner)).into_bound_py_any(py)
+            }
+            Transformable2::Circle(other) => {
+                Circle2::from_inner(other.inner.transformed_by(&self.inner)).into_bound_py_any(py)
             }
         }
     }

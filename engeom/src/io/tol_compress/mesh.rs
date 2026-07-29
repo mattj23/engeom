@@ -7,7 +7,7 @@
 use crate::io::tol_compress::core::{
     read_indices, read_tc_points3, write_indices, write_tc_points3,
 };
-use crate::{Mesh, Result};
+use crate::{MeshData3, Result};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
@@ -22,10 +22,17 @@ const MAGIC: &[u8; 6] = b"TCMESH";
 /// Smaller values produce more accurate output at the cost of more bytes per vertex.
 ///
 /// Use [`write_tc_mesh_file`] for the common case of writing directly to a file path.
-pub fn write_tc_mesh_to<W: Write>(writer: &mut W, mesh: &Mesh, tol: f64) -> Result<()> {
+pub fn write_tc_mesh_to<W: Write>(
+    writer: &mut W,
+    mesh: &MeshData3,
+    tol: f64,
+    allow_attribute_loss: bool,
+) -> Result<()> {
+    mesh.check_attribute_loss("the tcmesh format", allow_attribute_loss)?;
+
     writer.write_all(MAGIC)?;
-    write_tc_points3(writer, mesh.vertices(), tol)?;
-    write_indices(writer, mesh.faces(), mesh.vertices().len() as u32)?;
+    write_tc_points3(writer, mesh.points(), tol)?;
+    write_indices(writer, mesh.faces(), mesh.points().len() as u32)?;
     Ok(())
 }
 
@@ -35,7 +42,7 @@ pub fn write_tc_mesh_to<W: Write>(writer: &mut W, mesh: &Mesh, tol: f64) -> Resu
 /// vertex positions are guaranteed to be within the tolerance that was supplied at write time.
 ///
 /// Use [`read_tc_mesh_file`] for the common case of reading from a file path.
-pub fn read_tc_mesh_from<R: Read>(reader: &mut R) -> Result<Mesh> {
+pub fn read_tc_mesh_from<R: Read>(reader: &mut R) -> Result<MeshData3> {
     let mut magic = [0u8; 6];
     reader.read_exact(&mut magic)?;
     if &magic != MAGIC {
@@ -44,18 +51,23 @@ pub fn read_tc_mesh_from<R: Read>(reader: &mut R) -> Result<Mesh> {
 
     let vertices = read_tc_points3(reader)?;
     let faces = read_indices::<_, 3>(reader, vertices.len() as u32)?;
-    Ok(Mesh::new(vertices, faces, false))
+    MeshData3::new(vertices, faces)
 }
 
 /// Write a mesh to a tcmesh file at the given path. See [`write_tc_mesh_to`] for format details.
-pub fn write_tc_mesh_file(path: &Path, mesh: &Mesh, tol: f64) -> Result<()> {
+pub fn write_tc_mesh_file(
+    path: &Path,
+    mesh: &MeshData3,
+    tol: f64,
+    allow_attribute_loss: bool,
+) -> Result<()> {
     let file = File::create(path)?;
     let mut writer = BufWriter::new(file);
-    write_tc_mesh_to(&mut writer, mesh, tol)
+    write_tc_mesh_to(&mut writer, mesh, tol, allow_attribute_loss)
 }
 
 /// Read a mesh from a tcmesh file at the given path. See [`read_tc_mesh_from`] for format details.
-pub fn read_tc_mesh_file(path: &Path) -> Result<Mesh> {
+pub fn read_tc_mesh_file(path: &Path) -> Result<MeshData3> {
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
     read_tc_mesh_from(&mut reader)
@@ -68,10 +80,10 @@ mod tests {
     use approx::assert_relative_eq;
     use std::io::Cursor;
 
-    fn check_round_trip(original: &Mesh, recovered: &Mesh, tol: f64) {
-        assert_eq!(original.vertices().len(), recovered.vertices().len());
+    fn check_round_trip(original: &MeshData3, recovered: &MeshData3, tol: f64) {
+        assert_eq!(original.points().len(), recovered.points().len());
         assert_eq!(original.faces().len(), recovered.faces().len());
-        for (a, b) in original.vertices().iter().zip(recovered.vertices().iter()) {
+        for (a, b) in original.points().iter().zip(recovered.points().iter()) {
             assert_relative_eq!(a, b, epsilon = tol);
         }
         for (a, b) in original.faces().iter().zip(recovered.faces().iter()) {
@@ -81,10 +93,10 @@ mod tests {
 
     #[test]
     fn round_trip_bytes() {
-        let mesh = stanford_bun_2();
+        let mesh = stanford_bun_2().to_data();
         let tol = 1e-4;
         let mut buf = Vec::new();
-        write_tc_mesh_to(&mut buf, &mesh, tol).unwrap();
+        write_tc_mesh_to(&mut buf, &mesh, tol, false).unwrap();
 
         let mut cursor = Cursor::new(&buf);
         let recovered = read_tc_mesh_from(&mut cursor).unwrap();
@@ -93,10 +105,10 @@ mod tests {
 
     #[test]
     fn round_trip_file() {
-        let mesh = stanford_bun_2();
+        let mesh = stanford_bun_2().to_data();
         let tol = 1e-4;
         let path = std::env::temp_dir().join("stanford_bun_2_round_trip.tcmesh");
-        write_tc_mesh_file(&path, &mesh, tol).unwrap();
+        write_tc_mesh_file(&path, &mesh, tol, false).unwrap();
         let recovered = read_tc_mesh_file(&path).unwrap();
         check_round_trip(&mesh, &recovered, tol);
     }
@@ -104,14 +116,27 @@ mod tests {
     #[test]
     fn round_trip_high_res() {
         // stanford_bun_4 has more vertices, exercising a larger index byte width
-        let mesh = stanford_bun_4();
+        let mesh = stanford_bun_4().to_data();
         let tol = 1e-4;
         let mut buf = Vec::new();
-        write_tc_mesh_to(&mut buf, &mesh, tol).unwrap();
+        write_tc_mesh_to(&mut buf, &mesh, tol, false).unwrap();
 
         let mut cursor = Cursor::new(&buf);
         let recovered = read_tc_mesh_from(&mut cursor).unwrap();
         check_round_trip(&mesh, &recovered, tol);
+    }
+
+    /// The format stores geometry only, so it has to refuse an attributed mesh rather than
+    /// silently stripping it.
+    #[test]
+    fn writing_refuses_to_drop_attributes_silently() {
+        let mut mesh = stanford_bun_2().to_data();
+        mesh.set_face_labels(Some(vec![1; mesh.face_count()]))
+            .unwrap();
+
+        let mut buf = Vec::new();
+        assert!(write_tc_mesh_to(&mut buf, &mesh, 1e-4, false).is_err());
+        assert!(write_tc_mesh_to(&mut buf, &mesh, 1e-4, true).is_ok());
     }
 
     #[test]

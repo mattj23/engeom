@@ -239,7 +239,7 @@ impl TryFrom<Vec<f64>> for DiscreteDomain {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::{Rng, RngExt};
+    use rand::RngExt;
     use test_case::test_case;
 
     #[test]

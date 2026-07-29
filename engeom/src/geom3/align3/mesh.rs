@@ -16,7 +16,7 @@
 //!
 //! ## Alignment mesh container
 //!
-//! [`AlignmentMesh`] wraps a `&Mesh` together with optional per-vertex uncertainty values, an
+//! [`AlignmentMesh`] wraps a `&Mesh3` together with optional per-vertex uncertainty values, an
 //! initial transform, and a list of [`MeshWeight`] providers.  It is used by the multi-mesh bundle
 //! adjustment solver (`multi_mesh`) where each entity needs its own configuration.
 //!
@@ -25,26 +25,49 @@
 //! The [`MeshWeight`] trait and its two built-in implementations let callers scale alignment
 //! residuals by region:
 //!
-//! - [`FaceIndexWeight`] — applies a weight to points whose face index falls within a given
+//! - [`FaceIndexWeight`] - applies a weight to points whose face index falls within a given
 //!   [`IndexMask`], leaving all other points at weight `1.0`.
-//! - [`NearMeshWeight`] — applies a weight to points that are close to (and similarly oriented as)
+//! - [`NearMeshWeight`] - applies a weight to points that are close to (and similarly oriented as)
 //!   a second reference mesh, based on distance and normal angle thresholds.
 
+use crate::common::IndexMask;
 use crate::common::kd_tree::KdTreeSearch;
 use crate::common::points::{dist, mean_point};
 use crate::common::vec_f64::mean_and_stdev;
-use crate::common::{IndexMask, PCoords};
 use crate::geom3::align3::{AlignSurfMatch3, SurfaceTarget3};
 use crate::geom3::mesh::MeshSurfPoint;
-use crate::{Iso3, KdTree3, Mesh, SelectOp, Selection, SvdBasis3, To2D, TransformBy};
+use crate::{Iso3, KdTree3, Mesh3, Point3, SelectOp, Selection, SvdBasis3, To2D};
 use parry2d_f64::transformation::convex_hull;
 use std::f64::consts::PI;
 
-impl SurfaceTarget3 for Mesh {
-    fn align_surf_closest_to(&self, p: &impl PCoords<3>) -> AlignSurfMatch3 {
-        let m = self.surf_closest_to(p);
-        AlignSurfMatch3::new(m.point(), m.normal(), true, 1.0)
+impl SurfaceTarget3 for Mesh3 {
+    fn find_align_match(&self, p: &Point3) -> AlignSurfMatch3 {
+        let m = self.surface_closest_to(p);
+        let match_ = AlignSurfMatch3::new(m.point(), m.normal(), true, 1.0);
+
+        match self.point_stdev() {
+            Some(stdev) => match_.with_sigma(interpolated_stdev(self, &m, stdev)),
+            None => match_,
+        }
     }
+}
+
+/// Interpolates a mesh's per-vertex standard deviation to the position of a surface match, using
+/// the barycentric coordinates the projection already produced.
+///
+/// The interpolation is linear in the standard deviation rather than in the variance. Combining
+/// the three vertex variances as `sum(bc_i^2 * var_i)` would be right if the interpolated point
+/// were an *average of independent measurements of the same quantity*, but it isn't: it is a
+/// position on a surface which is uncertain by roughly the local noise level everywhere. That
+/// form would claim the centroid of a face is `1/sqrt(3)` times as uncertain as its corners,
+/// which is not true of a scanned surface. Linear interpolation keeps sigma continuous across
+/// faces and equal to the vertex value at each vertex, which is the behavior wanted here.
+fn interpolated_stdev(mesh: &Mesh3, m: &MeshSurfPoint, stdev: &[f64]) -> f64 {
+    let face = mesh.faces()[m.face_index as usize];
+    m.bc.iter()
+        .zip(face.iter())
+        .map(|(w, &v)| w * stdev[v as usize])
+        .sum()
 }
 
 // ===============================================================================================
@@ -56,7 +79,7 @@ impl SurfaceTarget3 for Mesh {
 /// alignment process, such as the uncertainty of the mesh vertex points, an initial alignment,
 /// and methods of applying weights to the sample points.
 pub struct AlignmentMesh<'a> {
-    pub mesh: &'a Mesh,
+    pub mesh: &'a Mesh3,
     pub uncertainty: Option<&'a [f64]>,
     pub initial: Option<&'a Iso3>,
     pub weights: Option<&'a [Box<dyn MeshWeight + Sync>]>,
@@ -79,7 +102,7 @@ impl<'a> AlignmentMesh<'a> {
     ///   weights of the alignment points _once_ upon initialization. These weights will be combined
     ///   and will then scale the residual calculated at the associated alignment point.
     pub fn new(
-        mesh: &'a Mesh,
+        mesh: &'a Mesh3,
         uncertainty: Option<&'a [f64]>,
         initial: Option<&'a Iso3>,
         weights: Option<&'a [Box<dyn MeshWeight + Sync>]>,
@@ -150,7 +173,7 @@ impl MeshWeight for FaceIndexWeight {
 
 #[derive(Clone)]
 pub struct NearMeshWeight {
-    mesh: Mesh,
+    mesh: Mesh3,
     weight: f64,
     max_dist: f64,
     max_angle: f64,
@@ -165,7 +188,7 @@ impl NearMeshWeight {
     /// * `weight`: The weight to apply to the mesh points.
     /// * `max_dist`: The maximum distance to consider for the weight.
     /// * `max_angle`: The maximum angle between normals to consider for the weight.
-    pub fn new(mesh: Mesh, weight: f64, max_dist: f64, max_angle: f64) -> Self {
+    pub fn new(mesh: Mesh3, weight: f64, max_dist: f64, max_angle: f64) -> Self {
         Self {
             mesh,
             weight,
@@ -182,7 +205,7 @@ impl NearMeshWeight {
 impl MeshWeight for NearMeshWeight {
     fn weight(&self, point: &MeshSurfPoint) -> f64 {
         // Find the nearest point in the mesh to the given point
-        let nearest = self.mesh.surf_closest_to(&point.sp.point);
+        let nearest = self.mesh.surface_closest_to(&point.sp.point);
         let dist = dist(&nearest.sp, &point.sp);
 
         // If the distance is greater than the maximum distance, return 1.0
@@ -277,8 +300,8 @@ impl GAPParams {
 }
 
 pub fn simple_alignment_points(
-    test_mesh: &Mesh,
-    ref_mesh: &Mesh,
+    test_mesh: &Mesh3,
+    ref_mesh: &Mesh3,
     spacing: f64,
 ) -> Vec<MeshSurfPoint> {
     let overlap = test_mesh
@@ -333,8 +356,8 @@ pub fn simple_alignment_points(
 ///
 /// returns: Vec<MeshSurfPoint, Global>
 pub fn generate_alignment_points(
-    test_mesh: &Mesh,
-    ref_mesh: &Mesh,
+    test_mesh: &Mesh3,
+    ref_mesh: &Mesh3,
     iso: &Iso3,
     params: &GAPParams,
 ) -> Vec<MeshSurfPoint> {
@@ -390,7 +413,7 @@ pub fn generate_alignment_points(
 fn smpl_check(
     check: &MeshSurfPoint,
     neighbors: &[MeshSurfPoint],
-    reference: &Mesh,
+    reference: &Mesh3,
     iso: &Iso3,
     params: &GAPParams,
 ) -> (bool, f64) {
@@ -402,7 +425,7 @@ fn smpl_check(
     // If the points on the test mesh pass, we project the points to the reference mesh and
     // run the same check.
     let moved = iso * check.sp;
-    let check_ref = reference.surf_closest_to(&moved.point);
+    let check_ref = reference.surface_closest_to(&moved.point);
 
     // Normals must be facing the same direction
     if check_ref.sp.normal.dot(&moved.normal) < 0.0 {
@@ -411,7 +434,7 @@ fn smpl_check(
 
     let neighbors_ref = neighbors
         .iter()
-        .map(|sp| reference.surf_closest_to(&(iso * sp.sp.point)))
+        .map(|sp| reference.surface_closest_to(&(iso * sp.sp.point)))
         .collect::<Vec<_>>();
 
     // The minimum spacing to the check_ref point should be max_spacing
@@ -469,7 +492,7 @@ pub fn sac_check(
     // be the surface normal direction. The origin is the centroid of the neighbors + the
     // original check point.
     let iso = Iso3::from(&basis);
-    let points = (&points).transform_by(&iso);
+    let points = points.iter().map(|p| iso * p).collect::<Vec<_>>();
 
     // Check that all the points are no more than out_of_plane_ratio * sample_spacing from the
     // x-y plane.

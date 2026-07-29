@@ -1,4 +1,5 @@
 //! This module should have tools for working with indices
+//! TODO: Check if we still need this module, remove if not
 
 pub fn index_vec(indices: Option<&[usize]>, len: usize) -> Vec<usize> {
     if let Some(items) = indices {

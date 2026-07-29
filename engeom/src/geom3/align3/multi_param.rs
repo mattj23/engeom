@@ -1,7 +1,7 @@
 //! This module has an abstraction to help manage optimization parameters for multiple relative
 //! entities
 
-use crate::geom3::align3::{RcParams3, T3Storage};
+use crate::geom3::align3::{AlignStorage3, RcParams3};
 use crate::geom3::{Iso3, Point3};
 use parry3d_f64::na::{DVector, Dyn, Matrix, Owned};
 
@@ -111,7 +111,7 @@ impl ParamHandler {
         matrix: &mut Jacobian,
         row: usize,
         cloud_index: usize,
-        values: &T3Storage,
+        values: &AlignStorage3,
     ) {
         if cloud_index != self.static_i {
             let start_col = self.p_index(cloud_index) * 6;
@@ -131,6 +131,7 @@ mod tests {
 
     use crate::geom3::Vector3;
 
+    #[allow(dead_code)] // retained test helper
     fn gen_mean_pts() -> Vec<Point3> {
         vec![
             Point3::new(1.0, 2.0, 3.0),
@@ -139,6 +140,7 @@ mod tests {
         ]
     }
 
+    #[allow(dead_code)] // retained test helper
     fn gen_transform(x: f64, y: f64, z: f64, rx: f64, ry: f64, rz: f64) -> Iso3 {
         Iso3::new(Vector3::new(x, y, z), Vector3::new(rx, ry, rz))
     }

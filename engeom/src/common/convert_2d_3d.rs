@@ -1,9 +1,10 @@
 //! This module contains two traits, `To2D` and `To3D`, which are used to convert between 2D and
 //! 3D constructs by dropping or adding a Z component.
 
+use crate::Result;
 use crate::common::SurfacePoint;
-use crate::geom2::{Point2, UnitVec2, Vector2};
-use crate::geom3::{Point3, UnitVec3, Vector3};
+use crate::geom2::{Curve2, Point2, UnitVec2, Vector2};
+use crate::geom3::{Curve3, Point3, UnitVec3, Vector3};
 
 /// A trait for converting a 3D construct to a 2D construct by dropping the Z component.
 pub trait To2D {
@@ -94,6 +95,22 @@ impl To2D for &Vec<SurfacePoint<3>> {
     /// it has a magnitude of 1 in the X-Y plane.
     fn to_2d(&self) -> Self::T2D {
         self.iter().map(|p| p.to_2d()).collect()
+    }
+}
+
+impl To2D for Curve3 {
+    type T2D = Result<Curve2>;
+
+    /// Converts a 3D curve to a 2D curve by dropping the Z component of each of its vertices,
+    /// effectively projecting the curve into the X-Y plane.  The tolerance of the original curve
+    /// is preserved, and the resulting curve will be considered closed if its first and last
+    /// vertices are within that tolerance of each other.
+    ///
+    /// This operation is fallible because the projection can bring vertices closer together than
+    /// the tolerance, and the de-duplication which follows may leave fewer than two distinct
+    /// points (for instance, when the original curve is parallel to the Z axis).
+    fn to_2d(&self) -> Self::T2D {
+        Curve2::from_points(&self.vertices().to_2d(), self.tol(), false)
     }
 }
 
@@ -188,7 +205,7 @@ mod tests {
 
     #[test]
     fn unit_vec3_to_2d_renormalizes() {
-        // A vector pointing at 45° in XY with a Z component — result should be unit length
+        // A vector pointing at 45° in XY with a Z component - result should be unit length
         let uv3 = UnitVec3::new_normalize(Vector3::new(1.0, 1.0, 10.0));
         let uv2 = uv3.to_2d();
         assert_relative_eq!(uv2.norm(), 1.0, epsilon = 1e-10);
@@ -222,7 +239,7 @@ mod tests {
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
         );
-        // Normal is (0,0,1) — projecting to XY gives (0,0), which is degenerate but the
+        // Normal is (0,0,1) - projecting to XY gives (0,0), which is degenerate but the
         // function still calls new_normalize; test a non-degenerate case instead.
         let sp2 = SurfacePoint::<3>::new_normalize(
             Point3::new(1.0, 2.0, 3.0),
@@ -267,6 +284,61 @@ mod tests {
         let pts2 = (&pts).to_2d();
         assert_eq!(pts2.len(), 1);
         assert_relative_eq!(pts2[0].normal.norm(), 1.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn curve3_to_2d_drops_z() {
+        let curve = Curve3::from_points(
+            &[
+                Point3::new(0.0, 0.0, 5.0),
+                Point3::new(1.0, 0.0, 6.0),
+                Point3::new(1.0, 1.0, 7.0),
+            ],
+            1e-6,
+        )
+        .unwrap();
+
+        let curve2 = curve.to_2d().unwrap();
+        assert_eq!(curve2.count(), 3);
+        assert!(!curve2.is_closed());
+        assert_relative_eq!(curve2.tol(), curve.tol());
+        assert_relative_eq!(curve2.points()[1].x, 1.0);
+        assert_relative_eq!(curve2.points()[1].y, 0.0);
+        assert_relative_eq!(curve2.points()[2].x, 1.0);
+        assert_relative_eq!(curve2.points()[2].y, 1.0);
+    }
+
+    #[test]
+    fn curve3_to_2d_detects_closure() {
+        let curve = Curve3::from_points(
+            &[
+                Point3::new(0.0, 0.0, 1.0),
+                Point3::new(1.0, 0.0, 2.0),
+                Point3::new(1.0, 1.0, 3.0),
+                Point3::new(0.0, 0.0, 4.0),
+            ],
+            1e-6,
+        )
+        .unwrap();
+
+        let curve2 = curve.to_2d().unwrap();
+        assert!(curve2.is_closed());
+    }
+
+    #[test]
+    fn curve3_to_2d_fails_when_degenerate() {
+        // A curve parallel to the Z axis collapses to a single point in the X-Y plane
+        let curve = Curve3::from_points(
+            &[
+                Point3::new(1.0, 2.0, 0.0),
+                Point3::new(1.0, 2.0, 1.0),
+                Point3::new(1.0, 2.0, 2.0),
+            ],
+            1e-6,
+        )
+        .unwrap();
+
+        assert!(curve.to_2d().is_err());
     }
 
     #[test]
