@@ -383,22 +383,22 @@ class SurfacePoint2:
         """
         ...
 
-    def shift_orthogonal(self, distance: float) -> SurfacePoint2:
+    def shifted_orthogonal(self, distance: float) -> SurfacePoint2:
         """
-        Shift the surface point by a distance orthogonal to the normal vector. The direction of travel is the surface
-        point's normal vector rotated 90 degrees clockwise. For instance, if the normal vector is (0, 1), a positive
-        distance will move the point to the right and a negative distance will move the point to the left.
+        Return a new surface point shifted by a distance orthogonal to the normal vector. The direction of travel is the
+        surface point's normal vector rotated 90 degrees clockwise. For instance, if the normal vector is (0, 1), a
+        positive distance will move the point to the right and a negative distance will move the point to the left.
 
         :param distance: the distance to shift the surface point.
         :return: a new surface point shifted by the given distance.
         """
         ...
 
-    def rot_normal(self, angle: float) -> SurfacePoint2:
+    def normal_rotated(self, angle: float) -> SurfacePoint2:
         """
-        Rotate the normal vector of the surface point by a given angle in radians and return a new surface point. The
-        position of the surface point is not affected. The angle is positive for counter-clockwise rotation and negative
-        for clockwise rotation.
+        Return a new surface point with its normal vector rotated by a given angle in radians. The position of the
+        surface point is not affected. The angle is positive for counter-clockwise rotation and negative for clockwise
+        rotation.
 
         :param angle: the angle to rotate the normal vector by.
         :return: a new surface point with the rotated normal vector.

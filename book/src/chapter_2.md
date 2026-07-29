@@ -539,7 +539,7 @@ use std::f64::consts::PI;
 use engeom::{Point2, SurfacePoint2, Vector2};
 
 let sp      = SurfacePoint2::new_normalize(Point2::new(0.0, 0.0), Vector2::new(0.0, 1.0));
-let rotated = sp.rot_normal(PI / 2.0);
+let rotated = sp.normal_rotated(PI / 2.0);
 // Normal now points in the -X direction
 ```
 
@@ -550,13 +550,13 @@ from engeom.geom2 import SurfacePoint2
 from math import pi
 
 a = SurfacePoint2(0, 0, 0, 1)
-b = a.rot_normal(pi / 2)
+b = a.normal_rotated(pi / 2)
 # SurfacePoint2(0, 0, -1, 0)
 ```
 
 ### Orthogonal Shift
 
-Shifts the position of the surface point in the direction orthogonal to its normal. Following the clockwise winding order convention, this direction is the normal rotated 90 degrees clockwise. For a normal pointing in +Y, a positive shift moves the point in the +X direction.
+Returns a copy of the surface point with its position shifted in the direction orthogonal to its normal. Following the clockwise winding order convention, this direction is the normal rotated 90 degrees clockwise. For a normal pointing in +Y, a positive shift moves the point in the +X direction.
 
 **Rust:**
 
@@ -564,7 +564,7 @@ Shifts the position of the surface point in the direction orthogonal to its norm
 use engeom::{Point2, SurfacePoint2, Vector2};
 
 let sp      = SurfacePoint2::new_normalize(Point2::new(0.0, 0.0), Vector2::new(0.0, 1.0));
-let shifted = sp.shift_orthogonal(2.0);
+let shifted = sp.shifted_orthogonal(2.0);
 // point moves to (2, 0), normal unchanged
 ```
 
@@ -574,6 +574,6 @@ let shifted = sp.shift_orthogonal(2.0);
 from engeom.geom2 import SurfacePoint2
 
 a = SurfacePoint2(0, 0, 0, 1)
-b = a.shift_orthogonal(2)
+b = a.shifted_orthogonal(2)
 # SurfacePoint2(2, 0, 0, 1)
 ```

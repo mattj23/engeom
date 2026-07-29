@@ -189,8 +189,8 @@ impl Circle2 {
             -radius
         };
 
-        let a1 = a.shift_orthogonal(da);
-        let b1 = b.shift_orthogonal(db);
+        let a1 = a.shifted_orthogonal(da);
+        let b1 = b.shifted_orthogonal(db);
 
         let ts = intersect_lines(&a1, &b1);
         if let Some((t_a, _t_b)) = ts {

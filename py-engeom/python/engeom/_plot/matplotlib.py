@@ -470,7 +470,7 @@ else:
             # direction.
             offset_dir = distance.direction if distance.value >= 0 else -distance.direction
             center = SurfacePoint2(*distance.center.point, *offset_dir)
-            center = center.shift_orthogonal(side_shift)
+            center = center.shifted_orthogonal(side_shift)
             leader_a = center.projection(distance.a)
             leader_b = center.projection(distance.b)
 

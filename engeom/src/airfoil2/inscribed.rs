@@ -317,7 +317,7 @@ impl<'a> SectionInput<'a> {
         let cr = (b.c.r() - a.c.r()) * f + a.c.r();
 
         // Now find the measured circle
-        let line = Line2::from(&cp.rot_normal_90(Ccw));
+        let line = Line2::from(&cp.normal_rotated_90(Ccw));
         let circle = self.try_inscribed(&line)?;
 
         // If the circle is larger than either of its neighbors, we'll add it (we want to try to

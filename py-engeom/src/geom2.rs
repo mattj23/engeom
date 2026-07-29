@@ -493,12 +493,12 @@ impl SurfacePoint2 {
         self.inner.planar_distance(other.get_inner())
     }
 
-    fn shift_orthogonal(&self, distance: f64) -> Self {
-        Self::from_inner(self.inner.shift_orthogonal(distance))
+    fn shifted_orthogonal(&self, distance: f64) -> Self {
+        Self::from_inner(self.inner.shifted_orthogonal(distance))
     }
 
-    fn rot_normal(&self, angle: f64) -> Self {
-        Self::from_inner(self.inner.rot_normal(angle))
+    fn normal_rotated(&self, angle: f64) -> Self {
+        Self::from_inner(self.inner.normal_rotated(angle))
     }
 
     fn shifted(&self, distance: f64) -> Self {

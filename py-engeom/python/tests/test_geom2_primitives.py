@@ -66,7 +66,7 @@ def test_sp_div_scalar():
 def test_sp_rotate():
     from math import pi
     a = SurfacePoint2(0, 0, 0, 1)
-    b = a.rot_normal(pi / 2)
+    b = a.normal_rotated(pi / 2)
 
     assert abs(b.point.x) < 1e-6
     assert abs(b.point.y) < 1e-6
