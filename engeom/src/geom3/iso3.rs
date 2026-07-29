@@ -7,6 +7,70 @@ use parry3d_f64::na::{Matrix4, UnitQuaternion, try_convert};
 use std::f64::consts;
 
 pub trait IsoExtensions3 {
+    /// Create an isometry that translates by the given x, y, and z distances, with no rotation.
+    ///
+    /// This is a pass-through to nalgebra's `Iso3::translation`, provided so that the
+    /// constructor family on `Iso3` follows this project's `from_<description>` naming
+    /// convention. It also avoids the ambiguity of the underlying name, which nalgebra uses for
+    /// both this constructor and the isometry's public `translation` field.
+    ///
+    /// # Arguments
+    ///
+    /// * `x`: the distance to translate along the x-axis
+    /// * `y`: the distance to translate along the y-axis
+    /// * `z`: the distance to translate along the z-axis
+    ///
+    /// returns: Isometry<f64, Unit<Quaternion<f64>>, 3>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use approx::assert_relative_eq;
+    /// use engeom::{Iso3, Point3};
+    /// use engeom::geom3::IsoExtensions3;
+    ///
+    /// let iso = Iso3::from_translation(1.0, 2.0, 3.0);
+    /// assert_relative_eq!(iso * Point3::origin(), Point3::new(1.0, 2.0, 3.0), epsilon = 1e-10);
+    /// ```
+    fn from_translation(x: f64, y: f64, z: f64) -> Iso3;
+
+    /// Create an isometry that rotates around the global origin by an axis-angle vector, with no
+    /// translation.
+    ///
+    /// The vector encodes both the axis and the angle: its direction is the axis of rotation and
+    /// its magnitude is the angle of rotation in radians. A zero-length vector produces the
+    /// identity rotation. When the axis is pointed at the viewer, positive angles will produce
+    /// rotations viewed as counter-clockwise.
+    ///
+    /// For the common cases there are more direct alternatives: `from_rx`, `from_ry`, and
+    /// `from_rz` to rotate around a principal axis, and `from_rot_axis` to rotate around an
+    /// arbitrary axis that doesn't pass through the origin.
+    ///
+    /// This is a pass-through to nalgebra's `Iso3::rotation`, provided so that the constructor
+    /// family on `Iso3` follows this project's `from_<description>` naming convention.
+    ///
+    /// # Arguments
+    ///
+    /// * `axisangle`: a vector whose direction is the axis of rotation and whose magnitude is
+    ///   the angle of rotation in radians. It is *not* normalized, because its length carries
+    ///   the angle.
+    ///
+    /// returns: Isometry<f64, Unit<Quaternion<f64>>, 3>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::f64::consts::FRAC_PI_2;
+    /// use approx::assert_relative_eq;
+    /// use engeom::{Iso3, Vector3};
+    /// use engeom::geom3::IsoExtensions3;
+    ///
+    /// // Rotate a quarter turn around the z-axis
+    /// let iso = Iso3::from_rotation(&(Vector3::z() * FRAC_PI_2));
+    /// assert_relative_eq!(iso * Vector3::x(), Vector3::y(), epsilon = 1e-10);
+    /// ```
+    fn from_rotation(axisangle: &Vector3) -> Iso3;
+
     /// Tries to create an isometry from a 16-element array, which should contain the values of
     /// the transformation matrix in row-major order (the first four values are the first row,
     /// the next four are the second row, etc.).
@@ -575,6 +639,14 @@ pub trait IsoExtensions3 {
 }
 
 impl IsoExtensions3 for Iso3 {
+    fn from_translation(x: f64, y: f64, z: f64) -> Iso3 {
+        Iso3::translation(x, y, z)
+    }
+
+    fn from_rotation(axisangle: &Vector3) -> Iso3 {
+        Iso3::rotation(*axisangle)
+    }
+
     fn from_array(array: &[f64; 16]) -> Result<Self> {
         try_convert(Matrix4::from_row_slice(array)).ok_or("Could not convert to Iso3".into())
     }
@@ -832,6 +904,40 @@ mod tests {
             iso * Point3::new(1.0, 0.0, 0.0),
             o + e0.into_inner() * 1.0,
             epsilon = 1e-6
+        );
+    }
+
+    #[test]
+    fn from_translation_matches_nalgebra() {
+        let iso = Iso3::from_translation(1.0, 2.0, 3.0);
+
+        assert_relative_eq!(
+            iso * Point3::origin(),
+            Point3::new(1.0, 2.0, 3.0),
+            epsilon = 1e-10
+        );
+        assert_relative_eq!(iso, Iso3::translation(1.0, 2.0, 3.0), epsilon = 1e-10);
+    }
+
+    #[test]
+    fn from_rotation_matches_nalgebra() {
+        let axisangle = Vector3::z() * (PI / 2.0);
+        let iso = Iso3::from_rotation(&axisangle);
+
+        assert_relative_eq!(iso * Vector3::x(), Vector3::y(), epsilon = 1e-10);
+        assert_relative_eq!(iso, Iso3::rotation(axisangle), epsilon = 1e-10);
+
+        // The magnitude of the vector carries the angle, so an arbitrary axis should agree with
+        // the equivalent axis-and-angle construction.
+        let axis = UnitVec3::new_normalize(Vector3::new(1.0, 2.0, 3.0));
+        let iso = Iso3::from_rotation(&(axis.into_inner() * (PI / 3.0)));
+        assert_relative_eq!(
+            iso,
+            Iso3::from_parts(
+                Translation3::identity(),
+                UnitQuaternion::from_axis_angle(&axis, PI / 3.0)
+            ),
+            epsilon = 1e-10
         );
     }
 

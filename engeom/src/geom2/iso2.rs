@@ -5,6 +5,58 @@ use parry2d_f64::na::{Matrix3, Translation2, UnitComplex, try_convert};
 use std::f64::consts::PI;
 
 pub trait IsoExtensions2 {
+    /// Create an isometry that translates by the given x and y distances, with no rotation.
+    ///
+    /// This is a pass-through to nalgebra's `Iso2::translation`, provided so that the
+    /// constructor family on `Iso2` follows this project's `from_<description>` naming
+    /// convention. It also avoids the ambiguity of the underlying name, which nalgebra uses for
+    /// both this constructor and the isometry's public `translation` field.
+    ///
+    /// # Arguments
+    ///
+    /// * `x`: the distance to translate along the x-axis
+    /// * `y`: the distance to translate along the y-axis
+    ///
+    /// returns: Isometry<f64, Unit<Complex<f64>>, 2>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use approx::assert_relative_eq;
+    /// use engeom::{Iso2, Point2};
+    /// use engeom::geom2::IsoExtensions2;
+    ///
+    /// let iso = Iso2::from_translation(1.0, 2.0);
+    /// assert_relative_eq!(iso * Point2::origin(), Point2::new(1.0, 2.0), epsilon = 1e-10);
+    /// ```
+    fn from_translation(x: f64, y: f64) -> Iso2;
+
+    /// Create an isometry that rotates around the global origin by a given angle, with no
+    /// translation. To rotate around a different point, use `from_rotation_about`.
+    ///
+    /// This is a pass-through to nalgebra's `Iso2::rotation`, provided so that the constructor
+    /// family on `Iso2` follows this project's `from_<description>` naming convention.
+    ///
+    /// # Arguments
+    ///
+    /// * `angle`: the angle of rotation, specified in radians. Positive angles rotate
+    ///   counter-clockwise.
+    ///
+    /// returns: Isometry<f64, Unit<Complex<f64>>, 2>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::f64::consts::FRAC_PI_2;
+    /// use approx::assert_relative_eq;
+    /// use engeom::{Iso2, Vector2};
+    /// use engeom::geom2::IsoExtensions2;
+    ///
+    /// let iso = Iso2::from_rotation(FRAC_PI_2);
+    /// assert_relative_eq!(iso * Vector2::x(), Vector2::y(), epsilon = 1e-10);
+    /// ```
+    fn from_rotation(angle: f64) -> Iso2;
+
     /// Tries to create an isometry from a 9-element array, which should contain the values of
     /// the transformation matrix in row-major order (the first three values are the first row,
     /// the next three are the second row, etc.).
@@ -230,6 +282,14 @@ pub trait IsoExtensions2 {
 }
 
 impl IsoExtensions2 for Iso2 {
+    fn from_translation(x: f64, y: f64) -> Iso2 {
+        Iso2::translation(x, y)
+    }
+
+    fn from_rotation(angle: f64) -> Iso2 {
+        Iso2::rotation(angle)
+    }
+
     fn from_array(array: &[f64; 9]) -> Result<Self> {
         try_convert(Matrix3::from_row_slice(array)).ok_or("Could not convert to Iso2".into())
     }
@@ -283,6 +343,26 @@ fn from_parts(r: UnitComplex<f64>, origin: Option<Point2>) -> Iso2 {
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
+
+    #[test]
+    fn from_translation_matches_nalgebra() {
+        let iso = Iso2::from_translation(1.0, 2.0);
+
+        assert_relative_eq!(
+            iso * Point2::origin(),
+            Point2::new(1.0, 2.0),
+            epsilon = 1e-10
+        );
+        assert_relative_eq!(iso, Iso2::translation(1.0, 2.0), epsilon = 1e-10);
+    }
+
+    #[test]
+    fn from_rotation_matches_nalgebra() {
+        let iso = Iso2::from_rotation(PI / 2.0);
+
+        assert_relative_eq!(iso * Vector2::x(), Vector2::y(), epsilon = 1e-10);
+        assert_relative_eq!(iso, Iso2::rotation(PI / 2.0), epsilon = 1e-10);
+    }
 
     #[test]
     fn from_array_simple() {
