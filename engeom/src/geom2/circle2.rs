@@ -637,10 +637,11 @@ impl Circle2 {
     ///
     /// ```
     /// use engeom::{Circle2, Iso2, Vector2};
+    /// use engeom::geom2::IsoExtensions2;
     /// use approx::assert_relative_eq;
     ///
     /// let c = Circle2::new(1.0, 0.0, 2.0);
-    /// let moved = c.transformed_by(&Iso2::translation(0.0, 3.0));
+    /// let moved = c.transformed_by(&Iso2::from_translation(0.0, 3.0));
     ///
     /// assert_relative_eq!(moved.x(), 1.0);
     /// assert_relative_eq!(moved.y(), 3.0);

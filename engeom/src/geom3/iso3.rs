@@ -584,7 +584,7 @@ pub trait IsoExtensions3 {
     /// use engeom::{Iso3, Point3};
     /// use engeom::geom3::IsoExtensions3;
     ///
-    /// let iso = Iso3::translation(1.0, 2.0, 3.0);
+    /// let iso = Iso3::from_translation(1.0, 2.0, 3.0);
     /// assert_relative_eq!(iso.origin(), Point3::new(1.0, 2.0, 3.0), epsilon = 1e-10);
     /// ```
     fn origin(&self) -> Point3;

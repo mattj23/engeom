@@ -86,6 +86,11 @@ id3 = Iso3.identity()
 
 A 2D isometry is fully specified by an x translation, a y translation, and a rotation angle in radians.
 
+The `from_*` constructors below come from the `IsoExtensions2` trait (`engeom::geom2`), which must be in scope to use
+them. `from_translation` and `from_rotation` forward to nalgebra's `Iso2::translation` and `Iso2::rotation`; they exist
+so that the whole constructor family follows engeom's `from_<description>` naming convention, and because nalgebra uses
+the name `translation` for both a constructor and the isometry's `translation` field.
+
 **Rust:**
 
 ```rust
@@ -97,10 +102,10 @@ use std::f64::consts::PI;
 let iso = Iso2::new(Vector2::new(1.0, 2.0), PI / 4.0);
 
 // Translation only
-let t = Iso2::translation(1.0, 2.0);
+let t = Iso2::from_translation(1.0, 2.0);
 
 // Rotation only
-let r = Iso2::rotation(PI / 4.0);
+let r = Iso2::from_rotation(PI / 4.0);
 
 // From a 3x3 homogeneous matrix (row-major), from the `IsoExtensions2` trait
 let array = [1.0, 0.0, 1.0, 0.0, 1.0, 2.0, 0.0, 0.0, 1.0];
@@ -129,7 +134,7 @@ i1 = Iso2.from_array(m)
 
 ### 2D Isometries from an Arbitrary Rotation Point
 
-`Iso2::rotation` always rotates around the origin. To rotate around an arbitrary point, such as the center of a
+`Iso2::from_rotation` always rotates around the origin. To rotate around an arbitrary point, such as the center of a
 fitted circle, use `from_rotation_about`, provided by the `IsoExtensions2` trait (`engeom::geom2`). In 2D the axis of
 rotation is always perpendicular to the plane, so unlike the 3D `from_rot_axis` (which needs a `Line3` to describe an
 arbitrary direction), it is fully specified by a single point.
@@ -192,18 +197,22 @@ construction paths are available.
 
 **Rust:**
 
-In nalgebra, `Iso3::new` takes a translation vector and an axis-angle vector. The axis-angle vector's direction is
-the rotation axis and its magnitude is the rotation angle in radians.
+Rotations are encoded as an axis-angle vector, whose direction is the rotation axis and whose magnitude is the
+rotation angle in radians. `Iso3::new` (from nalgebra) takes a translation vector and an axis-angle vector together,
+while `from_translation` and `from_rotation` (from the `IsoExtensions3` trait) each build one component on its own.
+The latter two forward to nalgebra's `Iso3::translation` and `Iso3::rotation`, under names that follow engeom's
+`from_<description>` convention.
 
 ```rust
+use engeom::geom3::IsoExtensions3;
 use engeom::{Iso3, Vector3};
 use std::f64::consts::PI;
 
 // Translate by (1, 2, 3) with no rotation
-let t = Iso3::translation(1.0, 2.0, 3.0);
+let t = Iso3::from_translation(1.0, 2.0, 3.0);
 
 // Rotate by π/4 around the x-axis (axis-angle encoding)
-let r = Iso3::rotation(Vector3::x() * (PI / 4.0));
+let r = Iso3::from_rotation(&(Vector3::x() * (PI / 4.0)));
 
 // Combine translation and rotation directly
 let iso = Iso3::new(Vector3::new(1.0, 2.0, 3.0), Vector3::x() * (PI / 4.0));
@@ -331,10 +340,11 @@ The inverse of an isometry undoes the transformation. If \\( T \\) maps points f
 **Rust:**
 
 ```rust
+use engeom::geom3::IsoExtensions3;
 use engeom::{Iso3, Vector3};
 use std::f64::consts::PI;
 
-let iso = Iso3::rotation(Vector3::x() * (PI / 4.0));
+let iso = Iso3::from_rotation(&(Vector3::x() * (PI / 4.0)));
 let inv = iso.inverse();
 ```
 
@@ -370,7 +380,7 @@ use engeom::geom3::IsoExtensions3;
 use engeom::{Iso3, Vector3};
 use std::f64::consts::PI;
 
-let iso3 = Iso3::rotation(Vector3::x() * (PI / 4.0));
+let iso3 = Iso3::from_rotation(&(Vector3::x() * (PI / 4.0)));
 let flipped3 = iso3.flipped_around_z();
 ```
 
@@ -379,7 +389,7 @@ use engeom::geom2::IsoExtensions2;
 use engeom::Iso2;
 use std::f64::consts::PI;
 
-let iso2 = Iso2::rotation(PI / 4.0);
+let iso2 = Iso2::from_rotation(PI / 4.0);
 let flipped2 = iso2.flipped();
 ```
 
@@ -412,11 +422,12 @@ than translating then rotating.
 **Rust:**
 
 ```rust
+use engeom::geom3::IsoExtensions3;
 use engeom::{Iso3, Vector3};
 use std::f64::consts::PI;
 
-let r = Iso3::rotation(Vector3::x() * (PI / 4.0));
-let t = Iso3::translation(1.0, 2.0, 3.0);
+let r = Iso3::from_rotation(&(Vector3::x() * (PI / 4.0)));
+let t = Iso3::from_translation(1.0, 2.0, 3.0);
 
 // Rotate first, then translate
 let rt = t * r;

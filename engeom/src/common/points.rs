@@ -577,9 +577,10 @@ impl<'a, const D: usize> Rdp<'a, D> {
 /// ```
 /// use engeom::{Point2, Iso2};
 /// use engeom::common::points::transform_points;
+/// use engeom::geom2::IsoExtensions2;
 ///
 /// let points = vec![Point2::new(1.0, 2.0), Point2::new(3.0, 4.0)];
-/// let transform = Iso2::translation(1.0, 2.0);
+/// let transform = Iso2::from_translation(1.0, 2.0);
 /// let transformed_points = transform_points(&points, &transform);
 /// assert_eq!(transformed_points[0], Point2::new(2.0, 4.0));
 /// assert_eq!(transformed_points[1], Point2::new(4.0, 6.0));

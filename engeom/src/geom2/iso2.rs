@@ -243,7 +243,7 @@ pub trait IsoExtensions2 {
     /// use engeom::{Iso2, Point2};
     /// use engeom::geom2::IsoExtensions2;
     ///
-    /// let iso = Iso2::translation(1.0, 2.0);
+    /// let iso = Iso2::from_translation(1.0, 2.0);
     /// assert_relative_eq!(iso.origin(), Point2::new(1.0, 2.0), epsilon = 1e-10);
     /// ```
     fn origin(&self) -> Point2;
@@ -259,7 +259,7 @@ pub trait IsoExtensions2 {
     /// use engeom::{Iso2, Vector2};
     /// use engeom::geom2::IsoExtensions2;
     ///
-    /// let iso = Iso2::rotation(FRAC_PI_2);
+    /// let iso = Iso2::from_rotation(FRAC_PI_2);
     /// assert_relative_eq!(iso.x(), Vector2::y_axis(), epsilon = 1e-10);
     /// ```
     fn x(&self) -> UnitVec2;
@@ -275,7 +275,7 @@ pub trait IsoExtensions2 {
     /// use engeom::{Iso2, Vector2};
     /// use engeom::geom2::IsoExtensions2;
     ///
-    /// let iso = Iso2::rotation(FRAC_PI_2);
+    /// let iso = Iso2::from_rotation(FRAC_PI_2);
     /// assert_relative_eq!(iso.y(), -Vector2::x_axis(), epsilon = 1e-10);
     /// ```
     fn y(&self) -> UnitVec2;
