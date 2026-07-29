@@ -98,6 +98,18 @@ We're going to follow the standard Rust API guidelines:
 - `into_`: a consuming conversion to a different type
 - `as_`: a cheap reference-to-reference reinterpretation 
 
+### Conforming pass-through on foreign types
+
+Several types that are part of engeom's public surface aren't ours: `Iso2`, `Iso3`, `Point2`/`3`, `Vector2`/`3` and friends are aliases over `nalgebra`/`parry` types, so their inherent methods are named by someone else and can't be renamed. Where those names violate the conventions above, we do have the option of adding a conforming name to the corresponding extension trait (`IsoExtensions2`, `IsoExtensions3`, ...) that just forwards to the foreign method.
+
+This is worth doing when *all* the following hold:
+
+- The foreign name actually violates a rule here, rather than merely being unfamiliar.
+- The operation is part of the everyday surface that users will reach for, not an obscure corner.
+- The extension trait already owns that part of the namespace, so the addition completes an existing family instead of starting a redundant parallel one.
+
+The worked example is `IsoExtensions2/3::from_translation` and `from_rotation`, added July 2026. nalgebra spells these `Iso3::translation(x, y, z)` and `Iso3::rotation(axisangle)`, which read as accessors rather than the constructors they are. `IsoExtensions3` already held twelve `from_*` constructors (`from_array`, six `from_basis_*`, `from_rot_axis`, `from_rx`/`ry`/`rz`, `from_z_arbitrary_xy`), so the two most basic constructors were a hole in that family: autocompleting `Iso3::from_` suggested no way to build a plain translation.  Additionally, nalgebra uses the name `translation` for both the constructor *and* the isometry's public field, so `iso.translation.x` and `Iso3::translation(..)` sit side by side meaning different things; `from_translation` can't be confused with the field. 
+
 # Implementation Conventions
 
 ## Geometric Primitives
