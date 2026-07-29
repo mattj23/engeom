@@ -622,6 +622,16 @@ impl Circle2 {
         self.inner.contains_point(&[x, y])
     }
 
+    fn contained_points<'py>(
+        &self,
+        py: Python<'py>,
+        points: PyReadonlyArray2<'py, f64>,
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let points = array_to_points2(&points.as_array())?;
+        let result = self.inner.contained_points(&points);
+        Ok(points_to_array(&result).into_pyarray(py))
+    }
+
     fn tangent_points_to(&self, point: &Point2) -> Option<(Point2, Point2)> {
         let pts = self
             .inner

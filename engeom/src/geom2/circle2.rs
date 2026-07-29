@@ -453,6 +453,38 @@ impl Circle2 {
         self.distance_to(point) <= 0.0
     }
 
+    /// Returns a new `Vec` containing copies of only the points which lie at or inside the
+    /// boundary of the circle, in their original order. Points are tested with `contains_point`.
+    ///
+    /// # Arguments
+    ///
+    /// * `points`: the test points to filter
+    ///
+    /// returns: Vec<Point2>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::{Circle2, Point2};
+    ///
+    /// let c = Circle2::new(0.0, 0.0, 1.0);
+    /// let points = vec![
+    ///     Point2::new(0.0, 0.0),
+    ///     Point2::new(2.0, 0.0),
+    ///     Point2::new(0.5, 0.5),
+    /// ];
+    ///
+    /// let inside = c.contained_points(&points);
+    /// assert_eq!(inside, vec![Point2::new(0.0, 0.0), Point2::new(0.5, 0.5)]);
+    /// ```
+    pub fn contained_points(&self, points: &[impl PCoords<2>]) -> Vec<Point2> {
+        points
+            .iter()
+            .filter(|p| self.contains_point(*p))
+            .map(|p| Point2::from(p.coords()))
+            .collect()
+    }
+
     /// Compute and return the two tangent points on the circle from a given point. If the point is
     /// on or within the circle, then `None` is returned.
     ///
@@ -955,6 +987,43 @@ mod tests {
             assert_relative_eq!(by_mul.center, moved.center, epsilon = 1.0e-12);
             assert_relative_eq!(by_mul.r(), moved.r(), epsilon = 1.0e-12);
         }
+    }
+
+    #[test]
+    fn contained_points_keeps_inside_and_boundary_in_order() {
+        let c = Circle2::new(1.0, 1.0, 1.0);
+        let points = vec![
+            Point2::new(1.0, 1.0),  // center, inside
+            Point2::new(5.0, 5.0),  // far outside
+            Point2::new(2.0, 1.0),  // exactly on the boundary, counts as inside
+            Point2::new(1.0, -1.0), // outside
+            Point2::new(1.5, 1.0),  // inside
+        ];
+
+        let result = c.contained_points(&points);
+        assert_eq!(
+            result,
+            vec![
+                Point2::new(1.0, 1.0),
+                Point2::new(2.0, 1.0),
+                Point2::new(1.5, 1.0)
+            ]
+        );
+    }
+
+    #[test]
+    fn contained_points_matches_contains_point() {
+        let mut rng = RandomGeometry2::new();
+        let c = rng.circle2(5.0, 0.5, 2.0);
+        let points = (0..500).map(|_| rng.point(8.0)).collect::<Vec<_>>();
+
+        let expected = points
+            .iter()
+            .filter(|p| c.contains_point(*p))
+            .copied()
+            .collect::<Vec<_>>();
+
+        assert_eq!(c.contained_points(&points), expected);
     }
 
     #[test_case(3.0, 0.5, 3.5)]

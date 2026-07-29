@@ -221,3 +221,28 @@ def test_circle2_resized_by():
     assert bigger.r == pytest.approx(3.5)
     assert smaller.r == pytest.approx(2.5)
     assert c.r == pytest.approx(3.0)
+
+
+def test_circle2_contained_points():
+    c = Circle2(1.0, 1.0, 1.0)
+    points = numpy.array(
+        [
+            [1.0, 1.0],  # center, inside
+            [5.0, 5.0],  # far outside
+            [2.0, 1.0],  # exactly on the boundary, counts as inside
+            [1.0, -1.0],  # outside
+            [1.5, 1.0],  # inside
+        ]
+    )
+
+    result = c.contained_points(points)
+    expected = numpy.array([[1.0, 1.0], [2.0, 1.0], [1.5, 1.0]])
+    assert result.shape == (3, 2)
+    assert numpy.allclose(result, expected)
+
+
+def test_circle2_contained_points_none_inside():
+    c = Circle2(0.0, 0.0, 1.0)
+    points = numpy.array([[5.0, 5.0], [-3.0, 0.0]])
+    result = c.contained_points(points)
+    assert result.shape == (0, 2)

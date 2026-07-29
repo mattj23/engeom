@@ -1298,6 +1298,16 @@ class Circle2:
         """
         ...
 
+    def contained_points(self, points: NDArray[float]) -> NDArray[float]:
+        """
+        Filter an array of points, returning only the ones which lie at or inside the boundary of
+        the circle. The original order of the points is preserved.
+
+        :param points: a numpy array of shape (n, 2) of points to test.
+        :return: a new numpy array of shape (m, 2) containing the points inside the circle.
+        """
+        ...
+
     def tangent_points_to(self, point: Point2) -> List[Point2]:
         """
         Get the tangent points on the circle from a given point outside the circle.
