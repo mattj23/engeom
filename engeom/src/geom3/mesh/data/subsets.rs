@@ -3,9 +3,9 @@
 //! The two directions are deliberately asymmetric, because in each case one domain is chosen by the
 //! caller and the other is derived from it:
 //!
-//! - `create_subset_faces` takes a face mask. The points are derived, so only points referenced by
+//! - `extract_subset_faces` takes a face mask. The points are derived, so only points referenced by
 //!   a surviving face are kept and any orphan is dropped.
-//! - `create_subset_points` takes a point mask. The faces are derived, so only faces whose three
+//! - `extract_subset_points` takes a point mask. The faces are derived, so only faces whose three
 //!   points *all* survive are kept. The points are exactly what the caller asked for, including any
 //!   which end up belonging to no face, since dropping a point the caller explicitly selected would
 //!   be surprising.
@@ -70,7 +70,7 @@ impl MeshData3 {
     /// * `face_mask`: a mask whose length must match the face count
     ///
     /// returns: `Result<MeshData3>`
-    pub fn create_subset_faces(&self, face_mask: &IndexMask) -> Result<Self> {
+    pub fn extract_subset_faces(&self, face_mask: &IndexMask) -> Result<Self> {
         let point_mask = self.unique_point_mask(face_mask)?;
         self.compact(&point_mask, face_mask)
     }
@@ -86,7 +86,7 @@ impl MeshData3 {
     /// * `point_mask`: a mask whose length must match the point count
     ///
     /// returns: `Result<MeshData3>`
-    pub fn create_subset_points(&self, point_mask: &IndexMask) -> Result<Self> {
+    pub fn extract_subset_points(&self, point_mask: &IndexMask) -> Result<Self> {
         let face_mask = self.unique_face_mask(point_mask)?;
         self.compact(point_mask, &face_mask)
     }
@@ -197,7 +197,7 @@ mod tests {
     #[test]
     fn subset_by_faces_drops_orphans_and_renumbers() -> Result<()> {
         let mesh = fixture();
-        let sub = mesh.create_subset_faces(&mask(2, &[1]))?;
+        let sub = mesh.extract_subset_faces(&mask(2, &[1]))?;
 
         // The second face is [0, 2, 3], so points 0, 2, 3 survive and become 0, 1, 2.
         assert_eq!(sub.point_count(), 3);
@@ -229,7 +229,7 @@ mod tests {
 
         // Select the first face's points plus the orphan. The orphan belongs to no face but was
         // asked for, so it stays.
-        let sub = mesh.create_subset_points(&mask(5, &[0, 1, 2, 4]))?;
+        let sub = mesh.extract_subset_points(&mask(5, &[0, 1, 2, 4]))?;
 
         assert_eq!(sub.point_count(), 4);
         assert_eq!(sub.face_count(), 1);
@@ -247,7 +247,7 @@ mod tests {
         let mesh = fixture();
 
         // Point 2 is shared by both faces, so excluding it loses both.
-        let sub = mesh.create_subset_points(&mask(5, &[0, 1, 3]))?;
+        let sub = mesh.extract_subset_points(&mask(5, &[0, 1, 3]))?;
 
         assert_eq!(sub.point_count(), 3);
         assert_eq!(sub.face_count(), 0);
@@ -262,12 +262,12 @@ mod tests {
     fn selecting_everything_reproduces_the_mesh() -> Result<()> {
         let mesh = fixture();
 
-        let by_faces = mesh.create_subset_faces(&mask(2, &[0, 1]))?;
+        let by_faces = mesh.extract_subset_faces(&mask(2, &[0, 1]))?;
         // The orphan point is not referenced by any face, so a face-driven selection drops it.
         assert_eq!(by_faces.point_count(), 4);
         assert_eq!(by_faces.faces(), mesh.faces());
 
-        let by_points = mesh.create_subset_points(&mask(5, &[0, 1, 2, 3, 4]))?;
+        let by_points = mesh.extract_subset_points(&mask(5, &[0, 1, 2, 3, 4]))?;
         assert_eq!(by_points.point_count(), 5);
         assert_eq!(by_points.faces(), mesh.faces());
         assert_eq!(by_points.points(), mesh.points());
@@ -280,11 +280,11 @@ mod tests {
     fn selecting_nothing_gives_an_empty_mesh() -> Result<()> {
         let mesh = fixture();
 
-        let sub = mesh.create_subset_faces(&mask(2, &[]))?;
+        let sub = mesh.extract_subset_faces(&mask(2, &[]))?;
         assert!(sub.is_empty());
         sub.attrs().validate(0, 0)?;
 
-        let sub = mesh.create_subset_points(&mask(5, &[]))?;
+        let sub = mesh.extract_subset_points(&mask(5, &[]))?;
         assert!(sub.is_empty());
 
         Ok(())
@@ -297,14 +297,14 @@ mod tests {
         // A point mask handed to a face-taking method, and vice versa.
         assert!(mesh.unique_point_mask(&mask(5, &[0])).is_err());
         assert!(mesh.unique_face_mask(&mask(2, &[0])).is_err());
-        assert!(mesh.create_subset_faces(&mask(5, &[0])).is_err());
-        assert!(mesh.create_subset_points(&mask(2, &[0])).is_err());
+        assert!(mesh.extract_subset_faces(&mask(5, &[0])).is_err());
+        assert!(mesh.extract_subset_points(&mask(2, &[0])).is_err());
     }
 
     #[test]
     fn the_result_is_a_valid_mesh_in_its_own_right() -> Result<()> {
         let mesh = fixture();
-        let sub = mesh.create_subset_faces(&mask(2, &[0]))?;
+        let sub = mesh.extract_subset_faces(&mask(2, &[0]))?;
 
         // Every face index must be in range for the compacted point buffer, which is exactly what
         // the constructor checks, so rebuilding from the parts must succeed.

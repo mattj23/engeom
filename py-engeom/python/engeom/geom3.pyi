@@ -2746,7 +2746,7 @@ class Mesh3:
         :return: a list of new mesh objects containing the connected patches.
         """
 
-    def create_from_indices(self, indices: List[int]) -> Mesh3:
+    def extract_subset_faces_from_indices(self, indices: List[int]) -> Mesh3:
         """
         Create a new mesh from a list of face indices. This will build a new mesh object containing only the faces
         (and the points they reference) identified by the given list of indices. Every attribute is carried through.

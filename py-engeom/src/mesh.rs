@@ -468,10 +468,10 @@ impl Mesh3 {
         .into_pyobject(py)
     }
 
-    fn create_from_indices(&self, indices: Vec<usize>) -> PyResult<Self> {
+    fn extract_subset_faces_from_indices(&self, indices: Vec<usize>) -> PyResult<Self> {
         let inner = self
             .inner
-            .create_from_indices(&indices)
+            .extract_subset_faces_from_indices(&indices)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(inner))
     }
@@ -485,7 +485,7 @@ impl Mesh3 {
         for mask in patch_groups.iter() {
             results.push(
                 self.inner
-                    .create_from_mask(mask)
+                    .extract_subset_faces(mask)
                     .map_err(|e| PyValueError::new_err(e.to_string()))?,
             );
         }
@@ -700,7 +700,7 @@ impl FaceFilterHandle {
         self.mesh
             .bind(py)
             .borrow()
-            .create_from_indices(self.indices.clone())
+            .extract_subset_faces_from_indices(self.indices.clone())
     }
 }
 

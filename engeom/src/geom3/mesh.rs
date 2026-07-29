@@ -1406,11 +1406,11 @@ mod tests {
     }
 
     #[test]
-    fn create_from_mask_carries_the_attributes() -> Result<()> {
+    fn extract_subset_faces_carries_the_attributes() -> Result<()> {
         let mesh = labeled_box()?;
         let mask = IndexMask::try_from_indices(&[0, 1], mesh.face_count())?;
 
-        let sub = mesh.create_from_mask(&mask)?;
+        let sub = mesh.extract_subset_faces(&mask)?;
 
         assert_eq!(sub.face_count(), 2);
         assert_eq!(sub.face_labels().unwrap(), &[0, 1]);
@@ -1431,9 +1431,9 @@ mod tests {
     }
 
     #[test]
-    fn create_from_indices_carries_the_attributes() -> Result<()> {
+    fn extract_subset_faces_from_indices_carries_the_attributes() -> Result<()> {
         let mesh = labeled_box()?;
-        let sub = mesh.create_from_indices(&[2, 3])?;
+        let sub = mesh.extract_subset_faces_from_indices(&[2, 3])?;
 
         assert_eq!(sub.face_count(), 2);
         assert_eq!(sub.face_labels().unwrap(), &[2, 3]);
@@ -1445,12 +1445,12 @@ mod tests {
     /// Routing through a mask makes the selection a set, so order does not matter and a repeat
     /// selects its face once rather than duplicating it.
     #[test]
-    fn create_from_indices_normalizes_the_selection() -> Result<()> {
+    fn extract_subset_faces_from_indices_normalizes_the_selection() -> Result<()> {
         let mesh = labeled_box()?;
 
-        let ordered = mesh.create_from_indices(&[1, 3])?;
-        let reversed = mesh.create_from_indices(&[3, 1])?;
-        let repeated = mesh.create_from_indices(&[3, 1, 3])?;
+        let ordered = mesh.extract_subset_faces_from_indices(&[1, 3])?;
+        let reversed = mesh.extract_subset_faces_from_indices(&[3, 1])?;
+        let repeated = mesh.extract_subset_faces_from_indices(&[3, 1, 3])?;
 
         assert_eq!(ordered.faces(), reversed.faces());
         assert_eq!(ordered.faces(), repeated.faces());
@@ -1461,9 +1461,12 @@ mod tests {
     }
 
     #[test]
-    fn create_from_indices_rejects_an_out_of_range_index() -> Result<()> {
+    fn extract_subset_faces_from_indices_rejects_an_out_of_range_index() -> Result<()> {
         let mesh = labeled_box()?;
-        assert!(mesh.create_from_indices(&[0, mesh.face_count()]).is_err());
+        assert!(
+            mesh.extract_subset_faces_from_indices(&[0, mesh.face_count()])
+                .is_err()
+        );
         Ok(())
     }
 

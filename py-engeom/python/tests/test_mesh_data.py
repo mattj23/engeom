@@ -448,7 +448,7 @@ def test_convex_hull_refuses_an_attributed_mesh_unless_the_loss_is_accepted():
 
 def test_a_mesh_subset_carries_its_attributes():
     mesh = attributed_mesh()
-    sub = mesh.create_from_indices([0, 1])
+    sub = mesh.extract_subset_faces_from_indices([0, 1])
 
     data = MeshData3.from_mesh(sub)
 

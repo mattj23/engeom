@@ -1,7 +1,7 @@
 //! This module extracts a sub-mesh from the point and face buffers, given masks over both domains.
 //!
 //! Both mesh containers need this and neither should own it. `MeshData3` reaches it through
-//! `create_subset_faces`/`create_subset_points`, and `Mesh3` through `create_from_mask`. The
+//! `extract_subset_faces`/`extract_subset_points`, and `Mesh3` through `extract_subset_faces`. The
 //! attribute half is not here, because it is not a buffer operation: each container hands its
 //! attribute set the same pair of masks and lets it select for itself.
 

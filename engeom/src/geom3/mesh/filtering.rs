@@ -69,7 +69,7 @@ impl TriangleFilter<'_> {
     /// returns: `Result<Mesh3>`, failing if the selection is empty, since a mesh needs at least one
     /// face to build an acceleration structure over
     pub fn create_mesh(self) -> Result<Mesh3> {
-        self.mesh.create_from_mask(&self.mask)
+        self.mesh.extract_subset_faces(&self.mask)
     }
 
     /// Perform a direct mask operation on the current selection. This will modify the currently
@@ -520,7 +520,7 @@ impl Mesh3 {
 
     /// Extract points and faces from the mesh based on a mask of face indices. This is a step
     /// towards creating a new mesh, but can be used independently.  To directly construct a new
-    /// mesh, use `create_from_mask` instead, which also carries the attributes across.
+    /// mesh, use `extract_subset_faces` instead, which also carries the attributes across.
     ///
     /// # Arguments
     ///
@@ -549,7 +549,7 @@ impl Mesh3 {
     ///   the number of faces in the mesh, or the function will return an error.
     ///
     /// returns: `Result<Mesh3>`, failing if the mask is the wrong length or selects no faces
-    pub fn create_from_mask(&self, mask: &IndexMask) -> Result<Self> {
+    pub fn extract_subset_faces(&self, mask: &IndexMask) -> Result<Self> {
         let point_mask = self.unique_point_mask(mask)?;
         let (points, faces) = compact_by_masks(self.points(), self.faces(), &point_mask, mask)?;
         let attrs = self.attrs.subset(&point_mask, mask)?;
@@ -562,7 +562,7 @@ impl Mesh3 {
     /// Create a new mesh from a list of face indices. The indices correspond with elements in the
     /// `faces()` slice.
     ///
-    /// This is `create_from_mask` with the selection given as indices rather than a mask, and
+    /// This is `extract_subset_faces` with the selection given as indices rather than a mask, and
     /// behaves identically: orphaned points are dropped, the survivors are renumbered, and every
     /// attribute is carried through. Because the selection becomes a mask, the faces of the result
     /// are in ascending index order regardless of the order the indices were given in, and a
@@ -584,14 +584,14 @@ impl Mesh3 {
     /// let indices = mesh.face_select(Selection::None)
     ///     .facing(&Vector3::z(), PI / 2.0, SelectOp::Add)
     ///     .collect_indices();
-    /// let new_mesh = mesh.create_from_indices(&indices).unwrap();
+    /// let new_mesh = mesh.extract_subset_faces_from_indices(&indices).unwrap();
     ///
     /// assert_eq!(new_mesh.faces().len(), 2);
     /// assert_eq!(new_mesh.points().len(), 4);
     /// ```
-    pub fn create_from_indices(&self, indices: &[usize]) -> Result<Self> {
+    pub fn extract_subset_faces_from_indices(&self, indices: &[usize]) -> Result<Self> {
         let mask = IndexMask::try_from_indices(indices, self.faces().len())?;
-        self.create_from_mask(&mask)
+        self.extract_subset_faces(&mask)
     }
 
     pub fn unique_point_mask(&self, face_mask: &IndexMask) -> Result<IndexMask> {
