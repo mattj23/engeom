@@ -265,28 +265,186 @@ impl Alignment3 {
 }
 
 // ================================================================================================
+// AlignOutcome3
+// ================================================================================================
+
+/// How a single Levenberg-Marquardt solve ended, classified by whether its result can be used.
+///
+/// `"converged"` means a convergence criterion was met. `"unconverged"` means the solver ran out
+/// of its evaluation budget, so the parameters are the best it found but convergence was never
+/// demonstrated; the alignment is still valid geometry. A solve that broke down entirely is never
+/// reported here, because its result is discarded rather than returned.
+fn quality_str(q: engeom::common::SolveQuality) -> &'static str {
+    match q {
+        engeom::common::SolveQuality::Converged => "converged",
+        engeom::common::SolveQuality::Unconverged => "unconverged",
+        engeom::common::SolveQuality::Failed => "failed",
+    }
+}
+
+/// How a single Levenberg-Marquardt solve terminated, as a stable snake_case string rather than
+/// the solver crate's `Debug` formatting.
+fn termination_str(t: &engeom::common::TerminationReason) -> String {
+    use engeom::common::TerminationReason as T;
+    match t {
+        T::Converged { ftol, xtol } => match (ftol, xtol) {
+            (true, true) => "converged(ftol,xtol)".to_string(),
+            (true, false) => "converged(ftol)".to_string(),
+            (false, true) => "converged(xtol)".to_string(),
+            (false, false) => "converged".to_string(),
+        },
+        T::ResidualsZero => "residuals_zero".to_string(),
+        T::Orthogonal => "orthogonal".to_string(),
+        T::LostPatience => "lost_patience".to_string(),
+        T::Numerical(s) => format!("numerical({s})"),
+        T::User(s) => format!("user({s})"),
+        T::NoImprovementPossible(s) => format!("no_improvement_possible({s})"),
+        T::NoParameters => "no_parameters".to_string(),
+        T::NoResiduals => "no_residuals".to_string(),
+        T::WrongDimensions(s) => format!("wrong_dimensions({s})"),
+    }
+}
+
+/// Why robust refinement stopped before completing every requested round.
+fn halt_str(h: &engeom::common::RefinementHalt) -> String {
+    match h {
+        engeom::common::RefinementHalt::NoNoiseEstimate => "no_noise_estimate".to_string(),
+        engeom::common::RefinementHalt::Underdetermined { weighted, params } => {
+            format!("underdetermined({weighted} weighted points, {params} parameters)")
+        }
+        engeom::common::RefinementHalt::SolveFailed(t) => {
+            format!("solve_failed({})", termination_str(t))
+        }
+    }
+}
+
+/// The full outcome of a 3-D alignment: the `Alignment3` itself, plus a record of how the solves
+/// which produced it terminated.
+///
+/// This is only ever returned, never accepted as an argument, so unlike the other classes here it
+/// does not implement `from_py_object`. It cannot: the termination reasons it carries come from
+/// the underlying solver crate and are not `Clone`.
+#[pyclass(module = "engeom.align3")]
+#[derive(Debug)]
+pub struct AlignOutcome3 {
+    inner: engeom::geom3::AlignOutcome3,
+}
+
+impl AlignOutcome3 {
+    pub fn from_inner(inner: engeom::geom3::AlignOutcome3) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl AlignOutcome3 {
+    /// The alignment which was produced.
+    #[getter]
+    pub fn alignment(&self) -> Alignment3 {
+        Alignment3::from_inner(self.inner.alignment().clone())
+    }
+
+    /// The quality of the weakest solve that contributed to the result, as `"converged"` or
+    /// `"unconverged"`. See the module documentation for why an unconverged result is still usable.
+    #[getter]
+    pub fn quality(&self) -> &'static str {
+        quality_str(self.inner.quality())
+    }
+
+    /// Whether every solve that contributed to the result met a convergence criterion.
+    #[getter]
+    pub fn converged(&self) -> bool {
+        self.inner.converged()
+    }
+
+    /// The number of robust refinement rounds which completed and contributed to the result.
+    #[getter]
+    pub fn refinement_rounds(&self) -> usize {
+        self.inner.refinement_rounds()
+    }
+
+    /// How each contributing solve terminated, as a list of strings, beginning with the initial
+    /// solve and followed by one entry per completed refinement round.
+    #[getter]
+    pub fn solves(&self) -> Vec<String> {
+        self.inner.solves().iter().map(termination_str).collect()
+    }
+
+    /// Why robust refinement stopped early, or `None` if it ran every round it was asked to.
+    #[getter]
+    pub fn halt(&self) -> Option<String> {
+        self.inner.halt().map(halt_str)
+    }
+
+    pub fn __repr__(&self) -> String {
+        format!(
+            "AlignOutcome3(quality={}, refinement_rounds={}, halt={:?})",
+            self.quality(),
+            self.refinement_rounds(),
+            self.halt()
+        )
+    }
+}
+
+// ================================================================================================
 // Functions
 // ================================================================================================
 
+/// Align a set of 3-D points to a mesh by repeatedly projecting them onto their closest position
+/// on the surface as the solver moves them.
+///
+/// By default this is a robust alignment: an initial unweighted solve followed by
+/// `refinement_steps` rounds of iteratively reweighted least squares using MAGSAC++ weights. Pass
+/// `refinement_steps=0` for a plain unweighted least-squares alignment.
+///
+/// A `ValueError` is raised only when there is no answer at all: the arguments were rejected, or
+/// the initial solve broke down. A solve that merely exhausts its evaluation budget returns
+/// normally with `quality == "unconverged"` on the outcome.
+///
+/// :param points: an `(n, 3)` array of the points to align, in their own coordinate system.
+/// :param mesh: the stationary `Mesh3` to align to. If it carries per-vertex `point_stdev`, that
+///     uncertainty is used automatically, interpolated to each match position.
+/// :param params: an `AlignParams3` describing how the alignment is parameterized.
+/// :param ignore_off_target: weight points at 0.0 when they do not project onto the surface.
+/// :param refinement_steps: rounds of robust reweighting after the initial solve.
+/// :param sigma_max: the MAGSAC++ upper noise bound. Estimated from the data when `None`.
+/// :param point_sigma: optional per-point standard deviations, one per input point. Combines in
+///     quadrature with any uncertainty the mesh reports.
+/// :param patience: the Levenberg-Marquardt evaluation budget, as a multiplier on the parameter
+///     count.
 #[pyfunction]
-#[pyo3(signature = (points, mesh, params))]
+#[pyo3(signature = (points, mesh, params, ignore_off_target=false, refinement_steps=4,
+                    sigma_max=None, point_sigma=None, patience=100))]
+#[allow(clippy::too_many_arguments)]
 pub fn points_to_mesh(
     points: PyReadonlyArray2<'_, f64>,
     mesh: &Mesh3,
     params: AlignParams3,
-) -> PyResult<Alignment3> {
+    ignore_off_target: bool,
+    refinement_steps: usize,
+    sigma_max: Option<f64>,
+    point_sigma: Option<Vec<f64>>,
+    patience: usize,
+) -> PyResult<AlignOutcome3> {
     let points = array_to_points3(&points.as_array())?;
+
+    let opts = engeom::geom3::align3::AlignOptions3 {
+        ignore_off_target,
+        refinement_steps,
+        sigma_max,
+        point_sigma: point_sigma.as_deref(),
+        patience,
+    };
 
     let result = engeom::geom3::align3::points_to_surface3(
         &points,
         mesh.get_inner(),
         params.get_inner().clone(),
-        false,
-        true,
+        &opts,
     );
 
     match result {
-        Ok(align) => Ok(Alignment3::from_inner(align)),
+        Ok(outcome) => Ok(AlignOutcome3::from_inner(outcome)),
         Err(e) => Err(PyValueError::new_err(e.to_string())),
     }
 }

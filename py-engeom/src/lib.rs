@@ -120,6 +120,7 @@ fn register_align3_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_class::<align3::Dof6>()?;
     child.add_class::<align3::AlignParams3>()?;
     child.add_class::<align3::Alignment3>()?;
+    child.add_class::<align3::AlignOutcome3>()?;
     child.add_function(wrap_pyfunction!(align3::points_to_mesh, &child)?)?;
     parent_module.add_submodule(&child)
 }

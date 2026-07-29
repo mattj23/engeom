@@ -171,19 +171,110 @@ class Alignment3:
         ...
 
 
+class AlignOutcome3:
+    """
+    The full outcome of a 3-D alignment: the `Alignment3` itself, plus a record of how the solves
+    which produced it terminated.
+
+    An alignment is only ever returned when it is usable, so receiving one of these already means
+    there is a real answer to work with. What it adds is the ability to tell a proven convergence
+    from a merely plausible one, and to see whether robust refinement ran to completion.
+    """
+
+    @property
+    def alignment(self) -> Alignment3:
+        """The alignment which was produced."""
+        ...
+
+    @property
+    def quality(self) -> str:
+        """
+        The quality of the weakest solve that contributed to the result.
+
+        ``"converged"`` means every contributing solve met a convergence criterion.
+        ``"unconverged"`` means at least one ran out of its evaluation budget, so the parameters
+        are the best the solver found but convergence was never demonstrated. The alignment is
+        valid geometry either way.
+
+        An unconverged result is routine rather than alarming here: the correspondences are
+        re-established every time the parameters change, so near the solution a point close to an
+        edge can flip between two matches indefinitely without the criteria ever being satisfied.
+        Raising `patience` will not help in that case.
+        """
+        ...
+
+    @property
+    def converged(self) -> bool:
+        """Whether every solve that contributed to the result met a convergence criterion."""
+        ...
+
+    @property
+    def refinement_rounds(self) -> int:
+        """The number of robust refinement rounds which completed and contributed to the result."""
+        ...
+
+    @property
+    def solves(self) -> list[str]:
+        """
+        How each contributing solve terminated, beginning with the initial solve and followed by
+        one entry per completed refinement round.
+
+        Values are ``"converged(ftol)"``, ``"converged(xtol)"``, ``"converged(ftol,xtol)"``,
+        ``"residuals_zero"``, ``"orthogonal"``, or ``"lost_patience"``. A solve that broke down
+        never appears here, because its result is rolled back rather than kept; see `halt`.
+        """
+        ...
+
+    @property
+    def halt(self) -> str | None:
+        """
+        Why robust refinement stopped before completing every requested round, or ``None`` if it
+        ran them all.
+
+        ``"no_noise_estimate"`` means the residual spread collapsed and there was nothing left to
+        reweight. ``"underdetermined(...)"`` means reweighting would have left fewer weighted
+        points than free parameters. ``"solve_failed(...)"`` means a refinement round broke down
+        and was rolled back to the previous round's result.
+        """
+        ...
+
+
 def points_to_mesh(
     points: numpy.ndarray,
     mesh: Mesh3,
     params: AlignParams3,
-) -> Alignment3:
+    ignore_off_target: bool = False,
+    refinement_steps: int = 4,
+    sigma_max: float | None = None,
+    point_sigma: numpy.ndarray | list[float] | None = None,
+    patience: int = 100,
+) -> AlignOutcome3:
     """
-    Align a set of 3-D points to a mesh surface using an iterative least-squares solver.
+    Align a set of 3-D points to a mesh surface, repeatedly projecting them onto their closest
+    position on the surface as the solver moves them.
+
+    By default this is a robust alignment: an initial unweighted solve followed by
+    ``refinement_steps`` rounds of iteratively reweighted least squares using MAGSAC++ weights.
+    Pass ``refinement_steps=0`` for a plain unweighted least-squares alignment.
 
     :param points: An ``(N, 3)`` ``float64`` numpy array of test points.
-    :param mesh: The target `Mesh3` surface.
+    :param mesh: The target `Mesh3` surface. If it carries per-vertex ``point_stdev``, that
+        uncertainty is used automatically, interpolated to each match position.
     :param params: An `AlignParams3` that controls the local origin, working offset, and DOF
         constraints for the alignment.
-    :returns: An `Alignment3` containing the resulting transformation and residuals.
-    :raises ValueError: if the solver fails to converge or the inputs are invalid.
+    :param ignore_off_target: Weight points at 0.0 when they do not project onto the surface.
+    :param refinement_steps: Rounds of robust reweighting after the initial solve. Zero disables
+        robust weighting entirely.
+    :param sigma_max: The MAGSAC++ upper noise bound. When ``None`` it is estimated from the
+        residuals of the initial solve via the median absolute deviation. In units of sigma when
+        any uncertainty is supplied, otherwise in the units of the geometry.
+    :param point_sigma: Optional per-point standard deviations, one per input point. Combines in
+        quadrature with any uncertainty the mesh reports. Every entry must be finite and positive.
+    :param patience: The Levenberg-Marquardt evaluation budget, as a multiplier on the parameter
+        count. Must be greater than zero.
+    :returns: An `AlignOutcome3` carrying the alignment and how the solves terminated.
+    :raises ValueError: only when there is no answer at all, meaning the arguments were rejected
+        or the initial solve broke down. A solve that merely exhausts its evaluation budget
+        returns normally with ``quality == "unconverged"``.
     """
     ...
