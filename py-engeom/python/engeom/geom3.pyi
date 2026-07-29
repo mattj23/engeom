@@ -2891,6 +2891,22 @@ class Mesh3:
         """
         ...
 
+    def compute_face_areas(self) -> NDArray[float]:
+        """
+        Compute the area of every face.
+
+        :return: a numpy array of shape (m,).
+        """
+        ...
+
+    def compute_face_centers(self) -> NDArray[float]:
+        """
+        Compute the centroid of every face, which is the mean of its three points.
+
+        :return: a numpy array of shape (m, 3).
+        """
+        ...
+
     def face_mask(self, value: bool = False) -> IndexMask:
         """
         Create a mask over the mesh's faces, with every face set to the same initial value.
@@ -4655,6 +4671,134 @@ class MeshData3:
     def cloned(self) -> MeshData3:
         """
         Create a copy of this mesh data.
+        """
+        ...
+
+    @staticmethod
+    def empty() -> MeshData3:
+        """
+        Create mesh data with no points, no faces, and no attributes, as a starting point for building one up with
+        `push_point` and `push_face`.
+
+        :return: empty mesh data.
+        """
+        ...
+
+    @property
+    def is_empty(self) -> bool:
+        """ Whether the mesh data holds no points and no faces. """
+        ...
+
+    @property
+    def point_count(self) -> int:
+        """ The number of points. """
+        ...
+
+    @property
+    def face_count(self) -> int:
+        """ The number of faces. """
+        ...
+
+    def push_point(self, point: Point3) -> int:
+        """
+        Add a point to the end of the point buffer and return its index, so it can be fed straight into a face.
+
+        :param point: the position to add.
+        :return: the index of the new point.
+        :raises ValueError: if the mesh carries per-point attributes, since there would be no value to give them for
+            the new point. Remove them first, or build the point buffer before attaching attributes.
+        """
+        ...
+
+    def push_face(self, face: Tuple[int, int, int]) -> int:
+        """
+        Add a face to the end of the face buffer and return its index.
+
+        :param face: three indices into the point buffer, each of which must refer to a point which exists.
+        :return: the index of the new face.
+        :raises ValueError: if any index is out of range, or if the mesh carries per-face attributes.
+        """
+        ...
+
+    def set_point(self, index: int, point: Point3):
+        """
+        Move a point to a new position. Nothing else is touched: a stored normal at this point is not recomputed and
+        will be stale if the surrounding geometry changed meaningfully.
+
+        :param index: the point to move.
+        :param point: its new position.
+        :raises ValueError: if the index is out of range.
+        """
+        ...
+
+    def set_face(self, index: int, face: Tuple[int, int, int]):
+        """
+        Replace a face with a different triple of point indices.
+
+        :param index: the face to replace.
+        :param face: three indices into the point buffer, each of which must refer to a point which exists.
+        :raises ValueError: if the face index or any point index is out of range.
+        """
+        ...
+
+    def remove_point(self, index: int):
+        """
+        Remove a point, along with every face which references it. Attribute values are carried through for both
+        domains.
+
+        Removal is ordered rather than a swap, so **every point index above the one removed shifts down by one**, and
+        any index held above it is invalidated. Face indices shift too, wherever a face was dropped.
+
+        :param index: the point to remove.
+        :raises ValueError: if the index is out of range.
+        """
+        ...
+
+    def remove_face(self, index: int):
+        """
+        Remove a face, leaving the points alone. Points which the removed face was the last to reference become
+        orphans, which is a legal state for this type, and nothing renumbers them. Face indices above the one removed
+        shift down by one.
+
+        :param index: the face to remove.
+        :raises ValueError: if the index is out of range.
+        """
+        ...
+
+    def compute_point_normals(self) -> NDArray[float]:
+        """
+        Compute a smoothed normal for every point by averaging the normals of the faces which touch it, weighted by
+        the interior angle of that face at that point.
+
+        Unlike the `Mesh3` method of the same name, this is not cached, because this is the editable type.
+
+        :return: a numpy array of shape (n, 3) containing one unit normal per point.
+        :raises ValueError: if any point has no well-defined normal.
+        """
+        ...
+
+    def compute_face_normals(self) -> NDArray[float]:
+        """
+        Compute the unit normal of every face.
+
+        :return: a numpy array of shape (m, 3).
+        :raises ValueError: if any face is degenerate and so has no well-defined normal.
+        """
+        ...
+
+    def compute_face_areas(self) -> NDArray[float]:
+        """
+        Compute the area of every face.
+
+        :return: a numpy array of shape (m,).
+        """
+        ...
+
+    def compute_face_centers(self) -> NDArray[float]:
+        """
+        Compute the centroid of every face, which is the mean of its three points.
+
+        :return: a numpy array of shape (m, 3).
         """
         ...
 

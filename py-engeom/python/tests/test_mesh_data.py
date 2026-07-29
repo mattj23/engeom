@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy
 import pytest
 
-from engeom.geom3 import Iso3, Mesh3, MeshData3, PointCloud, PointCloudData3
+from engeom.geom3 import Iso3, Mesh3, MeshData3, Point3, PointCloud, PointCloudData3
 from engeom.common import IndexMask
 
 
@@ -618,3 +618,172 @@ def test_mesh_data_and_mesh_extract_the_same_subset():
 
     assert numpy.allclose(from_data.points, from_mesh.points)
     assert numpy.array_equal(from_data.faces, from_mesh.faces)
+
+
+# ---------------------------------------------------------------------------
+# Editing
+# ---------------------------------------------------------------------------
+
+def test_mesh_data_empty_starts_with_nothing():
+    data = MeshData3.empty()
+
+    assert data.is_empty
+    assert data.point_count == 0
+    assert data.face_count == 0
+    assert data.points.shape == (0, 3)
+
+
+def test_mesh_data_can_be_built_up_from_empty():
+    data = MeshData3.empty()
+
+    a = data.push_point(Point3(0.0, 0.0, 0.0))
+    b = data.push_point(Point3(1.0, 0.0, 0.0))
+    c = data.push_point(Point3(0.0, 1.0, 0.0))
+    f = data.push_face((a, b, c))
+
+    assert (a, b, c, f) == (0, 1, 2, 0)
+    assert not data.is_empty
+    assert data.point_count == 3
+    assert data.face_count == 1
+    assert numpy.array_equal(data.faces, [[0, 1, 2]])
+
+
+def test_mesh_data_push_face_rejects_an_index_with_no_point():
+    data = MeshData3.empty()
+    data.push_point(Point3(0.0, 0.0, 0.0))
+
+    with pytest.raises(ValueError):
+        data.push_face((0, 1, 2))
+
+
+def test_mesh_data_push_point_is_blocked_by_point_attributes():
+    """There would be no value to give the attribute for the new point, so the type refuses."""
+    data = loaded_mesh_data()
+
+    with pytest.raises(ValueError):
+        data.push_point(Point3(9.0, 9.0, 9.0))
+
+
+def test_mesh_data_set_point_moves_it():
+    data = MeshData3(triangle_points(), triangle_faces())
+
+    data.set_point(1, Point3(5.0, 6.0, 7.0))
+
+    assert numpy.allclose(data.points[1], [5.0, 6.0, 7.0])
+
+
+def test_mesh_data_set_point_invalidates_the_cached_points():
+    """The cached numpy array would otherwise keep reporting the old position."""
+    data = MeshData3(triangle_points(), triangle_faces())
+    before = data.points
+
+    data.set_point(1, Point3(5.0, 6.0, 7.0))
+
+    assert before is not data.points
+    assert numpy.allclose(data.points[1], [5.0, 6.0, 7.0])
+
+
+def test_mesh_data_set_face_replaces_the_indices():
+    data = MeshData3(triangle_points(), triangle_faces())
+
+    data.set_face(0, (2, 1, 0))
+
+    assert numpy.array_equal(data.faces, [[2, 1, 0]])
+
+
+@pytest.mark.parametrize("call", [
+    lambda d: d.set_point(9, Point3(0.0, 0.0, 0.0)),
+    lambda d: d.set_face(9, (0, 1, 2)),
+    lambda d: d.set_face(0, (0, 1, 9)),
+    lambda d: d.remove_point(9),
+    lambda d: d.remove_face(9),
+])
+def test_mesh_data_editing_rejects_out_of_range_indices(call):
+    data = MeshData3(triangle_points(), triangle_faces())
+    with pytest.raises(ValueError):
+        call(data)
+
+
+def test_mesh_data_remove_face_leaves_the_points_alone():
+    data = two_triangles()
+
+    data.remove_face(0)
+
+    assert data.face_count == 1
+    # The points the removed face referenced become orphans rather than being renumbered.
+    assert data.point_count == 6
+    assert numpy.array_equal(data.faces, [[3, 4, 5]])
+    assert numpy.array_equal(data.face_labels, [22])
+
+
+def test_mesh_data_remove_point_drops_its_faces_and_shifts_indices():
+    data = two_triangles()
+
+    data.remove_point(0)
+
+    assert data.point_count == 5
+    assert data.face_count == 1
+    # The surviving face's indices all shifted down by one.
+    assert numpy.array_equal(data.faces, [[2, 3, 4]])
+    assert numpy.array_equal(data.face_labels, [22])
+
+
+def test_mesh_data_remove_point_invalidates_the_cached_arrays():
+    data = two_triangles()
+    points_before = data.points
+    faces_before = data.faces
+
+    data.remove_point(0)
+
+    assert points_before is not data.points
+    assert faces_before is not data.faces
+    assert data.points.shape == (5, 3)
+
+
+# ---------------------------------------------------------------------------
+# Computed quantities
+# ---------------------------------------------------------------------------
+
+def test_mesh_data_compute_face_quantities():
+    data = MeshData3(triangle_points(), triangle_faces())
+
+    normals = data.compute_face_normals()
+    areas = data.compute_face_areas()
+    centers = data.compute_face_centers()
+
+    assert normals.shape == (1, 3)
+    assert numpy.allclose(normals[0], [0.0, 0.0, 1.0])
+    assert areas.shape == (1,)
+    assert areas[0] == pytest.approx(0.5)
+    assert centers.shape == (1, 3)
+    assert numpy.allclose(centers[0], numpy.mean(triangle_points(), axis=0))
+
+
+def test_mesh_data_compute_point_normals():
+    data = MeshData3(triangle_points(), triangle_faces())
+
+    normals = data.compute_point_normals()
+
+    assert normals.shape == (3, 3)
+    assert numpy.allclose(normals, numpy.tile([0.0, 0.0, 1.0], (3, 1)))
+
+
+def test_mesh_data_compute_matches_the_accelerated_type():
+    """Both types delegate to the same algorithms, so their results have to agree exactly."""
+    data = two_triangles()
+    mesh = data.to_mesh()
+
+    assert numpy.array_equal(data.compute_face_areas(), mesh.compute_face_areas())
+    assert numpy.array_equal(data.compute_face_centers(), mesh.compute_face_centers())
+    assert numpy.array_equal(data.compute_point_normals(), mesh.compute_point_normals())
+
+
+def test_mesh_data_compute_point_normals_reports_a_point_with_no_normal():
+    data = MeshData3.empty()
+    for p in triangle_points():
+        data.push_point(Point3(*p))
+    data.push_point(Point3(9.0, 9.0, 9.0))  # orphan, belongs to no face
+    data.push_face((0, 1, 2))
+
+    with pytest.raises(ValueError):
+        data.compute_point_normals()

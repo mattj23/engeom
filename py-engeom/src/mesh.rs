@@ -439,6 +439,22 @@ impl Mesh3 {
         Ok(self.face_normals.as_ref().unwrap().bind(py))
     }
 
+    fn compute_face_areas<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray1<f64>>> {
+        let areas = self
+            .inner
+            .compute_face_areas()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(scalars_to_array(&areas).into_pyarray(py))
+    }
+
+    fn compute_face_centers<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let centers = self
+            .inner
+            .compute_face_centers()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(points_to_array(&centers).into_pyarray(py))
+    }
+
     fn boundary_curves(&self) -> PyResult<Vec<Curve3>> {
         let edges = self
             .inner
@@ -1073,6 +1089,28 @@ impl MeshData3 {
         Ok(Self::from_inner(inner))
     }
 
+    /// Create mesh data with no points, no faces, and no attributes, as a starting point for
+    /// building one up with `push_point` and `push_face`.
+    #[staticmethod]
+    fn empty() -> Self {
+        Self::from_inner(engeom::MeshData3::empty())
+    }
+
+    #[getter]
+    fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    #[getter]
+    fn point_count(&self) -> usize {
+        self.inner.point_count()
+    }
+
+    #[getter]
+    fn face_count(&self) -> usize {
+        self.inner.face_count()
+    }
+
     // --- Serialization ---------------------------------------------------------------------
 
     #[staticmethod]
@@ -1250,6 +1288,87 @@ impl MeshData3 {
         self.inner
             .set_face_labels(values)
             .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    // --- Editing ---------------------------------------------------------------------------
+
+    fn push_point(&mut self, point: Point3) -> PyResult<u32> {
+        self.clear_cached();
+        self.inner
+            .push_point(*point.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    fn push_face(&mut self, face: [u32; 3]) -> PyResult<u32> {
+        self.clear_cached();
+        self.inner
+            .push_face(face)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    fn set_point(&mut self, index: u32, point: Point3) -> PyResult<()> {
+        self.clear_cached();
+        self.inner
+            .set_point(index, *point.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    fn set_face(&mut self, index: u32, face: [u32; 3]) -> PyResult<()> {
+        self.clear_cached();
+        self.inner
+            .set_face(index, face)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    fn remove_point(&mut self, index: u32) -> PyResult<()> {
+        self.clear_cached();
+        self.inner
+            .remove_point(index)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    fn remove_face(&mut self, index: u32) -> PyResult<()> {
+        self.clear_cached();
+        self.inner
+            .remove_face(index)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    // --- Computed quantities -----------------------------------------------------------------
+    //
+    // Unlike their counterparts on `Mesh3`, these are not cached. This is the editable type, and a
+    // cached derived quantity is one more thing every mutation has to remember to invalidate.
+
+    fn compute_point_normals<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let normals = self
+            .inner
+            .compute_point_normals()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(unit_vectors_to_array(&normals).into_pyarray(py))
+    }
+
+    fn compute_face_normals<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let normals = self
+            .inner
+            .compute_face_normals()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(unit_vectors_to_array(&normals).into_pyarray(py))
+    }
+
+    fn compute_face_areas<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray1<f64>>> {
+        let areas = self
+            .inner
+            .compute_face_areas()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(scalars_to_array(&areas).into_pyarray(py))
+    }
+
+    fn compute_face_centers<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let centers = self
+            .inner
+            .compute_face_centers()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(points_to_array(&centers).into_pyarray(py))
     }
 
     // --- Operations ------------------------------------------------------------------------
