@@ -5,7 +5,7 @@
 use super::Mesh3;
 use crate::geom3::Aabb3;
 use crate::geom3::mesh::edges::edge_key;
-use crate::{Curve3, Line3, Plane3, Point3, Result, Vector3};
+use crate::{Curve3, IndexMask, Line3, Plane3, Point3, Result, Vector3};
 use parry3d_f64::partitioning::TraversalAction;
 use parry3d_f64::shape::TriMesh;
 use std::collections::{HashMap, HashSet};
@@ -15,8 +15,20 @@ impl Mesh3 {
         &self,
         plane: &Plane3,
         curve_tol: Option<f64>,
+        faces: Option<&IndexMask>,
     ) -> Result<Vec<Curve3>> {
         let curve_tol = curve_tol.unwrap_or(1e-6);
+
+        if let Some(mask) = faces {
+            if mask.len() != self.face_count() {
+                return Err(format!(
+                    "A face mask of length {} does not match a mesh with {} faces",
+                    mask.len(),
+                    self.face_count()
+                )
+                .into());
+            }
+        }
 
         // First, we'll find all triangles that intersect the plane and produce segments from them.
         // Each segment will have two endpoints. The order of the points will be such that when
@@ -24,7 +36,7 @@ impl Mesh3 {
         // the triangle's original normal, preserving the inside/outside relationship from the
         // mesh.
         let mut segments = Vec::new();
-        for face_i in candidate_faces(&self.shape, plane) {
+        for face_i in candidate_faces(&self.shape, plane, faces) {
             let Some(tri_n) = self.shape.triangle(face_i).normal() else {
                 continue;
             };
@@ -176,7 +188,7 @@ fn edge_intersection(a: &Point3, b: &Point3, plane: &Plane3) -> Option<Point3> {
     Some(line.at(t))
 }
 
-fn candidate_faces(shape: &TriMesh, plane: &Plane3) -> Vec<u32> {
+fn candidate_faces(shape: &TriMesh, plane: &Plane3, faces: Option<&IndexMask>) -> Vec<u32> {
     let mut candidates = Vec::new();
     shape.bvh().traverse(|node| {
         if !aabb_plane(&node.aabb(), plane) {
@@ -191,7 +203,13 @@ fn candidate_faces(shape: &TriMesh, plane: &Plane3) -> Vec<u32> {
                     || intersects_edge(&t.b, &t.c, plane)
                     || intersects_edge(&t.c, &t.a, plane))
             {
-                candidates.push(index);
+                if let Some(mask) = faces {
+                    if mask.get(index as usize) {
+                        candidates.push(index);
+                    }
+                } else {
+                    candidates.push(index);
+                }
             };
         }
 
@@ -231,7 +249,7 @@ mod tests {
     fn candidates_box_has_eight() {
         let mesh = Mesh3::create_box(2.0, 2.0, 2.0, false);
         let plane = Plane3::new(Vector3::z_axis(), 0.0);
-        let candidates = candidate_faces(&mesh.shape, &plane);
+        let candidates = candidate_faces(&mesh.shape, &plane, None);
         assert_eq!(candidates.len(), 8);
     }
 
@@ -245,7 +263,7 @@ mod tests {
         let faces = vec![[0, 1, 2]];
         let mesh = Mesh3::new(vertices, faces, false);
         let plane = Plane3::new(Vector3::z_axis(), 0.0);
-        let candidates = candidate_faces(&mesh.shape, &plane);
+        let candidates = candidate_faces(&mesh.shape, &plane, None);
         assert!(candidates.is_empty());
     }
 
@@ -253,7 +271,7 @@ mod tests {
     fn single_loop() -> Result<()> {
         let mesh = Mesh3::create_box(2.0, 2.0, 2.0, false);
 
-        let curves = mesh.section_with_plane(&Plane3::xy(), None)?;
+        let curves = mesh.section_with_plane(&Plane3::xy(), None, None)?;
 
         assert_eq!(curves.len(), 1);
 
@@ -265,7 +283,7 @@ mod tests {
         let mesh = Mesh3::create_cylinder(1.0, 2.0, 256);
         let plane = Plane3::xz();
 
-        let curves = mesh.section_with_plane(&plane, Some(1.0e-10)).unwrap();
+        let curves = mesh.section_with_plane(&plane, Some(1.0e-10), None).unwrap();
         assert_eq!(curves.len(), 1);
 
         let curve = &curves[0];
@@ -295,7 +313,7 @@ mod tests {
 
         let plane = Plane3::xz();
 
-        let curves = mesh.section_with_plane(&plane, Some(1.0e-10)).unwrap();
+        let curves = mesh.section_with_plane(&plane, Some(1.0e-10), None).unwrap();
         assert_eq!(curves.len(), 2);
 
         for curve in curves.iter() {

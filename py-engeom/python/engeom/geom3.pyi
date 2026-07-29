@@ -2841,14 +2841,23 @@ class Mesh3:
         """
         ...
 
-    def section_with_plane(self, plane: Plane3, tol: float | None = None) -> List[Curve3]:
+    def section_with_plane(
+            self,
+            plane: Plane3,
+            tol: float | None = None,
+            faces: IndexMask | None = None
+    ) -> List[Curve3]:
         """
         Calculate and return the intersection curves between the mesh and a plane.
 
         :param plane: The plane to intersect the mesh with.
         :param tol: The curve tolerance to use when constructing the intersection curves. See the `Curve3` class
         initializer for more information on the tolerance parameter.
+        :param faces: an optional `IndexMask` over the mesh's faces which limits the section to the selected faces.
+        Faces which are not selected are ignored entirely, so a section which crosses the boundary of the selection
+        will produce open curves rather than closed loops. If `None` (the default) all faces are considered.
         :return: a list of `Curve3` objects representing the intersection curves.
+        :raises ValueError: if `faces` is not a mask of the mesh's face count.
         """
         ...
 

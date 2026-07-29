@@ -605,11 +605,16 @@ impl Mesh3 {
         result.into_pyarray(py)
     }
 
-    #[pyo3(signature=(plane, tol = None))]
-    fn section_with_plane(&self, plane: Plane3, tol: Option<f64>) -> PyResult<Vec<Curve3>> {
+    #[pyo3(signature=(plane, tol = None, faces = None))]
+    fn section_with_plane(
+        &self,
+        plane: Plane3,
+        tol: Option<f64>,
+        faces: Option<&IndexMask>,
+    ) -> PyResult<Vec<Curve3>> {
         let results = self
             .inner
-            .section_with_plane(plane.get_inner(), tol)
+            .section_with_plane(plane.get_inner(), tol, faces.map(|m| m.get_inner()))
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         Ok(results.into_iter().map(Curve3::from_inner).collect())
