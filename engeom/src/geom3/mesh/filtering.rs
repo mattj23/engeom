@@ -3,7 +3,7 @@
 use crate::common::points::{dist, mean_point, triangle_area};
 use crate::common::{IndexMask, PCoords};
 use crate::geom3::mesh::MeshData3;
-use crate::geom3::mesh::algorithms::subsets::{compact_by_masks, unique_point_mask};
+use crate::geom3::mesh::algorithms::subsets::{compact_by_masks, compute_unique_point_mask};
 use crate::{Mesh3, Point3, SelectOp, Selection, SurfacePoint3, UnitVec3, Vector3};
 use crate::{Plane3, Result};
 use parry3d_f64::query::PointQuery;
@@ -336,14 +336,14 @@ impl TriangleFilter<'_> {
         let vert_mask = match mode {
             // If we're adding new faces, we'll start with the vertices that are part of triangles
             // that are currently selected by the filter
-            SelectOp::Add => self.mesh.unique_point_mask(&self.mask),
+            SelectOp::Add => self.mesh.compute_unique_point_mask(&self.mask),
 
             // If we're removing or keeping faces, we start with the vertices that are part of
             // triangles that are NOT currently selected by the filter
             SelectOp::Remove | SelectOp::KeepOnly => {
                 let mut flipped = self.mask.clone();
                 flipped.not_mut();
-                self.mesh.unique_point_mask(&flipped)
+                self.mesh.compute_unique_point_mask(&flipped)
             }
         }
         .expect("Failed to create point mask from face mask, was the face mask valid?");
@@ -476,13 +476,13 @@ impl TriangleFilter<'_> {
 impl Mesh3 {
     /// Create a new mask with the same length as the number of faces in the mesh, initialized to
     /// the specified value.
-    pub fn new_face_mask(&self, value: bool) -> IndexMask {
+    pub fn face_mask(&self, value: bool) -> IndexMask {
         IndexMask::new(self.faces().len(), value)
     }
 
     /// Create a new mask with the same length as the number of points in the mesh, initialized to
     /// the specified value.
-    pub fn new_point_mask(&self, value: bool) -> IndexMask {
+    pub fn point_mask(&self, value: bool) -> IndexMask {
         IndexMask::new(self.points().len(), value)
     }
 
@@ -529,8 +529,11 @@ impl Mesh3 {
     ///   error.
     ///
     /// returns: `Result<(Vec<Point3>, Vec<[u32; 3]>)>`
-    pub fn faces_verts_from_mask(&self, mask: &IndexMask) -> Result<(Vec<Point3>, Vec<[u32; 3]>)> {
-        let point_mask = self.unique_point_mask(mask)?;
+    pub fn compute_points_and_faces_from_mask(
+        &self,
+        mask: &IndexMask,
+    ) -> Result<(Vec<Point3>, Vec<[u32; 3]>)> {
+        let point_mask = self.compute_unique_point_mask(mask)?;
         compact_by_masks(self.points(), self.faces(), &point_mask, mask)
     }
 
@@ -550,7 +553,7 @@ impl Mesh3 {
     ///
     /// returns: `Result<Mesh3>`, failing if the mask is the wrong length or selects no faces
     pub fn extract_subset_faces(&self, mask: &IndexMask) -> Result<Self> {
-        let point_mask = self.unique_point_mask(mask)?;
+        let point_mask = self.compute_unique_point_mask(mask)?;
         let (points, faces) = compact_by_masks(self.points(), self.faces(), &point_mask, mask)?;
         let attrs = self.attrs.subset(&point_mask, mask)?;
 
@@ -594,8 +597,8 @@ impl Mesh3 {
         self.extract_subset_faces(&mask)
     }
 
-    pub fn unique_point_mask(&self, face_mask: &IndexMask) -> Result<IndexMask> {
-        unique_point_mask(self.faces(), face_mask, self.points().len())
+    pub fn compute_unique_point_mask(&self, face_mask: &IndexMask) -> Result<IndexMask> {
+        compute_unique_point_mask(self.faces(), face_mask, self.points().len())
     }
 }
 

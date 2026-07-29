@@ -1,8 +1,8 @@
 //! Distance queries and measurements on meshes
 
 use super::{Mesh3, MeshSurfPoint};
-use crate::common::PCoords;
 use crate::common::points::dist;
+use crate::common::{IndexMask, PCoords};
 use crate::{Iso3, Plane3, Point3, Result, SurfacePoint3};
 use parry3d_f64::query::{PointProjection, PointQueryWithLocation, SplitResult};
 use parry3d_f64::shape::TrianglePointLocation;
@@ -190,33 +190,36 @@ impl Mesh3 {
         }
     }
 
-    /// Return the indices of the points in the given list that project onto the mesh within the
-    /// given distance tolerance and angle tolerance.  An optional transform can be provided to
-    /// transform the points before projecting them onto the mesh.
+    /// Find which of the given points project onto the mesh within the given distance and angle
+    /// tolerances.
+    ///
+    /// The returned mask is indexed by **the given `points` slice**, not by the mesh's own points
+    /// or faces, and so has the same length as `points`.
     ///
     /// # Arguments
     ///
-    /// * `points`:
-    /// * `max_dist`:
-    /// * `max_angle`:
-    /// * `transform`:
+    /// * `points`: the points to test
+    /// * `max_dist`: the furthest a point may be from the mesh and still be kept
+    /// * `max_angle`: the largest angle allowed between the point's direction of approach and the
+    ///   surface normal at its projection
+    /// * `transform`: an optional transform applied to each point before it is projected
     ///
-    /// returns: Vec<usize, Global>
-    pub fn indices_in_tol(
+    /// returns: `IndexMask` over `points`, set where the point is within tolerance of the mesh
+    pub fn find_points_in_tol(
         &self,
         points: &[Point3],
         max_dist: f64,
         max_angle: f64,
         transform: Option<&Iso3>,
-    ) -> Vec<usize> {
+    ) -> IndexMask {
         // TODO: Needs test coverage
-        let mut result = Vec::new();
+        let mut result = IndexMask::new(points.len(), false);
         for (i, point) in points.iter().enumerate() {
             if self
                 .project_with_tol(point, max_dist, max_angle, transform)
                 .is_some()
             {
-                result.push(i);
+                result.set(i, true);
             }
         }
         result

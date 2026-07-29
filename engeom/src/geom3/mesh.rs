@@ -1421,7 +1421,7 @@ mod tests {
 
         // The surviving standard deviations are exactly those of the points the faces reference.
         let kept: Vec<f64> = mesh
-            .unique_point_mask(&mask)?
+            .compute_unique_point_mask(&mask)?
             .iter_true()
             .map(|i| mesh.point_stdev().unwrap()[i])
             .collect();

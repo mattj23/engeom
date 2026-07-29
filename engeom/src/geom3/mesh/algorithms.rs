@@ -28,4 +28,4 @@ pub mod subsets;
 pub use faces::{compute_face_areas, compute_face_centers, compute_face_normals};
 pub use normals::compute_point_normals;
 pub use offset::{OffsetOpts, compute_face_offset_points, compute_normal_displaced_points};
-pub use subsets::{compact_by_masks, unique_face_mask, unique_point_mask};
+pub use subsets::{compact_by_masks, compute_unique_face_mask, compute_unique_point_mask};

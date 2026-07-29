@@ -18,7 +18,7 @@ use super::MeshData3;
 use crate::Result;
 use crate::common::IndexMask;
 use crate::geom3::mesh::algorithms::subsets::{
-    compact_by_masks, unique_face_mask, unique_point_mask,
+    compact_by_masks, compute_unique_face_mask, compute_unique_point_mask,
 };
 
 // ===============================================================================================
@@ -33,8 +33,8 @@ impl MeshData3 {
     /// * `face_mask`: a mask whose length must match the face count
     ///
     /// returns: `Result<IndexMask>` of length equal to the point count
-    pub fn unique_point_mask(&self, face_mask: &IndexMask) -> Result<IndexMask> {
-        unique_point_mask(&self.faces, face_mask, self.points.len())
+    pub fn compute_unique_point_mask(&self, face_mask: &IndexMask) -> Result<IndexMask> {
+        compute_unique_point_mask(&self.faces, face_mask, self.points.len())
     }
 
     /// Given a mask over the points, produce the mask over the faces which can survive it.
@@ -48,9 +48,9 @@ impl MeshData3 {
     /// * `point_mask`: a mask whose length must match the point count
     ///
     /// returns: `Result<IndexMask>` of length equal to the face count
-    pub fn unique_face_mask(&self, point_mask: &IndexMask) -> Result<IndexMask> {
+    pub fn compute_unique_face_mask(&self, point_mask: &IndexMask) -> Result<IndexMask> {
         self.check_point_mask(point_mask)?;
-        unique_face_mask(&self.faces, point_mask)
+        compute_unique_face_mask(&self.faces, point_mask)
     }
 }
 
@@ -71,7 +71,7 @@ impl MeshData3 {
     ///
     /// returns: `Result<MeshData3>`
     pub fn extract_subset_faces(&self, face_mask: &IndexMask) -> Result<Self> {
-        let point_mask = self.unique_point_mask(face_mask)?;
+        let point_mask = self.compute_unique_point_mask(face_mask)?;
         self.compact(&point_mask, face_mask)
     }
 
@@ -87,7 +87,7 @@ impl MeshData3 {
     ///
     /// returns: `Result<MeshData3>`
     pub fn extract_subset_points(&self, point_mask: &IndexMask) -> Result<Self> {
-        let face_mask = self.unique_face_mask(point_mask)?;
+        let face_mask = self.compute_unique_face_mask(point_mask)?;
         self.compact(point_mask, &face_mask)
     }
 
@@ -161,15 +161,15 @@ mod tests {
         let mesh = fixture();
 
         // Only the first face: points 0, 1, 2.
-        let points = mesh.unique_point_mask(&mask(2, &[0]))?;
+        let points = mesh.compute_unique_point_mask(&mask(2, &[0]))?;
         assert_eq!(points.to_indices(), vec![0, 1, 2]);
 
         // Both faces: everything except the orphan.
-        let points = mesh.unique_point_mask(&mask(2, &[0, 1]))?;
+        let points = mesh.compute_unique_point_mask(&mask(2, &[0, 1]))?;
         assert_eq!(points.to_indices(), vec![0, 1, 2, 3]);
 
         // No faces: nothing.
-        let points = mesh.unique_point_mask(&mask(2, &[]))?;
+        let points = mesh.compute_unique_point_mask(&mask(2, &[]))?;
         assert_eq!(points.count_true(), 0);
 
         Ok(())
@@ -180,15 +180,15 @@ mod tests {
         let mesh = fixture();
 
         // Points 0, 1, 2 fully contain the first face but only part of the second.
-        let faces = mesh.unique_face_mask(&mask(5, &[0, 1, 2]))?;
+        let faces = mesh.compute_unique_face_mask(&mask(5, &[0, 1, 2]))?;
         assert_eq!(faces.to_indices(), vec![0]);
 
         // Dropping a single shared point loses both faces.
-        let faces = mesh.unique_face_mask(&mask(5, &[1, 2, 3, 4]))?;
+        let faces = mesh.compute_unique_face_mask(&mask(5, &[1, 2, 3, 4]))?;
         assert_eq!(faces.count_true(), 0);
 
         // Everything selected keeps everything.
-        let faces = mesh.unique_face_mask(&mask(5, &[0, 1, 2, 3, 4]))?;
+        let faces = mesh.compute_unique_face_mask(&mask(5, &[0, 1, 2, 3, 4]))?;
         assert_eq!(faces.to_indices(), vec![0, 1]);
 
         Ok(())
@@ -295,8 +295,8 @@ mod tests {
         let mesh = fixture();
 
         // A point mask handed to a face-taking method, and vice versa.
-        assert!(mesh.unique_point_mask(&mask(5, &[0])).is_err());
-        assert!(mesh.unique_face_mask(&mask(2, &[0])).is_err());
+        assert!(mesh.compute_unique_point_mask(&mask(5, &[0])).is_err());
+        assert!(mesh.compute_unique_face_mask(&mask(2, &[0])).is_err());
         assert!(mesh.extract_subset_faces(&mask(5, &[0])).is_err());
         assert!(mesh.extract_subset_points(&mask(2, &[0])).is_err());
     }

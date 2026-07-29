@@ -15,7 +15,7 @@ use crate::{Point3, Result};
 /// than a selection over the original.
 ///
 /// The two masks must be **consistent**: every point referenced by a selected face must itself be
-/// selected. A caller derives one from the other with `unique_point_mask` or `unique_face_mask`
+/// selected. A caller derives one from the other with `compute_unique_point_mask` or `compute_unique_face_mask`
 /// rather than supplying both independently, and passing an inconsistent pair is an error rather
 /// than a silently corrupt mesh.
 ///
@@ -89,7 +89,7 @@ pub fn compact_by_masks(
 /// * `n_points`: the point count, which sets the length of the returned mask
 ///
 /// returns: `Result<IndexMask>`
-pub fn unique_point_mask(
+pub fn compute_unique_point_mask(
     faces: &[[u32; 3]],
     face_mask: &IndexMask,
     n_points: usize,
@@ -121,7 +121,7 @@ pub fn unique_point_mask(
 /// * `point_mask`: a mask whose length must match the point count
 ///
 /// returns: `Result<IndexMask>`
-pub fn unique_face_mask(faces: &[[u32; 3]], point_mask: &IndexMask) -> Result<IndexMask> {
+pub fn compute_unique_face_mask(faces: &[[u32; 3]], point_mask: &IndexMask) -> Result<IndexMask> {
     let mut mask = IndexMask::new(faces.len(), false);
     for (i, face) in faces.iter().enumerate() {
         let keep = face
@@ -153,7 +153,7 @@ mod tests {
     fn keeping_one_face_drops_the_points_it_does_not_use() -> Result<()> {
         let (points, faces) = quad();
         let face_mask = IndexMask::try_from_indices(&[0], 2)?;
-        let point_mask = unique_point_mask(&faces, &face_mask, points.len())?;
+        let point_mask = compute_unique_point_mask(&faces, &face_mask, points.len())?;
 
         assert_eq!(point_mask.to_indices(), vec![0, 1, 2]);
 
@@ -170,7 +170,7 @@ mod tests {
     fn the_surviving_faces_are_re_indexed() -> Result<()> {
         let (points, faces) = quad();
         let face_mask = IndexMask::try_from_indices(&[1], 2)?;
-        let point_mask = unique_point_mask(&faces, &face_mask, points.len())?;
+        let point_mask = compute_unique_point_mask(&faces, &face_mask, points.len())?;
 
         let (new_points, new_faces) = compact_by_masks(&points, &faces, &point_mask, &face_mask)?;
 
@@ -215,7 +215,7 @@ mod tests {
             )
             .is_err()
         );
-        assert!(unique_point_mask(&faces, &IndexMask::new(9, true), points.len()).is_err());
+        assert!(compute_unique_point_mask(&faces, &IndexMask::new(9, true), points.len()).is_err());
 
         Ok(())
     }
@@ -226,7 +226,7 @@ mod tests {
 
         // Points 0, 1, 2 keep face 0 only; face 1 needs point 3.
         let point_mask = IndexMask::try_from_indices(&[0, 1, 2], 4)?;
-        let face_mask = unique_face_mask(&faces, &point_mask)?;
+        let face_mask = compute_unique_face_mask(&faces, &point_mask)?;
 
         assert_eq!(face_mask.to_indices(), vec![0]);
 
