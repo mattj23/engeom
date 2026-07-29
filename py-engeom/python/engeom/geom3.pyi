@@ -786,6 +786,10 @@ class Iso3:
     def from_rx(angle: float) -> Iso3:
         """
         Create an isometry representing a rotation around the x-axis by the specified angle in radians.
+
+        When looking down the x-axis (the axis is pointing towards the observer), the rotation will be
+        counter-clockwise.
+
         :param angle: the angle to rotate by in radians.
         :return: an isometry containing only a rotation component
         """
@@ -795,6 +799,10 @@ class Iso3:
     def from_ry(angle: float) -> Iso3:
         """
         Create an isometry representing a rotation around the y-axis by the specified angle in radians.
+
+        When looking down the y-axis (the axis is pointing towards the observer), the rotation will be
+        counter-clockwise.
+
         :param angle: the angle to rotate by in radians.
         :return: an isometry containing only a rotation component
         """
@@ -804,6 +812,10 @@ class Iso3:
     def from_rz(angle: float) -> Iso3:
         """
         Create an isometry representing a rotation around the z-axis by the specified angle in radians.
+
+        When looking down the z-axis (the axis is pointing towards the observer), the rotation will be
+        counter-clockwise.
+
         :param angle: the angle to rotate by in radians.
         :return: an isometry containing only a rotation component
         """

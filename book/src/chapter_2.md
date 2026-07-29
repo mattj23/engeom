@@ -556,7 +556,7 @@ b = a.normal_rotated(pi / 2)
 
 ### Orthogonal Shift
 
-Returns a copy of the surface point with its position shifted in the direction orthogonal to its normal. Following the clockwise winding order convention, this direction is the normal rotated 90 degrees clockwise. For a normal pointing in +Y, a positive shift moves the point in the +X direction.
+Returns a copy of the surface point with its position shifted in the direction orthogonal to its normal. Following the counter-clockwise winding order convention, this direction is the normal rotated 90 degrees clockwise. For a normal pointing in +Y, a positive shift moves the point in the +X direction.
 
 **Rust:**
 

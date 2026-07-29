@@ -421,8 +421,8 @@ pub trait IsoExtensions3 {
     /// ```
     fn from_basis_zy(e2: &Vector3, e1: &Vector3, origin: Option<Point3>) -> Result<Iso3>;
 
-    /// Create an isometry that rotates around the x-axis by a given angle. Positive angles rotate
-    /// in the clockwise direction.
+    /// Create an isometry that rotates around the x-axis by a given angle. When the x-axis is
+    /// pointed at the viewer, positive angles will produce rotations viewed as counter-clockwise.
     ///
     /// # Arguments
     ///
@@ -444,8 +444,8 @@ pub trait IsoExtensions3 {
     /// ```
     fn from_rx(angle: f64) -> Iso3;
 
-    /// Create an isometry that rotates around the y-axis by a given angle. Positive angles rotate
-    /// in the clockwise direction.
+    /// Create an isometry that rotates around the y-axis by a given angle. When the y-axis is
+    /// pointed at the viewer, positive angles will produce rotations viewed as counter-clockwise.
     ///
     /// # Arguments
     ///
@@ -467,8 +467,8 @@ pub trait IsoExtensions3 {
     /// ```
     fn from_ry(angle: f64) -> Iso3;
 
-    /// Create an isometry that rotates around the z-axis by a given angle. Positive angles rotate
-    /// in the clockwise direction.
+    /// Create an isometry that rotates around the z-axis by a given angle. When the z-axis is
+    /// pointed at the viewer, positive angles will produce rotations viewed as counter-clockwise.
     ///
     /// # Arguments
     ///
