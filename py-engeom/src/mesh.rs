@@ -27,18 +27,28 @@ type VisualOutline<'py> = (Bound<'py, PyArrayDyn<f64>>, Bound<'py, PyArray1<u8>>
 #[pyclass(from_py_object, module = "engeom.geom3")]
 pub struct Mesh3 {
     inner: engeom::Mesh3,
-    vertices: Option<Py<PyArray2<f64>>>,
+    points: Option<Py<PyArray2<f64>>>,
     faces: Option<Py<PyArray2<u32>>>,
     face_normals: Option<Py<PyArray2<f64>>>,
     computed_point_normals: Option<Py<PyArray2<f64>>>,
+    point_normals: Option<Py<PyArray2<f64>>>,
+    point_colors: Option<Py<PyArray2<u8>>>,
+    point_stdev: Option<Py<PyArray1<f64>>>,
+    face_colors: Option<Py<PyArray2<u8>>>,
+    face_labels: Option<Py<PyArray1<u32>>>,
 }
 
 impl Mesh3 {
     fn clear_cached(&mut self) {
-        self.vertices = None;
+        self.points = None;
         self.faces = None;
         self.face_normals = None;
         self.computed_point_normals = None;
+        self.point_normals = None;
+        self.point_colors = None;
+        self.point_stdev = None;
+        self.face_colors = None;
+        self.face_labels = None;
     }
 
     pub fn get_inner(&self) -> &engeom::Mesh3 {
@@ -48,10 +58,15 @@ impl Mesh3 {
     pub fn from_inner(inner: engeom::Mesh3) -> Self {
         Self {
             inner,
-            vertices: None,
+            points: None,
             faces: None,
             face_normals: None,
             computed_point_normals: None,
+            point_normals: None,
+            point_colors: None,
+            point_stdev: None,
+            face_colors: None,
+            face_labels: None,
         }
     }
 }
@@ -65,19 +80,20 @@ impl Clone for Mesh3 {
 #[pymethods]
 impl Mesh3 {
     #[new]
-    #[pyo3(signature=(vertices, faces, merge_duplicates = false, delete_degenerate = false))]
+    #[pyo3(signature=(points, faces, merge_duplicates = false, delete_degenerate = false, is_solid = false))]
     fn new<'py>(
-        vertices: PyReadonlyArray2<'py, f64>,
+        points: PyReadonlyArray2<'py, f64>,
         faces: PyReadonlyArray2<'py, u32>,
         merge_duplicates: bool,
         delete_degenerate: bool,
+        is_solid: bool,
     ) -> PyResult<Self> {
-        let vertices = array_to_points3(&vertices.as_array())?;
+        let points = array_to_points3(&points.as_array())?;
         let faces = array_to_faces(&faces.as_array())?;
         let mesh = engeom::Mesh3::new_with_options(
-            vertices,
+            points,
             faces,
-            false,
+            is_solid,
             merge_duplicates,
             delete_degenerate,
             None,
@@ -194,12 +210,138 @@ impl Mesh3 {
     }
 
     #[getter]
-    fn vertices<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArray2<f64>> {
-        if self.vertices.is_none() {
+    fn points<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArray2<f64>> {
+        if self.points.is_none() {
             let array = points_to_array(self.inner.points());
-            self.vertices = Some(array.into_pyarray(py).unbind());
+            self.points = Some(array.into_pyarray(py).unbind());
         }
-        self.vertices.as_ref().unwrap().bind(py)
+        self.points.as_ref().unwrap().bind(py)
+    }
+
+    #[getter]
+    fn is_solid(&self) -> bool {
+        self.inner.is_solid()
+    }
+
+    #[getter]
+    fn point_count(&self) -> usize {
+        self.inner.point_count()
+    }
+
+    #[getter]
+    fn face_count(&self) -> usize {
+        self.inner.face_count()
+    }
+
+    fn __len__(&self) -> usize {
+        self.inner.point_count()
+    }
+
+    fn flip_normals_in_place(&mut self) {
+        self.clear_cached();
+        self.inner.flip_normals_in_place();
+    }
+
+    // --- Attributes ------------------------------------------------------------------------
+
+    #[getter]
+    fn point_normals<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray2<f64>>> {
+        let values = self.inner.point_normals()?;
+        if self.point_normals.is_none() {
+            let array = unit_vectors_to_array(values);
+            self.point_normals = Some(array.into_pyarray(py).unbind());
+        }
+        Some(self.point_normals.as_ref().unwrap().bind(py))
+    }
+
+    #[getter]
+    fn point_colors<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray2<u8>>> {
+        let values = self.inner.point_colors()?;
+        if self.point_colors.is_none() {
+            let array = colors_to_array(values);
+            self.point_colors = Some(array.into_pyarray(py).unbind());
+        }
+        Some(self.point_colors.as_ref().unwrap().bind(py))
+    }
+
+    #[getter]
+    fn point_stdev<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray1<f64>>> {
+        let values = self.inner.point_stdev()?;
+        if self.point_stdev.is_none() {
+            let array = scalars_to_array(values);
+            self.point_stdev = Some(array.into_pyarray(py).unbind());
+        }
+        Some(self.point_stdev.as_ref().unwrap().bind(py))
+    }
+
+    #[getter]
+    fn face_colors<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray2<u8>>> {
+        let values = self.inner.face_colors()?;
+        if self.face_colors.is_none() {
+            let array = colors_to_array(values);
+            self.face_colors = Some(array.into_pyarray(py).unbind());
+        }
+        Some(self.face_colors.as_ref().unwrap().bind(py))
+    }
+
+    #[getter]
+    fn face_labels<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray1<u32>>> {
+        let values = self.inner.face_labels()?;
+        if self.face_labels.is_none() {
+            let array = labels_to_array(values);
+            self.face_labels = Some(array.into_pyarray(py).unbind());
+        }
+        Some(self.face_labels.as_ref().unwrap().bind(py))
+    }
+
+    #[pyo3(signature = (values=None))]
+    fn set_point_normals<'py>(
+        &mut self,
+        values: Option<PyReadonlyArray2<'py, f64>>,
+    ) -> PyResult<()> {
+        let values = values
+            .map(|v| array_to_unit_vectors3(&v.as_array()))
+            .transpose()?;
+        self.clear_cached();
+        self.inner
+            .set_point_normals(values)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[pyo3(signature = (values=None))]
+    fn set_point_colors<'py>(&mut self, values: Option<PyReadonlyArray2<'py, u8>>) -> PyResult<()> {
+        let values = values.map(|v| array_to_colors(&v.as_array())).transpose()?;
+        self.clear_cached();
+        self.inner
+            .set_point_colors(values)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[pyo3(signature = (values=None))]
+    fn set_point_stdev<'py>(&mut self, values: Option<PyReadonlyArray1<'py, f64>>) -> PyResult<()> {
+        let values = values.map(|v| array_to_vec(&v)).transpose()?;
+        self.clear_cached();
+        self.inner
+            .set_point_stdev(values)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[pyo3(signature = (values=None))]
+    fn set_face_colors<'py>(&mut self, values: Option<PyReadonlyArray2<'py, u8>>) -> PyResult<()> {
+        let values = values.map(|v| array_to_colors(&v.as_array())).transpose()?;
+        self.clear_cached();
+        self.inner
+            .set_face_colors(values)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[pyo3(signature = (values=None))]
+    fn set_face_labels<'py>(&mut self, values: Option<PyReadonlyArray1<'py, u32>>) -> PyResult<()> {
+        let values = values.map(|v| array_to_vec(&v)).transpose()?;
+        self.clear_cached();
+        self.inner
+            .set_face_labels(values)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     fn compute_point_normals<'py>(
@@ -518,8 +660,9 @@ impl Mesh3 {
     }
 
     #[staticmethod]
-    fn create_box(length: f64, width: f64, height: f64) -> Self {
-        let mesh = engeom::Mesh3::create_box(length, width, height, true);
+    #[pyo3(signature = (length, width, height, is_solid = true))]
+    fn create_box(length: f64, width: f64, height: f64, is_solid: bool) -> Self {
+        let mesh = engeom::Mesh3::create_box(length, width, height, is_solid);
         Self::from_inner(mesh)
     }
 

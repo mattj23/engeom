@@ -2336,14 +2336,15 @@ class Mesh3:
 
     def __init__(
             self,
-            vertices: NDArray[float],
+            points: NDArray[float],
             faces: NDArray[numpy.uint32],
             merge_duplicates: bool = False,
-            delete_degenerate: bool = False
+            delete_degenerate: bool = False,
+            is_solid: bool = False
     ):
         """
-        Create an engeom mesh from vertices and triangles.  The vertices should be a numpy array of shape (n, 3), while
-        the triangles should be a numpy array of shape (m, 3) containing the indices of the vertices that make up each
+        Create an engeom mesh from points and triangles.  The points should be a numpy array of shape (n, 3), while
+        the triangles should be a numpy array of shape (m, 3) containing the indices of the points that make up each
         triangle. The triangles should be specified in counter-clockwise order when looking at the triangle from the
         front/outside.
 
@@ -2351,10 +2352,12 @@ class Mesh3:
             If you get an error `TypeError: argument 'faces': 'ndarray' object cannot be converted to 'PyArray<T, D>'`,
             make sure to convert the faces array to an unsigned integer type, e.g. `numpy.uint32`.
 
-        :param vertices: a numpy array of shape (n, 3) containing the vertices of the mesh.
+        :param points: a numpy array of shape (n, 3) containing the points of the mesh.
         :param faces: a numpy array of shape (m, 3) containing the triangles of the mesh, should be uint.
-        :param merge_duplicates: merge duplicate vertices and triangles
+        :param merge_duplicates: merge duplicate points and triangles
         :param delete_degenerate: delete degenerate triangles
+        :param is_solid: whether distance queries should treat the interior as solid, returning zero distance for
+            points inside the mesh.
         """
         ...
 
@@ -2586,10 +2589,134 @@ class Mesh3:
         ...
 
     @property
-    def vertices(self) -> NDArray[float]:
+    def points(self) -> NDArray[float]:
         """
-        Will return an immutable view of the vertices of the mesh as a numpy array of shape (n, 3).
-        :return: a numpy array of shape (n, 3) containing the vertices of the mesh.
+        Will return an immutable view of the points of the mesh as a numpy array of shape (n, 3).
+        :return: a numpy array of shape (n, 3) containing the points of the mesh.
+        """
+        ...
+
+    @property
+    def is_solid(self) -> bool:
+        """
+        Whether distance queries treat the interior of the mesh as solid, in which case a point inside the mesh has a
+        distance of zero rather than the distance to the nearest surface.
+        """
+        ...
+
+    @property
+    def point_count(self) -> int:
+        """ The number of points in the mesh. """
+        ...
+
+    @property
+    def face_count(self) -> int:
+        """ The number of faces in the mesh. """
+        ...
+
+    def __len__(self) -> int:
+        """ The number of points in the mesh, matching `point_count`. """
+        ...
+
+    def flip_normals_in_place(self):
+        """
+        Reverse the winding order of every face, turning the surface inside out. Any stored point normals are negated
+        to match, since the direction the surface faces has changed. This modifies the mesh in place.
+        """
+        ...
+
+    @property
+    def point_normals(self) -> NDArray[float] | None:
+        """
+        The stored per-point unit normals, or None if the mesh has none.
+
+        These are whatever was measured or loaded with the mesh, not a computed quantity. Use `compute_point_normals`
+        to derive normals from the faces instead.
+
+        :return: a numpy array of shape (n, 3), or None.
+        """
+        ...
+
+    @property
+    def point_colors(self) -> NDArray[numpy.uint8] | None:
+        """
+        The stored per-point RGB colors, or None if the mesh has none.
+
+        :return: a numpy array of shape (n, 3) with dtype uint8, or None.
+        """
+        ...
+
+    @property
+    def point_stdev(self) -> NDArray[float] | None:
+        """
+        The stored per-point standard deviations, or None if the mesh has none. These are 1-sigma values in the mesh's
+        own length units.
+
+        :return: a numpy array of shape (n,), or None.
+        """
+        ...
+
+    @property
+    def face_colors(self) -> NDArray[numpy.uint8] | None:
+        """
+        The stored per-face RGB colors, or None if the mesh has none.
+
+        :return: a numpy array of shape (m, 3) with dtype uint8, or None.
+        """
+        ...
+
+    @property
+    def face_labels(self) -> NDArray[numpy.uint32] | None:
+        """
+        The stored per-face labels, or None if the mesh has none.
+
+        :return: a numpy array of shape (m,) with dtype uint32, or None.
+        """
+        ...
+
+    def set_point_normals(self, values: NDArray[float] | None = None):
+        """
+        Set or clear the stored per-point normals. Rows are normalized to unit length, and a row of zero length is
+        rejected because it has no direction.
+
+        :param values: a numpy array of shape (n, 3) with one row per point, or None to clear the attribute.
+        :raises ValueError: if the array length does not match the point count, or a row has zero length.
+        """
+        ...
+
+    def set_point_colors(self, values: NDArray[numpy.uint8] | None = None):
+        """
+        Set or clear the stored per-point RGB colors.
+
+        :param values: a numpy array of shape (n, 3) with dtype uint8, or None to clear the attribute.
+        :raises ValueError: if the array length does not match the point count.
+        """
+        ...
+
+    def set_point_stdev(self, values: NDArray[float] | None = None):
+        """
+        Set or clear the stored per-point standard deviations.
+
+        :param values: a numpy array of shape (n,), or None to clear the attribute.
+        :raises ValueError: if the array length does not match the point count.
+        """
+        ...
+
+    def set_face_colors(self, values: NDArray[numpy.uint8] | None = None):
+        """
+        Set or clear the stored per-face RGB colors.
+
+        :param values: a numpy array of shape (m, 3) with dtype uint8, or None to clear the attribute.
+        :raises ValueError: if the array length does not match the face count.
+        """
+        ...
+
+    def set_face_labels(self, values: NDArray[numpy.uint32] | None = None):
+        """
+        Set or clear the stored per-face labels.
+
+        :param values: a numpy array of shape (m,) with dtype uint32, or None to clear the attribute.
+        :raises ValueError: if the array length does not match the face count.
         """
         ...
 
@@ -2922,13 +3049,14 @@ class Mesh3:
         ...
 
     @staticmethod
-    def create_box(length: float, width: float, height: float) -> Mesh3:
+    def create_box(length: float, width: float, height: float, is_solid: bool = True) -> Mesh3:
         """
         Creates a box with the center at the origin and the specified length, width, and height
 
         :param length: the size of the box along the X-axis
         :param width: the size of the box along the Y-axis
         :param height: the size of the box along the Z-axis
+        :param is_solid: whether distance queries should treat the interior as solid
         :return: a new `Mesh3` object representing the box
         """
         ...

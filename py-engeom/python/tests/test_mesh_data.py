@@ -244,7 +244,7 @@ def test_mesh_data_loads_a_g3d_file():
 def test_mesh_loads_a_g3d_file():
     mesh = Mesh3.load_g3d(STUD_BOLT_G3D)
 
-    assert mesh.vertices.shape == (8565, 3)
+    assert mesh.points.shape == (8565, 3)
     assert mesh.faces.shape == (16957, 3)
 
 
@@ -258,7 +258,7 @@ def test_mesh_data_round_trips_through_mesh():
     mesh = before.to_mesh()
 
     assert isinstance(mesh, Mesh3)
-    assert mesh.vertices.shape == (3, 3)
+    assert mesh.points.shape == (3, 3)
 
     after = MeshData3.from_mesh(mesh)
 

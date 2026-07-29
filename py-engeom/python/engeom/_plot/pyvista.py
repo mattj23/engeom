@@ -188,7 +188,7 @@ else:
 
             prefix = numpy.ones((mesh.faces.shape[0], 1), dtype=mesh.faces.dtype)
             faces = numpy.hstack((prefix * 3, mesh.faces))
-            data = pyvista.PolyData(mesh.vertices, faces)
+            data = pyvista.PolyData(mesh.points, faces)
             return self.pv.add_mesh(data, **kwargs)
 
         def point_cloud(self, cloud: PointCloud, use_colors: bool = True, normal_arrow_size: float = 0.0, **kwargs):
