@@ -281,7 +281,7 @@ else:
             assert visible_kwargs is not None
             assert hidden_kwargs is not None
 
-            points, edge_types = mesh.visual_outline(self.view.inverse() @ Vector3.z_axis(), max_edge_len, corner_angle)
+            points, edge_types = mesh.compute_visual_outline(self.view.inverse() @ Vector3.z_axis(), max_edge_len, corner_angle)
             p0s = self.view.transform_points(points[:, :3])
             p1s = self.view.transform_points(points[:, 3:])
             for edge_type, (p0, p1) in zip(edge_types, zip(p0s, p1s)):

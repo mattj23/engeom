@@ -2860,7 +2860,7 @@ class Mesh3:
         """
         ...
 
-    def visual_outline(
+    def compute_visual_outline(
             self,
             facing: Vector3,
             max_edge_length: float,

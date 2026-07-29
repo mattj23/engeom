@@ -10,7 +10,7 @@ use std::f64::consts::PI;
 type CEdgeTypes = (HashSet<[u32; 2]>, HashMap<[u32; 2], [u32; 2]>);
 
 impl Mesh3 {
-    pub fn visual_outline(
+    pub fn compute_visual_outline(
         &self,
         facing: UnitVec3,
         max_edge_length: f64,

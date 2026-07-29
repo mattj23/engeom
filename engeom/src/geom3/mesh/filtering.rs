@@ -68,7 +68,7 @@ impl TriangleFilter<'_> {
     ///
     /// returns: `Result<Mesh3>`, failing if the selection is empty, since a mesh needs at least one
     /// face to build an acceleration structure over
-    pub fn create_mesh(self) -> Result<Mesh3> {
+    pub fn into_mesh(self) -> Result<Mesh3> {
         self.mesh.extract_subset_faces(&self.mask)
     }
 
@@ -692,7 +692,7 @@ mod tests {
             .face_select(Selection::None)
             .facing(&Vector3::z(), PI / 2.0, Add);
 
-        let new_mesh = selection.create_mesh()?;
+        let new_mesh = selection.into_mesh()?;
         assert_eq!(new_mesh.faces().len(), 2);
 
         for t in new_mesh.tri_mesh().triangles() {

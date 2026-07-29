@@ -239,7 +239,7 @@ impl Mesh3 {
     }
 
     #[pyo3(signature=(facing, max_edge_length, corner_angle = None))]
-    fn visual_outline<'py>(
+    fn compute_visual_outline<'py>(
         &self,
         py: Python<'py>,
         facing: Vector3,
@@ -247,7 +247,9 @@ impl Mesh3 {
         corner_angle: Option<f64>,
     ) -> (Bound<'py, PyArrayDyn<f64>>, Bound<'py, PyArray1<u8>>) {
         let n = engeom::UnitVec3::new_normalize(*facing.get_inner());
-        let outline = self.inner.visual_outline(n, max_edge_length, corner_angle);
+        let outline = self
+            .inner
+            .compute_visual_outline(n, max_edge_length, corner_angle);
         let mut result = ArrayD::zeros(vec![outline.len(), 6]);
         let mut result_type = Array1::zeros(outline.len());
         for (i, (p0, p1, t)) in outline.iter().enumerate() {

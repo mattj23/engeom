@@ -408,7 +408,7 @@ impl Mesh3 {
             uv: None,
         }
     }
-    pub fn new_take_trimesh(shape: TriMesh, is_solid: bool) -> Self {
+    pub fn from_trimesh(shape: TriMesh, is_solid: bool) -> Self {
         Self {
             shape,
             attrs: MeshAttrSet3::empty(),
@@ -664,7 +664,7 @@ impl Mesh3 {
             .clone()
             .scaled(&Vector3::new(scale, scale, scale));
 
-        let mut result = Mesh3::new_take_trimesh(new_shape, self.is_solid);
+        let mut result = Mesh3::from_trimesh(new_shape, self.is_solid);
         result.attrs = self.attrs.clone();
         result.attrs.scale_in_place(scale);
 
@@ -852,13 +852,13 @@ impl Mesh3 {
     /// navigate the mesh through edges and faces.  It is recommended to use this if you will be
     /// performing multiple structural queries on the mesh, so that the structure does not need to
     /// be recomputed each time.
-    pub fn nav(&self) -> MeshNav<'_> {
+    pub fn compute_nav(&self) -> MeshNav<'_> {
         MeshNav::new(self)
     }
 
     /// Calculates the patches in the mesh. If you are going to be doing multiple queries of the
     /// structure of the mesh, either use the half-edge representation, or generate a `MeshNav`
-    /// through the `nav()` method to avoid having to recompute the mesh structure each time.
+    /// through the `compute_nav()` method to avoid having to recompute the mesh structure each time.
     ///
     /// # Arguments
     ///
@@ -866,7 +866,7 @@ impl Mesh3 {
     ///
     /// returns: Result<Vec<IndexMask, Global>, Box<dyn Error, Global>>
     pub fn compute_patches(&self, mask: Option<&IndexMask>) -> Result<Vec<IndexMask>> {
-        let nav = self.nav();
+        let nav = self.compute_nav();
         nav.patches(mask)
     }
 

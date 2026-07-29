@@ -262,8 +262,8 @@ impl Mesh3 {
         let result = self.shape.local_split(&plane.normal, plane.d, 1.0e-6);
         Ok(match result {
             SplitResult::Pair(a, b) => {
-                let mesh_a = Mesh3::new_take_trimesh(a, false);
-                let mesh_b = Mesh3::new_take_trimesh(b, false);
+                let mesh_a = Mesh3::from_trimesh(a, false);
+                let mesh_b = Mesh3::from_trimesh(b, false);
                 SplitResult::Pair(mesh_a, mesh_b)
             }
             SplitResult::Negative => SplitResult::Negative,

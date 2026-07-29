@@ -63,6 +63,12 @@ If it needs further disambiguation from another method with the same type of inp
 
 It makes sense to reverse the input vs method naming convention in certain cases when the input and method are closely related and the method is more recognizable than the input.  For example, `from_least_squares` or `from_fit` is preferable to `from_points_least_squares`.
 
+### Static shape factories: `create_<shape>(...)`
+
+The mesh and point cloud types have a family of static constructors which tessellate a named primitive shape from its dimensions: `Mesh3::create_box`, `Mesh3::create_sphere`, `MeshData3::create_cylinder`, and so on. These keep the `create_` prefix rather than becoming `from_box`/`from_sphere`, because the family is large, mirrored across several types, and reads better with a verb than with `from_` followed by a shape that isn't really the "input" in the sense the rule above means.
+
+`create_` is **reserved** for this. It always means: an associated function with no receiver, which builds a whole new entity out of parameters. A method taking `&self` must never use it — that was the old `Mesh3::create_from_mask`, which read as a constructor but actually returned a subset of an existing mesh, and is now `extract_subset_faces`.
+
 ### Methods returning a modified copy: bare past-participle, no prefix
 
 A method that takes `&self` and returns a new, modified `Self` (as opposed to mutating in place) gets a bare past-participle name: `rotated`, `reversed`, `normalized`, `transformed_by`.
