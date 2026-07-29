@@ -12,6 +12,7 @@ import numpy
 import pytest
 
 from engeom.geom3 import Iso3, Mesh3, MeshData3, PointCloud, PointCloudData3
+from engeom.common import IndexMask
 
 
 def triangle_points() -> numpy.ndarray:
@@ -545,3 +546,75 @@ def test_mesh_append_in_place_offsets_the_face_indices():
     assert numpy.array_equal(data.faces, [[0, 1, 2], [3, 4, 5]])
     assert data.point_stdev.shape == (6,)
     assert data.face_labels.shape == (2,)
+
+
+# ---------------------------------------------------------------------------
+# Mask-based subsets
+# ---------------------------------------------------------------------------
+
+def two_triangles() -> MeshData3:
+    """Two disjoint triangles, so a face selection has points it can drop."""
+    points = numpy.array([
+        [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0],
+        [5.0, 0.0, 0.0], [6.0, 0.0, 0.0], [5.0, 1.0, 0.0],
+    ])
+    faces = numpy.array([[0, 1, 2], [3, 4, 5]], dtype=numpy.uint32)
+    data = MeshData3(points, faces)
+    data.set_face_labels(numpy.array([11, 22], dtype=numpy.uint32))
+    return data
+
+
+def test_mesh_data_extract_subset_faces_drops_orphaned_points():
+    data = two_triangles()
+    mask = IndexMask.from_indices([1], 2)
+
+    subset = data.extract_subset_faces(mask)
+
+    assert subset.faces.shape == (1, 3)
+    assert subset.points.shape == (3, 3)
+    assert numpy.allclose(subset.points[0], [5.0, 0.0, 0.0])
+    # Faces are renumbered against the surviving points.
+    assert numpy.array_equal(subset.faces, [[0, 1, 2]])
+    # Attributes follow the selection.
+    assert numpy.array_equal(subset.face_labels, [22])
+
+
+def test_mesh_data_extract_subset_points_keeps_only_fully_selected_faces():
+    data = two_triangles()
+    # Select the first triangle's points plus one point of the second.
+    mask = IndexMask.from_indices([0, 1, 2, 3], 6)
+
+    subset = data.extract_subset_points(mask)
+
+    assert subset.points.shape == (4, 3)
+    assert subset.faces.shape == (1, 3)
+    assert numpy.array_equal(subset.face_labels, [11])
+
+
+def test_mesh_data_unique_masks_are_inverses_over_a_clean_selection():
+    data = two_triangles()
+    face_mask = IndexMask.from_indices([0], 2)
+
+    point_mask = data.compute_unique_point_mask(face_mask)
+    back = data.compute_unique_face_mask(point_mask)
+
+    assert list(point_mask.to_indices()) == [0, 1, 2]
+    assert back == face_mask
+
+
+def test_mesh_data_subset_rejects_a_mask_of_the_wrong_length():
+    data = two_triangles()
+    with pytest.raises(ValueError):
+        data.extract_subset_faces(IndexMask(6))
+
+
+def test_mesh_data_and_mesh_extract_the_same_subset():
+    """The accelerated and plain types wrap the same subset code, so they must agree."""
+    data = two_triangles()
+    mask = IndexMask.from_indices([1], 2)
+
+    from_data = data.extract_subset_faces(mask)
+    from_mesh = data.to_mesh().extract_subset_faces(mask)
+
+    assert numpy.allclose(from_data.points, from_mesh.points)
+    assert numpy.array_equal(from_data.faces, from_mesh.faces)

@@ -8,6 +8,7 @@ from numpy.typing import NDArray
 import engeom
 from typing import Callable
 from engeom.geom2 import Vector2, Point2, SurfacePoint2, SplineProjection
+from engeom.common import IndexMask
 
 import metrology
 
@@ -2890,6 +2891,78 @@ class Mesh3:
         """
         ...
 
+    def face_mask(self, value: bool = False) -> IndexMask:
+        """
+        Create a mask over the mesh's faces, with every face set to the same initial value.
+
+        :param value: the initial value for every face.
+        :return: a mask whose length is the mesh's face count.
+        """
+        ...
+
+    def point_mask(self, value: bool = False) -> IndexMask:
+        """
+        Create a mask over the mesh's points, with every point set to the same initial value.
+
+        :param value: the initial value for every point.
+        :return: a mask whose length is the mesh's point count.
+        """
+        ...
+
+    def extract_subset_faces(self, mask: IndexMask) -> Mesh3:
+        """
+        Create a new mesh from the faces selected by a mask. Points which no surviving face references are dropped and
+        the remaining ones are renumbered. Every attribute is carried through.
+
+        :param mask: a mask over the mesh's faces, which must have the same length as the mesh's face count.
+        :return: a new mesh containing only the selected faces.
+        :raises ValueError: if the mask length does not match the face count, or if the selection is empty, since a
+            mesh needs at least one face.
+        """
+        ...
+
+    def compute_unique_point_mask(self, face_mask: IndexMask) -> IndexMask:
+        """
+        Compute the mask of points which are referenced by at least one of the faces selected by `face_mask`.
+
+        :param face_mask: a mask over the mesh's faces.
+        :return: a mask whose length is the mesh's point count.
+        :raises ValueError: if the mask length does not match the face count.
+        """
+        ...
+
+    def compute_patches(self, mask: IndexMask | None = None) -> List[IndexMask]:
+        """
+        Partition the faces into connected patches, returning one face mask per patch.
+
+        :param mask: an optional face mask limiting which faces are considered. If None, every face participates.
+        :return: a list of face masks, one per connected patch.
+        :raises ValueError: if the mask length does not match the face count.
+        """
+        ...
+
+    def find_points_in_tol(
+            self,
+            points: NDArray[float],
+            max_dist: float,
+            max_angle: float,
+            transform: Iso3 | None = None
+    ) -> IndexMask:
+        """
+        Find which of the given points project onto the mesh within the given distance and angle tolerances.
+
+        The returned mask is indexed by the given `points` array, not by the mesh's own points or faces, so it has the
+        same length as `points`.
+
+        :param points: a numpy array of shape (n, 3) of the points to test.
+        :param max_dist: the maximum distance from the mesh surface for a point to be included.
+        :param max_angle: the maximum angle, in radians, between the point's projection direction and the surface
+            normal for a point to be included.
+        :param transform: an optional isometry applied to the mesh before the test.
+        :return: a mask whose length is the number of points given.
+        """
+        ...
+
     def measure_point_deviation(self, x: float, y: float, z: float,
                                 dist_mode: engeom.DeviationMode) -> metrology.Distance3:
         """
@@ -3228,14 +3301,36 @@ class FaceFilterHandle:
     or used to directly create a new mesh containing only the filtered triangles.
     """
 
-    def collect(self) -> List[int]:
+    def by_mask(self, mask: IndexMask, mode: engeom.SelectOp) -> FaceFilterHandle:
+        """
+        Modify the selection directly with a face mask.
+
+        :param mask: a mask over the mesh's faces, which must have the same length as the mesh's face count.
+        :param mode: whether to add the masked faces to the selection, remove them from it, or keep only the faces
+            which are in both the current selection and the mask.
+        :return: the same handle, to allow chaining.
+        :raises ValueError: if the mask length does not match the mesh's face count.
+        """
+        ...
+
+    def collect_indices(self) -> List[int]:
         """
         Finalize the handle by collecting the final indices of the triangles that passed the filter.
         :return: a list of the final indices of the triangles that passed the filter.
         """
         ...
 
-    def create_mesh(self) -> Mesh3:
+    def to_mask(self) -> IndexMask:
+        """
+        Return the current selection as a mask over the mesh's faces.
+
+        Unlike the Rust `take_mask`, this does not consume the handle, which stays usable afterwards.
+
+        :return: a mask whose length is the mesh's face count.
+        """
+        ...
+
+    def to_mesh(self) -> Mesh3:
         """
         Create a new mesh from the filtered faces. This will build a new mesh object containing only the faces (and
         the points they reference) that are still retained in the filter. Every attribute is carried through.
@@ -4560,6 +4655,48 @@ class MeshData3:
     def cloned(self) -> MeshData3:
         """
         Create a copy of this mesh data.
+        """
+        ...
+
+    def extract_subset_faces(self, face_mask: IndexMask) -> MeshData3:
+        """
+        Create new mesh data from the faces selected by a mask. Points which no surviving face references are dropped
+        and the remaining ones are renumbered. Every attribute is carried through.
+
+        :param face_mask: a mask over the faces, which must have the same length as the face count.
+        :return: new mesh data containing only the selected faces.
+        :raises ValueError: if the mask length does not match the face count.
+        """
+        ...
+
+    def extract_subset_points(self, point_mask: IndexMask) -> MeshData3:
+        """
+        Create new mesh data from the points selected by a mask. A face survives only if all three of its points do.
+        Every attribute is carried through.
+
+        :param point_mask: a mask over the points, which must have the same length as the point count.
+        :return: new mesh data containing only the selected points.
+        :raises ValueError: if the mask length does not match the point count.
+        """
+        ...
+
+    def compute_unique_point_mask(self, face_mask: IndexMask) -> IndexMask:
+        """
+        Compute the mask of points which are referenced by at least one of the faces selected by `face_mask`.
+
+        :param face_mask: a mask over the faces.
+        :return: a mask whose length is the point count.
+        :raises ValueError: if the mask length does not match the face count.
+        """
+        ...
+
+    def compute_unique_face_mask(self, point_mask: IndexMask) -> IndexMask:
+        """
+        Compute the mask of faces whose three points are all selected by `point_mask`.
+
+        :param point_mask: a mask over the points.
+        :return: a mask whose length is the face count.
+        :raises ValueError: if the mask length does not match the point count.
         """
         ...
 

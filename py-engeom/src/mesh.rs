@@ -1,5 +1,5 @@
 use crate::bounding::Aabb3;
-use crate::common::{deviation_mode_from_str, select_op_from_str};
+use crate::common::{IndexMask, deviation_mode_from_str, select_op_from_str};
 use crate::conversions::{
     array_to_colors, array_to_faces, array_to_points3, array_to_unit_vectors3, array_to_vec,
     colors_to_array, faces_to_array, labels_to_array, points_to_array, scalars_to_array,
@@ -634,6 +634,61 @@ impl Mesh3 {
         Ok(Self::from_inner(inner))
     }
 
+    // --- Masks -------------------------------------------------------------------------------
+
+    #[pyo3(signature = (value = false))]
+    fn face_mask(&self, value: bool) -> IndexMask {
+        IndexMask::from_inner(self.inner.face_mask(value))
+    }
+
+    #[pyo3(signature = (value = false))]
+    fn point_mask(&self, value: bool) -> IndexMask {
+        IndexMask::from_inner(self.inner.point_mask(value))
+    }
+
+    fn extract_subset_faces(&self, mask: &IndexMask) -> PyResult<Self> {
+        let inner = self
+            .inner
+            .extract_subset_faces(mask.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(inner))
+    }
+
+    fn compute_unique_point_mask(&self, face_mask: &IndexMask) -> PyResult<IndexMask> {
+        let inner = self
+            .inner
+            .compute_unique_point_mask(face_mask.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(IndexMask::from_inner(inner))
+    }
+
+    #[pyo3(signature = (mask = None))]
+    fn compute_patches(&self, mask: Option<&IndexMask>) -> PyResult<Vec<IndexMask>> {
+        let patches = self
+            .inner
+            .compute_patches(mask.map(|m| m.get_inner()))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(patches.into_iter().map(IndexMask::from_inner).collect())
+    }
+
+    #[pyo3(signature = (points, max_dist, max_angle, transform = None))]
+    fn find_points_in_tol<'py>(
+        &self,
+        points: PyReadonlyArray2<'py, f64>,
+        max_dist: f64,
+        max_angle: f64,
+        transform: Option<&Iso3>,
+    ) -> PyResult<IndexMask> {
+        let points = array_to_points3(&points.as_array())?;
+        let mask = self.inner.find_points_in_tol(
+            &points,
+            max_dist,
+            max_angle,
+            transform.map(|t| t.get_inner()),
+        );
+        Ok(IndexMask::from_inner(mask))
+    }
+
     fn separate_patches(&self) -> PyResult<Vec<Self>> {
         let patch_groups = self
             .inner
@@ -851,11 +906,41 @@ impl FaceFilterHandle {
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
-    fn collect(&self) -> Vec<usize> {
+    fn by_mask<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        py: Python<'py>,
+        mask: &IndexMask,
+        mode: &str,
+    ) -> PyResult<Bound<'py, Self>> {
+        let op = select_op_from_str(mode)?;
+        let temp = slf.mesh.bind(py).borrow();
+        let i = slf.indices.clone();
+        slf.indices = temp
+            .inner
+            .face_select(Selection::Indices(i))
+            .by_mask(mask.get_inner(), op)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?
+            .collect_indices();
+        slf.into_pyobject(py)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    fn collect_indices(&self) -> Vec<usize> {
         self.indices.clone()
     }
 
-    fn create_mesh(&self, py: Python<'_>) -> PyResult<Mesh3> {
+    /// Named `to_mask` rather than mirroring the core's `take_mask`, and `to_mesh` below rather
+    /// than the core's `into_mesh`, because both Rust methods consume the filter and neither of
+    /// these does: the handle stays usable afterwards.
+    fn to_mask(&self, py: Python<'_>) -> PyResult<IndexMask> {
+        let mesh = self.mesh.bind(py).borrow();
+        let inner =
+            engeom::common::IndexMask::try_from_indices(&self.indices, mesh.inner.face_count())
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(IndexMask::from_inner(inner))
+    }
+
+    fn to_mesh(&self, py: Python<'_>) -> PyResult<Mesh3> {
         self.mesh
             .bind(py)
             .borrow()
@@ -1207,6 +1292,40 @@ impl MeshData3 {
 
     fn cloned(&self) -> Self {
         self.clone()
+    }
+
+    // --- Masks -------------------------------------------------------------------------------
+
+    fn extract_subset_faces(&self, face_mask: &IndexMask) -> PyResult<Self> {
+        let inner = self
+            .inner
+            .extract_subset_faces(face_mask.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(inner))
+    }
+
+    fn extract_subset_points(&self, point_mask: &IndexMask) -> PyResult<Self> {
+        let inner = self
+            .inner
+            .extract_subset_points(point_mask.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(inner))
+    }
+
+    fn compute_unique_point_mask(&self, face_mask: &IndexMask) -> PyResult<IndexMask> {
+        let inner = self
+            .inner
+            .compute_unique_point_mask(face_mask.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(IndexMask::from_inner(inner))
+    }
+
+    fn compute_unique_face_mask(&self, point_mask: &IndexMask) -> PyResult<IndexMask> {
+        let inner = self
+            .inner
+            .compute_unique_face_mask(point_mask.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(IndexMask::from_inner(inner))
     }
 
     /// Build the accelerated `Mesh3` from this data, carrying every attribute across.

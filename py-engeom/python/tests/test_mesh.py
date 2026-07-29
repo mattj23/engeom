@@ -1,7 +1,7 @@
 import numpy
 import pytest
 from numpy import linalg
-from engeom.geom3 import Mesh3
+from engeom.geom3 import Mesh3, Iso3
 
 
 def test_mesh_offset_points_copy():
@@ -126,3 +126,92 @@ def test_mesh_flip_normals_in_place_negates_stored_normals():
     m.flip_normals_in_place()
 
     assert numpy.allclose(m.point_normals, numpy.array([[0.0, 0.0, -1.0]] * 3))
+
+
+def test_mesh_face_and_point_masks_are_sized_to_the_mesh():
+    m = Mesh3.create_box(1.0, 1.0, 1.0)
+
+    assert len(m.face_mask()) == m.face_count
+    assert len(m.point_mask()) == m.point_count
+    assert not m.face_mask().any()
+    assert m.face_mask(True).all()
+
+
+def test_mesh_extract_subset_faces_by_mask():
+    m = Mesh3.create_box(1.0, 1.0, 1.0)
+    mask = m.face_mask()
+    mask[0] = True
+    mask[1] = True
+
+    sub = m.extract_subset_faces(mask)
+
+    assert sub.face_count == 2
+    # Only the points those two faces reference survive.
+    assert sub.point_count == len(m.compute_unique_point_mask(mask).to_indices())
+
+
+def test_mesh_extract_subset_faces_rejects_a_mask_of_the_wrong_length():
+    m = Mesh3.create_box(1.0, 1.0, 1.0)
+    with pytest.raises(ValueError):
+        m.extract_subset_faces(m.point_mask(True))
+
+
+def test_mesh_extract_subset_faces_matches_the_index_route():
+    """The mask and index routes into a subset are the same operation, so they must agree."""
+    m = Mesh3.create_box(1.0, 1.0, 1.0)
+    mask = m.face_mask()
+    for i in (2, 5, 7):
+        mask[i] = True
+
+    by_mask = m.extract_subset_faces(mask)
+    by_indices = m.extract_subset_faces_from_indices([2, 5, 7])
+
+    assert numpy.array_equal(by_mask.points, by_indices.points)
+    assert numpy.array_equal(by_mask.faces, by_indices.faces)
+
+
+def test_mesh_compute_patches_finds_disconnected_pieces():
+    m = Mesh3.create_box(1.0, 1.0, 1.0)
+    other = Mesh3.create_box(1.0, 1.0, 1.0)
+    other.transform_in_place(Iso3.from_translation(10.0, 0.0, 0.0))
+    m.append_in_place(other)
+
+    patches = m.compute_patches()
+
+    assert len(patches) == 2
+    assert all(len(p) == m.face_count for p in patches)
+    assert sum(p.count_true() for p in patches) == m.face_count
+
+
+def test_mesh_find_points_in_tol_is_indexed_by_the_given_points():
+    m = Mesh3.create_box(2.0, 2.0, 2.0)
+    points = numpy.array([[0.0, 0.0, 1.0], [0.0, 0.0, 50.0]])
+
+    mask = m.find_points_in_tol(points, 0.1, numpy.pi / 4)
+
+    assert len(mask) == 2
+    assert mask[0]
+    assert not mask[1]
+
+
+def test_face_filter_handle_mask_round_trip():
+    m = Mesh3.create_box(1.0, 1.0, 1.0)
+    mask = m.face_mask()
+    mask[3] = True
+    mask[4] = True
+
+    handle = m.face_select_none().by_mask(mask, "add")
+
+    assert handle.collect_indices() == [3, 4]
+    assert handle.to_mask() == mask
+    assert handle.to_mesh().face_count == 2
+
+
+def test_face_filter_handle_to_mask_does_not_consume_the_handle():
+    m = Mesh3.create_box(1.0, 1.0, 1.0)
+    handle = m.face_select_all()
+
+    first = handle.to_mask()
+
+    assert first.all()
+    assert handle.collect_indices() == list(range(m.face_count))
