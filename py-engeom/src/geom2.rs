@@ -450,8 +450,8 @@ impl SurfacePoint2 {
         Self::from_inner(self.inner.new_reversed())
     }
 
-    fn transformed(&self, iso: Iso2) -> Self {
-        Self::from_inner(self.inner.transformed(iso.get_inner()))
+    fn transformed_by(&self, iso: Iso2) -> Self {
+        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
     }
 
     fn __mul__(&self, other: f64) -> Self {
@@ -2271,7 +2271,7 @@ impl Iso2 {
                 Point2::from_inner(self.inner * other.inner).into_bound_py_any(py)
             }
             Transformable2::Sp(other) => {
-                SurfacePoint2::from_inner(other.inner.transformed(&self.inner))
+                SurfacePoint2::from_inner(other.inner.transformed_by(&self.inner))
                     .into_bound_py_any(py)
             }
             Transformable2::Seg(other) => {

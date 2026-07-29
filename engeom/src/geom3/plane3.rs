@@ -284,7 +284,7 @@ impl Plane3 {
     pub fn transformed_by(&self, iso: &Iso3) -> Self {
         let pos = self.normal.into_inner() * self.d;
         let repr = SurfacePoint3::new(pos.into(), self.normal);
-        let new_repr = repr.transformed(iso);
+        let new_repr = repr.transformed_by(iso);
         Self::from_surface_point(&new_repr)
     }
 }

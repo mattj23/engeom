@@ -142,7 +142,7 @@ impl ops::Mul<SurfacePoint2> for Iso2 {
     type Output = SurfacePoint2;
 
     fn mul(self, rhs: SurfacePoint2) -> Self::Output {
-        rhs.transformed(&self)
+        rhs.transformed_by(&self)
     }
 }
 
@@ -150,7 +150,7 @@ impl ops::Mul<SurfacePoint2> for &Iso2 {
     type Output = SurfacePoint2;
 
     fn mul(self, rhs: SurfacePoint2) -> Self::Output {
-        rhs.transformed(self)
+        rhs.transformed_by(self)
     }
 }
 
@@ -158,7 +158,7 @@ impl ops::Mul<&SurfacePoint2> for &Iso2 {
     type Output = SurfacePoint2;
 
     fn mul(self, rhs: &SurfacePoint2) -> Self::Output {
-        rhs.transformed(self)
+        rhs.transformed_by(self)
     }
 }
 
@@ -166,7 +166,7 @@ impl ops::Mul<&SurfacePoint2> for Iso2 {
     type Output = SurfacePoint2;
 
     fn mul(self, rhs: &SurfacePoint2) -> Self::Output {
-        rhs.transformed(&self)
+        rhs.transformed_by(&self)
     }
 }
 

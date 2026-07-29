@@ -255,7 +255,7 @@ mod tests {
         let d0 = closest.scalar_projection(p);
 
         // Move the reference point
-        let moved = closest.transformed(&t);
+        let moved = closest.transformed_by(&t);
         let d1 = moved.scalar_projection(p);
 
         (d1 - d0) / NUMERIC_EPSILON

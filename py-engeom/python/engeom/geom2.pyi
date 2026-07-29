@@ -437,7 +437,7 @@ class SurfacePoint2:
         """
         ...
 
-    def transformed(self, iso: Iso2) -> SurfacePoint2:
+    def transformed_by(self, iso: Iso2) -> SurfacePoint2:
         """
         Transform the surface point by an isometry, moving its position and rotating its normal.
         :param iso: the isometry to apply to the surface point.

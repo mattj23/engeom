@@ -75,8 +75,7 @@ impl<const D: usize> SurfacePoint<D> {
     }
 
     /// Returns a new surface point transformed by the given isometry
-    /// TODO: rename this to transformed_by to match convention
-    pub fn transformed<R>(&self, t: &Isometry<f64, R, D>) -> Self
+    pub fn transformed_by<R>(&self, t: &Isometry<f64, R, D>) -> Self
     where
         R: AbstractRotation<f64, D>,
     {

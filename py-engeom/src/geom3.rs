@@ -459,8 +459,8 @@ impl SurfacePoint3 {
         Self::from_inner(self.inner.new_reversed())
     }
 
-    fn transformed(&self, iso: Iso3) -> Self {
-        Self::from_inner(self.inner.transformed(iso.get_inner()))
+    fn transformed_by(&self, iso: Iso3) -> Self {
+        Self::from_inner(self.inner.transformed_by(iso.get_inner()))
     }
 
     fn __repr__(&self) -> String {
@@ -2298,7 +2298,7 @@ impl Iso3 {
                 Plane3::from_inner(other.inner.transformed_by(&self.inner)).into_bound_py_any(py)
             }
             Transformable3::Sp(other) => {
-                SurfacePoint3::from_inner(other.inner.transformed(&self.inner))
+                SurfacePoint3::from_inner(other.inner.transformed_by(&self.inner))
                     .into_bound_py_any(py)
             }
             Transformable3::Line(other) => {
