@@ -81,7 +81,7 @@ impl Mesh3 {
     /// * `point`: the test point to seek the closest surface point to
     ///
     /// returns: MeshSurfPoint
-    pub fn surf_closest_to(&self, point: &impl PCoords<3>) -> MeshSurfPoint {
+    pub fn surface_closest_to(&self, point: &impl PCoords<3>) -> MeshSurfPoint {
         let point = Point3::from(point.coords());
         let result = self
             .shape
@@ -356,10 +356,10 @@ mod tests {
                         );
 
                         // Check the closest surface
-                        let closest_surf = mesh.surf_closest_to(&query);
+                        let closest_surf = mesh.surface_closest_to(&query);
                         assert!(
                             brute.iter().any(|(id, _)| *id == closest_surf.face_index),
-                            "surf_closest_to returned face {} for query {:?}, but brute force found {:?}",
+                            "surface_closest_to returned face {} for query {:?}, but brute force found {:?}",
                             closest_surf.face_index,
                             query,
                             brute.iter().map(|(id, _)| *id).collect::<Vec<_>>()

@@ -42,7 +42,7 @@ use std::f64::consts::PI;
 
 impl SurfaceTarget3 for Mesh3 {
     fn find_align_match(&self, p: &Point3) -> AlignSurfMatch3 {
-        let m = self.surf_closest_to(p);
+        let m = self.surface_closest_to(p);
         let match_ = AlignSurfMatch3::new(m.point(), m.normal(), true, 1.0);
 
         match self.point_stdev() {
@@ -205,7 +205,7 @@ impl NearMeshWeight {
 impl MeshWeight for NearMeshWeight {
     fn weight(&self, point: &MeshSurfPoint) -> f64 {
         // Find the nearest point in the mesh to the given point
-        let nearest = self.mesh.surf_closest_to(&point.sp.point);
+        let nearest = self.mesh.surface_closest_to(&point.sp.point);
         let dist = dist(&nearest.sp, &point.sp);
 
         // If the distance is greater than the maximum distance, return 1.0
@@ -425,7 +425,7 @@ fn smpl_check(
     // If the points on the test mesh pass, we project the points to the reference mesh and
     // run the same check.
     let moved = iso * check.sp;
-    let check_ref = reference.surf_closest_to(&moved.point);
+    let check_ref = reference.surface_closest_to(&moved.point);
 
     // Normals must be facing the same direction
     if check_ref.sp.normal.dot(&moved.normal) < 0.0 {
@@ -434,7 +434,7 @@ fn smpl_check(
 
     let neighbors_ref = neighbors
         .iter()
-        .map(|sp| reference.surf_closest_to(&(iso * sp.sp.point)))
+        .map(|sp| reference.surface_closest_to(&(iso * sp.sp.point)))
         .collect::<Vec<_>>();
 
     // The minimum spacing to the check_ref point should be max_spacing

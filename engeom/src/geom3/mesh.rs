@@ -813,7 +813,7 @@ impl Mesh3 {
 
     pub fn project_to_uv(&self, p: &impl PCoords<3>) -> Option<Point2> {
         let uv_map = self.uv()?;
-        let mp = self.surf_closest_to(p);
+        let mp = self.surface_closest_to(p);
         Some(uv_map.point(mp.face_index, mp.bc))
     }
 

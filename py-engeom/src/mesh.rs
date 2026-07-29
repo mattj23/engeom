@@ -138,12 +138,12 @@ impl Mesh3 {
 
     fn surface_closest_to(&self, x: f64, y: f64, z: f64) -> SurfacePoint3 {
         let p = engeom::Point3::new(x, y, z);
-        SurfacePoint3::from_inner(self.inner.surf_closest_to(&p).sp)
+        SurfacePoint3::from_inner(self.inner.surface_closest_to(&p).sp)
     }
 
     fn barycentric_closest_to(&self, x: f64, y: f64, z: f64) -> (u32, [f64; 3]) {
         let p = engeom::Point3::new(x, y, z);
-        let msp = self.inner.surf_closest_to(&p);
+        let msp = self.inner.surface_closest_to(&p);
         (msp.face_index, msp.bc)
     }
 
@@ -352,7 +352,7 @@ impl Mesh3 {
         let mut result = Array1::zeros(points.len());
 
         for (i, point) in points.iter().enumerate() {
-            let closest = self.inner.surf_closest_to(point);
+            let closest = self.inner.surface_closest_to(point);
             let normal_dev = closest.sp.scalar_projection(point);
 
             result[i] = match mode {

@@ -434,7 +434,7 @@ impl TriangleFilter<'_> {
             // Check that the centroid falls on a triangle of the other mesh with a normal
             // facing the same direction
             let centroid = mean_point(&[tri.a, tri.b, tri.c]);
-            let mp = other.surf_closest_to(&centroid);
+            let mp = other.surface_closest_to(&centroid);
             if mp.normal().angle(&face_normal) > PI * 0.45 {
                 continue;
             }

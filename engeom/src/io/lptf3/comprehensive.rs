@@ -119,7 +119,7 @@ pub fn load_lptf3_comprehensive(
                     }
                 }
 
-                let mp = mesh.surf_closest_to(&p);
+                let mp = mesh.surface_closest_to(&p);
                 points.push(p);
                 normals.push(mp.sp.normal);
 
