@@ -2,8 +2,9 @@
 
 use super::Mesh3;
 use crate::common::points::{fill_gaps, mid_point};
+use crate::geom3::mesh::algorithms;
 use crate::geom3::mesh::edges::{edge_key, naive_edges, unique_edges};
-use crate::{Point3, UnitVec3};
+use crate::{Point3, Result, UnitVec3, Vector3};
 use parry3d_f64::query::{Ray, RayCast};
 use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
@@ -15,7 +16,7 @@ impl Mesh3 {
         facing: UnitVec3,
         max_edge_length: f64,
         corner_angle: Option<f64>,
-    ) -> Vec<(Point3, Point3, u8)> {
+    ) -> Result<Vec<(Point3, Point3, u8)>> {
         let corner_angle = corner_angle.unwrap_or(PI / 4.0 - 1e-2);
         let (boundaries, mut corners) = self.classified_edge_types();
         // let mut working = KeyChainer::new();
@@ -65,14 +66,23 @@ impl Mesh3 {
             }
         }
 
-        let vert_normals = self.compute_vertex_normals();
+        // The normal is only used to nudge the outline off the surface so it does not z-fight, so a
+        // point whose normal is ambiguous gets no nudge rather than failing the whole outline.
+        let point_normals =
+            algorithms::compute_point_normals_where_defined(self.points(), self.faces())?;
+        let nudge = |index: u32| {
+            point_normals[index as usize]
+                .map(|n| n.into_inner() * 1e-2)
+                .unwrap_or_else(Vector3::zeros)
+        };
+
         let mut edges = Vec::new();
         for k in working {
             let k0 = k[0];
             let k1 = k[1];
 
-            let p0: Point3 = self.shape.vertices()[k0 as usize] + vert_normals[k0 as usize] * 1e-2;
-            let p1: Point3 = self.shape.vertices()[k1 as usize] + vert_normals[k1 as usize] * 1e-2;
+            let p0: Point3 = self.shape.vertices()[k0 as usize] + nudge(k0);
+            let p1: Point3 = self.shape.vertices()[k1 as usize] + nudge(k1);
 
             let points = fill_gaps(&[p0, p1], max_edge_length);
 
@@ -89,7 +99,7 @@ impl Mesh3 {
             }
         }
 
-        edges
+        Ok(edges)
     }
 
     fn classified_edge_types(&self) -> CEdgeTypes {

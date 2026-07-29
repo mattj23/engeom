@@ -2547,13 +2547,13 @@ class Mesh3:
         """
         ...
 
-    def offset_vertices_copy(self, offset: float) -> Mesh3:
+    def offset_points_copy(self, offset: float) -> Mesh3:
         """
-        Create a new mesh with the same structure, but in which the vertices have been offset by the specified amount
-        along their normal directions. The vertex normals are calculated through the same method as `vertex_normals`,
-        which involves an area-weighted average of the normals of the triangles that share a vertex.
-        :param offset: the amount to offset the vertices by in their respective normal directions
-        :return: a new mesh with the vertices offset
+        Create a new mesh with the same structure, but in which the points have been offset by the specified amount
+        along their normal directions. The point normals are calculated by `compute_point_normals`.
+        :param offset: the amount to offset the points by in their respective normal directions
+        :return: a new mesh with the points offset
+        :raises ValueError: if any point has no well-defined normal, as described in `compute_point_normals`.
         """
 
     def transform_in_place(self, iso: Iso3):
@@ -2602,13 +2602,17 @@ class Mesh3:
         """
         ...
 
-    @property
-    def vertex_normals(self) -> NDArray[float]:
+    def compute_point_normals(self) -> NDArray[float]:
         """
-        Will return an immutable view of the vertex normals of the mesh as a numpy array of shape (n, 3), where n is the
-        number of vertices in the mesh.  If a vertex has no faces, the normal will be (0, 0, 0), otherwise the normal
-        will have been area-weight averaged from the normals of the faces that share the vertex.
-        :return: a numpy array of shape (n, 3) containing the normals of the vertices of the mesh.
+        Compute a smoothed normal for every point by averaging the normals of the faces which touch it, weighting each
+        by the interior angle of that face at that point. Angle weighting is used because it is invariant to how a flat
+        region is triangulated, which area weighting is not.
+
+        The result is cached, so repeated access does not recompute it.
+
+        :return: a numpy array of shape (n, 3) containing one unit normal per point.
+        :raises ValueError: if any point has no well-defined normal, which happens when it belongs to no face, belongs
+            only to degenerate faces, or sits where the weighted contributions cancel exactly.
         """
         ...
 

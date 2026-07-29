@@ -50,6 +50,56 @@ const DEGENERATE_SIN: f64 = 1.0e-12;
 /// normal, which happens when it belongs to no face, belongs only to degenerate faces, or sits where
 /// the weighted contributions cancel exactly
 pub fn compute_point_normals(points: &[Point3], faces: &[[u32; 3]]) -> Result<Vec<UnitVec3>> {
+    let sums = accumulate_point_normals(points, faces)?;
+
+    let mut normals = Vec::with_capacity(sums.len());
+    for (i, sum) in sums.iter().enumerate() {
+        let unit = UnitVec3::try_new(*sum, 1.0e-12).ok_or_else(|| {
+            format!(
+                "Point {i} has no well-defined normal. It belongs to no face, belongs only to \
+                 degenerate faces, or its incident face normals cancel exactly."
+            )
+        })?;
+        normals.push(unit);
+    }
+
+    Ok(normals)
+}
+
+/// Compute point normals as `compute_point_normals` does, but report the points which have no
+/// well-defined normal as `None` instead of failing the whole computation.
+///
+/// This exists for callers which use the normal as a hint rather than as geometry, and for which
+/// losing one point out of a large mesh matters less than losing the result entirely. A caller
+/// which is going to move geometry along these directions should use `compute_point_normals` and
+/// take the error.
+///
+/// The `Result` still covers a malformed face buffer, which is a defect in the input rather than a
+/// property of a single point.
+///
+/// # Arguments
+///
+/// * `points`: the point buffer
+/// * `faces`: triangles given as triples of indices into `points`, all of which must be in range
+///
+/// returns: `Result<Vec<Option<UnitVec3>>>`, one entry per point
+pub fn compute_point_normals_where_defined(
+    points: &[Point3],
+    faces: &[[u32; 3]],
+) -> Result<Vec<Option<UnitVec3>>> {
+    let sums = accumulate_point_normals(points, faces)?;
+    Ok(sums
+        .iter()
+        .map(|sum| UnitVec3::try_new(*sum, 1.0e-12))
+        .collect())
+}
+
+/// Accumulate the angle-weighted sum of incident face normals at every point.
+///
+/// The sums are not normalized, so a point with no well-defined normal is left at or very near the
+/// zero vector rather than being turned into a direction. Deciding what to do about that is left to
+/// the callers above, which is the only thing that differs between them.
+fn accumulate_point_normals(points: &[Point3], faces: &[[u32; 3]]) -> Result<Vec<Vector3>> {
     let mut sums = vec![Vector3::zeros(); points.len()];
 
     for face in faces.iter() {
@@ -80,18 +130,7 @@ pub fn compute_point_normals(points: &[Point3], faces: &[[u32; 3]]) -> Result<Ve
         }
     }
 
-    let mut normals = Vec::with_capacity(sums.len());
-    for (i, sum) in sums.iter().enumerate() {
-        let unit = UnitVec3::try_new(*sum, 1.0e-12).ok_or_else(|| {
-            format!(
-                "Point {i} has no well-defined normal. It belongs to no face, belongs only to \
-                 degenerate faces, or its incident face normals cancel exactly."
-            )
-        })?;
-        normals.push(unit);
-    }
-
-    Ok(normals)
+    Ok(sums)
 }
 
 /// Compute the unit normal of a single triangle, returning `None` if it is degenerate.

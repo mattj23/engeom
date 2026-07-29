@@ -675,31 +675,30 @@ impl Mesh3 {
         Ok(result)
     }
 
-    /// Create a new mesh by offsetting each vertex along its smoothed vertex normal.
+    /// Create a new mesh by offsetting each point along its smoothed point normal.
     ///
-    /// The offset is applied as `vertex + offset * normal`, where the normal is the
-    /// normalized per-vertex normal computed from adjacent face normals.
+    /// The offset is applied as `point + offset * normal`, where the normal is the per-point normal
+    /// computed by `compute_point_normals`.
     ///
     /// Positive offsets expand the mesh outward; negative offsets shrink it inward.
     /// The original mesh is not modified.
     ///
     /// # Arguments
     ///
-    /// * `offset`: The distance to offset each vertex along its normal.
+    /// * `offset`: The distance to offset each point along its normal.
     ///
-    /// returns: Mesh3
-    pub fn offset_vertices_copy(&self, offset: f64) -> Self {
-        // These are already normalized
-        let normals = self.compute_vertex_normals();
+    /// returns: `Result<Mesh3>`, failing if any point has no well-defined normal
+    pub fn offset_points_copy(&self, offset: f64) -> Result<Self> {
+        let normals = self.compute_point_normals()?;
 
         let updated = self
             .points()
             .iter()
             .zip(normals.iter())
-            .map(|(v, n)| v + offset * n)
+            .map(|(v, n)| v + offset * n.into_inner())
             .collect();
 
-        Self::new(updated, self.faces().to_vec(), self.is_solid)
+        Ok(Self::new(updated, self.faces().to_vec(), self.is_solid))
     }
 
     /// Reverse the winding order of every face, turning the surface inside out.
@@ -914,41 +913,17 @@ impl Mesh3 {
         algorithms::compute_face_centers(self.points(), self.faces())
     }
 
-    /// Compute smooth per-vertex normals by averaging the normals of all adjacent triangles
-    /// weighted by triangle area. At the end of the computation, the normals are normalized to
-    /// have unit length.
+    /// Compute a smoothed normal for every point by averaging the normals of the faces which touch
+    /// it, weighting each by the interior angle of that face at that point.
     ///
-    /// Be aware that vertices that are not referenced by any valid triangle keep the zero vector.
+    /// See `algorithms::compute_point_normals` for why the weighting is by angle and not by area,
+    /// and for what this quantity is and is not good for.
     ///
-    /// Also, be aware that this may not produce the results you expect for meshes with large flat
-    /// surfaces represented by multiple triangles. For example, on a cube mesh, not all corner
-    /// vertices will point along the diagonals, since each vertex will have some faces where it
-    /// touches two triangles and may have some faces where it touches only one triangle, making
-    /// the weights uneven.
-    pub fn compute_vertex_normals(&self) -> Vec<Vector3> {
-        let mut sums: Vec<Vector3> = vec![Vector3::new(0.0, 0.0, 0.0); self.shape.vertices().len()];
-        let mut weights = vec![0.0; self.shape.vertices().len()];
-
-        for (face_i, tri) in self.shape.triangles().enumerate() {
-            let indices = self.shape.indices()[face_i];
-            let a = tri.area();
-            if let Some(n) = tri.normal() {
-                for i in indices {
-                    sums[i as usize] += n.into_inner() * a;
-                    weights[i as usize] += a;
-                }
-            }
-        }
-
-        // Normalize the normals
-        for i in 0..sums.len() {
-            if weights[i] > 0.0 {
-                let v = sums[i] / weights[i];
-                sums[i] = v.normalize();
-            }
-        }
-
-        sums
+    /// returns: `Result<Vec<UnitVec3>>`, one normal per point, failing if any point has no
+    /// well-defined normal, which happens when it belongs to no face, belongs only to degenerate
+    /// faces, or sits where the weighted contributions cancel exactly
+    pub fn compute_point_normals(&self) -> Result<Vec<UnitVec3>> {
+        algorithms::compute_point_normals(self.points(), self.faces())
     }
 }
 
@@ -1136,15 +1111,79 @@ mod tests {
     use std::f64::consts::FRAC_PI_2;
 
     #[test]
-    fn vertex_normals_match_vertex_count_and_are_normalized() {
-        let mesh = stanford_bun_4();
-        let normals = mesh.compute_vertex_normals();
+    fn point_normals_match_point_count() -> Result<()> {
+        let mesh = Mesh3::create_sphere(1.0, 40, 40);
+        let normals = mesh.compute_point_normals()?;
 
         assert_eq!(normals.len(), mesh.points().len());
 
-        for normal in normals {
-            assert_relative_eq!(normal.norm(), 1.0, epsilon = 1.0e-12);
+        Ok(())
+    }
+
+    /// The stanford bunny asset carries a defect: faces 300 and 538 are the same triangle wound in
+    /// opposite directions, and point 140 belongs to nothing else. Its two incident normals cancel,
+    /// so it genuinely has no normal, and the computation is expected to say so rather than
+    /// normalizing the floating point residue into a direction, which is what it used to do.
+    #[test]
+    fn point_normals_report_the_bunny_asset_defect() {
+        let mesh = stanford_bun_4();
+
+        let err = mesh.compute_point_normals().unwrap_err();
+
+        assert!(
+            err.to_string().starts_with("Point 140 has no well-defined"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// The outline uses point normals only to nudge itself off the surface, so it tolerates the
+    /// defect above rather than failing on a mesh it can perfectly well draw.
+    #[test]
+    fn visual_outline_survives_a_point_with_no_normal() -> Result<()> {
+        let mesh = stanford_bun_4();
+
+        let outline =
+            mesh.compute_visual_outline(UnitVec3::new_normalize(Vector3::z()), 1.0, None)?;
+
+        assert!(!outline.is_empty());
+        Ok(())
+    }
+
+    /// The accelerated type and the plain container are two representations of the same buffers, so
+    /// the normals they compute have to agree exactly rather than merely being close.
+    #[test]
+    fn point_normals_agree_with_mesh_data() -> Result<()> {
+        let mesh = Mesh3::create_sphere(1.0, 40, 40);
+        let from_mesh = mesh.compute_point_normals()?;
+        let from_data = mesh.to_data().compute_point_normals()?;
+
+        assert_eq!(from_mesh.len(), from_data.len());
+        for (a, b) in from_mesh.iter().zip(from_data.iter()) {
+            assert_relative_eq!(a.into_inner(), b.into_inner(), epsilon = 1.0e-15);
         }
+
+        Ok(())
+    }
+
+    /// Angle weighting is invariant to how a flat face is triangulated, so every corner normal of a
+    /// box lands exactly on the diagonal. Area weighting, which this method used to do, does not:
+    /// a corner touching one triangle on one face and two on another gets pulled off the diagonal.
+    #[test]
+    fn point_normals_of_a_box_point_along_the_diagonals() -> Result<()> {
+        let mesh = Mesh3::create_box(2.0, 2.0, 2.0, true);
+        let normals = mesh.compute_point_normals()?;
+        let diagonal = 1.0 / 3.0_f64.sqrt();
+
+        for (point, normal) in mesh.points().iter().zip(normals.iter()) {
+            let expected = Vector3::new(
+                point.x.signum() * diagonal,
+                point.y.signum() * diagonal,
+                point.z.signum() * diagonal,
+            );
+            assert_relative_eq!(normal.into_inner(), &expected, epsilon = 1.0e-12);
+        }
+
+        Ok(())
     }
 
     #[test]
@@ -1164,17 +1203,19 @@ mod tests {
     }
 
     #[test]
-    fn offset_vertices_copy_preserves_spherical_radius() {
+    fn offset_points_copy_preserves_spherical_radius() -> Result<()> {
         let radius = 1.0;
         let offset = 0.1;
         let mesh = Mesh3::create_sphere(radius, 100, 100);
-        let offset_mesh = mesh.offset_vertices_copy(offset);
+        let offset_mesh = mesh.offset_points_copy(offset)?;
 
         assert_eq!(mesh.points().len(), offset_mesh.points().len());
 
         for vertex in offset_mesh.points() {
             assert_relative_eq!(vertex.coords.norm(), radius + offset, epsilon = 1.0e-5);
         }
+
+        Ok(())
     }
 
     // ===========================================================================================

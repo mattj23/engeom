@@ -20,13 +20,17 @@ use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use std::path::PathBuf;
 
+/// The (n, 6) point-pair array and the (n,) per-edge type codes returned by
+/// `Mesh3.compute_visual_outline`.
+type VisualOutline<'py> = (Bound<'py, PyArrayDyn<f64>>, Bound<'py, PyArray1<u8>>);
+
 #[pyclass(from_py_object, module = "engeom.geom3")]
 pub struct Mesh3 {
     inner: engeom::Mesh3,
     vertices: Option<Py<PyArray2<f64>>>,
     faces: Option<Py<PyArray2<u32>>>,
     face_normals: Option<Py<PyArray2<f64>>>,
-    vertex_normals: Option<Py<PyArray2<f64>>>,
+    computed_point_normals: Option<Py<PyArray2<f64>>>,
 }
 
 impl Mesh3 {
@@ -34,7 +38,7 @@ impl Mesh3 {
         self.vertices = None;
         self.faces = None;
         self.face_normals = None;
-        self.vertex_normals = None;
+        self.computed_point_normals = None;
     }
 
     pub fn get_inner(&self) -> &engeom::Mesh3 {
@@ -47,7 +51,7 @@ impl Mesh3 {
             vertices: None,
             faces: None,
             face_normals: None,
-            vertex_normals: None,
+            computed_point_normals: None,
         }
     }
 }
@@ -198,15 +202,20 @@ impl Mesh3 {
         self.vertices.as_ref().unwrap().bind(py)
     }
 
-    #[getter]
-    fn vertex_normals<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArray2<f64>> {
-        if self.vertex_normals.is_none() {
-            let normals = self.inner.compute_vertex_normals();
-            let array = vectors_to_array(&normals);
-            self.vertex_normals = Some(array.into_pyarray(py).unbind());
+    fn compute_point_normals<'py>(
+        &mut self,
+        py: Python<'py>,
+    ) -> PyResult<&Bound<'py, PyArray2<f64>>> {
+        if self.computed_point_normals.is_none() {
+            let normals = self
+                .inner
+                .compute_point_normals()
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+            let array = unit_vectors_to_array(&normals);
+            self.computed_point_normals = Some(array.into_pyarray(py).unbind());
         }
 
-        self.vertex_normals.as_ref().unwrap().bind(py)
+        Ok(self.computed_point_normals.as_ref().unwrap().bind(py))
     }
 
     fn scale_copy(&self, scale: f64) -> PyResult<Self> {
@@ -217,8 +226,12 @@ impl Mesh3 {
         Ok(Self::from_inner(inner))
     }
 
-    fn offset_vertices_copy(&self, offset: f64) -> Self {
-        Self::from_inner(self.inner.offset_vertices_copy(offset))
+    fn offset_points_copy(&self, offset: f64) -> PyResult<Self> {
+        let inner = self
+            .inner
+            .offset_points_copy(offset)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(inner))
     }
 
     fn patch_boundaries(&self) -> PyResult<Vec<Curve3>> {
@@ -245,11 +258,12 @@ impl Mesh3 {
         facing: Vector3,
         max_edge_length: f64,
         corner_angle: Option<f64>,
-    ) -> (Bound<'py, PyArrayDyn<f64>>, Bound<'py, PyArray1<u8>>) {
+    ) -> PyResult<VisualOutline<'py>> {
         let n = engeom::UnitVec3::new_normalize(*facing.get_inner());
         let outline = self
             .inner
-            .compute_visual_outline(n, max_edge_length, corner_angle);
+            .compute_visual_outline(n, max_edge_length, corner_angle)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let mut result = ArrayD::zeros(vec![outline.len(), 6]);
         let mut result_type = Array1::zeros(outline.len());
         for (i, (p0, p1, t)) in outline.iter().enumerate() {
@@ -262,7 +276,7 @@ impl Mesh3 {
 
             result_type[i] = *t;
         }
-        (result.into_pyarray(py), result_type.into_pyarray(py))
+        Ok((result.into_pyarray(py), result_type.into_pyarray(py)))
     }
 
     #[getter]
