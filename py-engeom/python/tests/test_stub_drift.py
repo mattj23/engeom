@@ -19,9 +19,10 @@ import pytest
 
 STUB_DIR = Path(__file__).resolve().parent.parent / "engeom"
 
-# Stub stems to skip for now. The airfoil modules are not yet stabilized and their stubs are
-# known to lag; drop these from the exclusion set once they are cleaned up.
-EXCLUDE = {"airfoil", "airfoil2"}
+# Stub stems to skip for now. The old `airfoil` module was removed from the bindings; its stub is
+# gone too, so nothing should match it. `airfoil2` was brought into conformance in July 2026 and is
+# now checked.
+EXCLUDE = {"airfoil"}
 
 # A few modules we always expect to discover, so an empty/broken glob can't make the whole
 # parametrized check pass vacuously.

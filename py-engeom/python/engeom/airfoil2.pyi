@@ -5,7 +5,8 @@ from typing import List, Literal, Optional
 import numpy as np
 from numpy.typing import NDArray
 
-from engeom.geom2 import Circle2, Curve2, Point2, SurfacePoint2, Vector2
+from engeom.geom2 import Circle2, Curve2, CurveStation2, Point2, SurfacePoint2, Vector2
+from engeom.metrology import Distance2
 
 
 class Inscribed:
@@ -304,6 +305,29 @@ def extract_inscribed_circles(section: Curve2, tol: float) -> List[Inscribed]:
     ...
 
 
+AfSide = Literal["upper", "lower"]
+"""
+Selects between the upper (suction, convex) and lower (pressure, concave) side of the airfoil.
+"""
+
+
+AfPos = Literal["on_camber", "radius", "edge_offset"]
+"""
+Selects how a gage point location on an airfoil surface is specified. For all three methods a
+positive value is measured from the leading edge and a negative one from the trailing edge.
+
+- ``"on_camber"``: an arc distance along the mean camber line. A line orthogonal to the camber is
+  cast at that station and its intersection with the requested side is the point. This is the most
+  commonly used method and performs well across the whole length of the airfoil.
+- ``"radius"``: the intersection of the side with a circle of the given radius centered on the
+  edge point. Best close to an edge, where the angle between the camber line and the surface
+  tangent is large.
+- ``"edge_offset"``: step from the edge point along the camber tangent *at that edge*, then cast
+  orthogonally to that direction. Because the tangent diverges from a curved camber line, this
+  only reaches the surface near the edge, which is what it is intended for.
+"""
+
+
 AfEdgeSearch = Literal[
     "auto",
     "open",
@@ -495,6 +519,54 @@ class AfGeometry:
         """
         Return the inscribed circle with the largest radius. This corresponds to the maximum
         thickness location along the camber line.
+        """
+        ...
+
+    def af_point(self, side: AfSide, method: AfPos, value: float) -> Optional[CurveStation2]:
+        """
+        Locate a gage point on one surface of the airfoil.
+
+        :param side: which surface to locate the point on.
+        :param method: how ``value`` is interpreted, see ``AfPos``.
+        :param value: the position value. Positive is measured from the leading edge, negative
+            from the trailing edge.
+        :return: the station on the requested surface, or ``None`` when the position does not land
+            on it (a camber distance longer than the camber line, a radius whose circle does not
+            reach the surface, or an offset whose orthogonal cast misses it).
+        :raises ValueError: if ``side`` or ``method`` is not a valid token.
+        """
+        ...
+
+    def thickness_at(self, method: AfPos, value: float) -> Optional[Distance2]:
+        """
+        Measure the thickness of the airfoil at a location specified by one of the gage point
+        location methods.
+
+        A corresponding pair of points is located on the lower and upper surfaces with the same
+        ``method`` and ``value``, and the thickness is the Euclidean distance between them. The
+        returned measurement runs from the lower point to the upper point.
+
+        :param method: how ``value`` is interpreted, see ``AfPos``.
+        :param value: the position value. Positive is measured from the leading edge, negative
+            from the trailing edge.
+        :return: the thickness measurement, or ``None`` when the position does not land on both
+            surfaces.
+        :raises ValueError: if ``method`` is not a valid token.
+        """
+        ...
+
+    def max_thickness(self) -> Distance2:
+        """
+        Measure the maximum thickness of the airfoil, taken from the largest inscribed circle.
+
+        The measurement runs between the two contact points of ``max_thickness_circle``, which are
+        points measured on the section itself.
+
+        Note that this is **not** the maximum of ``thickness_at``. Sweeping that with
+        ``"on_camber"`` measures a chord orthogonal to the camber, which is not required to fit
+        inside the section, so on a cambered airfoil its maximum is larger and at a different
+        station. This method reports the inscribed circle, which is the conventional definition of
+        maximum airfoil thickness.
         """
         ...
 

@@ -1,11 +1,13 @@
-use crate::geom2::{Curve2, Point2, SurfacePoint2, Vector2};
+use crate::geom2::{Curve2, CurveStation2, Point2, SurfacePoint2, Vector2};
+use crate::metrology::Distance2;
 use engeom::airfoil2::SectionInput;
 use engeom::airfoil2::edges::AfEdgeFit as InnerAfEdgeFit;
 use engeom::airfoil2::inscribed::Inscribed as InnerInscribed;
 use engeom::airfoil2::{
     AfEdge as InnerAfEdge, AfEdgeGeometry as InnerAfEdgeGeometry,
-    AfEdgeSearch as InnerAfEdgeSearch, AfGeometry as InnerAfGeometry,
-    OrientFwdAft as InnerOrientFwdAft, OrientUpperLower as InnerOrientUpperLower,
+    AfEdgeSearch as InnerAfEdgeSearch, AfGeometry as InnerAfGeometry, AfPos as InnerAfPos,
+    AfSide as InnerAfSide, OrientFwdAft as InnerOrientFwdAft,
+    OrientUpperLower as InnerOrientUpperLower,
 };
 use numpy::ndarray::{Array1, ArrayD};
 use numpy::{IntoPyArray, PyArray1, PyArrayDyn};
@@ -543,6 +545,33 @@ pub fn af_edge_search_from_str(s: &str) -> PyResult<InnerAfEdgeSearch> {
 }
 
 // ================================================================================================
+// AfPos and AfSide
+// ================================================================================================
+
+/// Parse an airfoil position-method token into the core `AfPos` enum.
+pub fn af_pos_from_str(s: &str) -> PyResult<InnerAfPos> {
+    match s {
+        "on_camber" => Ok(InnerAfPos::OnCamber),
+        "radius" => Ok(InnerAfPos::Radius),
+        "edge_offset" => Ok(InnerAfPos::EdgeOffset),
+        _ => Err(PyValueError::new_err(format!(
+            "Invalid position method '{s}', expected 'on_camber', 'radius', or 'edge_offset'"
+        ))),
+    }
+}
+
+/// Parse an airfoil side token into the core `AfSide` enum.
+pub fn af_side_from_str(s: &str) -> PyResult<InnerAfSide> {
+    match s {
+        "upper" => Ok(InnerAfSide::Upper),
+        "lower" => Ok(InnerAfSide::Lower),
+        _ => Err(PyValueError::new_err(format!(
+            "Invalid airfoil side '{s}', expected 'upper' or 'lower'"
+        ))),
+    }
+}
+
+// ================================================================================================
 // AfGeometry
 // ================================================================================================
 
@@ -655,6 +684,35 @@ impl AfGeometry {
     /// location along the camber line.
     fn max_thickness_circle(&self) -> Inscribed {
         Inscribed::from_inner(self.inner.max_thickness_circle().clone())
+    }
+
+    /// Locate a gage point on one surface of the airfoil.
+    ///
+    /// Returns `None` when the requested position does not land on the surface.
+    fn af_point(&self, side: &str, method: &str, value: f64) -> PyResult<Option<CurveStation2>> {
+        let side = af_side_from_str(side)?;
+        let method = af_pos_from_str(method)?;
+        Ok(self.inner.af_point(side, method, value).map(|s| s.into()))
+    }
+
+    /// Measure the thickness of the airfoil at a location specified by one of the gage point
+    /// location methods.
+    ///
+    /// Returns `None` when the position does not land on both surfaces.
+    fn thickness_at(&self, method: &str, value: f64) -> PyResult<Option<Distance2>> {
+        let method = af_pos_from_str(method)?;
+        Ok(self
+            .inner
+            .thickness_at(method, value)
+            .map(Distance2::from_inner))
+    }
+
+    /// Measure the maximum thickness of the airfoil, taken from the largest inscribed circle.
+    ///
+    /// This is *not* the maximum of `thickness_at`; see the Rust documentation for why the two
+    /// definitions differ on a cambered section.
+    fn max_thickness(&self) -> Distance2 {
+        Distance2::from_inner(self.inner.max_thickness())
     }
 
     /// The inscribed circle stack as a `(N, 3)` numpy array of `(center_x, center_y, radius)`.
