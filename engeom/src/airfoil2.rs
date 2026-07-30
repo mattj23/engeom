@@ -204,17 +204,15 @@ impl AfGeometry {
     ///
     /// # Arguments
     ///
-    /// * `side`:
-    /// * `method`:
-    /// * `value`:
+    /// * `side`: which surface to return the station on, upper (suction) or lower (pressure).
+    /// * `method`: how `value` is interpreted, see [`AfPos`] for the three schemes.
+    /// * `value`: the position value, whose meaning and sign convention depend on `method`. For
+    ///   all three methods a positive value is measured from the leading edge and a negative one
+    ///   from the trailing edge.
     ///
-    /// returns: Option<CurveStation2>
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
+    /// returns: `Option<CurveStation2>`. `None` when the requested position does not land on the
+    /// surface: a camber distance longer than the camber line, a radius whose circle does not
+    /// reach the surface, or an offset whose orthogonal cast misses it.
     pub fn af_point(&self, side: AfSide, method: AfPos, value: f64) -> Option<CurveStation2<'_>> {
         let target = match side {
             AfSide::Upper => &self.upper,

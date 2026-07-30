@@ -418,7 +418,6 @@ pub fn fit_blended_round_edge(
     circles: Vec<Inscribed>,
     at_front: bool,
 ) -> Result<AfEdgeFit> {
-    // TODO: Can we refine the stack of inscribed circles?
     let mut working = EdgeWork::new(input, circles, at_front)?;
     let (p0, p1) = working.last_points()?;
 
@@ -455,11 +454,7 @@ pub fn fit_blended_round_edge(
     let result = fit_boundary_to_points(&working.fit_points, &builder, initial, false)?;
     let circle = Circle2::new(result.params[0], result.params[1], result.params[2]);
 
-    // Now let's refine the inscribed circles to get closer to the edge circle. The end circle's
-    // theoretical tangencies are at the ends of arc0 and arc1 as constructed by the method used
-    // in the fitting.
-    // let (arc0, arc1) = end_arcs(&t0, &t1, &clip, &circle.center, circle.r());
-    // refine_from_edge_circle(&mut working, input, &circle, arc0.b(), arc1.b())?;
+    // Now let's refine the inscribed circles to get closer to the edge circle
     refine_from_edge_circle(&mut working, input, &circle)?;
     let point = end_intersection(input, &working.last()?.c, &circle)?;
 
