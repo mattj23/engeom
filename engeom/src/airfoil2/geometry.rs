@@ -6,7 +6,7 @@
 use crate::airfoil2::camber::extract_inscribed_circles;
 use crate::airfoil2::edges::{
     AfEdgeFit, fit_blended_round_edge, fit_full_round_edge, fit_open_edge, fit_rounded_square_edge,
-    fit_sharp_edge, fit_spline_max_k, fit_square_edge,
+    fit_sharp_edge, fit_spline_max_k, fit_square_edge, is_open_at_end,
 };
 use crate::airfoil2::inscribed::Inscribed;
 use crate::airfoil2::{
@@ -161,6 +161,12 @@ fn fit_auto_edge(
     circles: Vec<Inscribed>,
     at_front: bool,
 ) -> Result<AfEdgeFit> {
+    // An open edge is a property of the section topology rather than of a candidate geometry, so it
+    // has no residual to be ranked by and is resolved first, short-circuiting the search.
+    if is_open_at_end(input, &circles, at_front)? {
+        return fit_open_edge(input, circles, at_front);
+    }
+
     // Candidates have a complexity score based on the type of edge fit, with the goal being to
     // use the lowest complexity method which adequately captures the geometry. For a method to be
     // selected, it must have an average residual at least some tolerance better than the best
@@ -233,7 +239,10 @@ fn fit_auto_edge(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::dist;
+    use crate::geom2::Segment2;
     use crate::tests::airfoil_curve;
+    use approx::assert_relative_eq;
 
     fn af_curve_known_ccw() -> Curve2 {
         let donor = airfoil_curve();
@@ -307,6 +316,116 @@ mod tests {
         let result = fit_auto_edge(&input, circles, true)?;
         let _result = fit_auto_edge(&input, result.circles, false)?;
 
+        Ok(())
+    }
+
+    /// Build an open airfoil section by cutting `gap` of arc length out of the closed test section
+    /// on either side of its trailing edge point. The vertices are re-ordered to start just past
+    /// the trailing edge and wrap all the way around, so the two ends of the resulting open curve
+    /// are the two lips of the gap.
+    fn open_at_trailing_edge(gap: f64) -> Result<Curve2> {
+        let closed = af_curve_known_ccw();
+        let full = AfGeometry::try_from_geometric_analysis(
+            &closed,
+            1e-3,
+            OrientFwdAft::TmaxFwd,
+            OrientUpperLower::Curvature,
+            AfEdgeSearch::Auto,
+            AfEdgeSearch::Auto,
+        )?;
+
+        let total = closed.length();
+        let l_te = closed
+            .at_closest_to_point(&full.trailing.point)
+            .length_along();
+
+        let mut ordered = closed
+            .points()
+            .iter()
+            .map(|p| {
+                let l = closed.at_closest_to_point(p).length_along();
+                (((l - l_te) % total + total) % total, *p)
+            })
+            .collect::<Vec<_>>();
+        ordered.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+        let points = ordered
+            .iter()
+            .filter(|(s, _)| *s > gap && *s < total - gap)
+            .map(|(_, p)| *p)
+            .collect::<Vec<_>>();
+
+        Curve2::from_points(&points, closed.tol(), false)
+    }
+
+    fn analyze_auto(section: &Curve2) -> Result<AfGeometry> {
+        AfGeometry::try_from_geometric_analysis(
+            section,
+            1e-3,
+            OrientFwdAft::TmaxFwd,
+            OrientUpperLower::Curvature,
+            AfEdgeSearch::Auto,
+            AfEdgeSearch::Auto,
+        )
+    }
+
+    #[test]
+    fn auto_detects_open_trailing_edge() -> Result<()> {
+        let section = open_at_trailing_edge(1.0)?;
+        assert!(!section.is_closed(), "The test section should be open");
+
+        let result = analyze_auto(&section)?;
+
+        assert!(
+            matches!(result.trailing.geometry, AfEdgeGeometry::Open),
+            "Expected an open trailing edge, got {:?}",
+            result.trailing.geometry
+        );
+        assert!(
+            !matches!(result.leading.geometry, AfEdgeGeometry::Open),
+            "The leading edge is closed and should not have been detected as open"
+        );
+
+        // The open branch of `split_sides` should have produced two usable skins
+        assert!(result.upper.points().len() > 1);
+        assert!(result.lower.points().len() > 1);
+
+        // The trailing edge point must land on the chord spanning the gap rather than short of it
+        let cap = Segment2::new(&section.at_front().point(), &section.at_back().point())?;
+        assert!(
+            dist(
+                &cap.closest_point(&result.trailing.point),
+                &result.trailing.point
+            ) < 1e-6,
+            "Trailing edge point {:?} is not on the gap chord",
+            result.trailing.point
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn auto_open_detection_is_direction_independent() -> Result<()> {
+        let section = open_at_trailing_edge(1.0)?;
+        let forward = analyze_auto(&section)?;
+        let reversed = analyze_auto(&section.reversed())?;
+
+        assert!(matches!(forward.trailing.geometry, AfEdgeGeometry::Open));
+        assert!(matches!(reversed.trailing.geometry, AfEdgeGeometry::Open));
+        assert_relative_eq!(
+            forward.trailing.point,
+            reversed.trailing.point,
+            epsilon = 1e-3
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn auto_leaves_closed_section_alone() -> Result<()> {
+        let result = analyze_auto(&af_curve_known_ccw())?;
+        assert!(!matches!(result.leading.geometry, AfEdgeGeometry::Open));
+        assert!(!matches!(result.trailing.geometry, AfEdgeGeometry::Open));
         Ok(())
     }
 }

@@ -128,6 +128,46 @@ pub fn fit_open_edge(
     Ok(AfEdgeFit::new(edge, DVector::zeros(0), c))
 }
 
+/// Determine whether the section is open at the end of the inscribed circle stack being processed.
+///
+/// Whether an edge is open is a property of the section topology rather than something which can be
+/// measured against a candidate geometry, so this is the test used to resolve the open case before
+/// any edge fitting is attempted.
+///
+/// A section is open at this end when it is not a closed curve *and* both lips of the gap lie beyond
+/// the end clipping line of the stack. Requiring both lips is what picks out the correct end: the
+/// leading and trailing clipping lines face in opposite directions, so at most one end can pass. A
+/// section with a gap in the middle of a surface passes at neither end and is left to the normal
+/// edge fitting, which matches the input contract documented on
+/// [`extract_inscribed_circles`](crate::airfoil2::camber::extract_inscribed_circles).
+///
+/// # Arguments
+///
+/// * `input` - The section geometry and search tolerances.
+/// * `circles` - The inscribed circle stack produced by the camber line fitting step.
+/// * `at_front` - When `true`, test the front (leading edge) end of the airfoil; when `false`, test
+///   the rear (trailing edge) end.
+///
+/// # Returns
+///
+/// `true` if the section is open at the requested end. Errors if the stack has fewer than two
+/// inscribed circles, which is too few to establish an end clipping line.
+pub fn is_open_at_end(input: &SectionInput, circles: &[Inscribed], at_front: bool) -> Result<bool> {
+    if input.section.is_closed() {
+        return Ok(false);
+    }
+
+    let mut stack = InscribedVec::new(circles.to_vec());
+    if at_front {
+        stack.reverse_order_only();
+    }
+    let clip = stack.end_clip_line()?;
+
+    let a = input.section.at_front().point();
+    let b = input.section.at_back().point();
+    Ok(clip.scalar_project(&a) > 0.0 && clip.scalar_project(&b) > 0.0)
+}
+
 /// Fit a square (flat) trailing or leading edge to airfoil section data.
 ///
 /// The edge geometry consists of two corner points connected by a straight flat face, with the

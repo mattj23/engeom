@@ -90,7 +90,9 @@ impl<'a> SectionInput<'a> {
 /// when running a geometric analysis.
 #[derive(Debug, Clone, Copy)]
 pub enum AfEdgeSearch {
-    /// Try every fittable variant and return the one with the lowest average residual.
+    /// Resolve the edge automatically. If the section is open at this end the edge is treated as
+    /// [`AfEdgeSearch::Open`]; otherwise every fittable variant is tried and the one with the
+    /// lowest average residual is returned.
     Auto,
 
     /// Treat the edge as open, meaning the section perimeter does not close at this end. No edge
