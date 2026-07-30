@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from enum import Enum
 from typing import List, Literal, Optional
 
 import numpy as np
@@ -69,10 +68,13 @@ class AfEdgeGeometry:
     - ``"rounded_square"``: ``corner0``, ``corner1``, and ``radius``.
     - ``"full_round"``: ``point`` is the circle center, ``radius`` is the circle radius.
     - ``"blended_round"``: ``point`` is the circle center, ``radius`` is the circle radius.
+    - ``"spline_max_k"``: ``point`` is the osculating circle center, ``radius`` its radius.
     """
 
     @property
-    def kind(self) -> Literal["open", "sharp", "square", "rounded_square", "full_round", "blended_round"]:
+    def kind(self) -> Literal[
+        "open", "sharp", "square", "rounded_square", "full_round", "blended_round", "spline_max_k"
+    ]:
         """The variant name."""
         ...
 
@@ -148,7 +150,7 @@ def is_open_at_end(section: Curve2, tol: float, circles: List[Inscribed], at_fro
     Determine whether the section is open at the end being processed.
 
     Whether an edge is open is a property of the section topology rather than something that can
-    be measured against a candidate geometry, so this is the test used by ``AfEdgeSearch.Auto`` to
+    be measured against a candidate geometry, so this is the test used by ``"auto"`` to
     resolve the open case before any edge fitting is attempted.
 
     A section is open at this end when it is not a closed curve *and* both lips of the gap lie
@@ -302,130 +304,114 @@ def extract_inscribed_circles(section: Curve2, tol: float) -> List[Inscribed]:
     ...
 
 
-type OrientFwdAftEnum = OrientFwdAft.TmaxFwd | OrientFwdAft.Airflow | OrientFwdAft.Fwd
-type OrientUpperLowerEnum = OrientUpperLower.Curvature | OrientUpperLower.Upper | OrientUpperLower.Lower
+AfEdgeSearch = Literal[
+    "auto",
+    "open",
+    "sharp",
+    "square",
+    "rounded_square",
+    "full_round",
+    "blended_round",
+    "spline_max_k",
+]
+"""
+Selects which edge geometry to fit at the leading or trailing edge during a geometric analysis.
+
+- ``"auto"``: resolve the edge automatically. If the section is open at this end the edge is
+  treated as ``"open"``; otherwise every applicable variant is fit and the lowest-residual result
+  is selected.
+- ``"open"``: treat the edge as open, meaning the section perimeter does not close at this end.
+  No edge geometry is fit; instead the camber line is advanced into the gap and the edge point is
+  projected onto a chord spanning the two open lips of the section.
+- ``"sharp"``: fit a sharp apex edge.
+- ``"square"``: fit a flat-faced edge with two sharp corners.
+- ``"rounded_square"``: fit a flat-faced edge with two rounded corners of equal radius.
+- ``"full_round"``: fit a full-round edge joined to the surfaces by short tangent segments.
+- ``"blended_round"``: fit a full-round edge joined to the surfaces by tangent blending arcs.
+- ``"spline_max_k"``: fit a cubic spline and take the point of maximum curvature as the edge.
+
+These tokens match the ``kind`` reported by ``AfEdgeGeometry``, so an edge can be searched for by
+the same name it reports back.
+"""
 
 
 class OrientFwdAft:
     """
     Selects the method used to identify which end of the camber line is the leading edge.
+
+    Build one with a variant constructor rather than by calling ``OrientFwdAft()`` directly.
     """
 
-    class TmaxFwd:
+    @staticmethod
+    def tmax_fwd() -> OrientFwdAft:
         """
         Identify the leading edge as the end nearer the largest inscribed circle (the maximum
         thickness point). Suitable for typical subsonic airfoils.
         """
+        ...
 
-        def __init__(self): ...
-
-    class Airflow:
+    @staticmethod
+    def airflow(x: float, y: float) -> OrientFwdAft:
         """
         Identify the leading edge based on a supplied airflow direction. The end of the camber
         line further upstream of the airflow becomes the leading edge.
-        """
 
-        def __init__(self, x: float, y: float):
-            """
-            :param x: x-component of the airflow direction.
-            :param y: y-component of the airflow direction.
-            """
-            ...
-
-    class Fwd:
+        :param x: x-component of the airflow direction.
+        :param y: y-component of the airflow direction.
         """
-        Identify the leading edge using a vector that points from the trailing toward the
-        leading edge. The end of the camber line that projects further along this vector
-        becomes the leading edge.
-        """
+        ...
 
-        def __init__(self, x: float, y: float):
-            """
-            :param x: x-component of the forward direction vector.
-            :param y: y-component of the forward direction vector.
-            """
-            ...
+    @staticmethod
+    def fwd(x: float, y: float) -> OrientFwdAft:
+        """
+        Identify the leading edge using a vector that points from the trailing toward the leading
+        edge. The end of the camber line that projects further along this vector becomes the
+        leading edge.
+
+        :param x: x-component of the forward direction vector.
+        :param y: y-component of the forward direction vector.
+        """
+        ...
 
 
 class OrientUpperLower:
     """
     Selects the method used to identify the upper (suction) and lower (pressure) surfaces of
     the airfoil after the forward/aft orientation has been resolved.
+
+    Build one with a variant constructor rather than by calling ``OrientUpperLower()`` directly.
     """
 
-    class Curvature:
+    @staticmethod
+    def curvature() -> OrientUpperLower:
         """
         Detect upper and lower from the curvature of the camber line. The more concave side
-        becomes the lower (pressure) surface. Will fail or give poor results if the camber
-        line is nearly straight.
+        becomes the lower (pressure) surface. Will fail or give poor results if the camber line
+        is nearly straight.
         """
+        ...
 
-        def __init__(self): ...
-
-    class Upper:
+    @staticmethod
+    def upper(x: float, y: float) -> OrientUpperLower:
         """
         Use a supplied direction vector to identify the upper surface. The side whose contact
         points are further along this vector becomes the upper surface.
+
+        :param x: x-component of the upper-direction vector.
+        :param y: y-component of the upper-direction vector.
         """
+        ...
 
-        def __init__(self, x: float, y: float):
-            """
-            :param x: x-component of the upper-direction vector.
-            :param y: y-component of the upper-direction vector.
-            """
-            ...
-
-    class Lower:
+    @staticmethod
+    def lower(x: float, y: float) -> OrientUpperLower:
         """
         Use a supplied direction vector to identify the lower surface. The side whose contact
         points are further along this vector becomes the lower surface.
+
+        :param x: x-component of the lower-direction vector.
+        :param y: y-component of the lower-direction vector.
         """
-
-        def __init__(self, x: float, y: float):
-            """
-            :param x: x-component of the lower-direction vector.
-            :param y: y-component of the lower-direction vector.
-            """
-            ...
-
-
-class AfEdgeSearch(Enum):
-    """
-    Selects which edge geometry to fit at the leading or trailing edge during a geometric
-    analysis. Use ``Auto`` to resolve the edge automatically.
-    """
-
-    Auto = 0
-    """
-    Resolve the edge automatically. If the section is open at this end the edge is treated as
-    ``Open``; otherwise every applicable variant is fit and the lowest-residual result is
-    selected.
-    """
-
-    Open = 1
-    """
-    Treat the edge as open, meaning the section perimeter does not close at this end. No edge
-    geometry is fit; instead the camber line is advanced into the gap and the edge point is
-    projected onto a chord spanning the two open lips of the section.
-    """
-
-    Sharp = 2
-    """ Fit a sharp apex edge. """
-
-    Square = 3
-    """ Fit a flat-faced edge with two sharp corners. """
-
-    RoundedSquare = 4
-    """ Fit a flat-faced edge with two rounded corners of equal radius. """
-
-    FullRound = 5
-    """ Fit a full-round edge joined to the surfaces by short tangent segments. """
-
-    BlendedRound = 6
-    """ Fit a full-round edge joined to the surfaces by tangent blending arcs. """
-
-    SplineMaxK = 7
-    """ Fit a cubic spline to the edge and take the point of maximum curvature as the edge. """
+        ...
 
 
 class AfGeometry:
@@ -441,8 +427,8 @@ class AfGeometry:
     def from_geometric_analysis(
         section: Curve2,
         general_tol: float,
-        fwd_aft: OrientFwdAftEnum,
-        upper_lower: OrientUpperLowerEnum,
+        fwd_aft: OrientFwdAft,
+        upper_lower: OrientUpperLower,
         le_search: AfEdgeSearch,
         te_search: AfEdgeSearch,
     ) -> AfGeometry:

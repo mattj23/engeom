@@ -134,7 +134,6 @@ fn register_airfoil2_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()>
     child.add_class::<airfoil2::AfEdgeFit>()?;
     child.add_class::<airfoil2::OrientFwdAft>()?;
     child.add_class::<airfoil2::OrientUpperLower>()?;
-    child.add_class::<airfoil2::AfEdgeSearch>()?;
     child.add_class::<airfoil2::AfGeometry>()?;
 
     child.add_function(wrap_pyfunction!(

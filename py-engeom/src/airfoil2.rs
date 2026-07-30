@@ -412,40 +412,54 @@ pub fn extract_inscribed_circles(section: &Curve2, tol: f64) -> PyResult<Vec<Ins
 
 /// Selects the method used to identify which end of the camber line is the leading edge.
 ///
-/// Variants:
-///
-/// - `TmaxFwd()`: the end nearer the largest inscribed circle becomes the leading edge.
-/// - `Airflow(x, y)`: airflow direction; the end further upstream becomes the leading edge.
-/// - `Fwd(x, y)`: vector pointing toward the leading edge; the end further in this direction
-///   becomes the leading edge.
+/// Build one with a variant constructor: `OrientFwdAft.tmax_fwd()`, `OrientFwdAft.airflow(x, y)`,
+/// or `OrientFwdAft.fwd(x, y)`.
 #[pyclass(from_py_object, module = "engeom.airfoil2")]
 #[derive(Clone, Copy, Debug)]
-pub enum OrientFwdAft {
-    TmaxFwd {},
-    Airflow { x: f64, y: f64 },
-    Fwd { x: f64, y: f64 },
+pub struct OrientFwdAft {
+    inner: InnerOrientFwdAft,
 }
 
 #[pymethods]
 impl OrientFwdAft {
+    /// Identify the leading edge as the end nearer the largest inscribed circle.
+    #[staticmethod]
+    fn tmax_fwd() -> Self {
+        Self {
+            inner: InnerOrientFwdAft::TmaxFwd,
+        }
+    }
+
+    /// Identify the leading edge from an airflow direction; the end further upstream becomes the
+    /// leading edge.
+    #[staticmethod]
+    fn airflow(x: f64, y: f64) -> Self {
+        Self {
+            inner: InnerOrientFwdAft::Airflow(engeom::Vector2::new(x, y)),
+        }
+    }
+
+    /// Identify the leading edge from a vector pointing toward it; the end further in this
+    /// direction becomes the leading edge.
+    #[staticmethod]
+    fn fwd(x: f64, y: f64) -> Self {
+        Self {
+            inner: InnerOrientFwdAft::Fwd(engeom::Vector2::new(x, y)),
+        }
+    }
+
     fn __repr__(&self) -> String {
-        match self {
-            OrientFwdAft::TmaxFwd {} => "OrientFwdAft.TmaxFwd".to_string(),
-            OrientFwdAft::Airflow { x, y } => format!("OrientFwdAft.Airflow({}, {})", x, y),
-            OrientFwdAft::Fwd { x, y } => format!("OrientFwdAft.Fwd({}, {})", x, y),
+        match self.inner {
+            InnerOrientFwdAft::TmaxFwd => "OrientFwdAft.tmax_fwd()".to_string(),
+            InnerOrientFwdAft::Airflow(v) => format!("OrientFwdAft.airflow({}, {})", v.x, v.y),
+            InnerOrientFwdAft::Fwd(v) => format!("OrientFwdAft.fwd({}, {})", v.x, v.y),
         }
     }
 }
 
 impl From<OrientFwdAft> for InnerOrientFwdAft {
     fn from(value: OrientFwdAft) -> Self {
-        match value {
-            OrientFwdAft::TmaxFwd {} => InnerOrientFwdAft::TmaxFwd,
-            OrientFwdAft::Airflow { x, y } => {
-                InnerOrientFwdAft::Airflow(engeom::Vector2::new(x, y))
-            }
-            OrientFwdAft::Fwd { x, y } => InnerOrientFwdAft::Fwd(engeom::Vector2::new(x, y)),
-        }
+        value.inner
     }
 }
 
@@ -455,41 +469,52 @@ impl From<OrientFwdAft> for InnerOrientFwdAft {
 
 /// Selects the method used to identify the upper (suction) and lower (pressure) surfaces.
 ///
-/// Variants:
-///
-/// - `Curvature()`: detect from camber line curvature; the more concave side becomes lower.
-/// - `Upper(x, y)`: the side whose points are more positive along (x, y) becomes upper.
-/// - `Lower(x, y)`: the side whose points are more positive along (x, y) becomes lower.
+/// Build one with a variant constructor: `OrientUpperLower.curvature()`,
+/// `OrientUpperLower.upper(x, y)`, or `OrientUpperLower.lower(x, y)`.
 #[pyclass(from_py_object, module = "engeom.airfoil2")]
 #[derive(Clone, Copy, Debug)]
-pub enum OrientUpperLower {
-    Curvature {},
-    Upper { x: f64, y: f64 },
-    Lower { x: f64, y: f64 },
+pub struct OrientUpperLower {
+    inner: InnerOrientUpperLower,
 }
 
 #[pymethods]
 impl OrientUpperLower {
+    /// Detect the sides from the camber line curvature; the more concave side becomes lower.
+    #[staticmethod]
+    fn curvature() -> Self {
+        Self {
+            inner: InnerOrientUpperLower::Curvature,
+        }
+    }
+
+    /// The side whose points are more positive along the vector `(x, y)` becomes the upper side.
+    #[staticmethod]
+    fn upper(x: f64, y: f64) -> Self {
+        Self {
+            inner: InnerOrientUpperLower::Upper(engeom::Vector2::new(x, y)),
+        }
+    }
+
+    /// The side whose points are more positive along the vector `(x, y)` becomes the lower side.
+    #[staticmethod]
+    fn lower(x: f64, y: f64) -> Self {
+        Self {
+            inner: InnerOrientUpperLower::Lower(engeom::Vector2::new(x, y)),
+        }
+    }
+
     fn __repr__(&self) -> String {
-        match self {
-            OrientUpperLower::Curvature {} => "OrientUpperLower.Curvature".to_string(),
-            OrientUpperLower::Upper { x, y } => format!("OrientUpperLower.Upper({}, {})", x, y),
-            OrientUpperLower::Lower { x, y } => format!("OrientUpperLower.Lower({}, {})", x, y),
+        match self.inner {
+            InnerOrientUpperLower::Curvature => "OrientUpperLower.curvature()".to_string(),
+            InnerOrientUpperLower::Upper(v) => format!("OrientUpperLower.upper({}, {})", v.x, v.y),
+            InnerOrientUpperLower::Lower(v) => format!("OrientUpperLower.lower({}, {})", v.x, v.y),
         }
     }
 }
 
 impl From<OrientUpperLower> for InnerOrientUpperLower {
     fn from(value: OrientUpperLower) -> Self {
-        match value {
-            OrientUpperLower::Curvature {} => InnerOrientUpperLower::Curvature,
-            OrientUpperLower::Upper { x, y } => {
-                InnerOrientUpperLower::Upper(engeom::Vector2::new(x, y))
-            }
-            OrientUpperLower::Lower { x, y } => {
-                InnerOrientUpperLower::Lower(engeom::Vector2::new(x, y))
-            }
-        }
+        value.inner
     }
 }
 
@@ -497,51 +522,23 @@ impl From<OrientUpperLower> for InnerOrientUpperLower {
 // AfEdgeSearch
 // ================================================================================================
 
-/// Selects which edge geometry to fit at the leading or trailing edge.
-///
-/// `Auto` will treat the edge as open if the section is open at that end, and will otherwise try
-/// every fittable variant and select the one with the lowest average residual.
-#[pyclass(eq, eq_int, from_py_object, module = "engeom.airfoil2")]
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum AfEdgeSearch {
-    Auto = 0,
-    Open = 1,
-    Sharp = 2,
-    Square = 3,
-    RoundedSquare = 4,
-    FullRound = 5,
-    BlendedRound = 6,
-    SplineMaxK = 7,
-}
-
-#[pymethods]
-impl AfEdgeSearch {
-    fn __repr__(&self) -> String {
-        match self {
-            AfEdgeSearch::Auto => "AfEdgeSearch.Auto".to_string(),
-            AfEdgeSearch::Open => "AfEdgeSearch.Open".to_string(),
-            AfEdgeSearch::Sharp => "AfEdgeSearch.Sharp".to_string(),
-            AfEdgeSearch::Square => "AfEdgeSearch.Square".to_string(),
-            AfEdgeSearch::RoundedSquare => "AfEdgeSearch.RoundedSquare".to_string(),
-            AfEdgeSearch::FullRound => "AfEdgeSearch.FullRound".to_string(),
-            AfEdgeSearch::BlendedRound => "AfEdgeSearch.BlendedRound".to_string(),
-            AfEdgeSearch::SplineMaxK => "AfEdgeSearch.SplineMaxK".to_string(),
-        }
-    }
-}
-
-impl From<AfEdgeSearch> for InnerAfEdgeSearch {
-    fn from(value: AfEdgeSearch) -> Self {
-        match value {
-            AfEdgeSearch::Auto => InnerAfEdgeSearch::Auto,
-            AfEdgeSearch::Open => InnerAfEdgeSearch::Open,
-            AfEdgeSearch::Sharp => InnerAfEdgeSearch::Sharp,
-            AfEdgeSearch::Square => InnerAfEdgeSearch::Square,
-            AfEdgeSearch::RoundedSquare => InnerAfEdgeSearch::RoundedSquare,
-            AfEdgeSearch::FullRound => InnerAfEdgeSearch::FullRound,
-            AfEdgeSearch::BlendedRound => InnerAfEdgeSearch::BlendedRound,
-            AfEdgeSearch::SplineMaxK => InnerAfEdgeSearch::SplineMaxK,
-        }
+/// Parse an edge search token into the core `AfEdgeSearch` enum. The tokens match the `kind`
+/// strings reported by `AfEdgeGeometry`, so an edge can be searched for by the same name it
+/// reports back.
+pub fn af_edge_search_from_str(s: &str) -> PyResult<InnerAfEdgeSearch> {
+    match s {
+        "auto" => Ok(InnerAfEdgeSearch::Auto),
+        "open" => Ok(InnerAfEdgeSearch::Open),
+        "sharp" => Ok(InnerAfEdgeSearch::Sharp),
+        "square" => Ok(InnerAfEdgeSearch::Square),
+        "rounded_square" => Ok(InnerAfEdgeSearch::RoundedSquare),
+        "full_round" => Ok(InnerAfEdgeSearch::FullRound),
+        "blended_round" => Ok(InnerAfEdgeSearch::BlendedRound),
+        "spline_max_k" => Ok(InnerAfEdgeSearch::SplineMaxK),
+        _ => Err(PyValueError::new_err(format!(
+            "Invalid edge search '{s}', expected 'auto', 'open', 'sharp', 'square', \
+             'rounded_square', 'full_round', 'blended_round', or 'spline_max_k'"
+        ))),
     }
 }
 
@@ -585,16 +582,16 @@ impl AfGeometry {
         general_tol: f64,
         fwd_aft: OrientFwdAft,
         upper_lower: OrientUpperLower,
-        le_search: AfEdgeSearch,
-        te_search: AfEdgeSearch,
+        le_search: &str,
+        te_search: &str,
     ) -> PyResult<Self> {
         let inner = InnerAfGeometry::try_from_geometric_analysis(
             section.get_inner(),
             general_tol,
             fwd_aft.into(),
             upper_lower.into(),
-            le_search.into(),
-            te_search.into(),
+            af_edge_search_from_str(le_search)?,
+            af_edge_search_from_str(te_search)?,
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
 

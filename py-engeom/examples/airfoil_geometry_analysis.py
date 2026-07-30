@@ -1,5 +1,5 @@
 from _common import DATA_DIR
-from engeom.airfoil2 import AfEdgeSearch, AfGeometry, OrientFwdAft, OrientUpperLower
+from engeom.airfoil2 import AfGeometry, OrientFwdAft, OrientUpperLower
 from engeom.geom2 import Curve2
 from engeom.plot import MatplotlibAxesHelper
 from matplotlib.pyplot import Axes, Figure, figure, show
@@ -24,10 +24,10 @@ def main():
     geom = AfGeometry.from_geometric_analysis(
         section=section,
         general_tol=1e-3,
-        fwd_aft=OrientFwdAft.TmaxFwd(),
-        upper_lower=OrientUpperLower.Curvature(),
-        le_search=AfEdgeSearch.Auto,
-        te_search=AfEdgeSearch.Auto,
+        fwd_aft=OrientFwdAft.tmax_fwd(),
+        upper_lower=OrientUpperLower.curvature(),
+        le_search="auto",
+        te_search="auto",
     )
 
     # For plotting, we'll use matplotlib, and `engeom`'s helper tools.
