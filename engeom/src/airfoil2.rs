@@ -24,12 +24,15 @@ mod position;
 
 use crate::airfoil2::geometry::geometry_only_analysis;
 use crate::airfoil2::inscribed::Inscribed;
+use crate::airfoil2::measurements::{max_thickness, thickness};
 use crate::airfoil2::position::{pos_camber, pos_offset, pos_radius};
+use crate::metrology::Distance2;
 use crate::{Curve2, CurveStation2, Point2, Result};
 pub use orient::{OrientFwdAft, OrientUpperLower};
 use serde::{Deserialize, Serialize};
 
 /// Enum to specify between the upper and lower side of the airfoil
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum AfSide {
     /// The upper/suction/convex side of the airfoil
     Upper,
@@ -224,6 +227,40 @@ impl AfGeometry {
             AfPos::Radius => pos_radius(value, &self.camber, target),
             AfPos::EdgeOffset => pos_offset(value, &self.camber, target),
         }
+    }
+
+    /// Measure the thickness of the airfoil at a location specified by one of the gage point
+    /// location methods.
+    ///
+    /// A corresponding pair of points is located on the lower and upper surfaces by calling
+    /// [`AfGeometry::af_point`] with the same `method` and `value` on each side, and the thickness
+    /// is the Euclidean distance between them.
+    ///
+    /// # Arguments
+    ///
+    /// * `method`: how `value` is interpreted, see [`AfPos`] for the three schemes.
+    /// * `value`: the position value, whose meaning and sign convention depend on `method`. For
+    ///   all three methods a positive value is measured from the leading edge and a negative one
+    ///   from the trailing edge.
+    ///
+    /// returns: `Option<Distance2>` going from the lower surface point to the upper surface point.
+    /// `None` when the position does not land on both surfaces.
+    pub fn af_thickness(&self, method: AfPos, value: f64) -> Option<Distance2> {
+        thickness(self, method, value)
+    }
+
+    /// Measure the maximum thickness of the airfoil, taken from the largest inscribed circle.
+    ///
+    /// The measurement runs between the two contact points of the circle returned by
+    /// [`AfGeometry::tmax_circle`], which are points measured on the section itself.
+    ///
+    /// Note that this is *not* the maximum of [`AfGeometry::af_thickness`]. Sweeping that with
+    /// [`AfPos::OnCamber`] measures a chord orthogonal to the camber, which is not required to fit
+    /// inside the section, so on a cambered airfoil its maximum is larger and at a different
+    /// station. This function reports the inscribed circle, which is the conventional definition of
+    /// maximum airfoil thickness.
+    pub fn af_max_thickness(&self) -> Distance2 {
+        max_thickness(self)
     }
 
     /// Run a purely geometric analysis of an airfoil section, attempting to extract the mean
