@@ -309,6 +309,31 @@ fn fit_err(e: Box<dyn std::error::Error>) -> PyErr {
 }
 
 #[pyfunction]
+pub fn fit_open_edge(
+    section: &Curve2,
+    tol: f64,
+    circles: Vec<Inscribed>,
+    at_front: bool,
+) -> PyResult<AfEdgeFit> {
+    let input = SectionInput::new(section.get_inner(), tol);
+    engeom::airfoil2::edges::fit_open_edge(&input, to_inner_circles(circles), at_front)
+        .map(AfEdgeFit::from_inner)
+        .map_err(fit_err)
+}
+
+#[pyfunction]
+pub fn is_open_at_end(
+    section: &Curve2,
+    tol: f64,
+    circles: Vec<Inscribed>,
+    at_front: bool,
+) -> PyResult<bool> {
+    let input = SectionInput::new(section.get_inner(), tol);
+    engeom::airfoil2::edges::is_open_at_end(&input, &to_inner_circles(circles), at_front)
+        .map_err(fit_err)
+}
+
+#[pyfunction]
 pub fn fit_square_edge(
     section: &Curve2,
     tol: f64,
@@ -474,7 +499,8 @@ impl From<OrientUpperLower> for InnerOrientUpperLower {
 
 /// Selects which edge geometry to fit at the leading or trailing edge.
 ///
-/// `Auto` will try every fittable variant and select the one with the lowest average residual.
+/// `Auto` will treat the edge as open if the section is open at that end, and will otherwise try
+/// every fittable variant and select the one with the lowest average residual.
 #[pyclass(eq, eq_int, from_py_object, module = "engeom.airfoil2")]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum AfEdgeSearch {
@@ -485,6 +511,7 @@ pub enum AfEdgeSearch {
     RoundedSquare = 4,
     FullRound = 5,
     BlendedRound = 6,
+    SplineMaxK = 7,
 }
 
 #[pymethods]
@@ -498,6 +525,7 @@ impl AfEdgeSearch {
             AfEdgeSearch::RoundedSquare => "AfEdgeSearch.RoundedSquare".to_string(),
             AfEdgeSearch::FullRound => "AfEdgeSearch.FullRound".to_string(),
             AfEdgeSearch::BlendedRound => "AfEdgeSearch.BlendedRound".to_string(),
+            AfEdgeSearch::SplineMaxK => "AfEdgeSearch.SplineMaxK".to_string(),
         }
     }
 }
@@ -512,6 +540,7 @@ impl From<AfEdgeSearch> for InnerAfEdgeSearch {
             AfEdgeSearch::RoundedSquare => InnerAfEdgeSearch::RoundedSquare,
             AfEdgeSearch::FullRound => InnerAfEdgeSearch::FullRound,
             AfEdgeSearch::BlendedRound => InnerAfEdgeSearch::BlendedRound,
+            AfEdgeSearch::SplineMaxK => InnerAfEdgeSearch::SplineMaxK,
         }
     }
 }

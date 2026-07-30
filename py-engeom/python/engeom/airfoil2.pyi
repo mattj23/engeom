@@ -143,6 +143,54 @@ class AfEdgeFit:
         ...
 
 
+def is_open_at_end(section: Curve2, tol: float, circles: List[Inscribed], at_front: bool) -> bool:
+    """
+    Determine whether the section is open at the end being processed.
+
+    Whether an edge is open is a property of the section topology rather than something that can
+    be measured against a candidate geometry, so this is the test used by ``AfEdgeSearch.Auto`` to
+    resolve the open case before any edge fitting is attempted.
+
+    A section is open at this end when it is not a closed curve *and* both lips of the gap lie
+    beyond the end of the inscribed circle stack. A section with a gap in the middle of a surface
+    is open at neither end.
+
+    :param section: the airfoil section curve.
+    :param tol: general fitting tolerance.
+    :param circles: the inscribed circle stack from the camber line fitting step.
+    :param at_front: when ``True``, test the leading edge; when ``False``, test the trailing edge.
+    :return: ``True`` if the section is open at the requested end.
+    :raises ValueError: if there are fewer than two inscribed circles.
+    """
+    ...
+
+
+def fit_open_edge(section: Curve2, tol: float, circles: List[Inscribed], at_front: bool) -> AfEdgeFit:
+    """
+    Fit an open trailing or leading edge on the airfoil section data.
+
+    An open edge is one where the airfoil shape is incomplete, most commonly because the
+    measurement system did not capture all the way around the airfoil, or because the nominal
+    geometry is not a full airfoil (near the root or tip, where it blends into other geometry).
+
+    Because there is no edge geometry to fit, the edge point is found by projecting the end of the
+    camber line onto a chord spanning the gap, from the first point of the section curve to the
+    last. The camber line is first advanced into the gap by repeatedly stepping halfway to the
+    nearer lip and pushing a new refined inscribed circle, until the projected edge point stops
+    moving by more than ``tol``.
+
+    :param section: the airfoil section curve, which must be open.
+    :param tol: general fitting tolerance.
+    :param circles: the inscribed circle stack from the camber line fitting step.
+    :param at_front: when ``True``, fit the leading edge; when ``False``, fit the trailing edge.
+    :return: an ``AfEdgeFit`` whose edge geometry is of kind ``"open"``, with an empty residual
+        array and an inscribed circle stack extended toward the gap.
+    :raises ValueError: if the section is closed, or if the gap does not lie ahead of the end of
+        the camber line.
+    """
+    ...
+
+
 def fit_square_edge(section: Curve2, tol: float, circles: List[Inscribed], at_front: bool) -> AfEdgeFit:
     """
     Fit a square (flat) trailing or leading edge to airfoil section data.
@@ -344,15 +392,22 @@ class OrientUpperLower:
 class AfEdgeSearch(Enum):
     """
     Selects which edge geometry to fit at the leading or trailing edge during a geometric
-    analysis. Use ``Auto`` to try every fittable variant and pick the one with the lowest
-    average residual.
+    analysis. Use ``Auto`` to resolve the edge automatically.
     """
 
     Auto = 0
-    """ Fit every applicable variant and select the lowest-residual result. """
+    """
+    Resolve the edge automatically. If the section is open at this end the edge is treated as
+    ``Open``; otherwise every applicable variant is fit and the lowest-residual result is
+    selected.
+    """
 
     Open = 1
-    """ Treat the edge as open; no edge geometry is fit (not yet implemented). """
+    """
+    Treat the edge as open, meaning the section perimeter does not close at this end. No edge
+    geometry is fit; instead the camber line is advanced into the gap and the edge point is
+    projected onto a chord spanning the two open lips of the section.
+    """
 
     Sharp = 2
     """ Fit a sharp apex edge. """
@@ -368,6 +423,9 @@ class AfEdgeSearch(Enum):
 
     BlendedRound = 6
     """ Fit a full-round edge joined to the surfaces by tangent blending arcs. """
+
+    SplineMaxK = 7
+    """ Fit a cubic spline to the edge and take the point of maximum curvature as the edge. """
 
 
 class AfGeometry:

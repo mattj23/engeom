@@ -141,6 +141,8 @@ fn register_airfoil2_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()>
         airfoil2::extract_inscribed_circles,
         &child
     )?)?;
+    child.add_function(wrap_pyfunction!(airfoil2::is_open_at_end, &child)?)?;
+    child.add_function(wrap_pyfunction!(airfoil2::fit_open_edge, &child)?)?;
     child.add_function(wrap_pyfunction!(airfoil2::fit_square_edge, &child)?)?;
     child.add_function(wrap_pyfunction!(airfoil2::fit_rounded_square_edge, &child)?)?;
     child.add_function(wrap_pyfunction!(airfoil2::fit_sharp_edge, &child)?)?;
