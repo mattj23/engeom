@@ -1,12 +1,13 @@
 name: CI
 
-# Runs on every branch push, not just main, so that a branch gets feedback before it becomes a PR
-# or a tag. Defining `branches` and no `tags` is what keeps tag pushes out of this workflow; those
-# are handled by release.yml.
+# Automatic CI on the two integration branches, which is where work actually lands. Feature branches
+# are run on demand instead: Actions > CI > Run workflow, against any branch. Defining `branches` and
+# no `tags` is what keeps tag pushes out of this workflow; those are handled by release.yml.
 on:
   push:
     branches:
-      - '**'
+      - main
+      - develop
   pull_request:
   workflow_dispatch:
 
