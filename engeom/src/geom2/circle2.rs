@@ -532,9 +532,11 @@ impl Circle2 {
     /// Compute and return two segments which are the outer tangents between this circle and another
     /// circle.
     ///
-    /// If the circles are concentric, the result will be `None`. Otherwise, both segments will
-    /// start on the tangency point on *this* circle and end on the tangency point on the other
-    /// circle. The segments will be symmetric about the line connecting the two circle centers.
+    /// Outer tangents only exist when neither circle contains the other, so the result will be
+    /// `None` if the circles are concentric or if one circle lies entirely within the other.
+    /// Otherwise, both segments will start on the tangency point on *this* circle and end on the
+    /// tangency point on the other circle. The segments will be symmetric about the line connecting
+    /// the two circle centers.
     ///
     /// The segments will always be returned in the same order relative to the line passing through
     /// this circle center in the direction of the other circle center. The first segment will be
@@ -544,14 +546,32 @@ impl Circle2 {
     ///
     /// # Arguments
     ///
-    /// * `other`:
+    /// * `other`: the circle to find the outer tangents to
     ///
     /// returns: Option<(Segment2, Segment2)>
     ///
     /// # Examples
     ///
     /// ```
+    /// use approx::assert_relative_eq;
+    /// use engeom::Circle2;
     ///
+    /// let c0 = Circle2::new(0.0, 0.0, 1.0);
+    /// let c1 = Circle2::new(5.0, 0.0, 2.0);
+    /// let (s0, s1) = c0.outer_tangents_to(&c1).unwrap();
+    ///
+    /// // Each segment runs from a tangency point on `c0` to a tangency point on `c1`, and both
+    /// // have the outer tangent length sqrt(d^2 - (r1 - r0)^2) = sqrt(24)
+    /// for s in [s0, s1] {
+    ///     assert_relative_eq!((s.a - c0.center).norm(), 1.0, epsilon = 1e-10);
+    ///     assert_relative_eq!((s.b - c1.center).norm(), 2.0, epsilon = 1e-10);
+    ///     assert_relative_eq!(s.length(), 24.0_f64.sqrt(), epsilon = 1e-10);
+    /// }
+    ///
+    /// // A circle fully contained inside another has no outer tangents
+    /// let inner = Circle2::new(0.1, 0.0, 1.0);
+    /// let outer = Circle2::new(0.0, 0.0, 5.0);
+    /// assert!(inner.outer_tangents_to(&outer).is_none());
     /// ```
     pub fn outer_tangents_to(&self, other: &Circle2) -> Option<(Segment2, Segment2)> {
         if dist(&self.center, &other.center) < 1.0e-10 {
@@ -576,10 +596,13 @@ impl Circle2 {
             // https://upload.wikimedia.org/wikipedia/commons/7/7c/Aeussere_tangente_computation.svg
             // where we re-frame the problem as the point-to-circle tangent problem.
             let proxy = Circle2::new(other.x(), other.y(), other.r() - self.r());
-            // p0 is in the negative half space and p1 is in the positive half space
-            let (p0, p1) = proxy.tangent_points_to(&self.center).unwrap();
-            let s0 = Segment2::new(&self.center, &p0).unwrap();
-            let s1 = Segment2::new(&self.center, &p1).unwrap();
+
+            // p0 is in the negative half space and p1 is in the positive half space. This returns
+            // `None` when this circle lies entirely inside the other one, in which case there are
+            // genuinely no outer tangents to find.
+            let (p0, p1) = proxy.tangent_points_to(&self.center)?;
+            let s0 = Segment2::new(&self.center, &p0).ok()?;
+            let s1 = Segment2::new(&self.center, &p1).ok()?;
 
             Some((s0.offset_by(-self.r()), s1.offset_by(self.r())))
         }
@@ -923,6 +946,37 @@ mod tests {
         let (p0, p1) = c.tangent_points_to(&p).unwrap();
         assert_relative_eq!(p0, Point2::new(-0.4844568895369135, 0.24075924101671814));
         assert_relative_eq!(p1, Point2::new(1.045148109645135, -1.2054127582099456));
+    }
+
+    #[test]
+    fn outer_tangents_to_contained_circle_is_none() {
+        // A circle fully inside another has no outer tangents. Both orderings go through a
+        // different branch of the function, so both are checked.
+        let inner = Circle2::new(0.1, 0.0, 1.0);
+        let outer = Circle2::new(0.0, 0.0, 5.0);
+        assert!(inner.outer_tangents_to(&outer).is_none());
+        assert!(outer.outer_tangents_to(&inner).is_none());
+    }
+
+    #[test]
+    fn outer_tangents_to_internally_tangent_circle_is_none() {
+        // Touching from the inside is the boundary of the contained case
+        let inner = Circle2::new(4.0, 0.0, 1.0);
+        let outer = Circle2::new(0.0, 0.0, 5.0);
+        assert!(inner.outer_tangents_to(&outer).is_none());
+        assert!(outer.outer_tangents_to(&inner).is_none());
+    }
+
+    #[test]
+    fn outer_tangents_to_overlapping_circles() {
+        // Overlapping circles which do not contain each other still have outer tangents
+        let c0 = Circle2::new(0.0, 0.0, 1.0);
+        let c1 = Circle2::new(1.5, 0.0, 2.0);
+        let (s0, s1) = c0.outer_tangents_to(&c1).unwrap();
+        for s in [s0, s1] {
+            assert_relative_eq!((s.a - c0.center).norm(), 1.0, epsilon = 1e-10);
+            assert_relative_eq!((s.b - c1.center).norm(), 2.0, epsilon = 1e-10);
+        }
     }
 
     #[test]

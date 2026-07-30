@@ -421,6 +421,34 @@ mod tests {
         Ok(())
     }
 
+    /// Asking for a closed edge geometry on an open section cannot succeed, but it must fail by
+    /// returning an error rather than by panicking. `fit_auto_edge` collects its candidates with
+    /// `if let Ok(..)`, so a panic in any fitter would be uncatchable and would take down the whole
+    /// analysis instead of just eliminating one candidate.
+    #[test]
+    fn closed_edge_search_on_open_section_errors() -> Result<()> {
+        let section = open_at_trailing_edge(1.0)?;
+        let input = SectionInput::new(&section, 1e-3);
+
+        let circles = extract_inscribed_circles(&input)?;
+        let circles = OrientFwdAft::TmaxFwd.apply(circles)?;
+        let circles = OrientUpperLower::Curvature.apply(circles)?;
+
+        for search in [
+            AfEdgeSearch::Sharp,
+            AfEdgeSearch::Square,
+            AfEdgeSearch::RoundedSquare,
+            AfEdgeSearch::FullRound,
+            AfEdgeSearch::BlendedRound,
+            AfEdgeSearch::SplineMaxK,
+        ] {
+            // The result itself is meaningless, we only care that it comes back at all
+            let _ = run_edge_fit(search, &input, circles.clone(), false);
+        }
+
+        Ok(())
+    }
+
     #[test]
     fn auto_leaves_closed_section_alone() -> Result<()> {
         let result = analyze_auto(&af_curve_known_ccw())?;
