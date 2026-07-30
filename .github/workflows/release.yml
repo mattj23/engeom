@@ -1,0 +1,223 @@
+name: Release
+
+# A tag push is the real release. `workflow_dispatch` defaults to a rehearsal that builds and
+# validates everything but publishes nothing, so the release path can be exercised from a branch
+# before a tag is ever pushed.
+#
+# The tag pattern is deliberately narrow. The previous pipeline matched '*', so any tag at all
+# could start a publish.
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Rehearse only. Build and validate, publish nothing.
+        type: boolean
+        required: false
+        default: true
+
+# Never cancel a release in flight. The literal prefix keeps this group distinct from the one in
+# wheels.yml, which would otherwise deadlock against its own caller.
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # crates.io rejects API requests that do not send a descriptive User-Agent.
+  CRATES_UA: 'engeom-release-ci (https://github.com/mattj23/engeom)'
+
+jobs:
+  check-version:
+    name: Check version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      publish: ${{ steps.check.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Resolve and check the version
+        id: check
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          # Read the version through cargo rather than parsing a manifest: engeom inherits
+          # `version.workspace = true`, so the number is not in engeom/Cargo.toml at all.
+          VERSION=$(cargo metadata --format-version 1 --no-deps | python3 -c \
+            'import json,sys; m=json.load(sys.stdin); print(next(p["version"] for p in m["packages"] if p["name"]=="engeom"))')
+          echo "Workspace version: $VERSION"
+
+          IS_TAG=false
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            IS_TAG=true
+            TAG="${GITHUB_REF#refs/tags/}"
+            if [[ "$TAG" != "v$VERSION" ]]; then
+              echo "::error::Tag $TAG does not match the workspace version $VERSION. Expected tag v$VERSION."
+              exit 1
+            fi
+            echo "Tag $TAG matches the workspace version."
+          else
+            echo "::notice::Not a tag ref, so the tag/version equality check does not apply."
+          fi
+
+          # Publishing requires a tag as well as dry_run being off, so a branch dispatch can never
+          # reach a registry no matter how it is invoked.
+          PUBLISH=false
+          if [[ "$IS_TAG" == "true" && "$DRY_RUN" != "true" ]]; then
+            PUBLISH=true
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
+
+          status() {
+            curl -sS -o /dev/null -w '%{http_code}' --max-time 30 -H "User-Agent: $CRATES_UA" "$1"
+          }
+          CRATES=$(status "https://crates.io/api/v1/crates/engeom/$VERSION")
+          PYPI=$(status "https://pypi.org/pypi/engeom/$VERSION/json")
+          describe() {
+            case "$1" in
+              200) echo "already published" ;;
+              404) echo "not published" ;;
+              *)   echo "unknown (HTTP $1)" ;;
+            esac
+          }
+
+          {
+            echo "### engeom $VERSION"
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Ref | \`${GITHUB_REF#refs/*/}\` |"
+            echo "| Will publish | $PUBLISH |"
+            echo "| crates.io | $(describe "$CRATES") |"
+            echo "| PyPI | $(describe "$PYPI") |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  wheels:
+    name: Build
+    # Gated on the version check so a mistyped tag fails in seconds rather than after the whole
+    # matrix has run.
+    needs: check-version
+    uses: ./.github/workflows/wheels.yml
+
+  attest:
+    name: Attest artifacts
+    needs: [check-version, wheels]
+    if: ${{ needs.check-version.outputs.publish == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      attestations: write
+    steps:
+      # `pattern: wheels-*` is what keeps any experimental free-threaded artifact out; those are
+      # named experimental-* precisely so they cannot be picked up here or by the publish jobs.
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: dist
+      - name: Generate build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: 'dist/*'
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: [check-version, wheels]
+    runs-on: ubuntu-latest
+    permissions:
+      # Required to mint the OIDC token for trusted publishing.
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: dist
+      - name: List the artifacts
+        run: ls -la dist
+      # No moving v9 tag is published for this action, only exact versions, so it is pinned.
+      - uses: astral-sh/setup-uv@v9.0.0
+      - name: Publish
+        env:
+          PUBLISH: ${{ needs.check-version.outputs.publish }}
+        run: |
+          set -euo pipefail
+          if [[ "$PUBLISH" == "true" ]]; then
+            # --check-url skips files already on the index, so re-running a release that failed
+            # partway through is safe rather than a hard error.
+            uv publish \
+              --trusted-publishing always \
+              --check-url https://pypi.org/simple/ \
+              dist/*
+          else
+            echo "::notice::Rehearsal: validating the artifact set without uploading."
+            uv publish --dry-run --trusted-publishing never dist/*
+          fi
+
+  publish-crates:
+    name: Publish to crates.io
+    needs: [check-version, wheels]
+    runs-on: ubuntu-latest
+    permissions:
+      # Required to mint the OIDC token for crates.io trusted publishing.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check whether this version is already on crates.io
+        id: exists
+        run: |
+          set -euo pipefail
+          CODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 \
+            -H "User-Agent: $CRATES_UA" \
+            "https://crates.io/api/v1/crates/engeom/${{ needs.check-version.outputs.version }}")
+          case "$CODE" in
+            200) echo "already=true"  >> "$GITHUB_OUTPUT"; echo "::notice::Already on crates.io, the publish will be skipped." ;;
+            404) echo "already=false" >> "$GITHUB_OUTPUT" ;;
+            *)   echo "::error::Unexpected HTTP $CODE from crates.io"; exit 1 ;;
+          esac
+      - name: Rehearse the publish
+        if: ${{ needs.check-version.outputs.publish != 'true' }}
+        run: cargo publish -p engeom --dry-run
+      # cargo has no --skip-existing, so the check above stands in for it and keeps a partial
+      # release re-runnable.
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+        if: ${{ needs.check-version.outputs.publish == 'true' && steps.exists.outputs.already == 'false' }}
+      - name: Publish
+        if: ${{ needs.check-version.outputs.publish == 'true' && steps.exists.outputs.already == 'false' }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish -p engeom
+
+  github-release:
+    name: GitHub release
+    needs: [check-version, wheels, attest, publish-pypi, publish-crates]
+    if: ${{ needs.check-version.outputs.publish == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: dist
+      # The old pipeline asked for `contents: write` and then never created a release.
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" dist/* \
+            --title "${{ github.ref_name }}" \
+            --generate-notes \
+            --verify-tag
