@@ -4,6 +4,11 @@ version.workspace = true
 edition.workspace = true
 # The PyO3 binding crate is distributed through PyPI, never crates.io.
 publish = false
+# Not needed by any registry, but `cargo package --list` runs during `maturin sdist` and warns when
+# these are absent, so filling them in keeps the sdist build output clean.
+description = "Python bindings for the engeom engineering metrology geometry library."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/mattj23/engeom"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]

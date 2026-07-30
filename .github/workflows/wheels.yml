@@ -1,0 +1,250 @@
+name: Wheels
+
+# Builds the full wheel matrix and the sdist. This workflow deliberately has no publish step of its
+# own: release.yml calls it via `workflow_call` and does the publishing, while `workflow_dispatch`
+# lets the whole matrix be exercised from any branch without pushing a tag.
+on:
+  workflow_call:
+    inputs:
+      free_threaded:
+        description: Also attempt experimental free-threaded (3.14t) wheels
+        type: boolean
+        required: false
+        default: false
+  workflow_dispatch:
+    inputs:
+      free_threaded:
+        description: Also attempt experimental free-threaded (3.14t) wheels
+        type: boolean
+        required: false
+        default: false
+
+# The group is prefixed with a literal rather than `github.workflow`, because in a called workflow
+# `github.workflow` resolves to the *caller's* name. Sharing a group with the calling release run
+# would make these jobs queue behind a run that is itself waiting on them, which deadlocks.
+# Superseded branch dispatches are cancelled, but a release build never is.
+concurrency:
+  group: wheels-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: read
+
+env:
+  # pyo3 is built with the abi3-py38 feature, so a single wheel per platform covers Python 3.8 and
+  # up and the interpreter used to build it does not set that floor. That means there is no need to
+  # install an end-of-life Python on the runners just to build against it, and no need for
+  # --find-interpreter, which is what produced the stray pypy wheel in the 0.2.21 release.
+  BUILD_PYTHON: '3.12'
+  MATURIN_ARGS: --release --out dist --manifest-path py-engeom/Cargo.toml
+
+jobs:
+  linux:
+    name: manylinux ${{ matrix.platform.target }}
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - runner: ubuntu-22.04
+            target: x86_64
+          - runner: ubuntu-22.04
+            target: aarch64
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.BUILD_PYTHON }}
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.platform.target }}
+          args: ${{ env.MATURIN_ARGS }}
+          # Disabled for tags so that a release artifact is always built from a cold, known state.
+          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          manylinux: auto
+      - uses: actions/upload-artifact@v7
+        with:
+          if-no-files-found: error
+          name: wheels-linux-${{ matrix.platform.target }}
+          path: dist
+
+  musllinux:
+    name: musllinux ${{ matrix.platform.target }}
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - runner: ubuntu-22.04
+            target: x86_64
+          - runner: ubuntu-22.04
+            target: aarch64
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.BUILD_PYTHON }}
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.platform.target }}
+          args: ${{ env.MATURIN_ARGS }}
+          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          manylinux: musllinux_1_2
+      - uses: actions/upload-artifact@v7
+        with:
+          if-no-files-found: error
+          name: wheels-musllinux-${{ matrix.platform.target }}
+          path: dist
+
+  windows:
+    name: windows ${{ matrix.platform.target }}
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - runner: windows-latest
+            target: x64
+            python_arch: x64
+          - runner: windows-11-arm
+            target: aarch64
+            python_arch: arm64
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.BUILD_PYTHON }}
+          architecture: ${{ matrix.platform.python_arch }}
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.platform.target }}
+          args: ${{ env.MATURIN_ARGS }}
+          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+      - uses: actions/upload-artifact@v7
+        with:
+          if-no-files-found: error
+          name: wheels-windows-${{ matrix.platform.target }}
+          path: dist
+
+  macos:
+    name: macos ${{ matrix.platform.target }}
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          # Restores the Intel Mac wheel. Without it, Intel Mac users fall back to the sdist, which
+          # requires them to have a Rust toolchain installed.
+          - runner: macos-15-intel
+            target: x86_64
+          - runner: macos-latest
+            target: aarch64
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.BUILD_PYTHON }}
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.platform.target }}
+          args: ${{ env.MATURIN_ARGS }}
+          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+      - uses: actions/upload-artifact@v7
+        with:
+          if-no-files-found: error
+          name: wheels-macos-${{ matrix.platform.target }}
+          path: dist
+
+  sdist:
+    name: sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist --manifest-path py-engeom/Cargo.toml
+      - uses: actions/upload-artifact@v7
+        with:
+          if-no-files-found: error
+          name: wheels-sdist
+          path: dist
+
+  test-wheel:
+    name: Test built wheel
+    needs: linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.BUILD_PYTHON }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: wheels-linux-x86_64
+          path: dist
+      - name: Install the wheel
+        run: |
+          pip install pytest
+          pip install dist/*.whl
+      # Tests the artifact that would actually be published, which is the only way to catch a
+      # packaging fault such as a missing .pyi stub. Run from the repository root so
+      # test_stub_drift.py finds the stubs while `import engeom` resolves to the installed wheel.
+      - name: Run the test suite against the wheel
+        run: pytest py-engeom/python/tests/ -q
+
+  test-sdist:
+    name: Test sdist builds from source
+    needs: sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.BUILD_PYTHON }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/download-artifact@v8
+        with:
+          name: wheels-sdist
+          path: dist
+      # The sdist is the fallback for every platform the matrix above does not cover, and it has to
+      # compile the path-dependency `engeom` crate that maturin vendors into it. Nothing else in the
+      # pipeline proves that vendoring is intact.
+      - name: Build and install from the sdist
+        run: |
+          pip install pytest
+          pip install dist/*.tar.gz
+      - name: Run the test suite against the source build
+        run: pytest py-engeom/python/tests/ -q
+
+  free-threaded:
+    name: free-threaded 3.14t (experimental)
+    if: ${{ inputs.free_threaded }}
+    runs-on: ubuntu-22.04
+    # An experiment, not a gate. pyo3 is on abi3-py38 and abi3 combined with free-threading is a
+    # known rough edge, so this reports the answer without ever failing a release.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14t'
+      - name: Build free-threaded wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: x86_64
+          args: --release --out dist --manifest-path py-engeom/Cargo.toml -i python3.14t
+          sccache: 'true'
+          manylinux: auto
+      # Named so it cannot match the `wheels-*` glob the release job publishes. An experimental
+      # wheel must never reach PyPI by accident.
+      - uses: actions/upload-artifact@v7
+        with:
+          if-no-files-found: error
+          name: experimental-freethreaded-linux-x86_64
+          path: dist
