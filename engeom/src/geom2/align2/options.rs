@@ -79,9 +79,10 @@ const DEFAULT_PATIENCE: usize = 100;
 
 impl<'a> AlignOptions2<'a> {
     pub fn no_refine() -> Self {
-        let mut x = Self::default();
-        x.refinement_steps = 0;
-        x
+        Self {
+            refinement_steps: 0,
+            ..Default::default()
+        }
     }
 }
 

@@ -1699,8 +1699,10 @@ mod tests {
                 .is_err()
         );
 
-        let mut opts = StlWriteOpts::default();
-        opts.allow_attribute_loss = true;
+        let opts = StlWriteOpts {
+            allow_attribute_loss: true,
+            ..Default::default()
+        };
         mesh.save_stl(file.path(), &opts)?;
 
         Ok(())

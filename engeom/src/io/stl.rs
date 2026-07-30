@@ -672,7 +672,7 @@ mod tests {
     fn coordinates_are_quantized_to_f32() -> Result<()> {
         // The f32 step at 1000 mm is 2^-13, about 61 nanometres, so a value offset half a step
         // from a representable one is as wrong as this format can make it.
-        let exact = 1000.000_03_f64;
+        let exact = 1_000.000_03_f64;
         let mesh = MeshData3::new(
             vec![
                 Point3::new(exact, 0.0, 0.0),

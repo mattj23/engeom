@@ -19,15 +19,15 @@ impl Mesh3 {
     ) -> Result<Vec<Curve3>> {
         let curve_tol = curve_tol.unwrap_or(1e-6);
 
-        if let Some(mask) = faces {
-            if mask.len() != self.face_count() {
-                return Err(format!(
-                    "A face mask of length {} does not match a mesh with {} faces",
-                    mask.len(),
-                    self.face_count()
-                )
-                .into());
-            }
+        if let Some(mask) = faces
+            && mask.len() != self.face_count()
+        {
+            return Err(format!(
+                "A face mask of length {} does not match a mesh with {} faces",
+                mask.len(),
+                self.face_count()
+            )
+            .into());
         }
 
         // First, we'll find all triangles that intersect the plane and produce segments from them.
@@ -283,7 +283,9 @@ mod tests {
         let mesh = Mesh3::create_cylinder(1.0, 2.0, 256);
         let plane = Plane3::xz();
 
-        let curves = mesh.section_with_plane(&plane, Some(1.0e-10), None).unwrap();
+        let curves = mesh
+            .section_with_plane(&plane, Some(1.0e-10), None)
+            .unwrap();
         assert_eq!(curves.len(), 1);
 
         let curve = &curves[0];
@@ -313,7 +315,9 @@ mod tests {
 
         let plane = Plane3::xz();
 
-        let curves = mesh.section_with_plane(&plane, Some(1.0e-10), None).unwrap();
+        let curves = mesh
+            .section_with_plane(&plane, Some(1.0e-10), None)
+            .unwrap();
         assert_eq!(curves.len(), 2);
 
         for curve in curves.iter() {
