@@ -1,12 +1,13 @@
+use crate::AngleDir::Ccw;
 use crate::airfoil2::inscribed::{Inscribed, InscribedVec};
 use crate::airfoil2::{AfEdge, AfEdgeGeometry, SectionInput};
 use crate::common::cubic_spline::{SplineBuildFn, fit_spline_to_points};
 use crate::common::{PCoords, dist, mid_point};
 use crate::geom2::{
-    BndBuildFn, BoundaryData2, BoundaryEditor, BoundaryElement2, CubicSpline2, LineOps2,
+    BndBuildFn, BoundaryData2, BoundaryEditor, BoundaryElement2, CubicSpline2, LineOps2, Segment2,
     fit_boundary_to_points, signed_angle,
 };
-use crate::{Arc2, Circle2, Curve2, DVector, Iso2, Line2, Point2, Result, Vector2};
+use crate::{Arc2, Circle2, Curve2, DVector, Iso2, Line2, Point2, Result, SurfacePoint2, Vector2};
 use std::f64::consts::PI;
 
 /// This is the result of an airfoil edge fitting operation. It contains the detected edge point
@@ -49,6 +50,12 @@ impl AfEdgeFit {
 /// is not a full airfoil (sometimes occurring near the root or tip where the airfoil is blending
 /// into other geometry).
 ///
+/// Because there is no edge geometry to fit, the edge point is instead found by projecting the end
+/// of the camber line onto a chord spanning the gap, from the first point of the section curve to
+/// the last. To keep that projection from being dominated by the direction of a camber line which
+/// stopped well short of the gap, the camber line is first advanced into the gap by repeatedly
+/// stepping halfway to the nearer lip and pushing a new refined inscribed circle, until the
+/// projected edge point stops moving by more than the general tolerance.
 ///
 /// # Arguments
 ///
@@ -59,14 +66,66 @@ impl AfEdgeFit {
 ///
 /// # Returns
 ///
-/// An [`AfEdgeFit`] whose edge geometry is [`AfEdgeGeometry::Open`]
+/// An [`AfEdgeFit`] whose edge geometry is [`AfEdgeGeometry::Open`], with an empty residual vector
+/// (there is no fitted geometry to measure against) and an inscribed circle stack extended toward
+/// the gap.
 pub fn fit_open_edge(
     input: &SectionInput,
     circles: Vec<Inscribed>,
     at_front: bool,
 ) -> Result<AfEdgeFit> {
+    // Each step halves the distance remaining to the gap, so this is a generous upper bound on the
+    // number of steps needed to converge for any sane tolerance.
+    const MAX_ITERATIONS: usize = 20;
 
-    todo!()
+    let mut working = EdgeWork::new(input, circles, at_front)?;
+    let cap = open_gap_segment(input)?;
+
+    let mut point = end_cap_intersection(&working.stack, &cap)?;
+    let mut drift = f64::INFINITY;
+
+    for _ in 0..MAX_ITERATIONS {
+        if drift <= input.general_tol {
+            break;
+        }
+
+        let sp = end_camber_ray(&working.stack)?;
+        let max_dist = sp
+            .scalar_projection(&cap.a)
+            .min(sp.scalar_projection(&cap.b));
+        if max_dist < 0.0 {
+            return Err("The open gap does not lie ahead of the end of the camber line".into());
+        }
+
+        // Probe halfway to the nearer lip of the gap. The test line is oriented so that the `p0`
+        // and `p1` of the resulting circle come out in the same order as the rest of the stack,
+        // since `refine_and_push` does not orient what it's given.
+        let probe = Line2::from(&sp.shifted(max_dist * 0.5).normal_rotated_90(Ccw));
+        let test_line = if probe.direction.dot(&working.last()?.contact_dir()) < 0.0 {
+            probe.reversed()
+        } else {
+            probe
+        };
+
+        // Failing to find a crossing line means the camber has been advanced as far as the section
+        // data supports, so we stop and keep the best edge point found so far.
+        let Some(inscribed) = input.try_inscribed(&test_line) else {
+            break;
+        };
+        working.stack.refine_and_push(inscribed, input);
+
+        let next = end_cap_intersection(&working.stack, &cap)?;
+        drift = dist(&point, &next);
+        point = next;
+    }
+
+    let c = working.take_circles();
+    let edge = AfEdge::new(point, AfEdgeGeometry::Open);
+
+    // The residuals are deliberately empty. An open edge has no fitted geometry, so it cannot be
+    // ranked against the closed-edge fits by residual; callers which compare fits must resolve the
+    // open case separately rather than letting it into the comparison.
+    Ok(AfEdgeFit::new(edge, DVector::zeros(0), c))
 }
 
 /// Fit a square (flat) trailing or leading edge to airfoil section data.
@@ -626,6 +685,48 @@ fn end_intersection(
     Ok(line.at(*t))
 }
 
+/// Build the chord which spans the open gap in a section, running from the first point of the
+/// section curve to the last. Returns an error if the section is closed, in which case there is no
+/// gap to span.
+fn open_gap_segment(input: &SectionInput) -> Result<Segment2> {
+    if input.section.is_closed() {
+        return Err("Cannot fit an open edge on a closed section".into());
+    }
+    Segment2::new(
+        &input.section.at_front().point(),
+        &input.section.at_back().point(),
+    )
+}
+
+/// Build the outward facing ray at the end of the inscribed circle stack. The origin is the center
+/// of the last inscribed circle, which is definitionally on the camber line, and the direction
+/// comes from the end clipping line, which is already normalized and already faces away from the
+/// interior of the airfoil.
+fn end_camber_ray(stack: &InscribedVec) -> Result<SurfacePoint2> {
+    let clip = stack.end_clip_line()?;
+    let last = stack
+        .last()
+        .ok_or("Cannot build an end camber ray from an empty inscribed circle stack")?;
+    Ok(SurfacePoint2::new_normalize(last.center(), clip.direction))
+}
+
+/// The open section counterpart to `end_intersection`. Because the section perimeter does not close
+/// across the gap there is nothing there to intersect, so the end of the camber line is projected
+/// onto the chord spanning the gap instead of onto the section itself.
+fn end_cap_intersection(stack: &InscribedVec, cap: &Segment2) -> Result<Point2> {
+    let ray = Line2::from(&end_camber_ray(stack)?);
+    let (t0, t1) = ray
+        .intersection_params(&cap.to_line())
+        .ok_or("The end of the camber line is parallel to the open gap")?;
+
+    // `ray` has a unit direction and `cap.to_line()` spans the gap over `t` in [0, 1], so this
+    // rejects a gap which lies behind the camber end or off to one side of it.
+    if t0 <= 0.0 || !(0.0..=1.0).contains(&t1) {
+        return Err("The end of the camber line does not project onto the open gap".into());
+    }
+    Ok(ray.at(t0))
+}
+
 fn refine_from_edge_circle(
     working: &mut EdgeWork,
     input: &SectionInput,
@@ -807,8 +908,58 @@ mod tests {
 
     #[test]
     fn open_edge() -> Result<()> {
+        // A constant thickness slab with a sharp apex on the left and an open gap on the right,
+        // between the first point (3, -1) and the last point (3, 1). The camber line is y = 0 and
+        // every inscribed circle has a radius of 1.
+        #[rustfmt::skip]
+        let curve = curve2!((3.0, -1.0), (0.0, -1.0), (-1.0, 0.0), (0.0, 1.0), (3.0, 1.0))?;
+        #[rustfmt::skip]
+        let circles = inscribed_vec!((1.0, 0.0, 1.0, 1.0, -1.0, 1.0, 1.0), (1.5, 0.0, 1.0, 1.5, -1.0, 1.5, 1.0));
 
-        todo!()
+        let input = SectionInput::new(&curve, 1e-3);
+        let result = fit_open_edge(&input, circles, false)?;
+
+        assert!(matches!(result.edge.geometry, AfEdgeGeometry::Open));
+
+        // The section is symmetric about y = 0, so the camber line meets the gap chord at its
+        // midpoint. The circle centers are only located to `resolve_tol`, which bounds how
+        // precisely the end of the camber line can be aimed.
+        assert_relative_eq!(
+            result.edge.point,
+            Point2::new(3.0, 0.0),
+            epsilon = input.resolve_tol
+        );
+
+        // The camber line should have been advanced into the gap
+        assert!(
+            result.circles.len() > 2,
+            "Expected the inscribed circle stack to grow, got {} circles",
+            result.circles.len()
+        );
+
+        // Every appended circle must keep the p0/p1 ordering of the seed circles
+        for c in result.circles.iter() {
+            assert!(
+                c.p0.y < c.p1.y,
+                "Inscribed circle contact points are out of order: {:?} then {:?}",
+                c.p0,
+                c.p1
+            );
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn open_edge_rejects_closed_section() -> Result<()> {
+        #[rustfmt::skip]
+        let curve = curve2!(tol: 1e-6, closed: true; (3.0, -1.0), (0.0, -1.0), (-1.0, 0.0), (0.0, 1.0), (3.0, 1.0))?;
+        #[rustfmt::skip]
+        let circles = inscribed_vec!((1.0, 0.0, 1.0, 1.0, -1.0, 1.0, 1.0), (1.5, 0.0, 1.0, 1.5, -1.0, 1.5, 1.0));
+
+        let input = SectionInput::new(&curve, 1e-3);
+        assert!(fit_open_edge(&input, circles, false).is_err());
+        Ok(())
     }
 
     #[test]

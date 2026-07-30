@@ -93,7 +93,9 @@ pub enum AfEdgeSearch {
     /// Try every fittable variant and return the one with the lowest average residual.
     Auto,
 
-    /// Treat the edge as open and skip edge fitting. (Not yet implemented.)
+    /// Treat the edge as open, meaning the section perimeter does not close at this end. No edge
+    /// geometry is fit; instead the camber line is advanced into the gap and the edge point is
+    /// projected onto a chord spanning the two open lips of the section.
     Open,
 
     /// Fit a sharp apex edge: a single point where the two surfaces meet.

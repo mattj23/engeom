@@ -5,7 +5,7 @@
 
 use crate::airfoil2::camber::extract_inscribed_circles;
 use crate::airfoil2::edges::{
-    AfEdgeFit, fit_blended_round_edge, fit_full_round_edge, fit_rounded_square_edge,
+    AfEdgeFit, fit_blended_round_edge, fit_full_round_edge, fit_open_edge, fit_rounded_square_edge,
     fit_sharp_edge, fit_spline_max_k, fit_square_edge,
 };
 use crate::airfoil2::inscribed::Inscribed;
@@ -133,7 +133,7 @@ fn run_edge_fit(
 ) -> Result<(Vec<Inscribed>, AfEdge)> {
     let result = match search {
         AfEdgeSearch::Auto => fit_auto_edge(input, circles, at_front),
-        AfEdgeSearch::Open => todo!(),
+        AfEdgeSearch::Open => fit_open_edge(input, circles, at_front),
         AfEdgeSearch::Sharp => fit_sharp_edge(input, circles, at_front),
         AfEdgeSearch::Square => fit_square_edge(input, circles, at_front),
         AfEdgeSearch::RoundedSquare => fit_rounded_square_edge(input, circles, at_front),
