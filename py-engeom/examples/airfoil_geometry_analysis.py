@@ -40,7 +40,7 @@ def main():
         helper.plot_circle(c.c, color="gray", alpha=0.4, linewidth=0.5)
 
     # Let's plot the tmax circle with a different color
-    helper.plot_circle(geom.tmax_circle().c, color="red")
+    helper.plot_circle(geom.max_thickness_circle().c, color="red")
 
     # Now we'll draw the upper, lower, and camber curves. Upper will be red and lower blue.
     helper.plot_curve(geom.upper, color="lightsalmon", linewidth=3.0, label="upper")

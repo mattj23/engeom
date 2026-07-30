@@ -40,15 +40,15 @@ pub fn thickness(geom: &AfGeometry, method: AfPos, value: f64) -> Option<Distanc
 ///
 /// The returned measurement runs between the two contact points of that circle, which are points
 /// measured on the section itself rather than constructed on the circle. The value therefore agrees
-/// with `geom.tmax_circle().radius() * 2.0` only to within the `resolve_tol` of the analysis, since
-/// the contact points come from a binary search resolved to that tolerance while the radius is the
-/// average of the two search bounds.
+/// with `geom.max_thickness_circle().radius() * 2.0` only to within the `resolve_tol` of the
+/// analysis, since the contact points come from a binary search resolved to that tolerance while
+/// the radius is the average of the two search bounds.
 ///
 /// # This is not the maximum of [`thickness`]
 ///
 /// Sweeping [`thickness`] with [`AfPos::OnCamber`] measures the chord cast orthogonal to the camber
-/// line, which is not required to fit inside the section. On a cambered airfoil its maximum lands at
-/// a different station and is larger: on the `airfoil-0` test section it exceeds the inscribed
+/// line, which is not required to fit inside the section. On a cambered airfoil its maximum lands
+/// at a different station and is larger: on the `airfoil-0` test section it exceeds the inscribed
 /// diameter by roughly 0.8%. The two are equivalent only when the camber is straight or lightly
 /// curved. This function reports the inscribed circle, which is the conventional definition of
 /// maximum airfoil thickness, not the orthogonal-chord maximum.
@@ -60,7 +60,7 @@ pub fn thickness(geom: &AfGeometry, method: AfPos, value: f64) -> Option<Distanc
 /// returns: `Distance2` going from the lower surface contact point to the upper surface contact
 /// point. This is infallible because an [`AfGeometry`] always holds at least one inscribed circle.
 pub fn max_thickness(geom: &AfGeometry) -> Distance2 {
-    let c = geom.tmax_circle();
+    let c = geom.max_thickness_circle();
     Distance2::new(c.p0, c.p1, None)
 }
 
@@ -199,7 +199,7 @@ mod tests {
     #[test]
     fn thickness_works_for_every_position_method() -> Result<()> {
         let geom = analyzed()?;
-        let tmax = geom.tmax_circle().radius() * 2.0;
+        let tmax = geom.max_thickness_circle().radius() * 2.0;
 
         // Each method is given a value that is meaningful for it. `EdgeOffset` steps along the
         // camber tangent at the edge rather than along the camber itself, so on a cambered section
@@ -240,7 +240,7 @@ mod tests {
         // The contact points are located by a binary search resolved to `resolve_tol`, and the
         // circle radius is the average of the two search bounds, so the chord between the contact
         // points can differ from the diameter by about that much in either direction.
-        let diameter = geom.tmax_circle().radius() * 2.0;
+        let diameter = geom.max_thickness_circle().radius() * 2.0;
         assert_relative_eq!(d.value(), diameter, epsilon = TOL * 0.1);
 
         assert_relative_eq!(geom.lower.dist_to_point(&d.a), 0.0, epsilon = 1e-9);
@@ -253,8 +253,8 @@ mod tests {
     ///
     /// `max_thickness` reports the largest inscribed circle. Sweeping `thickness` along the camber
     /// instead reports the longest chord cast orthogonal to the camber. On a cambered section these
-    /// are *not* the same: the orthogonal chord is not constrained to fit inside the section, so its
-    /// maximum lands at a different station and comes out larger. On the test airfoil the sweep
+    /// are *not* the same: the orthogonal chord is not constrained to fit inside the section, so
+    /// its maximum lands at a different station and comes out larger. On the test airfoil the sweep
     /// exceeds the inscribed diameter by roughly 0.8%.
     ///
     /// The check that the sweep peak is genuinely not an inscribed diameter is what distinguishes
@@ -297,7 +297,7 @@ mod tests {
         );
 
         // The tmax circle, by contrast, really is inscribed
-        let c = geom.tmax_circle();
+        let c = geom.max_thickness_circle();
         assert_relative_eq!(
             section.dist_to_point(&mid_point(&c.p0, &c.p1)),
             c.radius(),

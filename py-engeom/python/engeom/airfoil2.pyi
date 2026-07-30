@@ -505,7 +505,7 @@ class AfGeometry:
         """
         ...
 
-    def tmax_circle(self) -> Inscribed:
+    def max_thickness_circle(self) -> Inscribed:
         """
         Return the inscribed circle with the largest radius. This corresponds to the maximum
         thickness location along the camber line.
