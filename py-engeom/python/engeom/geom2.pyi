@@ -509,6 +509,29 @@ class Iso2:
         ...
 
     @staticmethod
+    def from_translation(x: float, y: float) -> Iso2:
+        """
+        Create an isometry representing a translation by the specified x and y components, with no rotation.
+        :param x: the x component of the translation.
+        :param y: the y component of the translation.
+        :return: an isometry containing only a translation component.
+        """
+        ...
+
+    @staticmethod
+    def from_rotation(angle: float) -> Iso2:
+        """
+        Create an isometry representing a rotation around the origin by the specified angle in radians, with no
+        translation. To rotate around a different point, use `from_rotation_about`.
+
+        Positive angles rotate counter-clockwise.
+
+        :param angle: the angle to rotate by in radians.
+        :return: an isometry containing only a rotation component.
+        """
+        ...
+
+    @staticmethod
     def from_array(matrix: NDArray[float]) -> Iso2:
         """
         Try to create an isometry from a 3x3 homogeneous transformation matrix. Raises a `ValueError` if the matrix
@@ -567,6 +590,18 @@ class Iso2:
         y-axis directions are reversed together. A 2D isometry cannot represent a reflection (determinant -1), only
         proper rotations, and a 180 degree turn about the implicit out-of-plane axis is the only one that flips both
         in-plane axes at once.
+        """
+        ...
+
+    def translation(self) -> Iso2:
+        """
+        Return the translation component of the isometry as a separate isometry.
+        """
+        ...
+
+    def rotation(self) -> Iso2:
+        """
+        Return the rotation component of the isometry as a separate isometry.
         """
         ...
 

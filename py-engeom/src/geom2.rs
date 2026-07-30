@@ -11,6 +11,7 @@ use numpy::ndarray::{Array1, Array2};
 use numpy::{
     IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods,
 };
+use parry2d_f64::na::{Translation2, UnitComplex};
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::PyAnyMethods;
 use pyo3::types::PyIterator;
@@ -2207,6 +2208,20 @@ impl Iso2 {
     }
 
     #[staticmethod]
+    fn from_translation(x: f64, y: f64) -> Self {
+        Self {
+            inner: engeom::Iso2::from_translation(x, y),
+        }
+    }
+
+    #[staticmethod]
+    fn from_rotation(angle: f64) -> Self {
+        Self {
+            inner: engeom::Iso2::from_rotation(angle),
+        }
+    }
+
+    #[staticmethod]
     fn from_array(matrix: PyReadonlyArray2<'_, f64>) -> PyResult<Self> {
         if matrix.shape().len() != 2 || matrix.shape()[0] != 3 || matrix.shape()[1] != 3 {
             return Err(PyValueError::new_err("Expected 3x3 matrix"));
@@ -2251,6 +2266,18 @@ impl Iso2 {
     fn flipped(&self) -> Self {
         Self {
             inner: self.inner.flipped(),
+        }
+    }
+
+    fn translation(&self) -> Self {
+        Self {
+            inner: engeom::Iso2::from_parts(self.inner.translation, UnitComplex::identity()),
+        }
+    }
+
+    fn rotation(&self) -> Self {
+        Self {
+            inner: engeom::Iso2::from_parts(Translation2::identity(), self.inner.rotation),
         }
     }
 

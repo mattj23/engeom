@@ -153,6 +153,31 @@ def test_iso2_matmul_iso2():
     assert isinstance(result, Iso2)
 
 
+def test_iso2_from_translation():
+    iso = Iso2.from_translation(1.0, 2.0)
+    assert iso.origin.x == pytest.approx(1.0)
+    assert iso.origin.y == pytest.approx(2.0)
+    assert iso == Iso2(1.0, 2.0, 0.0)
+
+
+def test_iso2_from_rotation():
+    iso = Iso2.from_rotation(math.pi / 2)
+    rotated = iso @ Point2(1, 0)
+    assert rotated.x == pytest.approx(0.0)
+    assert rotated.y == pytest.approx(1.0)
+    assert iso == Iso2(0.0, 0.0, math.pi / 2)
+
+
+# The translation and rotation components should recompose into the original isometry, in the
+# same order the Iso2 constructor applies them (rotate first, then translate).
+def test_iso2_translation_rotation_decomposition():
+    iso = Iso2(3.0, -4.0, 0.7)
+
+    assert iso.translation() == Iso2.from_translation(3.0, -4.0)
+    assert iso.rotation() == Iso2.from_rotation(0.7)
+    assert iso.translation() @ iso.rotation() == iso
+
+
 def test_segment2_transformed_by():
     s = Segment2(0, 0, 1, 0)
     iso = Iso2(1, 2, 0)
