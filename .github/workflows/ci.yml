@@ -1,0 +1,134 @@
+name: CI
+
+# Runs on every branch push, not just main, so that a branch gets feedback before it becomes a PR
+# or a tag. Defining `branches` and no `tags` is what keeps tag pushes out of this workflow; those
+# are handled by release.yml.
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+  workflow_dispatch:
+
+# Normalizing to the branch name means a push event and a pull_request event for the same branch
+# share a group, so the duplicate run is cancelled instead of doubling the cost.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    name: Format and clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Check formatting
+        run: cargo fmt --all --check
+      - name: Clippy
+        # Clippy runs the full rustc lint set as well, so this also gates ordinary warnings such as
+        # unused imports.
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: Rust tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # A debug build runs the whole suite in well under two minutes, so there is no need to pay for
+      # a release build here. `private_tests` stays off: that data is not in the repository.
+      - name: Run tests
+        run: cargo test --workspace
+
+  msrv:
+    name: MSRV (1.88)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      # Verifies the `rust-version` promised in engeom/Cargo.toml. Only the engeom crate is checked,
+      # because it is the only one published to crates.io and so the only one making the promise.
+      # 1.88 is required by the stable let-chains used in the source; nalgebra only needs 1.87.
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Check with no features
+        run: cargo check -p engeom
+      - name: Check with the published feature set
+        run: cargo check -p engeom --features stl,ply
+
+  features:
+    name: Feature combinations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # engeom declares no default features, so every combination is opt-in and worth checking
+      # individually. A consumer enabling only one of these should not hit a build error.
+      - run: cargo check -p engeom
+      - run: cargo check -p engeom --features stl
+      - run: cargo check -p engeom --features ply
+      - run: cargo check -p engeom --features stl,ply
+      - name: Check the three_d viewer feature
+        # The viewer is a debugging aid, not part of the shipped surface, and it drags in a large
+        # graphics stack. Surface its bit-rot without letting it block a merge.
+        continue-on-error: true
+        run: cargo check -p engeom --features three_d
+
+  python:
+    name: Python bindings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install maturin and pytest
+        run: pip install maturin pytest
+      # Build an actual wheel and test against it, rather than `maturin develop`, so that a
+      # packaging fault (a missing .pyi stub, a bad python-source layout) fails here.
+      - name: Build wheel
+        run: maturin build --out dist -m py-engeom/Cargo.toml
+      - name: Install wheel
+        run: pip install dist/*.whl
+      # Run from the repository root. pytest puts the tests directory on sys.path but not
+      # py-engeom/python, so `import engeom` resolves to the installed wheel while
+      # test_stub_drift.py still finds the .pyi files next to the source package.
+      - name: Run tests
+        run: pytest py-engeom/python/tests/ -q
+
+  package:
+    name: crates.io packaging
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Catches broken or missing publish metadata now, on a branch, instead of at tag time. This is
+      # the class of failure that let the published versions drift.
+      - name: Dry-run the publish
+        run: cargo publish -p engeom --dry-run
+
+  book:
+    name: Book
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: peaceiris/actions-mdbook@v2
+        with:
+          mdbook-version: latest
+      # Proves the book still builds. Deploying it to Pages is a later step that can reuse this.
+      - name: Build the book
+        run: mdbook build book/
