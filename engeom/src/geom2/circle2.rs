@@ -4,7 +4,7 @@ use crate::common::{Intersection, PCoords, signed_compliment_2pi};
 use crate::geom2::aabb2::circle_aabb2;
 use crate::geom2::line2::intersect_lines;
 use crate::geom2::{
-    Aabb2, Iso2, LineOps2, Manifold1Pos2, Point2, Segment2, Vector2, rot90, signed_angle,
+    Aabb2, Iso2, Line2, LineOps2, Manifold1Pos2, Point2, Segment2, Vector2, rot90, signed_angle,
 };
 use crate::na::SVector;
 use crate::{AngleDir, AngleInterval, IntervalOps, SurfacePoint2, UnitVec2};
@@ -22,6 +22,18 @@ mod fitting;
 pub struct Circle2 {
     pub center: Point2,
     pub radius: f64,
+}
+
+/// Lists the two ways one circle can be tangent to another.
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum CircleTangency {
+    /// The circles touch from the outside, neither containing the other. Their centers are the
+    /// sum of the two radii apart.
+    Outer,
+
+    /// One circle lies within the other, touching it from the inside. Their centers are the
+    /// difference of the two radii apart.
+    Inner,
 }
 
 //=============================================================================================
@@ -223,6 +235,81 @@ impl Circle2 {
         let cx = (p.x.powi(2) + p.y.powi(2)) / (2.0 * p.x);
         let center = iso.inverse() * Point2::new(cx, 0.0);
         Circle2::new(center.x, center.y, cx.abs())
+    }
+
+    /// Compute the circles of a given radius which are tangent to both a line and another circle,
+    /// the construction which places a fillet of known size against a round.
+    ///
+    /// A center at `radius` from the line lies on one of the two lines offset to either side of
+    /// it, and a center tangent to `circle` lies on a circle concentric with it, so the tangent
+    /// circles are centered where those two loci meet. There are up to four, and it is normal for
+    /// there to be none: a radius too large to fit between the line and the circle has no
+    /// solution, as does one too small to reach across the gap between them.
+    ///
+    /// The results are ordered by the side of the line their centers fall on, taking the side the
+    /// line's normal points to first, and then by ascending parameter along the line. This makes
+    /// the ordering stable for a given input, but note that it says nothing about which result is
+    /// the one you want; the caller has to select on the geometry of its own problem.
+    ///
+    /// # Arguments
+    ///
+    /// * `line`: the line to be tangent to
+    /// * `circle`: the circle to be tangent to
+    /// * `radius`: the radius of the circles to construct, which must be positive
+    /// * `tangency`: whether to touch `circle` from the outside or from within
+    ///
+    /// returns: Vec<Circle2>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::{Circle2, Line2, Point2, Vector2};
+    /// use engeom::geom2::CircleTangency;
+    /// use approx::assert_relative_eq;
+    ///
+    /// // The x axis, and a circle of radius 1 whose center is 3 above it. There is exactly one
+    /// // circle of radius 1 tangent to both: the one nestled between them.
+    /// let line = Line2::new(Point2::new(0.0, 0.0), Vector2::new(1.0, 0.0));
+    /// let circle = Circle2::new(0.0, 3.0, 1.0);
+    ///
+    /// let found = Circle2::from_tangent_to_line_and_circle(
+    ///     &line, &circle, 1.0, CircleTangency::Outer,
+    /// );
+    ///
+    /// assert_eq!(found.len(), 1);
+    /// assert_relative_eq!(found[0].x(), 0.0, epsilon = 1e-10);
+    /// assert_relative_eq!(found[0].y(), 1.0, epsilon = 1e-10);
+    /// assert_relative_eq!(found[0].r(), 1.0, epsilon = 1e-10);
+    /// ```
+    pub fn from_tangent_to_line_and_circle(
+        line: &impl LineOps2,
+        circle: &Circle2,
+        radius: f64,
+        tangency: CircleTangency,
+    ) -> Vec<Circle2> {
+        if !(radius > 0.0) || !radius.is_finite() {
+            return Vec::new();
+        }
+
+        // The locus of centers at `radius` from the given circle, which is what the tangency mode
+        // actually selects between.
+        let locus = match tangency {
+            CircleTangency::Outer => Circle2::from_point(circle.center, circle.radius + radius),
+            CircleTangency::Inner => {
+                Circle2::from_point(circle.center, (circle.radius - radius).abs())
+            }
+        };
+
+        let base = Line2::new(line.origin(), line.dir());
+        let mut result = Vec::new();
+        for side in [radius, -radius] {
+            let offset = base.offset_by(side);
+            for t in intersection_line_circle(&offset, &locus) {
+                result.push(Circle2::from_point(offset.at(t), radius));
+            }
+        }
+
+        result
     }
 }
 
@@ -837,6 +924,130 @@ mod tests {
         let circle = Circle2::from_tangent_to_corner(&corner, &v0, &v1, 1.0).unwrap();
         assert_relative_eq!(circle.center, Point2::new(0.0, 0.0), epsilon = 1.0e-8);
         assert_relative_eq!(circle.r(), 1.0, epsilon = 1.0e-8);
+    }
+
+    /// Checks that every result really is tangent to both the line and the circle, which is the
+    /// whole contract of `from_tangent_to_line_and_circle`.
+    fn check_tangency(
+        found: &[Circle2],
+        line: &Line2,
+        circle: &Circle2,
+        radius: f64,
+        tangency: CircleTangency,
+    ) {
+        let expected_center_dist = match tangency {
+            CircleTangency::Outer => circle.r() + radius,
+            CircleTangency::Inner => (circle.r() - radius).abs(),
+        };
+
+        for c in found {
+            assert_relative_eq!(c.r(), radius, epsilon = 1.0e-9);
+            assert_relative_eq!(
+                line.signed_projection_dist(&c.center).abs(),
+                radius,
+                epsilon = 1.0e-9
+            );
+            assert_relative_eq!(
+                dist(&c.center, &circle.center),
+                expected_center_dist,
+                epsilon = 1.0e-9
+            );
+        }
+    }
+
+    #[test]
+    fn tangent_to_line_and_circle_outer() {
+        // The x axis and a circle of radius 1 centered 2 above it. Two circles of radius 1 fit
+        // tangent to both, one either side of the circle.
+        let line = Line2::new(Point2::new(0.0, 0.0), Vector2::new(1.0, 0.0));
+        let circle = Circle2::new(0.0, 2.0, 1.0);
+
+        let found =
+            Circle2::from_tangent_to_line_and_circle(&line, &circle, 1.0, CircleTangency::Outer);
+
+        assert_eq!(found.len(), 2);
+        check_tangency(&found, &line, &circle, 1.0, CircleTangency::Outer);
+
+        // Ordered by ascending parameter along the line, which here is ascending x
+        assert!(found[0].x() < found[1].x());
+        assert_relative_eq!(found[0].x(), -3.0_f64.sqrt(), epsilon = 1.0e-9);
+        assert_relative_eq!(found[1].x(), 3.0_f64.sqrt(), epsilon = 1.0e-9);
+    }
+
+    #[test]
+    fn tangent_to_line_and_circle_inner() {
+        // A large circle straddling the x axis; a radius 1 circle tangent to the axis and touching
+        // the large one from within.
+        let line = Line2::new(Point2::new(0.0, 0.0), Vector2::new(1.0, 0.0));
+        let circle = Circle2::new(0.0, 0.0, 5.0);
+
+        let found =
+            Circle2::from_tangent_to_line_and_circle(&line, &circle, 1.0, CircleTangency::Inner);
+
+        // Two offset lines, each cutting the radius-4 locus twice
+        assert_eq!(found.len(), 4);
+        check_tangency(&found, &line, &circle, 1.0, CircleTangency::Inner);
+    }
+
+    #[test]
+    fn tangent_to_line_and_circle_ordering_is_stable() {
+        let line = Line2::new(Point2::new(0.0, 0.0), Vector2::new(1.0, 0.0));
+        let circle = Circle2::new(0.0, 2.0, 1.0);
+
+        let a =
+            Circle2::from_tangent_to_line_and_circle(&line, &circle, 1.0, CircleTangency::Outer);
+        let b =
+            Circle2::from_tangent_to_line_and_circle(&line, &circle, 1.0, CircleTangency::Outer);
+
+        assert_eq!(a.len(), b.len());
+        for (x, y) in a.iter().zip(b.iter()) {
+            assert_relative_eq!(x.center, y.center, epsilon = 1.0e-12);
+        }
+    }
+
+    #[test]
+    fn tangent_to_line_and_circle_impossible_cases() {
+        let line = Line2::new(Point2::new(0.0, 0.0), Vector2::new(1.0, 0.0));
+
+        // A circle far from the line, with a radius too small to bridge the gap
+        let far = Circle2::new(0.0, 50.0, 1.0);
+        assert!(
+            Circle2::from_tangent_to_line_and_circle(&line, &far, 1.0, CircleTangency::Outer)
+                .is_empty()
+        );
+
+        // A non-positive radius is not a circle
+        let circle = Circle2::new(0.0, 2.0, 1.0);
+        assert!(
+            Circle2::from_tangent_to_line_and_circle(&line, &circle, 0.0, CircleTangency::Outer)
+                .is_empty()
+        );
+        assert!(
+            Circle2::from_tangent_to_line_and_circle(&line, &circle, -1.0, CircleTangency::Outer)
+                .is_empty()
+        );
+    }
+
+    /// The construction should hold up on arbitrary geometry, not just axis-aligned cases.
+    #[test]
+    fn stress_tangent_to_line_and_circle() {
+        let mut rng = RandomGeometry2::new();
+
+        let mut found_any = 0;
+        for _ in 0..1000 {
+            let circle = rng.circle2(5.0, 0.5, 2.0);
+            let line = Line2::new(rng.point(5.0), rng.unit_vec().into_inner());
+
+            for tangency in [CircleTangency::Outer, CircleTangency::Inner] {
+                let radius = 1.0;
+                let found =
+                    Circle2::from_tangent_to_line_and_circle(&line, &circle, radius, tangency);
+                found_any += found.len();
+                check_tangency(&found, &line, &circle, radius, tangency);
+            }
+        }
+
+        assert!(found_any > 0, "the stress test never produced a solution");
     }
 
     #[test]
