@@ -2,6 +2,8 @@
 name = "utilities"
 version.workspace = true
 edition.workspace = true
+# A repository-local CLI, not something to claim a crates.io name for.
+publish = false
 
 [dependencies]
 flate2 = { workspace = true }

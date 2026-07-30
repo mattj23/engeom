@@ -10,8 +10,6 @@ Python bindings for this library are on Pypi, and can be installed using standar
 pip install engeom
 ```
 
-Python documentation can be found at https://mattj23.github.io/py-engeom/
-
 ## Documentation
 
 The documentation for this project is built with [mdBook](https://rust-lang.github.io/mdBook/index.html).

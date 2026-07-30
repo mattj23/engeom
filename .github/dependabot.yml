@@ -1,0 +1,13 @@
+version: 2
+updates:
+  # Keeps the workflow action versions from going stale the way the original CI.yml did.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns:
+          - "*"

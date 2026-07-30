@@ -4,16 +4,29 @@ build-backend = "maturin"
 
 [project]
 name = "engeom"
+description = "Geometry tools for engineering metrology applications, in 2D and 3D."
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
 requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Manufacturing",
 ]
 dynamic = ["version"]
 dependencies = [
     "numpy"
 ]
+
+[project.urls]
+Homepage = "https://github.com/mattj23/engeom"
+Repository = "https://github.com/mattj23/engeom"
+Issues = "https://github.com/mattj23/engeom/issues"
 [project.optional-dependencies]
 tests = [
     "pytest",
@@ -21,6 +34,11 @@ tests = [
 [tool.maturin]
 python-source = "python"
 features = ["pyo3/extension-module"]
+
+# Keeps a future `maturin generate-ci github` regeneration consistent with the hand-maintained
+# release workflow, which publishes to PyPI over OIDC rather than with an API token.
+[tool.maturin.generate-ci.github]
+trusted-publishing = true
 
 [tool.black]
 line-length = 100
