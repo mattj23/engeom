@@ -26,7 +26,7 @@ class ViewPort3:
         self.view = view
         self.helper = helper
 
-    def mesh_edge_point_in_dir(self, view_x: float, view_y: float, mesh: Mesh3) -> Point3:
+    def find_mesh_edge_point(self, view_x: float, view_y: float, mesh: Mesh3) -> Point3:
         """ A quick and rough method for finding a point on the visual perimeter of a mesh in a 2d viewport
         direction to label something without the arrow overlapping the actual mesh. There's probably a better way
         to do this."""
@@ -34,7 +34,7 @@ class ViewPort3:
                 Vector3(view_x, view_y, 0) * 100 * mesh.aabb.extent.norm())
         return mesh.point_closest_to(*sample_point)
 
-    def line(self, line: Line3, t: float = 1.0, t0: float | None = None, color: str = "black",
+    def draw_line(self, line: Line3, t: float = 1.0, t0: float | None = None, color: str = "black",
              linewidth: float = 1.0, linestyle: str = "-", alpha: float = 1.0, **kwargs):
         """
         Draws a line in the 2d view using the provided view. If `t0` is `None`, the line will be drawn from `-t` to
@@ -54,7 +54,7 @@ class ViewPort3:
         self.helper.ax.plot([p0.x, p1.x], [p0.y, p1.y], color=color, linewidth=linewidth, linestyle=linestyle,
                             alpha=alpha, **kwargs)
 
-    def dimension_arrow(
+    def draw_dimension_arrow(
             self,
             point0: PointLike,
             point1: PointLike,
@@ -84,7 +84,7 @@ class ViewPort3:
             self.helper.draw_arrow(self.view @ p1, self.view @ p1_end, color=color, linewidth=linewidth * 0.75,
                               arrow="-", linestyle="dotted")
 
-    def labeled_point(
+    def draw_labeled_point(
             self,
             point: PointLike,
             label: str,
@@ -146,7 +146,7 @@ class ViewPort3:
         if marker_size > 0.0:
             self.helper.draw_point(self.view @ p, marker=marker, markersize=marker_size, color=color)
 
-    def coordinate_system(
+    def draw_coordinate_system(
             self,
             cs: Iso3,
             length: float,
@@ -181,7 +181,7 @@ class ViewPort3:
                 text_pos = self.view @ cs @ (Point3.origin() + vector * length * (1 + label_offset))
                 self.helper.draw_text(f"${text}$", text_pos, color=color, fontsize=fontsize, ha="center", va="center")
 
-    def mesh_outline(
+    def draw_mesh_outline(
             self, mesh:
             Mesh3,
             visible_kwargs: dict | None = None,

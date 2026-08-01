@@ -530,86 +530,86 @@ def new_viewport() -> ViewPort3:
     return new_helper().viewport(Iso3.identity())
 
 
-def test_viewport_line_draws():
+def test_viewport_draw_line_adds_an_artist():
     view = new_viewport()
     before = artist_count(view.helper.ax)
-    view.line(Line3(0.0, 0.0, 0.0, 1.0, 1.0, 0.0), t=2.0)
+    view.draw_line(Line3(0.0, 0.0, 0.0, 1.0, 1.0, 0.0), t=2.0)
     assert artist_count(view.helper.ax) > before
 
 
-def test_viewport_line_accepts_an_explicit_start():
+def test_viewport_draw_line_accepts_an_explicit_start():
     view = new_viewport()
     before = artist_count(view.helper.ax)
-    view.line(Line3(0.0, 0.0, 0.0, 1.0, 0.0, 0.0), t=2.0, t0=1.0)
+    view.draw_line(Line3(0.0, 0.0, 0.0, 1.0, 0.0, 0.0), t=2.0, t0=1.0)
     assert artist_count(view.helper.ax) > before
 
 
-def test_viewport_coordinate_system_draws_the_visible_axes():
+def test_viewport_draw_coordinate_system_adds_the_visible_axes():
     view = new_viewport()
     before = artist_count(view.helper.ax)
-    view.coordinate_system(Iso3.identity(), 1.0)
+    view.draw_coordinate_system(Iso3.identity(), 1.0)
     # Looking down Z, the X and Y axes are visible and the Z axis is hidden; each visible axis
     # contributes an arrow and a label.
     assert artist_count(view.helper.ax) == before + 4
 
 
-def test_viewport_labeled_point_draws():
+def test_viewport_draw_labeled_point_adds_an_artist():
     view = new_viewport()
     before = artist_count(view.helper.ax)
-    view.labeled_point(Point3(0.0, 0.0, 0.0), "P")
+    view.draw_labeled_point(Point3(0.0, 0.0, 0.0), "P")
     assert artist_count(view.helper.ax) > before
 
 
-def test_viewport_labeled_point_can_draw_a_leader_arrow():
+def test_viewport_draw_labeled_point_can_add_a_leader_arrow():
     view = new_viewport()
     plain_before = artist_count(view.helper.ax)
-    view.labeled_point(Point3(0.0, 0.0, 0.0), "P")
+    view.draw_labeled_point(Point3(0.0, 0.0, 0.0), "P")
     plain = artist_count(view.helper.ax) - plain_before
 
     view = new_viewport()
     arrow_before = artist_count(view.helper.ax)
-    view.labeled_point(Point3(0.0, 0.0, 0.0), "P", offset_2d=(1.0, 1.0), arrow=True)
+    view.draw_labeled_point(Point3(0.0, 0.0, 0.0), "P", offset_2d=(1.0, 1.0), arrow=True)
     assert artist_count(view.helper.ax) - arrow_before == plain + 1
 
 
-def test_viewport_dimension_arrow_draws():
+def test_viewport_draw_dimension_arrow_adds_an_artist():
     view = new_viewport()
     before = artist_count(view.helper.ax)
-    view.dimension_arrow(Point3(0.0, 0.0, 0.0), Point3(2.0, 0.0, 0.0), "2.0")
+    view.draw_dimension_arrow(Point3(0.0, 0.0, 0.0), Point3(2.0, 0.0, 0.0), "2.0")
     assert artist_count(view.helper.ax) > before
 
 
-def test_viewport_dimension_arrow_adds_leaders_when_shifted():
+def test_viewport_draw_dimension_arrow_adds_leaders_when_shifted():
     view = new_viewport()
     plain_before = artist_count(view.helper.ax)
-    view.dimension_arrow(Point3(0.0, 0.0, 0.0), Point3(2.0, 0.0, 0.0), "2.0")
+    view.draw_dimension_arrow(Point3(0.0, 0.0, 0.0), Point3(2.0, 0.0, 0.0), "2.0")
     plain = artist_count(view.helper.ax) - plain_before
 
     view = new_viewport()
     shifted_before = artist_count(view.helper.ax)
-    view.dimension_arrow(Point3(0.0, 0.0, 0.0), Point3(2.0, 0.0, 0.0), "2.0", leader_shift=(0.0, 1.0, 0.0))
+    view.draw_dimension_arrow(Point3(0.0, 0.0, 0.0), Point3(2.0, 0.0, 0.0), "2.0", leader_shift=(0.0, 1.0, 0.0))
     assert artist_count(view.helper.ax) - shifted_before == plain + 2
 
 
-def test_viewport_mesh_outline_draws():
+def test_viewport_draw_mesh_outline_adds_an_artist():
     view = new_viewport()
     before = artist_count(view.helper.ax)
-    view.mesh_outline(Mesh3.create_box(1.0, 1.0, 1.0))
+    view.draw_mesh_outline(Mesh3.create_box(1.0, 1.0, 1.0))
     assert artist_count(view.helper.ax) > before
 
 
-def test_viewport_mesh_outline_can_suppress_hidden_edges():
+def test_viewport_draw_mesh_outline_can_suppress_hidden_edges():
     view = new_viewport()
     before = artist_count(view.helper.ax)
-    view.mesh_outline(Mesh3.create_box(1.0, 1.0, 1.0), no_hidden=True)
+    view.draw_mesh_outline(Mesh3.create_box(1.0, 1.0, 1.0), no_hidden=True)
     # Only the visible trace is plotted, rather than a visible and a hidden trace.
     assert artist_count(view.helper.ax) == before + 1
 
 
-def test_viewport_mesh_edge_point_in_dir_returns_a_point_on_the_mesh():
+def test_viewport_find_mesh_edge_point_returns_a_point_on_the_mesh():
     view = new_viewport()
     mesh = Mesh3.create_box(2.0, 2.0, 2.0)
-    found = view.mesh_edge_point_in_dir(1.0, 0.0, mesh)
+    found = view.find_mesh_edge_point(1.0, 0.0, mesh)
     assert isinstance(found, Point3)
     # The box spans -1 to 1 on each axis, and the query asks for the +X extreme.
     assert found.x == pytest.approx(1.0, abs=1e-9)
@@ -628,8 +628,8 @@ EXERCISED_HELPER_MEMBERS = {
 }
 
 EXERCISED_VIEWPORT_MEMBERS = {
-    "coordinate_system", "dimension_arrow", "labeled_point", "line", "mesh_edge_point_in_dir",
-    "mesh_outline",
+    "draw_coordinate_system", "draw_dimension_arrow", "draw_labeled_point", "draw_line",
+    "draw_mesh_outline", "find_mesh_edge_point",
 }
 
 EXERCISED_TRACE_MEMBERS = {
