@@ -255,7 +255,7 @@ class PlotterHelper:
         :raises ValueError: if `label_place` is not one of the valid placement tokens.
         """
         label_place = check_label_place(label_place)
-        label_offset = label_offset or max(abs(distance.value), 1.0) * 3
+        label_offset = label_offset if label_offset is not None else max(abs(distance.value), 1.0) * 3
 
         # The offset_dir is the direction from `a` to `b` projected so that it's parallel to the measurement
         # direction.

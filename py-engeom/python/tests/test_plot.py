@@ -385,6 +385,48 @@ def test_draw_circle_accepts_a_raw_xyr_iterable():
     assert len(helper.ax.patches) == 1
 
 
+@pytest.mark.parametrize("bad", [(0.0, 0.0), (0.0, 0.0, 1.0, 9.0), ()])
+def test_draw_circle_rejects_an_iterable_that_is_not_three_values(bad):
+    """ Regression: a 4-value input silently dropped the extras, and a 2-value one raised a bare
+    unpacking error that never mentioned circles. """
+    helper = new_helper()
+    with pytest.raises(ValueError, match="x, y, r"):
+        helper.draw_circle(bad)
+
+
+# ---------------------------------------------------------------------------
+# AxesHelper: zero-valued arguments must not be mistaken for "not supplied"
+# ---------------------------------------------------------------------------
+
+def test_draw_boundary_rejects_a_non_positive_tolerance():
+    """ Regression: `tol or default` silently replaced an explicit 0.0 with the computed default. """
+    helper = new_helper()
+    with pytest.raises(ValueError, match="positive"):
+        helper.draw_boundary(sample_boundary(), tol=0.0)
+
+
+def test_draw_distance_honors_a_zero_label_offset():
+    """
+    Regression: `label_offset or default` treated an explicit 0.0 as "not supplied", so a label
+    pinned to the leader end silently jumped to the default standoff.
+    """
+    helper = new_helper()
+    helper.draw_distance(Distance2(Point2(0.0, 0.0), Point2(3.0, 0.0)), label_offset=0.0)
+    zero_offset = {t.get_text(): t.xy for t in helper.ax.texts}["3.000"]
+
+    helper = new_helper()
+    helper.draw_distance(Distance2(Point2(0.0, 0.0), Point2(3.0, 0.0)))
+    defaulted = {t.get_text(): t.xy for t in helper.ax.texts}["3.000"]
+
+    assert zero_offset != defaulted
+
+
+def test_draw_boundary_normals_omits_color_when_none_so_the_default_applies():
+    helper = new_helper()
+    helper.draw_boundary_normals(sample_boundary(), 3, 0.1, color=None)
+    assert artist_count(helper.ax) == 3
+
+
 def test_draw_circle_honors_the_fill_flag():
     helper = new_helper()
     helper.draw_circle(Circle2(0.0, 0.0, 1.0), fill=True)
@@ -576,6 +618,33 @@ def test_viewport_draw_line_accepts_an_explicit_start():
     before = artist_count(view.helper.ax)
     view.draw_line(Line3(0.0, 0.0, 0.0, 1.0, 0.0, 0.0), t=2.0, t0=1.0)
     assert artist_count(view.helper.ax) > before
+
+
+def test_viewport_draw_line_honors_a_zero_start():
+    """
+    Regression: `t0 or -t` treated an explicit t0=0.0 as "not supplied", so a ray asked to start at
+    the line origin was silently drawn from -t instead, doubling its length in the wrong direction.
+    """
+    line = Line3(0.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+
+    view = new_viewport()
+    view.draw_line(line, t=2.0, t0=0.0)
+    from_origin = view.helper.ax.lines[-1].get_xdata()
+
+    view = new_viewport()
+    view.draw_line(line, t=2.0)
+    symmetric = view.helper.ax.lines[-1].get_xdata()
+
+    assert tuple(from_origin) == pytest.approx((0.0, 2.0), abs=TOL)
+    assert tuple(symmetric) == pytest.approx((-2.0, 2.0), abs=TOL)
+
+
+def test_viewport_draw_mesh_outline_honors_an_empty_kwargs_dict():
+    """ Regression: `visible_kwargs or default` replaced an explicit empty dict with the default. """
+    view = new_viewport()
+    view.draw_mesh_outline(Mesh3.create_box(1.0, 1.0, 1.0), visible_kwargs={}, no_hidden=True)
+    # An empty dict means "use Matplotlib's own defaults", which are not the helper's black.
+    assert view.helper.ax.lines[-1].get_color() != "black"
 
 
 def test_viewport_draw_coordinate_system_adds_the_visible_axes():

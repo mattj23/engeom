@@ -7,7 +7,8 @@ from __future__ import annotations
 from typing import Iterable
 
 import numpy
-from matplotlib.pyplot import Axes, Circle
+from matplotlib.axes import Axes
+from matplotlib.patches import Arc, Circle
 
 from engeom.geom2 import Curve2, Circle2, Aabb2, Point2, Vector2, SurfacePoint2, Arc2, Segment2, Boundary2, \
     CubicSpline2
@@ -109,8 +110,6 @@ class AxesHelper:
         :param arc:
         :return:
         """
-        from matplotlib.patches import Arc
-
         # Arcs are drawn by matplotlib in a counter-clockwise direction, so if the sweep is negative we
         # need to swap the start and end angles.
         if arc.angle < 0.0:
@@ -136,17 +135,20 @@ class AxesHelper:
         self.ax.plot([seg.a.x, seg.b.x], [seg.a.y, seg.b.y], **kwargs)
 
     def draw_boundary(self, boundary: Boundary2, tol: float | None = None, **kwargs):
-        tol = tol or boundary.aabb.extent.norm() / 1000
+        if tol is None:
+            tol = boundary.aabb.extent.norm() / 1000
+        elif tol <= 0.0:
+            raise ValueError(f"tol must be positive, got {tol}")
         points = boundary.to_points(tol)
         self.ax.plot(points[:, 0], points[:, 1], **kwargs)
 
     def draw_boundary_normals(self, boundary: Boundary2, n: int, length: float, color: str | None = None, linewidth=1.0):
+        kwargs = {"linewidth": linewidth}
+        if color is not None:
+            kwargs["color"] = color
+
         for t in numpy.linspace(0, boundary.length(), n):
             m = boundary.at_length(t)
-            kwargs = {"linewidth": linewidth}
-            if color:
-                kwargs["color"] = color
-
             self.draw_arrow(m.point, m.surface_point.at_distance(length), **kwargs)
 
     def draw_circle(self, *circles: Circle2 | Iterable[float], fill=False, **kwargs):
@@ -155,13 +157,16 @@ class AxesHelper:
         :param circle: a Circle2 object
         :param kwargs: keyword arguments to pass to the plot function
         """
-        from matplotlib.pyplot import Circle
-
         for cdata in circles:
             if isinstance(cdata, Circle2):
                 c = Circle((cdata.center.x, cdata.center.y), cdata.r, fill=fill, **kwargs)
             else:
-                x, y, r, *_ = cdata
+                values = tuple(cdata)
+                if len(values) != 3:
+                    raise ValueError(
+                        f"expected a Circle2 or an (x, y, r) iterable, got {len(values)} values"
+                    )
+                x, y, r = values
                 c = Circle((x, y), r, fill=fill, **kwargs)
             self.ax.add_patch(c)
 
@@ -235,17 +240,17 @@ class AxesHelper:
         leader_b = center.projection(distance.b)
 
         if label_place == "inside":
-            label_offset = label_offset or 0.0
+            label_offset = label_offset if label_offset is not None else 0.0
             label_coords = center.at_distance(label_offset)
             self.draw_arrow(label_coords, leader_a)
             self.draw_arrow(label_coords, leader_b)
         elif label_place == "outside":
-            label_offset = label_offset or pad_scale * 3
+            label_offset = label_offset if label_offset is not None else pad_scale * 3
             label_coords = leader_b + offset_dir * label_offset
             self.draw_arrow(leader_a - offset_dir * pad_scale, leader_a)
             self.draw_arrow(label_coords, leader_b)
         else:  # "outside_rev", the only remaining token after validation
-            label_offset = label_offset or pad_scale * 3
+            label_offset = label_offset if label_offset is not None else pad_scale * 3
             label_coords = leader_a - offset_dir * label_offset
             self.draw_arrow(leader_b + offset_dir * pad_scale, leader_b)
             self.draw_arrow(label_coords, leader_a)
@@ -294,7 +299,7 @@ class AxesHelper:
         x, y = zip(*[to_tuple2(p) for p in points])
         return self.ax.plot(x, y, marker, markersize=markersize, **kwargs)
 
-    def draw_surface_point(self, *points: SurfacePoint2, arrow_len=1, marker="o", markersize="5", **kwargs):
+    def draw_surface_point(self, *points: SurfacePoint2, arrow_len=1, marker="o", markersize=5.0, **kwargs):
         x, y = zip(*[(p.point.x, p.point.y) for p in points])
         color = kwargs.get("color", "black")
         kwargs["color"] = color

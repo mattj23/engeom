@@ -49,7 +49,7 @@ class ViewPort3:
         :param kwargs: Additional keyword arguments to pass to the line plot function.
         """
         l = self.view @ line
-        p0 = l.at(t0 or -t)
+        p0 = l.at(t0 if t0 is not None else -t)
         p1 = l.at(t)
         self.helper.ax.plot([p0.x, p1.x], [p0.y, p1.y], color=color, linewidth=linewidth, linestyle=linestyle,
                             alpha=alpha, **kwargs)
@@ -205,10 +205,10 @@ class ViewPort3:
         visible = TraceBuilder()
         hidden = TraceBuilder()
 
-        visible_kwargs = visible_kwargs or {'color': 'black', 'linewidth': 1.0}
-        hidden_kwargs = hidden_kwargs or {'color': 'black', 'linewidth': 0.5, 'alpha': 0.125}
-        assert visible_kwargs is not None
-        assert hidden_kwargs is not None
+        if visible_kwargs is None:
+            visible_kwargs = {'color': 'black', 'linewidth': 1.0}
+        if hidden_kwargs is None:
+            hidden_kwargs = {'color': 'black', 'linewidth': 0.5, 'alpha': 0.125}
 
         points, edge_types = mesh.compute_visual_outline(self.view.inverse() @ Vector3.z_axis(), max_edge_len, corner_angle)
         p0s = self.view.transform_points(points[:, :3])
