@@ -157,16 +157,44 @@ class AxesHelper:
             lines.append(self.ax.plot(points[:, 0], points[:, 1], **kwargs)[0])
         return lines
 
-    def draw_boundary_normals(self, boundary: Boundary2, n: int, length: float, color: str | None = None,
-                              linewidth=1.0) -> list[Annotation]:
-        kwargs = {"linewidth": linewidth}
+    def draw_normals(self, *sources: Curve2 | Boundary2, count: int, length: float,
+                     color: str | None = None, linewidth: float = 1.0, **kwargs) -> list[Annotation]:
+        """
+        Draw surface normals sampled at even arc-length intervals along one or more curves or
+        boundaries, as arrows of a fixed length pointing outward from the geometry.
+
+        This is mainly a debugging aid for confirming that a winding direction matches your
+        intention, since the normal direction in 2D is derived from it.
+
+        `Curve2` and `Boundary2` are both accepted, because both are arc-length parameterized and
+        both report a surface point with a normal at a given length, which is all this needs.
+
+        :param sources: the curves or boundaries to draw normals along.
+        :param count: how many normals to draw along each source. Samples are evenly spaced by arc
+            length from one end to the other, so on a closed source the first and last coincide.
+        :param length: the length of each arrow, in data units.
+        :param color: the color of the arrows. If None, the arrow default is used.
+        :param linewidth: the width of the arrows.
+        :param kwargs: additional keyword arguments to pass to `draw_arrow`.
+        :return: one Annotation per normal drawn, across every source, in order.
+        :raises TypeError: if a source is neither a `Curve2` nor a `Boundary2`.
+        """
         if color is not None:
             kwargs["color"] = color
+        kwargs["linewidth"] = linewidth
 
-        return [
-            self.draw_arrow(m.point, m.surface_point.at_distance(length), **kwargs)
-            for m in (boundary.at_length(t) for t in numpy.linspace(0, boundary.length(), n))
-        ]
+        arrows = []
+        for source in sources:
+            if not isinstance(source, (Curve2, Boundary2)):
+                raise TypeError(
+                    f"expected a Curve2 or Boundary2, got {type(source).__name__}"
+                )
+            for t in numpy.linspace(0, source.length(), count):
+                station = source.at_length(t)
+                arrows.append(
+                    self.draw_arrow(station.point, station.surface_point.at_distance(length), **kwargs)
+                )
+        return arrows
 
     def draw_circle(self, *circles: Circle2 | Iterable[float], fill=False, **kwargs) -> list[Circle]:
         """

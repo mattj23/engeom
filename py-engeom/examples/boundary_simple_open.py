@@ -37,7 +37,7 @@ def main():
 
     # We'll additionally plot the boundary's normals. This is useful for debugging when trying to make sure that the
     # winding direction correctly matches your intention.
-    helper.draw_boundary_normals(boundary, 10, 0.1, color="red")
+    helper.draw_normals(boundary, count=10, length=0.1, color="red")
 
     # Finally, because the annotation arrows used to draw the normals don't automatically adjust the plot bounds,
     # we'll grab the `Aabb2` of the boundary, expand it by 0.5 in all directions, and then use it to set the plot

@@ -423,9 +423,9 @@ def test_draw_distance_honors_a_zero_label_offset():
     assert zero_offset != defaulted
 
 
-def test_draw_boundary_normals_omits_color_when_none_so_the_default_applies():
+def test_draw_normals_omits_color_when_none_so_the_default_applies():
     helper = new_helper()
-    helper.draw_boundary_normals(sample_boundary(), 3, 0.1, color=None)
+    helper.draw_normals(sample_boundary(), count=3, length=0.1, color=None)
     assert artist_count(helper.ax) == 3
 
 
@@ -469,11 +469,49 @@ def test_draw_boundary_accepts_an_explicit_tolerance():
     assert artist_count(helper.ax) > before
 
 
-def test_draw_boundary_normals_adds_one_arrow_per_sample():
+def test_draw_normals_adds_one_arrow_per_sample():
     helper = new_helper()
     before = artist_count(helper.ax)
-    helper.draw_boundary_normals(sample_boundary(), 5, 0.1, color="red")
+    helper.draw_normals(sample_boundary(), count=5, length=0.1, color="red")
     assert artist_count(helper.ax) == before + 5
+
+
+@pytest.mark.parametrize("source", [sample_curve(), sample_boundary()])
+def test_draw_normals_accepts_both_curves_and_boundaries(source):
+    """
+    `Curve2` and `Boundary2` are unrelated types, but both are arc-length parameterized and both
+    report a surface point with a normal, which is the entire contract this method needs.
+    """
+    helper = new_helper()
+    arrows = helper.draw_normals(source, count=4, length=0.1)
+    assert len(arrows) == 4
+
+
+def test_draw_normals_accepts_a_mix_of_sources_in_one_call():
+    helper = new_helper()
+    arrows = helper.draw_normals(sample_curve(), sample_boundary(), count=3, length=0.1)
+    assert len(arrows) == 6
+
+
+def test_draw_normals_points_along_the_surface_normal():
+    """ The arrow must run from the sampled point to that point offset along its own normal. """
+    helper = new_helper()
+    source = sample_boundary()
+    arrows = helper.draw_normals(source, count=3, length=0.5)
+
+    for arrow, t in zip(arrows, numpy.linspace(0, source.length(), 3)):
+        station = source.at_length(t)
+        expected_tail = (station.point.x, station.point.y)
+        expected_tip = tuple(station.surface_point.at_distance(0.5))
+        assert arrow.xyann == pytest.approx(expected_tail, abs=1e-9)
+        assert tuple(arrow.xy) == pytest.approx(expected_tip, abs=1e-9)
+
+
+@pytest.mark.parametrize("bad", ["not geometry", Point2(0.0, 0.0), Circle2(0.0, 0.0, 1.0)])
+def test_draw_normals_rejects_a_source_that_is_neither(bad):
+    helper = new_helper()
+    with pytest.raises(TypeError, match="Curve2 or Boundary2"):
+        helper.draw_normals(bad, count=3, length=0.1)
 
 
 def test_draw_spline_adds_an_artist():
@@ -785,7 +823,7 @@ COMPOSITE_CALLS = {
     "draw_distance": lambda h: h.draw_distance(Distance2(Point2(0.0, 0.0), Point2(3.0, 0.0))),
     "draw_labeled_arrow": lambda h: h.draw_labeled_arrow(Point2(0.0, 0.0), Point2(2.0, 0.0), "x"),
     "draw_surface_point": lambda h: h.draw_surface_point(SurfacePoint2(0.0, 0.0, 0.0, 1.0)),
-    "draw_boundary_normals": lambda h: h.draw_boundary_normals(sample_boundary(), 3, 0.1),
+    "draw_normals": lambda h: h.draw_normals(sample_boundary(), count=3, length=0.1),
 }
 
 
@@ -841,9 +879,10 @@ def test_viewport_composites_return_every_artist_they_added(call):
 # Every public method on the helper classes, each of which must be exercised above. Adding a method
 # without adding a test will fail these, in the spirit of test_stub_drift.py.
 EXERCISED_HELPER_MEMBERS = {
-    "draw_arc", "draw_arrow", "draw_boundary", "draw_boundary_normals", "draw_circle",
+    "draw_arc", "draw_arrow", "draw_boundary", "draw_circle",
     "draw_curve", "draw_distance", "draw_labeled_arrow", "draw_point", "draw_segment",
-    "draw_spline", "draw_surface_point", "draw_text", "fill_curve", "set_bounds", "viewport",
+    "draw_normals", "draw_spline", "draw_surface_point", "draw_text", "fill_curve", "set_bounds",
+    "viewport",
 }
 
 EXERCISED_VIEWPORT_MEMBERS = {
