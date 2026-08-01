@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 from matplotlib.pyplot import Figure, Axes
 
 from engeom.geom2 import BoundaryData2, fit_boundary_to_points
-from engeom.plot import MatplotlibAxesHelper
+from engeom.plot.matplotlib import MatplotlibAxesHelper
 
 
 def build_slot(params: NDArray) -> BoundaryData2:

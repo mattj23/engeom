@@ -2,7 +2,7 @@ from pyvista import Plotter
 
 from _common import DATA_DIR
 from engeom.geom3 import Mesh3, Iso3, Plane3
-from engeom.plot import PyvistaPlotterHelper
+from engeom.plot.pyvista import PyvistaPlotterHelper
 
 
 def main():

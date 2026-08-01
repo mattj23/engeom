@@ -1,4 +1,9 @@
+"""
+Backend-neutral pieces shared by every plotting helper.
+"""
+
 from enum import Enum
+
 
 class LabelPlace(Enum):
     """
@@ -13,5 +18,3 @@ class LabelPlace(Enum):
 
     OutsideRev = 3
     """ The label is placed outside the two anchor points, on the side of the first point in the measurement. """
-
-

@@ -1,7 +1,7 @@
 from _common import DATA_DIR
 from engeom.airfoil2 import AfGeometry, OrientFwdAft, OrientUpperLower
 from engeom.geom2 import Curve2
-from engeom.plot import MatplotlibAxesHelper
+from engeom.plot.matplotlib import MatplotlibAxesHelper
 from matplotlib.pyplot import Axes, Figure, figure, show
 
 

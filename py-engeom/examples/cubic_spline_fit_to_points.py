@@ -36,7 +36,7 @@ from numpy.typing import NDArray
 from matplotlib.pyplot import Figure, Axes, figure, show as show_figure
 
 from engeom.geom2 import Aabb2, CubicSpline2, Point2, fit_spline_to_points
-from engeom.plot import MatplotlibAxesHelper
+from engeom.plot.matplotlib import MatplotlibAxesHelper
 
 
 def make_builder(p0: Point2, p3: Point2) -> Callable[[NDArray], CubicSpline2]:

@@ -3,7 +3,7 @@ import math
 from pyvista import Plotter
 from engeom.geom3 import Mesh3, Iso3, Point3
 from engeom.align3 import AlignParams3, points_to_mesh
-from engeom.plot import PyvistaPlotterHelper
+from engeom.plot.pyvista import PyvistaPlotterHelper
 
 from _common import DATA_DIR
 

@@ -7,7 +7,7 @@ import matplotlib.pyplot
 from matplotlib.pyplot import figure, Figure, Axes
 
 from engeom.geom2 import BoundaryData2
-from engeom.plot import MatplotlibAxesHelper
+from engeom.plot.matplotlib import MatplotlibAxesHelper
 
 
 def main():
