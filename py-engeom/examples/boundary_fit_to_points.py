@@ -93,8 +93,8 @@ def main():
     ax.scatter(noisy_points[:, 0], noisy_points[:, 1], s=15, color="steelblue", zorder=3,
                label=f"Sample points (σ = 0.05, n = {len(noisy_points)})")
 
-    helper.boundary(true_boundary, color="green", linewidth=2.0, linestyle="--", tol=0.005, label="True boundary")
-    helper.boundary(fitted_boundary, color="firebrick", linewidth=2.0, linestyle="-", tol=0.005, label="Fitted boundary")
+    helper.draw_boundary(true_boundary, color="green", linewidth=2.0, linestyle="--", tol=0.005, label="True boundary")
+    helper.draw_boundary(fitted_boundary, color="firebrick", linewidth=2.0, linestyle="-", tol=0.005, label="Fitted boundary")
 
     ax.legend()
     ax.set_title("fit_boundary_to_points: slot fitting")

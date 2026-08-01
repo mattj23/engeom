@@ -37,19 +37,19 @@ def main():
 
     # We'll draw the inscribed circles first, making them thin and slighty transparent
     for c in geom.circles:
-        helper.plot_circle(c.c, color="gray", alpha=0.4, linewidth=0.5)
+        helper.draw_circle(c.c, color="gray", alpha=0.4, linewidth=0.5)
 
     # Let's plot the tmax circle with a different color
-    helper.plot_circle(geom.max_thickness_circle().c, color="red")
+    helper.draw_circle(geom.max_thickness_circle().c, color="red")
 
     # Now we'll draw the upper, lower, and camber curves. Upper will be red and lower blue.
-    helper.plot_curve(geom.upper, color="lightsalmon", linewidth=3.0, label="upper")
-    helper.plot_curve(geom.lower, color="cornflowerblue", linewidth=3.0, label="lower")
-    helper.plot_curve(geom.camber, color="lightseagreen", linewidth=1.0, linestyle="--", label="camber")
+    helper.draw_curve(geom.upper, color="lightsalmon", linewidth=3.0, label="upper")
+    helper.draw_curve(geom.lower, color="cornflowerblue", linewidth=3.0, label="lower")
+    helper.draw_curve(geom.camber, color="lightseagreen", linewidth=1.0, linestyle="--", label="camber")
 
     # We'll draw the original section over top of the curves so that we can verify that the upper and lower surfaces
     # match the original section data.
-    helper.plot_curve(section, color="black", linewidth=1.0, linestyle="--")
+    helper.draw_curve(section, color="black", linewidth=1.0, linestyle="--")
 
     # Finally, we'll plot the leading and trailing edge points, and annotate them.
     le = geom.leading.point

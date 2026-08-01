@@ -345,9 +345,9 @@ def test_set_bounds_applies_the_box_to_both_limits():
     assert helper.ax.get_ylim() == pytest.approx((-3.0, 4.0), abs=TOL)
 
 
-def test_get_3d_viewport_returns_a_viewport_bound_to_the_helper():
+def test_viewport_returns_a_viewport_bound_to_the_helper():
     helper = new_helper()
-    view = helper.get_3d_viewport(Iso3.identity())
+    view = helper.viewport(Iso3.identity())
     assert isinstance(view, ViewPort3)
     assert view.helper is helper
 
@@ -356,127 +356,127 @@ def test_get_3d_viewport_returns_a_viewport_bound_to_the_helper():
 # AxesHelper: 2D draw methods
 # ---------------------------------------------------------------------------
 
-def test_plot_curve_draws():
+def test_draw_curve_adds_an_artist():
     helper = new_helper()
     before = artist_count(helper.ax)
-    helper.plot_curve(sample_curve(), color="black")
+    helper.draw_curve(sample_curve(), color="black")
     assert artist_count(helper.ax) > before
 
 
-def test_fill_curve_draws():
+def test_fill_curve_adds_an_artist():
     helper = new_helper()
     before = artist_count(helper.ax)
     helper.fill_curve(sample_curve(), alpha=0.2)
     assert artist_count(helper.ax) > before
 
 
-def test_plot_circle_draws_one_patch_per_circle():
+def test_draw_circle_adds_one_patch_per_circle():
     helper = new_helper()
-    helper.plot_circle(Circle2(0.0, 0.0, 1.0), Circle2(2.0, 0.0, 1.0))
+    helper.draw_circle(Circle2(0.0, 0.0, 1.0), Circle2(2.0, 0.0, 1.0))
     assert len(helper.ax.patches) == 2
 
 
-def test_plot_circle_accepts_a_raw_xyr_iterable():
+def test_draw_circle_accepts_a_raw_xyr_iterable():
     helper = new_helper()
-    helper.plot_circle((0.0, 0.0, 1.0))
+    helper.draw_circle((0.0, 0.0, 1.0))
     assert len(helper.ax.patches) == 1
 
 
-def test_plot_circle_honors_the_fill_flag():
+def test_draw_circle_honors_the_fill_flag():
     helper = new_helper()
-    helper.plot_circle(Circle2(0.0, 0.0, 1.0), fill=True)
+    helper.draw_circle(Circle2(0.0, 0.0, 1.0), fill=True)
     assert helper.ax.patches[0].get_fill()
 
 
-def test_arc_draws():
+def test_draw_arc_adds_an_artist():
     helper = new_helper()
     before = artist_count(helper.ax)
-    helper.arc(Arc2(0.0, 0.0, 1.0, 0.0, numpy.pi / 2))
+    helper.draw_arc(Arc2(0.0, 0.0, 1.0, 0.0, numpy.pi / 2))
     assert artist_count(helper.ax) > before
 
 
-def test_arc_handles_a_negative_sweep():
+def test_draw_arc_handles_a_negative_sweep():
     helper = new_helper()
-    helper.arc(Arc2(0.0, 0.0, 1.0, numpy.pi, -numpy.pi / 2))
+    helper.draw_arc(Arc2(0.0, 0.0, 1.0, numpy.pi, -numpy.pi / 2))
     assert len(helper.ax.patches) == 1
 
 
-def test_segment_draws():
+def test_draw_segment_adds_an_artist():
     helper = new_helper()
     before = artist_count(helper.ax)
-    helper.segment(Segment2(0.0, 0.0, 1.0, 1.0))
+    helper.draw_segment(Segment2(0.0, 0.0, 1.0, 1.0))
     assert artist_count(helper.ax) > before
 
 
-def test_boundary_draws():
+def test_draw_boundary_adds_an_artist():
     helper = new_helper()
     before = artist_count(helper.ax)
-    helper.boundary(sample_boundary(), color="black")
+    helper.draw_boundary(sample_boundary(), color="black")
     assert artist_count(helper.ax) > before
 
 
-def test_boundary_accepts_an_explicit_tolerance():
+def test_draw_boundary_accepts_an_explicit_tolerance():
     helper = new_helper()
     before = artist_count(helper.ax)
-    helper.boundary(sample_boundary(), tol=0.001)
+    helper.draw_boundary(sample_boundary(), tol=0.001)
     assert artist_count(helper.ax) > before
 
 
-def test_boundary_normals_draws_one_arrow_per_sample():
+def test_draw_boundary_normals_adds_one_arrow_per_sample():
     helper = new_helper()
     before = artist_count(helper.ax)
-    helper.boundary_normals(sample_boundary(), 5, 0.1, color="red")
+    helper.draw_boundary_normals(sample_boundary(), 5, 0.1, color="red")
     assert artist_count(helper.ax) == before + 5
 
 
-def test_cubic_spline_draws():
+def test_draw_spline_adds_an_artist():
     helper = new_helper()
     before = artist_count(helper.ax)
-    helper.cubic_spline(CubicSpline2(0.0, 0.0, 1.0, 2.0, 2.0, -1.0, 3.0, 0.0), tol=0.01)
+    helper.draw_spline(CubicSpline2(0.0, 0.0, 1.0, 2.0, 2.0, -1.0, 3.0, 0.0), tol=0.01)
     assert artist_count(helper.ax) > before
 
 
-def test_points_draws():
+def test_draw_point_adds_an_artist():
     helper = new_helper()
     before = artist_count(helper.ax)
-    helper.points(Point2(0.0, 0.0), (1.0, 1.0), [2.0, 2.0])
+    helper.draw_point(Point2(0.0, 0.0), (1.0, 1.0), [2.0, 2.0])
     assert artist_count(helper.ax) > before
 
 
-def test_surface_points_draws_the_markers_and_one_arrow_each():
+def test_draw_surface_point_adds_markers_and_one_arrow_each():
     helper = new_helper()
     before = artist_count(helper.ax)
-    helper.surface_points(SurfacePoint2(0.0, 0.0, 0.0, 1.0), SurfacePoint2(1.0, 0.0, 0.0, 1.0))
+    helper.draw_surface_point(SurfacePoint2(0.0, 0.0, 0.0, 1.0), SurfacePoint2(1.0, 0.0, 0.0, 1.0))
     # One `plot` call for the markers, plus one annotation arrow per point.
     assert artist_count(helper.ax) == before + 3
 
 
-def test_text_draws_and_returns_the_annotation():
+def test_draw_text_adds_and_returns_the_annotation():
     helper = new_helper()
-    result = helper.text("hello", Point2(0.0, 0.0))
+    result = helper.draw_text("hello", Point2(0.0, 0.0))
     assert result is not None
     assert helper.ax.texts[-1].get_text() == "hello"
 
 
-def test_text_applies_the_shift_to_the_position():
+def test_draw_text_applies_the_shift_to_the_position():
     helper = new_helper()
-    plain = helper.text("a", (1.0, 1.0))
-    shifted = helper.text("b", (1.0, 1.0), shift=(2.0, 3.0))
+    plain = helper.draw_text("a", (1.0, 1.0))
+    shifted = helper.draw_text("b", (1.0, 1.0), shift=(2.0, 3.0))
     assert shifted.xy == pytest.approx((plain.xy[0] + 2.0, plain.xy[1] + 3.0), abs=TOL)
 
 
-def test_arrow_draws_and_returns_the_annotation():
+def test_draw_arrow_adds_and_returns_the_annotation():
     helper = new_helper()
     before = artist_count(helper.ax)
-    result = helper.arrow(Point2(0.0, 0.0), Point2(1.0, 1.0))
+    result = helper.draw_arrow(Point2(0.0, 0.0), Point2(1.0, 1.0))
     assert result is not None
     assert artist_count(helper.ax) > before
 
 
-def test_labeled_arrow_draws_the_arrow_and_the_label():
+def test_draw_labeled_arrow_adds_the_arrow_and_the_label():
     helper = new_helper()
     before = artist_count(helper.ax)
-    helper.labeled_arrow(Point2(0.0, 0.0), Point2(2.0, 0.0), "label")
+    helper.draw_labeled_arrow(Point2(0.0, 0.0), Point2(2.0, 0.0), "label")
     assert artist_count(helper.ax) == before + 2
     assert helper.ax.texts[-1].get_text() == "label"
 
@@ -486,39 +486,39 @@ def test_labeled_arrow_draws_the_arrow_and_the_label():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("label_place", [LabelPlace.Outside, LabelPlace.Inside, LabelPlace.OutsideRev])
-def test_distance_draws_for_every_label_placement(label_place):
+def test_draw_distance_adds_artists_for_every_label_placement(label_place):
     helper = new_helper()
     before = artist_count(helper.ax)
-    helper.distance(Distance2(Point2(0.0, 0.0), Point2(3.0, 0.0)), label_place=label_place)
+    helper.draw_distance(Distance2(Point2(0.0, 0.0), Point2(3.0, 0.0)), label_place=label_place)
     assert artist_count(helper.ax) > before
 
 
-def test_distance_formats_the_value_with_the_template():
+def test_draw_distance_formats_the_value_with_the_template():
     helper = new_helper()
-    helper.distance(Distance2(Point2(0.0, 0.0), Point2(3.0, 0.0)), template="{value:.1f} mm")
+    helper.draw_distance(Distance2(Point2(0.0, 0.0), Point2(3.0, 0.0)), template="{value:.1f} mm")
     assert "3.0 mm" in {t.get_text() for t in helper.ax.texts}
 
 
-def test_distance_applies_the_value_scale_to_the_label_only():
+def test_draw_distance_applies_the_value_scale_to_the_label_only():
     helper = new_helper()
     d = Distance2(Point2(0.0, 0.0), Point2(3.0, 0.0))
-    helper.distance(d, template="{value:.1f}", scale_value=10.0)
+    helper.draw_distance(d, template="{value:.1f}", scale_value=10.0)
     assert "30.0" in {t.get_text() for t in helper.ax.texts}
     assert d.value == pytest.approx(3.0, abs=TOL)
 
 
-def test_distance_accepts_a_side_shift():
+def test_draw_distance_accepts_a_side_shift():
     helper = new_helper()
     before = artist_count(helper.ax)
-    helper.distance(Distance2(Point2(0.0, 0.0), Point2(3.0, 0.0)), side_shift=1.0)
+    helper.draw_distance(Distance2(Point2(0.0, 0.0), Point2(3.0, 0.0)), side_shift=1.0)
     assert artist_count(helper.ax) > before
 
 
-def test_distance_of_a_negative_value_still_draws():
+def test_draw_distance_of_a_negative_value_still_draws():
     helper = new_helper()
     d = Distance2(Point2(3.0, 0.0), Point2(0.0, 0.0), Vector2(1.0, 0.0))
     before = artist_count(helper.ax)
-    helper.distance(d)
+    helper.draw_distance(d)
     assert artist_count(helper.ax) > before
 
 
@@ -527,7 +527,7 @@ def test_distance_of_a_negative_value_still_draws():
 # ---------------------------------------------------------------------------
 
 def new_viewport() -> ViewPort3:
-    return new_helper().get_3d_viewport(Iso3.identity())
+    return new_helper().viewport(Iso3.identity())
 
 
 def test_viewport_line_draws():
@@ -622,9 +622,9 @@ def test_viewport_mesh_edge_point_in_dir_returns_a_point_on_the_mesh():
 # Every public method on the helper classes, each of which must be exercised above. Adding a method
 # without adding a test will fail these, in the spirit of test_stub_drift.py.
 EXERCISED_HELPER_MEMBERS = {
-    "arc", "arrow", "boundary", "boundary_normals", "cubic_spline", "distance", "fill_curve",
-    "get_3d_viewport", "labeled_arrow", "plot_circle", "plot_curve", "points", "segment",
-    "set_bounds", "surface_points", "text",
+    "draw_arc", "draw_arrow", "draw_boundary", "draw_boundary_normals", "draw_circle",
+    "draw_curve", "draw_distance", "draw_labeled_arrow", "draw_point", "draw_segment",
+    "draw_spline", "draw_surface_point", "draw_text", "fill_curve", "set_bounds", "viewport",
 }
 
 EXERCISED_VIEWPORT_MEMBERS = {

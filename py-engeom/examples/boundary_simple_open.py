@@ -33,11 +33,11 @@ def main():
     # We'll use the helper's boundary drawing function to plot the geometry. The `tol` argument controls how densely
     # points are generated over arc geometry. The rest of the arguments are passthroughs to the matplotlib `plot`
     # function.
-    helper.boundary(boundary, color="black", linewidth=2.0, linestyle="--", tol=0.001)
+    helper.draw_boundary(boundary, color="black", linewidth=2.0, linestyle="--", tol=0.001)
 
     # We'll additionally plot the boundary's normals. This is useful for debugging when trying to make sure that the
     # winding direction correctly matches your intention.
-    helper.boundary_normals(boundary, 10, 0.1, color="red")
+    helper.draw_boundary_normals(boundary, 10, 0.1, color="red")
 
     # Finally, because the annotation arrows used to draw the normals don't automatically adjust the plot bounds,
     # we'll grab the `Aabb2` of the boundary, expand it by 0.5 in all directions, and then use it to set the plot

@@ -83,7 +83,7 @@ class AxesHelper:
         if hide_axes:
             ax.axis("off")
 
-    def get_3d_viewport(self, view: Iso3) -> ViewPort3:
+    def viewport(self, view: Iso3) -> ViewPort3:
         """
         This method returns a ViewPort3 object that can be used to draw 3d objects in parallel projection onto the
         2d view, such as for generating diagrams and illustrations. The view should be an isometry describing a
@@ -103,7 +103,7 @@ class AxesHelper:
         self.ax.set_xlim(box.min.x, box.max.x)
         self.ax.set_ylim(box.min.y, box.max.y)
 
-    def arc(self, arc: Arc2, **kwargs):
+    def draw_arc(self, arc: Arc2, **kwargs):
         """
 
         :param arc:
@@ -127,7 +127,7 @@ class AxesHelper:
                     **kwargs)
         self.ax.add_patch(patch)
 
-    def segment(self, seg: Segment2, **kwargs):
+    def draw_segment(self, seg: Segment2, **kwargs):
         """
         Plot a segment on a Matplotlib Axes object.
         :param seg: a Segment2 object
@@ -135,21 +135,21 @@ class AxesHelper:
         """
         self.ax.plot([seg.a.x, seg.b.x], [seg.a.y, seg.b.y], **kwargs)
 
-    def boundary(self, boundary: Boundary2, tol: float | None = None, **kwargs):
+    def draw_boundary(self, boundary: Boundary2, tol: float | None = None, **kwargs):
         tol = tol or boundary.aabb.extent.norm() / 1000
         points = boundary.to_points(tol)
         self.ax.plot(points[:, 0], points[:, 1], **kwargs)
 
-    def boundary_normals(self, boundary: Boundary2, n: int, length: float, color: str | None = None, linewidth=1.0):
+    def draw_boundary_normals(self, boundary: Boundary2, n: int, length: float, color: str | None = None, linewidth=1.0):
         for t in numpy.linspace(0, boundary.length(), n):
             m = boundary.at_length(t)
             kwargs = {"linewidth": linewidth}
             if color:
                 kwargs["color"] = color
 
-            self.arrow(m.point, m.surface_point.at_distance(length), **kwargs)
+            self.draw_arrow(m.point, m.surface_point.at_distance(length), **kwargs)
 
-    def plot_circle(self, *circle: Circle2 | Iterable[float], fill=False, **kwargs):
+    def draw_circle(self, *circles: Circle2 | Iterable[float], fill=False, **kwargs):
         """
         Plot a circle on a Matplotlib Axes object.
         :param circle: a Circle2 object
@@ -157,7 +157,7 @@ class AxesHelper:
         """
         from matplotlib.pyplot import Circle
 
-        for cdata in circle:
+        for cdata in circles:
             if isinstance(cdata, Circle2):
                 c = Circle((cdata.center.x, cdata.center.y), cdata.r, fill=fill, **kwargs)
             else:
@@ -165,7 +165,7 @@ class AxesHelper:
                 c = Circle((x, y), r, fill=fill, **kwargs)
             self.ax.add_patch(c)
 
-    def plot_curve(self, curve: Curve2, **kwargs):
+    def draw_curve(self, curve: Curve2, **kwargs):
         """
         Plot a curve on a Matplotlib Axes object.
         :param curve: a Curve2 object
@@ -173,7 +173,7 @@ class AxesHelper:
         """
         self.ax.plot(curve.points[:, 0], curve.points[:, 1], **kwargs)
 
-    def cubic_spline(self, spline: CubicSpline2, tol: float, **kwargs):
+    def draw_spline(self, spline: CubicSpline2, tol: float, **kwargs):
         """
         Plot a cubic Bezier spline by flattening it into an adaptive polyline whose linear
         segments deviate from the underlying curve by no more than `tol`.
@@ -195,7 +195,7 @@ class AxesHelper:
         """
         self.ax.fill(curve.points[:, 0], curve.points[:, 1], **kwargs)
 
-    def distance(
+    def draw_distance(
             self,
             distance: Distance2,
             side_shift: float = 0,
@@ -235,18 +235,18 @@ class AxesHelper:
         if label_place == LabelPlace.Inside:
             label_offset = label_offset or 0.0
             label_coords = center.at_distance(label_offset)
-            self.arrow(label_coords, leader_a)
-            self.arrow(label_coords, leader_b)
+            self.draw_arrow(label_coords, leader_a)
+            self.draw_arrow(label_coords, leader_b)
         elif label_place == LabelPlace.Outside:
             label_offset = label_offset or pad_scale * 3
             label_coords = leader_b + offset_dir * label_offset
-            self.arrow(leader_a - offset_dir * pad_scale, leader_a)
-            self.arrow(label_coords, leader_b)
+            self.draw_arrow(leader_a - offset_dir * pad_scale, leader_a)
+            self.draw_arrow(label_coords, leader_b)
         elif label_place == LabelPlace.OutsideRev:
             label_offset = label_offset or pad_scale * 3
             label_coords = leader_a - offset_dir * label_offset
-            self.arrow(leader_b + offset_dir * pad_scale, leader_b)
-            self.arrow(label_coords, leader_a)
+            self.draw_arrow(leader_b + offset_dir * pad_scale, leader_b)
+            self.draw_arrow(label_coords, leader_a)
 
         # Do we need sideways leaders?
         self._line_if_needed(pad_scale, distance.a, leader_a)
@@ -258,7 +258,7 @@ class AxesHelper:
 
         value = distance.value * scale_value
         box_style = dict(boxstyle="round,pad=0.3", ec="black", fc="white")
-        self.text(template.format(value=value), label_coords, bbox=box_style, **kwargs)
+        self.draw_text(template.format(value=value), label_coords, bbox=box_style, **kwargs)
 
     def _line_if_needed(self, pad: float, actual: Point2, leader_end: Point2):
         half_pad = pad * 0.5
@@ -267,9 +267,9 @@ class AxesHelper:
             return
         work = SurfacePoint2(*actual, *v)
         t1 = work.scalar_projection(leader_end) + half_pad
-        self.arrow(actual, work.at_distance(t1), arrow="-")
+        self.draw_arrow(actual, work.at_distance(t1), arrow="-")
 
-    def text(self, text: str, pos: Coords2, shift: Coords2 | None = None, ha: str = "center",
+    def draw_text(self, text: str, pos: Coords2, shift: Coords2 | None = None, ha: str = "center",
              va: str = "center", **kwargs):
         """
         Annotate a Matplotlib Axes object with text only, by default in the xy data plane.
@@ -288,20 +288,20 @@ class AxesHelper:
 
         return self.ax.annotate(text, xy=xy, ha=ha, va=va, **kwargs)
 
-    def points(self, *points: Coords2, marker="o", markersize=5.0, **kwargs):
+    def draw_point(self, *points: Coords2, marker="o", markersize=5.0, **kwargs):
         x, y = zip(*[to_tuple2(p) for p in points])
         return self.ax.plot(x, y, marker, markersize=markersize, **kwargs)
 
-    def surface_points(self, *points: SurfacePoint2, arrow_len=1, marker="o", markersize="5", **kwargs):
+    def draw_surface_point(self, *points: SurfacePoint2, arrow_len=1, marker="o", markersize="5", **kwargs):
         x, y = zip(*[(p.point.x, p.point.y) for p in points])
         color = kwargs.get("color", "black")
         kwargs["color"] = color
         self.ax.plot(x, y, marker, markersize=markersize, **kwargs)
         for p in points:
             p: SurfacePoint2
-            self.arrow(p.point, p.at_distance(arrow_len), arrow="->", color=color)
+            self.draw_arrow(p.point, p.at_distance(arrow_len), arrow="->", color=color)
 
-    def labeled_arrow(self, start: Coords2, end: Coords2, text: str, fraction: float = 0.5,
+    def draw_labeled_arrow(self, start: Coords2, end: Coords2, text: str, fraction: float = 0.5,
                       shift: Coords2 | None = None,
                       arrow="->", color="black", linewidth: float | None = None, linestyle="-",
                       **text_kwargs):
@@ -322,13 +322,13 @@ class AxesHelper:
         start = Point2(*to_tuple2(start))
         end = Point2(*to_tuple2(end))
 
-        self.arrow(start, end, arrow=arrow, color=color, linewidth=linewidth, linestyle=linestyle)
+        self.draw_arrow(start, end, arrow=arrow, color=color, linewidth=linewidth, linestyle=linestyle)
 
         v: Vector2 = end - start
         position = start + v * fraction
-        self.text(text, position, shift=shift, color=color, **text_kwargs)
+        self.draw_text(text, position, shift=shift, color=color, **text_kwargs)
 
-    def arrow(self, start: Coords2, end: Coords2, arrow="->", color="black", linewidth: float | None = None,
+    def draw_arrow(self, start: Coords2, end: Coords2, arrow="->", color="black", linewidth: float | None = None,
               linestyle="-", **arrow_kwargs):
         """
         Draw an arrow on a Matplotlib Axes object from `start` to `end`.

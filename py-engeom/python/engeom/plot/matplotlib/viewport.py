@@ -74,14 +74,14 @@ class ViewPort3:
         p1_end = p1 + ldr_shift
         label_pos = p0 + (p1 - p0) * label_position + ldr_shift + lbl_shift
 
-        self.helper.arrow(self.view @ p0_end, self.view @ p1_end, color=color, linewidth=linewidth, arrow="<->")
-        self.helper.text(label, self.view @ label_pos, fontsize=fontsize, ha="center", va="center", color=color,
+        self.helper.draw_arrow(self.view @ p0_end, self.view @ p1_end, color=color, linewidth=linewidth, arrow="<->")
+        self.helper.draw_text(label, self.view @ label_pos, fontsize=fontsize, ha="center", va="center", color=color,
                          bbox=dict(boxstyle="round", ec="black", fc="w", lw=linewidth))
 
         if ldr_shift.norm() > 0.0:
-            self.helper.arrow(self.view @ p0, self.view @ p0_end, color=color, linewidth=linewidth * 0.75,
+            self.helper.draw_arrow(self.view @ p0, self.view @ p0_end, color=color, linewidth=linewidth * 0.75,
                               arrow="-", linestyle="dotted")
-            self.helper.arrow(self.view @ p1, self.view @ p1_end, color=color, linewidth=linewidth * 0.75,
+            self.helper.draw_arrow(self.view @ p1, self.view @ p1_end, color=color, linewidth=linewidth * 0.75,
                               arrow="-", linestyle="dotted")
 
     def labeled_point(
@@ -129,7 +129,7 @@ class ViewPort3:
         text_position = self.view @ (p + o3) + o2
 
         if arrow:
-            self.helper.arrow(text_position, self.view @ p, arrow=arrow_style, color=color, linewidth=linewidth,
+            self.helper.draw_arrow(text_position, self.view @ p, arrow=arrow_style, color=color, linewidth=linewidth,
                               linestyle=linestyle, **(arrow_props or {}))
         text_params = {
             "fontsize": fontsize,
@@ -141,10 +141,10 @@ class ViewPort3:
         if box:
             text_params["bbox"] = dict(boxstyle="round", ec=color, fc="w", lw=linewidth)
 
-        self.helper.text(label, text_position, **text_params)
+        self.helper.draw_text(label, text_position, **text_params)
 
         if marker_size > 0.0:
-            self.helper.points(self.view @ p, marker=marker, markersize=marker_size, color=color)
+            self.helper.draw_point(self.view @ p, marker=marker, markersize=marker_size, color=color)
 
     def coordinate_system(
             self,
@@ -177,9 +177,9 @@ class ViewPort3:
         for text, color, vector in to_draw:
             p_view: Point3 = self.view @ cs @ (Point3.origin() + vector * length)
             if _visible(p_view, length):
-                self.helper.arrow(o_view, p_view, color=color, linewidth=linewidth)
+                self.helper.draw_arrow(o_view, p_view, color=color, linewidth=linewidth)
                 text_pos = self.view @ cs @ (Point3.origin() + vector * length * (1 + label_offset))
-                self.helper.text(f"${text}$", text_pos, color=color, fontsize=fontsize, ha="center", va="center")
+                self.helper.draw_text(f"${text}$", text_pos, color=color, fontsize=fontsize, ha="center", va="center")
 
     def mesh_outline(
             self, mesh:
