@@ -15,7 +15,7 @@ from engeom.geom3 import Iso3
 from engeom.metrology import Distance2
 
 from .._coerce import Coords2, to_tuple2
-from .._common import LabelPlace
+from .._common import LabelPlace, check_label_place
 from .viewport import ViewPort3
 
 
@@ -201,7 +201,7 @@ class AxesHelper:
             side_shift: float = 0,
             template: str = "{value:.3f}",
             fontsize: int = 10,
-            label_place: LabelPlace = LabelPlace.Outside,
+            label_place: LabelPlace = "outside",
             label_offset: float | None = None,
             fontname: str | None = None,
             scale_value: float = 1.0,
@@ -221,7 +221,9 @@ class AxesHelper:
         :param scale_value: A scaling factor to apply to the value before displaying it in the label. Use this to
         convert between different units of measurement without having to modify the actual value or the coordinate
         system.
+        :raises ValueError: if `label_place` is not one of the valid placement tokens.
         """
+        label_place = check_label_place(label_place)
         pad_scale = self._font_height(12) * 1.5
 
         # The offset_dir is the direction from `a` to `b` projected so that it's parallel to the measurement
@@ -232,17 +234,17 @@ class AxesHelper:
         leader_a = center.projection(distance.a)
         leader_b = center.projection(distance.b)
 
-        if label_place == LabelPlace.Inside:
+        if label_place == "inside":
             label_offset = label_offset or 0.0
             label_coords = center.at_distance(label_offset)
             self.draw_arrow(label_coords, leader_a)
             self.draw_arrow(label_coords, leader_b)
-        elif label_place == LabelPlace.Outside:
+        elif label_place == "outside":
             label_offset = label_offset or pad_scale * 3
             label_coords = leader_b + offset_dir * label_offset
             self.draw_arrow(leader_a - offset_dir * pad_scale, leader_a)
             self.draw_arrow(label_coords, leader_b)
-        elif label_place == LabelPlace.OutsideRev:
+        else:  # "outside_rev", the only remaining token after validation
             label_offset = label_offset or pad_scale * 3
             label_coords = leader_a - offset_dir * label_offset
             self.draw_arrow(leader_b + offset_dir * pad_scale, leader_b)

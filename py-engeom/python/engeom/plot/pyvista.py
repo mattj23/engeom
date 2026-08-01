@@ -23,7 +23,7 @@ from engeom.geom3 import Mesh3, Curve3, Iso3, SurfacePoint3, PointCloud, Circle3
 from engeom.metrology import Distance3
 
 from ._coerce import Coords3, to_tuple3
-from ._common import LabelPlace
+from ._common import LabelPlace, check_label_place
 
 __all__ = ["PlotterHelper"]
 
@@ -233,7 +233,7 @@ class PlotterHelper:
             self,
             distance: Distance3,
             template: str = "{value:.3f}",
-            label_place: LabelPlace = LabelPlace.Outside,
+            label_place: LabelPlace = "outside",
             label_offset: float | None = None,
             font_size: int = 12,
             scale_value: float = 1.0,
@@ -252,7 +252,9 @@ class PlotterHelper:
         convert between different units of measurement without having to modify the actual value or the coordinate
         system.
         :param font_family: The font family to use for the label.
+        :raises ValueError: if `label_place` is not one of the valid placement tokens.
         """
+        label_place = check_label_place(label_place)
         label_offset = label_offset or max(abs(distance.value), 1.0) * 3
 
         # The offset_dir is the direction from `a` to `b` projected so that it's parallel to the measurement
@@ -263,7 +265,7 @@ class PlotterHelper:
         spheres = [distance.a, distance.b]
         builder = LineBuilder()
 
-        if label_place == LabelPlace.Inside:
+        if label_place == "inside":
             c = SurfacePoint3(*distance.center.point, *offset_dir)
             label_coords = c.at_distance(label_offset)
 
@@ -274,7 +276,7 @@ class PlotterHelper:
             builder.add(distance.b)
             builder.add(distance.b + offset_dir * label_offset * 0.25)
 
-        elif label_place == LabelPlace.Outside:
+        elif label_place == "outside":
             label_coords = distance.b + offset_dir * label_offset
 
             builder.add(distance.a)
@@ -284,7 +286,7 @@ class PlotterHelper:
             builder.add(distance.b)
             builder.add(label_coords)
 
-        elif label_place == LabelPlace.OutsideRev:
+        else:  # "outside_rev", the only remaining token after validation
             label_coords = distance.a - offset_dir * label_offset
 
             builder.add(distance.b)

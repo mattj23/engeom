@@ -9,6 +9,8 @@ public entry point is exercised and that its documented edge cases hold.
 Matplotlib is an optional dependency, so the whole module skips when it is absent.
 """
 
+from typing import get_args
+
 import numpy
 import pytest
 
@@ -26,6 +28,7 @@ from engeom.geom3 import Iso3, Line3, Mesh3, Point3, Vector3
 from engeom.metrology import Distance2
 from engeom.plot import LabelPlace
 from engeom.plot._coerce import to_point2, to_point3, to_tuple2, to_tuple3
+from engeom.plot._common import LABEL_PLACES
 from engeom.plot.matplotlib import GOM_CMAP, GomColorMap, AxesHelper, TraceBuilder, ViewPort3
 
 TOL = 1e-12
@@ -485,12 +488,43 @@ def test_draw_labeled_arrow_adds_the_arrow_and_the_label():
 # AxesHelper: distance and label placement
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("label_place", [LabelPlace.Outside, LabelPlace.Inside, LabelPlace.OutsideRev])
+@pytest.mark.parametrize("label_place", LABEL_PLACES)
 def test_draw_distance_adds_artists_for_every_label_placement(label_place):
     helper = new_helper()
     before = artist_count(helper.ax)
     helper.draw_distance(Distance2(Point2(0.0, 0.0), Point2(3.0, 0.0)), label_place=label_place)
     assert artist_count(helper.ax) > before
+
+
+def test_label_place_tokens_match_the_literal_alias():
+    """ The valid-token tuple is derived from the alias, so the two can never disagree. """
+    assert set(LABEL_PLACES) == set(get_args(LabelPlace))
+
+
+@pytest.mark.parametrize("bad", ["Outside", "OUTSIDE", "outside_reversed", "", "middle"])
+def test_draw_distance_rejects_an_unknown_label_placement(bad):
+    """
+    Regression: an out-of-range placement used to fall through every branch and surface as an
+    UnboundLocalError on `label_coords`, rather than naming the bad argument.
+    """
+    helper = new_helper()
+    with pytest.raises(ValueError) as excinfo:
+        helper.draw_distance(Distance2(Point2(0.0, 0.0), Point2(3.0, 0.0)), label_place=bad)
+
+    message = str(excinfo.value)
+    assert "label_place" in message
+    # The message must name the alternatives, not just reject the input.
+    for token in LABEL_PLACES:
+        assert token in message
+
+
+def test_draw_distance_validates_before_drawing_anything():
+    """ A rejected placement must not leave a half-drawn measurement on the axes. """
+    helper = new_helper()
+    before = artist_count(helper.ax)
+    with pytest.raises(ValueError):
+        helper.draw_distance(Distance2(Point2(0.0, 0.0), Point2(3.0, 0.0)), label_place="nope")
+    assert artist_count(helper.ax) == before
 
 
 def test_draw_distance_formats_the_value_with_the_template():
