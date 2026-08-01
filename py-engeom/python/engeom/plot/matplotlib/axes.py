@@ -10,10 +10,10 @@ import numpy
 from matplotlib.artist import Artist
 from matplotlib.axes import Axes
 from matplotlib.lines import Line2D
-from matplotlib.patches import Arc, Circle, Polygon
+from matplotlib.patches import Arc, Circle, Polygon, Rectangle
 from matplotlib.text import Annotation
 
-from engeom.geom2 import Curve2, Circle2, Aabb2, Point2, Vector2, SurfacePoint2, Arc2, Segment2, Boundary2, \
+from engeom.geom2 import Curve2, Circle2, Aabb2, Line2, Point2, Vector2, SurfacePoint2, Arc2, Segment2, Boundary2, \
     CubicSpline2
 from engeom.geom3 import Iso3
 from engeom.metrology import Distance2
@@ -186,6 +186,65 @@ class AxesHelper:
             for seg in segments
         ]
 
+    def draw_line(self, *lines: Line2, t: tuple[float, float] | None = None,
+                  color: str | None = None, linewidth: float | None = None,
+                  linestyle: str | None = None, alpha: float | None = None,
+                  label: str | None = None, **kwargs) -> list[Line2D]:
+        """
+        Draw one or more `Line2` entities, either as infinite lines spanning the axes or as finite
+        pieces cut from a parameter range.
+
+        A `Line2` has no endpoints, so by default each one is drawn as a Matplotlib ``AxLine``,
+        which re-clips itself to the axes whenever the view changes. Such a line therefore stays
+        correct if the limits are changed afterward, and it is deliberately excluded from
+        autoscaling, so that a construction line passing far from the geometry does not drag the
+        view out to meet it. Give `t` to draw a finite piece instead, which is an ordinary line that
+        does participate in autoscaling.
+
+        :param lines: the lines to draw.
+        :param t: if given, the ``(t0, t1)`` parameter range to draw between, producing a finite
+            segment from ``line.at(t0)`` to ``line.at(t1)``. The parameter is in units of the
+            line's direction vector, which is arc length only if that vector is unit-length, so
+            consider `Line2.normalized` first. If None, the line is drawn infinite.
+        :param color: the line color. If None, the axes' color cycle supplies one.
+        :param linewidth: the line width in points. If None, the Matplotlib default applies.
+        :param linestyle: the line style, such as ``"--"``. If None, the Matplotlib default applies.
+        :param alpha: the opacity from 0.0 to 1.0. If None, the line is fully opaque.
+        :param label: the legend label. If None, the line is not labeled.
+        :param kwargs: any other keyword argument accepted by ``Axes.plot``.
+        :return: one ``Line2D`` per line, in the order given. Infinite lines return the ``AxLine``
+            subclass of ``Line2D``.
+        :raises ValueError: if `t` is given and does not hold exactly two values.
+        """
+        kwargs = merge_style(kwargs, color=color, linewidth=linewidth, linestyle=linestyle,
+                             alpha=alpha, label=label)
+
+        if t is not None:
+            values = tuple(t)
+            if len(values) != 2:
+                raise ValueError(f"t must hold exactly two values, got {len(values)}")
+            t0, t1 = values
+            drawn = []
+            for line in lines:
+                a, b = line.at(t0), line.at(t1)
+                drawn.append(self.ax.plot([a.x, b.x], [a.y, b.y], **kwargs)[0])
+            return drawn
+
+        # An infinite line is a construction entity and should never influence the data limits, but
+        # `axline` registers its two reference points like any other artist. Snapshot the limits and
+        # put them back, so that a line through a far-off origin cannot rescale the plot.
+        saved_bounds = self.ax.dataLim.frozen()
+        saved_ignore = self.ax.ignore_existing_data_limits
+        try:
+            drawn = []
+            for line in lines:
+                origin, other = line.origin, line.at(1.0)
+                drawn.append(self.ax.axline((origin.x, origin.y), (other.x, other.y), **kwargs))
+            return drawn
+        finally:
+            self.ax.dataLim.set(saved_bounds)
+            self.ax.ignore_existing_data_limits = saved_ignore
+
     def draw_boundary(self, *boundaries: Boundary2, tol: float | None = None,
                       color: str | None = None, linewidth: float | None = None,
                       linestyle: str | None = None, alpha: float | None = None,
@@ -302,6 +361,41 @@ class AxesHelper:
                 x, y, r = values
                 c = Circle((x, y), r, fill=fill, **kwargs)
             patches.append(self.ax.add_patch(c))
+        return patches
+
+    def draw_aabb(self, *boxes: Aabb2, fill: bool = False, color: str | None = None,
+                  edgecolor: str | None = None, facecolor: str | None = None,
+                  linewidth: float | None = None, linestyle: str | None = None,
+                  alpha: float | None = None, label: str | None = None,
+                  **kwargs) -> list[Rectangle]:
+        """
+        Draw one or more axis-aligned bounding boxes as rectangle patches.
+
+        To draw a box with some breathing room around the geometry it bounds, expand it first with
+        `Aabb2.expand`, rather than looking for a margin argument here.
+
+        :param boxes: the bounding boxes to draw.
+        :param fill: whether to fill the boxes. Both stroking and filling are the same Matplotlib
+            patch here, so this is a flag rather than a separate method.
+        :param color: sets both the edge and face color at once. If None, the Matplotlib default
+            applies. `edgecolor` and `facecolor` override this for the side they name.
+        :param edgecolor: the outline color. If None, `color` or the Matplotlib default applies.
+        :param facecolor: the fill color, which has no effect unless `fill` is True. If None,
+            `color` or the Matplotlib default applies.
+        :param linewidth: the outline width in points. If None, the Matplotlib default applies.
+        :param linestyle: the outline style, such as ``"--"``. If None, the Matplotlib default applies.
+        :param alpha: the opacity from 0.0 to 1.0. If None, the box is fully opaque.
+        :param label: the legend label. If None, the box is not labeled.
+        :param kwargs: any other keyword argument accepted by the Matplotlib ``Rectangle`` patch.
+        :return: one ``Rectangle`` patch per box, in the order given.
+        """
+        kwargs = merge_style(kwargs, color=color, edgecolor=edgecolor, facecolor=facecolor,
+                             linewidth=linewidth, linestyle=linestyle, alpha=alpha, label=label)
+        patches = []
+        for box in boxes:
+            extent = box.extent
+            patch = Rectangle((box.min.x, box.min.y), extent.x, extent.y, fill=fill, **kwargs)
+            patches.append(self.ax.add_patch(patch))
         return patches
 
     def draw_curve(self, *curves: Curve2, color: str | None = None, linewidth: float | None = None,

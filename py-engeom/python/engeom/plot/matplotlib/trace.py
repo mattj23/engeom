@@ -58,7 +58,7 @@ class TraceBuilder:
             y_max=max(ys),
         )
 
-    def add_segment(self, *points: PointLike):
+    def add_segment(self, *points: PointLike) -> None:
         """
         Add a run of points followed by a break, so that the next thing added starts a new
         disconnected polyline.
@@ -69,7 +69,7 @@ class TraceBuilder:
         self.add_points(*points)
         self.add_blank()
 
-    def add_blank(self):
+    def add_blank(self) -> None:
         """
         Add a break, terminating the current run so that the next point added is not connected to
         the previous one. Appends `None` to all three lists.
@@ -78,7 +78,7 @@ class TraceBuilder:
         self.ys.append(None)
         self.c.append(None)
 
-    def add_points(self, *points: PointLike):
+    def add_points(self, *points: PointLike) -> None:
         """
         Add one or more points to the current run without terminating it.
 
@@ -94,7 +94,7 @@ class TraceBuilder:
             self.ys.append(y)
             self.c.append(None)
 
-    def add_point_and_color(self, point: PointLike, color: float):
+    def add_point_and_color(self, point: PointLike, color: float) -> None:
         """
         Add a single point to the current run along with a scalar to color it by, for use with a
         color-mapped plotting call.
@@ -108,7 +108,7 @@ class TraceBuilder:
         self.ys.append(y)
         self.c.append(color)
 
-    def invert_y(self):
+    def invert_y(self) -> None:
         """
         Negate every y coordinate accumulated so far, in place, leaving the `None` breaks intact.
         Useful when the source data uses a downward-positive y axis, as image and raster data does.
@@ -116,7 +116,7 @@ class TraceBuilder:
         self.ys = [-y if y is not None else None for y in self.ys]
 
     @property
-    def xy(self):
+    def xy(self) -> tuple[list[float | None], list[float | None]]:
         """
         The accumulated coordinates as an `(xs, ys)` pair, ready to be unpacked into an `Axes.plot`
         call as ``ax.plot(*builder.xy, ...)``.

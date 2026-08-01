@@ -21,10 +21,10 @@ import matplotlib
 matplotlib.use("Agg")
 
 from matplotlib.figure import Figure
-from matplotlib.lines import Line2D
+from matplotlib.lines import AxLine, Line2D
 from matplotlib.text import Annotation
 
-from engeom.geom2 import (Aabb2, Arc2, BoundaryData2, Circle2, CubicSpline2, Curve2, Point2,
+from engeom.geom2 import (Aabb2, Arc2, BoundaryData2, Circle2, CubicSpline2, Curve2, Line2, Point2,
                           Segment2, SurfacePoint2, Vector2)
 from engeom.geom3 import Iso3, Line3, Mesh3, Point3, Vector3
 from engeom.metrology import Distance2
@@ -470,6 +470,101 @@ def test_draw_boundary_accepts_an_explicit_tolerance():
     assert artist_count(helper.ax) > before
 
 
+def test_draw_aabb_adds_one_patch_per_box():
+    helper = new_helper()
+    helper.draw_aabb(Aabb2(0.0, 0.0, 1.0, 2.0), Aabb2(3.0, 3.0, 4.0, 4.0))
+    assert len(helper.ax.patches) == 2
+
+
+def test_draw_aabb_places_the_rectangle_on_the_box():
+    helper = new_helper()
+    patch = helper.draw_aabb(Aabb2(-1.0, 2.0, 4.0, 8.0))[0]
+    assert patch.get_xy() == pytest.approx((-1.0, 2.0), abs=TOL)
+    assert patch.get_width() == pytest.approx(5.0, abs=TOL)
+    assert patch.get_height() == pytest.approx(6.0, abs=TOL)
+
+
+def test_draw_aabb_honors_the_fill_flag():
+    helper = new_helper()
+    helper.draw_aabb(Aabb2(0.0, 0.0, 1.0, 1.0), fill=True)
+    assert helper.ax.patches[0].get_fill()
+
+
+def test_draw_line_adds_one_artist_per_line():
+    helper = new_helper()
+    before = artist_count(helper.ax)
+    helper.draw_line(Line2.x_axis(), Line2.y_axis())
+    assert artist_count(helper.ax) == before + 2
+
+
+def test_draw_line_spans_the_axes_when_no_extent_is_given():
+    """ An infinite line is drawn as an AxLine, which re-clips itself as the view changes. """
+    helper = new_helper()
+    artist = helper.draw_line(Line2(0.0, 0.0, 1.0, 1.0))[0]
+    assert isinstance(artist, AxLine)
+
+
+def test_draw_line_cut_to_an_extent_lands_on_the_parameter_endpoints():
+    helper = new_helper()
+    line = Line2.new_normalize(1.0, 1.0, 1.0, 0.0)
+    artist = helper.draw_line(line, t=(2.0, 5.0))[0]
+    assert list(artist.get_xdata()) == pytest.approx([3.0, 6.0], abs=TOL)
+    assert list(artist.get_ydata()) == pytest.approx([1.0, 1.0], abs=TOL)
+
+
+def test_draw_line_cut_to_an_extent_is_a_plain_line_not_an_axline():
+    """ A finite piece is real geometry, so it autoscales like anything else drawn. """
+    helper = new_helper()
+    artist = helper.draw_line(Line2.x_axis(), t=(0.0, 1.0))[0]
+    assert isinstance(artist, Line2D) and not isinstance(artist, AxLine)
+
+
+@pytest.mark.parametrize("bad", [(0.0,), (0.0, 1.0, 2.0), ()])
+def test_draw_line_rejects_an_extent_that_is_not_two_values(bad):
+    helper = new_helper()
+    with pytest.raises(ValueError, match="two values"):
+        helper.draw_line(Line2.x_axis(), t=bad)
+
+
+def test_draw_line_honors_a_zero_valued_extent_endpoint():
+    """
+    Regression guard on the same falsy-zero shape found elsewhere: `t=(0.0, 5.0)` must start at the
+    origin, not be treated as "not supplied".
+    """
+    helper = new_helper()
+    artist = helper.draw_line(Line2.new_normalize(0.0, 0.0, 1.0, 0.0), t=(0.0, 5.0))[0]
+    assert list(artist.get_xdata()) == pytest.approx([0.0, 5.0], abs=TOL)
+
+
+def test_an_infinite_line_does_not_drag_the_autoscaled_view():
+    """
+    `Axes.axline` registers its two reference points in the data limits, so a construction line
+    through a far-off origin would otherwise rescale a plot of distant geometry. An infinite line is
+    an annotation and must not influence autoscaling.
+    """
+    ax = Figure().subplots()
+    helper = AxesHelper(ax)
+    helper.draw_curve(Curve2(numpy.array([[100.0, 100.0], [200.0, 200.0]]), tol=1.0e-6))
+    ax.autoscale_view()
+    before = ax.get_xlim()
+
+    helper.draw_line(Line2(0.0, 0.0, 1.0, 1.0))
+    ax.autoscale_view()
+    assert ax.get_xlim() == pytest.approx(before, abs=TOL)
+
+
+def test_a_finite_line_piece_does_take_part_in_autoscaling():
+    ax = Figure().subplots()
+    helper = AxesHelper(ax)
+    helper.draw_curve(Curve2(numpy.array([[0.0, 0.0], [1.0, 1.0]]), tol=1.0e-6))
+    ax.autoscale_view()
+    before = ax.get_xlim()
+
+    helper.draw_line(Line2.x_axis(), t=(0.0, 50.0))
+    ax.autoscale_view()
+    assert ax.get_xlim()[1] > before[1]
+
+
 def test_draw_normals_adds_one_arrow_per_sample():
     helper = new_helper()
     before = artist_count(helper.ax)
@@ -768,8 +863,11 @@ def two_of(factory):
 
 
 VARARGS_CALLS = {
+    "draw_aabb": lambda h: h.draw_aabb(Aabb2(0.0, 0.0, 1.0, 1.0), Aabb2(2.0, 2.0, 3.0, 3.0)),
     "draw_arc": lambda h: h.draw_arc(Arc2(0.0, 0.0, 1.0, 0.0, 1.0), Arc2(3.0, 0.0, 1.0, 0.0, 1.0)),
     "draw_circle": lambda h: h.draw_circle(Circle2(0.0, 0.0, 1.0), Circle2(3.0, 0.0, 1.0)),
+    "draw_line": lambda h: h.draw_line(Line2.x_axis(), Line2.y_axis()),
+    "draw_line_extent": lambda h: h.draw_line(Line2.x_axis(), Line2.y_axis(), t=(0.0, 1.0)),
     "draw_curve": lambda h: h.draw_curve(sample_curve(), sample_curve()),
     "draw_segment": lambda h: h.draw_segment(Segment2(0.0, 0.0, 1.0, 1.0), Segment2(2.0, 2.0, 3.0, 3.0)),
     "draw_boundary": lambda h: h.draw_boundary(sample_boundary(), sample_boundary()),
@@ -790,13 +888,20 @@ def test_entity_draw_methods_accept_varargs_and_return_one_artist_each(name):
     assert len(result) == 2
 
 
+# Methods whose no-entity call still needs an argument, or whose entry above is a second calling
+# form of a method already keyed by its own name.
+EMPTY_CALLS = {
+    "draw_spline": lambda h: h.draw_spline(tol=0.01),
+    "draw_line_extent": lambda h: h.draw_line(t=(0.0, 1.0)),
+}
+
+
 @pytest.mark.parametrize("name", sorted(VARARGS_CALLS))
 def test_entity_draw_methods_return_an_empty_list_when_given_nothing(name):
     """ Drawing a computed and possibly empty collection should not need a special case. """
     helper = new_helper()
-    method = getattr(helper, name)
-    result = method(tol=0.01) if name == "draw_spline" else method()
-    assert result == []
+    call = EMPTY_CALLS.get(name, lambda h, n=name: getattr(h, n)())
+    assert call(helper) == []
 
 
 def test_draw_point_returns_a_single_artist_because_it_makes_one():
@@ -910,6 +1015,12 @@ def test_omitting_color_leaves_the_axes_color_cycle_in_charge():
      lambda a: a.get_linewidth() == 3.0),
     ("draw_arc", lambda h: h.draw_arc(Arc2(0.0, 0.0, 1.0, 0.0, 1.0), alpha=0.5)[0],
      lambda a: a.get_alpha() == 0.5),
+    ("draw_aabb", lambda h: h.draw_aabb(Aabb2(0.0, 0.0, 1.0, 1.0), linestyle="--")[0],
+     lambda a: a.get_linestyle() == "--"),
+    ("draw_line", lambda h: h.draw_line(Line2.x_axis(), color="purple")[0],
+     lambda a: a.get_color() == "purple"),
+    ("draw_line_extent", lambda h: h.draw_line(Line2.x_axis(), t=(0.0, 1.0), linewidth=6.0)[0],
+     lambda a: a.get_linewidth() == 6.0),
     ("fill_curve", lambda h: h.fill_curve(sample_curve(), alpha=0.3)[0],
      lambda a: a.get_alpha() == 0.3),
     ("draw_point", lambda h: h.draw_point(Point2(0.0, 0.0), color="green"),
@@ -925,6 +1036,8 @@ def test_named_styling_arguments_reach_the_artist(name, call, check):
     ("draw_curve", lambda h: h.draw_curve(sample_curve(), solid_capstyle="round")[0]),
     ("draw_segment", lambda h: h.draw_segment(Segment2(0.0, 0.0, 1.0, 1.0), dash_capstyle="round")[0]),
     ("draw_circle", lambda h: h.draw_circle(Circle2(0.0, 0.0, 1.0), hatch="//")[0]),
+    ("draw_aabb", lambda h: h.draw_aabb(Aabb2(0.0, 0.0, 1.0, 1.0), hatch="//")[0]),
+    ("draw_line", lambda h: h.draw_line(Line2.x_axis(), dash_capstyle="round")[0]),
     ("draw_text", lambda h: h.draw_text("x", Point2(0.0, 0.0), rotation=45)),
 ])
 def test_uncommon_matplotlib_arguments_still_pass_through(name, call):
@@ -950,7 +1063,7 @@ def test_labels_reach_the_legend():
 # Every public method on the helper classes, each of which must be exercised above. Adding a method
 # without adding a test will fail these, in the spirit of test_stub_drift.py.
 EXERCISED_HELPER_MEMBERS = {
-    "draw_arc", "draw_arrow", "draw_boundary", "draw_circle",
+    "draw_aabb", "draw_arc", "draw_arrow", "draw_boundary", "draw_circle", "draw_line",
     "draw_curve", "draw_distance", "draw_labeled_arrow", "draw_point", "draw_segment",
     "draw_normals", "draw_spline", "draw_surface_point", "draw_text", "fill_curve", "set_bounds",
     "viewport",
