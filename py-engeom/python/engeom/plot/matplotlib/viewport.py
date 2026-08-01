@@ -13,6 +13,7 @@ from matplotlib.lines import Line2D
 from engeom.geom3 import Iso3, Line3, Mesh3, Point3, Vector3
 
 from .._coerce import PointLike, to_point2, to_point3
+from ._style import merge_style
 from .trace import TraceBuilder
 
 if TYPE_CHECKING:
@@ -21,36 +22,71 @@ if TYPE_CHECKING:
 
 class ViewPort3:
     """
-    A helper class that helps draw diagrams of 3d objects being rendered in parallel projection onto a 2d view,
-    such as for generating diagrams and illustrations.
+    Draws 3D entities onto a 2D Matplotlib ``Axes`` in parallel projection, for generating diagrams
+    and illustrations of 3D geometry.
+
+    This is not a renderer. There is no perspective, no lighting, and no depth sorting beyond what
+    the individual methods do for themselves, and entities are drawn in call order. It is intended
+    for line diagrams, not for visualizing a scene; use the PyVista helper for that.
+
+    Obtain one from `AxesHelper.viewport` rather than constructing it directly, and note that it
+    draws onto that helper's axes, so 2D and 3D entities can be mixed in one figure.
+
+    Every method that adds an artist is prefixed ``draw_``, matching `AxesHelper`.
     """
 
     def __init__(self, view: Iso3, helper: AxesHelper):
+        """
+        :param view: the isometry transforming 3D space into the 2D image plane, where +X is to the
+            right, +Y is up, and +Z points into the image plane.
+        :param helper: the helper whose axes to draw onto.
+        """
         self.view = view
         self.helper = helper
 
     def find_mesh_edge_point(self, view_x: float, view_y: float, mesh: Mesh3) -> Point3:
-        """ A quick and rough method for finding a point on the visual perimeter of a mesh in a 2d viewport
-        direction to label something without the arrow overlapping the actual mesh. There's probably a better way
-        to do this."""
+        """
+        Find a point on the visual perimeter of a mesh in a given 2D view direction, so that a
+        label can be attached to the silhouette without its leader crossing the mesh itself.
+
+        This is a rough approximation: it projects far outward from the mesh centroid along the
+        requested direction and takes the closest point on the mesh to that far sample. It is good
+        enough for placing an annotation but is not an exact silhouette query.
+
+        :param view_x: the x component of the direction to search in, in view coordinates.
+        :param view_y: the y component of the direction to search in, in view coordinates.
+        :param mesh: the mesh to find a perimeter point on.
+        :return: a point on the mesh surface, in the mesh's own 3D coordinates rather than view
+            coordinates.
+        """
         sample_point = mesh.aabb.center + self.view.inverse() @ (
                 Vector3(view_x, view_y, 0) * 100 * mesh.aabb.extent.norm())
         return mesh.point_closest_to(*sample_point)
 
     def draw_line(self, line: Line3, t: float = 1.0, t0: float | None = None, color: str = "black",
-                  linewidth: float = 1.0, linestyle: str = "-", alpha: float = 1.0, **kwargs) -> Line2D:
+                  linewidth: float = 1.0, linestyle: str = "-", alpha: float = 1.0,
+                  label: str | None = None, **kwargs) -> Line2D:
         """
-        Draws a line in the 2d view using the provided view. If `t0` is `None`, the line will be drawn from `-t` to
-        `t`. Otherwise, the line will be drawn from `t0` to `t`.
-        :param line: The line to draw.
-        :param t: The ending value to draw the line at. If `t0` is `None`, the line will be drawn from `-t` to `t`.
-        :param t0: The starting value to draw the line at. If `t0` is `None`, the line will be drawn from `-t` to `t`.
-        :param color: The color of the line.
-        :param linewidth: The width of the line.
-        :param linestyle: The style of the line.
-        :param alpha: The transparency of the line.
-        :param kwargs: Additional keyword arguments to pass to the line plot function.
+        Draw a segment of an infinite 3D line, projected into the view.
+
+        A `Line3` has no endpoints, so a parameter range has to be chosen. By default the segment is
+        drawn symmetrically about the line origin, from ``-t`` to ``t``; give `t0` to draw from
+        there to `t` instead.
+
+        :param line: the line to draw.
+        :param t: the parameter value to stop drawing at.
+        :param t0: the parameter value to start drawing at. If None, ``-t`` is used, giving a
+            segment centered on the line origin. Note that ``0.0`` is honored, and produces a ray
+            from the origin rather than a centered segment.
+        :param color: the color of the line.
+        :param linewidth: the width of the line.
+        :param linestyle: the line style.
+        :param alpha: the opacity of the line, from 0.0 to 1.0.
+        :param label: the legend label. If None, the line is not labeled.
+        :param kwargs: any other keyword argument accepted by ``Axes.plot``.
+        :return: the ``Line2D`` that was drawn.
         """
+        kwargs = merge_style(kwargs, label=label)
         l = self.view @ line
         p0 = l.at(t0 if t0 is not None else -t)
         p1 = l.at(t)
@@ -69,6 +105,30 @@ class ViewPort3:
             color: str = "black",
             label_position: float = 0.5,
     ) -> list[Artist]:
+        """
+        Draw a dimension between two 3D points as a double-headed arrow with a boxed label,
+        optionally standing the dimension off from the geometry it measures.
+
+        When `leader_shift` is given, the dimension arrow is drawn at the shifted position and
+        dotted leader lines are added connecting it back to the two original points, which is the
+        usual way to keep a dimension clear of the part it refers to.
+
+        :param point0: the first anchor point, as any coordinate the helpers accept.
+        :param point1: the second anchor point.
+        :param label: the text to show in the label box.
+        :param leader_shift: a 3D offset applied to the dimension arrow, moving it away from the
+            anchor points. If given and non-zero, dotted leaders back to the anchors are drawn too.
+        :param label_shift: a further 3D offset applied to the label alone, for nudging the text
+            clear of the arrow.
+        :param linewidth: the width of the dimension arrow. Leaders are drawn at three quarters of
+            this width.
+        :param fontsize: the font size of the label.
+        :param color: the color of the arrows and the label text.
+        :param label_position: where the label sits along the dimension, as a fraction from
+            `point0` to `point1`.
+        :return: every artist drawn, in draw order: the dimension arrow, the label, then the two
+            dotted leaders if a `leader_shift` was given.
+        """
         ldr_shift = to_point3(leader_shift).coords if leader_shift is not None else Vector3.zero()
         lbl_shift = to_point3(label_shift).coords if label_shift is not None else Vector3.zero()
         p0 = to_point3(point0)
@@ -111,25 +171,33 @@ class ViewPort3:
             box: bool = False,
     ) -> list[Artist]:
         """
-        Generates a labeled point representation on a 3D or 2D space. The labeled point is defined
-        by its position, label text, offsets for 3D and 2D rendering adjustments, and additional
-        visual attributes.
+        Draw a marker at a 3D point with a text label beside it, optionally with a leader arrow
+        from the label back to the point.
 
-        :param point: The coordinates of the point to be labeled, specified as a type compatible with PointLike.
-        :param label: The label text to display near the point.
-        :param offset_3d: The 3D offset value to position the label relative to the point in the 3D rendered space.
-        :param offset_2d: The 2D offset value to position the label relative to the point in the 2D rendered space.
-        :param fontsize: Font size of the label. Defaults to 14.
-        :param color: The color of the label text. Defaults to "black".
-        :param marker: The marker style used to visually indicate the point. Defaults to "o".
-        :param marker_size: Size of the marker representing the point. Defaults to 5.0.
-        :param weight: The font weight of the label text. Defaults to "normal".
-        :param arrow: Whether to display an arrow from the point to the label. Defaults to False.
-        :param arrow_style: The style of the arrow, if arrow is True. Defaults to "->".
-        :param linewidth: The width of the arrow line, if arrow is True. Defaults to 1.5.
-        :param linestyle: The style of the arrow line, if arrow is True. Defaults to "-".
-        :param arrow_props: Extra keyword arguments to pass to the arrow function.
-        :param box: Whether to draw a box around the label. Defaults to False.
+        The label can be offset in either space, and the two compose. `offset_3d` moves the label
+        in 3D before projection, so it stays anchored to the geometry as the view rotates;
+        `offset_2d` moves it on the page after projection, so it always displaces in the same
+        screen direction. Use the former to place a label relative to the part, the latter to keep
+        text from colliding in a particular view.
+
+        :param point: the point to label, as any coordinate the helpers accept.
+        :param label: the label text.
+        :param offset_3d: an offset applied to the label position in 3D, before projection.
+        :param offset_2d: an offset applied to the label position in 2D, after projection.
+        :param fontsize: the font size of the label.
+        :param color: the color of the label, marker, and leader arrow.
+        :param marker: the Matplotlib marker style for the point.
+        :param marker_size: the marker size in points. Set to 0.0 to draw the label with no marker.
+        :param weight: the font weight of the label.
+        :param arrow: whether to draw a leader arrow from the label back to the point. Only useful
+            in combination with an offset, since otherwise the two coincide.
+        :param arrow_style: the Matplotlib arrow style, used when `arrow` is True.
+        :param linewidth: the width of the leader arrow.
+        :param linestyle: the line style of the leader arrow.
+        :param arrow_props: additional keyword arguments to pass to the arrow.
+        :param box: whether to draw a rounded box around the label text.
+        :return: every artist drawn, in draw order: the leader arrow if requested, the label, then
+            the marker if `marker_size` is positive.
         """
         p = to_point3(point)
         o3 = Vector3.zero() if offset_3d is None else to_point3(offset_3d).coords
@@ -166,15 +234,20 @@ class ViewPort3:
             fontsize: int = 14,
     ) -> list[Artist]:
         """
-        Draws a coordinate system in the 2d view using the provided view. The coordinate system is drawn as a set
-        of red, green, and blue arrows representing the x, y, and z axes respectively. If one of the arrows
-        aligns too closely to the view direction, it will be hidden.
+        Draw a coordinate frame as three labeled arrows: X in red, Y in green, and Z in blue.
 
-        :param cs: The coordinate system to draw
-        :param length: The length of the arrows representing the axes
-        :param linewidth: The width of the arrows representing the axes
-        :param label_offset: The additional scale factor for length to determine where the labels are placed.
-        :param fontsize: The font size of the labels
+        An axis pointing nearly straight into or out of the view would project to almost nothing
+        and render as a meaningless stub, so any axis whose projected length falls below a tenth of
+        `length` is skipped entirely. Looking down an axis therefore yields two arrows, not three.
+
+        :param cs: the coordinate frame to draw, as an isometry.
+        :param length: the length of each axis arrow, in data units.
+        :param linewidth: the width of the axis arrows.
+        :param label_offset: how far beyond the arrow tip to place its label, as a fraction of
+            `length`.
+        :param fontsize: the font size of the axis labels.
+        :return: every artist drawn: an arrow and a label for each visible axis, so between zero
+            and six artists depending on the view direction.
         """
 
         def _visible(_v: Point3, _len: float) -> bool:
@@ -205,16 +278,29 @@ class ViewPort3:
             corner_angle=None
     ) -> list[Line2D]:
         """
-        Draws the outline of a mesh in the 2d view using the provided view and helper. The default parameters for
-        the visible edges are {'color': 'black', 'linewidth': 1.0} and for the hidden edges are
-        {'color': 'black', 'linewidth': 0.5, alpha=0.125}.
+        Draw a mesh as a line drawing of its silhouette and corner edges, in the manner of a
+        technical illustration rather than a shaded render.
 
-        :param mesh: The mesh to draw the outline of.
-        :param visible_kwargs: Optional keyword arguments for the visible edges of the mesh.
-        :param hidden_kwargs: Optional keyword arguments for the hidden edges of the mesh.
-        :param no_hidden: If True, only the visible edges will be drawn.
-        :param max_edge_len: Max length of edges for the outline, edges longer than this will be broken up
-        :param corner_angle: Minimum angle between two adjacent faces for the common edge to be considered a corner and included in the outline
+        Edges are classified as visible or hidden with respect to the view direction and drawn with
+        separate styles, so that hidden detail can be shown faintly or suppressed. All the edges of
+        one class go into a single artist, using `TraceBuilder` to break between disjoint runs.
+
+        :param mesh: the mesh to outline.
+        :param visible_kwargs: keyword arguments for the visible edges, passed to ``Axes.plot``. If
+            None, ``{'color': 'black', 'linewidth': 1.0}`` is used. Pass an empty dict to fall back
+            to Matplotlib's own defaults instead.
+        :param hidden_kwargs: keyword arguments for the hidden edges. If None,
+            ``{'color': 'black', 'linewidth': 0.5, 'alpha': 0.125}`` is used.
+        :param no_hidden: if True, hidden edges are not drawn at all and only one artist is
+            returned.
+        :param max_edge_len: the maximum length of an outline edge, in data units. Longer edges are
+            subdivided, which matters because a long straight edge on a curved surface would
+            otherwise cut across the silhouette.
+        :param corner_angle: the minimum angle between adjacent faces, in radians, for their shared
+            edge to count as a corner and be included in the outline. If None, only silhouette
+            edges are drawn and interior corners are omitted.
+        :return: the visible-edge ``Line2D``, followed by the hidden-edge ``Line2D`` unless
+            `no_hidden` was set.
         """
         visible = TraceBuilder()
         hidden = TraceBuilder()

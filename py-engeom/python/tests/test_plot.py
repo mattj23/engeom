@@ -32,6 +32,7 @@ from engeom.plot import LabelPlace
 from engeom.plot._coerce import to_point2, to_point3, to_tuple2, to_tuple3
 from engeom.plot._common import LABEL_PLACES
 from engeom.plot.matplotlib import GOM_CMAP, GomColorMap, AxesHelper, TraceBuilder, ViewPort3
+from engeom.plot.matplotlib._style import merge_style
 
 TOL = 1e-12
 
@@ -870,6 +871,76 @@ def test_viewport_composites_return_every_artist_they_added(call):
     result = call(view)
     assert isinstance(result, list)
     assert len(result) == artist_count(view.helper.ax) - before
+
+
+# ---------------------------------------------------------------------------
+# Named styling arguments
+# ---------------------------------------------------------------------------
+
+def test_merge_style_drops_the_arguments_left_as_none():
+    assert merge_style({}, color="red", linewidth=None, alpha=0.5) == {"color": "red", "alpha": 0.5}
+
+
+def test_merge_style_leaves_the_open_kwargs_intact():
+    assert merge_style({"solid_capstyle": "round"}, color=None) == {"solid_capstyle": "round"}
+
+
+def test_omitting_color_leaves_the_axes_color_cycle_in_charge():
+    """
+    The named styling arguments must not be forwarded when left as None. Passing `color=None` to
+    Matplotlib is not the same as omitting it: omitting it draws the next color from the cycle.
+    """
+    helper = new_helper()
+    first = helper.draw_curve(sample_curve())[0]
+    second = helper.draw_curve(sample_curve())[0]
+    assert first.get_color() != second.get_color()
+
+
+@pytest.mark.parametrize("name,call,check", [
+    ("draw_curve", lambda h: h.draw_curve(sample_curve(), color="red")[0],
+     lambda a: a.get_color() == "red"),
+    ("draw_segment", lambda h: h.draw_segment(Segment2(0.0, 0.0, 1.0, 1.0), linewidth=4.0)[0],
+     lambda a: a.get_linewidth() == 4.0),
+    ("draw_spline", lambda h: h.draw_spline(
+        CubicSpline2(0.0, 0.0, 1.0, 2.0, 2.0, -1.0, 3.0, 0.0), tol=0.01, linestyle="--")[0],
+     lambda a: a.get_linestyle() == "--"),
+    ("draw_boundary", lambda h: h.draw_boundary(sample_boundary(), alpha=0.25)[0],
+     lambda a: a.get_alpha() == 0.25),
+    ("draw_circle", lambda h: h.draw_circle(Circle2(0.0, 0.0, 1.0), linewidth=3.0)[0],
+     lambda a: a.get_linewidth() == 3.0),
+    ("draw_arc", lambda h: h.draw_arc(Arc2(0.0, 0.0, 1.0, 0.0, 1.0), alpha=0.5)[0],
+     lambda a: a.get_alpha() == 0.5),
+    ("fill_curve", lambda h: h.fill_curve(sample_curve(), alpha=0.3)[0],
+     lambda a: a.get_alpha() == 0.3),
+    ("draw_point", lambda h: h.draw_point(Point2(0.0, 0.0), color="green"),
+     lambda a: a.get_color() == "green"),
+    ("draw_text", lambda h: h.draw_text("x", Point2(0.0, 0.0), fontsize=22),
+     lambda a: a.get_fontsize() == 22),
+])
+def test_named_styling_arguments_reach_the_artist(name, call, check):
+    assert check(call(new_helper()))
+
+
+@pytest.mark.parametrize("name,call", [
+    ("draw_curve", lambda h: h.draw_curve(sample_curve(), solid_capstyle="round")[0]),
+    ("draw_segment", lambda h: h.draw_segment(Segment2(0.0, 0.0, 1.0, 1.0), dash_capstyle="round")[0]),
+    ("draw_circle", lambda h: h.draw_circle(Circle2(0.0, 0.0, 1.0), hatch="//")[0]),
+    ("draw_text", lambda h: h.draw_text("x", Point2(0.0, 0.0), rotation=45)),
+])
+def test_uncommon_matplotlib_arguments_still_pass_through(name, call):
+    """
+    Naming the common styling arguments must not close the set. Anything else Matplotlib accepts
+    has to keep working, which is why **kwargs stays open and untyped.
+    """
+    assert call(new_helper()) is not None
+
+
+def test_labels_reach_the_legend():
+    helper = new_helper()
+    helper.draw_curve(sample_curve(), label="upper")
+    helper.draw_curve(sample_curve(), label="lower")
+    legend_texts = [t.get_text() for t in helper.ax.legend().get_texts()]
+    assert legend_texts == ["upper", "lower"]
 
 
 # ---------------------------------------------------------------------------

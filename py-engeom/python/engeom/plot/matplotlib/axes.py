@@ -20,6 +20,7 @@ from engeom.metrology import Distance2
 
 from .._coerce import Coords2, to_tuple2
 from .._common import LabelPlace, check_label_place
+from ._style import merge_style
 from .viewport import ViewPort3
 
 
@@ -59,9 +60,17 @@ def set_aspect_fill(ax: Axes):
 
 class AxesHelper:
     """
-    A helper class for working with Matplotlib. It wraps around a Matplotlib `Axes` object and provides direct
-    methods for plotting some `engeom` entities.  It also enforces the aspect ratio to be 1:1 and expands the
-    subplot to fill its available space.
+    Wraps a Matplotlib ``Axes`` and draws `engeom` entities onto it.
+
+    Every method that adds an artist is prefixed ``draw_``, so ``helper.draw_<tab>`` enumerates
+    everything that can be drawn; a method without that prefix configures or queries instead. Each
+    ``draw_`` method returns the Matplotlib artist or artists it created, so anything the helper
+    does not expose can still be reached by configuring the returned object directly.
+
+    The wrapped ``Axes`` stays available as `ax`, which is the escape hatch for the rest of the
+    Matplotlib API: ``helper.ax.legend()``, ``helper.ax.set_title(...)``, and so on.
+
+    By default the aspect ratio is set to 1:1, since geometry drawn at unequal scales is misleading.
 
     !!! example
         ```python
@@ -72,12 +81,16 @@ class AxesHelper:
         ```
     """
 
-    def __init__(self, ax: Axes, skip_aspect=False, hide_axes=False):
+    def __init__(self, ax: Axes, skip_aspect: bool = False, hide_axes: bool = False):
         """
-        Initialize the helper with a Matplotlib `Axes` object.
-        :param ax: The Matplotlib `Axes` object to wrap around.
-        :param skip_aspect: Set this to true to skip enforcing the aspect ratio to be 1:1.
-        :param hide_axes: Set this to true to hide the axes.
+        Wrap a Matplotlib ``Axes`` object.
+
+        :param ax: the ``Axes`` object to wrap. It is not copied, so anything drawn through the
+            helper appears on the caller's own figure.
+        :param skip_aspect: set to True to leave the aspect ratio alone. By default the aspect is
+            forced to 1:1 with ``adjustable="datalim"``, so that geometry is not visually distorted.
+        :param hide_axes: set to True to hide the axis lines, ticks, and labels, which is usually
+            what you want when the figure is a diagram rather than a plot.
         """
 
         self.ax = ax
@@ -89,30 +102,48 @@ class AxesHelper:
 
     def viewport(self, view: Iso3) -> ViewPort3:
         """
-        This method returns a ViewPort3 object that can be used to draw 3d objects in parallel projection onto the
-        2d view, such as for generating diagrams and illustrations. The view should be an isometry describing a
-        transformation from the 3d space into a 2d image plane where +X is to the right, +Y is up, and +Z is into
-        the image plane.
+        Create a viewport for drawing 3D entities onto this 2D axes in parallel projection, such as
+        for generating diagrams and illustrations of 3D geometry.
 
-        :param view: The isometry describing the transformation from 3d space into the 2d image plane.
-        :return: A ViewPort3 object that can be used to draw 3d objects in parallel projection onto the 2d view.
+        The view isometry describes the transformation from 3D space into the 2D image plane, where
+        +X is to the right, +Y is up, and +Z points into the image plane.
+
+        :param view: the isometry transforming 3D space into the 2D image plane.
+        :return: a `ViewPort3` bound to this helper, which draws onto the same axes.
         """
         return ViewPort3(view, self)
 
     def set_bounds(self, box: Aabb2) -> None:
         """
-        Set the bounds of a Matplotlib Axes object.
-        :param box: an Aabb2 object
+        Set both axis limits from a bounding box, in a single call.
+
+        :param box: the box to fit the axes to. Its extents are applied directly, with no padding.
         """
         self.ax.set_xlim(box.min.x, box.max.x)
         self.ax.set_ylim(box.min.y, box.max.y)
 
-    def draw_arc(self, *arcs: Arc2, **kwargs) -> list[Arc]:
+    def draw_arc(self, *arcs: Arc2, color: str | None = None, linewidth: float | None = None,
+                 linestyle: str | None = None, alpha: float | None = None, label: str | None = None,
+                 **kwargs) -> list[Arc]:
         """
+        Draw one or more circular arcs. Matplotlib's ``Arc`` is a stroke-only patch and cannot be
+        filled.
 
-        :param arcs:
-        :return:
+        `Arc2` carries a signed sweep, while Matplotlib's ``Arc`` patch always sweeps
+        counter-clockwise from its start angle. A negative sweep is therefore converted here into
+        the equivalent positive sweep from the other end, so that clockwise arcs render correctly.
+
+        :param arcs: the arcs to draw.
+        :param color: the stroke color. If None, the Matplotlib default applies.
+        :param linewidth: the stroke width in points. If None, the Matplotlib default applies.
+        :param linestyle: the stroke style, such as ``"--"``. If None, the Matplotlib default applies.
+        :param alpha: the opacity from 0.0 to 1.0. If None, the arc is fully opaque.
+        :param label: the legend label. If None, the arc is not labeled.
+        :param kwargs: any other keyword argument accepted by the Matplotlib ``Arc`` patch.
+        :return: one ``Arc`` patch per arc, in the order given.
         """
+        kwargs = merge_style(kwargs, color=color, linewidth=linewidth, linestyle=linestyle,
+                             alpha=alpha, label=label)
         patches = []
         for arc in arcs:
             # Arcs are drawn by matplotlib in a counter-clockwise direction, so if the sweep is negative we
@@ -132,19 +163,52 @@ class AxesHelper:
             patches.append(self.ax.add_patch(patch))
         return patches
 
-    def draw_segment(self, *segments: Segment2, **kwargs) -> list[Line2D]:
+    def draw_segment(self, *segments: Segment2, color: str | None = None,
+                     linewidth: float | None = None, linestyle: str | None = None,
+                     alpha: float | None = None, label: str | None = None,
+                     **kwargs) -> list[Line2D]:
         """
-        Plot a segment on a Matplotlib Axes object.
-        :param segments: the Segment2 objects to draw
-        :param kwargs: keyword arguments to pass to the plot function
-        :return: one Line2D per segment
+        Draw one or more line segments, each as its own separate line.
+
+        :param segments: the segments to draw.
+        :param color: the line color. If None, the axes' color cycle supplies one.
+        :param linewidth: the line width in points. If None, the Matplotlib default applies.
+        :param linestyle: the line style, such as ``"--"``. If None, the Matplotlib default applies.
+        :param alpha: the opacity from 0.0 to 1.0. If None, the line is fully opaque.
+        :param label: the legend label. If None, the line is not labeled.
+        :param kwargs: any other keyword argument accepted by ``Axes.plot``.
+        :return: one ``Line2D`` per segment, in the order given.
         """
+        kwargs = merge_style(kwargs, color=color, linewidth=linewidth, linestyle=linestyle,
+                             alpha=alpha, label=label)
         return [
             self.ax.plot([seg.a.x, seg.b.x], [seg.a.y, seg.b.y], **kwargs)[0]
             for seg in segments
         ]
 
-    def draw_boundary(self, *boundaries: Boundary2, tol: float | None = None, **kwargs) -> list[Line2D]:
+    def draw_boundary(self, *boundaries: Boundary2, tol: float | None = None,
+                      color: str | None = None, linewidth: float | None = None,
+                      linestyle: str | None = None, alpha: float | None = None,
+                      label: str | None = None, **kwargs) -> list[Line2D]:
+        """
+        Draw one or more boundaries by flattening their arc segments into polylines.
+
+        :param boundaries: the boundaries to draw.
+        :param tol: the maximum deviation between the drawn polyline and the true boundary, in data
+            units. Smaller values give smoother arcs at the cost of more points. If None, a
+            tolerance of one thousandth of each boundary's own diagonal is used, so mixed-scale
+            boundaries in one call are each flattened appropriately.
+        :param color: the line color. If None, the axes' color cycle supplies one.
+        :param linewidth: the line width in points. If None, the Matplotlib default applies.
+        :param linestyle: the line style, such as ``"--"``. If None, the Matplotlib default applies.
+        :param alpha: the opacity from 0.0 to 1.0. If None, the line is fully opaque.
+        :param label: the legend label. If None, the line is not labeled.
+        :param kwargs: any other keyword argument accepted by ``Axes.plot``.
+        :return: one ``Line2D`` per boundary, in the order given.
+        :raises ValueError: if `tol` is given and is not positive.
+        """
+        kwargs = merge_style(kwargs, color=color, linewidth=linewidth, linestyle=linestyle,
+                             alpha=alpha, label=label)
         lines = []
         for boundary in boundaries:
             if tol is None:
@@ -196,13 +260,35 @@ class AxesHelper:
                 )
         return arrows
 
-    def draw_circle(self, *circles: Circle2 | Iterable[float], fill=False, **kwargs) -> list[Circle]:
+    def draw_circle(self, *circles: Circle2 | Iterable[float], fill: bool = False,
+                    color: str | None = None, edgecolor: str | None = None,
+                    facecolor: str | None = None, linewidth: float | None = None,
+                    linestyle: str | None = None, alpha: float | None = None,
+                    label: str | None = None, **kwargs) -> list[Circle]:
         """
-        Plot a circle on a Matplotlib Axes object.
-        :param circles: the Circle2 objects, or (x, y, r) iterables, to draw
-        :param kwargs: keyword arguments to pass to the plot function
-        :return: one Circle patch per circle
+        Draw one or more circles as patches.
+
+        A raw ``(x, y, r)`` iterable is accepted alongside `Circle2`, so circle data already held as
+        an array row does not need converting first.
+
+        :param circles: the circles to draw, each either a `Circle2` or an ``(x, y, r)`` iterable.
+        :param fill: whether to fill the circles. Unlike stroking versus filling a curve, both are
+            the same Matplotlib patch here, so this is a flag rather than a separate method.
+        :param color: sets both the edge and face color at once. If None, the Matplotlib default
+            applies. `edgecolor` and `facecolor` override this for the side they name.
+        :param edgecolor: the outline color. If None, `color` or the Matplotlib default applies.
+        :param facecolor: the fill color, which has no effect unless `fill` is True. If None,
+            `color` or the Matplotlib default applies.
+        :param linewidth: the outline width in points. If None, the Matplotlib default applies.
+        :param linestyle: the outline style, such as ``"--"``. If None, the Matplotlib default applies.
+        :param alpha: the opacity from 0.0 to 1.0. If None, the circle is fully opaque.
+        :param label: the legend label. If None, the circle is not labeled.
+        :param kwargs: any other keyword argument accepted by the Matplotlib ``Circle`` patch.
+        :return: one ``Circle`` patch per circle, in the order given.
+        :raises ValueError: if an iterable does not hold exactly three values.
         """
+        kwargs = merge_style(kwargs, color=color, edgecolor=edgecolor, facecolor=facecolor,
+                             linewidth=linewidth, linestyle=linestyle, alpha=alpha, label=label)
         patches = []
         for cdata in circles:
             if isinstance(cdata, Circle2):
@@ -218,43 +304,85 @@ class AxesHelper:
             patches.append(self.ax.add_patch(c))
         return patches
 
-    def draw_curve(self, *curves: Curve2, **kwargs) -> list[Line2D]:
+    def draw_curve(self, *curves: Curve2, color: str | None = None, linewidth: float | None = None,
+                   linestyle: str | None = None, alpha: float | None = None,
+                   label: str | None = None, **kwargs) -> list[Line2D]:
         """
-        Plot a curve on a Matplotlib Axes object.
-        :param curves: the Curve2 objects to draw
-        :param kwargs: keyword arguments to pass to the plot function
-        :return: one Line2D per curve
+        Draw one or more curves as polylines, each as its own separate line.
+
+        :param curves: the curves to draw.
+        :param color: the line color. If None, the axes' color cycle supplies one, which means each
+            curve in a multi-curve call takes the next cycle color rather than matching.
+        :param linewidth: the line width in points. If None, the Matplotlib default applies.
+        :param linestyle: the line style, such as ``"--"``. If None, the Matplotlib default applies.
+        :param alpha: the opacity from 0.0 to 1.0. If None, the line is fully opaque.
+        :param label: the legend label. If None, the line is not labeled. Note that a label given
+            while drawing several curves is applied to every one of them, producing repeated legend
+            entries; label them in separate calls instead.
+        :param kwargs: any other keyword argument accepted by ``Axes.plot``.
+        :return: one ``Line2D`` per curve, in the order given.
         """
+        kwargs = merge_style(kwargs, color=color, linewidth=linewidth, linestyle=linestyle,
+                             alpha=alpha, label=label)
         return [
             self.ax.plot(curve.points[:, 0], curve.points[:, 1], **kwargs)[0]
             for curve in curves
         ]
 
-    def draw_spline(self, *splines: CubicSpline2, tol: float, **kwargs) -> list[Line2D]:
+    def draw_spline(self, *splines: CubicSpline2, tol: float, color: str | None = None,
+                    linewidth: float | None = None, linestyle: str | None = None,
+                    alpha: float | None = None, label: str | None = None,
+                    **kwargs) -> list[Line2D]:
         """
-        Plot a cubic Bezier spline by flattening it into an adaptive polyline whose linear
-        segments deviate from the underlying curve by no more than `tol`.
+        Draw one or more cubic Bezier splines, flattening each into an adaptive polyline whose
+        linear segments deviate from the true curve by no more than `tol`.
 
-        :param splines: the CubicSpline2 objects to draw
-        :param tol: maximum Euclidean deviation between the drawn polyline and the spline.
-            Smaller values produce a smoother-looking curve at the cost of more line segments.
-        :param kwargs: keyword arguments to pass to `Axes.plot`
-        :return: one Line2D per spline
+        :param splines: the splines to draw.
+        :param tol: the maximum Euclidean deviation between the drawn polyline and the spline, in
+            data units. Smaller values produce a smoother-looking curve at the cost of more line
+            segments. Required, and keyword-only, since there is no scale-independent default.
+        :param color: the line color. If None, the axes' color cycle supplies one.
+        :param linewidth: the line width in points. If None, the Matplotlib default applies.
+        :param linestyle: the line style, such as ``"--"``. If None, the Matplotlib default applies.
+        :param alpha: the opacity from 0.0 to 1.0. If None, the line is fully opaque.
+        :param label: the legend label. If None, the line is not labeled.
+        :param kwargs: any other keyword argument accepted by ``Axes.plot``.
+        :return: one ``Line2D`` per spline, in the order given.
         """
+        kwargs = merge_style(kwargs, color=color, linewidth=linewidth, linestyle=linestyle,
+                             alpha=alpha, label=label)
         lines = []
         for spline in splines:
             points = spline.polyline(tol)
             lines.append(self.ax.plot(points[:, 0], points[:, 1], **kwargs)[0])
         return lines
 
-    def fill_curve(self, *curves: Curve2, **kwargs) -> list[Polygon]:
+    def fill_curve(self, *curves: Curve2, color: str | None = None, edgecolor: str | None = None,
+                   facecolor: str | None = None, linewidth: float | None = None,
+                   alpha: float | None = None, label: str | None = None,
+                   **kwargs) -> list[Polygon]:
         """
-        Fill a curve on a Matplotlib Axes object.
-        :param curves: the Curve2 objects to fill (each can be closed but doesn't need to be, and
-            will be closed automatically)
-        :param kwargs: keyword arguments to pass to the inner Axes.fill function
-        :return: one Polygon per curve
+        Fill the interior of one or more curves, rather than stroking their outline.
+
+        This is a separate method from `draw_curve` rather than a flag on it, because filling goes
+        through ``Axes.fill`` while stroking goes through ``Axes.plot``, and the two accept
+        different keyword arguments.
+
+        :param curves: the curves to fill. Each may be open, in which case it is closed
+            automatically by joining its last point back to its first.
+        :param color: sets both the edge and face color at once. If None, the axes' color cycle
+            supplies one. `edgecolor` and `facecolor` override this for the side they name.
+        :param edgecolor: the outline color of the filled region.
+        :param facecolor: the interior color of the filled region.
+        :param linewidth: the outline width in points. If None, the Matplotlib default applies.
+        :param alpha: the opacity from 0.0 to 1.0. Filled regions are usually worth making partly
+            transparent so that geometry drawn underneath stays visible.
+        :param label: the legend label. If None, the region is not labeled.
+        :param kwargs: any other keyword argument accepted by ``Axes.fill``.
+        :return: one ``Polygon`` per curve, in the order given.
         """
+        kwargs = merge_style(kwargs, color=color, edgecolor=edgecolor, facecolor=facecolor,
+                             linewidth=linewidth, alpha=alpha, label=label)
         return [
             self.ax.fill(curve.points[:, 0], curve.points[:, 1], **kwargs)[0]
             for curve in curves
@@ -272,20 +400,32 @@ class AxesHelper:
             scale_value: float = 1.0,
     ) -> list[Artist]:
         """
-        Plot a `Distance2` object on a Matplotlib Axes, drawing the leader lines and adding a text label with the
-        distance value.
-        :param distance: The `Distance2` object to plot.
-        :param side_shift: Shift the ends of the leader lines by this amount of data units. The direction of the
-        shift is orthogonal to the distance direction, with positive values shifting to the right.
-        :param template: The format string to use for the distance label. The default is "{value:.3f}".
-        :param fontsize: The font size to use for the label.
-        :param label_place: The placement of the label.
-        :param label_offset: The distance offset to use for the label. Will have different meanings depending on
-        the `label_place` parameter.
-        :param fontname: The name of the font to use for the label.
-        :param scale_value: A scaling factor to apply to the value before displaying it in the label. Use this to
-        convert between different units of measurement without having to modify the actual value or the coordinate
-        system.
+        Draw a `Distance2` as a dimension: leader lines running out to the two anchor points, an
+        arrow spanning between them, and a boxed text label carrying the measured value.
+
+        Sizes that are not given in data units, such as the standoff between an anchor point and the
+        start of its leader, are derived from the current font size and axis limits. That means the
+        dimension is laid out for the axes as they are when this is called, so set the axis limits
+        before drawing rather than after.
+
+        :param distance: the measurement to draw.
+        :param side_shift: offset the leader line ends by this many data units, orthogonally to the
+            measurement direction, with positive values shifting to the right. Use this to keep
+            several dimensions of the same feature from overlapping each other.
+        :param template: the format string for the label. The measured value is substituted for the
+            ``value`` key.
+        :param fontsize: the font size of the label.
+        :param label_place: where to put the label relative to the anchor points. See `LabelPlace`.
+        :param label_offset: how far the label sits from its anchor, in data units. For ``"inside"``
+            this is measured from the midpoint, and for the outside placements it is the standoff
+            beyond the relevant leader. If None, a default derived from the font size is used.
+        :param fontname: the name of the font to use for the label. If None, the Matplotlib default
+            is used.
+        :param scale_value: a factor applied to the value before it is formatted into the label.
+            Use this to display a measurement in different units without altering the geometry or
+            its coordinate system.
+        :return: every artist drawn, in draw order: the leader and dimension arrows first, then any
+            sideways leaders, and the label last.
         :raises ValueError: if `label_place` is not one of the valid placement tokens.
         """
         label_place = check_label_place(label_place)
@@ -330,6 +470,8 @@ class AxesHelper:
         return artists
 
     def _line_if_needed(self, pad: float, actual: Point2, leader_end: Point2) -> list[Annotation]:
+        # A sideways leader is only drawn when the anchor point and the end of its leader are far
+        # enough apart to be visually distinct; below that they would overlap into a smudge.
         half_pad = pad * 0.5
         v: Vector2 = leader_end - actual
         if v.norm() < half_pad:
@@ -339,17 +481,25 @@ class AxesHelper:
         return [self.draw_arrow(actual, work.at_distance(t1), arrow="-")]
 
     def draw_text(self, text: str, pos: Coords2, shift: Coords2 | None = None, ha: str = "center",
-                  va: str = "center", **kwargs) -> Annotation:
+                  va: str = "center", color: str | None = None, fontsize: float | None = None,
+                  alpha: float | None = None, **kwargs) -> Annotation:
         """
-        Annotate a Matplotlib Axes object with text only, by default in the xy data plane.
-        :param text: the text to annotate
-        :param pos: the position of the annotation
-        :param shift: an optional shift vector to apply to the position
-        :param ha: horizontal alignment
-        :param va: vertical alignment
-        :param kwargs: keyword arguments to pass to the annotate function
-        :return: the annotation object
+        Draw a text label at a position in data coordinates.
+
+        :param text: the text to draw.
+        :param pos: where to place it, as any 2D coordinate the helpers accept.
+        :param shift: an optional offset added to `pos`, in data units. Useful for nudging a label
+            clear of the feature it names without recomputing the position.
+        :param ha: horizontal alignment of the text relative to its position.
+        :param va: vertical alignment of the text relative to its position.
+        :param color: the text color. If None, the Matplotlib default applies.
+        :param fontsize: the font size in points. If None, the Matplotlib default applies.
+        :param alpha: the opacity from 0.0 to 1.0. If None, the text is fully opaque.
+        :param kwargs: any other keyword argument accepted by ``Axes.annotate``, such as ``bbox``,
+            ``rotation``, ``fontweight``, or ``fontfamily``.
+        :return: the ``Annotation`` that was drawn.
         """
+        kwargs = merge_style(kwargs, color=color, fontsize=fontsize, alpha=alpha)
         xy = to_tuple2(pos)
         if shift is not None:
             shift = to_tuple2(shift)
@@ -357,19 +507,54 @@ class AxesHelper:
 
         return self.ax.annotate(text, xy=xy, ha=ha, va=va, **kwargs)
 
-    def draw_point(self, *points: Coords2, marker="o", markersize=5.0, **kwargs) -> Line2D:
-        # An empty call still produces a real (empty) artist, rather than failing in `zip`, so that
-        # drawing a computed and possibly empty set of points needs no special case at the call site.
+    def draw_point(self, *points: Coords2, marker: str = "o", markersize: float = 5.0,
+                   color: str | None = None, alpha: float | None = None, label: str | None = None,
+                   **kwargs) -> Line2D:
+        """
+        Draw one or more discrete points as markers.
+
+        Unlike the other varargs draw methods, all the points go into a single Matplotlib artist,
+        so this returns one ``Line2D`` rather than a list of them.
+
+        :param points: the points to draw, each as any 2D coordinate the helpers accept.
+        :param marker: the Matplotlib marker style, such as ``"o"``, ``"x"``, or ``"^"``.
+        :param markersize: the marker size in points.
+        :param color: the marker color. If None, the axes' color cycle supplies one.
+        :param alpha: the opacity from 0.0 to 1.0. If None, the markers are fully opaque.
+        :param label: the legend label. If None, the markers are not labeled.
+        :param kwargs: any other keyword argument accepted by ``Axes.plot``, such as
+            ``markeredgecolor`` or ``markerfacecolor``.
+        :return: the single ``Line2D`` holding every point. Drawing no points still returns a valid
+            but empty artist, so that a computed and possibly empty set needs no special case.
+        """
+        kwargs = merge_style(kwargs, color=color, alpha=alpha, label=label)
         coords = [to_tuple2(p) for p in points]
         x, y = zip(*coords) if coords else ((), ())
         return self.ax.plot(x, y, marker, markersize=markersize, **kwargs)[0]
 
-    def draw_surface_point(self, *points: SurfacePoint2, arrow_len=1, marker="o", markersize=5.0,
+    def draw_surface_point(self, *points: SurfacePoint2, arrow_len: float = 1, marker: str = "o",
+                           markersize: float = 5.0, color: str = "black",
+                           alpha: float | None = None, label: str | None = None,
                            **kwargs) -> list[Artist]:
+        """
+        Draw one or more surface points, each as a marker with an arrow showing its normal.
+
+        :param points: the surface points to draw.
+        :param arrow_len: the length of the normal arrows, in data units.
+        :param marker: the Matplotlib marker style used for the point positions.
+        :param markersize: the marker size in points.
+        :param color: the color of both the markers and their normal arrows, so the two stay
+            visually paired. Defaults to black rather than the color cycle, since a surface point
+            and its arrow have to match to read as one glyph.
+        :param alpha: the opacity from 0.0 to 1.0. If None, the markers are fully opaque.
+        :param label: the legend label for the markers. If None, they are not labeled.
+        :param kwargs: any other keyword argument accepted by ``Axes.plot`` for the markers.
+        :return: every artist drawn: the single ``Line2D`` holding all the markers first, then one
+            ``Annotation`` per normal arrow, in the order the points were given.
+        """
+        kwargs = merge_style(kwargs, color=color, alpha=alpha, label=label)
         coords = [(p.point.x, p.point.y) for p in points]
         x, y = zip(*coords) if coords else ((), ())
-        color = kwargs.get("color", "black")
-        kwargs["color"] = color
         artists: list[Artist] = [self.ax.plot(x, y, marker, markersize=markersize, **kwargs)[0]]
         for p in points:
             p: SurfacePoint2
@@ -377,22 +562,26 @@ class AxesHelper:
         return artists
 
     def draw_labeled_arrow(self, start: Coords2, end: Coords2, text: str, fraction: float = 0.5,
-                           shift: Coords2 | None = None,
-                           arrow="->", color="black", linewidth: float | None = None, linestyle="-",
+                           shift: Coords2 | None = None, arrow: str = "->", color: str = "black",
+                           linewidth: float | None = None, linestyle: str = "-",
                            **text_kwargs) -> list[Artist]:
         """
+        Draw an arrow with a text label positioned along it, for annotating a direction or a
+        callout on a diagram.
 
-        :param start:
-        :param end:
-        :param text:
-        :param shift:
-        :param fraction:
-        :param arrow:
-        :param color:
-        :param linewidth:
-        :param linestyle:
-        :param text_kwargs: parameters to pass to the text function
-        :return:
+        :param start: the tail of the arrow, as any 2D coordinate the helpers accept.
+        :param end: the head of the arrow.
+        :param text: the label text.
+        :param fraction: where the label sits along the arrow, as a fraction from `start` to `end`.
+            The default of 0.5 puts it at the midpoint; 0.0 and 1.0 put it at the ends.
+        :param shift: an optional offset added to the label position, in data units, for nudging
+            the text clear of the arrow itself.
+        :param arrow: the Matplotlib arrow style. Use ``"-"`` for a plain line with no head.
+        :param color: the color of both the arrow and the label, so the two read as one annotation.
+        :param linewidth: the width of the arrow. If None, the Matplotlib default is used.
+        :param linestyle: the line style of the arrow.
+        :param text_kwargs: additional keyword arguments to pass to `draw_text`.
+        :return: the arrow ``Annotation`` and the label ``Annotation``, in that order.
         """
         start = Point2(*to_tuple2(start))
         end = Point2(*to_tuple2(end))
@@ -403,30 +592,38 @@ class AxesHelper:
         position = start + v * fraction
         return [drawn, self.draw_text(text, position, shift=shift, color=color, **text_kwargs)]
 
-    def draw_arrow(self, start: Coords2, end: Coords2, arrow="->", color="black", linewidth: float | None = None,
-                   linestyle="-", **arrow_kwargs) -> Annotation:
+    def draw_arrow(self, start: Coords2, end: Coords2, arrow: str = "->", color: str = "black",
+                   linewidth: float | None = None, linestyle: str = "-",
+                   alpha: float | None = None, **arrow_kwargs) -> Annotation:
         """
-        Draw an arrow on a Matplotlib Axes object from `start` to `end`.
-        :param start:
-        :param end:
-        :param arrow:
-        :param color:
-        :param linewidth:
-        :param linestyle:
+        Draw an arrow from `start` to `end`.
+
+        This is implemented as an empty annotation carrying an arrow patch, which is what lets the
+        head keep a fixed size in points as the axes are zoomed, rather than scaling with the data.
+
+        :param start: the tail of the arrow, as any 2D coordinate the helpers accept.
+        :param end: the head of the arrow.
+        :param arrow: the Matplotlib arrow style, such as ``"->"``, ``"<->"``, or ``"-"`` for a
+            plain line with no head at all.
+        :param color: the color of both the arrow's fill and its edge.
+        :param linewidth: the width of the arrow. If None, the Matplotlib default is used.
+        :param linestyle: the line style of the arrow, such as ``"dotted"``.
+        :param alpha: the opacity from 0.0 to 1.0. If None, the arrow is fully opaque.
+        :param arrow_kwargs: any other property accepted in the ``arrowprops`` dict passed to
+            ``Axes.annotate``, such as ``connectionstyle``, ``shrinkA``, or ``mutation_scale``.
+        :return: the ``Annotation`` that was drawn.
         """
-        props = dict(
-            arrowstyle=arrow,
-            fc=color,
-            ec=color,
+        props = merge_style(
+            dict(arrowstyle=arrow, fc=color, ec=color, linestyle=linestyle, **arrow_kwargs),
             linewidth=linewidth,
-            linestyle=linestyle,
-            **arrow_kwargs
+            alpha=alpha,
         )
 
         return self.ax.annotate("", xy=to_tuple2(end), xytext=to_tuple2(start), arrowprops=props)
 
     def _font_height(self, font_size: int) -> float:
-        # Get the height of a font in data units
+        # The height of a font in data units, used to size dimension standoffs so that they stay
+        # proportional to the text rather than to the geometry being measured.
         fig_dpi = self.ax.figure.dpi
         font_height_inches = font_size * 1.0 / 72.0
         font_height_px = font_height_inches * fig_dpi
