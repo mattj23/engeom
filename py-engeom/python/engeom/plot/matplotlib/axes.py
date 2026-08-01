@@ -16,7 +16,7 @@ from engeom.metrology import Distance2
 
 from .._coerce import Coords2, to_tuple2
 from .._common import LabelPlace
-from .viewport import ViewPort
+from .viewport import ViewPort3
 
 
 def set_aspect_fill(ax: Axes):
@@ -53,7 +53,7 @@ def set_aspect_fill(ax: Axes):
         ax.set_xlim(x_mid - x_range / 2, x_mid + x_range / 2)
 
 
-class MatplotlibAxesHelper:
+class AxesHelper:
     """
     A helper class for working with Matplotlib. It wraps around a Matplotlib `Axes` object and provides direct
     methods for plotting some `engeom` entities.  It also enforces the aspect ratio to be 1:1 and expands the
@@ -64,7 +64,7 @@ class MatplotlibAxesHelper:
         from matplotlib.pyplot import figure
         fig = figure()
         ax = fig.subplots()
-        helper = MatplotlibAxesHelper(ax)
+        helper = AxesHelper(ax)
         ```
     """
 
@@ -83,17 +83,17 @@ class MatplotlibAxesHelper:
         if hide_axes:
             ax.axis("off")
 
-    def get_3d_viewport(self, view: Iso3) -> ViewPort:
+    def get_3d_viewport(self, view: Iso3) -> ViewPort3:
         """
-        This method returns a ViewPort object that can be used to draw 3d objects in parallel projection onto the
+        This method returns a ViewPort3 object that can be used to draw 3d objects in parallel projection onto the
         2d view, such as for generating diagrams and illustrations. The view should be an isometry describing a
         transformation from the 3d space into a 2d image plane where +X is to the right, +Y is up, and +Z is into
         the image plane.
 
         :param view: The isometry describing the transformation from 3d space into the 2d image plane.
-        :return: A ViewPort object that can be used to draw 3d objects in parallel projection onto the 2d view.
+        :return: A ViewPort3 object that can be used to draw 3d objects in parallel projection onto the 2d view.
         """
-        return ViewPort(view, self)
+        return ViewPort3(view, self)
 
     def set_bounds(self, box: Aabb2):
         """

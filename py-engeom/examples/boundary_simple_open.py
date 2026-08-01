@@ -7,7 +7,7 @@ import matplotlib.pyplot
 from matplotlib.pyplot import figure, Figure, Axes
 
 from engeom.geom2 import BoundaryData2
-from engeom.plot.matplotlib import MatplotlibAxesHelper
+from engeom.plot.matplotlib import AxesHelper
 
 
 def main():
@@ -28,7 +28,7 @@ def main():
     # Now we'll create a matplotlib figure and an engeom helper to plot the geometry
     fig: Figure = figure(figsize=(8, 5))
     ax: Axes = fig.subplots()
-    helper = MatplotlibAxesHelper(ax)
+    helper = AxesHelper(ax)
 
     # We'll use the helper's boundary drawing function to plot the geometry. The `tol` argument controls how densely
     # points are generated over arc geometry. The rest of the arguments are passthroughs to the matplotlib `plot`

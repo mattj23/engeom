@@ -13,16 +13,16 @@ from .._coerce import PointLike, to_point2, to_point3
 from .trace import TraceBuilder
 
 if TYPE_CHECKING:
-    from .axes import MatplotlibAxesHelper
+    from .axes import AxesHelper
 
 
-class ViewPort:
+class ViewPort3:
     """
     A helper class that helps draw diagrams of 3d objects being rendered in parallel projection onto a 2d view,
     such as for generating diagrams and illustrations.
     """
 
-    def __init__(self, view: Iso3, helper: MatplotlibAxesHelper):
+    def __init__(self, view: Iso3, helper: AxesHelper):
         self.view = view
         self.helper = helper
 

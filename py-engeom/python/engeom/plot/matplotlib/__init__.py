@@ -1,9 +1,9 @@
 """
 Helpers for drawing `engeom` entities onto a Matplotlib `Axes` object.
 
-`MatplotlibAxesHelper` wraps an `Axes` and draws 2D entities directly onto it. For 3D entities, ask
-the helper for a `ViewPort` via `get_3d_viewport`, which renders them in parallel projection onto
-the same axes.
+`AxesHelper` wraps an `Axes` and draws 2D entities directly onto it. For 3D entities, ask the helper
+for a `ViewPort3` via `get_3d_viewport`, which renders them in parallel projection onto that same
+axes.
 
 Requires `matplotlib`, which is an optional dependency: `pip install engeom[matplotlib]`.
 """
@@ -19,15 +19,15 @@ except ImportError as _e:
         "Install it with `pip install engeom[matplotlib]`."
     ) from _e
 
-from .axes import MatplotlibAxesHelper
+from .axes import AxesHelper
 from .colors import GOM_CMAP, GomColorMap
 from .trace import TraceBuilder
-from .viewport import ViewPort
+from .viewport import ViewPort3
 
 __all__ = [
     "GOM_CMAP",
+    "AxesHelper",
     "GomColorMap",
-    "MatplotlibAxesHelper",
     "TraceBuilder",
-    "ViewPort",
+    "ViewPort3",
 ]

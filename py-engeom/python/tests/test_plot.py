@@ -26,7 +26,7 @@ from engeom.geom3 import Iso3, Line3, Mesh3, Point3, Vector3
 from engeom.metrology import Distance2
 from engeom.plot import LabelPlace
 from engeom.plot._coerce import to_point2, to_point3, to_tuple2, to_tuple3
-from engeom.plot.matplotlib import GOM_CMAP, GomColorMap, MatplotlibAxesHelper, TraceBuilder, ViewPort
+from engeom.plot.matplotlib import GOM_CMAP, GomColorMap, AxesHelper, TraceBuilder, ViewPort3
 
 TOL = 1e-12
 
@@ -35,13 +35,13 @@ TOL = 1e-12
 # Fixtures and helpers
 # ---------------------------------------------------------------------------
 
-def new_helper() -> MatplotlibAxesHelper:
+def new_helper() -> AxesHelper:
     """
     Build a helper over a standalone Figure. A bare `Figure` is used rather than `pyplot.figure` so
     that the tests do not accumulate state in the pyplot registry.
     """
     ax = Figure().subplots()
-    helper = MatplotlibAxesHelper(ax)
+    helper = AxesHelper(ax)
     helper.set_bounds(Aabb2(x_min=-10.0, x_max=10.0, y_min=-10.0, y_max=10.0))
     return helper
 
@@ -311,30 +311,30 @@ def test_gom_cmap_is_a_ready_made_instance():
 
 
 # ---------------------------------------------------------------------------
-# MatplotlibAxesHelper: construction and configuration
+# AxesHelper: construction and configuration
 # ---------------------------------------------------------------------------
 
 def test_helper_wraps_the_axes_and_exposes_it():
     ax = Figure().subplots()
-    assert MatplotlibAxesHelper(ax).ax is ax
+    assert AxesHelper(ax).ax is ax
 
 
 def test_helper_enforces_an_equal_aspect_ratio_by_default():
     ax = Figure().subplots()
-    MatplotlibAxesHelper(ax)
+    AxesHelper(ax)
     assert ax.get_aspect() == 1.0
 
 
 def test_skip_aspect_leaves_the_aspect_ratio_alone():
     ax = Figure().subplots()
     before = ax.get_aspect()
-    MatplotlibAxesHelper(ax, skip_aspect=True)
+    AxesHelper(ax, skip_aspect=True)
     assert ax.get_aspect() == before
 
 
 def test_hide_axes_turns_the_axis_off():
     ax = Figure().subplots()
-    MatplotlibAxesHelper(ax, hide_axes=True)
+    AxesHelper(ax, hide_axes=True)
     assert not ax.axison
 
 
@@ -348,12 +348,12 @@ def test_set_bounds_applies_the_box_to_both_limits():
 def test_get_3d_viewport_returns_a_viewport_bound_to_the_helper():
     helper = new_helper()
     view = helper.get_3d_viewport(Iso3.identity())
-    assert isinstance(view, ViewPort)
+    assert isinstance(view, ViewPort3)
     assert view.helper is helper
 
 
 # ---------------------------------------------------------------------------
-# MatplotlibAxesHelper: 2D draw methods
+# AxesHelper: 2D draw methods
 # ---------------------------------------------------------------------------
 
 def test_plot_curve_draws():
@@ -482,7 +482,7 @@ def test_labeled_arrow_draws_the_arrow_and_the_label():
 
 
 # ---------------------------------------------------------------------------
-# MatplotlibAxesHelper: distance and label placement
+# AxesHelper: distance and label placement
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("label_place", [LabelPlace.Outside, LabelPlace.Inside, LabelPlace.OutsideRev])
@@ -523,10 +523,10 @@ def test_distance_of_a_negative_value_still_draws():
 
 
 # ---------------------------------------------------------------------------
-# ViewPort: 3D entities in parallel projection
+# ViewPort3: 3D entities in parallel projection
 # ---------------------------------------------------------------------------
 
-def new_viewport() -> ViewPort:
+def new_viewport() -> ViewPort3:
     return new_helper().get_3d_viewport(Iso3.identity())
 
 
@@ -642,8 +642,8 @@ def public_members(cls) -> set:
 
 
 @pytest.mark.parametrize("cls,exercised", [
-    (MatplotlibAxesHelper, EXERCISED_HELPER_MEMBERS),
-    (ViewPort, EXERCISED_VIEWPORT_MEMBERS),
+    (AxesHelper, EXERCISED_HELPER_MEMBERS),
+    (ViewPort3, EXERCISED_VIEWPORT_MEMBERS),
     (TraceBuilder, EXERCISED_TRACE_MEMBERS),
 ])
 def test_every_public_member_is_covered_by_a_test(cls, exercised):

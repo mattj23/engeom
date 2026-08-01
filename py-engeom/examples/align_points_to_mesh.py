@@ -3,7 +3,7 @@ import math
 from pyvista import Plotter
 from engeom.geom3 import Mesh3, Iso3, Point3
 from engeom.align3 import AlignParams3, points_to_mesh
-from engeom.plot.pyvista import PyvistaPlotterHelper
+from engeom.plot.pyvista import PlotterHelper
 
 from _common import DATA_DIR
 
@@ -37,7 +37,7 @@ def main():
 
     # Finally, we'll plot the original points, the aligned points, and the original mesh.
     plotter = Plotter()
-    helper = PyvistaPlotterHelper(plotter)
+    helper = PlotterHelper(plotter)
     helper.mesh(mesh, color="white")
     plotter.add_points(to_align, point_size=5, color="red")
     plotter.add_points(aligned, point_size=5, color="green")

@@ -25,10 +25,10 @@ from engeom.metrology import Distance3
 from ._coerce import Coords3, to_tuple3
 from ._common import LabelPlace
 
-__all__ = ["PyvistaPlotterHelper"]
+__all__ = ["PlotterHelper"]
 
 
-class PyvistaPlotterHelper:
+class PlotterHelper:
     """
     A helper class for working with PyVista. It wraps around a PyVista `Plotter` object and provides direct methods
     for plotting some `engeom` entities.
@@ -37,7 +37,7 @@ class PyvistaPlotterHelper:
         ```python
         import pyvista
         plotter = pyvista.Plotter()
-        helper = PyvistaPlotterHelper(plotter)
+        helper = PlotterHelper(plotter)
         ```
     """
 
@@ -50,15 +50,15 @@ class PyvistaPlotterHelper:
         self.pv = plotter
 
     @staticmethod
-    def with_new_plotter(**kwargs) -> PyvistaPlotterHelper:
+    def with_new_plotter(**kwargs) -> PlotterHelper:
         """
         Create a new PyVista plotter and return a helper for it.
 
         :param kwargs: Additional keyword arguments to pass to the PyVista `Plotter` constructor.
-        :return: A new `PyvistaPlotterHelper` instance.
+        :return: A new `PlotterHelper` instance.
         """
         plotter = pyvista.Plotter(**kwargs)
-        return PyvistaPlotterHelper(plotter)
+        return PlotterHelper(plotter)
 
     def show(self):
         """

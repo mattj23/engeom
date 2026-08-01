@@ -1,7 +1,7 @@
 from _common import DATA_DIR
 from engeom.airfoil2 import AfGeometry, OrientFwdAft, OrientUpperLower
 from engeom.geom2 import Curve2
-from engeom.plot.matplotlib import MatplotlibAxesHelper
+from engeom.plot.matplotlib import AxesHelper
 from matplotlib.pyplot import Axes, Figure, figure, show
 
 
@@ -33,7 +33,7 @@ def main():
     # For plotting, we'll use matplotlib, and `engeom`'s helper tools.
     fig: Figure = figure(figsize=(12, 6))
     ax: Axes = fig.subplots()
-    helper = MatplotlibAxesHelper(ax)
+    helper = AxesHelper(ax)
 
     # We'll draw the inscribed circles first, making them thin and slighty transparent
     for c in geom.circles:

@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 from matplotlib.pyplot import Figure, Axes
 
 from engeom.geom2 import BoundaryData2, fit_boundary_to_points
-from engeom.plot.matplotlib import MatplotlibAxesHelper
+from engeom.plot.matplotlib import AxesHelper
 
 
 def build_slot(params: NDArray) -> BoundaryData2:
@@ -88,7 +88,7 @@ def main():
     # ----------------------------------------------------------------------------------------------------------------
     fig: Figure = plt.figure(figsize=(9, 6))
     ax: Axes = fig.subplots()
-    helper = MatplotlibAxesHelper(ax)
+    helper = AxesHelper(ax)
 
     ax.scatter(noisy_points[:, 0], noisy_points[:, 1], s=15, color="steelblue", zorder=3,
                label=f"Sample points (σ = 0.05, n = {len(noisy_points)})")

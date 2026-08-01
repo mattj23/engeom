@@ -36,7 +36,7 @@ from numpy.typing import NDArray
 from matplotlib.pyplot import Figure, Axes, figure, show as show_figure
 
 from engeom.geom2 import Aabb2, CubicSpline2, Point2, fit_spline_to_points
-from engeom.plot.matplotlib import MatplotlibAxesHelper
+from engeom.plot.matplotlib import AxesHelper
 
 
 def make_builder(p0: Point2, p3: Point2) -> Callable[[NDArray], CubicSpline2]:
@@ -122,7 +122,7 @@ def main():
     # ----------------------------------------------------------------------------------------------
     fig: Figure = figure(figsize=(9, 6))
     ax: Axes = fig.subplots()
-    helper = MatplotlibAxesHelper(ax)
+    helper = AxesHelper(ax)
 
     ax.scatter(noisy_points[:, 0], noisy_points[:, 1], s=15, color="steelblue", zorder=3,
                label=f"Sample points (σ = 0.02, n = {len(noisy_points)})")
