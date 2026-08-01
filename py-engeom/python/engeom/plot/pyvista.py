@@ -6,7 +6,7 @@ Requires `pyvista`, which is an optional dependency: `pip install engeom[pyvista
 
 from __future__ import annotations
 
-from typing import Any, Dict, Union, Iterable, Tuple
+from typing import Any, Dict
 
 import numpy
 
@@ -19,12 +19,11 @@ except ImportError as _e:
         "Install it with `pip install engeom[pyvista]`."
     ) from _e
 
-from engeom.geom3 import Mesh3, Curve3, Vector3, Point3, Iso3, SurfacePoint3, PointCloud, Circle3, Sphere3
+from engeom.geom3 import Mesh3, Curve3, Iso3, SurfacePoint3, PointCloud, Circle3, Sphere3
 from engeom.metrology import Distance3
 
+from ._coerce import Coords3, to_tuple3
 from ._common import LabelPlace
-
-PlotCoords = Union[Point3, Vector3, Iterable[float]]
 
 __all__ = ["PyvistaPlotterHelper"]
 
@@ -141,7 +140,7 @@ class PyvistaPlotterHelper:
         :return: The PyVista actor that was added to the plotter.
         """
         return self.pv.add_points(
-            numpy.array([_tuplefy(p) for p in points], dtype=numpy.float64),
+            numpy.array([to_tuple3(p) for p in points], dtype=numpy.float64),
             color=color,
             point_size=point_size,
             render_points_as_spheres=render_points_as_spheres,
@@ -201,8 +200,20 @@ class PyvistaPlotterHelper:
         return self.pv.add_mesh(data, **kwargs)
 
     def point_cloud(self, cloud: PointCloud, use_colors: bool = True, normal_arrow_size: float = 0.0, **kwargs):
+        """
+        Add a `PointCloud` to the plotter, optionally colored by the cloud's own per-point colors and
+        optionally overlaid with arrows showing the per-point normals.
+
+        :param cloud: The point cloud to plot.
+        :param use_colors: If True and the cloud carries per-point colors, they are used as RGBA scalars
+        and any `color` keyword argument is discarded.
+        :param normal_arrow_size: The length of the normal arrows. Leave at the default of 0.0 to suppress
+        the arrows entirely; they are only drawn for a positive size, and only if the cloud has normals.
+        :param kwargs: Additional keyword arguments to pass to the PyVista `Plotter.add_points` method.
+        :return: A list of the PyVista actors that were added to the plotter.
+        """
         actors = []
-        if normal_arrow_size >= 0.0 and cloud.normals is not None:
+        if normal_arrow_size > 0.0 and cloud.normals is not None:
             arrow_color = kwargs.get("color", "gray")
             arrow_actor = self.pv.add_arrows(cloud.points, cloud.normals, mag=normal_arrow_size,
                                              color=arrow_color, reset_camera=False)
@@ -283,7 +294,7 @@ class PyvistaPlotterHelper:
             builder.add(distance.a)
             builder.add(label_coords)
 
-        points = numpy.array([_tuplefy(p) for p in spheres], dtype=numpy.float64)
+        points = numpy.array([to_tuple3(p) for p in spheres], dtype=numpy.float64)
         self.pv.add_points(points, color="black", point_size=4, render_points_as_spheres=True)
 
         lines = builder.build()
@@ -291,7 +302,7 @@ class PyvistaPlotterHelper:
 
         value = distance.value * scale_value
         self.pv.add_point_labels(
-            [_tuplefy(label_coords)],
+            [to_tuple3(label_coords)],
             [template.format(value=value)],
             show_points=False,
             background_color="white",
@@ -323,9 +334,9 @@ class PyvistaPlotterHelper:
                 if iso.shape == (4, 4):
                     iso = Iso3(iso)
                 else:
-                    raise ValueError("Invalid shape for iso: expected (4, 4), got {iso.shape}")
+                    raise ValueError(f"Invalid shape for iso: expected (4, 4), got {iso.shape}")
             else:
-                raise TypeError("Invalid type for iso: expected Iso3 or numpy.ndarray, got {type(iso)}")
+                raise TypeError(f"Invalid type for iso: expected Iso3 or numpy.ndarray, got {type(iso)}")
 
         points = numpy.array([[0, 0, 0], [size, 0, 0], [0, size, 0], [0, 0, size]], dtype=numpy.float64)
         points = iso.transform_points(points)
@@ -347,22 +358,22 @@ class PyvistaPlotterHelper:
 
         return actors
 
-    def label(self, point: PlotCoords, text: str, **kwargs):
+    def label(self, point: Coords3, text: str, **kwargs):
         """
         Add a text label to the plotter.
         :param point: The position of the label in 3D space.
         :param text: The text to display in the label.
         :param kwargs: Additional keyword arguments to pass to the `pyvista.Label` constructor.
         """
-        label = pyvista.Label(text=text, position=_tuplefy(point), **kwargs)
+        label = pyvista.Label(text=text, position=to_tuple3(point), **kwargs)
         self.pv.add_actor(label)
 
-    def arrow(self, start: PlotCoords, direction: PlotCoords,
+    def arrow(self, start: Coords3, direction: Coords3,
               tip_length: float = 0.25,
               tip_radius: float = 0.1,
               shaft_radius: float = 0.05,
               **kwargs):
-        pd = pyvista.Arrow(_tuplefy(start), _tuplefy(direction), tip_length=tip_length, tip_radius=tip_radius,
+        pd = pyvista.Arrow(to_tuple3(start), to_tuple3(direction), tip_length=tip_length, tip_radius=tip_radius,
                            shaft_radius=shaft_radius)
         self.pv.add_mesh(pd, **kwargs, color="black")
 
@@ -389,25 +400,17 @@ class LineBuilder:
         self.vertices = []
         self._skip = 1
 
-    def add(self, points: PlotCoords):
+    def add(self, points: Coords3):
         if self.vertices:
             if self._skip > 0:
                 self._skip -= 1
             else:
                 self.vertices.append(self.vertices[-1])
 
-        self.vertices.append(_tuplefy(points))
+        self.vertices.append(to_tuple3(points))
 
     def skip(self):
         self._skip = 2
 
     def build(self) -> numpy.ndarray:
         return numpy.array(self.vertices, dtype=numpy.float64)
-
-
-def _tuplefy(item: PlotCoords) -> Tuple[float, float, float]:
-    if isinstance(item, (Point3, Vector3)):
-        return item.x, item.y, item.z
-    else:
-        x, y, z, *_ = item
-        return x, y, z
