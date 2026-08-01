@@ -7,6 +7,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from matplotlib.artist import Artist
+from matplotlib.lines import Line2D
+
 from engeom.geom3 import Iso3, Line3, Mesh3, Point3, Vector3
 
 from .._coerce import PointLike, to_point2, to_point3
@@ -35,7 +38,7 @@ class ViewPort3:
         return mesh.point_closest_to(*sample_point)
 
     def draw_line(self, line: Line3, t: float = 1.0, t0: float | None = None, color: str = "black",
-             linewidth: float = 1.0, linestyle: str = "-", alpha: float = 1.0, **kwargs):
+                  linewidth: float = 1.0, linestyle: str = "-", alpha: float = 1.0, **kwargs) -> Line2D:
         """
         Draws a line in the 2d view using the provided view. If `t0` is `None`, the line will be drawn from `-t` to
         `t`. Otherwise, the line will be drawn from `t0` to `t`.
@@ -51,8 +54,8 @@ class ViewPort3:
         l = self.view @ line
         p0 = l.at(t0 if t0 is not None else -t)
         p1 = l.at(t)
-        self.helper.ax.plot([p0.x, p1.x], [p0.y, p1.y], color=color, linewidth=linewidth, linestyle=linestyle,
-                            alpha=alpha, **kwargs)
+        return self.helper.ax.plot([p0.x, p1.x], [p0.y, p1.y], color=color, linewidth=linewidth,
+                                   linestyle=linestyle, alpha=alpha, **kwargs)[0]
 
     def draw_dimension_arrow(
             self,
@@ -65,7 +68,7 @@ class ViewPort3:
             fontsize: int = 14,
             color: str = "black",
             label_position: float = 0.5,
-    ):
+    ) -> list[Artist]:
         ldr_shift = to_point3(leader_shift).coords if leader_shift is not None else Vector3.zero()
         lbl_shift = to_point3(label_shift).coords if label_shift is not None else Vector3.zero()
         p0 = to_point3(point0)
@@ -74,15 +77,20 @@ class ViewPort3:
         p1_end = p1 + ldr_shift
         label_pos = p0 + (p1 - p0) * label_position + ldr_shift + lbl_shift
 
-        self.helper.draw_arrow(self.view @ p0_end, self.view @ p1_end, color=color, linewidth=linewidth, arrow="<->")
-        self.helper.draw_text(label, self.view @ label_pos, fontsize=fontsize, ha="center", va="center", color=color,
-                         bbox=dict(boxstyle="round", ec="black", fc="w", lw=linewidth))
+        artists: list[Artist] = [
+            self.helper.draw_arrow(self.view @ p0_end, self.view @ p1_end, color=color, linewidth=linewidth,
+                                   arrow="<->"),
+            self.helper.draw_text(label, self.view @ label_pos, fontsize=fontsize, ha="center", va="center",
+                                  color=color,
+                                  bbox=dict(boxstyle="round", ec="black", fc="w", lw=linewidth)),
+        ]
 
         if ldr_shift.norm() > 0.0:
-            self.helper.draw_arrow(self.view @ p0, self.view @ p0_end, color=color, linewidth=linewidth * 0.75,
-                              arrow="-", linestyle="dotted")
-            self.helper.draw_arrow(self.view @ p1, self.view @ p1_end, color=color, linewidth=linewidth * 0.75,
-                              arrow="-", linestyle="dotted")
+            artists.append(self.helper.draw_arrow(self.view @ p0, self.view @ p0_end, color=color,
+                                                  linewidth=linewidth * 0.75, arrow="-", linestyle="dotted"))
+            artists.append(self.helper.draw_arrow(self.view @ p1, self.view @ p1_end, color=color,
+                                                  linewidth=linewidth * 0.75, arrow="-", linestyle="dotted"))
+        return artists
 
     def draw_labeled_point(
             self,
@@ -101,7 +109,7 @@ class ViewPort3:
             linestyle: str = "-",
             arrow_props: dict | None = None,
             box: bool = False,
-    ):
+    ) -> list[Artist]:
         """
         Generates a labeled point representation on a 3D or 2D space. The labeled point is defined
         by its position, label text, offsets for 3D and 2D rendering adjustments, and additional
@@ -128,9 +136,11 @@ class ViewPort3:
         o2 = Vector3.zero() if offset_2d is None else Vector3(*to_point2(offset_2d), 0)
         text_position = self.view @ (p + o3) + o2
 
+        artists: list[Artist] = []
         if arrow:
-            self.helper.draw_arrow(text_position, self.view @ p, arrow=arrow_style, color=color, linewidth=linewidth,
-                              linestyle=linestyle, **(arrow_props or {}))
+            artists.append(self.helper.draw_arrow(text_position, self.view @ p, arrow=arrow_style, color=color,
+                                                  linewidth=linewidth, linestyle=linestyle,
+                                                  **(arrow_props or {})))
         text_params = {
             "fontsize": fontsize,
             "color": color,
@@ -141,10 +151,11 @@ class ViewPort3:
         if box:
             text_params["bbox"] = dict(boxstyle="round", ec=color, fc="w", lw=linewidth)
 
-        self.helper.draw_text(label, text_position, **text_params)
+        artists.append(self.helper.draw_text(label, text_position, **text_params))
 
         if marker_size > 0.0:
-            self.helper.draw_point(self.view @ p, marker=marker, markersize=marker_size, color=color)
+            artists.append(self.helper.draw_point(self.view @ p, marker=marker, markersize=marker_size, color=color))
+        return artists
 
     def draw_coordinate_system(
             self,
@@ -153,7 +164,7 @@ class ViewPort3:
             linewidth: float = 2.0,
             label_offset: float = 0.1,
             fontsize: int = 14,
-    ):
+    ) -> list[Artist]:
         """
         Draws a coordinate system in the 2d view using the provided view. The coordinate system is drawn as a set
         of red, green, and blue arrows representing the x, y, and z axes respectively. If one of the arrows
@@ -174,22 +185,25 @@ class ViewPort3:
                    ("y", "green", Vector3.y_axis()),
                    ("z", "blue", Vector3.z_axis())]
 
+        artists: list[Artist] = []
         for text, color, vector in to_draw:
             p_view: Point3 = self.view @ cs @ (Point3.origin() + vector * length)
             if _visible(p_view, length):
-                self.helper.draw_arrow(o_view, p_view, color=color, linewidth=linewidth)
+                artists.append(self.helper.draw_arrow(o_view, p_view, color=color, linewidth=linewidth))
                 text_pos = self.view @ cs @ (Point3.origin() + vector * length * (1 + label_offset))
-                self.helper.draw_text(f"${text}$", text_pos, color=color, fontsize=fontsize, ha="center", va="center")
+                artists.append(self.helper.draw_text(f"${text}$", text_pos, color=color, fontsize=fontsize,
+                                                     ha="center", va="center"))
+        return artists
 
     def draw_mesh_outline(
-            self, mesh:
-            Mesh3,
+            self,
+            mesh: Mesh3,
             visible_kwargs: dict | None = None,
             hidden_kwargs: dict | None = None,
             no_hidden=False,
             max_edge_len=10.0,
             corner_angle=None
-    ):
+    ) -> list[Line2D]:
         """
         Draws the outline of a mesh in the 2d view using the provided view and helper. The default parameters for
         the visible edges are {'color': 'black', 'linewidth': 1.0} and for the hidden edges are
@@ -219,6 +233,7 @@ class ViewPort3:
             elif not no_hidden:
                 hidden.add_segment(p0, p1)
 
-        self.helper.ax.plot(*visible.xy, **visible_kwargs)
+        lines = [self.helper.ax.plot(*visible.xy, **visible_kwargs)[0]]
         if not no_hidden:
-            self.helper.ax.plot(*hidden.xy, **hidden_kwargs)
+            lines.append(self.helper.ax.plot(*hidden.xy, **hidden_kwargs)[0])
+        return lines

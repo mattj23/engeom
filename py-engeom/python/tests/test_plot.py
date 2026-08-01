@@ -21,6 +21,8 @@ import matplotlib
 matplotlib.use("Agg")
 
 from matplotlib.figure import Figure
+from matplotlib.lines import Line2D
+from matplotlib.text import Annotation
 
 from engeom.geom2 import (Aabb2, Arc2, BoundaryData2, Circle2, CubicSpline2, Curve2, Point2,
                           Segment2, SurfacePoint2, Vector2)
@@ -716,6 +718,120 @@ def test_viewport_find_mesh_edge_point_returns_a_point_on_the_mesh():
     assert isinstance(found, Point3)
     # The box spans -1 to 1 on each axis, and the query asks for the +X extreme.
     assert found.x == pytest.approx(1.0, abs=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# Varargs and returned artists
+# ---------------------------------------------------------------------------
+
+def two_of(factory):
+    return [factory(), factory()]
+
+
+VARARGS_CALLS = {
+    "draw_arc": lambda h: h.draw_arc(Arc2(0.0, 0.0, 1.0, 0.0, 1.0), Arc2(3.0, 0.0, 1.0, 0.0, 1.0)),
+    "draw_circle": lambda h: h.draw_circle(Circle2(0.0, 0.0, 1.0), Circle2(3.0, 0.0, 1.0)),
+    "draw_curve": lambda h: h.draw_curve(sample_curve(), sample_curve()),
+    "draw_segment": lambda h: h.draw_segment(Segment2(0.0, 0.0, 1.0, 1.0), Segment2(2.0, 2.0, 3.0, 3.0)),
+    "draw_boundary": lambda h: h.draw_boundary(sample_boundary(), sample_boundary()),
+    "fill_curve": lambda h: h.fill_curve(sample_curve(), sample_curve()),
+    "draw_spline": lambda h: h.draw_spline(
+        CubicSpline2(0.0, 0.0, 1.0, 2.0, 2.0, -1.0, 3.0, 0.0),
+        CubicSpline2(0.0, 5.0, 1.0, 7.0, 2.0, 4.0, 3.0, 5.0),
+        tol=0.01,
+    ),
+}
+
+
+@pytest.mark.parametrize("name", sorted(VARARGS_CALLS))
+def test_entity_draw_methods_accept_varargs_and_return_one_artist_each(name):
+    helper = new_helper()
+    result = VARARGS_CALLS[name](helper)
+    assert isinstance(result, list)
+    assert len(result) == 2
+
+
+@pytest.mark.parametrize("name", sorted(VARARGS_CALLS))
+def test_entity_draw_methods_return_an_empty_list_when_given_nothing(name):
+    """ Drawing a computed and possibly empty collection should not need a special case. """
+    helper = new_helper()
+    method = getattr(helper, name)
+    result = method(tol=0.01) if name == "draw_spline" else method()
+    assert result == []
+
+
+def test_draw_point_returns_a_single_artist_because_it_makes_one():
+    helper = new_helper()
+    result = helper.draw_point(Point2(0.0, 0.0), Point2(1.0, 1.0))
+    assert isinstance(result, Line2D)
+
+
+def test_draw_point_of_nothing_still_returns_an_empty_artist():
+    helper = new_helper()
+    result = helper.draw_point()
+    assert isinstance(result, Line2D)
+    assert len(result.get_xdata()) == 0
+
+
+@pytest.mark.parametrize("call", [
+    lambda h: h.draw_text("t", Point2(0.0, 0.0)),
+    lambda h: h.draw_arrow(Point2(0.0, 0.0), Point2(1.0, 1.0)),
+])
+def test_coordinate_draw_methods_return_a_single_annotation(call):
+    assert isinstance(call(new_helper()), Annotation)
+
+
+COMPOSITE_CALLS = {
+    "draw_distance": lambda h: h.draw_distance(Distance2(Point2(0.0, 0.0), Point2(3.0, 0.0))),
+    "draw_labeled_arrow": lambda h: h.draw_labeled_arrow(Point2(0.0, 0.0), Point2(2.0, 0.0), "x"),
+    "draw_surface_point": lambda h: h.draw_surface_point(SurfacePoint2(0.0, 0.0, 0.0, 1.0)),
+    "draw_boundary_normals": lambda h: h.draw_boundary_normals(sample_boundary(), 3, 0.1),
+}
+
+
+@pytest.mark.parametrize("name", sorted(COMPOSITE_CALLS))
+def test_composite_draw_methods_return_every_artist_they_added(name):
+    helper = new_helper()
+    before = artist_count(helper.ax)
+    result = COMPOSITE_CALLS[name](helper)
+    assert isinstance(result, list)
+    assert len(result) == artist_count(helper.ax) - before
+
+
+ALL_RETURNING_CALLS = {**VARARGS_CALLS, **COMPOSITE_CALLS}
+
+
+@pytest.mark.parametrize("name", sorted(ALL_RETURNING_CALLS))
+def test_returned_artists_are_really_attached_to_the_axes(name):
+    """
+    A returned artist is only useful if it is the one on the plot, so that restyling it through the
+    return value actually changes the rendered figure.
+    """
+    helper = new_helper()
+    on_axes = set()
+    for artist in ALL_RETURNING_CALLS[name](helper):
+        assert artist.axes is helper.ax
+        on_axes.add(id(artist))
+    assert len(on_axes) == len(ALL_RETURNING_CALLS[name](new_helper()))
+
+
+def test_viewport_draw_line_returns_the_line_artist():
+    view = new_viewport()
+    assert isinstance(view.draw_line(Line3(0.0, 0.0, 0.0, 1.0, 0.0, 0.0)), Line2D)
+
+
+@pytest.mark.parametrize("call", [
+    lambda v: v.draw_coordinate_system(Iso3.identity(), 1.0),
+    lambda v: v.draw_labeled_point(Point3(0.0, 0.0, 0.0), "P"),
+    lambda v: v.draw_dimension_arrow(Point3(0.0, 0.0, 0.0), Point3(2.0, 0.0, 0.0), "2.0"),
+    lambda v: v.draw_mesh_outline(Mesh3.create_box(1.0, 1.0, 1.0)),
+])
+def test_viewport_composites_return_every_artist_they_added(call):
+    view = new_viewport()
+    before = artist_count(view.helper.ax)
+    result = call(view)
+    assert isinstance(result, list)
+    assert len(result) == artist_count(view.helper.ax) - before
 
 
 # ---------------------------------------------------------------------------

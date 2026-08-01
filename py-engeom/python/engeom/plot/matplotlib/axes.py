@@ -7,8 +7,11 @@ from __future__ import annotations
 from typing import Iterable
 
 import numpy
+from matplotlib.artist import Artist
 from matplotlib.axes import Axes
-from matplotlib.patches import Arc, Circle
+from matplotlib.lines import Line2D
+from matplotlib.patches import Arc, Circle, Polygon
+from matplotlib.text import Annotation
 
 from engeom.geom2 import Curve2, Circle2, Aabb2, Point2, Vector2, SurfacePoint2, Arc2, Segment2, Boundary2, \
     CubicSpline2
@@ -96,7 +99,7 @@ class AxesHelper:
         """
         return ViewPort3(view, self)
 
-    def set_bounds(self, box: Aabb2):
+    def set_bounds(self, box: Aabb2) -> None:
         """
         Set the bounds of a Matplotlib Axes object.
         :param box: an Aabb2 object
@@ -104,59 +107,75 @@ class AxesHelper:
         self.ax.set_xlim(box.min.x, box.max.x)
         self.ax.set_ylim(box.min.y, box.max.y)
 
-    def draw_arc(self, arc: Arc2, **kwargs):
+    def draw_arc(self, *arcs: Arc2, **kwargs) -> list[Arc]:
         """
 
-        :param arc:
+        :param arcs:
         :return:
         """
-        # Arcs are drawn by matplotlib in a counter-clockwise direction, so if the sweep is negative we
-        # need to swap the start and end angles.
-        if arc.angle < 0.0:
-            start_angle = arc.angle0 + arc.angle
-            sweep_angle = -arc.angle
-        else:
-            start_angle = arc.angle0
-            sweep_angle = arc.angle
+        patches = []
+        for arc in arcs:
+            # Arcs are drawn by matplotlib in a counter-clockwise direction, so if the sweep is negative we
+            # need to swap the start and end angles.
+            if arc.angle < 0.0:
+                start_angle = arc.angle0 + arc.angle
+                sweep_angle = -arc.angle
+            else:
+                start_angle = arc.angle0
+                sweep_angle = arc.angle
 
-        patch = Arc((arc.center.x, arc.center.y), 2 * arc.r, 2 * arc.r,
-                    angle=numpy.rad2deg(start_angle),
-                    theta1=0.0,
-                    theta2=numpy.rad2deg(sweep_angle),
-                    **kwargs)
-        self.ax.add_patch(patch)
+            patch = Arc((arc.center.x, arc.center.y), 2 * arc.r, 2 * arc.r,
+                        angle=numpy.rad2deg(start_angle),
+                        theta1=0.0,
+                        theta2=numpy.rad2deg(sweep_angle),
+                        **kwargs)
+            patches.append(self.ax.add_patch(patch))
+        return patches
 
-    def draw_segment(self, seg: Segment2, **kwargs):
+    def draw_segment(self, *segments: Segment2, **kwargs) -> list[Line2D]:
         """
         Plot a segment on a Matplotlib Axes object.
-        :param seg: a Segment2 object
+        :param segments: the Segment2 objects to draw
         :param kwargs: keyword arguments to pass to the plot function
+        :return: one Line2D per segment
         """
-        self.ax.plot([seg.a.x, seg.b.x], [seg.a.y, seg.b.y], **kwargs)
+        return [
+            self.ax.plot([seg.a.x, seg.b.x], [seg.a.y, seg.b.y], **kwargs)[0]
+            for seg in segments
+        ]
 
-    def draw_boundary(self, boundary: Boundary2, tol: float | None = None, **kwargs):
-        if tol is None:
-            tol = boundary.aabb.extent.norm() / 1000
-        elif tol <= 0.0:
-            raise ValueError(f"tol must be positive, got {tol}")
-        points = boundary.to_points(tol)
-        self.ax.plot(points[:, 0], points[:, 1], **kwargs)
+    def draw_boundary(self, *boundaries: Boundary2, tol: float | None = None, **kwargs) -> list[Line2D]:
+        lines = []
+        for boundary in boundaries:
+            if tol is None:
+                use_tol = boundary.aabb.extent.norm() / 1000
+            elif tol <= 0.0:
+                raise ValueError(f"tol must be positive, got {tol}")
+            else:
+                use_tol = tol
+            points = boundary.to_points(use_tol)
+            lines.append(self.ax.plot(points[:, 0], points[:, 1], **kwargs)[0])
+        return lines
 
-    def draw_boundary_normals(self, boundary: Boundary2, n: int, length: float, color: str | None = None, linewidth=1.0):
+    def draw_boundary_normals(self, boundary: Boundary2, n: int, length: float, color: str | None = None,
+                              linewidth=1.0) -> list[Annotation]:
         kwargs = {"linewidth": linewidth}
         if color is not None:
             kwargs["color"] = color
 
-        for t in numpy.linspace(0, boundary.length(), n):
-            m = boundary.at_length(t)
+        return [
             self.draw_arrow(m.point, m.surface_point.at_distance(length), **kwargs)
+            for m in (boundary.at_length(t) for t in numpy.linspace(0, boundary.length(), n))
+        ]
 
-    def draw_circle(self, *circles: Circle2 | Iterable[float], fill=False, **kwargs):
+    def draw_circle(self, *circles: Circle2 | Iterable[float], fill=False, **kwargs) -> list[Circle]:
         """
         Plot a circle on a Matplotlib Axes object.
-        :param circle: a Circle2 object
+        :param circles: the Circle2 objects, or (x, y, r) iterables, to draw
         :param kwargs: keyword arguments to pass to the plot function
+        :return: one Circle patch per circle
         """
+        patches = []
         for cdata in circles:
             if isinstance(cdata, Circle2):
                 c = Circle((cdata.center.x, cdata.center.y), cdata.r, fill=fill, **kwargs)
@@ -168,37 +187,50 @@ class AxesHelper:
                     )
                 x, y, r = values
                 c = Circle((x, y), r, fill=fill, **kwargs)
-            self.ax.add_patch(c)
+            patches.append(self.ax.add_patch(c))
+        return patches
 
-    def draw_curve(self, curve: Curve2, **kwargs):
+    def draw_curve(self, *curves: Curve2, **kwargs) -> list[Line2D]:
         """
         Plot a curve on a Matplotlib Axes object.
-        :param curve: a Curve2 object
+        :param curves: the Curve2 objects to draw
         :param kwargs: keyword arguments to pass to the plot function
+        :return: one Line2D per curve
         """
-        self.ax.plot(curve.points[:, 0], curve.points[:, 1], **kwargs)
+        return [
+            self.ax.plot(curve.points[:, 0], curve.points[:, 1], **kwargs)[0]
+            for curve in curves
+        ]
 
-    def draw_spline(self, spline: CubicSpline2, tol: float, **kwargs):
+    def draw_spline(self, *splines: CubicSpline2, tol: float, **kwargs) -> list[Line2D]:
         """
         Plot a cubic Bezier spline by flattening it into an adaptive polyline whose linear
         segments deviate from the underlying curve by no more than `tol`.
 
-        :param spline: a CubicSpline2 object
+        :param splines: the CubicSpline2 objects to draw
         :param tol: maximum Euclidean deviation between the drawn polyline and the spline.
             Smaller values produce a smoother-looking curve at the cost of more line segments.
         :param kwargs: keyword arguments to pass to `Axes.plot`
+        :return: one Line2D per spline
         """
-        points = spline.polyline(tol)
-        self.ax.plot(points[:, 0], points[:, 1], **kwargs)
+        lines = []
+        for spline in splines:
+            points = spline.polyline(tol)
+            lines.append(self.ax.plot(points[:, 0], points[:, 1], **kwargs)[0])
+        return lines
 
-    def fill_curve(self, curve: Curve2, **kwargs):
+    def fill_curve(self, *curves: Curve2, **kwargs) -> list[Polygon]:
         """
         Fill a curve on a Matplotlib Axes object.
-        :param curve: a Curve2 object (can be closed but doesn't need to be, will be closed automatically)
+        :param curves: the Curve2 objects to fill (each can be closed but doesn't need to be, and
+            will be closed automatically)
         :param kwargs: keyword arguments to pass to the inner Axes.fill function
-        :return:
+        :return: one Polygon per curve
         """
-        self.ax.fill(curve.points[:, 0], curve.points[:, 1], **kwargs)
+        return [
+            self.ax.fill(curve.points[:, 0], curve.points[:, 1], **kwargs)[0]
+            for curve in curves
+        ]
 
     def draw_distance(
             self,
@@ -210,7 +242,7 @@ class AxesHelper:
             label_offset: float | None = None,
             fontname: str | None = None,
             scale_value: float = 1.0,
-    ):
+    ) -> list[Artist]:
         """
         Plot a `Distance2` object on a Matplotlib Axes, drawing the leader lines and adding a text label with the
         distance value.
@@ -229,6 +261,7 @@ class AxesHelper:
         :raises ValueError: if `label_place` is not one of the valid placement tokens.
         """
         label_place = check_label_place(label_place)
+        artists: list[Artist] = []
         pad_scale = self._font_height(12) * 1.5
 
         # The offset_dir is the direction from `a` to `b` projected so that it's parallel to the measurement
@@ -242,22 +275,22 @@ class AxesHelper:
         if label_place == "inside":
             label_offset = label_offset if label_offset is not None else 0.0
             label_coords = center.at_distance(label_offset)
-            self.draw_arrow(label_coords, leader_a)
-            self.draw_arrow(label_coords, leader_b)
+            artists.append(self.draw_arrow(label_coords, leader_a))
+            artists.append(self.draw_arrow(label_coords, leader_b))
         elif label_place == "outside":
             label_offset = label_offset if label_offset is not None else pad_scale * 3
             label_coords = leader_b + offset_dir * label_offset
-            self.draw_arrow(leader_a - offset_dir * pad_scale, leader_a)
-            self.draw_arrow(label_coords, leader_b)
+            artists.append(self.draw_arrow(leader_a - offset_dir * pad_scale, leader_a))
+            artists.append(self.draw_arrow(label_coords, leader_b))
         else:  # "outside_rev", the only remaining token after validation
             label_offset = label_offset if label_offset is not None else pad_scale * 3
             label_coords = leader_a - offset_dir * label_offset
-            self.draw_arrow(leader_b + offset_dir * pad_scale, leader_b)
-            self.draw_arrow(label_coords, leader_a)
+            artists.append(self.draw_arrow(leader_b + offset_dir * pad_scale, leader_b))
+            artists.append(self.draw_arrow(label_coords, leader_a))
 
         # Do we need sideways leaders?
-        self._line_if_needed(pad_scale, distance.a, leader_a)
-        self._line_if_needed(pad_scale, distance.b, leader_b)
+        artists.extend(self._line_if_needed(pad_scale, distance.a, leader_a))
+        artists.extend(self._line_if_needed(pad_scale, distance.b, leader_b))
 
         kwargs = {"ha": "center", "va": "center", "fontsize": fontsize}
         if fontname is not None:
@@ -265,19 +298,20 @@ class AxesHelper:
 
         value = distance.value * scale_value
         box_style = dict(boxstyle="round,pad=0.3", ec="black", fc="white")
-        self.draw_text(template.format(value=value), label_coords, bbox=box_style, **kwargs)
+        artists.append(self.draw_text(template.format(value=value), label_coords, bbox=box_style, **kwargs))
+        return artists
 
-    def _line_if_needed(self, pad: float, actual: Point2, leader_end: Point2):
+    def _line_if_needed(self, pad: float, actual: Point2, leader_end: Point2) -> list[Annotation]:
         half_pad = pad * 0.5
         v: Vector2 = leader_end - actual
         if v.norm() < half_pad:
-            return
+            return []
         work = SurfacePoint2(*actual, *v)
         t1 = work.scalar_projection(leader_end) + half_pad
-        self.draw_arrow(actual, work.at_distance(t1), arrow="-")
+        return [self.draw_arrow(actual, work.at_distance(t1), arrow="-")]
 
     def draw_text(self, text: str, pos: Coords2, shift: Coords2 | None = None, ha: str = "center",
-             va: str = "center", **kwargs):
+                  va: str = "center", **kwargs) -> Annotation:
         """
         Annotate a Matplotlib Axes object with text only, by default in the xy data plane.
         :param text: the text to annotate
@@ -295,23 +329,29 @@ class AxesHelper:
 
         return self.ax.annotate(text, xy=xy, ha=ha, va=va, **kwargs)
 
-    def draw_point(self, *points: Coords2, marker="o", markersize=5.0, **kwargs):
-        x, y = zip(*[to_tuple2(p) for p in points])
-        return self.ax.plot(x, y, marker, markersize=markersize, **kwargs)
+    def draw_point(self, *points: Coords2, marker="o", markersize=5.0, **kwargs) -> Line2D:
+        # An empty call still produces a real (empty) artist, rather than failing in `zip`, so that
+        # drawing a computed and possibly empty set of points needs no special case at the call site.
+        coords = [to_tuple2(p) for p in points]
+        x, y = zip(*coords) if coords else ((), ())
+        return self.ax.plot(x, y, marker, markersize=markersize, **kwargs)[0]
 
-    def draw_surface_point(self, *points: SurfacePoint2, arrow_len=1, marker="o", markersize=5.0, **kwargs):
-        x, y = zip(*[(p.point.x, p.point.y) for p in points])
+    def draw_surface_point(self, *points: SurfacePoint2, arrow_len=1, marker="o", markersize=5.0,
+                           **kwargs) -> list[Artist]:
+        coords = [(p.point.x, p.point.y) for p in points]
+        x, y = zip(*coords) if coords else ((), ())
         color = kwargs.get("color", "black")
         kwargs["color"] = color
-        self.ax.plot(x, y, marker, markersize=markersize, **kwargs)
+        artists: list[Artist] = [self.ax.plot(x, y, marker, markersize=markersize, **kwargs)[0]]
         for p in points:
             p: SurfacePoint2
-            self.draw_arrow(p.point, p.at_distance(arrow_len), arrow="->", color=color)
+            artists.append(self.draw_arrow(p.point, p.at_distance(arrow_len), arrow="->", color=color))
+        return artists
 
     def draw_labeled_arrow(self, start: Coords2, end: Coords2, text: str, fraction: float = 0.5,
-                      shift: Coords2 | None = None,
-                      arrow="->", color="black", linewidth: float | None = None, linestyle="-",
-                      **text_kwargs):
+                           shift: Coords2 | None = None,
+                           arrow="->", color="black", linewidth: float | None = None, linestyle="-",
+                           **text_kwargs) -> list[Artist]:
         """
 
         :param start:
@@ -329,14 +369,14 @@ class AxesHelper:
         start = Point2(*to_tuple2(start))
         end = Point2(*to_tuple2(end))
 
-        self.draw_arrow(start, end, arrow=arrow, color=color, linewidth=linewidth, linestyle=linestyle)
+        drawn = self.draw_arrow(start, end, arrow=arrow, color=color, linewidth=linewidth, linestyle=linestyle)
 
         v: Vector2 = end - start
         position = start + v * fraction
-        self.draw_text(text, position, shift=shift, color=color, **text_kwargs)
+        return [drawn, self.draw_text(text, position, shift=shift, color=color, **text_kwargs)]
 
     def draw_arrow(self, start: Coords2, end: Coords2, arrow="->", color="black", linewidth: float | None = None,
-              linestyle="-", **arrow_kwargs):
+                   linestyle="-", **arrow_kwargs) -> Annotation:
         """
         Draw an arrow on a Matplotlib Axes object from `start` to `end`.
         :param start:
