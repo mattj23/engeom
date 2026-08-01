@@ -96,19 +96,29 @@ jobs:
           python-version: '3.12'
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Install maturin and pytest
-        run: pip install maturin pytest
+      - name: Install maturin
+        run: pip install maturin
       # Build an actual wheel and test against it, rather than `maturin develop`, so that a
       # packaging fault (a missing .pyi stub, a bad python-source layout) fails here.
       - name: Build wheel
         run: maturin build --out dist -m py-engeom/Cargo.toml
-      - name: Install wheel
-        run: pip install dist/*.whl
+      # Installed through the `tests` extra, which carries pytest and matplotlib. That keeps the
+      # test dependencies declared once in pyproject.toml instead of duplicated here, and means a
+      # broken extras declaration fails this step. Without matplotlib the plotting tests would
+      # silently skip rather than run.
+      - name: Install wheel with test dependencies
+        run: pip install "$(ls dist/*.whl)[tests]"
+      # pip only warns when an extra does not exist, so a typo in the extras table would leave
+      # matplotlib uninstalled and the plotting tests would skip themselves rather than fail.
+      # Assert the dependency is really here.
+      - name: Verify optional test dependencies are present
+        run: python -c "import matplotlib"
       # Run from the repository root. pytest puts the tests directory on sys.path but not
       # py-engeom/python, so `import engeom` resolves to the installed wheel while
       # test_stub_drift.py still finds the .pyi files next to the source package.
+      # `-rs` reports any skips, so a silently skipped module is visible in the log.
       - name: Run tests
-        run: pytest py-engeom/python/tests/ -q
+        run: pytest py-engeom/python/tests/ -q -rs
 
   package:
     name: crates.io packaging
