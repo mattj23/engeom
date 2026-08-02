@@ -655,7 +655,12 @@ class AxesHelper:
         Unlike the other varargs draw methods, all the points go into a single Matplotlib artist,
         so this returns one ``Line2D`` rather than a list of them.
 
-        :param points: the points to draw, each as any 2D coordinate the helpers accept.
+        A single ``(n, 2)`` array is also accepted in place of the varargs, since that is the form
+        the rest of the library returns point sets in. Extra columns are ignored, so an ``(n, 3)``
+        array is drawn as its xy projection.
+
+        :param points: the points to draw, either as individual coordinates in any form the helpers
+            accept, or as one array of shape ``(n, 2)`` or wider.
         :param marker: the Matplotlib marker style, such as ``"o"``, ``"x"``, or ``"^"``.
         :param markersize: the marker size in points.
         :param color: the marker color. If None, the axes' color cycle supplies one.
@@ -665,10 +670,24 @@ class AxesHelper:
             ``markeredgecolor`` or ``markerfacecolor``.
         :return: the single ``Line2D`` holding every point. Drawing no points still returns a valid
             but empty artist, so that a computed and possibly empty set needs no special case.
+        :raises ValueError: if a point array is given with fewer than two columns.
         """
         kwargs = merge_style(kwargs, color=color, alpha=alpha, label=label)
-        coords = [to_tuple2(p) for p in points]
-        x, y = zip(*coords) if coords else ((), ())
+
+        # A single two-dimensional argument is a whole array of points rather than one coordinate,
+        # which is the form the rest of the library hands back. Dimensionality tells the two apart
+        # unambiguously: an `engeom` primitive reports 0 and a loose coordinate reports 1.
+        if len(points) == 1 and numpy.ndim(points[0]) == 2:
+            array = numpy.asarray(points[0], dtype=float)
+            if array.shape[1] < 2:
+                raise ValueError(
+                    f"a point array needs at least two columns, got shape {array.shape}"
+                )
+            x, y = array[:, 0], array[:, 1]
+        else:
+            coords = [to_tuple2(p) for p in points]
+            x, y = zip(*coords) if coords else ((), ())
+
         return self.ax.plot(x, y, marker, markersize=markersize, **kwargs)[0]
 
     def draw_surface_point(self, *points: SurfacePoint2, arrow_len: float = 1, marker: str = "o",

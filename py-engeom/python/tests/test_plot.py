@@ -1044,6 +1044,51 @@ def test_draw_point_returns_a_single_artist_because_it_makes_one():
     assert isinstance(result, Line2D)
 
 
+def test_draw_point_accepts_a_single_point_array():
+    """
+    Regression: an (n, 2) array used to be treated as one coordinate, unpacking its first two rows
+    as x and y. That silently drew a single wrong point instead of raising, and an array is the form
+    the rest of the library hands point sets back in.
+    """
+    points = numpy.array([[0.0, 1.0], [2.0, 3.0], [4.0, 5.0]])
+    artist = new_helper().draw_point(points)
+    assert list(artist.get_xdata()) == pytest.approx([0.0, 2.0, 4.0], abs=TOL)
+    assert list(artist.get_ydata()) == pytest.approx([1.0, 3.0, 5.0], abs=TOL)
+
+
+def test_draw_point_of_an_array_matches_the_varargs_form():
+    points = numpy.array([[0.0, 1.0], [2.0, 3.0]])
+    as_array = new_helper().draw_point(points)
+    as_varargs = new_helper().draw_point(*points)
+    assert list(as_array.get_xdata()) == pytest.approx(list(as_varargs.get_xdata()), abs=TOL)
+    assert list(as_array.get_ydata()) == pytest.approx(list(as_varargs.get_ydata()), abs=TOL)
+
+
+def test_draw_point_ignores_the_extra_columns_of_a_wider_array():
+    points = numpy.array([[0.0, 1.0, 9.0], [2.0, 3.0, 9.0]])
+    artist = new_helper().draw_point(points)
+    assert list(artist.get_xdata()) == pytest.approx([0.0, 2.0], abs=TOL)
+
+
+def test_draw_point_accepts_a_nested_sequence_of_points():
+    artist = new_helper().draw_point([[0.0, 1.0], [2.0, 3.0]])
+    assert list(artist.get_xdata()) == pytest.approx([0.0, 2.0], abs=TOL)
+
+
+def test_draw_point_rejects_a_point_array_that_is_too_narrow():
+    with pytest.raises(ValueError, match="at least two columns"):
+        new_helper().draw_point(numpy.array([[0.0], [1.0]]))
+
+
+@pytest.mark.parametrize("point", [Point2(1.0, 2.0), Vector2(1.0, 2.0), (1.0, 2.0), [1.0, 2.0],
+                                   numpy.array([1.0, 2.0])])
+def test_draw_point_still_takes_a_single_loose_coordinate(point):
+    """ The array form must not swallow the one-point case, which reports a lower dimension. """
+    artist = new_helper().draw_point(point)
+    assert list(artist.get_xdata()) == pytest.approx([1.0], abs=TOL)
+    assert list(artist.get_ydata()) == pytest.approx([2.0], abs=TOL)
+
+
 def test_draw_point_of_nothing_still_returns_an_empty_artist():
     helper = new_helper()
     result = helper.draw_point()

@@ -90,8 +90,9 @@ def main():
     ax: Axes = fig.subplots()
     helper = AxesHelper(ax)
 
-    ax.scatter(noisy_points[:, 0], noisy_points[:, 1], s=15, color="steelblue", zorder=3,
-               label=f"Sample points (σ = 0.05, n = {len(noisy_points)})")
+    # `draw_point` takes the whole (n, 2) array directly, so the columns don't need splitting out.
+    helper.draw_point(noisy_points, markersize=4.0, color="steelblue", zorder=3,
+                      label=f"Sample points (σ = 0.05, n = {len(noisy_points)})")
 
     helper.draw_boundary(true_boundary, color="green", linewidth=2.0, linestyle="--", tol=0.005, label="True boundary")
     helper.draw_boundary(fitted_boundary, color="firebrick", linewidth=2.0, linestyle="-", tol=0.005, label="Fitted boundary")

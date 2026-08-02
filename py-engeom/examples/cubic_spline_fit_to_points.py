@@ -35,7 +35,7 @@ import numpy
 from numpy.typing import NDArray
 from matplotlib.pyplot import Figure, Axes, figure, show as show_figure
 
-from engeom.geom2 import Aabb2, CubicSpline2, Point2, fit_spline_to_points
+from engeom.geom2 import Aabb2, CubicSpline2, Point2, Segment2, fit_spline_to_points
 from engeom.plot.matplotlib import AxesHelper
 
 
@@ -124,27 +124,33 @@ def main():
     ax: Axes = fig.subplots()
     helper = AxesHelper(ax)
 
-    ax.scatter(noisy_points[:, 0], noisy_points[:, 1], s=15, color="steelblue", zorder=3,
-               label=f"Sample points (σ = 0.02, n = {len(noisy_points)})")
+    # `draw_point` takes the whole (n, 2) array directly, so the columns don't need splitting out.
+    helper.draw_point(noisy_points, markersize=4.0, color="steelblue", zorder=3,
+                      label=f"Sample points (σ = 0.02, n = {len(noisy_points)})")
 
-    true_poly = true_spline.polyline(0.001)
-    ax.plot(true_poly[:, 0], true_poly[:, 1], color="green", linewidth=2.0, linestyle="--",
-            label="True spline")
+    # `draw_spline` flattens each spline into a polyline itself, to the tolerance given, so there's
+    # no need to call `polyline` and unpack the columns by hand.
+    helper.draw_spline(true_spline, tol=0.001, color="green", linewidth=2.0, linestyle="--",
+                       label="True spline")
+    helper.draw_spline(fitted_spline, tol=0.001, color="firebrick", linewidth=2.0, linestyle="-",
+                       label="Fitted spline")
 
-    fitted_poly = fitted_spline.polyline(0.001)
-    ax.plot(fitted_poly[:, 0], fitted_poly[:, 1], color="firebrick", linewidth=2.0, linestyle="-",
-            label="Fitted spline")
+    # Draw the closest-point projections as leader lines from each probe to its foot on the curve.
+    # A `Segment2` is the natural way to say "a line between these two points".
+    helper.draw_segment(*(Segment2(probe[0], probe[1], foot.x, foot.y) for probe, foot in projections),
+                        color="black", linewidth=1.0, zorder=4)
 
-    # Draw the closest-point projections for the probe points.
-    for i, (probe, foot) in enumerate(projections):
-        ax.plot([probe[0], foot.x], [probe[1], foot.y], color="black", linewidth=1.0, zorder=4)
-        ax.scatter([probe[0]], [probe[1]], s=30, color="darkorange", zorder=5,
-                   label="Probe points" if i == 0 else None)
+    # All the probe markers go into one artist, which is also what gives them a single legend entry
+    # instead of needing the label suppressed on all but the first.
+    helper.draw_point(probes, marker="o", markersize=6.0, color="darkorange", zorder=5,
+                      label="Probe points")
 
     ax.legend()
     ax.set_title("fit_spline_to_points + closest-point query")
 
-    bounds = Aabb2.from_points(noisy_points).expand(0.5)
+    # Frame everything that was drawn, probes included, or the leader to the probe above the curve
+    # runs off the top of the view.
+    bounds = Aabb2.from_points(noisy_points).merged(Aabb2.from_points(probes)).expand(0.5)
     helper.set_bounds(bounds)
 
     fig.tight_layout()
