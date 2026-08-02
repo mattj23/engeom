@@ -1792,3 +1792,226 @@ fn baseline_candidates_score_within_their_bounds() -> Result<()> {
 
     Ok(())
 }
+
+// ================================================================================================
+// Residual field smoothness
+// ================================================================================================
+
+/// Upper edges, in millimetres, of the separation bins used for the residual autocorrelation.
+///
+/// Fine at short range, where a field driven by unresolved detail should already have decayed, and
+/// out to a substantial fraction of the part so that a bulk distortion has room to show itself.
+const AUTOCORR_BINS: [f64; 9] = [0.5, 1.0, 2.0, 3.0, 5.0, 8.0, 12.0, 20.0, 32.0];
+
+/// How many points per scan are used as autocorrelation anchors. Strided rather than sampled, so
+/// the result does not move between runs.
+const AUTOCORR_ANCHORS: usize = 400;
+
+/// The autocorrelation of a scalar field sampled at scattered points, binned by separation.
+///
+/// This is the estimator that separates the two explanations for the floor. A field driven by
+/// detail the reference mesh cannot resolve is essentially independent between neighbouring points
+/// and decays to zero within a sample spacing or two. A field driven by a bulk distortion of the
+/// measurement volume is smooth, and neighbouring points share both magnitude and sign out to a
+/// large fraction of the part.
+///
+/// Returns one `(correlation, pair count)` per bin, normalized by the field's own variance so that
+/// scans with different residual magnitudes are comparable.
+fn autocorrelation(points: &[Point3], values: &[f64]) -> Vec<(f64, usize)> {
+    let empty = vec![(f64::NAN, 0); AUTOCORR_BINS.len()];
+    if points.len() < 2 {
+        return empty;
+    }
+    let Ok(tree) = KdTree3::try_new(points) else {
+        return empty;
+    };
+
+    let n = values.len() as f64;
+    let mean = values.iter().sum::<f64>() / n;
+    let var = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n;
+    if var <= 0.0 {
+        return empty;
+    }
+
+    let max_r = AUTOCORR_BINS[AUTOCORR_BINS.len() - 1];
+    let stride = (points.len() / AUTOCORR_ANCHORS).max(1);
+
+    let mut sums = vec![0.0; AUTOCORR_BINS.len()];
+    let mut counts = vec![0_usize; AUTOCORR_BINS.len()];
+
+    for (i, p) in points.iter().enumerate().step_by(stride) {
+        for (j, d) in tree.within(p, max_r) {
+            if j == i {
+                continue;
+            }
+            if let Some(b) = AUTOCORR_BINS.iter().position(|&edge| d <= edge) {
+                sums[b] += (values[i] - mean) * (values[j] - mean);
+                counts[b] += 1;
+            }
+        }
+    }
+
+    sums.iter()
+        .zip(counts.iter())
+        .map(|(s, c)| {
+            if *c == 0 {
+                (f64::NAN, 0)
+            } else {
+                (s / (*c as f64) / var, *c)
+            }
+        })
+        .collect()
+}
+
+/// A fixed permutation, used as the control.
+///
+/// Shuffling the values while leaving the point positions alone destroys any spatial structure
+/// without changing the distribution at all. If the estimator reports correlation on this, it is
+/// manufacturing it.
+fn deterministic_shuffle(values: &[f64]) -> Vec<f64> {
+    let mut out = values.to_vec();
+    let mut state = 0x2545_f491_4f6c_dd1d_u64;
+    for i in (1..out.len()).rev() {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        out.swap(i, (state >> 33) as usize % (i + 1));
+    }
+    out
+}
+
+impl Benchmark {
+    /// The span of the reference deviation vector belonging to each scan, matching the order
+    /// `score` emits them in.
+    fn reference_spans(&self) -> Vec<std::ops::Range<usize>> {
+        let mut spans = Vec::with_capacity(self.scans.len());
+        let mut start = 0;
+        for scan in self.scans.iter() {
+            let n = scan.points.iter().filter(|p| p.on_reference).count();
+            spans.push(start..start + n);
+            start += n;
+        }
+        spans
+    }
+}
+
+/// Averages per-scan autocorrelations, weighting by how many pairs each contributed.
+fn pooled_autocorrelation(per_scan: &[Vec<(f64, usize)>]) -> Vec<(f64, usize)> {
+    (0..AUTOCORR_BINS.len())
+        .map(|b| {
+            let mut num = 0.0;
+            let mut den = 0_usize;
+            for scan in per_scan.iter() {
+                let (corr, count) = scan[b];
+                if count > 0 && corr.is_finite() {
+                    num += corr * count as f64;
+                    den += count;
+                }
+            }
+            if den == 0 {
+                (f64::NAN, 0)
+            } else {
+                (num / den as f64, den)
+            }
+        })
+        .collect()
+}
+
+/// The fewest pairs a bin needs before its correlation is worth printing.
+///
+/// The measurement points are Poisson sampled at `SAMPLE_SPACING`, so bins below that separation
+/// contain almost no pairs and their estimates are meaningless. Left unsuppressed they produce
+/// values outside the range a correlation can occupy, which is how the problem announced itself.
+const AUTOCORR_MIN_PAIRS: usize = 5000;
+
+fn print_autocorrelation(label: &str, pooled: &[(f64, usize)]) {
+    let cells = pooled
+        .iter()
+        .map(|(c, n)| {
+            if c.is_finite() && *n >= AUTOCORR_MIN_PAIRS {
+                format!("{c:>7.3}")
+            } else {
+                "      -".to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("");
+    println!("  {label:<18}{cells}");
+}
+
+fn print_pair_counts(pooled: &[(f64, usize)]) {
+    let cells = pooled
+        .iter()
+        .map(|(_, n)| {
+            if *n >= 1_000_000 {
+                format!("{:>6.1}M", *n as f64 / 1.0e6)
+            } else {
+                format!("{:>6.0}k", *n as f64 / 1.0e3)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("");
+    println!("  {:<18}{}", "pairs", cells);
+}
+
+/// Diagnostic: is the residual field against the reference smooth, or is it detail-scale noise?
+///
+/// This distinguishes the two explanations for why an individually fitted scan still disagrees with
+/// the ATOS mesh. Either the reference is too coarse to resolve fine features, in which case the
+/// disagreement is high frequency and uncorrelated beyond a sample spacing, or the laser scanner
+/// measures in a slightly warped volume, in which case it is smooth and correlated over tens of
+/// millimetres. The two predict identical aggregate statistics but call for entirely different
+/// responses, so the aggregates cannot settle it and this can.
+///
+/// The floor field is the one that matters, since its rigid component has already been removed per
+/// scan. The v0.2.16 field is shown beside it because it has a *different* rigid component removed,
+/// so agreement between the two is stronger evidence than either alone. The shuffled control shares
+/// the floor field's distribution exactly and differs only in having no spatial structure.
+#[test]
+#[ignore]
+fn diagnose_residual_field_smoothness() -> Result<()> {
+    let header = AUTOCORR_BINS
+        .iter()
+        .map(|e| format!("{e:>7.1}"))
+        .collect::<Vec<_>>()
+        .join("");
+
+    for case in find_cases()?.iter() {
+        let loaded = LoadedCase::load(case)?;
+        let spans = loaded.bench.reference_spans();
+
+        let floor = loaded.score(&loaded.floor())?;
+        let v0216 = loaded.score(&loaded.cad_align)?;
+
+        let mut floor_scans = Vec::new();
+        let mut v0216_scans = Vec::new();
+        let mut control_scans = Vec::new();
+
+        for (scan, span) in loaded.bench.scans.iter().zip(spans.iter()) {
+            let pts = scan
+                .points
+                .iter()
+                .filter(|p| p.on_reference)
+                .map(|p| p.point)
+                .collect::<Vec<_>>();
+
+            floor_scans.push(autocorrelation(&pts, &floor.reference_devs[span.clone()]));
+            v0216_scans.push(autocorrelation(&pts, &v0216.reference_devs[span.clone()]));
+            control_scans.push(autocorrelation(
+                &pts,
+                &deterministic_shuffle(&floor.reference_devs[span.clone()]),
+            ));
+        }
+
+        let floor_pooled = pooled_autocorrelation(&floor_scans);
+
+        println!("\n=== {} === separation, mm:", loaded.name);
+        println!("  {:<18}{}", "", header);
+        print_autocorrelation("floor", &floor_pooled);
+        print_autocorrelation("v0.2.16", &pooled_autocorrelation(&v0216_scans));
+        print_autocorrelation("floor shuffled", &pooled_autocorrelation(&control_scans));
+        print_pair_counts(&floor_pooled);
+    }
+
+    Ok(())
+}
