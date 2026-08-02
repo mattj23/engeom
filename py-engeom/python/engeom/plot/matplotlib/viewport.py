@@ -7,17 +7,43 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import numpy
 from matplotlib.artist import Artist
 from matplotlib.lines import Line2D
+from matplotlib.patches import Ellipse, Polygon
 
-from engeom.geom3 import Iso3, Line3, Mesh3, Point3, Vector3
+from engeom.geom2 import Point2, Vector2
+from engeom.geom3 import Aabb3, Circle3, Curve3, Iso3, Line3, Mesh3, Plane3, Point3, PointCloud, Vector3
+from engeom.metrology import Distance2, Distance3
 
+from .._common import LabelPlace
 from .._coerce import PointLike, to_point2, to_point3
 from ._style import merge_style
 from .trace import TraceBuilder
 
 if TYPE_CHECKING:
     from .axes import AxesHelper
+
+# Below this ratio between a projected direction and its 3D original, the entity is considered to be
+# viewed edge-on to the point where the projection carries no usable information.
+_DEGENERATE = 1.0e-9
+
+
+def _plane_basis(normal: Vector3) -> tuple[Vector3, Vector3]:
+    """
+    Build an orthonormal pair of vectors spanning the plane with the given normal.
+
+    The pair is deterministic but otherwise arbitrary, since a plane normal alone does not fix a
+    rotation about itself. The world axis least aligned with the normal is used as the seed, which
+    keeps the construction numerically well conditioned for every possible normal.
+
+    :param normal: the plane normal. Need not be unit length.
+    :return: two orthonormal vectors, both perpendicular to `normal` and to each other.
+    """
+    n = normal.normalized()
+    seed = min((Vector3.x_axis(), Vector3.y_axis(), Vector3.z_axis()), key=lambda a: abs(n.dot(a)))
+    u = n.cross(seed).normalized()
+    return u, n.cross(u)
 
 
 class ViewPort3:
@@ -92,6 +118,267 @@ class ViewPort3:
         p1 = l.at(t)
         return self.helper.ax.plot([p0.x, p1.x], [p0.y, p1.y], color=color, linewidth=linewidth,
                                    linestyle=linestyle, alpha=alpha, **kwargs)[0]
+
+    def draw_curve(self, *curves: Curve3, color: str | None = None, linewidth: float | None = None,
+                   linestyle: str | None = None, alpha: float | None = None,
+                   label: str | None = None, **kwargs) -> list[Line2D]:
+        """
+        Draw one or more 3D curves as projected polylines, each as its own separate line.
+
+        The curve's own vertices are projected directly, so the drawn polyline is exactly the
+        projection of the polyline the curve already is, with no resampling.
+
+        :param curves: the curves to draw.
+        :param color: the line color. If None, the axes' color cycle supplies one.
+        :param linewidth: the line width in points. If None, the Matplotlib default applies.
+        :param linestyle: the line style, such as ``"--"``. If None, the Matplotlib default applies.
+        :param alpha: the opacity from 0.0 to 1.0. If None, the line is fully opaque.
+        :param label: the legend label. If None, the line is not labeled.
+        :param kwargs: any other keyword argument accepted by ``Axes.plot``.
+        :return: one ``Line2D`` per curve, in the order given.
+        """
+        kwargs = merge_style(kwargs, color=color, linewidth=linewidth, linestyle=linestyle,
+                             alpha=alpha, label=label)
+        drawn = []
+        for curve in curves:
+            points = self.view.transform_points(curve.points)
+            drawn.append(self.helper.ax.plot(points[:, 0], points[:, 1], **kwargs)[0])
+        return drawn
+
+    def draw_point_cloud(self, *clouds: PointCloud, marker: str = ".", markersize: float = 1.0,
+                         color: str | None = None, alpha: float | None = None,
+                         label: str | None = None, **kwargs) -> list[Line2D]:
+        """
+        Draw one or more point clouds as projected markers.
+
+        Points are drawn in storage order with no depth sorting, so a cloud with a far side will
+        show it through the near side. For a cloud dense enough that this matters, a small marker
+        with some transparency reads better than trying to hide the back.
+
+        Per-point colors carried by the cloud are ignored, since a single Matplotlib line artist has
+        one color. Reach for the PyVista helper if the colors are the point of the plot.
+
+        :param clouds: the point clouds to draw.
+        :param marker: the Matplotlib marker style for each point.
+        :param markersize: the marker size in points, defaulting small because clouds are dense.
+        :param color: the marker color. If None, the axes' color cycle supplies one.
+        :param alpha: the opacity from 0.0 to 1.0. If None, the markers are fully opaque.
+        :param label: the legend label. If None, the cloud is not labeled.
+        :param kwargs: any other keyword argument accepted by ``Axes.plot``.
+        :return: one ``Line2D`` per cloud, in the order given.
+        """
+        kwargs = merge_style(kwargs, color=color, alpha=alpha, label=label)
+        drawn = []
+        for cloud in clouds:
+            points = self.view.transform_points(cloud.points)
+            drawn.append(self.helper.ax.plot(points[:, 0], points[:, 1], linestyle="none",
+                                             marker=marker, markersize=markersize, **kwargs)[0])
+        return drawn
+
+    def draw_circle(self, *circles: Circle3, fill: bool = False, color: str | None = None,
+                    edgecolor: str | None = None, facecolor: str | None = None,
+                    linewidth: float | None = None, linestyle: str | None = None,
+                    alpha: float | None = None, label: str | None = None,
+                    **kwargs) -> list[Ellipse]:
+        """
+        Draw one or more 3D circles as the ellipses they project to.
+
+        A circle not facing the viewer projects to an ellipse under parallel projection, and that
+        ellipse is computed exactly rather than approximated by a polyline: the projection maps the
+        circle's plane basis to a 2x2 matrix whose singular values are the ellipse's semi-axes. A
+        circle seen exactly edge-on therefore collapses to a line, which is correct.
+
+        :param circles: the circles to draw.
+        :param fill: whether to fill the ellipses.
+        :param color: sets both the edge and face color at once. If None, the Matplotlib default
+            applies. `edgecolor` and `facecolor` override this for the side they name.
+        :param edgecolor: the outline color. If None, `color` or the Matplotlib default applies.
+        :param facecolor: the fill color, which has no effect unless `fill` is True. If None,
+            `color` or the Matplotlib default applies.
+        :param linewidth: the outline width in points. If None, the Matplotlib default applies.
+        :param linestyle: the outline style, such as ``"--"``. If None, the Matplotlib default applies.
+        :param alpha: the opacity from 0.0 to 1.0. If None, the ellipse is fully opaque.
+        :param label: the legend label. If None, the ellipse is not labeled.
+        :param kwargs: any other keyword argument accepted by the Matplotlib ``Ellipse`` patch.
+        :return: one ``Ellipse`` patch per circle, in the order given.
+        """
+        kwargs = merge_style(kwargs, color=color, edgecolor=edgecolor, facecolor=facecolor,
+                             linewidth=linewidth, linestyle=linestyle, alpha=alpha, label=label)
+        patches = []
+        for circle in circles:
+            in_view = self.view @ circle
+            u, v = _plane_basis(in_view.normal)
+            # The circle is the image of the unit circle under [r*u | r*v]; dropping z leaves a 2x2
+            # whose singular values are the projected semi-axes and whose left singular vectors give
+            # their directions.
+            matrix = numpy.array([[u.x, v.x], [u.y, v.y]]) * in_view.r
+            left, semi_axes, _ = numpy.linalg.svd(matrix)
+            angle = numpy.rad2deg(numpy.arctan2(left[1, 0], left[0, 0]))
+            center = in_view.center
+            patch = Ellipse((center.x, center.y), 2 * semi_axes[0], 2 * semi_axes[1], angle=angle,
+                            fill=fill, **kwargs)
+            patches.append(self.helper.ax.add_patch(patch))
+        return patches
+
+    def draw_plane(self, *planes: Plane3, center: PointLike, size: float, fill: bool = False,
+                   color: str | None = None, edgecolor: str | None = None,
+                   facecolor: str | None = None, linewidth: float | None = None,
+                   linestyle: str | None = None, alpha: float | None = None,
+                   label: str | None = None, **kwargs) -> list[Polygon]:
+        """
+        Draw one or more infinite planes as bounded square quads, projected into the view.
+
+        A `Plane3` has no extent, so both where to draw it and how big to draw it have to be given.
+        `center` is projected onto each plane to place the quad, meaning the same anchor point can
+        be reused for several planes without having to sit on any of them. The quad's rotation about
+        the plane normal is deterministic but arbitrary, since a plane does not carry one.
+
+        A quad's projection is exact, unlike a circle's, because parallel projection maps straight
+        edges to straight edges.
+
+        :param planes: the planes to draw.
+        :param center: the point to center each quad on, projected onto the plane first. Any
+            coordinate the helpers accept.
+        :param size: the edge length of the square quad, in data units.
+        :param fill: whether to fill the quads.
+        :param color: sets both the edge and face color at once. If None, the Matplotlib default
+            applies. `edgecolor` and `facecolor` override this for the side they name.
+        :param edgecolor: the outline color. If None, `color` or the Matplotlib default applies.
+        :param facecolor: the fill color, which has no effect unless `fill` is True. If None,
+            `color` or the Matplotlib default applies.
+        :param linewidth: the outline width in points. If None, the Matplotlib default applies.
+        :param linestyle: the outline style, such as ``"--"``. If None, the Matplotlib default applies.
+        :param alpha: the opacity from 0.0 to 1.0. A filled plane is usually worth making partly
+            transparent so that geometry behind it stays visible.
+        :param label: the legend label. If None, the quad is not labeled.
+        :param kwargs: any other keyword argument accepted by the Matplotlib ``Polygon`` patch.
+        :return: one ``Polygon`` patch per plane, in the order given.
+        :raises ValueError: if `size` is not positive.
+        """
+        if size <= 0.0:
+            raise ValueError(f"size must be positive, got {size}")
+        kwargs = merge_style(kwargs, color=color, edgecolor=edgecolor, facecolor=facecolor,
+                             linewidth=linewidth, linestyle=linestyle, alpha=alpha, label=label)
+        anchor = to_point3(center)
+        half = size / 2.0
+        patches = []
+        for plane in planes:
+            origin = plane.project_point(anchor)
+            u, v = _plane_basis(plane.normal)
+            corners = [origin + u * half + v * half, origin - u * half + v * half,
+                       origin - u * half - v * half, origin + u * half - v * half]
+            projected = [self.view @ corner for corner in corners]
+            patch = Polygon([(p.x, p.y) for p in projected], closed=True, fill=fill, **kwargs)
+            patches.append(self.helper.ax.add_patch(patch))
+        return patches
+
+    def draw_aabb(self, *boxes: Aabb3, color: str | None = None, linewidth: float | None = None,
+                  linestyle: str | None = None, alpha: float | None = None,
+                  label: str | None = None, **kwargs) -> list[Line2D]:
+        """
+        Draw one or more 3D bounding boxes as projected wireframes.
+
+        All twelve edges of a box go into a single artist, using `TraceBuilder` to break between
+        them, so the box restyles as one thing. Every edge is drawn, including the three at the
+        back, since hiding them would need a depth test this viewport does not do.
+
+        :param boxes: the bounding boxes to draw.
+        :param color: the line color. If None, the axes' color cycle supplies one.
+        :param linewidth: the line width in points. If None, the Matplotlib default applies.
+        :param linestyle: the line style, such as ``"--"``. If None, the Matplotlib default applies.
+        :param alpha: the opacity from 0.0 to 1.0. If None, the wireframe is fully opaque.
+        :param label: the legend label. If None, the box is not labeled.
+        :param kwargs: any other keyword argument accepted by ``Axes.plot``.
+        :return: one ``Line2D`` per box, in the order given.
+        """
+        kwargs = merge_style(kwargs, color=color, linewidth=linewidth, linestyle=linestyle,
+                             alpha=alpha, label=label)
+        drawn = []
+        for box in boxes:
+            axes = ((box.min.x, box.max.x), (box.min.y, box.max.y), (box.min.z, box.max.z))
+            corners = {(i, j, k): Point3(axes[0][i], axes[1][j], axes[2][k])
+                       for i in (0, 1) for j in (0, 1) for k in (0, 1)}
+            trace = TraceBuilder()
+            for a in sorted(corners):
+                for b in sorted(corners):
+                    # One differing index means the two corners share an edge; `a < b` keeps each
+                    # of the twelve edges from being walked in both directions.
+                    if a < b and sum(1 for x, y in zip(a, b) if x != y) == 1:
+                        trace.add_segment(self.view @ corners[a], self.view @ corners[b])
+            drawn.append(self.helper.ax.plot(*trace.xy, **kwargs)[0])
+        return drawn
+
+    def draw_distance(
+            self,
+            distance: Distance3,
+            side_shift: float = 0.0,
+            template: str = "{value:.3f}",
+            fontsize: int = 10,
+            label_place: LabelPlace = "outside",
+            label_offset: float | None = None,
+            fontname: str | None = None,
+            scale_value: float = 1.0,
+    ) -> list[Artist]:
+        """
+        Draw a `Distance3` as a dimension, by projecting it into the view and handing it to
+        `AxesHelper.draw_distance`, so that leaders, arrows, and label placement all behave exactly
+        as they do for a 2D dimension.
+
+        **The label reports the true 3D distance, not the projected one.** Projection foreshortens
+        any measurement not parallel to the image plane, and a dimension whose label disagreed with
+        the geometry it measures would be worse than useless. The arrow is drawn foreshortened, as
+        it must be, but the number is the real one.
+
+        :param distance: the 3D measurement to draw.
+        :param side_shift: offset the leader line ends by this many data units, orthogonally to the
+            projected measurement direction, with positive values shifting to the right.
+        :param template: the format string for the label. The measured value is substituted for the
+            ``value`` key.
+        :param fontsize: the font size of the label.
+        :param label_place: where to put the label relative to the anchor points. See `LabelPlace`.
+        :param label_offset: how far the label sits from its anchor, in data units. If None, a
+            default derived from the font size is used.
+        :param fontname: the name of the font to use for the label. If None, the Matplotlib default
+            is used.
+        :param scale_value: a factor applied to the true 3D value before it is formatted into the
+            label, for displaying the measurement in different units.
+        :return: every artist drawn, in the same order as `AxesHelper.draw_distance` returns them.
+        :raises ValueError: if the measurement direction is so close to the view direction that the
+            dimension projects to nothing and cannot be drawn.
+        :raises ValueError: if `label_place` is not one of the valid placement tokens.
+        """
+        a = self.view @ distance.a
+        b = self.view @ distance.b
+        direction = self.view @ distance.direction
+        flat_direction = Vector2(direction.x, direction.y)
+
+        if flat_direction.norm() <= _DEGENERATE * direction.norm():
+            raise ValueError(
+                "the measurement direction is parallel to the view direction, so the dimension "
+                "projects to a point and cannot be drawn; view the geometry from another angle"
+            )
+
+        flat = Distance2(Point2(a.x, a.y), Point2(b.x, b.y), flat_direction.normalized())
+        if distance.value != 0.0 and abs(flat.value) <= _DEGENERATE * abs(distance.value):
+            raise ValueError(
+                "the measurement projects to a zero-length dimension and cannot be drawn; view the "
+                "geometry from another angle"
+            )
+
+        # `draw_distance` formats whatever the 2D value is, which foreshortening has shrunk. Fold
+        # the recovery factor into the scale so the label shows the true 3D distance. A measurement
+        # that is genuinely zero in 3D needs no recovery, and labels as zero either way.
+        correction = 1.0 if flat.value == 0.0 else distance.value / flat.value
+        return self.helper.draw_distance(
+            flat,
+            side_shift=side_shift,
+            template=template,
+            fontsize=fontsize,
+            label_place=label_place,
+            label_offset=label_offset,
+            fontname=fontname,
+            scale_value=scale_value * correction,
+        )
 
     def draw_dimension_arrow(
             self,

@@ -26,13 +26,15 @@ from matplotlib.text import Annotation
 
 from engeom.geom2 import (Aabb2, Arc2, BoundaryData2, Circle2, CubicSpline2, Curve2, Line2, Point2,
                           Segment2, SurfacePoint2, Vector2)
-from engeom.geom3 import Iso3, Line3, Mesh3, Point3, Vector3
-from engeom.metrology import Distance2
+from engeom.geom3 import (Aabb3, Circle3, Curve3, Iso3, Line3, Mesh3, Plane3, Point3, PointCloud,
+                          Vector3)
+from engeom.metrology import Distance2, Distance3
 from engeom.plot import LabelPlace
 from engeom.plot._coerce import to_point2, to_point3, to_tuple2, to_tuple3
 from engeom.plot._common import LABEL_PLACES
 from engeom.plot.matplotlib import GOM_CMAP, GomColorMap, AxesHelper, TraceBuilder, ViewPort3
 from engeom.plot.matplotlib._style import merge_style
+from engeom.plot.matplotlib.viewport import _plane_basis
 
 TOL = 1e-12
 
@@ -775,6 +777,135 @@ def test_viewport_draw_line_honors_a_zero_start():
     assert tuple(symmetric) == pytest.approx((-2.0, 2.0), abs=TOL)
 
 
+def test_viewport_draw_curve_projects_the_curve_vertices():
+    view = new_viewport()
+    curve = Curve3(numpy.array([[0.0, 0.0, 0.0], [1.0, 2.0, 5.0], [3.0, 1.0, 9.0]]), tol=1.0e-6)
+    line = view.draw_curve(curve)[0]
+    # Under the identity view, projecting is just dropping z.
+    assert list(line.get_xdata()) == pytest.approx([0.0, 1.0, 3.0], abs=TOL)
+    assert list(line.get_ydata()) == pytest.approx([0.0, 2.0, 1.0], abs=TOL)
+
+
+def test_viewport_draw_point_cloud_draws_markers_without_connecting_them():
+    view = new_viewport()
+    line = view.draw_point_cloud(PointCloud(numpy.array([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]])))[0]
+    assert line.get_linestyle() == "None"
+    assert len(line.get_xdata()) == 2
+
+
+def test_viewport_draw_aabb_draws_all_twelve_edges():
+    """ A box has twelve edges, each contributing two points and a break to the single artist. """
+    view = new_viewport()
+    line = view.draw_aabb(Aabb3(0.0, 0.0, 0.0, 1.0, 2.0, 3.0))[0]
+    xs = list(line.get_xdata())
+    assert len(xs) == 36
+    assert sum(1 for x in xs if x is None or numpy.isnan(x)) == 12
+
+
+def test_viewport_draw_plane_places_a_quad_of_the_requested_size():
+    view = new_viewport()
+    patch = view.draw_plane(Plane3.from_point_normal(0.0, 0.0, 4.0, 0.0, 0.0, 1.0),
+                            center=Point3(0.0, 0.0, 0.0), size=2.0)[0]
+    corners = patch.get_xy()[:4]
+    # Seen face-on, the quad projects to a 2x2 square centered where the anchor projects onto it.
+    assert corners[:, 0].min() == pytest.approx(-1.0, abs=TOL)
+    assert corners[:, 0].max() == pytest.approx(1.0, abs=TOL)
+    assert corners[:, 1].min() == pytest.approx(-1.0, abs=TOL)
+    assert corners[:, 1].max() == pytest.approx(1.0, abs=TOL)
+
+
+def test_viewport_draw_plane_rejects_a_non_positive_size():
+    view = new_viewport()
+    with pytest.raises(ValueError, match="positive"):
+        view.draw_plane(Plane3.from_point_normal(0.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+                        center=Point3(0.0, 0.0, 0.0), size=0.0)
+
+
+def test_viewport_draw_circle_seen_face_on_is_a_true_circle():
+    view = new_viewport()
+    patch = view.draw_circle(Circle3(1.0, 2.0, 0.0, 0.0, 0.0, 1.0, 3.0))[0]
+    assert patch.get_center() == pytest.approx((1.0, 2.0), abs=TOL)
+    assert patch.get_width() == pytest.approx(6.0, abs=TOL)
+    assert patch.get_height() == pytest.approx(6.0, abs=TOL)
+
+
+def test_viewport_draw_circle_foreshortens_by_the_cosine_of_the_tilt():
+    """
+    The projected minor axis of a tilted circle is exactly r*cos(tilt), which is the property the
+    ellipse construction exists to get right.
+    """
+    tilt = numpy.deg2rad(60.0)
+    view = new_viewport()
+    patch = view.draw_circle(Circle3(0.0, 0.0, 0.0, 0.0, numpy.sin(tilt), numpy.cos(tilt), 2.0))[0]
+    assert patch.get_width() == pytest.approx(4.0, abs=1.0e-9)
+    assert patch.get_height() == pytest.approx(4.0 * numpy.cos(tilt), abs=1.0e-9)
+
+
+def test_viewport_draw_circle_seen_edge_on_collapses_to_a_line():
+    view = new_viewport()
+    patch = view.draw_circle(Circle3(0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 3.0))[0]
+    assert patch.get_width() == pytest.approx(6.0, abs=TOL)
+    assert patch.get_height() == pytest.approx(0.0, abs=TOL)
+
+
+def test_viewport_draw_distance_labels_the_true_3d_value_not_the_projected_one():
+    """
+    Projection foreshortens the arrow, but the number beside it has to stay the real measurement. A
+    dimension whose label disagreed with the geometry would be silently wrong rather than merely
+    ugly.
+    """
+    view = new_helper().viewport(Iso3.from_rotation(numpy.deg2rad(30.0), 1.0, 0.0, 0.0))
+    view.draw_distance(Distance3(Point3(0.0, 0.0, 0.0), Point3(0.0, 0.0, 10.0)))
+    labels = [t.get_text() for t in view.helper.ax.texts if t.get_text()]
+    # The measurement projects to half its length in this view, so an uncorrected label would read
+    # "5.000".
+    assert labels == ["10.000"]
+
+
+def test_viewport_draw_distance_still_honors_a_unit_scale_factor():
+    view = new_helper().viewport(Iso3.from_rotation(numpy.deg2rad(30.0), 1.0, 0.0, 0.0))
+    view.draw_distance(Distance3(Point3(0.0, 0.0, 0.0), Point3(0.0, 0.0, 10.0)), scale_value=25.4)
+    labels = [t.get_text() for t in view.helper.ax.texts if t.get_text()]
+    assert labels == ["254.000"]
+
+
+def test_viewport_draw_distance_draws_a_genuinely_zero_length_measurement():
+    """
+    A zero-length measurement projects to zero too, but it is not a foreshortening failure and must
+    not be rejected as one. It also must not divide by zero recovering the true value.
+    """
+    view = new_viewport()
+    view.draw_distance(Distance3(Point3(1.0, 1.0, 0.0), Point3(1.0, 1.0, 0.0),
+                                 Vector3(1.0, 0.0, 0.0)))
+    labels = [t.get_text() for t in view.helper.ax.texts if t.get_text()]
+    assert labels == ["0.000"]
+
+
+def test_viewport_draw_distance_rejects_a_measurement_along_the_view_direction():
+    view = new_viewport()
+    with pytest.raises(ValueError, match="view direction"):
+        view.draw_distance(Distance3(Point3(0.0, 0.0, 0.0), Point3(0.0, 0.0, 5.0)))
+
+
+def test_viewport_draw_distance_passes_a_bad_label_place_through_to_validation():
+    view = new_viewport()
+    with pytest.raises(ValueError, match="invalid label_place"):
+        view.draw_distance(Distance3(Point3(0.0, 0.0, 0.0), Point3(3.0, 0.0, 0.0)),
+                           label_place="sideways")
+
+
+def test_plane_basis_returns_an_orthonormal_pair_for_any_normal():
+    for normal in [Vector3(0.0, 0.0, 1.0), Vector3(1.0, 0.0, 0.0), Vector3(0.0, 1.0, 0.0),
+                   Vector3(1.0, 1.0, 1.0), Vector3(-3.0, 0.2, 0.0)]:
+        u, v = _plane_basis(normal)
+        n = normal.normalized()
+        assert u.norm() == pytest.approx(1.0, abs=1.0e-12)
+        assert v.norm() == pytest.approx(1.0, abs=1.0e-12)
+        assert u.dot(v) == pytest.approx(0.0, abs=1.0e-12)
+        assert u.dot(n) == pytest.approx(0.0, abs=1.0e-12)
+        assert v.dot(n) == pytest.approx(0.0, abs=1.0e-12)
+
+
 def test_viewport_draw_mesh_outline_honors_an_empty_kwargs_dict():
     """ Regression: `visible_kwargs or default` replaced an explicit empty dict with the default. """
     view = new_viewport()
@@ -1070,8 +1201,9 @@ EXERCISED_HELPER_MEMBERS = {
 }
 
 EXERCISED_VIEWPORT_MEMBERS = {
-    "draw_coordinate_system", "draw_dimension_arrow", "draw_labeled_point", "draw_line",
-    "draw_mesh_outline", "find_mesh_edge_point",
+    "draw_aabb", "draw_circle", "draw_coordinate_system", "draw_curve", "draw_dimension_arrow",
+    "draw_distance", "draw_labeled_point", "draw_line", "draw_mesh_outline", "draw_plane",
+    "draw_point_cloud", "find_mesh_edge_point",
 }
 
 EXERCISED_TRACE_MEMBERS = {
