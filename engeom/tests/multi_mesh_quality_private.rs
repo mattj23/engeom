@@ -19,12 +19,15 @@ use engeom::common::DistMode;
 use engeom::common::kd_tree::KdTreeSearch;
 use engeom::geom3::MultiAlignOutcome3;
 use engeom::geom3::XyzQuat;
+use engeom::geom3::align3::jacobian::point_surf_jacobian;
 use engeom::geom3::align3::{
-    AlignOptions3, AlignParams3, AlignmentMesh, GAPParams, MultiAlignOptions3,
-    multi_mesh_adjustment, points_to_surface3,
+    AlignInformation3, AlignOptions3, AlignOrigin3, AlignParams3, AlignStorage3, AlignValues3,
+    AlignmentMesh, Dof6, GAPParams, MulMeshAlignPoint, MultiAlignOptions3,
+    generate_alignment_points, multi_mesh_adjustment, multi_mesh_adjustment_with_points,
+    points_to_surface3,
 };
 use engeom::rayon::prelude::*;
-use engeom::{Iso3, KdTree3, Mesh3, Point3, Result, UnitVec3};
+use engeom::{Iso3, KdTree3, Mesh3, Point3, Result, SurfacePoint3, UnitVec3};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
@@ -2632,6 +2635,194 @@ fn diagnose_unweighted_solve_gates() -> Result<()> {
             score.reference.beyond_gate,
             max_point_shift(&loaded.bench, &transforms, &loaded.cad_align),
             outcome_summary(&outcome),
+        );
+    }
+
+    Ok(())
+}
+
+// ================================================================================================
+// Correspondence pruning
+// ================================================================================================
+
+/// Builds the full correspondence set for a multi-mesh run, one direction per unordered pair.
+///
+/// This mirrors what `multi_mesh_adjustment` does internally, reproduced here so the same
+/// correspondences can be handed to the solver both whole and pruned. The static mesh and the
+/// pairing direction are fixed rather than chosen by `reference_priority`, which keeps the pruned
+/// and unpruned runs comparing like with like.
+fn build_correspondences(
+    scans: &[Mesh3],
+    start: &[Iso3],
+    sample: &GAPParams,
+) -> Vec<MulMeshAlignPoint> {
+    let mut pairs = Vec::new();
+    for i in 0..scans.len() {
+        for j in (i + 1)..scans.len() {
+            pairs.push((j, i));
+        }
+    }
+
+    pairs
+        .par_iter()
+        .flat_map(|&(mesh_i, ref_i)| {
+            let t = start[ref_i].inv_mul(&start[mesh_i]);
+            generate_alignment_points(&scans[mesh_i], &scans[ref_i], &t, sample)
+                .into_iter()
+                .map(|mp| MulMeshAlignPoint::new(mesh_i, mp, ref_i, 1.0))
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// The jacobian row and world-frame correspondence for one alignment point at a given set of poses.
+fn forward_row(
+    point: &MulMeshAlignPoint,
+    scans: &[Mesh3],
+    start: &[Iso3],
+    values: &AlignValues3,
+) -> AlignStorage3 {
+    let t_test = start[point.mesh_i];
+    let t_ref = start[point.ref_i];
+
+    let p_world = t_test * point.mp.point();
+    let query = t_ref.inverse_transform_point(&p_world);
+    let m = scans[point.ref_i].surface_closest_to(&query);
+    let c_world = SurfacePoint3::new(t_ref * m.point(), t_ref.rotation * m.normal());
+
+    point_surf_jacobian(&p_world, &c_world, values)
+}
+
+/// Prunes the correspondence set by greedy D-optimal selection, body by body.
+///
+/// Each correspondence belongs to exactly one test mesh, so grouping by that mesh partitions the
+/// set and the selections cannot conflict. Within a body the choice is made on the *forward*
+/// jacobian rows, the ones describing how that body's own six parameters respond.
+///
+/// That is an approximation worth naming. A correspondence also constrains the mesh it was matched
+/// against, through the reverse jacobian block, and this ignores that when deciding what to drop.
+/// The full treatment would be D-optimality over the whole `6 * (n - 1)` parameter space, which
+/// `AlignInformation3` is not built for. Whether the approximation costs anything is exactly what
+/// scoring the pruned result is meant to reveal.
+fn prune_d_optimal(
+    points: &[MulMeshAlignPoint],
+    scans: &[Mesh3],
+    start: &[Iso3],
+    keep_per_body: usize,
+) -> Result<Vec<MulMeshAlignPoint>> {
+    let mut by_body = vec![Vec::new(); scans.len()];
+    for (k, p) in points.iter().enumerate() {
+        by_body[p.mesh_i].push(k);
+    }
+
+    let mut kept = Vec::new();
+    for (i, idxs) in by_body.iter().enumerate() {
+        if idxs.is_empty() {
+            continue;
+        }
+
+        // The same parameterization the bundle uses for this body: rotation about the mesh's own
+        // centre, with the seed pose carried in the working offset so the parameters start at zero.
+        let c = scans[i].aabb().center();
+        let local = Iso3::translation(c.x, c.y, c.z);
+        let params = AlignParams3::new(
+            AlignOrigin3::Local(local),
+            Some(start[i] * local),
+            Some(Dof6::all()),
+        );
+        let values = params.compute_values();
+
+        let rows = idxs
+            .par_iter()
+            .map(|&k| forward_row(&points[k], scans, start, &values))
+            .collect::<Vec<_>>();
+
+        let weights = vec![1.0; rows.len()];
+        let info = AlignInformation3::from_rows(rows, weights, Dof6::all())?;
+
+        for s in info.select_d_optimal(keep_per_body, None) {
+            kept.push(points[idxs[s]].clone());
+        }
+    }
+
+    Ok(kept)
+}
+
+/// Diagnostic: does D-optimal pruning preserve the alignment while cutting the correspondence
+/// count?
+///
+/// This is the payoff the stability tooling was rebuilt for. The original motivation was that
+/// registering fifteen to twenty scans simultaneously is expensive, and that scoring points
+/// independently and keeping the best double-counts redundancy: two points on the same flat patch
+/// each look valuable, but the second adds almost nothing once the first is in. Greedy D-optimal
+/// selection de-duplicates automatically because a candidate is measured against what has already
+/// been chosen.
+///
+/// Cost matters here for a specific reason. Each Levenberg-Marquardt iteration factors the whole
+/// jacobian with a dense pivoted QR inside the solver crate, which is serial and scales with the
+/// row count, so it is the correspondence count rather than the thread count that governs runtime.
+#[test]
+#[ignore]
+fn diagnose_pruned_alignment() -> Result<()> {
+    let cases = find_cases()?;
+    let case = cases
+        .iter()
+        .find(|c| c.name == "sample_00")
+        .ok_or("sample_00 not found")?;
+    let loaded = LoadedCase::load(case)?;
+
+    let opts = MultiAlignOptions3::new(MULTI_MESH_MAX_DISTANCE);
+    let sample = GAPParams::defaults(MULTI_MESH_SPACING);
+    let all = build_correspondences(&loaded.scans, &loaded.cad_align, &sample);
+    println!("\n  {} correspondences before pruning", all.len());
+
+    println!(
+        "  {:<20} {:>9} {:>7} | {:>8} {:>6} | {:>8} {:>8} {:>6}",
+        "kept per body", "total", "secs", "cons.med", "out", "ref.med", "p95", "out"
+    );
+
+    for keep in [usize::MAX, 4000, 2000, 1000, 500, 200] {
+        let points = if keep == usize::MAX {
+            all.clone()
+        } else {
+            prune_d_optimal(&all, &loaded.scans, &loaded.cad_align, keep)?
+        };
+
+        let t = std::time::Instant::now();
+        let outcome = multi_mesh_adjustment_with_points(
+            &loaded
+                .scans
+                .iter()
+                .zip(loaded.cad_align.iter())
+                .map(|(m, t)| AlignmentMesh::new(m, None, Some(t), None))
+                .collect::<Vec<_>>(),
+            points.clone(),
+            0,
+            &opts,
+        )?;
+        let secs = t.elapsed().as_secs_f64();
+
+        let transforms = outcome
+            .alignments()
+            .iter()
+            .map(|a| *a.full_transform())
+            .collect::<Vec<_>>();
+        let score = loaded.score(&transforms)?;
+
+        println!(
+            "  {:<20} {:>9} {:>7.0} | {:>8.4} {:>6} | {:>8.4} {:>8.4} {:>6}",
+            if keep == usize::MAX {
+                "all".to_string()
+            } else {
+                keep.to_string()
+            },
+            points.len(),
+            secs,
+            score.consistency.median_abs,
+            score.consistency.beyond_gate,
+            score.reference.median_abs,
+            score.reference.p95,
+            score.reference.beyond_gate,
         );
     }
 
