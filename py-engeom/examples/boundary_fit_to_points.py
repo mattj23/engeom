@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 from matplotlib.pyplot import Figure, Axes
 
 from engeom.geom2 import BoundaryData2, fit_boundary_to_points
-from engeom.plot import MatplotlibAxesHelper
+from engeom.plot.matplotlib import AxesHelper
 
 
 def build_slot(params: NDArray) -> BoundaryData2:
@@ -88,13 +88,14 @@ def main():
     # ----------------------------------------------------------------------------------------------------------------
     fig: Figure = plt.figure(figsize=(9, 6))
     ax: Axes = fig.subplots()
-    helper = MatplotlibAxesHelper(ax)
+    helper = AxesHelper(ax)
 
-    ax.scatter(noisy_points[:, 0], noisy_points[:, 1], s=15, color="steelblue", zorder=3,
-               label=f"Sample points (σ = 0.05, n = {len(noisy_points)})")
+    # `draw_point` takes the whole (n, 2) array directly, so the columns don't need splitting out.
+    helper.draw_point(noisy_points, markersize=4.0, color="steelblue", zorder=3,
+                      label=f"Sample points (σ = 0.05, n = {len(noisy_points)})")
 
-    helper.boundary(true_boundary, color="green", linewidth=2.0, linestyle="--", tol=0.005, label="True boundary")
-    helper.boundary(fitted_boundary, color="firebrick", linewidth=2.0, linestyle="-", tol=0.005, label="Fitted boundary")
+    helper.draw_boundary(true_boundary, color="green", linewidth=2.0, linestyle="--", tol=0.005, label="True boundary")
+    helper.draw_boundary(fitted_boundary, color="firebrick", linewidth=2.0, linestyle="-", tol=0.005, label="Fitted boundary")
 
     ax.legend()
     ax.set_title("fit_boundary_to_points: slot fitting")

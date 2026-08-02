@@ -5,7 +5,7 @@ from pyvista import Plotter
 
 from engeom.align import points_to_mesh, Dof6
 from engeom.geom3 import Mesh3, Iso3
-from engeom.plot import PyvistaPlotterHelper
+from engeom.plot.pyvista import PlotterHelper
 
 
 def main():
@@ -25,7 +25,7 @@ def main():
 
     # Finally, we'll plot the original points, the aligned points, and the original mesh.
     plotter = Plotter()
-    helper = PyvistaPlotterHelper(plotter)
+    helper = PlotterHelper(plotter)
     helper.mesh(mesh, color="white")
     plotter.add_points(to_align, point_size=5, color="red")
     plotter.add_points(aligned, point_size=5, color="green")

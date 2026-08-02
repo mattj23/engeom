@@ -44,7 +44,7 @@ pub use self::aabb2::Aabb2;
 pub use self::angles2::{directed_angle, rot90, rot270, signed_angle};
 pub use self::arc2::Arc2;
 pub use self::boundary2::*;
-pub use self::circle2::Circle2;
+pub use self::circle2::{Circle2, CircleTangency};
 pub use self::cubic_spline2::CubicSpline2;
 pub use self::curve2::{Curve2, CurvePartitioner2, CurveStation2};
 pub use self::iso2::IsoExtensions2;
