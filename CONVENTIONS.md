@@ -163,3 +163,47 @@ Structs that bundle independent fields (a product type, not a sum type) get an o
 
 > [!IMPORTANT]
 > The `.pyi` need to be kept up-to-date with the binding signatures. I have a simple automated name tester in `py-engeom/python/tests/test_stub_drift.py`, which we'll see if it proves to be useful in the long term.
+
+# Plotting Helper Conventions
+
+The plotting helpers in `py-engeom/python/engeom/plot/` are pure Python wrappers that draw `engeom` entities onto some third-party plotting object. They aren't bindings, so nothing above about crossing the Rust boundary applies to them, but they *are* public API and had drifted badly.
+
+These conventions came out of the matplotlib overhaul (August 2026). They're written down because the PyVista helper still has to be done and most of the decisions should apply.
+
+## API Surface shape
+
+- `draw_` prefixes anything that adds an artist.** A method without the prefix configures or queries instead. This splits the API surface so any editor with autocomplete gives you a makeshift table of contents for drawing functions, which seem to be the ones that you spend the most time jumping around between during ordinary use.  Note: when doing the `pyvista` helper, I may consider using `add_` to match the existing convention instead of `draw_`...at this point I'm still undecided.
+
+- Names are singular and take varargs.** `draw_circle(*circles)`, not `draw_circles`. One rule with no per-method judgement, chosen because `draw_circle(c)` is 95% of calls and has to read naturally. Drawing nothing returns an empty list rather than raising, so a computed and possibly empty collection needs no special case at the call site.
+
+> [!NOTE]
+> **Known exception: `draw_normals`.** It's plural because the varargs are *sources* (curves or boundaries) and the entities drawn are the normals sampled along them; one call on one source draws `count` arrows. The name describes what lands on the plot, which is the thing the user is looking for in autocomplete. `draw_point` is a different sort of exception: it's singular and varargs per the rule, but additionally accepts a single `(n, 2)` array, since that's the form the rest of the library hands point sets back in. The two are told apart by `numpy.ndim`, which reports 0 for an `engeom` primitive, 1 for a loose coordinate, and 2 for an array.
+
+- Every `draw_*` returns its artists, annotated.** A varargs method returns one artist per entity in the order given; a composite returns every artist it added, in draw order. This is what lets a caller drop down to the host library for anything the helper doesn't expose, and it's the reason `helper.ax` alone isn't sufficient, since finding an artist again after the fact is worse than being handed it. Two deliberate departures: `draw_point` returns a single artist because all its points go into one, and `draw_airfoil` returns a `dict` keyed by element name because with six named parts, indices into a flat list would shift whenever an element was suppressed.
+
+- A more specific verb wins where the host has a separate entry point for it.** `fill_curve` stays `fill_curve` rather than becoming `draw_curve(fill=True)`, because filling goes through `Axes.fill` and stroking through `Axes.plot`, and the two accept disjoint keyword arguments, so a flag switching between them would be a discoverability trap. Where the host takes a real flag on one artist, it stays a flag: `draw_circle(..., fill=False)` maps onto `Circle(fill=)`.  This isn't ideal, but if I find a better way I may change it.
+
+- No `get_`,** same as the Rust rule. `get_3d_viewport` became `viewport`.
+
+## API Structure
+
+- Ideally, wrap instead of subclass, and keep the host object public.** `helper.ax` and `helper.pv` are the documented escape hatch. 
+
+- The helper is named `<HostType>Helper`,** after the object it wraps rather than the backend: `AxesHelper`, `PlotterHelper`. The backend prefix was redundant with the host-type noun once the module path already named the backend. The `Helper` suffix stays because `Axes` and `Plotter` are names users have in scope in the same file, and shadowing them would be hostile.
+
+- One public module per backend** under `engeom.plot`, so the import statement *is* the dependency declaration. Each backend imports its dependency at the top of its `__init__` behind a single guard that re-raises with a message naming the package and the install command. `engeom.plot` itself stays backend-neutral and must not pull either one in, and there's a test asserting that via `sys.modules` in a subprocess. Naming a submodule `matplotlib` is safe: Python 3 absolute imports mean `import matplotlib` inside it resolves to the real package.
+
+## Arguments and styling
+
+- Name the common styling arguments; keep `**kwargs` open.** Each `draw_*` spells out the handful of arguments that get used constantly (`color`, `linewidth`, `linestyle`, `alpha`, `label`, and the patch/text equivalents) as real keyword parameters so editors complete them, and still forwards an open untyped `**kwargs` for everything else the host accepts. I considered PEP 692 `Unpack[TypedDict]` for this and rejected it: it *closes* the set to type checkers, so every valid-but-unlisted matplotlib argument would be flagged as an error.
+
+> [!IMPORTANT]
+> Naming a styling argument means an unsupplied one arrives as `None`, and forwarding that is **not** the same as omitting it. `Axes.plot(color=None)` overrides matplotlib's color cycle, so two `draw_curve` calls would come out the same color. Route named styling arguments through `_style.merge_style`, which drops the `None`s. There is no collision risk with `**kwargs`: a named argument binds to its parameter and never reaches the dict, so Python rejects a duplicate before the merge runs.  The downside is that you can't deliberately insert a `None`, which may have some consequences for certain methods.  I'm not sure what the best thing to do is here.
+
+- Where possible, composite draw methods get one argument per element, doing double duty as toggle and style.** `False` suppresses the element, `True` or `None` accepts the defaults, and a dict of keyword arguments is merged **over** the defaults rather than replacing them, because restyling one property must not silently discard the rest of an element's designed appearance. `_style.element_style` resolves this; note that it tests `value is False` rather than falsiness, so that an empty dict means "defaults" instead of "suppress". `draw_airfoil` is the worked example. The alternative, a separate `camber=True` plus `camber_kwargs={...}` per element, doubles the signature for no gain.
+
+## Documentation and tests
+
+Every public member carries a complete Sphinx docstring: `:param:` for every argument including `kwargs`, `:return:`, and `:raises:` where it can raise. These helpers have no `.pyi`, so the docstring and the annotations *are* the reference; `mkdocs.yml` sets `docstring_style: sphinx`.
+
+The examples in `py-engeom/examples/` are the real acceptance test for a plotting API, and are worth running and *looking at* after any change here.

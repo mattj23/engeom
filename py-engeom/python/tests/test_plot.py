@@ -9,6 +9,8 @@ public entry point is exercised and that its documented edge cases hold.
 Matplotlib is an optional dependency, so the whole module skips when it is absent.
 """
 
+import subprocess
+import sys
 import warnings
 from typing import get_args
 
@@ -1507,6 +1509,28 @@ def test_fill_available_space_only_ever_widens_the_limits():
 
     assert helper.ax.get_xlim()[0] <= 0.0 and helper.ax.get_xlim()[1] >= 10.0
     assert helper.ax.get_ylim()[0] <= 0.0 and helper.ax.get_ylim()[1] >= 10.0
+
+
+# ---------------------------------------------------------------------------
+# Backend independence
+# ---------------------------------------------------------------------------
+
+def test_importing_the_neutral_plot_module_pulls_in_no_backend():
+    """
+    `engeom.plot` itself must stay dependency-free, so that the import statement is the dependency
+    declaration and neither backend is paid for unless it is asked for by name.
+
+    This runs in a subprocess because this test module imports matplotlib at the top, so checking
+    `sys.modules` in-process would find it there no matter what `engeom.plot` did.
+    """
+    probe = (
+        "import sys\n"
+        "import engeom.plot\n"
+        "loaded = [n for n in ('matplotlib', 'pyvista') if n in sys.modules]\n"
+        "assert not loaded, 'engeom.plot pulled in ' + ', '.join(loaded)\n"
+    )
+    result = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
 
 
 # ---------------------------------------------------------------------------
