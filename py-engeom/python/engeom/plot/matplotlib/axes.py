@@ -13,6 +13,7 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Arc, Circle, Polygon, Rectangle
 from matplotlib.text import Annotation
 
+from engeom.airfoil2 import AfGeometry
 from engeom.geom2 import Curve2, Circle2, Aabb2, Line2, Point2, Vector2, SurfacePoint2, Arc2, Segment2, Boundary2, \
     CubicSpline2
 from engeom.geom3 import Iso3
@@ -20,7 +21,7 @@ from engeom.metrology import Distance2
 
 from .._coerce import Coords2, to_tuple2
 from .._common import LabelPlace, check_label_place
-from ._style import merge_style
+from ._style import ElementStyle, element_style, merge_style
 from .viewport import ViewPort3
 
 
@@ -714,6 +715,93 @@ class AxesHelper:
         )
 
         return self.ax.annotate("", xy=to_tuple2(end), xytext=to_tuple2(start), arrowprops=props)
+
+    def draw_airfoil(self, geom: AfGeometry, circles: ElementStyle = None,
+                     max_thickness: ElementStyle = None, upper: ElementStyle = None,
+                     lower: ElementStyle = None, camber: ElementStyle = None,
+                     edge_labels: ElementStyle = None,
+                     label_offset: float | None = None) -> dict[str, list[Artist]]:
+        """
+        Draw a complete analyzed airfoil section in one call: the inscribed circle stack, the
+        largest inscribed circle, the upper and lower surfaces, the mean camber line, and labeled
+        markers on the leading and trailing edge points.
+
+        The section curve the analysis was run on is deliberately **not** drawn. Overlaying it on
+        the upper and lower surfaces is the usual way to check that the split tracked the original
+        data, so it wants its own contrasting style: ``helper.draw_curve(section, color="black",
+        linestyle="--")``.
+
+        Each element is controlled by one argument that both toggles and styles it. Pass `False` to
+        leave the element out, or a dict of Matplotlib keyword arguments to restyle it. Those are
+        merged over the defaults, so ``camber={"color": "red"}`` keeps the dashed line style rather
+        than reverting it.
+
+        A dense circle stack can bury the surfaces under solid gray. Suppress it with
+        ``circles=False`` and draw a subsample directly if that happens, since
+        `AfGeometry.circle_array` slices like any array:
+        ``helper.draw_circle(*geom.circle_array[::5])``.
+
+        :param geom: the analyzed airfoil geometry to draw.
+        :param circles: the inscribed circle stack, drawn thin and semi-transparent by default. Read
+            from `AfGeometry.circle_array` rather than by looping the circle objects.
+        :param max_thickness: the largest inscribed circle, drawn in red by default to pick it out
+            of the stack.
+        :param upper: the upper (suction) surface curve.
+        :param lower: the lower (pressure) surface curve.
+        :param camber: the mean camber line, dashed by default.
+        :param edge_labels: the "LE" and "TE" markers and text. The keyword arguments go to
+            `draw_text`, and the markers pick up the same ``color``.
+        :param label_offset: how far the edge labels sit from their points, in data units, measured
+            outward along the chord so the text clears the section. If None, a small fraction of the
+            chord length is used, which keeps the layout the same at any scale.
+        :return: the artists drawn, keyed by element name: ``"circles"``, ``"max_thickness"``,
+            ``"upper"``, ``"lower"``, ``"camber"``, and ``"edge_labels"``. A suppressed element is
+            absent from the dict rather than present and empty, so ``"camber" in result`` answers
+            whether it was drawn.
+        """
+        drawn: dict[str, list[Artist]] = {}
+
+        style = element_style(circles, {"color": "gray", "alpha": 0.4, "linewidth": 0.5})
+        if style is not None:
+            drawn["circles"] = self.draw_circle(*geom.circle_array, **style)
+
+        style = element_style(max_thickness, {"color": "red", "linewidth": 1.0})
+        if style is not None:
+            drawn["max_thickness"] = self.draw_circle(geom.max_thickness_circle().c, **style)
+
+        style = element_style(upper, {"color": "lightsalmon", "linewidth": 3.0, "label": "upper"})
+        if style is not None:
+            drawn["upper"] = self.draw_curve(geom.upper, **style)
+
+        style = element_style(lower, {"color": "cornflowerblue", "linewidth": 3.0, "label": "lower"})
+        if style is not None:
+            drawn["lower"] = self.draw_curve(geom.lower, **style)
+
+        style = element_style(camber, {"color": "lightseagreen", "linewidth": 1.0,
+                                       "linestyle": "--", "label": "camber"})
+        if style is not None:
+            drawn["camber"] = self.draw_curve(geom.camber, **style)
+
+        style = element_style(edge_labels, {"color": "black", "fontsize": 10})
+        if style is not None:
+            drawn["edge_labels"] = self._draw_edge_labels(geom, style, label_offset)
+
+        return drawn
+
+    def _draw_edge_labels(self, geom: AfGeometry, style: dict, label_offset: float | None) -> list[Artist]:
+        # Place the two edge labels outside the section by pushing each one further along the chord,
+        # away from the other edge, so that neither lands on top of the geometry it names.
+        leading = geom.leading.point
+        trailing = geom.trailing.point
+        chord = trailing - leading
+        offset = label_offset if label_offset is not None else chord.norm() * 0.04
+        along = chord.normalized() * offset
+
+        return [
+            self.draw_point(leading, trailing, markersize=4.0, color=style.get("color")),
+            self.draw_text("LE", leading - along, **style),
+            self.draw_text("TE", trailing + along, **style),
+        ]
 
     def _font_height(self, font_size: int) -> float:
         # The height of a font in data units, used to size dimension standoffs so that they stay

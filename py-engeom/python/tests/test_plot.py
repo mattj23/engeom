@@ -24,6 +24,7 @@ from matplotlib.figure import Figure
 from matplotlib.lines import AxLine, Line2D
 from matplotlib.text import Annotation
 
+from engeom.airfoil2 import AfGeometry, OrientFwdAft, OrientUpperLower
 from engeom.geom2 import (Aabb2, Arc2, BoundaryData2, Circle2, CubicSpline2, Curve2, Line2, Point2,
                           Segment2, SurfacePoint2, Vector2)
 from engeom.geom3 import (Aabb3, Circle3, Curve3, Iso3, Line3, Mesh3, Plane3, Point3, PointCloud,
@@ -33,7 +34,7 @@ from engeom.plot import LabelPlace
 from engeom.plot._coerce import to_point2, to_point3, to_tuple2, to_tuple3
 from engeom.plot._common import LABEL_PLACES
 from engeom.plot.matplotlib import GOM_CMAP, GomColorMap, AxesHelper, TraceBuilder, ViewPort3
-from engeom.plot.matplotlib._style import merge_style
+from engeom.plot.matplotlib._style import element_style, merge_style
 from engeom.plot.matplotlib.viewport import _plane_basis
 
 TOL = 1e-12
@@ -1188,6 +1189,133 @@ def test_labels_reach_the_legend():
 
 
 # ---------------------------------------------------------------------------
+# Composite element styling
+# ---------------------------------------------------------------------------
+
+def test_element_style_suppresses_on_false():
+    assert element_style(False, {"color": "red"}) is None
+
+
+@pytest.mark.parametrize("value", [None, True])
+def test_element_style_accepts_the_defaults(value):
+    assert element_style(value, {"color": "red"}) == {"color": "red"}
+
+
+def test_element_style_merges_over_the_defaults_instead_of_replacing_them():
+    """
+    Restyling one thing about an element must not silently discard the rest of its appearance,
+    which is what replacing the defaults wholesale would do.
+    """
+    resolved = element_style({"color": "blue"}, {"color": "red", "linestyle": "--"})
+    assert resolved == {"color": "blue", "linestyle": "--"}
+
+
+def test_element_style_does_not_mutate_the_defaults():
+    defaults = {"color": "red"}
+    element_style({"color": "blue"}, defaults)
+    element_style(None, defaults)["color"] = "green"
+    assert defaults == {"color": "red"}
+
+
+def test_an_empty_style_dict_is_not_mistaken_for_a_suppressed_element():
+    """ An empty dict is falsy, so a truth test rather than an `is False` check would drop it. """
+    assert element_style({}, {"color": "red"}) == {"color": "red"}
+
+
+# ---------------------------------------------------------------------------
+# AxesHelper: airfoils
+# ---------------------------------------------------------------------------
+
+def sample_airfoil() -> AfGeometry:
+    """
+    An elliptical section, matching the synthetic airfoil in test_airfoil2.py, so that the plot
+    tests need no data file and the geometry is known: the leading edge sits at (-10, 0), the
+    trailing edge at (10, 0), and the chord is 20 units long.
+    """
+    t = numpy.linspace(0.0, 2.0 * numpy.pi, 721)
+    section = Curve2(numpy.column_stack((10.0 * numpy.cos(t), 3.0 * numpy.sin(t))), tol=1e-8)
+    return AfGeometry.from_geometric_analysis(
+        section=section,
+        general_tol=1e-3,
+        fwd_aft=OrientFwdAft.fwd(-1.0, 0.0),
+        upper_lower=OrientUpperLower.upper(0.0, 1.0),
+        le_search="auto",
+        te_search="auto",
+    )
+
+
+AIRFOIL_ELEMENTS = ["circles", "max_thickness", "upper", "lower", "camber", "edge_labels"]
+
+
+def test_draw_airfoil_draws_every_element_by_default():
+    result = new_helper().draw_airfoil(sample_airfoil())
+    assert sorted(result) == sorted(AIRFOIL_ELEMENTS)
+
+
+@pytest.mark.parametrize("element", AIRFOIL_ELEMENTS)
+def test_draw_airfoil_can_suppress_any_single_element(element):
+    helper = new_helper()
+    before = artist_count(helper.ax)
+    result = helper.draw_airfoil(sample_airfoil(), **{element: False})
+
+    assert element not in result
+    assert sorted(result) == sorted(e for e in AIRFOIL_ELEMENTS if e != element)
+    assert artist_count(helper.ax) > before
+
+
+def test_draw_airfoil_draws_one_patch_per_inscribed_circle():
+    geom = sample_airfoil()
+    result = new_helper().draw_airfoil(geom)
+    assert len(result["circles"]) == len(geom.circle_array)
+
+
+def test_draw_airfoil_merges_a_style_over_the_element_defaults():
+    result = new_helper().draw_airfoil(sample_airfoil(), camber={"color": "red"})
+    camber = result["camber"][0]
+    assert camber.get_color() == "red"
+    # The dashed default survives, rather than being reset by the override.
+    assert camber.get_linestyle() == "--"
+
+
+def test_draw_airfoil_places_the_edge_labels_outside_the_section():
+    """ Both labels are pushed outward along the chord so neither lands on the geometry. """
+    geom = sample_airfoil()
+    result = new_helper().draw_airfoil(geom, label_offset=1.0)
+    labels = {a.get_text(): a.xy for a in result["edge_labels"] if isinstance(a, Annotation)}
+
+    assert labels["LE"][0] == pytest.approx(geom.leading.point.x - 1.0, abs=1e-6)
+    assert labels["TE"][0] == pytest.approx(geom.trailing.point.x + 1.0, abs=1e-6)
+
+
+def test_draw_airfoil_honors_a_zero_label_offset():
+    """ Regression guard on the falsy-zero pattern: 0.0 must pin the labels to their points. """
+    geom = sample_airfoil()
+    result = new_helper().draw_airfoil(geom, label_offset=0.0)
+    labels = {a.get_text(): a.xy for a in result["edge_labels"] if isinstance(a, Annotation)}
+
+    assert labels["LE"][0] == pytest.approx(geom.leading.point.x, abs=1e-6)
+    assert labels["TE"][0] == pytest.approx(geom.trailing.point.x, abs=1e-6)
+
+
+def test_draw_airfoil_defaults_the_label_offset_to_a_fraction_of_the_chord():
+    """ A scale-independent default keeps the layout the same on any size of section. """
+    geom = sample_airfoil()
+    result = new_helper().draw_airfoil(geom)
+    labels = {a.get_text(): a.xy for a in result["edge_labels"] if isinstance(a, Annotation)}
+    chord = (geom.trailing.point - geom.leading.point).norm()
+
+    assert geom.leading.point.x - labels["LE"][0] == pytest.approx(chord * 0.04, abs=1e-6)
+
+
+def test_draw_airfoil_returns_artists_that_are_really_on_the_axes():
+    helper = new_helper()
+    result = helper.draw_airfoil(sample_airfoil())
+    for artists in result.values():
+        for artist in artists:
+            assert artist.axes is helper.ax
+
+
+# ---------------------------------------------------------------------------
 # Coverage drift
 # ---------------------------------------------------------------------------
 
@@ -1196,7 +1324,8 @@ def test_labels_reach_the_legend():
 EXERCISED_HELPER_MEMBERS = {
     "draw_aabb", "draw_arc", "draw_arrow", "draw_boundary", "draw_circle", "draw_line",
     "draw_curve", "draw_distance", "draw_labeled_arrow", "draw_point", "draw_segment",
-    "draw_normals", "draw_spline", "draw_surface_point", "draw_text", "fill_curve", "set_bounds",
+    "draw_airfoil", "draw_normals", "draw_spline", "draw_surface_point", "draw_text", "fill_curve",
+    "set_bounds",
     "viewport",
 }
 

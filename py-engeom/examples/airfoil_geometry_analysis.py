@@ -6,7 +6,16 @@ from matplotlib.pyplot import Axes, Figure, figure, show
 
 
 def main():
-    # This is a sample airfoil cross-section from a small metal hot section blade found on ebay some years ago.  The
+    # -------------------------------------------------------------------------------------------------------------
+    # Note, this example does not use the specialized drawing tool for airfoils, but deliberately draws all the
+    # geometry manually as a way of demonstrating the different parts of the airfoil analysis results.
+    #
+    # Everything between the inscribed circles and the LE/TE annotations below is what `draw_airfoil` does in a
+    # single call, with the same default styling (see the docstring for more information on control):
+    #     helper.draw_airfoil(geom)
+    # -------------------------------------------------------------------------------------------------------------
+
+    # This is a sample airfoil cross-section from a small metal hot section blade I bought on ebay some years ago. The
     # original data is from a scan of the blade on a Zeiss (formerly GOM) ATOS 5 3D scanner, and the cross-section was
     # taken after some mesh smoothing and error handling. Units are in millimeters.
     section = Curve2.load_tccurve2(DATA_DIR / "airfoil-0.tccurve2")
@@ -58,8 +67,31 @@ def main():
     ax.annotate("LE", (le.x, le.y), textcoords="offset points", xytext=(6, 6))
     ax.annotate("TE", (te.x, te.y), textcoords="offset points", xytext=(6, 6))
 
+    # Now we'll add a pair of thickness gage dimensions, one near each edge. These use the "on_camber" method, which
+    # locates the gage point by walking a given arc distance along the mean camber line and then casting orthogonally
+    # to the camber to find the two surfaces. It's the most commonly used of the three location methods and behaves
+    # well anywhere along the airfoil. A positive value is measured from the leading edge and a negative one from the
+    # trailing edge, so the two stations below sit 3 mm aft of the LE and 5 mm forward of the TE on a camber line
+    # about 42.8 mm long. Both return None if the station doesn't land on both surfaces, which is worth checking
+    # rather than assuming, since a value longer than the camber line will simply run off the end.
+    le_gage = geom.thickness_at("on_camber", 3.0)
+    te_gage = geom.thickness_at("on_camber", -5.0)
+
+    # The measurements are ordinary `Distance2` objects, so the standard dimension drawing handles them. We push the
+    # labels out to opposite sides so they don't collide with the section, using "outside_rev" at the leading edge to
+    # place its label forward instead of aft.
+    if le_gage is not None:
+        helper.draw_distance(le_gage, label_place="outside_rev", template="LE+3.0: {value:.3f}")
+    if te_gage is not None:
+        helper.draw_distance(te_gage, label_place="outside", template="TE-5.0: {value:.3f}")
+
     print(f"Leading edge: kind={geom.leading.geometry.kind}, point=({le.x:.4f}, {le.y:.4f})")
     print(f"Trailing edge: kind={geom.trailing.geometry.kind}, point=({te.x:.4f}, {te.y:.4f})")
+    print(f"Camber length: {geom.camber.length():.4f}, max thickness: {geom.max_thickness().value:.4f}")
+    if le_gage is not None:
+        print(f"Thickness 3.0 aft of the LE: {le_gage.value:.4f}")
+    if te_gage is not None:
+        print(f"Thickness 5.0 forward of the TE: {te_gage.value:.4f}")
 
     ax.legend(loc="best")
     show()
