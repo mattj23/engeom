@@ -17,8 +17,12 @@ mod common;
 use crate::common::PathPair;
 use engeom::common::DistMode;
 use engeom::common::kd_tree::KdTreeSearch;
+use engeom::geom3::MultiAlignOutcome3;
 use engeom::geom3::XyzQuat;
-use engeom::geom3::align3::{AlignOptions3, AlignParams3, points_to_surface3};
+use engeom::geom3::align3::{
+    AlignOptions3, AlignParams3, AlignmentMesh, GAPParams, MultiAlignOptions3,
+    multi_mesh_adjustment, points_to_surface3,
+};
 use engeom::rayon::prelude::*;
 use engeom::{Iso3, KdTree3, Mesh3, Point3, Result, UnitVec3};
 use std::io::{Read, Write};
@@ -318,7 +322,10 @@ const COVERAGE_MAX_DISTANCE: f64 = 1.0;
 /// The largest angle, in radians, between a measurement point's normal and its match's normal for
 /// the two to be considered the same piece of surface. This rejects matches through a thin wall,
 /// where the geometry is close but facing the wrong way.
-const COVERAGE_MAX_NORMAL_ANGLE: f64 = std::f64::consts::PI / 6.0;
+const COVERAGE_MAX_NORMAL_ANGLE: f64 = PI_6;
+
+/// Thirty degrees, the normal-agreement gate used both for coverage and in the solver trials.
+const PI_6: f64 = std::f64::consts::PI / 6.0;
 
 /// How far, in millimetres, a match must sit from the boundary of the scan it matched against.
 ///
@@ -2255,6 +2262,377 @@ fn diagnose_volume_deformation() -> Result<()> {
                 Stats::from_deviations(&devs).median_abs
             );
         }
+    }
+
+    Ok(())
+}
+
+// ================================================================================================
+// Solver candidates
+// ================================================================================================
+
+/// The Poisson spacing, in millimetres, used when the multi-mesh alignment samples its own
+/// correspondences.
+///
+/// Coarser than the benchmark's measurement spacing. The correspondences only have to determine
+/// six parameters per body, and the sampling runs over every pair of meshes twice, so this is the
+/// dominant cost of the whole run.
+const MULTI_MESH_SPACING: f64 = 2.0;
+
+/// The correspondence distance gate handed to the multi-mesh alignment.
+///
+/// Required rather than optional, and for a reason this benchmark established: without it the
+/// initial unweighted solve is dragged most of a millimetre off a correct answer by a handful of
+/// correspondences sampled across regions the two scans never both saw. A millimetre is far wider
+/// than any real disagreement between these scans, which sit within about twenty microns of each
+/// other, and a tighter gate measured no better.
+const MULTI_MESH_MAX_DISTANCE: f64 = 1.0;
+
+/// Runs the simultaneous alignment from a given set of starting poses.
+fn run_multi_mesh(scans: &[Mesh3], start: &[Iso3]) -> Result<(Vec<Iso3>, MultiAlignOutcome3)> {
+    run_multi_mesh_with(
+        scans,
+        start,
+        &MultiAlignOptions3::new(MULTI_MESH_MAX_DISTANCE),
+    )
+}
+
+fn run_multi_mesh_with(
+    scans: &[Mesh3],
+    start: &[Iso3],
+    opts: &MultiAlignOptions3,
+) -> Result<(Vec<Iso3>, MultiAlignOutcome3)> {
+    let meshes = scans
+        .iter()
+        .zip(start.iter())
+        .map(|(m, t)| AlignmentMesh::new(m, None, Some(t), None))
+        .collect::<Vec<_>>();
+
+    let outcome = multi_mesh_adjustment(&meshes, opts, &GAPParams::defaults(MULTI_MESH_SPACING))?;
+
+    let transforms = outcome
+        .alignments()
+        .iter()
+        .map(|a| *a.full_transform())
+        .collect();
+
+    Ok((transforms, outcome))
+}
+
+/// Individually aligns every scan to the CAD model, starting from its robot-pose prealignment.
+///
+/// This is the first half of the chain that produced the v0.2.16 numbers: the prealignment only
+/// gets a scan near the CAD, and a local fit takes it the rest of the way. It runs on the frozen
+/// measurement points, all of them rather than only those the ATOS reference covers, since the CAD
+/// model spans the whole part.
+fn align_each_to_cad(loaded: &LoadedCase, cad: &Mesh3, pre: &[Iso3]) -> Result<Vec<Iso3>> {
+    loaded
+        .bench
+        .scans
+        .iter()
+        .zip(pre.iter())
+        .map(|(scan, start)| {
+            let pts = scan
+                .points
+                .iter()
+                .map(|p| start * p.point)
+                .collect::<Vec<_>>();
+
+            let g = gauge_fit(cad, &pts)?;
+            Ok(g * start)
+        })
+        .collect()
+}
+
+/// Summarizes how a bundle adjustment terminated.
+fn outcome_summary(outcome: &MultiAlignOutcome3) -> String {
+    format!(
+        "{:?} over {} solve(s), halt {:?}",
+        outcome.quality(),
+        outcome.solves().len(),
+        outcome.halt()
+    )
+}
+
+/// The largest distance any measurement point moved between two sets of transforms.
+fn max_point_shift(bench: &Benchmark, a: &[Iso3], b: &[Iso3]) -> f64 {
+    bench
+        .scans
+        .iter()
+        .zip(a.iter().zip(b.iter()))
+        .flat_map(|(scan, (ta, tb))| {
+            scan.points
+                .iter()
+                .map(move |p| (ta * p.point - tb * p.point).norm())
+        })
+        .fold(0.0_f64, f64::max)
+}
+
+/// Scores the two candidates that require the solver, against the two that do not.
+///
+/// The warm start seeds the solver with the v0.2.16 answer and asks whether it holds or improves
+/// on it. That is the sharper bug signal of the two, because a degradation cannot be blamed on a
+/// bad starting pose and does not depend on any of the subtleties in how the metrics are built.
+///
+/// The cold start reproduces the chain that produced the v0.2.16 numbers, prealignment to CAD fit
+/// to simultaneous alignment, so it is the comparison that is genuinely like for like. It also
+/// exercises `points_to_surface3`, which means a regression there has somewhere to hide.
+#[test]
+#[ignore]
+fn solver_candidates_report() -> Result<()> {
+    for case in find_cases()?.iter() {
+        let loaded = LoadedCase::load(case)?;
+        let design = design_key(case)?;
+
+        let t = std::time::Instant::now();
+        let (warm, warm_outcome) = run_multi_mesh(&loaded.scans, &loaded.cad_align)?;
+        let warm_time = t.elapsed();
+
+        let cad = case.cad()?;
+        let pre = case
+            .scans
+            .iter()
+            .map(|s| s.pre_align())
+            .collect::<Result<Vec<_>>>()?;
+        let t = std::time::Instant::now();
+        let seeded = align_each_to_cad(&loaded, &cad, &pre)?;
+        let seed_time = t.elapsed();
+
+        let t = std::time::Instant::now();
+        let (cold, cold_outcome) = run_multi_mesh(&loaded.scans, &seeded)?;
+        let cold_time = t.elapsed();
+
+        let mut scoring = std::time::Duration::ZERO;
+        let graded = [
+            ("floor", loaded.floor()),
+            ("v0.2.16", loaded.cad_align.clone()),
+            ("warm", warm.clone()),
+            ("cold", cold.clone()),
+        ]
+        .into_iter()
+        .map(|(name, transforms)| {
+            let t = std::time::Instant::now();
+            let score = loaded.score(&transforms)?;
+            scoring += t.elapsed();
+            Ok(Graded { name, score })
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+        print_table(&loaded.name, design, &graded, 0);
+
+        println!("  warm: {}", outcome_summary(&warm_outcome));
+        println!("  cold: {}", outcome_summary(&cold_outcome));
+        println!(
+            "  warm moved points up to {:.4} mm from the v0.2.16 seed",
+            max_point_shift(&loaded.bench, &warm, &loaded.cad_align)
+        );
+        println!(
+            "  cold moved points up to {:.4} mm from its CAD-aligned seed",
+            max_point_shift(&loaded.bench, &cold, &seeded)
+        );
+        println!(
+            "  timing: warm bundle {:.0}s, per-scan CAD fits {:.0}s, cold bundle {:.0}s, \
+             scoring {:.0}s over 4 candidates",
+            warm_time.as_secs_f64(),
+            seed_time.as_secs_f64(),
+            cold_time.as_secs_f64(),
+            scoring.as_secs_f64(),
+        );
+    }
+
+    Ok(())
+}
+
+/// Replicates the solver's own `sigma_max` estimator: a median absolute deviation scaled to a
+/// standard deviation.
+///
+/// These scans carry no per-point uncertainty, so the solver's `inv_sigma` is one throughout and
+/// its normalized residuals are the geometric ones an `Alignment3` reports. That makes this the
+/// same number the solver would have computed for itself.
+fn estimated_sigma_max(outcome: &MultiAlignOutcome3) -> f64 {
+    const MAD_TO_SIGMA: f64 = 1.4826;
+
+    let residuals = outcome
+        .alignments()
+        .iter()
+        .flat_map(|a| a.residuals().iter().copied())
+        .collect::<Vec<_>>();
+
+    let median = |v: &[f64]| {
+        let mut s = v.to_vec();
+        s.sort_by(f64::total_cmp);
+        s[s.len() / 2]
+    };
+
+    let centre = median(&residuals);
+    MAD_TO_SIGMA
+        * median(
+            &residuals
+                .iter()
+                .map(|r| (r - centre).abs())
+                .collect::<Vec<_>>(),
+        )
+}
+
+/// Diagnostic: does a warm start collapse its own robust weighting?
+///
+/// The warm start seeds the solver with an already converged answer, so its initial residuals are
+/// small and tightly distributed. `sigma_max` is estimated from those residuals by a median
+/// absolute deviation, so a tight distribution yields a small `sigma_max`, and MAGSAC then assigns
+/// near-zero weight to everything outside a narrow band. If that is what is happening, the solve is
+/// effectively running on a small and badly conditioned subset of its correspondences while still
+/// reporting convergence.
+///
+/// The cold start seeds from per-scan CAD fits which are mutually inconsistent, so its residuals
+/// are broader and its `sigma_max` larger. The hypothesis predicts three things: the warm seed's
+/// estimated `sigma_max` is much smaller than the cold seed's, disabling refinement removes the
+/// failure, and supplying a generous explicit `sigma_max` removes it too.
+///
+/// Note that the solver's own `Underdetermined` guard cannot catch this. It counts correspondences
+/// whose weight is merely greater than zero, which stays large even when the weight distribution
+/// has collapsed onto a narrow core.
+#[test]
+#[ignore]
+fn diagnose_warm_start_sigma_collapse() -> Result<()> {
+    let cases = find_cases()?;
+    let case = cases
+        .iter()
+        .find(|c| c.name == "sample_00")
+        .ok_or("sample_00 not found")?;
+    let loaded = LoadedCase::load(case)?;
+
+    let cad = case.cad()?;
+    let pre = case
+        .scans
+        .iter()
+        .map(|s| s.pre_align())
+        .collect::<Result<Vec<_>>>()?;
+    let cold_seed = align_each_to_cad(&loaded, &cad, &pre)?;
+
+    let no_refine = MultiAlignOptions3 {
+        refinement_steps: 0,
+        ..MultiAlignOptions3::new(MULTI_MESH_MAX_DISTANCE)
+    };
+
+    // The two seeds, unrefined, purely to compare the noise scale each one would hand to MAGSAC.
+    let (_, warm_raw) = run_multi_mesh_with(&loaded.scans, &loaded.cad_align, &no_refine)?;
+    let (_, cold_raw) = run_multi_mesh_with(&loaded.scans, &cold_seed, &no_refine)?;
+    println!(
+        "\n  estimated sigma_max from the warm seed: {:.5} mm",
+        estimated_sigma_max(&warm_raw)
+    );
+    println!(
+        "  estimated sigma_max from the cold seed: {:.5} mm",
+        estimated_sigma_max(&cold_raw)
+    );
+
+    let trials: Vec<(String, MultiAlignOptions3)> = vec![
+        (
+            "default, auto sigma".to_string(),
+            MultiAlignOptions3::new(MULTI_MESH_MAX_DISTANCE),
+        ),
+        ("no refinement".to_string(), no_refine),
+        (
+            "explicit sigma_max 0.05".to_string(),
+            MultiAlignOptions3 {
+                sigma_max: Some(0.05),
+                ..MultiAlignOptions3::new(MULTI_MESH_MAX_DISTANCE)
+            },
+        ),
+        (
+            "explicit sigma_max 0.15".to_string(),
+            MultiAlignOptions3 {
+                sigma_max: Some(0.15),
+                ..MultiAlignOptions3::new(MULTI_MESH_MAX_DISTANCE)
+            },
+        ),
+    ];
+
+    println!(
+        "\n  {:<24} | {:>8} {:>8} | {:>8} {:>8} {:>7} | {:>8}",
+        "warm start variant", "cons.med", "out", "ref.med", "p90", "out", "shift"
+    );
+    for (name, opts) in trials {
+        let (transforms, outcome) = run_multi_mesh_with(&loaded.scans, &loaded.cad_align, &opts)?;
+        let score = loaded.score(&transforms)?;
+
+        println!(
+            "  {:<24} | {:>8.4} {:>8} | {:>8.4} {:>8.4} {:>7} | {:>8.4}   {}",
+            name,
+            score.consistency.median_abs,
+            score.consistency.beyond_gate,
+            score.reference.median_abs,
+            score.reference.p90,
+            score.reference.beyond_gate,
+            max_point_shift(&loaded.bench, &transforms, &loaded.cad_align),
+            outcome_summary(&outcome),
+        );
+    }
+
+    Ok(())
+}
+
+/// Diagnostic: does a geometric gate stop the unweighted solve from drifting?
+///
+/// The previous experiment localized the failure to the initial unweighted solve, which moves a
+/// known-good configuration most of a millimetre before robust weighting ever runs. Least squares
+/// has no defense against a gross outlier, and `MultiAlignOptions3` leaves both geometric gates off
+/// by default, so with seventeen partially overlapping scans any correspondence sampled across a
+/// region the other scan never saw pulls on the solve at full strength.
+///
+/// Refinement is disabled throughout so that only the initial solve is under test. If a gate fixes
+/// it here, the defect is in the defaults rather than in the algorithm.
+#[test]
+#[ignore]
+fn diagnose_unweighted_solve_gates() -> Result<()> {
+    let cases = find_cases()?;
+    let case = cases
+        .iter()
+        .find(|c| c.name == "sample_00")
+        .ok_or("sample_00 not found")?;
+    let loaded = LoadedCase::load(case)?;
+
+    // A gate wider than the whole part stands in for the gate being off, which the options type
+    // no longer allows to be expressed directly.
+    const UNGATED: f64 = 1000.0;
+
+    let gated = |d: f64, a: Option<f64>| MultiAlignOptions3 {
+        max_normal_angle: a,
+        refinement_steps: 0,
+        ..MultiAlignOptions3::new(d)
+    };
+
+    let trials: Vec<(String, MultiAlignOptions3)> = vec![
+        ("no gates".to_string(), gated(UNGATED, None)),
+        ("max_distance 1.0".to_string(), gated(1.0, None)),
+        ("max_distance 0.5".to_string(), gated(0.5, None)),
+        ("max_distance 0.2".to_string(), gated(0.2, None)),
+        ("normal 30 deg only".to_string(), gated(UNGATED, Some(PI_6))),
+        (
+            "distance 0.5 + normal 30".to_string(),
+            gated(0.5, Some(PI_6)),
+        ),
+    ];
+
+    println!(
+        "\n  unweighted solve, warm seed\n  {:<26} | {:>8} {:>8} | {:>8} {:>8} {:>7} | {:>8}",
+        "gate", "cons.med", "out", "ref.med", "p90", "out", "shift"
+    );
+    for (name, opts) in trials {
+        let (transforms, outcome) = run_multi_mesh_with(&loaded.scans, &loaded.cad_align, &opts)?;
+        let score = loaded.score(&transforms)?;
+
+        println!(
+            "  {:<26} | {:>8.4} {:>8} | {:>8.4} {:>8.4} {:>7} | {:>8.4}   {}",
+            name,
+            score.consistency.median_abs,
+            score.consistency.beyond_gate,
+            score.reference.median_abs,
+            score.reference.p90,
+            score.reference.beyond_gate,
+            max_point_shift(&loaded.bench, &transforms, &loaded.cad_align),
+            outcome_summary(&outcome),
+        );
     }
 
     Ok(())

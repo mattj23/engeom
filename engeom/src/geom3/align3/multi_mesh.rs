@@ -24,6 +24,19 @@
 //! the residual and both jacobian blocks have to live there too for the derivatives to be
 //! consistent with it. (The previous generation of this module measured in the reference mesh's
 //! local frame while passing world-frame parameters to the jacobian, which did not agree.)
+//!
+//! # The distance gate is not optional
+//!
+//! [`MultiAlignOptions3::max_distance`] must be supplied, and there is no `Default` for the options
+//! precisely so that it cannot be forgotten.
+//!
+//! Partially overlapping meshes produce correspondences into regions the other mesh never saw, and
+//! the alignment opens with an unweighted least squares solve which has no defense against them.
+//! On real scan data a handful of such correspondences moved a seventeen mesh bundle by most of a
+//! millimetre away from an already correct answer, and the robust refinement that follows made it
+//! worse rather than better: the noise scale is estimated from that spoiled solve, so the displaced
+//! mesh looks like an outlier and gets weighted out of its own correction. The measurements are on
+//! [`MultiAlignOptions3::max_distance`].
 
 use crate::Result;
 use crate::common::align::{RefinementHalt, SolveQuality, TerminationReason};
@@ -53,24 +66,45 @@ const MAD_TO_SIGMA: f64 = 1.4826;
 
 /// Options controlling a simultaneous multi-mesh alignment.
 ///
-/// Construct with [`MultiAlignOptions3::default`] and override the fields you care about. The
-/// robust-estimation fields mirror `AlignOptions3` and behave identically; the two gates at the
-/// top are specific to multi-mesh work.
+/// Construct with [`MultiAlignOptions3::new`], which requires the correspondence distance gate,
+/// and override the remaining fields you care about. The robust-estimation fields mirror
+/// `AlignOptions3` and behave identically; the two gates at the top are specific to multi-mesh
+/// work.
+///
+/// There is deliberately no `Default`. See [`MultiAlignOptions3::max_distance`] for why the gate
+/// cannot be left to a default.
 #[derive(Clone, Copy, Debug)]
 pub struct MultiAlignOptions3 {
-    /// An optional hard cutoff on correspondence distance. A point whose closest match on the
-    /// reference mesh is further than this contributes nothing.
+    /// A hard cutoff on correspondence distance, in the units of the geometry. A point whose
+    /// closest match on the reference mesh is further than this contributes nothing.
     ///
-    /// This exists because meshes overlap only partially, and a point in a region the reference
-    /// never saw has no meaningful match at any distance. MAGSAC++ will down-weight such points
-    /// too, but it estimates its noise scale from the residual distribution, and heavy
-    /// non-overlap contamination degrades that estimate. A coarse geometric gate removes the
-    /// contamination before it can influence the scale.
+    /// This is required rather than optional, and that is a deliberate reversal of the earlier
+    /// advice to leave it off and let robust weighting do the work. On real multi-scan data that
+    /// advice is wrong, and expensively so.
     ///
-    /// Prefer leaving this at `None` and letting the robust weighting do the work when the meshes
-    /// overlap well. Note that, like `ignore_off_target` in the single-body case, this is a hard
-    /// gate re-evaluated as the points move, so it makes the objective piecewise.
-    pub max_distance: Option<f64>,
+    /// Meshes overlap only partially, so a point in a region the reference never saw has no
+    /// meaningful match at any distance. The alignment opens with an *unweighted* least squares
+    /// solve, in order to have residuals from which to estimate a noise scale, and unweighted least
+    /// squares has no defense whatsoever against a gross outlier. A handful of correspondences
+    /// sampled across non-overlapping regions is enough to drag the whole bundle.
+    ///
+    /// Measured on seventeen partially overlapping laser scans of a part 127 mm across, starting
+    /// from an already converged alignment: with no gate the initial solve moved the group by
+    /// 0.83 mm and left ten times as many points beyond a tenth of a millimetre of the reference.
+    /// Any gate at all fixed it, taking the drift to 0.09 mm. A gate of 1.0 mm and one of 0.5 mm
+    /// gave identical results, which says the offending correspondences were more than a
+    /// millimetre out rather than marginal. Robust refinement afterwards did not rescue it, because
+    /// the noise scale is estimated by a median absolute deviation from that same bad solve: the
+    /// estimate describes the well-fitted core, and MAGSAC then treats the displaced mesh's
+    /// correspondences as outliers and stops pulling on them, entrenching the error it inherited.
+    ///
+    /// Choose it from the geometry rather than from the expected residual. It only has to be
+    /// tighter than the scale of a spurious match, so err generous: a value far larger than the
+    /// alignment error still removes the correspondences that matter.
+    ///
+    /// Note that, like `ignore_off_target` in the single-body case, this is a hard gate
+    /// re-evaluated as the points move, so it makes the objective piecewise.
+    pub max_distance: f64,
 
     /// An optional cutoff on the angle, in radians, between a test point's normal and its match's
     /// normal. A correspondence exceeding it contributes nothing.
@@ -101,10 +135,16 @@ pub struct MultiAlignOptions3 {
     pub dof: Option<Dof6>,
 }
 
-impl Default for MultiAlignOptions3 {
-    fn default() -> Self {
+impl MultiAlignOptions3 {
+    /// Options with the required correspondence distance gate and defaults for everything else.
+    ///
+    /// `max_distance` has no safe default and so has to be supplied; see its documentation for the
+    /// measurements behind that. Everything else follows the single-body defaults: four rounds of
+    /// robust refinement with the noise scale estimated from the data, no normal gate, no degree of
+    /// freedom locks.
+    pub fn new(max_distance: f64) -> Self {
         Self {
-            max_distance: None,
+            max_distance,
             max_normal_angle: None,
             refinement_steps: 4,
             sigma_max: None,
@@ -237,10 +277,12 @@ fn validate(
     {
         return Err(format!("sigma_max is {s}, but must be finite and strictly positive").into());
     }
-    if let Some(d) = opts.max_distance
-        && (!d.is_finite() || d <= 0.0)
-    {
-        return Err(format!("max_distance is {d}, but must be finite and positive").into());
+    if !opts.max_distance.is_finite() || opts.max_distance <= 0.0 {
+        return Err(format!(
+            "max_distance is {}, but must be finite and strictly positive",
+            opts.max_distance
+        )
+        .into());
     }
     if static_i >= meshes.len() {
         return Err(format!(
@@ -407,7 +449,7 @@ struct MultiMeshProblem<'a> {
     /// The weight contributed by MAGSAC++ reweighting, held fixed across a solve.
     magsac_weights: Vec<f64>,
 
-    max_distance: Option<f64>,
+    max_distance: f64,
     min_normal_dot: Option<f64>,
 }
 
@@ -488,9 +530,7 @@ impl<'a> MultiMeshProblem<'a> {
                 let residual = d * c_world.scalar_projection(&p_world).signum();
 
                 let mut weight = h.weight;
-                if let Some(max) = max_distance
-                    && d > max
-                {
+                if d > max_distance {
                     weight = 0.0;
                 }
                 if let Some(min_dot) = min_normal_dot {
@@ -704,6 +744,14 @@ mod tests {
     use approx::assert_relative_eq;
     use std::f64::consts::PI;
 
+    /// A correspondence gate wider than the test boxes themselves, so that the synthetic cases
+    /// exercise the solver rather than the gate. Cases which are about the gate set their own.
+    const WIDE_GATE: f64 = 20.0;
+
+    fn test_opts() -> MultiAlignOptions3 {
+        MultiAlignOptions3::new(WIDE_GATE)
+    }
+
     fn box_mesh() -> Mesh3 {
         Mesh3::create_box(10.0, 6.0, 4.0, false)
     }
@@ -744,8 +792,7 @@ mod tests {
         let ams = alignment_meshes(&meshes, &initial);
         let points = chain_points(&meshes, 0.4);
 
-        let outcome =
-            multi_mesh_adjustment_with_points(&ams, points, 0, &MultiAlignOptions3::default())?;
+        let outcome = multi_mesh_adjustment_with_points(&ams, points, 0, &test_opts())?;
 
         assert_eq!(outcome.len(), 2);
         // Mesh 0 is static and must not have moved at all.
@@ -776,8 +823,7 @@ mod tests {
         let ams = alignment_meshes(&meshes, &initial);
         let points = chain_points(&meshes, 0.5);
 
-        let outcome =
-            multi_mesh_adjustment_with_points(&ams, points, 0, &MultiAlignOptions3::default())?;
+        let outcome = multi_mesh_adjustment_with_points(&ams, points, 0, &test_opts())?;
 
         for i in 0..3 {
             assert_relative_eq!(
@@ -800,12 +846,8 @@ mod tests {
         let ams = alignment_meshes(&meshes, &initial);
 
         // Make mesh 1 the static one this time, so the check is not trivially about index zero.
-        let outcome = multi_mesh_adjustment_with_points(
-            &ams,
-            chain_points(&meshes, 0.5),
-            1,
-            &MultiAlignOptions3::default(),
-        )?;
+        let outcome =
+            multi_mesh_adjustment_with_points(&ams, chain_points(&meshes, 0.5), 1, &test_opts())?;
 
         assert_relative_eq!(
             outcome.alignment(1).full_transform().to_matrix(),
@@ -826,8 +868,7 @@ mod tests {
         let from_1 = points.iter().filter(|p| p.mesh_i == 1).count();
         let from_2 = points.iter().filter(|p| p.mesh_i == 2).count();
 
-        let outcome =
-            multi_mesh_adjustment_with_points(&ams, points, 0, &MultiAlignOptions3::default())?;
+        let outcome = multi_mesh_adjustment_with_points(&ams, points, 0, &test_opts())?;
 
         // Mesh 0 sourced no correspondences, so it has no residuals of its own.
         assert_eq!(outcome.alignment(0).residuals().len(), 0);
@@ -849,7 +890,7 @@ mod tests {
 
         let opts = MultiAlignOptions3 {
             dof: Some(Dof6::new(false, true, true, true, true, true)),
-            ..Default::default()
+            ..test_opts()
         };
         let outcome =
             multi_mesh_adjustment_with_points(&ams, chain_points(&meshes, 0.5), 0, &opts)?;
@@ -875,7 +916,7 @@ mod tests {
 
         let opts = MultiAlignOptions3 {
             patience: 1,
-            ..Default::default()
+            ..test_opts()
         };
         let outcome =
             multi_mesh_adjustment_with_points(&ams, chain_points(&meshes, 0.5), 0, &opts)?;
@@ -911,11 +952,10 @@ mod tests {
             0,
             &MultiAlignOptions3 {
                 refinement_steps: 0,
-                ..Default::default()
+                ..test_opts()
             },
         )?;
-        let robust =
-            multi_mesh_adjustment_with_points(&ams, points, 0, &MultiAlignOptions3::default())?;
+        let robust = multi_mesh_adjustment_with_points(&ams, points, 0, &test_opts())?;
 
         let error = |o: &MultiAlignOutcome3| {
             (o.alignment(1).full_transform().to_matrix() - Iso3::identity().to_matrix()).norm()
@@ -927,6 +967,56 @@ mod tests {
              naive {}, robust {}",
             error(&naive),
             error(&robust)
+        );
+
+        Ok(())
+    }
+
+    /// The initial unweighted solve is dragged by correspondences into regions the other mesh
+    /// never covered, which is why `max_distance` is required rather than optional.
+    ///
+    /// This is the unit-scale form of a failure found on real data: seventeen partially
+    /// overlapping laser scans, starting from an already correct alignment, were moved most of a
+    /// millimetre by a handful of such correspondences, and the robust refinement that followed
+    /// entrenched the error rather than undoing it. See the module documentation.
+    #[test]
+    fn without_a_distance_gate_the_unweighted_solve_is_dragged() -> Result<()> {
+        let meshes = vec![box_mesh(), box_mesh()];
+        let initial = vec![Iso3::identity(), Iso3::identity()];
+        let ams = alignment_meshes(&meshes, &initial);
+
+        // Both bodies start on the answer, so any motion at all is damage. A twentieth of the
+        // correspondences are thrown well clear of the surface, standing in for points sampled
+        // over a region the two meshes never both saw.
+        let mut points = chain_points(&meshes, 0.4);
+        for (k, p) in points.iter_mut().enumerate() {
+            if k.is_multiple_of(20) {
+                p.mp.sp.point += Vector3::new(0.0, 0.0, 8.0);
+            }
+        }
+
+        let unweighted = |gate: f64| MultiAlignOptions3 {
+            refinement_steps: 0,
+            ..MultiAlignOptions3::new(gate)
+        };
+        let drift = |o: &MultiAlignOutcome3| {
+            (o.alignment(1).full_transform().to_matrix() - Iso3::identity().to_matrix()).norm()
+        };
+
+        let ungated =
+            multi_mesh_adjustment_with_points(&ams, points.clone(), 0, &unweighted(WIDE_GATE))?;
+        let gated = multi_mesh_adjustment_with_points(&ams, points, 0, &unweighted(1.0))?;
+
+        assert!(
+            drift(&ungated) > 1e-3,
+            "the ungated solve should have been pulled off the answer, but moved only {}",
+            drift(&ungated)
+        );
+        assert!(
+            drift(&gated) < drift(&ungated) * 0.1,
+            "the gate should have held the solve in place: ungated {}, gated {}",
+            drift(&ungated),
+            drift(&gated)
         );
 
         Ok(())
@@ -945,9 +1035,9 @@ mod tests {
         // With a tight gate the distant point contributes nothing, so the fit is unchanged from
         // the identity it already sits at.
         let opts = MultiAlignOptions3 {
-            max_distance: Some(1.0),
+            max_distance: 1.0,
             refinement_steps: 0,
-            ..Default::default()
+            ..test_opts()
         };
         let outcome = multi_mesh_adjustment_with_points(&ams, points, 0, &opts)?;
 
@@ -999,7 +1089,7 @@ mod tests {
 
         let opts = MultiAlignOptions3 {
             refinement_steps: 0,
-            ..Default::default()
+            ..test_opts()
         };
         let mut problem = MultiMeshProblem::new(&ams, points, 0, &opts)?;
 
@@ -1044,7 +1134,7 @@ mod tests {
         let mp = meshes[2].surface_closest_to(&Point3::new(0.0, 0.0, 2.0));
         let points = vec![MulMeshAlignPoint::new(2, mp, 1, 1.0)];
 
-        let problem = MultiMeshProblem::new(&ams, points, 0, &MultiAlignOptions3::default())?;
+        let problem = MultiMeshProblem::new(&ams, points, 0, &test_opts())?;
         let jac = problem.jacobian().unwrap();
 
         let body1 = problem.params.column_offset(1).unwrap();
@@ -1081,7 +1171,7 @@ mod tests {
         let mp = meshes[1].surface_closest_to(&Point3::new(1.0, 1.0, 2.0));
         let points = vec![MulMeshAlignPoint::new(1, mp, 1, 1.0)];
 
-        let problem = MultiMeshProblem::new(&ams, points, 0, &MultiAlignOptions3::default())?;
+        let problem = MultiMeshProblem::new(&ams, points, 0, &test_opts())?;
         let jac = problem.jacobian().unwrap();
 
         for k in 0..jac.ncols() {
@@ -1104,27 +1194,24 @@ mod tests {
 
         let bad_patience = MultiAlignOptions3 {
             patience: 0,
-            ..Default::default()
+            ..test_opts()
         };
         assert!(multi_mesh_adjustment_with_points(&ams, points.clone(), 0, &bad_patience).is_err());
 
         let bad_sigma = MultiAlignOptions3 {
             sigma_max: Some(-1.0),
-            ..Default::default()
+            ..test_opts()
         };
         assert!(multi_mesh_adjustment_with_points(&ams, points.clone(), 0, &bad_sigma).is_err());
 
         let bad_distance = MultiAlignOptions3 {
-            max_distance: Some(0.0),
-            ..Default::default()
+            max_distance: 0.0,
+            ..test_opts()
         };
         assert!(multi_mesh_adjustment_with_points(&ams, points.clone(), 0, &bad_distance).is_err());
 
         // A static index past the end of the mesh list.
-        assert!(
-            multi_mesh_adjustment_with_points(&ams, points, 5, &MultiAlignOptions3::default())
-                .is_err()
-        );
+        assert!(multi_mesh_adjustment_with_points(&ams, points, 5, &test_opts()).is_err());
     }
 
     #[test]
@@ -1136,10 +1223,9 @@ mod tests {
         let mut points = chain_points(&meshes, 1.0);
         points[0].ref_i = 7;
 
-        let err =
-            multi_mesh_adjustment_with_points(&ams, points, 0, &MultiAlignOptions3::default())
-                .unwrap_err()
-                .to_string();
+        let err = multi_mesh_adjustment_with_points(&ams, points, 0, &test_opts())
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("only 2 meshes"), "unexpected message: {err}");
     }
 }
