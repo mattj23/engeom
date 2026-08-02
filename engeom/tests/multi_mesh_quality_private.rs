@@ -2015,3 +2015,247 @@ fn diagnose_residual_field_smoothness() -> Result<()> {
 
     Ok(())
 }
+
+// ================================================================================================
+// Deformation of the scan volume
+// ================================================================================================
+
+/// The estimated linear deformation of one scan, in the laser scanner's own coordinates.
+///
+/// A rigid fit removes six degrees of freedom and none of them is a stretch, so any linear
+/// deformation of the measurement volume survives the floor fit intact. This recovers it.
+///
+/// The recovery is a linearization, which is sound here because the deviations are on the order of
+/// ten microns over a part sixty millimetres in radius: a strain of a few parts in ten thousand. A
+/// point `p` displaced by a linear map `D` plus a translation `t` moves the surface by
+/// `(D p + t) . n` along its normal, which is linear in the twelve unknowns and so is one least
+/// squares solve rather than a search.
+///
+/// The antisymmetric part of `D` is a rotation and the translation is a translation, so both are
+/// rigid and are estimated only to keep them from contaminating the rest. What matters is the
+/// symmetric part: its diagonal is the scale error on each axis, and its off-diagonal terms are
+/// shears.
+#[derive(Clone, Copy, Debug)]
+struct Deformation {
+    /// Scale error along scanner X, Y and Z, in parts per million.
+    scale_ppm: [f64; 3],
+
+    /// Shear in the YZ, XZ and XY planes, in parts per million.
+    shear_ppm: [f64; 3],
+
+    /// The median absolute deviation before and after removing the fitted deformation.
+    before: f64,
+    after: f64,
+}
+
+/// Recovers the linear deformation that best explains a scan's floor residual.
+///
+/// Everything is expressed in the scan's own coordinate frame, which is the laser scanner's, since
+/// that is the frame a machine error would be fixed in. Points are centred first, which costs
+/// nothing because the translation term absorbs it, and improves the conditioning of the solve.
+fn fit_deformation(points: &[Point3], normals: &[UnitVec3], devs: &[f64]) -> Option<Deformation> {
+    use engeom::na::{DMatrix, DVector};
+
+    if points.len() < 24 {
+        return None;
+    }
+
+    let centroid = Point3::from(
+        points.iter().map(|p| p.coords).sum::<engeom::Vector3>() / points.len() as f64,
+    );
+
+    let mut a = DMatrix::zeros(points.len(), 12);
+    let mut b = DVector::zeros(points.len());
+
+    for (i, ((p, n), d)) in points
+        .iter()
+        .zip(normals.iter())
+        .zip(devs.iter())
+        .enumerate()
+    {
+        let q = p - centroid;
+
+        // `(D q) . n` expands to a sum over the nine entries of D, each multiplied by one
+        // component of q and one of n.
+        for row in 0..3 {
+            for col in 0..3 {
+                a[(i, row * 3 + col)] = q[col] * n[row];
+            }
+        }
+        for k in 0..3 {
+            a[(i, 9 + k)] = n[k];
+        }
+
+        b[i] = *d;
+    }
+
+    let x = a.clone().svd(true, true).solve(&b, 1e-12).ok()?;
+
+    let d = |row: usize, col: usize| x[row * 3 + col];
+    let sym = |r: usize, c: usize| 0.5 * (d(r, c) + d(c, r));
+
+    // What the residual becomes once the fitted model is subtracted. If the deformation is real
+    // this drops substantially; if the model is describing noise it barely moves.
+    let predicted = &a * &x;
+    let mut before = devs.iter().map(|v| v.abs()).collect::<Vec<_>>();
+    let mut after = (0..devs.len())
+        .map(|i| (devs[i] - predicted[i]).abs())
+        .collect::<Vec<_>>();
+    before.sort_by(f64::total_cmp);
+    after.sort_by(f64::total_cmp);
+
+    Some(Deformation {
+        scale_ppm: [sym(0, 0) * 1.0e6, sym(1, 1) * 1.0e6, sym(2, 2) * 1.0e6],
+        shear_ppm: [sym(1, 2) * 1.0e6, sym(0, 2) * 1.0e6, sym(0, 1) * 1.0e6],
+        before: before[before.len() / 2],
+        after: after[after.len() / 2],
+    })
+}
+
+fn mean_and_sd(values: &[f64]) -> (f64, f64) {
+    let n = values.len() as f64;
+    let mean = values.iter().sum::<f64>() / n;
+    let sd = (values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n).sqrt();
+    (mean, sd)
+}
+
+/// Diagnostic: what linear deformation of the scanner volume would explain the floor residual?
+///
+/// The autocorrelation established that the residual field is smooth rather than detail scale. This
+/// asks what shape that smoothness has, in the frame where a machine error would live.
+///
+/// The axes are not interchangeable. X and Z come from the laser sensor's internal factory
+/// calibration. Y is derived from pulse triggering on the slide that carries the sensor, computed
+/// from a lead screw pitch and an electronic gear ratio configured against a stepper driver's pulse
+/// train, so Y is the one axis with a plain mechanism for being systematically wrong.
+///
+/// The result to look for is agreement rather than magnitude. Given free parameters every scan will
+/// improve, which on its own proves nothing. A gear ratio is a single machine setting shared by
+/// every scan, and each scan held the part at a different orientation so that scan-local Y points
+/// along a different direction on the part each time. Seventeen scans agreeing on one Y number,
+/// while X and Z scatter around zero, would be very hard to produce any other way.
+#[test]
+#[ignore]
+fn diagnose_volume_deformation() -> Result<()> {
+    for case in find_cases()?.iter() {
+        let loaded = LoadedCase::load(case)?;
+        let spans = loaded.bench.reference_spans();
+        let floor = loaded.score(&loaded.floor())?;
+
+        let mut per_axis: [Vec<f64>; 3] = [vec![], vec![], vec![]];
+        let mut per_shear: [Vec<f64>; 3] = [vec![], vec![], vec![]];
+        let mut gains = Vec::new();
+
+        for (scan, span) in loaded.bench.scans.iter().zip(spans.iter()) {
+            let on_ref = scan
+                .points
+                .iter()
+                .filter(|p| p.on_reference)
+                .collect::<Vec<_>>();
+
+            let points = on_ref.iter().map(|p| p.point).collect::<Vec<_>>();
+            let normals = on_ref.iter().map(|p| p.normal).collect::<Vec<_>>();
+
+            let Some(def) = fit_deformation(&points, &normals, &floor.reference_devs[span.clone()])
+            else {
+                continue;
+            };
+
+            for k in 0..3 {
+                per_axis[k].push(def.scale_ppm[k]);
+                per_shear[k].push(def.shear_ppm[k]);
+            }
+            gains.push(100.0 * (def.before - def.after) / def.before);
+        }
+
+        println!("\n=== {} ===", loaded.name);
+        println!("  {:<12} {:>10} {:>10}", "term", "mean ppm", "sd ppm");
+        for (k, label) in ["scale X (sensor)", "scale Y (slide)", "scale Z (sensor)"]
+            .iter()
+            .enumerate()
+        {
+            let (m, sd) = mean_and_sd(&per_axis[k]);
+            println!("  {label:<18} {m:>10.0} {sd:>10.0}");
+        }
+        for (k, label) in ["shear YZ", "shear XZ", "shear XY"].iter().enumerate() {
+            let (m, sd) = mean_and_sd(&per_shear[k]);
+            println!("  {label:<18} {m:>10.0} {sd:>10.0}");
+        }
+        println!(
+            "  median residual falls {:.1}% when the fitted deformation is removed",
+            gains.iter().sum::<f64>() / gains.len() as f64
+        );
+
+        let cells = per_axis[1]
+            .iter()
+            .map(|v| format!("{v:>7.0}"))
+            .collect::<Vec<_>>()
+            .join("");
+        println!("  scale Y per scan:{cells}");
+
+        // How differently is the slide axis pointed at the part across the scans?
+        //
+        // This decides how much the result is worth. A correction applied along scan-local Y is
+        // only distinguishable from a part-fixed error if scan-local Y points somewhere different
+        // on the part for each scan. If every scan sees the part the same way up, a stretch fixed
+        // in the scanner and a stretch fixed in the part are the same thing and nothing here can
+        // separate them.
+        let axes = case
+            .scans
+            .iter()
+            .map(|f| Ok(f.cad_align()?.rotation * engeom::Vector3::y()))
+            .collect::<Result<Vec<_>>>()?;
+
+        let mut angles = Vec::new();
+        for (i, a) in axes.iter().enumerate() {
+            for b in axes.iter().skip(i + 1) {
+                // Undirected: a stretch along an axis is the same as a stretch along its negation.
+                angles.push(a.dot(b).abs().clamp(-1.0, 1.0).acos().to_degrees());
+            }
+        }
+        angles.sort_by(f64::total_cmp);
+        println!(
+            "  slide axis spread on the part: median {:.0} deg, max {:.0} deg over {} scan pairs",
+            angles[angles.len() / 2],
+            angles[angles.len() - 1],
+            angles.len()
+        );
+
+        // Does correcting the slide axis by the fitted amount actually lower the floor? Both signs
+        // are tried rather than reasoned about, because getting the direction of a correction
+        // backwards is easy and the data can simply be asked.
+        let (mean_y, _) = mean_and_sd(&per_axis[1]);
+        println!("  applying a uniform Y correction to every scan, refitting each rigidly:");
+
+        for ppm in [0.0, mean_y, -mean_y] {
+            let s = 1.0 + ppm * 1.0e-6;
+            let mut devs = Vec::new();
+
+            for (scan, files) in loaded.bench.scans.iter().zip(case.scans.iter()) {
+                let start = files.cad_align()?;
+                let pts = scan
+                    .points
+                    .iter()
+                    .filter(|p| p.on_reference)
+                    .map(|p| start * Point3::new(p.point.x, p.point.y * s, p.point.z))
+                    .collect::<Vec<_>>();
+
+                let g = gauge_fit(&loaded.reference, &pts)?;
+                let placed = pts.iter().map(|p| g * p).collect::<Vec<_>>();
+                devs.extend(
+                    loaded
+                        .reference
+                        .measure_deviations(&placed, DistMode::ToPoint),
+                );
+            }
+
+            println!(
+                "    Y scale {:>+7.0} ppm -> floor {:.4} mm",
+                ppm,
+                Stats::from_deviations(&devs).median_abs
+            );
+        }
+    }
+
+    Ok(())
+}
