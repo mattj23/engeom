@@ -9,6 +9,9 @@ from typing import Iterable
 import numpy
 from matplotlib.artist import Artist
 from matplotlib.axes import Axes
+from matplotlib.cm import ScalarMappable
+from matplotlib.colorbar import Colorbar
+from matplotlib.colors import Colormap, Normalize
 from matplotlib.lines import Line2D
 from matplotlib.patches import Arc, Circle, Polygon, Rectangle
 from matplotlib.text import Annotation
@@ -22,41 +25,8 @@ from engeom.metrology import Distance2
 from .._coerce import Coords2, to_tuple2
 from .._common import LabelPlace, check_label_place
 from ._style import ElementStyle, element_style, merge_style
+from .colors import GOM_CMAP, extend_for
 from .viewport import ViewPort3
-
-
-def set_aspect_fill(ax: Axes):
-    """
-    Set the aspect ratio of a Matplotlib Axes (subplot) object to be 1:1 in x and y, while also having it expand
-    to fill all available space.
-
-    In comparison to the set_aspect('equal') method, this method will also expand the plot to prevent the overall
-    figure from shrinking.  It does this by manually re-checking the x and y limits and adjusting whichever is the
-    limiting value. Essentially, it will honor the larger of the two existing limits which were set before this
-    function was called, and will only expand the limits on the other axis to fill the remaining space.
-
-    Call this function after all visual elements have been added to the plot and any manual adjustments to the axis
-    limits are performed. If you use fig.tight_layout(), call this function after that.
-    :param ax: a Matplotlib Axes object
-    :return: None
-    """
-    x0, x1 = ax.get_xlim()
-    y0, y1 = ax.get_ylim()
-
-    bbox = ax.get_window_extent()
-    width, height = bbox.width, bbox.height
-
-    x_scale = width / (x1 - x0)
-    y_scale = height / (y1 - y0)
-
-    if y_scale > x_scale:
-        y_range = y_scale / x_scale * (y1 - y0)
-        y_mid = (y0 + y1) / 2
-        ax.set_ylim(y_mid - y_range / 2, y_mid + y_range / 2)
-    else:
-        x_range = x_scale / y_scale * (x1 - x0)
-        x_mid = (x0 + x1) / 2
-        ax.set_xlim(x_mid - x_range / 2, x_mid + x_range / 2)
 
 
 class AxesHelper:
@@ -122,6 +92,80 @@ class AxesHelper:
         """
         self.ax.set_xlim(box.min.x, box.max.x)
         self.ax.set_ylim(box.min.y, box.max.y)
+
+    def fill_available_space(self) -> None:
+        """
+        Expand the axis limits so the plot fills the space available to it, without distorting the
+        1:1 aspect ratio.
+
+        ``Axes.set_aspect("equal")`` gets a true aspect by *shrinking* the plot inside its box,
+        which leaves a figure with a band of empty space along one side. This instead widens the
+        limits of whichever axis has room to spare, so the geometry keeps its shape and the figure
+        stays full. Nothing is ever cropped: the existing limits are only ever expanded.
+
+        Call this last, after everything has been drawn and any manual limit changes have been made,
+        since it reads the limits and the rendered size as they are at that moment. If you use
+        ``Figure.tight_layout``, call this after that too.
+        """
+        x0, x1 = self.ax.get_xlim()
+        y0, y1 = self.ax.get_ylim()
+
+        bbox = self.ax.get_window_extent()
+        x_scale = bbox.width / (x1 - x0)
+        y_scale = bbox.height / (y1 - y0)
+
+        if y_scale > x_scale:
+            y_range = y_scale / x_scale * (y1 - y0)
+            y_mid = (y0 + y1) / 2
+            self.ax.set_ylim(y_mid - y_range / 2, y_mid + y_range / 2)
+        else:
+            x_range = x_scale / y_scale * (x1 - x0)
+            x_mid = (x0 + x1) / 2
+            self.ax.set_xlim(x_mid - x_range / 2, x_mid + x_range / 2)
+
+    def draw_colorbar(self, mappable: ScalarMappable | None = None, norm: Normalize | None = None,
+                      cmap: Colormap = GOM_CMAP, label: str | None = None,
+                      extend: str | None = None, **kwargs) -> Colorbar:
+        """
+        Draw a colorbar beside the axes, with pointed ends wherever the color map calls out
+        out-of-range values.
+
+        The ``extend`` token is derived from the color map rather than defaulting to ``"neither"``,
+        so a map like `GOM_CMAP` that reserves colors for values beyond the scale gets the arrow
+        ends that say so. A colorbar with square ends beside such a map is actively misleading: it
+        reads as though the scale covers the data when two of its colors mean the opposite.
+
+        Give either a `mappable` returned by a plotting call, such as ``Axes.scatter`` or
+        ``Axes.imshow``, or a `norm` to build a standalone bar from. The latter is the useful one
+        when the colors were applied by something the colorbar cannot see, such as per-vertex mesh
+        coloring or a plot drawn on another axes.
+
+        :param mappable: the artist to take the color scale from. If None, one is built from `norm`
+            and `cmap`.
+        :param norm: the normalization for a standalone bar, usually from `deviation_norm`. Ignored
+            when `mappable` is given, since the mappable carries its own.
+        :param cmap: the color map for a standalone bar. Ignored when `mappable` is given.
+        :param label: the text label for the bar. If None, the bar is unlabeled.
+        :param extend: the Matplotlib extend token, one of ``"neither"``, ``"min"``, ``"max"``, or
+            ``"both"``. If None, it is derived from the color map's out-of-range colors.
+        :param kwargs: any other keyword argument accepted by ``Figure.colorbar``, such as
+            ``orientation``, ``fraction``, ``shrink``, or ``pad``.
+        :return: the ``Colorbar`` that was created.
+        :raises ValueError: if neither `mappable` nor `norm` is given, since there would be no
+            scale to draw.
+        """
+        if mappable is None:
+            if norm is None:
+                raise ValueError("draw_colorbar needs either a mappable or a norm to draw a scale from")
+            mappable = ScalarMappable(norm=norm, cmap=cmap)
+
+        if extend is None:
+            extend = extend_for(mappable.get_cmap())
+
+        bar = self.ax.figure.colorbar(mappable, ax=self.ax, extend=extend, **kwargs)
+        if label is not None:
+            bar.set_label(label)
+        return bar
 
     def draw_arc(self, *arcs: Arc2, color: str | None = None, linewidth: float | None = None,
                  linestyle: str | None = None, alpha: float | None = None, label: str | None = None,

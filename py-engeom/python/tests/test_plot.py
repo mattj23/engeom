@@ -9,6 +9,7 @@ public entry point is exercised and that its documented edge cases hold.
 Matplotlib is an optional dependency, so the whole module skips when it is absent.
 """
 
+import warnings
 from typing import get_args
 
 import numpy
@@ -33,7 +34,8 @@ from engeom.metrology import Distance2, Distance3
 from engeom.plot import LabelPlace
 from engeom.plot._coerce import to_point2, to_point3, to_tuple2, to_tuple3
 from engeom.plot._common import LABEL_PLACES
-from engeom.plot.matplotlib import GOM_CMAP, GomColorMap, AxesHelper, TraceBuilder, ViewPort3
+from engeom.plot.matplotlib import (GOM_CMAP, AxesHelper, GomColorMap, TraceBuilder, ViewPort3,
+                                    deviation_limit, deviation_norm, extend_for, has_extremes)
 from engeom.plot.matplotlib._style import element_style, merge_style
 from engeom.plot.matplotlib.viewport import _plane_basis
 
@@ -1316,6 +1318,153 @@ def test_draw_airfoil_returns_artists_that_are_really_on_the_axes():
 
 
 # ---------------------------------------------------------------------------
+# Deviation scales and colorbars
+# ---------------------------------------------------------------------------
+
+def test_gom_color_map_builds_without_a_deprecation_warning():
+    """
+    Matplotlib 3.11 pends the deprecation of set_under/set_over in favor of constructor arguments,
+    which older versions do not accept. Whichever path is taken must be the quiet one.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", PendingDeprecationWarning)
+        warnings.simplefilter("error", DeprecationWarning)
+        GomColorMap()
+
+
+def test_deviation_limit_is_the_largest_magnitude_by_default():
+    assert deviation_limit([-4.0, 1.0, 2.5]) == pytest.approx(4.0, abs=TOL)
+
+
+def test_deviation_limit_ignores_non_finite_values():
+    assert deviation_limit([1.0, numpy.nan, -2.0, numpy.inf]) == pytest.approx(2.0, abs=TOL)
+
+
+def test_deviation_limit_can_clip_outliers_with_a_percentile():
+    """ One wild point should not be able to flatten the whole scale. """
+    values = numpy.concatenate([numpy.linspace(-1.0, 1.0, 99), [500.0]])
+    assert deviation_limit(values, percentile=95.0) < 2.0
+    assert deviation_limit(values) == pytest.approx(500.0, abs=TOL)
+
+
+@pytest.mark.parametrize("bad", [-1.0, 100.5])
+def test_deviation_limit_rejects_a_percentile_out_of_range(bad):
+    with pytest.raises(ValueError, match="between 0 and 100"):
+        deviation_limit([1.0, 2.0], percentile=bad)
+
+
+@pytest.mark.parametrize("values", [[], [numpy.nan, numpy.inf]])
+def test_deviation_limit_rejects_data_with_nothing_finite_in_it(values):
+    with pytest.raises(ValueError, match="no finite value"):
+        deviation_limit(values)
+
+
+def test_deviation_norm_is_symmetric_about_zero():
+    """ Zero has to land dead center, or the color that reads as nominal quietly moves. """
+    norm = deviation_norm(0.75)
+    assert norm.vmin == pytest.approx(-0.75, abs=TOL)
+    assert norm.vmax == pytest.approx(0.75, abs=TOL)
+    assert norm(0.0) == pytest.approx(0.5, abs=TOL)
+
+
+def test_deviation_norm_ignores_the_sign_of_the_limit():
+    assert deviation_norm(-2.0).vmin == deviation_norm(2.0).vmin
+
+
+def test_deviation_norm_rejects_a_zero_limit():
+    with pytest.raises(ValueError, match="non-zero"):
+        deviation_norm(0.0)
+
+
+def test_has_extremes_detects_the_gom_out_of_range_colors():
+    assert has_extremes(GOM_CMAP) == (True, True)
+
+
+def test_has_extremes_is_false_for_a_map_that_sets_no_extremes():
+    assert has_extremes(matplotlib.pyplot.get_cmap("viridis")) == (False, False)
+
+
+@pytest.mark.parametrize("cmap,expected", [
+    (GOM_CMAP, "both"),
+    (matplotlib.pyplot.get_cmap("viridis"), "neither"),
+    (matplotlib.pyplot.get_cmap("viridis").with_extremes(over="red"), "max"),
+    (matplotlib.pyplot.get_cmap("viridis").with_extremes(under="red"), "min"),
+])
+def test_extend_for_maps_the_extremes_to_a_colorbar_token(cmap, expected):
+    assert extend_for(cmap) == expected
+
+
+def test_draw_colorbar_from_a_norm_alone():
+    helper = new_helper()
+    bar = helper.draw_colorbar(norm=deviation_norm(1.0), label="deviation [mm]")
+    assert bar.extend == "both"
+    assert "deviation" in bar.ax.get_ylabel()
+
+
+def test_draw_colorbar_takes_the_scale_from_a_mappable():
+    helper = new_helper()
+    scatter = helper.ax.scatter([0.0, 1.0], [0.0, 1.0], c=[-1.0, 1.0], cmap=GOM_CMAP,
+                                norm=deviation_norm(1.0))
+    assert helper.draw_colorbar(scatter).extend == "both"
+
+
+def test_draw_colorbar_extends_only_where_the_color_map_calls_values_out():
+    """
+    Square ends beside a map that reserves colors for out-of-range data read as though the scale
+    covers everything, which is the opposite of what those colors mean.
+    """
+    helper = new_helper()
+    bar = helper.draw_colorbar(norm=deviation_norm(1.0),
+                               cmap=matplotlib.pyplot.get_cmap("viridis"))
+    assert bar.extend == "neither"
+
+
+def test_draw_colorbar_honors_an_explicit_extend():
+    helper = new_helper()
+    assert helper.draw_colorbar(norm=deviation_norm(1.0), extend="max").extend == "max"
+
+
+def test_draw_colorbar_needs_something_to_draw_a_scale_from():
+    with pytest.raises(ValueError, match="mappable or a norm"):
+        new_helper().draw_colorbar()
+
+
+# ---------------------------------------------------------------------------
+# AxesHelper: layout
+# ---------------------------------------------------------------------------
+
+def test_fill_available_space_equalizes_the_two_axis_scales():
+    """
+    The point of this over set_aspect("equal") is that the geometry keeps a 1:1 aspect without the
+    plot shrinking inside its box, so both axes must end up at the same pixels per data unit.
+    """
+    figure = Figure(figsize=(12.0, 4.0))
+    helper = AxesHelper(figure.subplots())
+    helper.set_bounds(Aabb2(0.0, 0.0, 10.0, 10.0))
+    figure.canvas.draw()
+
+    helper.fill_available_space()
+
+    x0, x1 = helper.ax.get_xlim()
+    y0, y1 = helper.ax.get_ylim()
+    box = helper.ax.get_window_extent()
+    assert box.width / (x1 - x0) == pytest.approx(box.height / (y1 - y0), rel=1e-9)
+
+
+def test_fill_available_space_only_ever_widens_the_limits():
+    """ Filling space must not crop anything that was already in view. """
+    figure = Figure(figsize=(12.0, 4.0))
+    helper = AxesHelper(figure.subplots())
+    helper.set_bounds(Aabb2(0.0, 0.0, 10.0, 10.0))
+    figure.canvas.draw()
+
+    helper.fill_available_space()
+
+    assert helper.ax.get_xlim()[0] <= 0.0 and helper.ax.get_xlim()[1] >= 10.0
+    assert helper.ax.get_ylim()[0] <= 0.0 and helper.ax.get_ylim()[1] >= 10.0
+
+
+# ---------------------------------------------------------------------------
 # Coverage drift
 # ---------------------------------------------------------------------------
 
@@ -1324,8 +1473,8 @@ def test_draw_airfoil_returns_artists_that_are_really_on_the_axes():
 EXERCISED_HELPER_MEMBERS = {
     "draw_aabb", "draw_arc", "draw_arrow", "draw_boundary", "draw_circle", "draw_line",
     "draw_curve", "draw_distance", "draw_labeled_arrow", "draw_point", "draw_segment",
-    "draw_airfoil", "draw_normals", "draw_spline", "draw_surface_point", "draw_text", "fill_curve",
-    "set_bounds",
+    "draw_airfoil", "draw_colorbar", "draw_normals", "draw_spline", "draw_surface_point",
+    "draw_text", "fill_available_space", "fill_curve", "set_bounds",
     "viewport",
 }
 

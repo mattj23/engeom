@@ -21,7 +21,7 @@ except ImportError as _e:
     ) from _e
 
 from .axes import AxesHelper
-from .colors import GOM_CMAP, GomColorMap
+from .colors import GOM_CMAP, GomColorMap, deviation_limit, deviation_norm, extend_for, has_extremes
 from .trace import TraceBuilder
 from .viewport import ViewPort3
 
@@ -31,4 +31,8 @@ __all__ = [
     "GomColorMap",
     "TraceBuilder",
     "ViewPort3",
+    "deviation_limit",
+    "deviation_norm",
+    "extend_for",
+    "has_extremes",
 ]

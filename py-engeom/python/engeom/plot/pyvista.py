@@ -381,20 +381,26 @@ class PlotterHelper:
 
 
 def _cmap_extremes(item: Any) -> Dict[str, pyvista.ColorLike]:
+    # Carry a Matplotlib color map's out-of-range colors across to PyVista's own equivalents, so a
+    # map like `GOM_CMAP` keeps calling out data beyond the scale instead of clamping it.
+    #
+    # Matplotlib has no public way to ask whether an extreme was explicitly set, so the end colors
+    # are compared against the map's own first and last: a map that has set neither returns its
+    # ends, and there is nothing to carry across. This deliberately avoids reading the private
+    # `_rgba_over`/`_rgba_under` attributes, which are not part of Matplotlib's API.
     working = {}
     try:
+        import numpy
         from matplotlib.colors import Colormap
     except ImportError:
         return working
-    else:
-        if isinstance(item, Colormap):
-            over = getattr(item, "_rgba_over", None)
-            under = getattr(item, "_rgba_under", None)
-            if over is not None:
-                working["above_color"] = over
-            if under is not None:
-                working["below_color"] = under
-        return working
+
+    if isinstance(item, Colormap):
+        for key, extreme, end in (("above_color", item.get_over(), item(1.0)),
+                                  ("below_color", item.get_under(), item(0.0))):
+            if not numpy.array_equal(numpy.asarray(extreme), numpy.asarray(end)):
+                working[key] = extreme
+    return working
 
 
 class LineBuilder:
