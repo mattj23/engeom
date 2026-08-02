@@ -60,7 +60,7 @@ jobs:
       # Verifies the `rust-version` promised in engeom/Cargo.toml. Only the engeom crate is checked,
       # because it is the only one published to crates.io and so the only one making the promise.
       # 1.88 is required by the stable let-chains used in the source; nalgebra only needs 1.87.
-      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: dtolnay/rust-toolchain@1.100.0
       - uses: Swatinem/rust-cache@v2
       - name: Check with no features
         run: cargo check -p engeom
