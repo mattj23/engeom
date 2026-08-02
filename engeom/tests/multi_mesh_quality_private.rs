@@ -1223,3 +1223,419 @@ fn diagnose_group_fit_to_reference() -> Result<()> {
 
     Ok(())
 }
+
+// ================================================================================================
+// The scorer
+// ================================================================================================
+
+/// The absolute deviation, in millimetres, beyond which a measurement point is counted as an
+/// outlier rather than as a measurement.
+///
+/// Fixed and geometric, never derived from a solver's weights. Some points simply cannot be
+/// reconciled by any alignment, and the count of them is itself a number worth comparing: a
+/// candidate that pushes many more points past this bar has done something bad to a region even if
+/// its median looks fine.
+const OUTLIER_GATE: f64 = 0.1;
+
+/// A summarized distribution of signed deviations.
+///
+/// Both a robust centre and a tail, deliberately. The median alone would hide a candidate that
+/// wrecks five percent of the part; the RMS alone would be dominated by the irreducible tail that
+/// every candidate carries.
+#[derive(Clone, Copy, Debug, Default)]
+struct Stats {
+    count: usize,
+    rms: f64,
+    median_abs: f64,
+    p90: f64,
+    p95: f64,
+    p99: f64,
+    max_abs: f64,
+    beyond_gate: usize,
+}
+
+impl Stats {
+    fn from_deviations(devs: &[f64]) -> Self {
+        if devs.is_empty() {
+            return Self::default();
+        }
+
+        let mut abs = devs.iter().map(|d| d.abs()).collect::<Vec<_>>();
+        abs.sort_by(f64::total_cmp);
+
+        let at = |q: f64| abs[(((abs.len() - 1) as f64) * q).round() as usize];
+
+        Self {
+            count: devs.len(),
+            rms: (devs.iter().map(|d| d * d).sum::<f64>() / devs.len() as f64).sqrt(),
+            median_abs: at(0.50),
+            p90: at(0.90),
+            p95: at(0.95),
+            p99: at(0.99),
+            max_abs: abs[abs.len() - 1],
+            beyond_gate: abs.iter().filter(|d| **d > OUTLIER_GATE).count(),
+        }
+    }
+
+    fn row(&self) -> String {
+        format!(
+            "n={:<7} rms={:.4} med={:.4} p90={:.4} p95={:.4} p99={:.4} max={:.4} out={}",
+            self.count,
+            self.rms,
+            self.median_abs,
+            self.p90,
+            self.p95,
+            self.p99,
+            self.max_abs,
+            self.beyond_gate
+        )
+    }
+}
+
+/// What one candidate alignment scored on one sample.
+#[derive(Clone, Debug)]
+struct Score {
+    /// Scan-to-scan disagreement, over the frozen partner mask. The sensitive metric: no reference
+    /// term enters it, so it responds directly to registration error.
+    consistency: Stats,
+
+    /// Deviation from `reference.ply` after the gauge fit. The guard rail against a solution that
+    /// is locally consistent but globally warped.
+    reference: Stats,
+
+    /// The same, broken out per scan, which is where a single bad scan becomes visible.
+    per_scan_reference: Vec<Stats>,
+
+    /// The rigid motion applied to the whole cloud before measuring against the reference.
+    gauge: Iso3,
+
+    /// Raw deviations in a canonical order, so two scores over the same benchmark can be
+    /// differenced point by point.
+    consistency_devs: Vec<f64>,
+    reference_devs: Vec<f64>,
+}
+
+impl Score {
+    /// The per-point difference in reference deviation against another candidate, scored over the
+    /// same benchmark.
+    ///
+    /// This is what cancels the common-mode disagreement between the laser scans and the ATOS mesh:
+    /// where two candidates place a point in nearly the same spot, the shared measurement
+    /// difference subtracts out and what is left is the difference the alignments made.
+    fn paired_reference_difference(&self, other: &Score) -> Result<Stats> {
+        if self.reference_devs.len() != other.reference_devs.len() {
+            return Err("Scores were computed over different benchmarks".into());
+        }
+
+        Ok(Stats::from_deviations(
+            &self
+                .reference_devs
+                .iter()
+                .zip(other.reference_devs.iter())
+                .map(|(a, b)| a - b)
+                .collect::<Vec<_>>(),
+        ))
+    }
+}
+
+/// Scores one candidate alignment of a sample.
+///
+/// The signature is the point of this function: it takes a set of per-scan transforms and nothing
+/// else. It does not know, and must not learn, what produced them, so the identical code grades the
+/// v0.2.16 transforms from disk, the frozen floor, and whatever the solver just returned.
+///
+/// Two independent choices keep the comparison honest. The measurement points and the coverage mask
+/// come from the frozen benchmark, never from the candidate, so a candidate cannot improve its
+/// score by discarding the points it does badly on. And every candidate is measured with `ToPoint`
+/// deviations, which penalize a point for hanging off the edge of a surface rather than sliding it
+/// along the tangent.
+///
+/// # A coupling worth stating
+///
+/// The gauge fit uses `points_to_surface3`, so this function is not entirely free of the alignment
+/// code it exists to measure. That is deliberate and narrow: it removes six global degrees of
+/// freedom that the multi-mesh alignment genuinely does not determine, over a hundred thousand
+/// points, from a starting pose already within a tenth of a millimetre. What it must not do is
+/// depend on the *multi-mesh* solver, and it does not. The self-test that a global rigid motion
+/// leaves both metrics unchanged is what keeps this honest.
+fn score(
+    bench: &Benchmark,
+    scans: &[Mesh3],
+    reference: &Mesh3,
+    transforms: &[Iso3],
+) -> Result<Score> {
+    if transforms.len() != bench.scans.len() || scans.len() != bench.scans.len() {
+        return Err("The candidate does not have one transform and mesh per frozen scan".into());
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // Mutual consistency
+    // ------------------------------------------------------------------------------------------
+
+    // The work list is built first, in scan-major then point then partner order, so that every
+    // candidate emits its deviations in the same positions and two scores can be differenced.
+    let mut work = Vec::new();
+    for (i, scan) in bench.scans.iter().enumerate() {
+        for (k, p) in scan.points.iter().enumerate() {
+            for &j in p.partners.iter() {
+                work.push((i, k, j as usize));
+            }
+        }
+    }
+
+    // Grouped by ordered pair so the relative transform is formed once per pair rather than once
+    // per point, and so the closest point queries batch against a single target mesh.
+    let mut groups: std::collections::HashMap<(usize, usize), Vec<usize>> =
+        std::collections::HashMap::new();
+    for (idx, &(i, _, j)) in work.iter().enumerate() {
+        groups.entry((i, j)).or_default().push(idx);
+    }
+
+    let scattered = groups
+        .par_iter()
+        .flat_map(|(&(i, j), idxs)| {
+            let rel = transforms[j].inv_mul(&transforms[i]);
+            let pts = idxs
+                .iter()
+                .map(|&idx| rel * bench.scans[i].points[work[idx].1].point)
+                .collect::<Vec<_>>();
+
+            idxs.iter()
+                .copied()
+                .zip(scans[j].measure_deviations(&pts, DistMode::ToPoint))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+
+    let mut consistency_devs = vec![0.0; work.len()];
+    for (idx, d) in scattered {
+        consistency_devs[idx] = d;
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // Reference fidelity
+    // ------------------------------------------------------------------------------------------
+
+    let mut cloud = Vec::new();
+    let mut scan_spans = Vec::with_capacity(bench.scans.len());
+    for (i, scan) in bench.scans.iter().enumerate() {
+        let start = cloud.len();
+        cloud.extend(
+            scan.points
+                .iter()
+                .filter(|p| p.on_reference)
+                .map(|p| transforms[i] * p.point),
+        );
+        scan_spans.push(start..cloud.len());
+    }
+
+    let gauge = gauge_fit(reference, &cloud)?;
+    let placed = cloud.par_iter().map(|p| gauge * p).collect::<Vec<_>>();
+    let reference_devs = reference.measure_deviations(&placed, DistMode::ToPoint);
+
+    Ok(Score {
+        consistency: Stats::from_deviations(&consistency_devs),
+        reference: Stats::from_deviations(&reference_devs),
+        per_scan_reference: scan_spans
+            .into_iter()
+            .map(|s| Stats::from_deviations(&reference_devs[s]))
+            .collect(),
+        gauge,
+        consistency_devs,
+        reference_devs,
+    })
+}
+
+/// Finds the single rigid motion placing a candidate's whole point cloud onto the reference mesh.
+///
+/// This removes the six global degrees of freedom a multi-mesh alignment leaves undetermined. It is
+/// not optional and it is not a formality: `reference.ply` is a fit to `cad.ply` and the v0.2.16
+/// transforms are separately a fit to `cad.ply`, so composing them leaves a rigid offset of the
+/// whole group which was measured at between fifty and a hundred and forty microns. Charging an
+/// alignment for that would be charging it for something it neither caused nor can remove.
+fn gauge_fit(reference: &Mesh3, cloud: &[Point3]) -> Result<Iso3> {
+    let centroid =
+        Point3::from(cloud.iter().map(|p| p.coords).sum::<engeom::Vector3>() / cloud.len() as f64);
+
+    let params = AlignParams3::from_center(centroid, None);
+    let outcome = points_to_surface3(cloud, reference, params, &AlignOptions3::default())?;
+
+    Ok(*outcome.alignment().full_transform())
+}
+
+/// Everything one sample needs to be scored, loaded once.
+struct LoadedCase {
+    name: String,
+    bench: Benchmark,
+    scans: Vec<Mesh3>,
+    reference: Mesh3,
+    cad_align: Vec<Iso3>,
+}
+
+impl LoadedCase {
+    fn load(case: &SampleCase) -> Result<Self> {
+        Ok(Self {
+            name: case.name.clone(),
+            bench: read_benchmark(&mut std::fs::File::open(
+                case.dir.data().join(BENCHMARK_FILE),
+            )?)?,
+            scans: case
+                .scans
+                .iter()
+                .map(|s| s.mesh())
+                .collect::<Result<Vec<_>>>()?,
+            reference: case.reference()?,
+            cad_align: case
+                .scans
+                .iter()
+                .map(|s| s.cad_align())
+                .collect::<Result<Vec<_>>>()?,
+        })
+    }
+
+    fn floor(&self) -> Vec<Iso3> {
+        self.bench.scans.iter().map(|s| s.floor).collect()
+    }
+
+    fn score(&self, transforms: &[Iso3]) -> Result<Score> {
+        score(&self.bench, &self.scans, &self.reference, transforms)
+    }
+}
+
+/// Scoring the same transforms twice must give an identically zero paired difference.
+///
+/// This is the weaker of the two self-tests but it catches a real class of bug: any hidden
+/// dependence on iteration order, on hash map traversal, or on a solver that does not land in
+/// exactly the same place twice would show up here as a nonzero difference between a candidate and
+/// itself.
+#[test]
+fn scoring_is_repeatable() -> Result<()> {
+    let case = LoadedCase::load(&find_cases()?[0])?;
+
+    let a = case.score(&case.cad_align)?;
+    let b = case.score(&case.cad_align)?;
+
+    let diff = a.paired_reference_difference(&b)?;
+    assert_eq!(
+        diff.max_abs, 0.0,
+        "Scoring the same transforms twice differed by up to {:.3e} mm",
+        diff.max_abs
+    );
+
+    assert_eq!(a.consistency_devs, b.consistency_devs);
+    assert_eq!(a.reference.count, b.reference.count);
+
+    Ok(())
+}
+
+/// Moving every scan together by the same rigid motion must not change either metric.
+///
+/// This is the self-test that matters. A multi-mesh alignment does not determine the pose of the
+/// group as a whole, so a scorer which let that pose leak into its numbers would be grading
+/// candidates on something none of them control.
+///
+/// The two metrics resist this for different reasons, and both need checking. Mutual consistency is
+/// invariant by construction, since a common motion cancels out of every relative transform, so a
+/// failure there means the frames are being composed wrongly. Reference fidelity is invariant only
+/// because the gauge fit absorbs the motion, so a failure there means the gauge fit did not
+/// converge or was not given enough freedom.
+#[test]
+fn a_global_rigid_motion_does_not_change_the_score() -> Result<()> {
+    let case = LoadedCase::load(&find_cases()?[0])?;
+
+    let plain = case.score(&case.cad_align)?;
+
+    // Large enough that a scorer which failed to remove it could not possibly be hiding the
+    // difference in rounding: two millimetres and about six degrees.
+    let motion = Iso3::translation(2.0, -1.5, 0.75)
+        * Iso3::rotation(engeom::Vector3::new(0.05, -0.08, 0.03));
+    let moved_transforms = case
+        .cad_align
+        .iter()
+        .map(|t| motion * t)
+        .collect::<Vec<_>>();
+    let moved = case.score(&moved_transforms)?;
+
+    // Algebraically this is exact: `(M T_j)^-1 (M T_i)` reduces to `T_j^-1 T_i`. In floating point
+    // it is not, because the composition and inversion are carried out on the moved transforms, so
+    // what is checked is that nothing beyond that rounding survives.
+    let worst = plain
+        .consistency_devs
+        .iter()
+        .zip(moved.consistency_devs.iter())
+        .fold(0.0_f64, |acc, (a, b)| acc.max((a - b).abs()));
+
+    assert!(
+        worst < 1e-9,
+        "A global rigid motion changed the mutual consistency deviations by up to {worst:.3e} mm, \
+         which is far more than the rounding of composing and inverting the moved transforms"
+    );
+
+    let diff = moved.paired_reference_difference(&plain)?;
+    assert!(
+        diff.max_abs < 1e-6,
+        "The gauge fit left {:.3e} mm of a global rigid motion in the reference deviations \
+         (median {:.3e} mm)",
+        diff.max_abs,
+        diff.median_abs
+    );
+
+    Ok(())
+}
+
+/// Prints what the frozen floor and the v0.2.16 transforms score on every sample.
+///
+/// Ignored because it is the slow, informative run rather than a pass or fail. This is the first
+/// point at which the two metrics can be read side by side against the bar the data itself sets.
+#[test]
+#[ignore]
+fn report_baseline_scores() -> Result<()> {
+    for case in find_cases()?.iter() {
+        let loaded = LoadedCase::load(case)?;
+
+        let floor = loaded.score(&loaded.floor())?;
+        let v0216 = loaded.score(&loaded.cad_align)?;
+
+        println!("\n=== {} ===", loaded.name);
+        println!("  floor    consistency  {}", floor.consistency.row());
+        println!("  v0.2.16  consistency  {}", v0216.consistency.row());
+        println!("  floor    reference    {}", floor.reference.row());
+        println!("  v0.2.16  reference    {}", v0216.reference.row());
+        println!(
+            "  v0.2.16 minus floor, per point on the reference: {}",
+            v0216.paired_reference_difference(&floor)?.row()
+        );
+
+        // The gauge is reported rather than hidden. Two candidates needing very different global
+        // motions to sit on the reference is itself worth noticing, even when both end up scoring
+        // well afterwards.
+        for (label, s) in [("floor", &floor), ("v0.2.16", &v0216)] {
+            let t = s.gauge.translation.vector;
+            println!(
+                "  {label} gauge: translation ({:.4}, {:.4}, {:.4}), rotation {:.4} deg",
+                t.x,
+                t.y,
+                t.z,
+                s.gauge.rotation.angle().to_degrees()
+            );
+        }
+
+        // The worst scan under each candidate, which is where a single bad scan hides inside an
+        // otherwise healthy aggregate.
+        for (label, s) in [("floor", &floor), ("v0.2.16", &v0216)] {
+            let (i, worst) = s
+                .per_scan_reference
+                .iter()
+                .enumerate()
+                .max_by(|a, b| a.1.median_abs.total_cmp(&b.1.median_abs))
+                .unwrap();
+            println!(
+                "  {label} worst scan {}: {}",
+                loaded.bench.scans[i].id,
+                worst.row()
+            );
+        }
+    }
+
+    Ok(())
+}
