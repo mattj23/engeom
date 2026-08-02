@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import Literal, Tuple, get_args
 
+from engeom.geom3 import Vector3
+
 LabelPlace = Literal["outside", "inside", "outside_rev"]
 """
 Where a measurement's label is placed relative to its two anchor points:
@@ -32,3 +34,24 @@ def check_label_place(value: str) -> str:
         valid = ", ".join(repr(v) for v in LABEL_PLACES)
         raise ValueError(f"invalid label_place {value!r}, expected one of {valid}")
     return value
+
+
+def plane_basis(normal: Vector3) -> Tuple[Vector3, Vector3]:
+    """
+    Build an orthonormal pair of vectors spanning the plane with the given normal.
+
+    The pair is deterministic but otherwise arbitrary, since a plane normal alone does not fix a
+    rotation about itself. The world axis least aligned with the normal is used as the seed, which
+    keeps the construction numerically well conditioned for every possible normal.
+
+    This is shared rather than per-backend because both backends need it for the same reason: an
+    entity defined only by a center, a normal, and a size (a `Circle3`, a `Plane3`) has to be given
+    an in-plane orientation before it can be turned into vertices.
+
+    :param normal: the plane normal. Need not be unit length.
+    :return: two orthonormal vectors, both perpendicular to `normal` and to each other.
+    """
+    n = normal.normalized()
+    seed = min((Vector3.x_axis(), Vector3.y_axis(), Vector3.z_axis()), key=lambda a: abs(n.dot(a)))
+    u = n.cross(seed).normalized()
+    return u, n.cross(u)

@@ -35,11 +35,10 @@ from engeom.geom3 import (Aabb3, Circle3, Curve3, Iso3, Line3, Mesh3, Plane3, Po
 from engeom.metrology import Distance2, Distance3
 from engeom.plot import LabelPlace
 from engeom.plot._coerce import to_point2, to_point3, to_tuple2, to_tuple3
-from engeom.plot._common import LABEL_PLACES
+from engeom.plot._common import LABEL_PLACES, plane_basis
 from engeom.plot.matplotlib import (GOM_CMAP, AxesHelper, GomColorMap, TraceBuilder, ViewPort3,
                                     deviation_limit, deviation_norm, extend_for, has_extremes)
 from engeom.plot.matplotlib._style import element_style, merge_style
-from engeom.plot.matplotlib.viewport import _plane_basis
 
 TOL = 1e-12
 
@@ -902,7 +901,7 @@ def test_viewport_draw_distance_passes_a_bad_label_place_through_to_validation()
 def test_plane_basis_returns_an_orthonormal_pair_for_any_normal():
     for normal in [Vector3(0.0, 0.0, 1.0), Vector3(1.0, 0.0, 0.0), Vector3(0.0, 1.0, 0.0),
                    Vector3(1.0, 1.0, 1.0), Vector3(-3.0, 0.2, 0.0)]:
-        u, v = _plane_basis(normal)
+        u, v = plane_basis(normal)
         n = normal.normalized()
         assert u.norm() == pytest.approx(1.0, abs=1.0e-12)
         assert v.norm() == pytest.approx(1.0, abs=1.0e-12)

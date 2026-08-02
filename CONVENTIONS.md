@@ -172,7 +172,7 @@ These conventions came out of the matplotlib overhaul (August 2026). They're wri
 
 ## API Surface shape
 
-- `draw_` prefixes anything that adds an artist.** A method without the prefix configures or queries instead. This splits the API surface so any editor with autocomplete gives you a makeshift table of contents for drawing functions, which seem to be the ones that you spend the most time jumping around between during ordinary use.  Note: when doing the `pyvista` helper, I may consider using `add_` to match the existing convention instead of `draw_`...at this point I'm still undecided.
+- `draw_` prefixes anything that adds an artist.** A method without the prefix configures or queries instead. This splits the API surface so any editor with autocomplete gives you a makeshift table of contents for drawing functions, which seem to be the ones that you spend the most time jumping around between during ordinary use. The PyVista helper uses `draw_` too, rather than the `add_` that would match PyVista's own `add_mesh`/`add_points`, so that the rule is one rule across backends and `draw_circle` means the same thing whichever helper is in hand.
 
 - Names are singular and take varargs.** `draw_circle(*circles)`, not `draw_circles`. One rule with no per-method judgement, chosen because `draw_circle(c)` is 95% of calls and has to read naturally. Drawing nothing returns an empty list rather than raising, so a computed and possibly empty collection needs no special case at the call site.
 

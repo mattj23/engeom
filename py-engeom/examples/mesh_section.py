@@ -19,8 +19,8 @@ def main():
     # Finally, we'll plot the original points, the aligned points, and the original mesh.
     plotter = Plotter()
     helper = PlotterHelper(plotter)
-    helper.mesh(mesh, color="white", opacity=0.5)
-    helper.curves(*curves, color="black")
+    helper.draw_mesh(mesh, color="white", opacity=0.5)
+    helper.draw_curve(*curves, color="black")
     plotter.add_axes()
     plotter.show()
 

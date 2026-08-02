@@ -23,7 +23,7 @@ from engeom.geom3 import Mesh3, Curve3, Iso3, SurfacePoint3, PointCloud, Circle3
 from engeom.metrology import Distance3
 
 from ._coerce import Coords3, to_tuple3
-from ._common import LabelPlace, check_label_place
+from ._common import LabelPlace, check_label_place, plane_basis
 
 __all__ = ["PlotterHelper"]
 
@@ -32,6 +32,9 @@ class PlotterHelper:
     """
     A helper class for working with PyVista. It wraps around a PyVista `Plotter` object and provides direct methods
     for plotting some `engeom` entities.
+
+    Every method that adds an actor to the plotter is prefixed `draw_`, matching the Matplotlib
+    helper, so `helper.draw_<tab>` lists everything that can be drawn.
 
     !!! example
         ```python
@@ -66,7 +69,7 @@ class PlotterHelper:
         """
         self.pv.show()
 
-    def sphere(
+    def draw_sphere(
             self,
             sphere: Sphere3,
             n_theta: int = 360,
@@ -86,9 +89,9 @@ class PlotterHelper:
         """
         mesh = Mesh3.create_sphere(sphere.r, n_theta, n_phi)
         mesh.transform_in_place(Iso3.from_translation(*sphere.center))
-        return self.mesh(mesh, color=color, opacity=opacity)
+        return self.draw_mesh(mesh, color=color, opacity=opacity)
 
-    def circle(
+    def draw_circle(
             self,
             circle: Circle3,
             n: int = 360,
@@ -108,28 +111,46 @@ class PlotterHelper:
         :param edge_width: The pixel width of the outline edge.
         :param line_opacity: Opacity of the outline edge (0.0–1.0). If `None`, the default PyVista opacity is used.
         :param face_opacity: Opacity of the filled face (0.0–1.0). If `None`, the default PyVista opacity is used.
+        :return: A list of the PyVista actors that were added to the plotter, which will be empty if both the edge
+        and the face were suppressed.
         """
-        mesh = Mesh3.create_circle(circle.r, n)
-        mesh.transform_in_place(circle.iso)
+        # A `Circle3` carries only a center, a normal, and a radius, so an in-plane orientation has to
+        # be chosen before it can be turned into vertices. Which one does not matter, as the result is
+        # rotationally symmetric about the normal either way.
+        u, v = plane_basis(circle.normal)
+        center = numpy.array(to_tuple3(circle.center), dtype=numpy.float64)
+        u_r = numpy.array(to_tuple3(u), dtype=numpy.float64) * circle.r
+        v_r = numpy.array(to_tuple3(v), dtype=numpy.float64) * circle.r
+
         actors = []
         if edge_color is not None:
-            theta = numpy.linspace(0, 2 * numpy.pi, n + 1)
-            points = circle.at_angles(theta)
+            theta = numpy.linspace(0.0, 2.0 * numpy.pi, n + 1)
+            points = center + numpy.outer(numpy.cos(theta), u_r) + numpy.outer(numpy.sin(theta), v_r)
 
             kwargs = {"color": edge_color, "width": edge_width}
             if line_opacity is not None:
                 kwargs["opacity"] = line_opacity
-            actors.append(self.pv.add_lines(points[:, :3], connected=True, **kwargs))
+            actors.append(self.pv.add_lines(points, connected=True, **kwargs))
 
         if face_color is not None:
+            # `create_circle` builds the circle in the XY plane at the origin, so it needs the same
+            # basis assembled into a transform to put it where the entity actually is.
+            matrix = numpy.eye(4)
+            matrix[:3, 0] = to_tuple3(u)
+            matrix[:3, 1] = to_tuple3(v)
+            matrix[:3, 2] = to_tuple3(circle.normal)
+            matrix[:3, 3] = center
+            mesh = Mesh3.create_circle(circle.r, n)
+            mesh.transform_in_place(Iso3(matrix))
+
             kwargs = {"color": face_color}
             if face_opacity is not None:
                 kwargs["opacity"] = face_opacity
-            actors.append(self.mesh(mesh, **kwargs))
+            actors.append(self.draw_mesh(mesh, **kwargs))
         return actors
 
-    def points(self, *points, color: pyvista.ColorLike = "b", point_size: float = 5.0,
-               render_points_as_spheres: bool = True, **kwargs) -> pyvista.vtkActor:
+    def draw_point(self, *points, color: pyvista.ColorLike = "b", point_size: float = 5.0,
+                   render_points_as_spheres: bool = True, **kwargs) -> pyvista.vtkActor:
         """
         Add one or more discrete points to be plotted.
         :param points: The points to add.
@@ -147,7 +168,7 @@ class PlotterHelper:
             **kwargs
         )
 
-    def curves(
+    def draw_curve(
             self,
             *curves: Curve3,
             color: pyvista.ColorLike = "w",
@@ -182,7 +203,7 @@ class PlotterHelper:
             name=name,
         )
 
-    def mesh(self, mesh: Mesh3, **kwargs) -> pyvista.vtkActor:
+    def draw_mesh(self, mesh: Mesh3, **kwargs) -> pyvista.vtkActor:
         """
         Add an `engeom` mesh to be plotted. Additional keyword arguments will be passed directly to the PyVista
         `Plotter.add_mesh` method, allowing for customization of the mesh appearance.
@@ -199,7 +220,8 @@ class PlotterHelper:
         data = pyvista.PolyData(mesh.points, faces)
         return self.pv.add_mesh(data, **kwargs)
 
-    def point_cloud(self, cloud: PointCloud, use_colors: bool = True, normal_arrow_size: float = 0.0, **kwargs):
+    def draw_point_cloud(self, cloud: PointCloud, use_colors: bool = True,
+                         normal_arrow_size: float = 0.0, **kwargs) -> list[pyvista.vtkActor]:
         """
         Add a `PointCloud` to the plotter, optionally colored by the cloud's own per-point colors and
         optionally overlaid with arrows showing the per-point normals.
@@ -229,7 +251,7 @@ class PlotterHelper:
 
         return actors
 
-    def distance(
+    def draw_distance(
             self,
             distance: Distance3,
             template: str = "{value:.3f}",
@@ -238,7 +260,7 @@ class PlotterHelper:
             font_size: int = 12,
             scale_value: float = 1.0,
             font_family=None,
-    ):
+    ) -> list[pyvista.vtkActor]:
         """
         Add a distance entity to the plotter.
         :param distance: The distance entity to add.
@@ -252,6 +274,8 @@ class PlotterHelper:
         convert between different units of measurement without having to modify the actual value or the coordinate
         system.
         :param font_family: The font family to use for the label.
+        :return: A list of the PyVista actors that were added to the plotter: the anchor spheres, the leader lines,
+        and the label.
         :raises ValueError: if `label_place` is not one of the valid placement tokens.
         """
         label_place = check_label_place(label_place)
@@ -297,13 +321,14 @@ class PlotterHelper:
             builder.add(label_coords)
 
         points = numpy.array([to_tuple3(p) for p in spheres], dtype=numpy.float64)
-        self.pv.add_points(points, color="black", point_size=4, render_points_as_spheres=True)
+        actors = [self.pv.add_points(points, color="black", point_size=4,
+                                     render_points_as_spheres=True)]
 
         lines = builder.build()
-        self.pv.add_lines(lines, color="black", width=1.5)
+        actors.append(self.pv.add_lines(lines, color="black", width=1.5))
 
         value = distance.value * scale_value
-        self.pv.add_point_labels(
+        actors.append(self.pv.add_point_labels(
             [to_tuple3(label_coords)],
             [template.format(value=value)],
             show_points=False,
@@ -313,10 +338,11 @@ class PlotterHelper:
             # justification_horizontal="center",
             font_size=font_size,
             bold=False,
-        )
+        ))
+        return actors
 
-    def coordinate_frame(self, iso, size: float = 1.0, line_width=3.0, label: str | None = None,
-                         label_size: int = 12):
+    def draw_coordinate_system(self, iso, size: float = 1.0, line_width=3.0, label: str | None = None,
+                               label_size: int = 12) -> list[pyvista.vtkActor]:
         """
         Add a coordinate frame to the plotter.  This will appear as three lines, with X in red, Y in green,
         and Z in blue.  The length of each line is determined by the `size` parameter.
@@ -327,6 +353,10 @@ class PlotterHelper:
         :param line_width: The width of the lines in the coordinate frame.
         :param label: An optional label to display at the origin of the coordinate frame.
         :param label_size: The size of the label text.
+        :return: A list of the PyVista actors that were added to the plotter: one per axis, plus the label if one
+        was requested.
+        :raises ValueError: if `iso` is a `numpy.ndarray` whose shape is not (4, 4).
+        :raises TypeError: if `iso` is neither an `Iso3` nor something convertible to a 4x4 `numpy.ndarray`.
         """
         if not isinstance(iso, Iso3):
             if hasattr(iso, "as_numpy"):
@@ -360,24 +390,41 @@ class PlotterHelper:
 
         return actors
 
-    def label(self, point: Coords3, text: str, **kwargs):
+    def draw_label(self, point: Coords3, text: str, **kwargs) -> pyvista.Label:
         """
         Add a text label to the plotter.
         :param point: The position of the label in 3D space.
         :param text: The text to display in the label.
         :param kwargs: Additional keyword arguments to pass to the `pyvista.Label` constructor.
+        :return: The `pyvista.Label` that was added to the plotter.
         """
         label = pyvista.Label(text=text, position=to_tuple3(point), **kwargs)
         self.pv.add_actor(label)
+        return label
 
-    def arrow(self, start: Coords3, direction: Coords3,
-              tip_length: float = 0.25,
-              tip_radius: float = 0.1,
-              shaft_radius: float = 0.05,
-              **kwargs):
-        pd = pyvista.Arrow(to_tuple3(start), to_tuple3(direction), tip_length=tip_length, tip_radius=tip_radius,
-                           shaft_radius=shaft_radius)
-        self.pv.add_mesh(pd, **kwargs, color="black")
+    def draw_arrow(self, start: Coords3, direction: Coords3,
+                   tip_length: float = 0.25,
+                   tip_radius: float = 0.1,
+                   shaft_radius: float = 0.05,
+                   **kwargs) -> pyvista.vtkActor:
+        """
+        Add an arrow to the plotter, drawn as a solid mesh rather than a line, so that it reads as an arrow from
+        any viewing angle.
+
+        :param start: The position of the arrow's tail in 3D space.
+        :param direction: The direction the arrow points. Its magnitude sets the arrow's overall length.
+        :param tip_length: The length of the arrow's head, as a fraction of the overall length.
+        :param tip_radius: The radius of the arrow's head, as a fraction of the overall length.
+        :param shaft_radius: The radius of the arrow's shaft, as a fraction of the overall length.
+        :param kwargs: Additional keyword arguments to pass to the PyVista `Plotter.add_mesh` method.
+        :return: The PyVista actor that was added to the plotter.
+        """
+        # PyVista 0.50 makes `start` and `direction` keyword-only, and warns about positional use
+        # before then.
+        pd = pyvista.Arrow(start=to_tuple3(start), direction=to_tuple3(direction),
+                           tip_length=tip_length, tip_radius=tip_radius, shaft_radius=shaft_radius)
+        kwargs.setdefault("color", "black")
+        return self.pv.add_mesh(pd, **kwargs)
 
 
 def _cmap_extremes(item: Any) -> Dict[str, pyvista.ColorLike]:
@@ -388,6 +435,9 @@ def _cmap_extremes(item: Any) -> Dict[str, pyvista.ColorLike]:
     # are compared against the map's own first and last: a map that has set neither returns its
     # ends, and there is nothing to carry across. This deliberately avoids reading the private
     # `_rgba_over`/`_rgba_under` attributes, which are not part of Matplotlib's API.
+    #
+    # The result is converted to a plain tuple because `Colormap.get_over` returns a numpy array,
+    # and PyVista tests these arguments for truthiness internally, which raises on an array.
     working = {}
     try:
         import numpy
@@ -399,7 +449,7 @@ def _cmap_extremes(item: Any) -> Dict[str, pyvista.ColorLike]:
         for key, extreme, end in (("above_color", item.get_over(), item(1.0)),
                                   ("below_color", item.get_under(), item(0.0))):
             if not numpy.array_equal(numpy.asarray(extreme), numpy.asarray(end)):
-                working[key] = extreme
+                working[key] = tuple(float(c) for c in numpy.asarray(extreme).ravel())
     return working
 
 

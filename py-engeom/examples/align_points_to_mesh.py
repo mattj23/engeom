@@ -33,16 +33,16 @@ def main():
     print(center)
     params = AlignParams3(center=Point3(*center))
     result = points_to_mesh(to_align, mesh, params)
-    aligned = result.full.transform_points(to_align)
+    aligned = result.alignment.full_transform.transform_points(to_align)
 
     # Finally, we'll plot the original points, the aligned points, and the original mesh.
     plotter = Plotter()
     helper = PlotterHelper(plotter)
-    helper.mesh(mesh, color="white")
+    helper.draw_mesh(mesh, color="white")
     plotter.add_points(to_align, point_size=5, color="red")
     plotter.add_points(aligned, point_size=5, color="green")
     plotter.add_axes()
-    helper.coordinate_frame(Iso3.identity(), size=10)
+    helper.draw_coordinate_system(Iso3.identity(), size=10)
     plotter.add_text("Original points are in red, aligned points are in green", font_size=10, font="courier")
     plotter.show()
 

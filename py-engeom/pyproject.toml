@@ -42,9 +42,12 @@ plot = [
     "matplotlib",
     "pyvista",
 ]
+# Both backends are here rather than only matplotlib, because the plotting tests skip themselves
+# when their backend is missing, so a backend left out of this extra is a backend nothing checks.
 tests = [
     "pytest",
     "matplotlib",
+    "pyvista",
 ]
 
 [tool.maturin]

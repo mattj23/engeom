@@ -7,7 +7,7 @@ def main():
     mesh = Mesh3.stanford_bunny_res4()
     plotter = Plotter()
     helper = PlotterHelper(plotter)
-    helper.mesh(mesh)
+    helper.draw_mesh(mesh)
     plotter.show()
 
 

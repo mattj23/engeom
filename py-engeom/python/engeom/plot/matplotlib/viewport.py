@@ -16,7 +16,7 @@ from engeom.geom2 import Point2, Vector2
 from engeom.geom3 import Aabb3, Circle3, Curve3, Iso3, Line3, Mesh3, Plane3, Point3, PointCloud, Vector3
 from engeom.metrology import Distance2, Distance3
 
-from .._common import LabelPlace
+from .._common import LabelPlace, plane_basis
 from .._coerce import PointLike, to_point2, to_point3
 from ._style import merge_style
 from .trace import TraceBuilder
@@ -27,23 +27,6 @@ if TYPE_CHECKING:
 # Below this ratio between a projected direction and its 3D original, the entity is considered to be
 # viewed edge-on to the point where the projection carries no usable information.
 _DEGENERATE = 1.0e-9
-
-
-def _plane_basis(normal: Vector3) -> tuple[Vector3, Vector3]:
-    """
-    Build an orthonormal pair of vectors spanning the plane with the given normal.
-
-    The pair is deterministic but otherwise arbitrary, since a plane normal alone does not fix a
-    rotation about itself. The world axis least aligned with the normal is used as the seed, which
-    keeps the construction numerically well conditioned for every possible normal.
-
-    :param normal: the plane normal. Need not be unit length.
-    :return: two orthonormal vectors, both perpendicular to `normal` and to each other.
-    """
-    n = normal.normalized()
-    seed = min((Vector3.x_axis(), Vector3.y_axis(), Vector3.z_axis()), key=lambda a: abs(n.dot(a)))
-    u = n.cross(seed).normalized()
-    return u, n.cross(u)
 
 
 class ViewPort3:
@@ -207,7 +190,7 @@ class ViewPort3:
         patches = []
         for circle in circles:
             in_view = self.view @ circle
-            u, v = _plane_basis(in_view.normal)
+            u, v = plane_basis(in_view.normal)
             # The circle is the image of the unit circle under [r*u | r*v]; dropping z leaves a 2x2
             # whose singular values are the projected semi-axes and whose left singular vectors give
             # their directions.
@@ -264,7 +247,7 @@ class ViewPort3:
         patches = []
         for plane in planes:
             origin = plane.project_point(anchor)
-            u, v = _plane_basis(plane.normal)
+            u, v = plane_basis(plane.normal)
             corners = [origin + u * half + v * half, origin - u * half + v * half,
                        origin - u * half - v * half, origin + u * half - v * half]
             projected = [self.view @ corner for corner in corners]
