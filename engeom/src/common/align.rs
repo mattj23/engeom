@@ -175,6 +175,89 @@ impl<R, const D: usize> AlignOutcome<R, D> {
     }
 }
 
+/// The full outcome of a simultaneous alignment of several bodies: one [`Alignment`] per body,
+/// plus a record of how the solves that produced them terminated.
+///
+/// Note that the solve record is **shared** rather than per body. A multi-body adjustment is a
+/// single least-squares problem over all of the bodies at once, so there is one sequence of solves
+/// and one halt reason for the whole thing, not one per body. Only the alignments and their
+/// residuals are per body.
+#[derive(Debug)]
+pub struct MultiAlignOutcome<R, const D: usize> {
+    alignments: Vec<Alignment<R, D>>,
+    solves: Vec<TerminationReason>,
+    halt: Option<RefinementHalt>,
+}
+
+impl<R, const D: usize> MultiAlignOutcome<R, D> {
+    pub(crate) fn new(
+        alignments: Vec<Alignment<R, D>>,
+        solves: Vec<TerminationReason>,
+        halt: Option<RefinementHalt>,
+    ) -> Self {
+        Self {
+            alignments,
+            solves,
+            halt,
+        }
+    }
+
+    /// The alignment produced for each body, in body order.
+    pub fn alignments(&self) -> &[Alignment<R, D>] {
+        &self.alignments
+    }
+
+    /// The alignment produced for one body.
+    pub fn alignment(&self, body: usize) -> &Alignment<R, D> {
+        &self.alignments[body]
+    }
+
+    /// Consumes the outcome and returns just the alignments, discarding the diagnostics.
+    pub fn into_alignments(self) -> Vec<Alignment<R, D>> {
+        self.alignments
+    }
+
+    /// The number of bodies.
+    pub fn len(&self) -> usize {
+        self.alignments.len()
+    }
+
+    /// Whether there are no bodies at all.
+    pub fn is_empty(&self) -> bool {
+        self.alignments.is_empty()
+    }
+
+    /// How each solve whose result was kept terminated, beginning with the initial solve and
+    /// followed by one entry per completed refinement round.
+    pub fn solves(&self) -> &[TerminationReason] {
+        &self.solves
+    }
+
+    /// The number of robust refinement rounds which completed and contributed to the result.
+    pub fn refinement_rounds(&self) -> usize {
+        self.solves.len().saturating_sub(1)
+    }
+
+    /// The quality of the weakest solve that contributed to the result. See
+    /// [`AlignOutcome::quality`], which this mirrors.
+    pub fn quality(&self) -> SolveQuality {
+        self.solves
+            .iter()
+            .map(SolveQuality::from_termination)
+            .fold(SolveQuality::Converged, SolveQuality::worse_of)
+    }
+
+    /// Whether every solve that contributed to the result met a convergence criterion.
+    pub fn converged(&self) -> bool {
+        self.quality() == SolveQuality::Converged
+    }
+
+    /// Why robust refinement stopped early, or `None` if it ran every round it was asked to.
+    pub fn halt(&self) -> Option<&RefinementHalt> {
+        self.halt.as_ref()
+    }
+}
+
 /// A container for the results of an alignment operation, including the full transformation, the
 /// various component transformations, and the residuals of the alignment.
 #[derive(Debug, Clone)]

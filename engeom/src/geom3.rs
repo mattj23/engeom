@@ -63,6 +63,7 @@ pub type SvdBasis3 = SvdBasis<3>;
 pub type Align3 = crate::common::align::Align<UnitQuaternion<f64>, 3>;
 pub type Alignment3 = crate::common::align::Alignment<UnitQuaternion<f64>, 3>;
 pub type AlignOutcome3 = crate::common::align::AlignOutcome<UnitQuaternion<f64>, 3>;
+pub type MultiAlignOutcome3 = crate::common::align::MultiAlignOutcome<UnitQuaternion<f64>, 3>;
 
 pub type Aabb3 = parry3d_f64::bounding_volume::Aabb;
 

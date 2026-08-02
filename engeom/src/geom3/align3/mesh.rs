@@ -62,7 +62,7 @@ impl SurfaceTarget3 for Mesh3 {
 /// form would claim the centroid of a face is `1/sqrt(3)` times as uncertain as its corners,
 /// which is not true of a scanned surface. Linear interpolation keeps sigma continuous across
 /// faces and equal to the vertex value at each vertex, which is the behavior wanted here.
-fn interpolated_stdev(mesh: &Mesh3, m: &MeshSurfPoint, stdev: &[f64]) -> f64 {
+pub(crate) fn interpolated_stdev(mesh: &Mesh3, m: &MeshSurfPoint, stdev: &[f64]) -> f64 {
     let face = mesh.faces()[m.face_index as usize];
     m.bc.iter()
         .zip(face.iter())
