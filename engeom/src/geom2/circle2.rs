@@ -287,7 +287,9 @@ impl Circle2 {
         radius: f64,
         tangency: CircleTangency,
     ) -> Vec<Circle2> {
-        if !(radius > 0.0) || !radius.is_finite() {
+        // Written as a single negated conjunction so that a NaN radius, which fails both tests,
+        // is rejected without relying on a negated comparison against a partially ordered type.
+        if !(radius > 0.0 && radius.is_finite()) {
             return Vec::new();
         }
 
@@ -1026,6 +1028,20 @@ mod tests {
             Circle2::from_tangent_to_line_and_circle(&line, &circle, -1.0, CircleTangency::Outer)
                 .is_empty()
         );
+
+        // Neither is a non-finite one, including NaN, which compares false against everything
+        for radius in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(
+                Circle2::from_tangent_to_line_and_circle(
+                    &line,
+                    &circle,
+                    radius,
+                    CircleTangency::Outer
+                )
+                .is_empty(),
+                "a radius of {radius} should produce no solutions"
+            );
+        }
     }
 
     /// The construction should hold up on arbitrary geometry, not just axis-aligned cases.
