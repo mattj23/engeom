@@ -62,6 +62,7 @@ pub mod jacobian;
 mod mesh;
 mod multi_mesh;
 pub mod multi_param;
+mod multi_params;
 mod options;
 mod params;
 mod points_to_surface;
@@ -83,6 +84,7 @@ pub use self::mesh::*;
 pub use self::multi_mesh::{
     MMOpts, MulMeshAlignPoint, multi_mesh_adjustment, multi_mesh_adjustment_with_points,
 };
+pub use self::multi_params::MultiAlignParams3;
 pub use self::options::*;
 pub use self::params::*;
 pub use self::points_to_surface::*;
