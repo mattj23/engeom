@@ -27,10 +27,26 @@ dependencies = [
 Homepage = "https://github.com/mattj23/engeom"
 Repository = "https://github.com/mattj23/engeom"
 Issues = "https://github.com/mattj23/engeom/issues"
+
+# The plotting helpers in `engeom.plot` are the only part of the package with dependencies beyond
+# numpy, and each backend is independently optional. No version floors, matching how `numpy` is
+# declared above; the helpers use long-stable API from both libraries.
 [project.optional-dependencies]
+matplotlib = [
+    "matplotlib",
+]
+pyvista = [
+    "pyvista",
+]
+plot = [
+    "matplotlib",
+    "pyvista",
+]
 tests = [
     "pytest",
+    "matplotlib",
 ]
+
 [tool.maturin]
 python-source = "python"
 features = ["pyo3/extension-module"]

@@ -7,7 +7,7 @@ import matplotlib.pyplot
 from matplotlib.pyplot import figure, Figure, Axes
 
 from engeom.geom2 import BoundaryData2
-from engeom.plot import MatplotlibAxesHelper
+from engeom.plot.matplotlib import AxesHelper
 
 
 def main():
@@ -28,16 +28,16 @@ def main():
     # Now we'll create a matplotlib figure and an engeom helper to plot the geometry
     fig: Figure = figure(figsize=(8, 5))
     ax: Axes = fig.subplots()
-    helper = MatplotlibAxesHelper(ax)
+    helper = AxesHelper(ax)
 
     # We'll use the helper's boundary drawing function to plot the geometry. The `tol` argument controls how densely
     # points are generated over arc geometry. The rest of the arguments are passthroughs to the matplotlib `plot`
     # function.
-    helper.boundary(boundary, color="black", linewidth=2.0, linestyle="--", tol=0.001)
+    helper.draw_boundary(boundary, color="black", linewidth=2.0, linestyle="--", tol=0.001)
 
     # We'll additionally plot the boundary's normals. This is useful for debugging when trying to make sure that the
     # winding direction correctly matches your intention.
-    helper.boundary_normals(boundary, 10, 0.1, color="red")
+    helper.draw_normals(boundary, count=10, length=0.1, color="red")
 
     # Finally, because the annotation arrows used to draw the normals don't automatically adjust the plot bounds,
     # we'll grab the `Aabb2` of the boundary, expand it by 0.5 in all directions, and then use it to set the plot
