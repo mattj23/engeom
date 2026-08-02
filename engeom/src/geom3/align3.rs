@@ -49,24 +49,16 @@
 //! it. The two are deliberately structural mirrors rather than a shared generic: 3D needs three
 //! Euler angles whose partial derivatives require a gimbal correction that 2D has no analogue
 //! for, and its parameter storage is twice the size.
-//!
-//! # Older machinery
-//!
-//! [`RcParams3`] and [`RotationMatrices`] are a previous generation of the parameterization,
-//! retained only because `multi_mesh` still depends on them. New work should use
-//! [`AlignParams3`].
 
 mod cloud;
 mod information;
 pub mod jacobian;
 mod mesh;
 mod multi_mesh;
-pub mod multi_param;
 mod multi_params;
 mod options;
 mod params;
 mod points_to_surface;
-mod rotations;
 
 use crate::UnitVec3;
 use crate::common::{PCoords, SPCoords};
@@ -88,7 +80,6 @@ pub use self::multi_params::MultiAlignParams3;
 pub use self::options::*;
 pub use self::params::*;
 pub use self::points_to_surface::*;
-pub use self::rotations::RotationMatrices;
 
 /// The result of projecting a single point onto a [`SurfaceTarget3`], used as the correspondence
 /// for that point during an alignment.
@@ -249,136 +240,11 @@ pub fn iso3_from_param(p: &AlignStorage3) -> Iso3 {
     )
 }
 
-/// This function returns 0.0 if the distance `d` is greater than the `threshold`, otherwise it
-/// returns 1.0. It is used for turning off the residuals of sample points that are beyond a
-/// distance threshold.
-pub fn distance_weight(d: f64, threshold: f64) -> f64 {
-    // Branchless version of returning 0.0 if d > threshold, otherwise returning (threshold - d)
-    (threshold - d).ceil().clamp(0.0, 1.0)
-}
-
-/// This function returns 0.0 if the normals `n` and `n_ref` are pointing in opposite directions,
-/// otherwise it returns 1.0. It is used for turning off the residuals of sample points that have
-/// normals pointing into different half-spaces.
-pub fn normal_weight(n: &Vector3, n_ref: &Vector3) -> f64 {
-    // If the normals are pointing in opposite directions, the dot product will be negative,
-    // so we clamp it to 0.0, otherwise we want to return 1
-    n.dot(n_ref).ceil().max(0.0)
-}
-
-/// This struct manages the parameters for a transformation which is expressed as rotations around
-/// a rotation center point that is not at the origin, but with the cardinal axes pointing in the
-/// same directions as the global coordinate system.  This lowers the scalar values of parameters
-/// on alignments happening far from the origins by largely decoupling the translation and rotation
-/// parameters.
-///
-/// To work, the RcParams struct must be initialized with the rotation center point, and it will
-/// manage the storage of the parameters and the conversion to and from the Iso3 transformation.
-///
-/// However, this is complicated when an initial transformation is provided.
-#[derive(Clone)]
-pub struct RcParams3 {
-    /// The rotation center point in the same coordinate system as the test entity(s)
-    pub rc: Point3,
-
-    /// The shift from the rotation center point to the origin
-    shift0: Iso3,
-
-    /// The shift from the origin to the initial transformed rotation center point
-    shift1: Iso3,
-
-    /// The storage for the 6 parameters
-    x: AlignStorage3,
-
-    /// The currently active transformation computed from the parameters `x`
-    transform: Iso3,
-
-    /// The currently active inverse transformation computed from the parameters `x`
-    inverse: Iso3,
-
-    /// The currently active rotation matrices computed from the parameters `x`
-    rotations: RotationMatrices,
-
-    /// The currently active center of rotation, computed by transforming the rotation center point
-    /// `rc` by the current transformation `transform`
-    current_rc: Point3,
-}
-
-impl RcParams3 {
-    pub fn from_initial(initial: &Iso3, rc: &Point3) -> Self {
-        let rc_d = initial * rc;
-        let rotations = RotationMatrices::from_rotation(&initial.rotation);
-        let x = AlignStorage3::new(0.0, 0.0, 0.0, rotations.r.x, rotations.r.y, rotations.r.z);
-
-        let mut item = Self {
-            rc: *rc,
-            shift0: Iso3::translation(-rc.x, -rc.y, -rc.z),
-            shift1: Iso3::translation(rc_d.x, rc_d.y, rc_d.z),
-            x,
-            transform: Iso3::identity(),
-            inverse: Iso3::identity(),
-            rotations,
-            current_rc: rc_d,
-        };
-
-        item.compute();
-        item
-    }
-
-    pub fn rotations(&self) -> &RotationMatrices {
-        &self.rotations
-    }
-
-    pub fn current_rc(&self) -> &Point3 {
-        &self.current_rc
-    }
-
-    pub fn set(&mut self, x: &AlignStorage3) {
-        self.x = *x;
-        self.compute();
-    }
-
-    pub fn set_index(&mut self, index: usize, value: f64) {
-        self.x[index] = value;
-        self.compute();
-    }
-
-    pub fn x(&self) -> &AlignStorage3 {
-        &self.x
-    }
-
-    fn compute(&mut self) {
-        self.rotations = RotationMatrices::from_euler(self.x[3], self.x[4], self.x[5]);
-
-        // 1. A translation from the source rotation center point to the origin
-        // 2. The transformation encoded by the parameters
-        // 3. A translation from the origin to the destination rotation center point
-        let p = Iso3::from_parts(
-            Translation3::new(self.x.x, self.x.y, self.x.z),
-            self.rotations.q,
-        );
-
-        self.transform = self.shift1 * p * self.shift0;
-        self.inverse = self.transform.inverse();
-        self.current_rc = self.transform * self.rc;
-    }
-
-    pub fn transform(&self) -> &Iso3 {
-        &self.transform
-    }
-
-    pub fn inverse(&self) -> &Iso3 {
-        &self.inverse
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::linear_space;
     use std::f64::consts::FRAC_PI_2;
 
-    use crate::common::random_geometry::RandomGeometry3;
     use approx::assert_relative_eq;
 
     #[test]
@@ -436,35 +302,5 @@ mod tests {
         let test = t * p;
         let expected = Iso3::rotation(Vector3::z_axis().into_inner() * FRAC_PI_2) * p;
         assert_relative_eq!(test, expected, epsilon = 1e-10);
-    }
-
-    #[test]
-    fn check_distance_weight() {
-        let threshold = 30.0;
-        for x in linear_space(0.0, 50.0, 1000).iter() {
-            let ex = if *x > threshold { 0.0 } else { 1.0 };
-            let w = distance_weight(*x, threshold);
-            assert_relative_eq!(w, ex, epsilon = 1e-10);
-        }
-
-        let threshold = 0.5;
-        for x in linear_space(0.0, 1.0, 1000).iter() {
-            let ex = if *x > threshold { 0.0 } else { 1.0 };
-            let w = distance_weight(*x, threshold);
-            assert_relative_eq!(w, ex, epsilon = 1e-10);
-        }
-    }
-
-    #[test]
-    fn iso3_param_round_trips_stress_test_rc() {
-        let mut rg = RandomGeometry3::new();
-        for _ in 0..10000 {
-            let t = rg.iso3(10.0);
-            let rc = rg.point(10.0);
-            let p = RcParams3::from_initial(&t, &rc);
-            let t2 = p.transform();
-
-            assert_relative_eq!(t.to_matrix(), t2.to_matrix(), epsilon = 1e-10);
-        }
     }
 }

@@ -62,7 +62,6 @@ pub type KdTree3 = crate::common::kd_tree::KdTree<3>;
 pub type SurfacePoint3 = SurfacePoint<3>;
 
 pub type SvdBasis3 = SvdBasis<3>;
-pub type Align3 = crate::common::align::Align<UnitQuaternion<f64>, 3>;
 pub type Alignment3 = crate::common::align::Alignment<UnitQuaternion<f64>, 3>;
 pub type AlignOutcome3 = crate::common::align::AlignOutcome<UnitQuaternion<f64>, 3>;
 pub type MultiAlignOutcome3 = crate::common::align::MultiAlignOutcome<UnitQuaternion<f64>, 3>;
