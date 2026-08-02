@@ -2274,6 +2274,29 @@ fn diagnose_volume_deformation() -> Result<()> {
 // Solver candidates
 // ================================================================================================
 
+/// How much worse than v0.2.16 the solver's mutual consistency may be before it counts as a
+/// regression. It was eight to ten percent *better* on all four samples, so this has real margin.
+const CONSISTENCY_SLACK: f64 = 1.05;
+
+/// How much worse than v0.2.16 the solver may be against the reference mesh.
+///
+/// Deliberately loose. Tightening mutual agreement between deformed scans costs reference fidelity,
+/// and the worst observed ratio was about 1.25 on a cold start. This is set to catch a collapse,
+/// which is what the missing distance gate produced, rather than to police the trade.
+const REFERENCE_CEILING: f64 = 1.5;
+
+/// How far a warm start may move its measurement points from the v0.2.16 seed, in millimetres.
+/// Observed between 0.098 and 0.164; the ungated defect reached 0.47.
+const WARM_DRIFT_BAR: f64 = 0.4;
+
+/// The same for a cold start, which begins further away and so legitimately travels further.
+/// Observed between 0.23 and 0.56.
+const COLD_DRIFT_BAR: f64 = 1.0;
+
+/// How far apart the warm and cold starts may land on mutual consistency, in millimetres. They
+/// agreed to within 0.0001 on every sample.
+const WARM_COLD_AGREEMENT: f64 = 0.002;
+
 /// The Poisson spacing, in millimetres, used when the multi-mesh alignment samples its own
 /// correspondences.
 ///
@@ -2371,18 +2394,37 @@ fn max_point_shift(bench: &Benchmark, a: &[Iso3], b: &[Iso3]) -> f64 {
         .fold(0.0_f64, f64::max)
 }
 
-/// Scores the two candidates that require the solver, against the two that do not.
+/// Scores the two candidates that require the solver against the two that do not, and holds them
+/// to the behaviour established when this benchmark was built.
 ///
-/// The warm start seeds the solver with the v0.2.16 answer and asks whether it holds or improves
-/// on it. That is the sharper bug signal of the two, because a degradation cannot be blamed on a
-/// bad starting pose and does not depend on any of the subtleties in how the metrics are built.
+/// The warm start seeds the solver with the v0.2.16 answer and asks whether it holds or improves on
+/// it. That is the sharper bug signal of the two, because a degradation cannot be blamed on a bad
+/// starting pose and does not depend on any of the subtleties in how the metrics are built. The
+/// cold start reproduces the chain that produced the v0.2.16 numbers, prealignment to CAD fit to
+/// simultaneous alignment, so it is the like-for-like comparison, and it exercises
+/// `points_to_surface3` as well.
 ///
-/// The cold start reproduces the chain that produced the v0.2.16 numbers, prealignment to CAD fit
-/// to simultaneous alignment, so it is the comparison that is genuinely like for like. It also
-/// exercises `points_to_surface3`, which means a regression there has somewhere to hide.
+/// # What is asserted, and what deliberately is not
+///
+/// The gates below are regression bars, not quality targets. They are set from measurements taken
+/// on all four samples with generous margin, so that a change which alters the alignment
+/// meaningfully trips one while ordinary variation does not.
+///
+/// Note what is *not* asserted. The solver is not required to beat v0.2.16 against the reference
+/// mesh, because it does not and should not be expected to: it optimizes mutual agreement between
+/// the scans, and those scans carry a per-scan deformation of the measurement volume, so pulling
+/// them into tighter agreement necessarily bends the group away from an independent measurement of
+/// the truth. Requiring both at once would be requiring the impossible. What is asserted is that
+/// the reference fidelity does not collapse, which is what the original gate defect looked like.
+///
+/// Per-scan transforms are not compared either. `reference_priority` chooses the static mesh from
+/// the data, and a different choice shifts every transform by a global rigid motion even when the
+/// alignment is identical.
+///
+/// This test runs two bundle adjustments and four scorings per sample, about three minutes each and
+/// twelve overall. It is not `#[ignore]`d because a regression gate that does not run is not a gate.
 #[test]
-#[ignore]
-fn solver_candidates_report() -> Result<()> {
+fn solver_candidates_meet_their_gates() -> Result<()> {
     for case in find_cases()?.iter() {
         let loaded = LoadedCase::load(case)?;
         let design = design_key(case)?;
@@ -2440,6 +2482,91 @@ fn solver_candidates_report() -> Result<()> {
             seed_time.as_secs_f64(),
             cold_time.as_secs_f64(),
             scoring.as_secs_f64(),
+        );
+
+        let floor = &graded[0].score;
+        let v0216 = &graded[1].score;
+
+        for (label, outcome, score, seed, moved, drift_bar) in [
+            (
+                "warm",
+                &warm_outcome,
+                &graded[2].score,
+                &loaded.cad_align,
+                &warm,
+                WARM_DRIFT_BAR,
+            ),
+            (
+                "cold",
+                &cold_outcome,
+                &graded[3].score,
+                &seeded,
+                &cold,
+                COLD_DRIFT_BAR,
+            ),
+        ] {
+            let where_ = format!("{} {}", loaded.name, label);
+
+            // A bundle adjustment that merely exhausts its budget is a normal outcome and keeps its
+            // alignments, but a halt means refinement gave up partway and the reason should be
+            // understood rather than absorbed.
+            assert!(
+                outcome.halt().is_none(),
+                "{where_}: refinement halted with {:?}",
+                outcome.halt()
+            );
+
+            // The solver's own objective. It beat v0.2.16 on every sample by eight percent or more,
+            // so a solver that no longer does has lost something real.
+            assert!(
+                score.consistency.median_abs <= v0216.consistency.median_abs * CONSISTENCY_SLACK,
+                "{where_}: mutual consistency is {:.4} mm against v0.2.16 at {:.4} mm, so the                  simultaneous alignment is no longer earning its keep",
+                score.consistency.median_abs,
+                v0216.consistency.median_abs
+            );
+
+            // Not a demand that it beat v0.2.16 against the reference, only that it stays in the
+            // same territory. The gate defect showed up here as a factor of two on the median and
+            // an order of magnitude on the tail.
+            assert!(
+                score.reference.median_abs <= v0216.reference.median_abs * REFERENCE_CEILING,
+                "{where_}: reference fidelity is {:.4} mm against v0.2.16 at {:.4} mm",
+                score.reference.median_abs,
+                v0216.reference.median_abs
+            );
+            assert!(
+                score.reference.p95 <= v0216.reference.p95 * REFERENCE_CEILING,
+                "{where_}: the reference tail reaches {:.4} mm at p95 against v0.2.16 at {:.4} mm",
+                score.reference.p95,
+                v0216.reference.p95
+            );
+
+            // Nothing constrained to move whole scans can beat a per-scan individual fit to the
+            // reference. A candidate that does means the harness is measuring the two differently.
+            assert!(
+                score.reference.median_abs >= floor.reference.median_abs,
+                "{where_}: scored {:.4} mm against the reference, below the individual-fit floor                  at {:.4} mm, which is not achievable",
+                score.reference.median_abs,
+                floor.reference.median_abs
+            );
+
+            // The most direct expression of the failure that this benchmark was built to find: a
+            // solve that walks away from a good starting pose while reporting convergence.
+            let drift = max_point_shift(&loaded.bench, moved, seed);
+            assert!(
+                drift < drift_bar,
+                "{where_}: the solve moved points up to {drift:.4} mm from its seed, past the                  {drift_bar:.2} mm bar"
+            );
+        }
+
+        // Two very different starting configurations must reach the same answer. This is the
+        // property that distinguishes a solver which converges from one which merely stops.
+        let split =
+            (graded[2].score.consistency.median_abs - graded[3].score.consistency.median_abs).abs();
+        assert!(
+            split < WARM_COLD_AGREEMENT,
+            "{}: the warm and cold starts disagree by {split:.4} mm on mutual consistency, so the              result depends on where the solve began",
+            loaded.name
         );
     }
 
