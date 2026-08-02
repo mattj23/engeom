@@ -16,6 +16,7 @@ mod segment3;
 mod sphere3;
 mod swept_boundary3;
 mod unroll_transform;
+mod xyz_quat;
 mod xyzwpr;
 
 use parry3d_f64::na::UnitQuaternion;
@@ -43,6 +44,7 @@ pub use sphere3::Sphere3;
 use std::ops;
 pub use swept_boundary3::*;
 pub use unroll_transform::UnrollTransform;
+pub use xyz_quat::XyzQuat;
 pub use xyzwpr::XyzWpr;
 
 pub type Point3 = parry3d_f64::na::Point3<f64>;
