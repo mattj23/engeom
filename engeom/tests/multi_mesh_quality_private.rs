@@ -6,8 +6,9 @@
 //! detail, but its bulk shape is the best available source of truth, so it is what a candidate
 //! alignment gets measured against.
 //!
-//! This file currently establishes that the data resolves, that every mesh in it loads, and that
-//! the stored transforms place their scans where they claim to. The measurement machinery follows.
+//! This file currently establishes that the data resolves and loads, that the stored transforms
+//! place their scans where they claim to, and it builds and validates the frozen measurement set
+//! that every candidate alignment will be scored against. The scorer itself follows.
 
 #![cfg(all(feature = "private_tests", feature = "ply"))]
 
@@ -17,6 +18,7 @@ use crate::common::PathPair;
 use engeom::common::DistMode;
 use engeom::common::kd_tree::KdTreeSearch;
 use engeom::geom3::XyzQuat;
+use engeom::geom3::align3::{AlignOptions3, AlignParams3, points_to_surface3};
 use engeom::rayon::prelude::*;
 use engeom::{Iso3, KdTree3, Mesh3, Point3, Result, UnitVec3};
 use std::io::{Read, Write};
@@ -326,10 +328,24 @@ const COVERAGE_MAX_NORMAL_ANGLE: f64 = std::f64::consts::PI / 6.0;
 /// another.
 const COVERAGE_EDGE_MARGIN: f64 = 1.0;
 
+/// The fewest measurement points a scan may have on the reference mesh and still be fitted to it.
+///
+/// Six parameters need far fewer than this in principle; the bar is set high because a scan with
+/// only a handful of points on the reference has essentially no overlap with it, and a fit from
+/// that is not a floor worth quoting.
+const MIN_FIT_POINTS: usize = 100;
+
 /// The name of the frozen artifact within each sample folder.
 const BENCHMARK_FILE: &str = "benchmark.bin";
 
 const BENCHMARK_MAGIC: &[u8; 4] = b"EGMB";
+
+/// The artifact layout version.
+///
+/// A mismatch is refused outright rather than migrated. The artifact is cheap to regenerate and
+/// is only ever consumed by this file, so silently reading an older layout would buy nothing and
+/// risk misinterpreting the bytes as something they are not.
+const BENCHMARK_VERSION: u32 = 2;
 
 /// One frozen measurement point, in the coordinate frame of the scan it was sampled from.
 #[derive(Clone, Debug)]
@@ -340,8 +356,16 @@ struct BenchPoint {
     /// The scans this point should be measured against, frozen from the reference configuration.
     ///
     /// Empty is legitimate: a point in a region only one scan saw contributes nothing to mutual
-    /// consistency, but still counts toward reference fidelity.
+    /// consistency, but may still count toward reference fidelity.
     partners: Vec<u32>,
+
+    /// Whether this point lands on a part of `reference.ply` that the ATOS scanner actually
+    /// captured, frozen from the same reference configuration and by the same rules as `partners`.
+    ///
+    /// The reference mesh has its own holes and borders, and a point projecting past one of them
+    /// lands on the border and reports a small, meaningless deviation, exactly as it would against
+    /// another scan.
+    on_reference: bool,
 }
 
 /// The frozen measurement points belonging to one scan.
@@ -354,6 +378,18 @@ struct ScanBench {
     /// mesh has not changed underneath them. These are the tripwire for that.
     vertex_count: u32,
     face_count: u32,
+
+    /// The transform placing this scan on `reference.ply` by an individual six degree of freedom
+    /// best fit, unconstrained by any of the other scans.
+    ///
+    /// This is the floor: the closest this scan can possibly come to the reference, and therefore
+    /// the best any multi-mesh alignment could achieve on it. A joint alignment must additionally
+    /// satisfy mutual consistency, which this fit is free to ignore.
+    ///
+    /// It is a fixed property of the data rather than of any candidate, which is why it is frozen
+    /// here rather than recomputed. Storing the transform rather than a summary statistic is what
+    /// lets the floor be re-scored later as a candidate in its own right.
+    floor: Iso3,
 
     points: Vec<BenchPoint>,
 }
@@ -393,13 +429,16 @@ impl Benchmark {
 // Layout, all values little-endian, following the style of `engeom::io::write_mesh_binary`:
 //
 // - 4 bytes magic: `b"EGMB"`
+// - 1 x `u32`: layout version
 // - 4 x `f64`: spacing, max distance, max normal angle, edge margin
 // - 1 x `u32`: scan count
 // - per scan:
 //   - 1 x `u32`: byte length of the id, then that many bytes of UTF-8
 //   - 2 x `u32`: source mesh vertex count, face count
+//   - 7 x `f64`: the floor transform, in the field order of `XyzQuat`
 //   - 1 x `u32`: measurement point count
-//   - per point: 3 x `f32` position, 3 x `f32` normal, 1 x `u32` partner count, that many `u32`
+//   - per point: 3 x `f32` position, 3 x `f32` normal, 1 x `u8` reference coverage flag,
+//     1 x `u32` partner count, that many `u32`
 //
 // Positions are stored as `f32`. At the ~100 mm scale of these parts that is a quantization of
 // well under a hundredth of a micron, which is four orders of magnitude below the deviations being
@@ -407,6 +446,7 @@ impl Benchmark {
 
 fn write_benchmark<W: Write>(writer: &mut W, bench: &Benchmark) -> Result<()> {
     writer.write_all(BENCHMARK_MAGIC)?;
+    writer.write_all(&BENCHMARK_VERSION.to_le_bytes())?;
     for v in [
         bench.spacing,
         bench.max_distance,
@@ -423,6 +463,10 @@ fn write_benchmark<W: Write>(writer: &mut W, bench: &Benchmark) -> Result<()> {
         writer.write_all(&scan.vertex_count.to_le_bytes())?;
         writer.write_all(&scan.face_count.to_le_bytes())?;
 
+        for v in XyzQuat::from(&scan.floor).to_array() {
+            writer.write_all(&v.to_le_bytes())?;
+        }
+
         writer.write_all(&(scan.points.len() as u32).to_le_bytes())?;
         for p in scan.points.iter() {
             for v in [p.point.x, p.point.y, p.point.z] {
@@ -431,6 +475,7 @@ fn write_benchmark<W: Write>(writer: &mut W, bench: &Benchmark) -> Result<()> {
             for v in [p.normal.x, p.normal.y, p.normal.z] {
                 writer.write_all(&(v as f32).to_le_bytes())?;
             }
+            writer.write_all(&[u8::from(p.on_reference)])?;
             writer.write_all(&(p.partners.len() as u32).to_le_bytes())?;
             for j in p.partners.iter() {
                 writer.write_all(&j.to_le_bytes())?;
@@ -450,6 +495,15 @@ fn read_benchmark<R: Read>(reader: &mut R) -> Result<Benchmark> {
         return Err("Not a benchmark file: invalid magic bytes".into());
     }
 
+    let version = r.read_u32()?;
+    if version != BENCHMARK_VERSION {
+        return Err(format!(
+            "Benchmark file is layout version {version}, but this build expects \
+             {BENCHMARK_VERSION}; run the regenerate_benchmark_artifacts producer"
+        )
+        .into());
+    }
+
     let spacing = r.read_f64()?;
     let max_distance = r.read_f64()?;
     let max_normal_angle = r.read_f64()?;
@@ -462,6 +516,12 @@ fn read_benchmark<R: Read>(reader: &mut R) -> Result<Benchmark> {
         let id = String::from_utf8(r.read_slice(id_len)?.to_vec())?;
         let vertex_count = r.read_u32()?;
         let face_count = r.read_u32()?;
+
+        let mut floor = [0.0_f64; 7];
+        for v in floor.iter_mut() {
+            *v = r.read_f64()?;
+        }
+        let floor = Iso3::from(&XyzQuat::from(floor));
 
         let point_count = r.read_u32()? as usize;
         let mut points = Vec::with_capacity(point_count);
@@ -477,6 +537,8 @@ fn read_benchmark<R: Read>(reader: &mut R) -> Result<Benchmark> {
                 f64::from(r.read_f32()?),
             ));
 
+            let on_reference = r.read_bytes::<1>()?[0] != 0;
+
             let partner_count = r.read_u32()? as usize;
             let mut partners = Vec::with_capacity(partner_count);
             for _ in 0..partner_count {
@@ -487,6 +549,7 @@ fn read_benchmark<R: Read>(reader: &mut R) -> Result<Benchmark> {
                 point,
                 normal,
                 partners,
+                on_reference,
             });
         }
 
@@ -494,6 +557,7 @@ fn read_benchmark<R: Read>(reader: &mut R) -> Result<Benchmark> {
             id,
             vertex_count,
             face_count,
+            floor,
             points,
         });
     }
@@ -552,6 +616,87 @@ impl<'a> ByteReader<'a> {
 // The producer
 // ================================================================================================
 
+/// A kd-tree over a mesh's boundary vertices, or `None` if the mesh has no boundary at all.
+///
+/// Testing proximity to boundary vertices rather than to the boundary edges themselves is an
+/// approximation, but these meshes triangulate far finer than [`COVERAGE_EDGE_MARGIN`], so a point
+/// near an edge is always near one of that edge's endpoints.
+fn boundary_tree(mesh: &Mesh3) -> Option<KdTree3> {
+    let nav = mesh.compute_nav();
+    let verts = nav
+        .boundary_vertices(None)
+        .into_iter()
+        .map(|i| mesh.points()[i as usize])
+        .collect::<Vec<_>>();
+
+    if verts.is_empty() {
+        None
+    } else {
+        KdTree3::try_new(&verts).ok()
+    }
+}
+
+/// Decides whether a query point, expressed in `target`'s own frame, lands on a piece of surface
+/// that `target` genuinely captured.
+///
+/// All three gates matter, but for different reasons. The distance gate rejects a point floating
+/// over a hole; the normal gate rejects a match through the far side of a thin wall, where the
+/// geometry is close but facing the wrong way; the boundary gate rejects a point just past the
+/// edge of the target's coverage, which would otherwise project onto the border and report a
+/// meaningless deviation of nearly zero.
+fn is_covered(
+    target: &Mesh3,
+    boundary: Option<&KdTree3>,
+    query: &Point3,
+    normal: &engeom::Vector3,
+) -> bool {
+    let match_ = target.surface_closest_to(query);
+
+    if (query - match_.point()).norm() > COVERAGE_MAX_DISTANCE {
+        return false;
+    }
+    if normal.angle(&match_.normal()) > COVERAGE_MAX_NORMAL_ANGLE {
+        return false;
+    }
+
+    match boundary {
+        Some(tree) => tree.nearest_one(&match_.point()).1 >= COVERAGE_EDGE_MARGIN,
+        None => true,
+    }
+}
+
+/// Best fits one scan to the reference mesh on its own, with all six degrees of freedom free.
+///
+/// `start` is the pose the scan is already in, and the returned transform replaces it. The fit
+/// runs on the scan's own frozen measurement points, restricted to those the reference actually
+/// covers, so that the floor is measured on the same population as everything else.
+///
+/// Returns `None` when too few points land on the reference to determine six parameters.
+fn fit_to_reference(reference: &Mesh3, points: &[BenchPoint], start: &Iso3) -> Option<Iso3> {
+    let fit_points = points
+        .iter()
+        .filter(|p| p.on_reference)
+        .map(|p| start * p.point)
+        .collect::<Vec<_>>();
+
+    if fit_points.len() < MIN_FIT_POINTS {
+        return None;
+    }
+
+    // Rotating about the centroid rather than the world origin keeps the rotation and translation
+    // parameters on comparable scales, which matters here because the part sits well off the
+    // origin of the CAD frame.
+    let centroid = Point3::from(
+        fit_points.iter().map(|p| p.coords).sum::<engeom::Vector3>() / fit_points.len() as f64,
+    );
+
+    let params = AlignParams3::from_center(centroid, None);
+    let outcome =
+        points_to_surface3(&fit_points, reference, params, &AlignOptions3::default()).ok()?;
+
+    Some(outcome.alignment().full_transform() * start)
+}
+
 /// Builds the frozen measurement set for one sample.
 ///
 /// Coverage is decided in the reference configuration, which is the v0.2.16 alignment, and then
@@ -570,27 +715,10 @@ fn build_benchmark(case: &SampleCase) -> Result<Benchmark> {
         .map(|s| s.cad_align())
         .collect::<Result<Vec<_>>>()?;
 
-    // A kd-tree over each scan's boundary vertices, used to keep matches away from the edge of the
-    // scan they matched against. Testing proximity to boundary vertices rather than to the
-    // boundary edges themselves is an approximation, but these meshes trianglate far finer than
-    // the margin, so a point near an edge is always near one of its endpoints.
-    let boundaries = meshes
-        .par_iter()
-        .map(|mesh| {
-            let nav = mesh.compute_nav();
-            let verts = nav
-                .boundary_vertices(None)
-                .into_iter()
-                .map(|i| mesh.points()[i as usize])
-                .collect::<Vec<_>>();
+    let boundaries = meshes.par_iter().map(boundary_tree).collect::<Vec<_>>();
 
-            if verts.is_empty() {
-                None
-            } else {
-                KdTree3::try_new(&verts).ok()
-            }
-        })
-        .collect::<Vec<_>>();
+    let reference = case.reference()?;
+    let reference_boundary = boundary_tree(&reference);
 
     let samples = meshes
         .par_iter()
@@ -613,39 +741,47 @@ fn build_benchmark(case: &SampleCase) -> Result<Benchmark> {
                     .enumerate()
                     .filter_map(|(j, rel)| {
                         let rel = rel.as_ref()?;
-                        let q = rel * mp.point();
-                        let n = rel.rotation * mp.normal().into_inner();
-
-                        let match_ = meshes[j].surface_closest_to(&q);
-                        let dist = (q - match_.point()).norm();
-                        if dist > COVERAGE_MAX_DISTANCE {
-                            return None;
-                        }
-                        if n.angle(&match_.normal()) > COVERAGE_MAX_NORMAL_ANGLE {
-                            return None;
-                        }
-
-                        let tree = boundaries[j].as_ref()?;
-                        if tree.nearest_one(&match_.point()).1 < COVERAGE_EDGE_MARGIN {
-                            return None;
-                        }
-
-                        Some(j as u32)
+                        let covered = is_covered(
+                            &meshes[j],
+                            boundaries[j].as_ref(),
+                            &(rel * mp.point()),
+                            &(rel.rotation * mp.normal().into_inner()),
+                        );
+                        covered.then_some(j as u32)
                     })
                     .collect::<Vec<_>>();
+
+                // The reference mesh is already in the CAD frame, which is where the v0.2.16
+                // transforms put the scans, so no relative transform is needed beyond this scan's
+                // own.
+                let on_reference = is_covered(
+                    &reference,
+                    reference_boundary.as_ref(),
+                    &(transforms[i] * mp.point()),
+                    &(transforms[i].rotation * mp.normal().into_inner()),
+                );
 
                 BenchPoint {
                     point: mp.point(),
                     normal: mp.normal(),
                     partners,
+                    on_reference,
                 }
             })
             .collect::<Vec<_>>();
+
+        let floor = fit_to_reference(&reference, &points, &transforms[i]).ok_or_else(|| {
+            format!(
+                "Scan {} has too few points on the reference mesh to fit against it",
+                case.scans[i].id
+            )
+        })?;
 
         scans.push(ScanBench {
             id: case.scans[i].id.clone(),
             vertex_count: mesh.points().len() as u32,
             face_count: mesh.faces().len() as u32,
+            floor,
             points,
         });
     }
@@ -687,16 +823,50 @@ fn regenerate_benchmark_artifacts() -> Result<()> {
             .flat_map(|s| s.points.iter())
             .filter(|p| !p.partners.is_empty())
             .count();
+        let on_ref = bench
+            .scans
+            .iter()
+            .flat_map(|s| s.points.iter())
+            .filter(|p| p.on_reference)
+            .count();
 
         println!(
-            "{}: {} scans, {} points ({:.1}% covered), {} measured pairs, {:.1} MB",
+            "{}: {} scans, {} points ({:.1}% paired, {:.1}% on reference), {} pairs, {:.1} MB",
             case.name,
             bench.scans.len(),
             bench.point_count(),
             100.0 * covered as f64 / bench.point_count() as f64,
+            100.0 * on_ref as f64 / bench.point_count() as f64,
             bench.pair_count(),
             bytes as f64 / 1.0e6,
         );
+
+        // The per-scan floor: how close each scan gets to the ATOS mesh when fitted to it on its
+        // own, with all six degrees of freedom free.
+        //
+        // Deliberately not printed beside the scan's deviation under its `cad-align.json`
+        // transform. That comparison is not meaningful here, because the floor is a fit to
+        // `reference.ply` and `cad-align.json` is not: it is a fit to `cad.ply`, and
+        // `reference.ply` is separately a fit to `cad.ply`, so composing them leaves a rigid
+        // offset of the whole group. Putting the two numbers side by side would charge the
+        // alignment for that offset. See `diagnose_group_fit_to_reference`, which removes it
+        // first, and the scorer, which does so for every candidate.
+        let reference = case.reference()?;
+        for scan in bench.scans.iter() {
+            let pts = scan
+                .points
+                .iter()
+                .filter(|p| p.on_reference)
+                .map(|p| scan.floor * p.point)
+                .collect::<Vec<_>>();
+
+            println!(
+                "    {}: floor {:.4} mm over {} points",
+                scan.id,
+                median_abs_deviation(&reference, &pts),
+                pts.len(),
+            );
+        }
     }
 
     Ok(())
@@ -719,16 +889,20 @@ fn benchmark_format_round_trips() -> Result<()> {
                 id: "10001".to_string(),
                 vertex_count: 1234,
                 face_count: 2345,
+                floor: Iso3::translation(1.5, -2.5, 0.75)
+                    * Iso3::rotation(engeom::Vector3::new(0.1, -0.2, 0.3)),
                 points: vec![
                     BenchPoint {
                         point: Point3::new(1.0, 2.0, 3.0),
                         normal: UnitVec3::new_normalize(engeom::Vector3::new(1.0, 1.0, 0.0)),
                         partners: vec![1, 2],
+                        on_reference: true,
                     },
                     BenchPoint {
                         point: Point3::new(-4.5, 0.25, 9.75),
                         normal: UnitVec3::new_normalize(engeom::Vector3::new(0.0, 0.0, -1.0)),
                         partners: vec![],
+                        on_reference: false,
                     },
                 ],
             },
@@ -736,6 +910,7 @@ fn benchmark_format_round_trips() -> Result<()> {
                 id: "10002".to_string(),
                 vertex_count: 9,
                 face_count: 8,
+                floor: Iso3::identity(),
                 points: vec![],
             },
         ],
@@ -756,12 +931,14 @@ fn benchmark_format_round_trips() -> Result<()> {
         assert_eq!(a.vertex_count, b.vertex_count);
         assert_eq!(a.face_count, b.face_count);
         assert_eq!(a.points.len(), b.points.len());
+        assert!((a.floor.to_matrix() - b.floor.to_matrix()).amax() < 1e-12);
 
         for (p, q) in a.points.iter().zip(b.points.iter()) {
             // f32 storage, so the tolerance is the quantization rather than a solver epsilon.
             assert!((p.point - q.point).norm() < 1e-5);
             assert!((p.normal.into_inner() - q.normal.into_inner()).norm() < 1e-6);
             assert_eq!(p.partners, q.partners);
+            assert_eq!(p.on_reference, q.on_reference);
         }
     }
 
@@ -779,10 +956,12 @@ fn a_truncated_benchmark_file_is_rejected() -> Result<()> {
             id: "10001".to_string(),
             vertex_count: 1,
             face_count: 1,
+            floor: Iso3::identity(),
             points: vec![BenchPoint {
                 point: Point3::new(1.0, 2.0, 3.0),
                 normal: UnitVec3::new_normalize(engeom::Vector3::new(0.0, 0.0, 1.0)),
                 partners: vec![7],
+                on_reference: true,
             }],
         }],
     };
@@ -904,6 +1083,142 @@ fn benchmark_artifacts_match_their_meshes() -> Result<()> {
                 worst
             );
         }
+    }
+
+    Ok(())
+}
+
+/// Checks that the frozen floor transforms are what they claim to be.
+///
+/// The floor is an individual six degree of freedom fit of one scan to the reference, started from
+/// the v0.2.16 pose. Three things have to hold for it to be usable as a bar:
+///
+/// - it must be at least as close to the reference as the pose it started from, since it optimized
+///   exactly that and had the freedom to stay put
+/// - it must be a refinement rather than a relocation, or the fit has slid the scan onto the wrong
+///   part of the surface
+/// - it must be small in absolute terms, since a floor of hundreds of microns would mean the two
+///   scanners disagree so badly that nothing measured against the reference means very much
+#[test]
+fn floor_transforms_refine_their_starting_pose() -> Result<()> {
+    for case in find_cases()?.iter() {
+        let bench = read_benchmark(&mut std::fs::File::open(
+            case.dir.data().join(BENCHMARK_FILE),
+        )?)?;
+        let reference = case.reference()?;
+
+        for (scan, files) in bench.scans.iter().zip(case.scans.iter()) {
+            let start = files.cad_align()?;
+
+            let on_ref = scan
+                .points
+                .iter()
+                .filter(|p| p.on_reference)
+                .map(|p| p.point)
+                .collect::<Vec<_>>();
+
+            assert!(
+                on_ref.len() >= MIN_FIT_POINTS,
+                "Sample {} scan {} has only {} points on the reference",
+                case.name,
+                scan.id,
+                on_ref.len()
+            );
+
+            let moved = |iso: &Iso3| on_ref.iter().map(|p| iso * p).collect::<Vec<_>>();
+            let floor_dev = median_abs_deviation(&reference, &moved(&scan.floor));
+            let start_dev = median_abs_deviation(&reference, &moved(&start));
+
+            assert!(
+                floor_dev <= start_dev,
+                "Sample {} scan {}: the individual fit ({:.4} mm) is worse than the pose it \
+                 started from ({:.4} mm), which it was free to keep",
+                case.name,
+                scan.id,
+                floor_dev,
+                start_dev
+            );
+
+            assert!(
+                floor_dev < 0.1,
+                "Sample {} scan {}: the floor is {:.4} mm, far enough that the laser and ATOS \
+                 measurements of this part disagree more than any alignment could fix",
+                case.name,
+                scan.id,
+                floor_dev
+            );
+
+            // Measured as point motion rather than as a component of the transform, since
+            // `full_transform` is taken about a local origin and its translation part alone says
+            // little about how far the geometry actually travelled.
+            let shift = moved(&scan.floor)
+                .iter()
+                .zip(moved(&start).iter())
+                .fold(0.0_f64, |acc, (a, b)| acc.max((a - b).norm()));
+
+            assert!(
+                shift < 1.0,
+                "Sample {} scan {}: the individual fit moved the scan by up to {:.3} mm, which is \
+                 a relocation rather than a refinement of an already good pose",
+                case.name,
+                scan.id,
+                shift
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Diagnostic: how much of the v0.2.16 deviation against the reference is a single global rigid
+/// offset rather than registration error.
+///
+/// `reference.ply` was best fit to `cad.ply` in Zeiss Inspect, and the `cad-align.json` transforms
+/// are a fit of the scan group to `cad.ply`. Both are aligned to the CAD, but that does not make
+/// them aligned to each other: composing them carries the residual of *both* fits, and the leftover
+/// is a rigid motion of the whole group which no multi-mesh alignment could remove or is
+/// accountable for. Measuring it is the only way to know whether it matters.
+#[test]
+#[ignore]
+fn diagnose_group_fit_to_reference() -> Result<()> {
+    for case in find_cases()?.iter() {
+        let bench = read_benchmark(&mut std::fs::File::open(
+            case.dir.data().join(BENCHMARK_FILE),
+        )?)?;
+        let reference = case.reference()?;
+
+        let mut raw = Vec::new();
+        let mut floored = Vec::new();
+        for (scan, files) in bench.scans.iter().zip(case.scans.iter()) {
+            let start = files.cad_align()?;
+            for p in scan.points.iter().filter(|p| p.on_reference) {
+                raw.push(start * p.point);
+                floored.push(scan.floor * p.point);
+            }
+        }
+
+        let centroid =
+            Point3::from(raw.iter().map(|p| p.coords).sum::<engeom::Vector3>() / raw.len() as f64);
+        let params = AlignParams3::from_center(centroid, None);
+        let outcome = points_to_surface3(&raw, &reference, params, &AlignOptions3::default())?;
+        let correction = outcome.alignment().full_transform();
+
+        let fitted = raw.iter().map(|p| correction * p).collect::<Vec<_>>();
+        let shift = raw
+            .iter()
+            .zip(fitted.iter())
+            .fold(0.0_f64, |acc, (a, b)| acc.max((a - b).norm()));
+
+        println!(
+            "{}: v0.2.16 unfitted {:.4} mm -> group-fitted {:.4} mm | floor {:.4} mm | \
+             global correction moves points up to {:.4} mm | {:?}",
+            case.name,
+            median_abs_deviation(&reference, &raw),
+            median_abs_deviation(&reference, &fitted),
+            median_abs_deviation(&reference, &floored),
+            shift,
+            outcome.quality(),
+        );
     }
 
     Ok(())
