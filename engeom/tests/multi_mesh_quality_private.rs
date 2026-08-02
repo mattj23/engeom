@@ -1583,58 +1583,211 @@ fn a_global_rigid_motion_does_not_change_the_score() -> Result<()> {
     Ok(())
 }
 
-/// Prints what the frozen floor and the v0.2.16 transforms score on every sample.
+// ================================================================================================
+// Candidates and reporting
+// ================================================================================================
+
+/// One alignment to be graded: a label and one transform per scan.
 ///
-/// Ignored because it is the slow, informative run rather than a pass or fail. This is the first
-/// point at which the two metrics can be read side by side against the bar the data itself sets.
-#[test]
-#[ignore]
-fn report_baseline_scores() -> Result<()> {
-    for case in find_cases()?.iter() {
-        let loaded = LoadedCase::load(case)?;
+/// Everything the benchmark compares reduces to this. Where the transforms came from, whether from
+/// a file on disk or from a solver that just ran, is deliberately not represented.
+struct Candidate {
+    name: &'static str,
+    transforms: Vec<Iso3>,
+}
 
-        let floor = loaded.score(&loaded.floor())?;
-        let v0216 = loaded.score(&loaded.cad_align)?;
+/// A candidate that has been scored.
+struct Graded {
+    name: &'static str,
+    score: Score,
+}
 
-        println!("\n=== {} ===", loaded.name);
-        println!("  floor    consistency  {}", floor.consistency.row());
-        println!("  v0.2.16  consistency  {}", v0216.consistency.row());
-        println!("  floor    reference    {}", floor.reference.row());
-        println!("  v0.2.16  reference    {}", v0216.reference.row());
+/// The registration error implied by a candidate's RMS once the floor is removed in quadrature.
+///
+/// The floor and the candidate share the laser-to-ATOS measurement difference, and independent
+/// error sources add in quadrature, so subtracting that way is what isolates the part of the
+/// candidate's deviation that the alignment is actually responsible for. Returns `None` when the
+/// candidate is at or below the floor, where the subtraction has nothing left to describe.
+fn registration_component(candidate: &Stats, floor: &Stats) -> Option<f64> {
+    let excess = candidate.rms * candidate.rms - floor.rms * floor.rms;
+    (excess > 0.0).then(|| excess.sqrt())
+}
+
+fn print_table(name: &str, design: u64, graded: &[Graded], floor_index: usize) {
+    println!("\n=== {name}  [design {design:04x}] ===");
+    println!(
+        "  {:<10} | {:>7} {:>7} {:>6} | {:>7} {:>7} {:>7} {:>6} | {:>7}",
+        "candidate", "cons.med", "p95", "out", "ref.med", "p95", "rms", "out", "reg."
+    );
+
+    let floor = &graded[floor_index].score;
+    for g in graded.iter() {
+        let reg = match registration_component(&g.score.reference, &floor.reference) {
+            Some(v) => format!("{v:.4}"),
+            None => "  --   ".to_string(),
+        };
+
         println!(
-            "  v0.2.16 minus floor, per point on the reference: {}",
-            v0216.paired_reference_difference(&floor)?.row()
+            "  {:<10} | {:>7.4} {:>7.4} {:>6} | {:>7.4} {:>7.4} {:>7.4} {:>6} | {:>7}",
+            g.name,
+            g.score.consistency.median_abs,
+            g.score.consistency.p95,
+            g.score.consistency.beyond_gate,
+            g.score.reference.median_abs,
+            g.score.reference.p95,
+            g.score.reference.rms,
+            g.score.reference.beyond_gate,
+            reg,
+        );
+    }
+
+    // The full distributions below the summary. The tail percentiles are where a candidate that
+    // looks fine at the median gives itself away, so they are printed rather than folded into the
+    // table's fixed width.
+    for g in graded.iter() {
+        let t = g.score.gauge.translation.vector;
+        let (i, worst) = g
+            .score
+            .per_scan_reference
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.median_abs.total_cmp(&b.1.median_abs))
+            .expect("a scored candidate always has at least one scan");
+
+        println!(
+            "  {:<10} consistency  {}",
+            g.name,
+            g.score.consistency.row()
+        );
+        println!("  {:<10} reference    {}", g.name, g.score.reference.row());
+        println!(
+            "  {:<10} gauge |t| {:.4} mm, {:.4} deg | worst scan #{} {}",
+            g.name,
+            t.norm(),
+            g.score.gauge.rotation.angle().to_degrees(),
+            i,
+            worst.row(),
+        );
+    }
+}
+
+/// Identifies which part design a sample belongs to, by the bytes of its CAD mesh.
+///
+/// The four samples are two designs with two instances each. Grouping by this lets the paired
+/// samples be checked against each other: they are the same part measured by the same instruments,
+/// so a large split between them points at the data or the alignment rather than at the part.
+fn design_key(case: &SampleCase) -> Result<u64> {
+    use std::hash::{Hash, Hasher};
+
+    let bytes = std::fs::read(case.dir.data().join(CAD_FILE))?;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    Ok(hasher.finish())
+}
+
+/// Scores the two candidates that need no solver at all, and checks the properties that must hold
+/// of them.
+///
+/// These two set the scale everything else is read against. The floor is what the data itself
+/// permits, and v0.2.16 is what the previous generation of this library achieved. Neither can
+/// regress, because neither is computed by code under development: the floor is frozen in the
+/// artifact and v0.2.16 is a file on disk. What this test guards is the *harness*.
+#[test]
+fn baseline_candidates_score_within_their_bounds() -> Result<()> {
+    let cases = find_cases()?;
+    let mut floors_by_design: std::collections::HashMap<u64, Vec<(String, f64)>> =
+        std::collections::HashMap::new();
+
+    for case in cases.iter() {
+        let loaded = LoadedCase::load(case)?;
+        let design = design_key(case)?;
+
+        let candidates = [
+            Candidate {
+                name: "floor",
+                transforms: loaded.floor(),
+            },
+            Candidate {
+                name: "v0.2.16",
+                transforms: loaded.cad_align.clone(),
+            },
+        ];
+
+        let graded = candidates
+            .iter()
+            .map(|c| {
+                Ok(Graded {
+                    name: c.name,
+                    score: loaded.score(&c.transforms)?,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        print_table(&loaded.name, design, &graded, 0);
+
+        let floor = &graded[0].score;
+        let v0216 = &graded[1].score;
+
+        // The floor is an individual per-scan fit to the reference, so nothing constrained to move
+        // the scans as one body can beat it on that metric. A candidate that did would mean the
+        // harness is measuring the floor and the candidate differently.
+        assert!(
+            v0216.reference.median_abs >= floor.reference.median_abs,
+            "{}: v0.2.16 scored {:.4} mm against the reference, below the individual-fit floor at \
+             {:.4} mm, which is not achievable and indicates a harness fault rather than a good \
+             alignment",
+            loaded.name,
+            v0216.reference.median_abs,
+            floor.reference.median_abs
         );
 
-        // The gauge is reported rather than hidden. Two candidates needing very different global
-        // motions to sit on the reference is itself worth noticing, even when both end up scoring
-        // well afterwards.
-        for (label, s) in [("floor", &floor), ("v0.2.16", &v0216)] {
-            let t = s.gauge.translation.vector;
-            println!(
-                "  {label} gauge: translation ({:.4}, {:.4}, {:.4}), rotation {:.4} deg",
-                t.x,
-                t.y,
-                t.z,
-                s.gauge.rotation.angle().to_degrees()
+        for g in graded.iter() {
+            assert!(
+                g.score.consistency.count > 0 && g.score.reference.count > 0,
+                "{}: candidate {} was scored on no points at all",
+                loaded.name,
+                g.name
+            );
+
+            // The gauge removes the offset between the CAD frame and the reference. It was
+            // measured at well under a tenth of a millimetre, so anything approaching a whole
+            // millimetre means it is absorbing a real misplacement instead.
+            let t = g.score.gauge.translation.vector.norm();
+            let r = g.score.gauge.rotation.angle().to_degrees();
+            assert!(
+                t < 1.0 && r < 1.0,
+                "{}: candidate {} needed a gauge of {:.4} mm and {:.4} deg to sit on the \
+                 reference, which is a relocation rather than the removal of a frame offset",
+                loaded.name,
+                g.name,
+                t,
+                r
             );
         }
 
-        // The worst scan under each candidate, which is where a single bad scan hides inside an
-        // otherwise healthy aggregate.
-        for (label, s) in [("floor", &floor), ("v0.2.16", &v0216)] {
-            let (i, worst) = s
-                .per_scan_reference
-                .iter()
-                .enumerate()
-                .max_by(|a, b| a.1.median_abs.total_cmp(&b.1.median_abs))
-                .unwrap();
-            println!(
-                "  {label} worst scan {}: {}",
-                loaded.bench.scans[i].id,
-                worst.row()
-            );
+        floors_by_design
+            .entry(design)
+            .or_default()
+            .push((loaded.name.clone(), floor.reference.median_abs));
+    }
+
+    // Two samples of the same part design, measured on the same two instruments, must agree about
+    // how far apart those instruments are. This is the check that the floor is a property of the
+    // measurement rather than an artifact of one sample.
+    for (design, mut floors) in floors_by_design {
+        if floors.len() < 2 {
+            continue;
         }
+        floors.sort_by(|a, b| a.1.total_cmp(&b.1));
+
+        let (lo_name, lo) = &floors[0];
+        let (hi_name, hi) = &floors[floors.len() - 1];
+        assert!(
+            hi - lo < 0.005,
+            "design {design:04x}: the floor is {lo:.4} mm on {lo_name} but {hi:.4} mm on \
+             {hi_name}; two instances of the same part should not disagree this much about the \
+             difference between the two scanners"
+        );
     }
 
     Ok(())
