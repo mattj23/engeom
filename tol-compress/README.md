@@ -12,18 +12,18 @@ tol-compress = "0.1"
 ## Quick start
 
 ```rust
-use std::path::Path;
 use tol_compress::{Mesh3, mesh};
 
 fn main() -> Result<(), tol_compress::Error> {
     let points = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
     let faces = vec![[0u32, 1, 2]];
+    let path = std::env::temp_dir().join("bracket.tcmesh");
 
     // Every vertex is guaranteed to come back within one micron of where it went in.
     let mesh = Mesh3::new(points, faces).named("bracket");
-    mesh::write_one_file(Path::new("bracket.tcmesh"), &mesh, 1e-6)?;
+    mesh::write_one_file(&path, &mesh, 1e-6)?;
 
-    let back = mesh::read_one_file(Path::new("bracket.tcmesh"))?;
+    let back = mesh::read_one_file(&path)?;
     assert_eq!(back.name.as_deref(), Some("bracket"));
     Ok(())
 }

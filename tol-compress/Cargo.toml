@@ -12,9 +12,10 @@ repository = "https://github.com/mattj23/engeom"
 documentation = "https://docs.rs/tol-compress"
 keywords = ["compression", "mesh", "geometry", "metrology", "serialization"]
 categories = ["compression", "encoding", "science"]
-# Benchmark fixtures are for developing the format, not for using it. Keeping them out of the
-# published package means downloads stay small.
-exclude = ["tests/data/*"]
+
+# The PLY fixtures under `tests/data` are deliberately NOT excluded. They were only used for
+# developing the format, so it's tempting to try to leave them out, but `tests/real_fixtures.rs` 
+# ships either and then all of its tests fail. So...175KiB seems like the lesser of the two evils.
 
 [lib]
 # The unit-test harness is not a benchmark, and cargo would otherwise run it as one and reject

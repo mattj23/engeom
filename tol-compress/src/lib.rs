@@ -89,6 +89,12 @@ pub mod quantize;
 mod raw;
 pub mod reorder;
 
+/// Compiles and runs the README's examples as doctests, so the first thing a reader copies cannot
+/// silently rot. Not part of the public API and not rendered anywhere.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeExamples;
+
 /// Deliberately awkward test geometry, behind the non-default `corpus` feature.
 #[cfg(any(test, feature = "corpus"))]
 pub mod corpus;

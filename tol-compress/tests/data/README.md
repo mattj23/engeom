@@ -4,8 +4,8 @@ Real measured geometry, kept small and normalized to one simple layout so a hand
 load them without pulling in a PLY dependency. Both are `binary_little_endian 1.0` with exactly
 three `float` vertex properties (`x`, `y`, `z`) and triangular faces.
 
-These are excluded from the published crate (`exclude` in `Cargo.toml`); they are for developing
-the format, not for using it.
+These ship in the published crate, because `tests/real_fixtures.rs` ships and every test in it
+needs them. They are for developing the format, not for using it, so nothing in `src` reads them.
 
 | file | verts | faces | units | provenance |
 | --- | --: | --: | --- | --- |
