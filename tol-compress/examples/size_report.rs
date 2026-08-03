@@ -16,12 +16,16 @@
 //!   old header carried a 56 byte quaternion that the current one replaces with a single flag byte.
 //! - `vs f32` is uncompressed single-precision storage with `u32` indices, which is what the source
 //!   PLY files actually cost. It is the absolute anchor.
+//!
+//! The `file` column is the real container output, so `over` is what the framing costs on top of
+//! the raw blocks. Cases with faces go through the mesh container, point-only cases through the
+//! cloud container.
 
 #[path = "../tests/support/ply.rs"]
 mod ply;
 
 use tol_compress::corpus::{self, Case};
-use tol_compress::{write_indices, write_points};
+use tol_compress::{Cloud3, Mesh3, cloud, mesh, write_indices, write_points};
 
 fn main() {
     println!("# tol-compress size report\n");
@@ -72,9 +76,9 @@ fn main() {
 
 fn print_table(rows: &[(String, Case)]) {
     println!(
-        "| case | verts | faces | tol | coords | indices | total | B/vert | vs old | vs f32 |"
+        "| case | verts | faces | tol | coords | indices | file | over | B/vert | vs old | vs f32 |"
     );
-    println!("| --- | --: | --: | --: | --: | --: | --: | --: | --: | --: |");
+    println!("| --- | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: |");
 
     for (label, case) in rows {
         let Some(m) = measure(case) else {
@@ -90,20 +94,21 @@ fn print_table(rows: &[(String, Case)]) {
         let per_vertex = if case.points.is_empty() {
             0.0
         } else {
-            m.total() as f64 / case.points.len() as f64
+            m.file as f64 / case.points.len() as f64
         };
 
         println!(
-            "| {label} | {} | {} | {:.0e} | {} | {} | {} | {:.2} | {} | {} |",
+            "| {label} | {} | {} | {:.0e} | {} | {} | {} | {} | {:.2} | {} | {} |",
             case.points.len(),
             case.faces.len(),
             case.tol,
             m.coords,
             m.indices,
-            m.total(),
+            m.file,
+            m.file - m.total(),
             per_vertex,
-            percent(m.total(), m.old_total()),
-            percent(m.total(), m.f32_total()),
+            percent(m.file, m.old_total()),
+            percent(m.file, m.f32_total()),
         );
     }
 }
@@ -120,6 +125,8 @@ fn percent(actual: usize, baseline: usize) -> String {
 struct Measurement {
     coords: usize,
     indices: usize,
+    /// The real container output, framing included.
+    file: usize,
     old_coords: usize,
     old_indices: usize,
     f32_total: usize,
@@ -147,6 +154,20 @@ fn measure(case: &Case) -> Option<Measurement> {
     let limit = case.points.len() as u32;
     write_indices(&mut index_buf, &case.faces, limit).ok()?;
 
+    // Point-only cases have no business paying for an index block, so they go through the cloud
+    // container and the framing comparison stays honest.
+    let mut file_buf = Vec::new();
+    if case.faces.is_empty() {
+        cloud::write_one_to(&mut file_buf, &Cloud3::new(case.points.clone()), case.tol).ok()?;
+    } else {
+        mesh::write_one_to(
+            &mut file_buf,
+            &Mesh3::new(case.points.clone(), case.faces.clone()),
+            case.tol,
+        )
+        .ok()?;
+    }
+
     let extents = case.extents();
     let axis_tol = case.tol / 3f64.sqrt();
 
@@ -165,6 +186,7 @@ fn measure(case: &Case) -> Option<Measurement> {
     Some(Measurement {
         coords: coord_buf.len(),
         indices: index_buf.len(),
+        file: file_buf.len(),
         old_coords,
         old_indices,
         f32_total: case.points.len() * 3 * 4 + case.faces.len() * 3 * 4,

@@ -10,7 +10,7 @@
 //! arrive in groups. Entries may carry a name; order is meaningful either way. See
 //! [`find_by_name`].
 
-use crate::container::{self, Kind, item};
+use crate::container::{self, Kind, Named, item};
 use crate::error::{Error, Result};
 use crate::metadata::Metadata;
 use crate::points::{read_points, write_points};
@@ -64,16 +64,10 @@ impl<const N: usize> Polyline<N> {
     }
 }
 
-/// The first entry with the given name, if any.
-///
-/// The format permits duplicate names, because enforcing uniqueness is a caller's policy rather
-/// than a container's. This returns the first match; use an iterator directly when every match
-/// matters.
-pub fn find_by_name<'a, const N: usize>(
-    items: &'a [Polyline<N>],
-    name: &str,
-) -> Option<&'a Polyline<N>> {
-    items.iter().find(|p| p.name.as_deref() == Some(name))
+impl<const N: usize> Named for Polyline<N> {
+    fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
 }
 
 /// The container kind for a polyline of this dimension.
@@ -221,6 +215,7 @@ fn read_item<R: Read, const N: usize>(reader: &mut R) -> Result<Polyline<N>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::find_by_name;
     use crate::metadata::Value;
     use crate::testgen::Rng;
     use std::io::Cursor;

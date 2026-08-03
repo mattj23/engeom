@@ -17,7 +17,7 @@
 //! since bit widths are recorded per block, so a future API could give each item its own tolerance
 //! without a format change.
 
-use crate::container::{self, Kind, item};
+use crate::container::{self, Kind, Named, item};
 use crate::error::{Error, Result};
 use crate::indices::{read_indices, write_indices};
 use crate::metadata::Metadata;
@@ -61,6 +61,12 @@ impl Mesh3 {
     pub fn with_meta(mut self, key: impl Into<String>, value: impl Into<crate::Value>) -> Self {
         self.metadata.insert(key.into(), value.into());
         self
+    }
+}
+
+impl Named for Mesh3 {
+    fn name(&self) -> Option<&str> {
+        self.name.as_deref()
     }
 }
 

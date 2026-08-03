@@ -229,6 +229,20 @@ pub fn read_header<R: Read>(reader: &mut R, expected: Kind) -> Result<Header> {
     Ok(header)
 }
 
+/// An item that can be identified by name within a collection.
+pub trait Named {
+    /// The item's name, if it has one.
+    fn name(&self) -> Option<&str>;
+}
+
+/// The first item in a collection with the given name.
+///
+/// The format permits duplicate names, because enforcing uniqueness is a caller's policy rather
+/// than a container's. This returns the first match; iterate directly when every match matters.
+pub fn find_by_name<'a, T: Named>(items: &'a [T], name: &str) -> Option<&'a T> {
+    items.iter().find(|item| item.name() == Some(name))
+}
+
 /// The framing every item carries, whatever kind it is.
 ///
 /// Grouped rather than scattered because the three kind modules that consume it all write the same

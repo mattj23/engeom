@@ -17,6 +17,7 @@
 
 pub mod bits;
 pub mod bounds;
+pub mod cloud;
 pub mod container;
 pub mod error;
 pub mod indices;
@@ -35,7 +36,8 @@ pub mod corpus;
 pub mod testgen;
 
 pub use bounds::Bounds;
-pub use container::{Header, Kind, probe};
+pub use cloud::{Cloud, Cloud2, Cloud3};
+pub use container::{Header, Kind, Named, find_by_name, probe};
 pub use error::{Error, Result};
 pub use indices::{bits_for_count, read_indices, write_indices};
 pub use mesh::Mesh3;
