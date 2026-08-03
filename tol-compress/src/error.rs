@@ -33,6 +33,15 @@ pub enum Error {
     /// The count is reserved in the layout so attributes can be added without a version bump.
     UnsupportedAttributes(u8),
 
+    /// A single item was requested but the container holds a different number.
+    ///
+    /// Reading one item out of a many-item file discards the rest, so it is refused rather than
+    /// done silently.
+    NotASingleItem {
+        /// How many the container actually holds.
+        found: u32,
+    },
+
     /// The stream was structurally invalid. The payload names what was wrong.
     Malformed(&'static str),
 
@@ -64,6 +73,10 @@ impl fmt::Display for Error {
             Error::UnsupportedAttributes(n) => write!(
                 f,
                 "item declares {n} attribute blocks, which this format version cannot decode"
+            ),
+            Error::NotASingleItem { found } => write!(
+                f,
+                "expected a container holding exactly one item, found {found}"
             ),
             Error::Malformed(what) => write!(f, "malformed tol-compress stream: {what}"),
             Error::ToleranceNotRepresentable { range, tol } => write!(

@@ -114,6 +114,45 @@ fn real_meshes_beat_the_whole_byte_scheme() {
     }
 }
 
+/// The container path, exercised through an actual file rather than an in-memory buffer, because
+/// `BufReader`/`BufWriter` behaviour and path handling are part of what the container adds.
+#[test]
+fn real_meshes_round_trip_through_a_tcmesh_file() {
+    for (name, tol) in [("bunny.ply", 1e-5), ("scan-chunk.ply", 1e-3)] {
+        let mesh = ply::load(name);
+        let item = tol_compress::Mesh3::new(mesh.points.clone(), mesh.faces.clone())
+            .named(name.trim_end_matches(".ply"));
+
+        let path = std::env::temp_dir().join(format!(
+            "tol-compress-fixture-{}-{}.tcmesh",
+            std::process::id(),
+            name.trim_end_matches(".ply")
+        ));
+
+        tol_compress::mesh::write_one_file(&path, &item, tol).unwrap();
+        let back = tol_compress::mesh::read_one_file(&path).unwrap();
+        let size = std::fs::metadata(&path).unwrap().len();
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(back.name.as_deref(), Some(name.trim_end_matches(".ply")));
+        assert_eq!(back.faces, mesh.faces, "{name}: connectivity must be exact");
+        assert_eq!(back.points.len(), mesh.points.len(), "{name}");
+
+        for (i, (o, r)) in mesh.points.iter().zip(back.points.iter()).enumerate() {
+            let d = distance(o, r);
+            assert!(d <= tol, "{name}: vertex {i} recovered {d} away");
+        }
+
+        // Container framing is 11 bytes plus a per-item preamble, so it must be negligible against
+        // the geometry rather than a meaningful share of the file.
+        let raw = mesh.points.len() * 3 * 4 + mesh.faces.len() * 3 * 4;
+        assert!(
+            size < raw as u64,
+            "{name}: {size} bytes is no better than {raw} raw f32 bytes"
+        );
+    }
+}
+
 /// The previous whole-byte width rules, reproduced so the comparison is exact and needs no
 /// dependency on `engeom`.
 fn old_bytes_for_tol(range: f64, tol: f64) -> u32 {
