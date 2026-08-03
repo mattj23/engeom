@@ -14,3 +14,8 @@
 //! any value in their dataset, the storage algorithm can find a representation scheme that uses
 //! the smallest amount of bytes necessary to guarantee every position is recovered within that
 //! tolerance.
+
+pub mod bits;
+pub mod error;
+
+pub use error::{Error, Result};
