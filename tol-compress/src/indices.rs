@@ -18,7 +18,7 @@
 //! was told separately. The extra byte buys the guarantee that an encoder and decoder cannot
 //! silently disagree about how to parse the payload.
 
-use crate::bits::{BitReader, BitWriter};
+use crate::bits::{BitReader, BitWriter, read_payload};
 use crate::error::{Error, Result};
 use crate::raw::{MAX_PREALLOC, read_u8, read_u32, write_u8, write_u32};
 use std::io::{Read, Write};
@@ -132,7 +132,12 @@ pub fn read_indices<R: Read, const N: usize>(
 
     let mut out: Vec<[u32; N]> = Vec::with_capacity(count.min(MAX_PREALLOC));
 
-    let mut br = BitReader::new(&mut *reader);
+    // The reader must not read past the payload, because a byte-oriented header follows it. The
+    // width, arity and count fully determine how long it is.
+    let payload = (count as u64 * N as u64 * u64::from(bits)).div_ceil(8) as usize;
+
+    let bytes = read_payload(reader, payload)?;
+    let mut br = BitReader::new(&bytes);
     for _ in 0..count {
         let mut simplex = [0u32; N];
         for slot in simplex.iter_mut() {
@@ -146,7 +151,7 @@ pub fn read_indices<R: Read, const N: usize>(
         }
         out.push(simplex);
     }
-    br.align();
+    br.finish()?;
 
     Ok(out)
 }

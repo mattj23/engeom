@@ -27,7 +27,7 @@
 //! axis is therefore given `tol / sqrt(N)`, so that `N` independent per-axis errors at their worst
 //! combine in quadrature to exactly `tol`.
 
-use crate::bits::{BitReader, BitWriter};
+use crate::bits::{BitReader, BitWriter, read_payload};
 use crate::bounds::Bounds;
 use crate::error::{Error, Result};
 use crate::quantize::Quantizer;
@@ -175,7 +175,13 @@ fn read_partition<R: Read, const N: usize>(reader: &mut R, out: &mut Vec<[f64; N
 
     out.reserve(count.min(MAX_PREALLOC));
 
-    let mut br = BitReader::new(&mut *reader);
+    // The reader must not read past the payload, because a byte-oriented header follows it. The
+    // widths and the count fully determine how long it is.
+    let per_point: u64 = quants.iter().map(|q| u64::from(q.bits())).sum();
+    let payload = (count as u64 * per_point).div_ceil(8) as usize;
+
+    let bytes = read_payload(reader, payload)?;
+    let mut br = BitReader::new(&bytes);
     for _ in 0..count {
         let mut p = [0.0f64; N];
         for (i, q) in quants.iter().enumerate() {
@@ -183,7 +189,7 @@ fn read_partition<R: Read, const N: usize>(reader: &mut R, out: &mut Vec<[f64; N
         }
         out.push(p);
     }
-    br.align();
+    br.finish()?;
 
     Ok(())
 }

@@ -199,7 +199,7 @@ fn bits(c: &mut Criterion) {
 
         group.bench_function(format!("read/{width}"), |b| {
             b.iter(|| {
-                let mut r = BitReader::new(Cursor::new(black_box(&buf)));
+                let mut r = BitReader::new(black_box(&buf));
                 let mut acc = 0u64;
                 for _ in 0..COUNT {
                     acc = acc.wrapping_add(r.read_bits(width).unwrap());
