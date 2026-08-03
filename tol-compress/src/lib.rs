@@ -21,7 +21,9 @@ pub mod container;
 pub mod error;
 pub mod indices;
 pub mod mesh;
+pub mod metadata;
 pub mod points;
+pub mod polyline;
 pub mod quantize;
 mod raw;
 
@@ -37,5 +39,7 @@ pub use container::{Header, Kind, probe};
 pub use error::{Error, Result};
 pub use indices::{bits_for_count, read_indices, write_indices};
 pub use mesh::Mesh3;
+pub use metadata::{Metadata, Value};
 pub use points::{read_points, write_points};
+pub use polyline::{Polyline, Polyline2, Polyline3};
 pub use quantize::{Quantizer, bits_for_tol};

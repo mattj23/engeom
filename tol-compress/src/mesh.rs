@@ -20,6 +20,7 @@
 use crate::container::{self, Kind, item};
 use crate::error::{Error, Result};
 use crate::indices::{read_indices, write_indices};
+use crate::metadata::Metadata;
 use crate::points::{read_points, write_points};
 use crate::raw::MAX_PREALLOC;
 use std::fs::File;
@@ -35,6 +36,8 @@ pub struct Mesh3 {
     pub points: Vec<[f64; 3]>,
     /// Triangles, as indices into `points`.
     pub faces: Vec<[u32; 3]>,
+    /// Caller metadata, empty when the mesh carries none. Stored, never interpreted.
+    pub metadata: Metadata,
 }
 
 impl Mesh3 {
@@ -44,12 +47,19 @@ impl Mesh3 {
             name: None,
             points,
             faces,
+            metadata: Metadata::new(),
         }
     }
 
     /// The same mesh carrying a name.
     pub fn named(mut self, name: impl Into<String>) -> Self {
         self.name = Some(name.into());
+        self
+    }
+
+    /// The same mesh carrying one metadata entry.
+    pub fn with_meta(mut self, key: impl Into<String>, value: impl Into<crate::Value>) -> Self {
+        self.metadata.insert(key.into(), value.into());
         self
     }
 }
@@ -61,9 +71,19 @@ impl Mesh3 {
 /// [`Error::ToleranceNotRepresentable`] if any axis is too wide to meet `tol`, and
 /// [`Error::Malformed`] for a non-finite coordinate or a face pointing past the vertex array.
 pub fn write_to<W: Write>(writer: &mut W, meshes: &[Mesh3], tol: f64) -> Result<()> {
+    write_to_with_meta(writer, meshes, tol, &Metadata::new())
+}
+
+/// Write a collection of meshes with file-level metadata attached. See [`write_to`].
+pub fn write_to_with_meta<W: Write>(
+    writer: &mut W,
+    meshes: &[Mesh3],
+    tol: f64,
+    file_metadata: &Metadata,
+) -> Result<()> {
     let count = u32::try_from(meshes.len())
         .map_err(|_| Error::Malformed("container holds more items than a u32 can count"))?;
-    container::write_header(writer, Kind::Mesh3, count)?;
+    container::write_header(writer, Kind::Mesh3, count, file_metadata)?;
 
     for mesh in meshes {
         write_item(writer, mesh, tol)?;
@@ -133,14 +153,7 @@ pub fn read_one_file(path: &Path) -> Result<Mesh3> {
 }
 
 fn write_item<W: Write>(writer: &mut W, mesh: &Mesh3, tol: f64) -> Result<()> {
-    let flags = if mesh.name.is_some() {
-        item::HAS_NAME
-    } else {
-        0
-    };
-    item::write_flags(writer, flags)?;
-    item::write_name(writer, mesh.name.as_deref())?;
-    item::write_attribute_count(writer)?;
+    item::write_preamble(writer, mesh.name.as_deref(), &mesh.metadata, false)?;
 
     write_points(writer, &mesh.points, tol)?;
 
@@ -154,15 +167,7 @@ fn write_item<W: Write>(writer: &mut W, mesh: &Mesh3, tol: f64) -> Result<()> {
 }
 
 fn read_item<R: Read>(reader: &mut R) -> Result<Mesh3> {
-    let flags = item::read_flags(reader)?;
-    if flags & !item::HAS_NAME != 0 {
-        return Err(Error::Malformed(
-            "mesh item sets flags that only apply to polylines",
-        ));
-    }
-
-    let name = item::read_name(reader, flags)?;
-    item::read_attribute_count(reader)?;
+    let preamble = item::read_preamble(reader, false)?;
 
     let points: Vec<[f64; 3]> = read_points(reader)?;
     let limit = u32::try_from(points.len())
@@ -170,9 +175,10 @@ fn read_item<R: Read>(reader: &mut R) -> Result<Mesh3> {
     let faces = read_indices(reader, limit)?;
 
     Ok(Mesh3 {
-        name,
+        name: preamble.name,
         points,
         faces,
+        metadata: preamble.metadata,
     })
 }
 
@@ -278,7 +284,7 @@ mod tests {
         let mut buf = Vec::new();
         write_to(&mut buf, &[], 1e-3).unwrap();
 
-        assert_eq!(buf.len(), 11, "an empty collection is just a header");
+        assert_eq!(buf.len(), 12, "an empty collection is just a header");
         assert!(read_from(&mut Cursor::new(&buf)).unwrap().is_empty());
     }
 
@@ -358,7 +364,7 @@ mod tests {
     #[test]
     fn a_different_kind_is_rejected() {
         let mut buf = Vec::new();
-        container::write_header(&mut buf, Kind::Cloud3, 0).unwrap();
+        container::write_header(&mut buf, Kind::Cloud3, 0, &Metadata::new()).unwrap();
 
         assert!(matches!(
             read_from(&mut Cursor::new(&buf)),
@@ -374,8 +380,8 @@ mod tests {
         let mut buf = Vec::new();
         write_one_to(&mut buf, &mesh, 1e-3).unwrap();
 
-        // The flag byte is the first thing after the 11 byte header.
-        buf[11] |= item::CLOSED;
+        // The flag byte is the first thing after the 12 byte header.
+        buf[12] |= item::CLOSED;
 
         assert!(matches!(
             read_one_from(&mut Cursor::new(&buf)),
@@ -402,7 +408,7 @@ mod tests {
     #[test]
     fn an_absurd_item_count_does_not_allocate() {
         let mut buf = Vec::new();
-        container::write_header(&mut buf, Kind::Mesh3, u32::MAX).unwrap();
+        container::write_header(&mut buf, Kind::Mesh3, u32::MAX, &Metadata::new()).unwrap();
 
         assert!(
             read_from(&mut Cursor::new(&buf)).is_err(),

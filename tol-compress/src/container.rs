@@ -12,30 +12,40 @@
 //! # Layout
 //!
 //! ```text
-//! container header (11 bytes)
-//!   4 bytes  magic "TOLC"
-//!   u8       format version
-//!   u8       kind
-//!   u8       compression, always 0, reserved
-//!   u32      item count
+//! container header (12 bytes, plus metadata if present)
+//!   4 bytes    magic "TOLC"
+//!   u8         format version
+//!   u8         kind
+//!   u8         compression, always 0, reserved
+//!   u8         file flags: bit0 has metadata
+//!   u32        item count
+//!   [metadata] if the flag is set
 //!
-//! per item, in kind-specific order:
-//!   u8       flags
-//!   [f64]    chord tolerance, if the flag is set
-//!   [name]   u32 byte length then UTF-8, if the flag is set
-//!   u8       attribute block count, always 0, reserved
-//!   ...      the kind's geometry blocks
+//! per item:
+//!   u8         item flags: bit0 closed (polylines), bit1 has name, bit2 has metadata
+//!   [metadata] if the flag is set
+//!   [name]     u32 byte length then UTF-8, if the flag is set
+//!   u8         attribute block count, always 0, reserved
+//!   ...        the kind's geometry blocks
 //! ```
 //!
 //! Two fields are reserved and rejected if nonzero: `compression` and the per-item attribute
 //! count. Both cost one byte and let a later version add the feature without a version bump, which
 //! matters because files written once should never need rewriting.
 //!
+//! # Metadata rather than named fields
+//!
+//! Anything a caller wants to record *about* the geometry goes in a [`crate::metadata::Metadata`]
+//! map, at file level or per item. Nothing domain-specific gets a flag bit of its own, so a caller
+//! who does not need chord tolerances or scanner serials pays nothing for them. An absent map
+//! costs zero bytes.
+//!
 //! Kind records the dimension even though the points block records it too. The kind byte is what
 //! lets [`probe`] identify a file without parsing any geometry, and the readers check that the two
 //! agree.
 
 use crate::error::{Error, Result};
+use crate::metadata::{Metadata, read_metadata, write_metadata};
 use crate::raw::{read_u8, read_u32, write_u8, write_u32};
 use std::io::{Read, Write};
 
@@ -109,7 +119,7 @@ impl Kind {
 }
 
 /// What a container header says about the file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Header {
     /// Format version the file was written at.
     pub version: u8,
@@ -117,15 +127,42 @@ pub struct Header {
     pub kind: Kind,
     /// How many items follow.
     pub count: u32,
+    /// File-level metadata, empty when the file carries none.
+    pub metadata: Metadata,
+}
+
+/// File-level flag bits.
+mod file_flags {
+    /// A metadata map follows the item count.
+    pub const HAS_METADATA: u8 = 1 << 0;
+    /// Every bit this version understands.
+    pub const KNOWN: u8 = HAS_METADATA;
 }
 
 /// Write a container header.
-pub fn write_header<W: Write>(writer: &mut W, kind: Kind, count: u32) -> Result<()> {
+pub fn write_header<W: Write>(
+    writer: &mut W,
+    kind: Kind,
+    count: u32,
+    metadata: &Metadata,
+) -> Result<()> {
     writer.write_all(&MAGIC)?;
     write_u8(writer, VERSION)?;
     write_u8(writer, kind.as_byte())?;
     write_u8(writer, 0)?;
+
+    let flags = if metadata.is_empty() {
+        0
+    } else {
+        file_flags::HAS_METADATA
+    };
+    write_u8(writer, flags)?;
     write_u32(writer, count)?;
+
+    if !metadata.is_empty() {
+        write_metadata(writer, metadata)?;
+    }
+
     Ok(())
 }
 
@@ -156,12 +193,24 @@ pub fn probe<R: Read>(reader: &mut R) -> Result<Header> {
         return Err(Error::UnsupportedCompression(compression));
     }
 
+    let flags = read_u8(reader)?;
+    if flags & !file_flags::KNOWN != 0 {
+        return Err(Error::Malformed("file sets unknown flag bits"));
+    }
+
     let count = read_u32(reader)?;
+
+    let metadata = if flags & file_flags::HAS_METADATA != 0 {
+        read_metadata(reader)?
+    } else {
+        Metadata::new()
+    };
 
     Ok(Header {
         version,
         kind,
         count,
+        metadata,
     })
 }
 
@@ -202,10 +251,79 @@ pub(crate) mod item {
     pub const CLOSED: u8 = 1 << 0;
     /// A name follows.
     pub const HAS_NAME: u8 = 1 << 1;
-    /// A chord tolerance follows. Meaningless for other kinds.
-    pub const HAS_CHORD_TOL: u8 = 1 << 2;
+    /// A metadata map follows.
+    pub const HAS_METADATA: u8 = 1 << 2;
     /// Every flag bit this version understands.
-    pub const KNOWN_FLAGS: u8 = CLOSED | HAS_NAME | HAS_CHORD_TOL;
+    pub const KNOWN_FLAGS: u8 = CLOSED | HAS_NAME | HAS_METADATA;
+
+    /// Everything an item carries before its geometry.
+    #[derive(Debug, Default)]
+    pub struct Preamble {
+        /// Optional identifier.
+        pub name: Option<String>,
+        /// Optional metadata, empty when absent.
+        pub metadata: Metadata,
+        /// Whether the polyline closes. Always false for kinds that have no such notion.
+        pub closed: bool,
+    }
+
+    /// Write an item's preamble: flags, metadata, name, and the reserved attribute count.
+    ///
+    /// Every kind writes this, in this order. Centralized because a divergence between kinds would
+    /// be a format bug rather than a local one.
+    pub fn write_preamble<W: Write>(
+        writer: &mut W,
+        name: Option<&str>,
+        metadata: &Metadata,
+        closed: bool,
+    ) -> Result<()> {
+        let mut flags = 0u8;
+        if closed {
+            flags |= CLOSED;
+        }
+        if name.is_some() {
+            flags |= HAS_NAME;
+        }
+        if !metadata.is_empty() {
+            flags |= HAS_METADATA;
+        }
+
+        write_flags(writer, flags)?;
+        if !metadata.is_empty() {
+            write_metadata(writer, metadata)?;
+        }
+        write_name(writer, name)?;
+        write_attribute_count(writer)?;
+
+        Ok(())
+    }
+
+    /// Read an item's preamble.
+    ///
+    /// `closable` is false for kinds with no notion of closure, which then reject the flag rather
+    /// than ignoring it.
+    pub fn read_preamble<R: Read>(reader: &mut R, closable: bool) -> Result<Preamble> {
+        let flags = read_flags(reader)?;
+        if !closable && flags & CLOSED != 0 {
+            return Err(Error::Malformed(
+                "item sets the closed flag, which only applies to polylines",
+            ));
+        }
+
+        let metadata = if flags & HAS_METADATA != 0 {
+            read_metadata(reader)?
+        } else {
+            Metadata::new()
+        };
+        let name = read_name(reader, flags)?;
+        read_attribute_count(reader)?;
+
+        Ok(Preamble {
+            name,
+            metadata,
+            closed: flags & CLOSED != 0,
+        })
+    }
 
     /// Write an item's flag byte.
     pub fn write_flags<W: Write>(writer: &mut W, flags: u8) -> Result<()> {
@@ -281,6 +399,7 @@ pub(crate) mod item {
 mod tests {
     use super::item::*;
     use super::*;
+    use crate::metadata::Value;
     use std::io::Cursor;
 
     const ALL_KINDS: [Kind; 5] = [
@@ -296,8 +415,8 @@ mod tests {
         for kind in ALL_KINDS {
             for count in [0u32, 1, 12, u32::MAX] {
                 let mut buf = Vec::new();
-                write_header(&mut buf, kind, count).unwrap();
-                assert_eq!(buf.len(), 11, "{kind:?}");
+                write_header(&mut buf, kind, count, &Metadata::new()).unwrap();
+                assert_eq!(buf.len(), 12, "{kind:?}");
 
                 let header = read_header(&mut Cursor::new(&buf), kind).unwrap();
                 assert_eq!(header.version, VERSION);
@@ -338,7 +457,7 @@ mod tests {
     #[test]
     fn probe_identifies_a_file_without_being_told_the_kind() {
         let mut buf = Vec::new();
-        write_header(&mut buf, Kind::Polyline2, 7).unwrap();
+        write_header(&mut buf, Kind::Polyline2, 7, &Metadata::new()).unwrap();
 
         let header = probe(&mut Cursor::new(&buf)).unwrap();
         assert_eq!(header.kind, Kind::Polyline2);
@@ -348,7 +467,7 @@ mod tests {
     #[test]
     fn wrong_magic_is_rejected() {
         let mut buf = Vec::new();
-        write_header(&mut buf, Kind::Mesh3, 1).unwrap();
+        write_header(&mut buf, Kind::Mesh3, 1, &Metadata::new()).unwrap();
         buf[0] = b'X';
 
         assert!(matches!(
@@ -360,7 +479,7 @@ mod tests {
     #[test]
     fn a_future_version_is_rejected() {
         let mut buf = Vec::new();
-        write_header(&mut buf, Kind::Mesh3, 1).unwrap();
+        write_header(&mut buf, Kind::Mesh3, 1, &Metadata::new()).unwrap();
         buf[4] = VERSION + 1;
 
         assert!(matches!(
@@ -372,7 +491,7 @@ mod tests {
     #[test]
     fn an_unknown_kind_is_rejected() {
         let mut buf = Vec::new();
-        write_header(&mut buf, Kind::Mesh3, 1).unwrap();
+        write_header(&mut buf, Kind::Mesh3, 1, &Metadata::new()).unwrap();
         buf[5] = 99;
 
         assert!(matches!(
@@ -386,7 +505,7 @@ mod tests {
     #[test]
     fn a_declared_compression_is_refused_rather_than_ignored() {
         let mut buf = Vec::new();
-        write_header(&mut buf, Kind::Mesh3, 1).unwrap();
+        write_header(&mut buf, Kind::Mesh3, 1, &Metadata::new()).unwrap();
         buf[6] = 1;
 
         assert!(matches!(
@@ -398,7 +517,7 @@ mod tests {
     #[test]
     fn asking_for_the_wrong_kind_is_rejected() {
         let mut buf = Vec::new();
-        write_header(&mut buf, Kind::Cloud3, 1).unwrap();
+        write_header(&mut buf, Kind::Cloud3, 1, &Metadata::new()).unwrap();
 
         assert!(matches!(
             read_header(&mut Cursor::new(&buf), Kind::Mesh3),
@@ -409,7 +528,7 @@ mod tests {
     #[test]
     fn truncation_at_every_offset_is_an_error() {
         let mut buf = Vec::new();
-        write_header(&mut buf, Kind::Mesh3, 3).unwrap();
+        write_header(&mut buf, Kind::Mesh3, 3, &Metadata::new()).unwrap();
 
         for cut in 0..buf.len() {
             assert!(
@@ -497,6 +616,84 @@ mod tests {
         let f = read_flags(&mut cursor).unwrap();
         assert!(matches!(
             read_name(&mut cursor, f),
+            Err(Error::Malformed(_))
+        ));
+    }
+
+    #[test]
+    fn file_level_metadata_round_trips() {
+        let mut meta = Metadata::new();
+        meta.insert("units".into(), "mm".into());
+        meta.insert("machine.id".into(), Value::I64(42));
+
+        let mut buf = Vec::new();
+        write_header(&mut buf, Kind::Mesh3, 3, &meta).unwrap();
+
+        let header = probe(&mut Cursor::new(&buf)).unwrap();
+        assert_eq!(header.metadata, meta);
+        assert_eq!(header.count, 3);
+    }
+
+    /// Absent metadata must cost nothing, so a caller who does not use it pays no bytes.
+    #[test]
+    fn absent_file_metadata_costs_nothing() {
+        let mut bare = Vec::new();
+        write_header(&mut bare, Kind::Mesh3, 1, &Metadata::new()).unwrap();
+        assert_eq!(bare.len(), 12);
+
+        let mut meta = Metadata::new();
+        meta.insert("k".into(), Value::Bool(true));
+        let mut tagged = Vec::new();
+        write_header(&mut tagged, Kind::Mesh3, 1, &meta).unwrap();
+        assert!(tagged.len() > bare.len());
+    }
+
+    #[test]
+    fn unknown_file_flag_bits_are_rejected() {
+        let mut buf = Vec::new();
+        write_header(&mut buf, Kind::Mesh3, 1, &Metadata::new()).unwrap();
+        buf[7] = 1 << 6;
+
+        assert!(matches!(
+            probe(&mut Cursor::new(&buf)),
+            Err(Error::Malformed(_))
+        ));
+    }
+
+    #[test]
+    fn an_item_preamble_round_trips() {
+        let mut meta = Metadata::new();
+        meta.insert("engeom.chord_tol".into(), Value::F64(1e-4));
+
+        for (name, closed) in [
+            (None, false),
+            (Some("outer"), true),
+            (Some(""), false),
+            (None, true),
+        ] {
+            let mut buf = Vec::new();
+            write_preamble(&mut buf, name, &meta, closed).unwrap();
+
+            let mut cursor = Cursor::new(&buf);
+            let back = read_preamble(&mut cursor, true).unwrap();
+
+            assert_eq!(back.name.as_deref(), name);
+            assert_eq!(back.closed, closed);
+            assert_eq!(back.metadata, meta);
+            assert_eq!(cursor.position() as usize, buf.len());
+        }
+    }
+
+    /// Kinds with no notion of closure reject the flag rather than ignoring it, so a mesh cannot
+    /// quietly carry a bit that means nothing for it.
+    #[test]
+    fn a_closed_flag_is_refused_where_it_makes_no_sense() {
+        let mut buf = Vec::new();
+        write_preamble(&mut buf, None, &Metadata::new(), true).unwrap();
+
+        assert!(read_preamble(&mut Cursor::new(&buf), true).is_ok());
+        assert!(matches!(
+            read_preamble(&mut Cursor::new(&buf), false),
             Err(Error::Malformed(_))
         ));
     }
