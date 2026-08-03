@@ -1,0 +1,16 @@
+//! Tolerance-bounded compression of spatial coordinate data.
+//!
+//! This crate stores spatial coordinates using a practical tolerance-compressed method, which
+//! takes advantage of two specific features of real world measurement data:
+//!
+//! 1. Real world measurement systems have known precisions below which differences in position
+//!    do not represent meaningful information, and users of measurement data have knowledge about
+//!    where increasingly small differences in values cease to be relevant to their use case.
+//! 2. Values produced by the measurement of physical objects rarely span more than a few orders
+//!    of magnitude more than the smallest meaningful precision for the measurement system and/or
+//!    the application.
+//!
+//! If a user can supply a tolerance that represents the largest acceptable round-trip accuracy of
+//! any value in their dataset, the storage algorithm can find a representation scheme that uses
+//! the smallest amount of bytes necessary to guarantee every position is recovered within that
+//! tolerance.
