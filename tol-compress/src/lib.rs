@@ -16,6 +16,10 @@
 //! tolerance.
 
 pub mod bits;
+pub mod bounds;
 pub mod error;
+pub mod quantize;
 
+pub use bounds::Bounds;
 pub use error::{Error, Result};
+pub use quantize::{Quantizer, bits_for_tol};
