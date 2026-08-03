@@ -168,7 +168,23 @@ pub fn write_header<W: Write>(
 
 /// Read a container header without caring what kind it turns out to be.
 ///
-/// This is the cheap identification path: eleven bytes, no geometry touched.
+/// This is the cheap identification path: eleven bytes, no geometry touched. Use it to decide which
+/// reader a file wants, rather than guessing from its extension.
+///
+/// ```
+/// use tol_compress::{Kind, Polyline3, polyline, probe};
+///
+/// let mut buf = Vec::new();
+/// let lines = [Polyline3::new(vec![[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]], false)];
+/// polyline::write_to(&mut buf, &lines, 1e-4)?;
+///
+/// let header = probe(&mut buf.as_slice())?;
+/// assert_eq!(header.kind, Kind::Polyline3);
+/// assert_eq!(header.kind.dimension(), 3);
+/// assert_eq!(header.kind.extension(), "tccurve3");
+/// assert_eq!(header.count, 1);
+/// # Ok::<(), tol_compress::Error>(())
+/// ```
 ///
 /// # Errors
 ///

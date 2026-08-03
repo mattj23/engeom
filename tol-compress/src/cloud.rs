@@ -3,11 +3,26 @@
 //! The simplest container there is: a points block and a preamble. No connectivity, no ordering
 //! guarantee beyond the one the caller supplied, nothing else.
 //!
-//! Point order *is* preserved, and once increment 5 introduces spatial reordering that will stop
-//! being true unless a caller asks for it.
+//! Point order *is* preserved. Unlike [`crate::mesh`], which renumbers vertices to make its
+//! indices compress, there is no connectivity here to compress against, so nothing is gained by
+//! moving points around and they are left where the caller put them.
 //!
 //! Like every container in this crate, a cloud file is an ordered collection, so several scans or
 //! several passes can live in one file. See [`crate::find_by_name`].
+//!
+//! ```
+//! use tol_compress::{Cloud3, cloud};
+//!
+//! let scan = Cloud3::new(vec![[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]).named("pass 1");
+//!
+//! let mut buf = Vec::new();
+//! cloud::write_one_to(&mut buf, &scan, 1e-4)?;
+//!
+//! let back: Cloud3 = cloud::read_one_from(&mut buf.as_slice())?;
+//! assert_eq!(back.name.as_deref(), Some("pass 1"));
+//! assert_eq!(back.points.len(), 2);
+//! # Ok::<(), tol_compress::Error>(())
+//! ```
 
 use crate::container::{self, Kind, Named, item};
 use crate::error::{Error, Result};

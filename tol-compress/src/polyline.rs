@@ -8,7 +8,25 @@
 //!
 //! A polyline file is an ordered collection, and cross sections, contours and toolpaths tend to
 //! arrive in groups. Entries may carry a name; order is meaningful either way. See
-//! [`find_by_name`].
+//! [`crate::find_by_name`].
+//!
+//! ```
+//! use tol_compress::{Polyline2, find_by_name, polyline};
+//!
+//! let sections = vec![
+//!     Polyline2::new(vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]], true).named("root"),
+//!     Polyline2::new(vec![[0.0, 0.5], [1.0, 0.5]], false).named("tip"),
+//! ];
+//!
+//! let mut buf = Vec::new();
+//! polyline::write_to(&mut buf, &sections, 1e-5)?;
+//!
+//! let back: Vec<Polyline2> = polyline::read_from(&mut buf.as_slice())?;
+//! assert_eq!(back.len(), 2);
+//! assert!(back[0].closed);
+//! assert_eq!(find_by_name(&back, "tip").map(|p| p.points.len()), Some(2));
+//! # Ok::<(), tol_compress::Error>(())
+//! ```
 
 use crate::container::{self, Kind, Named, item};
 use crate::error::{Error, Result};

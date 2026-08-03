@@ -28,6 +28,38 @@
 //! A caller holding per-vertex data outside the file, which this format cannot renumber for them,
 //! wants [`write_to_preserving_order`] instead. It writes the arrays exactly as given, at the cost
 //! of a larger index block. The block records which coding it used, so readers are unaffected.
+//!
+//! ## Keeping external data in step, without giving up the saving
+//!
+//! There is a third option, and it is usually the one you want if you have per-vertex data the
+//! crate does not hold: **do the renumbering yourself**, move your own arrays through the same
+//! permutation, then ask the encoder not to do it again. The file is byte-for-byte identical to
+//! what [`write_to`] would have produced, because [`crate::indices`] picks the compact coding
+//! whenever its input is already in first-use order.
+//!
+//! ```
+//! use tol_compress::{Mesh3, mesh, reorder};
+//!
+//! let points = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 1.0, 0.0]];
+//! let faces = vec![[0u32, 1, 2], [1, 3, 2]];
+//!
+//! // Something the crate knows nothing about, one entry per vertex.
+//! let scan_pass = vec![10u32, 11, 12, 13];
+//!
+//! let plan = reorder::optimize(&faces, points.len())?;
+//! let points = reorder::permute(&points, &plan.vertex_order);
+//! let scan_pass = reorder::permute(&scan_pass, &plan.vertex_order);
+//!
+//! let mut buf = Vec::new();
+//! let mesh = Mesh3::new(points, plan.faces);
+//! mesh::write_one_to_preserving_order(&mut buf, &mesh, 1e-6)?;
+//!
+//! // `scan_pass[i]` still belongs to vertex `i` of the mesh that was written.
+//! assert_eq!(scan_pass.len(), mesh.points.len());
+//! # Ok::<(), tol_compress::Error>(())
+//! ```
+//!
+//! Face-domain data moves through `plan.face_order` the same way.
 
 use crate::container::{self, Kind, Named, item};
 use crate::error::{Error, Result};
@@ -463,6 +495,39 @@ mod tests {
 
         assert_eq!(buf.len(), 12, "an empty collection is just a header");
         assert!(read_from(&mut Cursor::new(&buf)).unwrap().is_empty());
+    }
+
+    /// The recipe documented in the module header has to cost nothing, or callers with external
+    /// per-vertex data are choosing between correctness and size.
+    ///
+    /// This is the load-bearing test for that documentation: without it, a later change to how
+    /// [`crate::indices`] chooses a coding could quietly make the caller-driven path produce the
+    /// larger file, and the docs would go on promising otherwise.
+    #[test]
+    fn the_caller_driven_recipe_is_byte_identical() {
+        for case in corpus::all() {
+            if case.faces.is_empty() {
+                continue;
+            }
+            let mesh = Mesh3::new(case.points.clone(), case.faces.clone());
+
+            let mut internal = Vec::new();
+            write_one_to(&mut internal, &mesh, case.tol).unwrap();
+
+            let plan = reorder::optimize(&mesh.faces, mesh.points.len()).unwrap();
+            let by_hand = Mesh3::new(
+                reorder::permute(&mesh.points, &plan.vertex_order),
+                plan.faces,
+            );
+            let mut manual = Vec::new();
+            write_one_to_preserving_order(&mut manual, &by_hand, case.tol).unwrap();
+
+            assert_eq!(
+                internal, manual,
+                "{}: reordering by hand produced a different file",
+                case.name
+            );
+        }
     }
 
     /// Taking the first of several would silently discard data, so it is refused.

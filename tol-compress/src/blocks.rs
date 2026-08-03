@@ -54,7 +54,7 @@ pub const BLOCK: usize = 64;
 /// Bits used by a block's width header.
 const WIDTH_BITS: u8 = 6;
 
-/// The widest code this scheme can express, set by [`WIDTH_BITS`].
+/// The widest code this scheme can express, set by the six-bit width header.
 ///
 /// Every current and planned use fits: indices are at most 32 bits, and quantized coordinates and
 /// scalars at most 53.

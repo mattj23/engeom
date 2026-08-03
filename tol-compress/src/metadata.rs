@@ -16,6 +16,21 @@
 //! [`Metadata`] is a [`BTreeMap`], so entries serialize in sorted key order. Writing the same map
 //! twice produces the same bytes, which might matter if you're saving files in a repository of some
 //! type and they get rewritten with identical data.
+//!
+//! ```
+//! use tol_compress::{Cloud3, Value, cloud};
+//!
+//! let scan = Cloud3::new(vec![[0.0, 0.0, 0.0]])
+//!     .with_meta("acme.scanner.serial", "SN-4417")
+//!     .with_meta("acme.pass", 3i64);
+//!
+//! let mut buf = Vec::new();
+//! cloud::write_one_to(&mut buf, &scan, 1e-4)?;
+//!
+//! let back: Cloud3 = cloud::read_one_from(&mut buf.as_slice())?;
+//! assert_eq!(back.metadata["acme.pass"], Value::I64(3));
+//! # Ok::<(), tol_compress::Error>(())
+//! ```
 
 use crate::error::{Error, Result};
 use crate::raw::{read_u8, read_u32, write_u8, write_u32};

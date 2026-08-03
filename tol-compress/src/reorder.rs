@@ -28,6 +28,13 @@
 //!
 //! [`Reordering`] hands back both permutations as well as the remapped faces, because a caller has
 //! to move _everything_ that is indexed by vertex or by face, not just the positions.
+//!
+//! That is also what makes this module worth calling directly. [`crate::mesh::write_to`] applies a
+//! reordering internally and throws the permutation away, which is fine until you hold per-vertex
+//! data the crate does not know about. Doing it here instead lets you move your own arrays through
+//! [`permute`] first and then write with `write_to_preserving_order`, for a file byte-for-byte
+//! identical to the one the encoder would have produced. See the [`crate::mesh`] module docs for
+//! the worked recipe.
 
 use crate::error::{Error, Result};
 use std::collections::VecDeque;

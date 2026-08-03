@@ -14,6 +14,7 @@ impl Rng {
         Self(seed | 1)
     }
 
+    /// The next value in the sequence, uniform over the whole `u64` range.
     pub fn next_u64(&mut self) -> u64 {
         let mut x = self.0;
         x ^= x << 13;
