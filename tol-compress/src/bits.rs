@@ -1,7 +1,7 @@
 //! Bit-level stream I/O.
 //!
 //! Everything in this crate ultimately reduces to writing integers of an arbitrary, data-derived
-//! width. Rounding those widths up to whole bytes is a huge source of waste, so the encoders 
+//! width. Rounding those widths up to whole bytes is a huge source of waste, so the encoders
 //! here write bits rather than bytes.
 //!
 //! # Format conventions

@@ -16,6 +16,7 @@
 //! tolerance.
 
 pub mod bits;
+pub mod blocks;
 pub mod bounds;
 pub mod cloud;
 pub mod container;
