@@ -1,10 +1,5 @@
 //! A minimal reader for the binary PLY fixtures in `tests/data`.
 //!
-//! Hand-rolled rather than pulling a PLY crate in as a dev-dependency, so that `tol-compress` has
-//! no dependencies at all, not even for development. It handles exactly the subset the fixtures
-//! use, which is the subset they were normalized into, and rejects anything else rather than
-//! guessing.
-//!
 //! Shared by `tests/real_fixtures.rs` and `examples/size_report.rs` through `#[path]`.
 
 #![allow(dead_code)]
@@ -39,8 +34,12 @@ pub fn data_dir() -> PathBuf {
 
 /// Load a fixture by file name.
 pub fn load(name: &str) -> Mesh {
-    let path = data_dir().join(name);
-    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("reading {}: {e}", path.display()));
+    load_path(&data_dir().join(name))
+}
+
+/// Load a mesh from an arbitrary path, for measuring against files outside the repository.
+pub fn load_path(path: &Path) -> Mesh {
+    let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("reading {}: {e}", path.display()));
     parse(&bytes).unwrap_or_else(|e| panic!("parsing {}: {e}", path.display()))
 }
 
