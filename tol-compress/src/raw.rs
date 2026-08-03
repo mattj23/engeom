@@ -5,6 +5,13 @@
 use crate::error::Result;
 use std::io::{Read, Write};
 
+/// Ceiling on how much a decoder will pre-allocate from a length field before seeing any data.
+///
+/// A corrupt or hostile stream can claim four billion elements. Growing the vector as elements
+/// actually arrive costs a few reallocations on genuinely large blocks and bounds the damage on
+/// bad ones.
+pub(crate) const MAX_PREALLOC: usize = 1 << 16;
+
 pub(crate) fn write_u8<W: Write>(writer: &mut W, value: u8) -> Result<()> {
     writer.write_all(&[value])?;
     Ok(())

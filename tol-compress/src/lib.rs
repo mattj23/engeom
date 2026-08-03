@@ -18,6 +18,7 @@
 pub mod bits;
 pub mod bounds;
 pub mod error;
+pub mod indices;
 pub mod points;
 pub mod quantize;
 mod raw;
@@ -27,5 +28,6 @@ mod testgen;
 
 pub use bounds::Bounds;
 pub use error::{Error, Result};
+pub use indices::{bits_for_count, read_indices, write_indices};
 pub use points::{read_points, write_points};
 pub use quantize::{Quantizer, bits_for_tol};

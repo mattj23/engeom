@@ -31,15 +31,8 @@ use crate::bits::{BitReader, BitWriter};
 use crate::bounds::Bounds;
 use crate::error::{Error, Result};
 use crate::quantize::Quantizer;
-use crate::raw::{read_f64, read_u8, read_u32, write_f64, write_u8, write_u32};
+use crate::raw::{MAX_PREALLOC, read_f64, read_u8, read_u32, write_f64, write_u8, write_u32};
 use std::io::{Read, Write};
-
-/// Ceiling on how much a decoder will pre-allocate from a length field before seeing the data.
-///
-/// A corrupt or hostile stream can claim four billion points. Growing the vector as points
-/// actually arrive costs a few reallocations on genuinely large blocks and bounds the damage on
-/// bad ones.
-const MAX_PREALLOC: usize = 1 << 16;
 
 /// Write a block of points, choosing the narrowest per-axis widths that meet `tol`.
 ///
