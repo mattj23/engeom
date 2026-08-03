@@ -16,6 +16,11 @@ categories = ["compression", "encoding", "science"]
 # published package means downloads stay small.
 exclude = ["tests/data/*"]
 
+[lib]
+# The unit-test harness is not a benchmark, and cargo would otherwise run it as one and reject
+# criterion's arguments.
+bench = false
+
 [features]
 default = []
 # Generators for the benchmark corpus. Dependency-free, but test scaffolding rather than format
@@ -24,8 +29,16 @@ corpus = []
 
 [dependencies]
 
+# Nothing here reaches a consumer of the crate: dev-dependencies are not part of the published
+# dependency graph, so `cargo add tol-compress` still pulls in nothing at all.
 [dev-dependencies]
+criterion = "0.7.0"
 
 [[example]]
 name = "size_report"
+required-features = ["corpus"]
+
+[[bench]]
+name = "throughput"
+harness = false
 required-features = ["corpus"]

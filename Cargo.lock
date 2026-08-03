@@ -3669,6 +3669,9 @@ dependencies = [
 [[package]]
 name = "tol-compress"
 version = "0.1.0"
+dependencies = [
+ "criterion",
+]
 
 [[package]]
 name = "toml"
