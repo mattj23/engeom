@@ -12,7 +12,20 @@ repository = "https://github.com/mattj23/engeom"
 documentation = "https://docs.rs/tol-compress"
 keywords = ["compression", "mesh", "geometry", "metrology", "serialization"]
 categories = ["compression", "encoding", "science"]
+# Benchmark fixtures are for developing the format, not for using it. Keeping them out of the
+# published package means downloads stay small.
+exclude = ["tests/data/*"]
+
+[features]
+default = []
+# Generators for the benchmark corpus. Dependency-free, but test scaffolding rather than format
+# code, so it stays off unless asked for.
+corpus = []
 
 [dependencies]
 
 [dev-dependencies]
+
+[[example]]
+name = "size_report"
+required-features = ["corpus"]

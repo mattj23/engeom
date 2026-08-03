@@ -42,6 +42,29 @@ impl Rng {
     pub fn points<const N: usize>(&mut self, count: usize, lo: f64, hi: f64) -> Vec<[f64; N]> {
         (0..count).map(|_| self.point(lo, hi)).collect()
     }
+
+    /// A normally distributed value with the given standard deviation, by Box-Muller.
+    ///
+    /// Measurement noise is what makes prediction stop paying, so the corpus needs to be able to
+    /// dial it in rather than only using uniform scatter.
+    pub fn gaussian(&mut self, sigma: f64) -> f64 {
+        // Guarding the log against an exact zero, which the generator can produce.
+        let u1 = self.next_f64().max(f64::MIN_POSITIVE);
+        let u2 = self.next_f64();
+        sigma * (-2.0 * u1.ln()).sqrt() * (std::f64::consts::TAU * u2).cos()
+    }
+
+    /// A value in `0..limit`.
+    pub fn below(&mut self, limit: usize) -> usize {
+        (self.next_u64() % limit as u64) as usize
+    }
+
+    /// Shuffle in place, Fisher-Yates.
+    pub fn shuffle<T>(&mut self, items: &mut [T]) {
+        for i in (1..items.len()).rev() {
+            items.swap(i, self.below(i + 1));
+        }
+    }
 }
 
 #[cfg(test)]

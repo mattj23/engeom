@@ -23,8 +23,12 @@ pub mod points;
 pub mod quantize;
 mod raw;
 
-#[cfg(test)]
-mod testgen;
+/// Deliberately awkward test geometry, behind the non-default `corpus` feature.
+#[cfg(any(test, feature = "corpus"))]
+pub mod corpus;
+
+#[cfg(any(test, feature = "corpus"))]
+pub mod testgen;
 
 pub use bounds::Bounds;
 pub use error::{Error, Result};
