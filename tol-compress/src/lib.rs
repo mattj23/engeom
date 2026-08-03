@@ -18,8 +18,14 @@
 pub mod bits;
 pub mod bounds;
 pub mod error;
+pub mod points;
 pub mod quantize;
+mod raw;
+
+#[cfg(test)]
+mod testgen;
 
 pub use bounds::Bounds;
 pub use error::{Error, Result};
+pub use points::{read_points, write_points};
 pub use quantize::{Quantizer, bits_for_tol};
