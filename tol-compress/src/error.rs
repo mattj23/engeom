@@ -22,6 +22,17 @@ pub enum Error {
     /// The stream identifies a format version this build does not know how to decode.
     UnsupportedVersion(u8),
 
+    /// The stream declares a compression method this build does not implement.
+    ///
+    /// The header byte is reserved but always written as 0; nothing compresses tol-compress output
+    /// usefully, because quantizing to a tolerance is itself the compression.
+    UnsupportedCompression(u8),
+
+    /// An item declares attribute blocks, which this version cannot decode.
+    ///
+    /// The count is reserved in the layout so attributes can be added without a version bump.
+    UnsupportedAttributes(u8),
+
     /// The stream was structurally invalid. The payload names what was wrong.
     Malformed(&'static str),
 
@@ -46,6 +57,14 @@ impl fmt::Display for Error {
             Error::UnsupportedVersion(v) => {
                 write!(f, "unsupported tol-compress format version {v}")
             }
+            Error::UnsupportedCompression(c) => write!(
+                f,
+                "stream declares compression method {c}, which this build does not support"
+            ),
+            Error::UnsupportedAttributes(n) => write!(
+                f,
+                "item declares {n} attribute blocks, which this format version cannot decode"
+            ),
             Error::Malformed(what) => write!(f, "malformed tol-compress stream: {what}"),
             Error::ToleranceNotRepresentable { range, tol } => write!(
                 f,

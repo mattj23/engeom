@@ -17,6 +17,7 @@
 
 pub mod bits;
 pub mod bounds;
+pub mod container;
 pub mod error;
 pub mod indices;
 pub mod points;
@@ -31,6 +32,7 @@ pub mod corpus;
 pub mod testgen;
 
 pub use bounds::Bounds;
+pub use container::{Header, Kind, probe};
 pub use error::{Error, Result};
 pub use indices::{bits_for_count, read_indices, write_indices};
 pub use points::{read_points, write_points};
