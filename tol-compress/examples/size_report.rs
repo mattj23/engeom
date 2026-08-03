@@ -20,12 +20,17 @@
 //! The `file` column is the real container output, so `over` is what the framing costs on top of
 //! the raw blocks. Cases with faces go through the mesh container, point-only cases through the
 //! cloud container.
+//!
+//! Meshes are measured **as the container writes them**, which since increment 4 means with their
+//! vertices and faces renumbered by `reorder`. The `mode` column says which index coding won: `hw`
+//! for high-water-mark deltas, `abs` for plain absolute indices, which is what a block too small to
+//! pay for the block coder's overheads falls back to.
 
 #[path = "../tests/support/ply.rs"]
 mod ply;
 
 use tol_compress::corpus::{self, Case};
-use tol_compress::{Cloud3, Mesh3, cloud, mesh, write_indices, write_points};
+use tol_compress::{Cloud3, Mesh3, cloud, mesh, reorder, write_indices, write_points};
 
 fn main() {
     println!("# tol-compress size report\n");
@@ -57,8 +62,9 @@ fn main() {
 
     println!("\n## Noise sweep\n");
     println!(
-        "Prediction has not landed yet, so noise costs nothing today and these rows are identical. \
-         Once increment 5 is in they should diverge, and this is where that will show up.\n"
+        "Coordinate prediction was measured and dropped, so noise costs nothing in the points \
+         block and these rows stay identical. Noise does not disturb connectivity either, so the \
+         index blocks match too.\n"
     );
     let noise: Vec<(String, Case)> = [0.0, 0.005, 0.05, 0.5]
         .iter()
@@ -76,14 +82,14 @@ fn main() {
 
 fn print_table(rows: &[(String, Case)]) {
     println!(
-        "| case | verts | faces | tol | coords | indices | file | over | B/vert | vs old | vs f32 |"
+        "| case | verts | faces | tol | coords | indices | mode | file | over | B/vert | vs old | vs f32 |"
     );
-    println!("| --- | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: |");
+    println!("| --- | --: | --: | --: | --: | --: | :-: | --: | --: | --: | --: | --: |");
 
     for (label, case) in rows {
         let Some(m) = measure(case) else {
             println!(
-                "| {label} | {} | {} | {:.0e} | | | | | | not representable |",
+                "| {label} | {} | {} | {:.0e} | | | | | | | not representable |",
                 case.points.len(),
                 case.faces.len(),
                 case.tol
@@ -98,12 +104,13 @@ fn print_table(rows: &[(String, Case)]) {
         };
 
         println!(
-            "| {label} | {} | {} | {:.0e} | {} | {} | {} | {} | {:.2} | {} | {} |",
+            "| {label} | {} | {} | {:.0e} | {} | {} | {} | {} | {} | {:.2} | {} | {} |",
             case.points.len(),
             case.faces.len(),
             case.tol,
             m.coords,
             m.indices,
+            m.mode,
             m.file,
             m.file - m.total(),
             per_vertex,
@@ -125,6 +132,8 @@ fn percent(actual: usize, baseline: usize) -> String {
 struct Measurement {
     coords: usize,
     indices: usize,
+    /// Which index coding won, or a dash where there are no indices to code.
+    mode: &'static str,
     /// The real container output, framing included.
     file: usize,
     old_coords: usize,
@@ -147,12 +156,31 @@ impl Measurement {
 }
 
 fn measure(case: &Case) -> Option<Measurement> {
+    // Measured the way the container writes it, so the block columns and the file column describe
+    // the same bytes.
+    let (points, faces) = if case.faces.is_empty() {
+        (case.points.clone(), case.faces.clone())
+    } else {
+        let plan = reorder::optimize(&case.faces, case.points.len()).ok()?;
+        (
+            reorder::permute(&case.points, &plan.vertex_order),
+            plan.faces,
+        )
+    };
+
     let mut coord_buf = Vec::new();
-    write_points(&mut coord_buf, &case.points, case.tol).ok()?;
+    write_points(&mut coord_buf, &points, case.tol).ok()?;
 
     let mut index_buf = Vec::new();
     let limit = case.points.len() as u32;
-    write_indices(&mut index_buf, &case.faces, limit).ok()?;
+    write_indices(&mut index_buf, &faces, limit).ok()?;
+
+    // The mode byte sits after the arity and the simplex count.
+    let mode = match index_buf.get(5) {
+        Some(&tol_compress::indices::MODE_HIGH_WATER) => "hw",
+        Some(_) => "abs",
+        None => "-",
+    };
 
     // Point-only cases have no business paying for an index block, so they go through the cloud
     // container and the framing comparison stays honest.
@@ -186,6 +214,7 @@ fn measure(case: &Case) -> Option<Measurement> {
     Some(Measurement {
         coords: coord_buf.len(),
         indices: index_buf.len(),
+        mode,
         file: file_buf.len(),
         old_coords,
         old_indices,

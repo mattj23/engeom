@@ -135,10 +135,35 @@ fn real_meshes_round_trip_through_a_tcmesh_file() {
         let _ = std::fs::remove_file(&path);
 
         assert_eq!(back.name.as_deref(), Some(name.trim_end_matches(".ply")));
-        assert_eq!(back.faces, mesh.faces, "{name}: connectivity must be exact");
         assert_eq!(back.points.len(), mesh.points.len(), "{name}");
+        assert_eq!(back.faces.len(), mesh.faces.len(), "{name}");
 
-        for (i, (o, r)) in mesh.points.iter().zip(back.points.iter()).enumerate() {
+        // `write_one_file` renumbers vertices and faces, so the arrays are not the ones that went
+        // in. What must hold is that it is the same mesh: every triangle joining the same three
+        // positions it joined before, which is what a points array permuted out of step with its
+        // faces would break.
+        let plan = tol_compress::reorder::optimize(&mesh.faces, mesh.points.len()).unwrap();
+
+        for (new, &old) in plan.face_order.iter().enumerate() {
+            for corner in 0..3 {
+                let got = back.points[back.faces[new][corner] as usize];
+                let want = mesh.points[mesh.faces[old as usize][corner] as usize];
+
+                let d = distance(&got, &want);
+                assert!(
+                    d <= tol,
+                    "{name}: face {new} corner {corner} landed {d} away"
+                );
+            }
+        }
+
+        // And the order-preserving path must hand the arrays back untouched.
+        tol_compress::mesh::write_one_file_preserving_order(&path, &item, tol).unwrap();
+        let exact = tol_compress::mesh::read_one_file(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(exact.faces, mesh.faces, "{name}: preserved connectivity");
+        for (i, (o, r)) in mesh.points.iter().zip(exact.points.iter()).enumerate() {
             let d = distance(o, r);
             assert!(d <= tol, "{name}: vertex {i} recovered {d} away");
         }

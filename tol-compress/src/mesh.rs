@@ -16,6 +16,18 @@
 //! [`write_to`] applies one tolerance to every item. The format itself does not require that,
 //! since bit widths are recorded per block, so a future API could give each item its own tolerance
 //! without a format change.
+//!
+//! # Vertex and face order
+//!
+//! **Writing a mesh does not preserve the order of its vertices or its faces.** [`write_to`] hands
+//! the mesh to [`crate::reorder`] first, which renumbers vertices so that indices compress, and
+//! that is worth -25% to -50% of the index block on real meshes. The mesh that comes back out is
+//! the same mesh: the same triangles over the same positions, with everything renumbered
+//! consistently. Nothing about the reordering is stored, so decoding costs nothing extra.
+//!
+//! A caller holding per-vertex data outside the file, which this format cannot renumber for them,
+//! wants [`write_to_preserving_order`] instead. It writes the arrays exactly as given, at the cost
+//! of a larger index block. The block records which coding it used, so readers are unaffected.
 
 use crate::container::{self, Kind, Named, item};
 use crate::error::{Error, Result};
@@ -23,9 +35,33 @@ use crate::indices::{read_indices, write_indices};
 use crate::metadata::Metadata;
 use crate::points::{read_points, write_points};
 use crate::raw::MAX_PREALLOC;
+use crate::reorder;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
+
+/// Whether the encoder may renumber a mesh's vertices and faces to make its indices smaller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum VertexOrder {
+    /// Renumber for size. The default, and much the smaller of the two.
+    #[default]
+    Optimize,
+    /// Write the arrays exactly as given, so vertex and face indices mean the same thing after a
+    /// round trip as they did before it.
+    Preserve,
+}
+
+/// Everything [`write_to_with`] can be told beyond the geometry and the tolerance.
+///
+/// A struct rather than more arguments, because the two settings are independent and neither is
+/// wanted often enough to deserve its own function on every entry point.
+#[derive(Debug, Clone, Default)]
+pub struct WriteOptions {
+    /// File-level metadata. Stored, never interpreted.
+    pub metadata: Metadata,
+    /// Whether vertices and faces may be renumbered.
+    pub order: VertexOrder,
+}
 
 /// A triangle mesh with an optional name.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -72,27 +108,47 @@ impl Named for Mesh3 {
 
 /// Write a collection of meshes, every item at the same tolerance.
 ///
+/// Vertices and faces are renumbered for size; see the module documentation and
+/// [`write_to_preserving_order`].
+///
 /// # Errors
 ///
 /// [`Error::ToleranceNotRepresentable`] if any axis is too wide to meet `tol`, and
 /// [`Error::Malformed`] for a non-finite coordinate or a face pointing past the vertex array.
 pub fn write_to<W: Write>(writer: &mut W, meshes: &[Mesh3], tol: f64) -> Result<()> {
-    write_to_with_meta(writer, meshes, tol, &Metadata::new())
+    write_to_with(writer, meshes, tol, &WriteOptions::default())
 }
 
-/// Write a collection of meshes with file-level metadata attached. See [`write_to`].
-pub fn write_to_with_meta<W: Write>(
+/// Write a collection of meshes without renumbering anything. See [`write_to`].
+pub fn write_to_preserving_order<W: Write>(
     writer: &mut W,
     meshes: &[Mesh3],
     tol: f64,
-    file_metadata: &Metadata,
+) -> Result<()> {
+    write_to_with(
+        writer,
+        meshes,
+        tol,
+        &WriteOptions {
+            order: VertexOrder::Preserve,
+            ..Default::default()
+        },
+    )
+}
+
+/// Write a collection of meshes with full control over metadata and ordering. See [`write_to`].
+pub fn write_to_with<W: Write>(
+    writer: &mut W,
+    meshes: &[Mesh3],
+    tol: f64,
+    options: &WriteOptions,
 ) -> Result<()> {
     let count = u32::try_from(meshes.len())
         .map_err(|_| Error::Malformed("container holds more items than a u32 can count"))?;
-    container::write_header(writer, Kind::Mesh3, count, file_metadata)?;
+    container::write_header(writer, Kind::Mesh3, count, &options.metadata)?;
 
     for mesh in meshes {
-        write_item(writer, mesh, tol)?;
+        write_item(writer, mesh, tol, options.order)?;
     }
 
     Ok(())
@@ -101,6 +157,15 @@ pub fn write_to_with_meta<W: Write>(
 /// Write a single mesh as a one-item collection.
 pub fn write_one_to<W: Write>(writer: &mut W, mesh: &Mesh3, tol: f64) -> Result<()> {
     write_to(writer, std::slice::from_ref(mesh), tol)
+}
+
+/// Write a single mesh without renumbering anything. See [`write_to`].
+pub fn write_one_to_preserving_order<W: Write>(
+    writer: &mut W,
+    mesh: &Mesh3,
+    tol: f64,
+) -> Result<()> {
+    write_to_preserving_order(writer, std::slice::from_ref(mesh), tol)
 }
 
 /// Read a collection of meshes.
@@ -141,9 +206,22 @@ pub fn write_file(path: &Path, meshes: &[Mesh3], tol: f64) -> Result<()> {
     Ok(())
 }
 
+/// Write a collection of meshes to a file without renumbering anything. See [`write_to`].
+pub fn write_file_preserving_order(path: &Path, meshes: &[Mesh3], tol: f64) -> Result<()> {
+    let mut writer = BufWriter::new(File::create(path)?);
+    write_to_preserving_order(&mut writer, meshes, tol)?;
+    writer.flush()?;
+    Ok(())
+}
+
 /// Write a single mesh to a file as a one-item collection.
 pub fn write_one_file(path: &Path, mesh: &Mesh3, tol: f64) -> Result<()> {
     write_file(path, std::slice::from_ref(mesh), tol)
+}
+
+/// Write a single mesh to a file without renumbering anything. See [`write_to`].
+pub fn write_one_file_preserving_order(path: &Path, mesh: &Mesh3, tol: f64) -> Result<()> {
+    write_file_preserving_order(path, std::slice::from_ref(mesh), tol)
 }
 
 /// Read a collection of meshes from a file.
@@ -158,16 +236,27 @@ pub fn read_one_file(path: &Path) -> Result<Mesh3> {
     read_one_from(&mut reader)
 }
 
-fn write_item<W: Write>(writer: &mut W, mesh: &Mesh3, tol: f64) -> Result<()> {
+fn write_item<W: Write>(writer: &mut W, mesh: &Mesh3, tol: f64, order: VertexOrder) -> Result<()> {
     item::write_preamble(writer, mesh.name.as_deref(), &mesh.metadata, false)?;
-
-    write_points(writer, &mesh.points, tol)?;
 
     // The limit is this item's own vertex count, so the encoder refuses a face that points past
     // the end of the array it will be decoded against.
     let limit = u32::try_from(mesh.points.len())
         .map_err(|_| Error::Malformed("mesh holds more vertices than a u32 can index"))?;
-    write_indices(writer, &mesh.faces, limit)?;
+
+    // Renumbering has to move the points and the faces together, which is why it happens here,
+    // where both are in hand, rather than inside either encoder. When attributes arrive they are
+    // permuted at this same point, through `reorder::permute`.
+    if order == VertexOrder::Optimize && !mesh.faces.is_empty() {
+        let plan = reorder::optimize(&mesh.faces, mesh.points.len())?;
+        let points = reorder::permute(&mesh.points, &plan.vertex_order);
+
+        write_points(writer, &points, tol)?;
+        write_indices(writer, &plan.faces, limit)?;
+    } else {
+        write_points(writer, &mesh.points, tol)?;
+        write_indices(writer, &mesh.faces, limit)?;
+    }
 
     Ok(())
 }
@@ -216,6 +305,8 @@ mod tests {
         (0..3).map(|i| (a[i] - b[i]).powi(2)).sum::<f64>().sqrt()
     }
 
+    /// A round trip through [`write_to_preserving_order`], where the arrays come back as they went
+    /// in and index-for-index comparison is the right check.
     fn assert_matches(original: &Mesh3, recovered: &Mesh3, tol: f64, what: &str) {
         assert_eq!(recovered.name, original.name, "{what}: name");
         assert_eq!(
@@ -239,6 +330,47 @@ mod tests {
         }
     }
 
+    /// A round trip through [`write_to`], which renumbers. Array equality is the wrong question
+    /// here; the right one is whether it is the same mesh.
+    ///
+    /// Checked as geometry rather than as indices: every triangle must join the same three
+    /// positions it joined before. That is what catches the failure this whole design risks, which
+    /// is a points array permuted out of step with the faces that index it.
+    fn assert_same_mesh(original: &Mesh3, recovered: &Mesh3, tol: f64, what: &str) {
+        assert_eq!(recovered.name, original.name, "{what}: name");
+        assert_eq!(
+            recovered.points.len(),
+            original.points.len(),
+            "{what}: vertex count"
+        );
+        assert_eq!(
+            recovered.faces.len(),
+            original.faces.len(),
+            "{what}: face count"
+        );
+
+        let plan = reorder::optimize(&original.faces, original.points.len()).unwrap();
+
+        for (new, &old) in plan.face_order.iter().enumerate() {
+            for corner in 0..3 {
+                let got = recovered.points[recovered.faces[new][corner] as usize];
+                let want = original.points[original.faces[old as usize][corner] as usize];
+
+                let d = distance(&got, &want);
+                assert!(
+                    d <= tol,
+                    "{what}: face {new} corner {corner} landed {d} away, tol {tol}"
+                );
+            }
+        }
+
+        // Vertices no face references have to survive too, and nothing above would notice them.
+        for (i, &old) in plan.vertex_order.iter().enumerate() {
+            let d = distance(&recovered.points[i], &original.points[old as usize]);
+            assert!(d <= tol, "{what}: vertex {i} recovered {d} away, tol {tol}");
+        }
+    }
+
     #[test]
     fn every_corpus_mesh_round_trips() {
         for case in corpus::all() {
@@ -256,7 +388,46 @@ mod tests {
                 "{}: decoder left bytes unread",
                 case.name
             );
+            assert_same_mesh(&mesh, &back, case.tol, case.name);
+        }
+    }
+
+    /// The same corpus through the opt-out, where the arrays must come back untouched.
+    #[test]
+    fn every_corpus_mesh_round_trips_preserving_order() {
+        for case in corpus::all() {
+            let mesh = Mesh3::new(case.points.clone(), case.faces.clone());
+
+            let mut buf = Vec::new();
+            write_one_to_preserving_order(&mut buf, &mesh, case.tol).unwrap();
+
+            let back = read_one_from(&mut Cursor::new(&buf)).unwrap();
             assert_matches(&mesh, &back, case.tol, case.name);
+        }
+    }
+
+    /// Renumbering is the whole point, so it has to actually pay on real geometry.
+    #[test]
+    fn renumbering_makes_meshes_smaller() {
+        for case in corpus::all() {
+            if case.faces.is_empty() || case.faces.len() < 100 {
+                continue;
+            }
+            let mesh = Mesh3::new(case.points.clone(), case.faces.clone());
+
+            let mut optimized = Vec::new();
+            write_one_to(&mut optimized, &mesh, case.tol).unwrap();
+
+            let mut preserved = Vec::new();
+            write_one_to_preserving_order(&mut preserved, &mesh, case.tol).unwrap();
+
+            assert!(
+                optimized.len() < preserved.len(),
+                "{}: renumbered to {} bytes against {} preserved",
+                case.name,
+                optimized.len(),
+                preserved.len()
+            );
         }
     }
 
@@ -281,7 +452,7 @@ mod tests {
         assert_eq!(back[2].name.as_deref(), Some("smooth again"));
 
         for (o, r) in meshes.iter().zip(back.iter()) {
-            assert_matches(o, r, 1e-3, "collection");
+            assert_same_mesh(o, r, 1e-3, "collection");
         }
     }
 
@@ -358,13 +529,22 @@ mod tests {
         write_one_file(&path.0, &mesh, case.tol).unwrap();
         let back = read_one_file(&path.0).unwrap();
 
-        assert_matches(&mesh, &back, case.tol, "file");
+        assert_same_mesh(&mesh, &back, case.tol, "file");
 
         // And the collection path over the same file.
         write_file(&path.0, &[mesh.clone(), mesh.clone()], case.tol).unwrap();
         let all = read_file(&path.0).unwrap();
         assert_eq!(all.len(), 2);
-        assert_matches(&mesh, &all[1], case.tol, "file collection");
+        assert_same_mesh(&mesh, &all[1], case.tol, "file collection");
+
+        // And the order-preserving file path, which must hand the arrays back untouched.
+        write_one_file_preserving_order(&path.0, &mesh, case.tol).unwrap();
+        assert_matches(
+            &mesh,
+            &read_one_file(&path.0).unwrap(),
+            case.tol,
+            "preserved",
+        );
     }
 
     #[test]
