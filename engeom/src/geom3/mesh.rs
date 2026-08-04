@@ -1120,10 +1120,14 @@ mod tests {
         Ok(())
     }
 
-    /// The stanford bunny asset carries a defect: faces 300 and 538 are the same triangle wound in
-    /// opposite directions, and point 140 belongs to nothing else. Its two incident normals cancel,
+    /// The stanford bunny asset carries a defect: faces 207 and 209 are the same triangle wound in
+    /// opposite directions, and point 128 belongs to nothing else. Its two incident normals cancel,
     /// so it genuinely has no normal, and the computation is expected to say so rather than
     /// normalizing the floating point residue into a direction, which is what it used to do.
+    ///
+    /// The indices moved when the fixture was re-encoded from micro-mesh to tcmesh, which renumbers
+    /// vertices. The defect itself is unchanged: the same pair of opposed triangles, the same lone
+    /// point, verified rather than assumed when the numbers were updated.
     #[test]
     fn point_normals_report_the_bunny_asset_defect() {
         let mesh = stanford_bun_4();
@@ -1131,7 +1135,7 @@ mod tests {
         let err = mesh.compute_point_normals().unwrap_err();
 
         assert!(
-            err.to_string().starts_with("Point 140 has no well-defined"),
+            err.to_string().starts_with("Point 128 has no well-defined"),
             "unexpected error: {err}"
         );
     }

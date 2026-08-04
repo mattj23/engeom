@@ -24,7 +24,6 @@ rayon = { workspace = true }
 rand = { workspace = true }
 rand_distr = {workspace = true }
 uuid = { workspace = true, features = ["v4"] }
-flate2 = { workspace = true }
 
 # Both halves are needed: `path` so workspace changes are picked up without a release, `version` so
 # engeom can be published against the crates.io release.

@@ -2401,22 +2401,6 @@ class Mesh3:
         ...
 
     @staticmethod
-    def load_umesh(path: str | Path) -> Mesh3:
-        """
-        Load a mesh from the micro mesh (.umesh) format. This format was made for this library as a way of doing lossy
-        compression on very small meshes which have less than 2^16 vertices. The compression works by discretizing each
-        dimension to a 16-bit integer within the bounding box of the mesh, so the quality loss varies based on the
-        physical size of the mesh. However, for meshes of most physical objects the accuracy loss is well below the
-        measurement noise floor of the sensing system.
-
-        This function will load both gzip deflated umesh files and uncompressed umesh files.
-
-        :param path: the path to the file to be loaded
-        :return: a loaded mesh
-        """
-        ...
-
-    @staticmethod
     def load_ply(path: str | Path, is_solid: bool = False) -> Mesh3:
         """
         Loads a PLY (Polygon File Format or Stanford Triangle Format) file and returns its corresponding
@@ -3313,8 +3297,8 @@ class Mesh3:
         """
         Returns a low-resolution version of the Stanford Bunny mesh with 453 vertices and 948 faces
         that has been embedded into the binary. The mesh structure is the same as the original
-        `bun_zipper_res4.ply` but it was compressed with the 16-bit micro mesh format and so some
-        precision has been lost in the vertex coordinates.
+        `bun_zipper_res4.ply` but it has been quantized to 16 bits per axis and so some precision has
+        been lost in the vertex coordinates. The vertex order is not the same as the original's.
 
         The mesh dimensions are in meters, and the maximum vertex deviation from the original is
         0.00000189 meters.
@@ -3328,8 +3312,8 @@ class Mesh3:
         """
         Returns a medium-resolution version of the Stanford Bunny mesh with 1889 vertices and 3851 faces
         that has been embedded into the binary. The mesh structure is the same as the original
-        `bun_zipper_res3.ply` but it was compressed with the 16-bit micro mesh format and so some
-        precision has been lost in the vertex coordinates.
+        `bun_zipper_res3.ply` but it has been quantized to 16 bits per axis and so some precision has
+        been lost in the vertex coordinates. The vertex order is not the same as the original's.
 
         The mesh dimensions are in meters, and the maximum vertex deviation from the original is
         0.00000189 meters.
@@ -3343,8 +3327,8 @@ class Mesh3:
         """
         Returns a higher-resolution version of the Stanford Bunny mesh with 8171 vertices and 16301 faces
         that has been embedded into the binary. The mesh structure is the same as the original
-        `bun_zipper_res2.ply` but it was compressed with the 16-bit micro mesh format and so some
-        precision has been lost in the vertex coordinates.
+        `bun_zipper_res2.ply` but it has been quantized to 16 bits per axis and so some precision has
+        been lost in the vertex coordinates. The vertex order is not the same as the original's.
 
         The mesh dimensions are in meters, and the maximum vertex deviation from the original is
         0.00000189 meters.

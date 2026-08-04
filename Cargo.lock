@@ -793,7 +793,6 @@ dependencies = [
  "colorgrad",
  "criterion",
  "faer",
- "flate2",
  "imageproc",
  "itertools 0.14.0",
  "kdtree",
@@ -3810,7 +3809,6 @@ version = "0.4.4"
 dependencies = [
  "clap",
  "engeom",
- "flate2",
 ]
 
 [[package]]

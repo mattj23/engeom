@@ -16,7 +16,7 @@
 
 use super::MeshData3;
 use crate::geom3::IsoExtensions3;
-use crate::io::{deflate_bytes, u_bytes_to_mesh_data};
+use crate::io::read_tc_mesh_from;
 use crate::{Iso3, Point3, Result, Vector3};
 use parry3d_f64::shape;
 
@@ -292,31 +292,51 @@ impl MeshData3 {
 
 impl MeshData3 {
     /// Load a Stanford bunny mesh embedded in the binary with 453 points and 948 faces. This mesh
-    /// has been compressed into the 16-bit micro mesh format. The mesh structure is the same as the
-    /// corresponding `bun_zipper_res4.ply` mesh, but some precision has been lost in the conversion.
-    /// The maximum point deviation from the original is 0.00000189 meters.
+    /// has been quantized to 16 bits per axis. The mesh structure is the same as the corresponding
+    /// `bun_zipper_res4.ply` mesh, but some precision has been lost in the conversion. The maximum
+    /// point deviation from the original is 0.00000189 meters.
+    ///
+    /// Note that the vertex order is not the same as the original ply file's.
     pub fn stanford_bunny_res4() -> Self {
-        let bytes = include_bytes!("../../../../tests/data/stanford_bun_4.umesh.gz");
-        u_bytes_to_mesh_data(&deflate_bytes(bytes).unwrap()).unwrap()
+        embedded_mesh(include_bytes!(
+            "../../../../tests/data/stanford_bun_4.tcmesh"
+        ))
     }
 
     /// Load a Stanford bunny mesh embedded in the binary with 1889 points and 3851 faces. This mesh
-    /// has been compressed into the 16-bit micro mesh format. The mesh structure is the same as the
-    /// corresponding `bun_zipper_res3.ply` mesh, but some precision has been lost in the conversion.
-    /// The maximum point deviation from the original is 0.00000189 meters.
+    /// has been quantized to 16 bits per axis. The mesh structure is the same as the corresponding
+    /// `bun_zipper_res3.ply` mesh, but some precision has been lost in the conversion. The maximum
+    /// point deviation from the original is 0.00000189 meters.
+    ///
+    /// Note that the vertex order is not the same as the original ply file's.
     pub fn stanford_bunny_res3() -> Self {
-        let bytes = include_bytes!("../../../../tests/data/stanford_bun_3.umesh.gz");
-        u_bytes_to_mesh_data(&deflate_bytes(bytes).unwrap()).unwrap()
+        embedded_mesh(include_bytes!(
+            "../../../../tests/data/stanford_bun_3.tcmesh"
+        ))
     }
 
     /// Load a Stanford bunny mesh embedded in the binary with 8171 points and 16301 faces. This
-    /// mesh has been compressed into the 16-bit micro mesh format. The mesh structure is the same as
-    /// the corresponding `bun_zipper_res2.ply` mesh, but some precision has been lost in the
-    /// conversion. The maximum point deviation from the original is 0.00000189 meters.
+    /// mesh has been quantized to 16 bits per axis. The mesh structure is the same as the
+    /// corresponding `bun_zipper_res2.ply` mesh, but some precision has been lost in the conversion.
+    /// The maximum point deviation from the original is 0.00000189 meters.
+    ///
+    /// Note that the vertex order is not the same as the original ply file's.
     pub fn stanford_bunny_res2() -> Self {
-        let bytes = include_bytes!("../../../../tests/data/stanford_bun_2.umesh.gz");
-        u_bytes_to_mesh_data(&deflate_bytes(bytes).unwrap()).unwrap()
+        embedded_mesh(include_bytes!(
+            "../../../../tests/data/stanford_bun_2.tcmesh"
+        ))
     }
+}
+
+/// Decode one of the embedded fixtures.
+///
+/// These were stored in a 16-bit micro-mesh format until that was retired in favour of tcmesh. The
+/// re-encoding was deliberately done at a tolerance that lands on the same 16 bits per axis over the
+/// same bounds, so the coordinates are bit-identical to what the old format held and the deviation
+/// figures above did not have to be recomputed. Only the vertex numbering changed, because writing
+/// a tcmesh reorders vertices so the connectivity compresses.
+fn embedded_mesh(bytes: &[u8]) -> MeshData3 {
+    read_tc_mesh_from(&mut { bytes }).expect("embedded fixture must decode")
 }
 
 #[cfg(test)]

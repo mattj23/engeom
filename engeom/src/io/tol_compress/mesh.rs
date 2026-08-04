@@ -203,16 +203,40 @@ mod tests {
     /// Renumbering is the reason this format beats a naive quantized mesh, so it is worth pinning
     /// that it actually happens rather than trusting the default never changes.
     #[test]
-    fn writing_renumbers_vertices() {
+    fn writing_renumbers_a_badly_ordered_mesh() {
+        // The embedded fixtures are themselves tcmesh files, so they arrive already in a good order
+        // and would make a poor subject. Reversing the faces gives something that certainly is not.
         let mesh = stanford_bun_2().to_data();
+        let mut faces = mesh.faces().to_vec();
+        faces.reverse();
+        let scrambled = MeshData3::new(mesh.points().to_vec(), faces).unwrap();
+
         let mut buf = Vec::new();
-        write_tc_mesh_to(&mut buf, &mesh, 1e-4).unwrap();
+        write_tc_mesh_to(&mut buf, &scrambled, 1e-4).unwrap();
         let recovered = read_tc_mesh_from(&mut Cursor::new(&buf)).unwrap();
 
         assert_ne!(
             recovered.faces(),
-            mesh.faces(),
-            "the bunny is a zippered merge, so a good order cannot be the one it arrived in"
+            scrambled.faces(),
+            "a reversed face order cannot also be a good one"
         );
+    }
+
+    /// Writing a mesh that is already in the order the encoder would choose has to reproduce that
+    /// order exactly. This is what keeps the committed fixtures stable: they are tcmesh files, so
+    /// anything that rewrites one must not churn its bytes.
+    #[test]
+    fn rewriting_an_optimal_mesh_is_a_fixed_point() {
+        let mesh = stanford_bun_2().to_data();
+
+        let mut once = Vec::new();
+        write_tc_mesh_to(&mut once, &mesh, 3e-6).unwrap();
+        let back = read_tc_mesh_from(&mut Cursor::new(&once)).unwrap();
+
+        let mut twice = Vec::new();
+        write_tc_mesh_to(&mut twice, &back, 3e-6).unwrap();
+
+        assert_eq!(back.faces(), mesh.faces(), "connectivity must not move");
+        assert_eq!(once, twice, "a second write must be byte-identical");
     }
 }

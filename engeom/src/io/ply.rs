@@ -1158,6 +1158,11 @@ mod tests {
 
     /// The positions and faces must match what the old reader produced, so that swapping the
     /// implementation cannot have moved any geometry.
+    ///
+    /// The embedded fixture is a tcmesh, which renumbers vertices on write, so the two cannot be
+    /// compared index for index. The renumbering is derived from connectivity alone, so recomputing
+    /// the same plan from the freshly parsed faces says where each one went. A reader that changed
+    /// either the geometry or the vertex order still fails this.
     #[test]
     fn agrees_with_the_embedded_reference_mesh() -> Result<()> {
         let mesh = load_ply_mesh_data(&get_test_file_path("bun_zipper_res4.ply"))?;
@@ -1166,11 +1171,22 @@ mod tests {
         assert_eq!(mesh.point_count(), expected.points().len());
         assert_eq!(mesh.face_count(), expected.faces().len());
 
-        for (a, b) in mesh.faces().iter().zip(expected.faces().iter()) {
-            assert_eq!(a, b);
+        let plan = tol_compress::reorder::optimize(mesh.faces(), mesh.point_count())?;
+
+        for (new, &old) in plan.face_order.iter().enumerate() {
+            for corner in 0..3 {
+                let a = mesh.points()[mesh.faces()[old as usize][corner] as usize];
+                let b = expected.points()[expected.faces()[new][corner] as usize];
+                assert_relative_eq!(a, b, epsilon = 0.000002);
+            }
         }
-        for (a, b) in mesh.points().iter().zip(expected.points().iter()) {
-            assert_relative_eq!(a, b, epsilon = 0.000002);
+
+        for (new, &old) in plan.vertex_order.iter().enumerate() {
+            assert_relative_eq!(
+                mesh.points()[old as usize],
+                expected.points()[new],
+                epsilon = 0.000002
+            );
         }
 
         Ok(())

@@ -25,8 +25,9 @@ Because this is a metrology-focused library, the order of priority for algorithm
 * **Metrology** (`metrology`): dimension and tolerance types built on the geometry primitives.
 * **Robust estimation** (`common::consensus`): a MAGSAC++ based consensus framework for fitting primitives to
   data containing outliers.
-* **File I/O** (`io`): STL and PLY import/export (feature-gated), a compact binary "micro mesh" format, the
-  `lptf3` laser profile sensor format, and tolerance-based curve/mesh compression.
+* **File I/O** (`io`): STL and PLY import/export (feature-gated), the `lptf3` laser profile sensor format, and
+  tolerance-based curve, cloud and mesh compression via the [`tol-compress`](https://crates.io/crates/tol-compress)
+  crate.
 * **Sensor models** (`sensors`): pinhole camera and laser profile sensors.
 
 Types that exist in both two and three dimensions carry a `2` or `3` suffix (`Circle2`/`Circle3`,

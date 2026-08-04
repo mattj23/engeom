@@ -11,7 +11,6 @@ use crate::point_cloud::lptf3_load_from_args;
 use engeom::Selection;
 use engeom::common::SplitResult;
 use engeom::geom3::align3::{GAPParams, generate_alignment_points};
-use engeom::io::{deflate_bytes, u_bytes_to_mesh_data};
 use numpy::ndarray::{Array1, Array2, ArrayD};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::{PyIOError, PyValueError};
@@ -844,25 +843,6 @@ impl Mesh3 {
 
         let (points, faces, _) = mesh_data.into_parts();
         Ok(Self::from_inner(engeom::Mesh3::new(points, faces, false)))
-    }
-
-    #[staticmethod]
-    fn load_umesh(file_path: PathBuf) -> PyResult<Mesh3> {
-        // These files are always small, so we're going to just pull the whole thing into memory
-        let file_bytes =
-            std::fs::read(&file_path).map_err(|e| PyIOError::new_err(e.to_string()))?;
-
-        let deflated = if let Ok(b) = deflate_bytes(&file_bytes) {
-            b
-        } else {
-            file_bytes
-        };
-
-        let data =
-            u_bytes_to_mesh_data(&deflated).map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let mesh = engeom::Mesh3::from_data(data, false)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok(Self::from_inner(mesh))
     }
 
     #[staticmethod]
