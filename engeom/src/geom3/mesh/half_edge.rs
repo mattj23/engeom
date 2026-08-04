@@ -15,9 +15,9 @@
 //! that can absorb some of that churn.
 //!
 //! That said, because this is one of the least trodden parts of `engeom`, I don't have a good feel
-//! for how tooling around it is going to work in practice, so [`HalfEdgeMesh::as_alum`], 
-//! [`HalfEdgeMesh::as_alum_mut`], and [`HalfEdgeMesh::into_alum`] hand out the underlying mesh for 
-//! anything this wrapper does not cover, including the whole of `alum`'s decimation and subdivision 
+//! for how tooling around it is going to work in practice, so [`HalfEdgeMesh::as_alum`],
+//! [`HalfEdgeMesh::as_alum_mut`], and [`HalfEdgeMesh::into_alum`] hand out the underlying mesh for
+//! anything this wrapper does not cover, including the whole of `alum`'s decimation and subdivision
 //! machinery.
 //!
 //! [`NaAdaptor`] is the glue that lets `alum` work in terms of `nalgebra` types.
