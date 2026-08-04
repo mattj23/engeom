@@ -211,9 +211,11 @@ impl Mesh3 {
         Ok(Self::from_inner(mesh))
     }
 
-    #[pyo3(signature = (path, tol, allow_attribute_loss = false))]
-    fn save_tcmesh(&self, path: PathBuf, tol: f64, allow_attribute_loss: bool) -> PyResult<()> {
-        engeom::io::write_tc_mesh_file(&path, &self.inner.to_data(), tol, allow_attribute_loss)
+    // `allow_attribute_loss` is gone rather than kept as a parameter that only accepts one value:
+    // the tcmesh format refuses an attributed mesh outright now.
+    #[pyo3(signature = (path, tol))]
+    fn save_tcmesh(&self, path: PathBuf, tol: f64) -> PyResult<()> {
+        engeom::io::write_tc_mesh_file(&path, &self.inner.to_data(), tol)
             .map_err(|e| PyIOError::new_err(e.to_string()))
     }
 

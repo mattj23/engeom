@@ -34,6 +34,10 @@ pub use parry3d_f64::na;
 pub use rayon;
 pub use serde;
 pub use serde_json;
+// Re-exported so a caller can reach `tol_compress::reorder` without taking the dependency and
+// matching versions themselves. Writing a tcmesh renumbers vertices, and that is the module which
+// says how, so anyone holding per-vertex data outside the file needs it.
+pub use tol_compress;
 
 // Re-export the `three_d` crate if the feature is enabled
 #[cfg(feature = "three_d")]

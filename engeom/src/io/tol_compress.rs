@@ -1,20 +1,17 @@
-//! This module contains common tools for serialization that uses the practical tolerance-compressed
-//! method of storing spatial coordinates.
+//! Serialization that uses the practical tolerance-compressed method of storing spatial
+//! coordinates: the caller supplies the largest round-trip error they are willing to accept, and
+//! the storage layer finds the smallest representation that guarantees it.
 //!
-//! This method attempts to take advantage of two specific features of practical measurement data:
+//! The method and the on-disk format live in the standalone [`tol_compress`] crate, which has no
+//! dependencies and knows nothing about engeom. What is here is the adapter layer that converts
+//! between engeom's geometry types and that crate's containers, plus the two engeom-specific
+//! decisions that adapter has to make:
 //!
-//! 1. Real world measurement systems have known precisions below which differences in position
-//!    do not represent meaningful information, and users of measurement data have knowledge about
-//!    where increasingly small differences in values cease to be relevant to their use case.
-//! 2. Values produced by the measurement of physical objects rarely span more than a few orders
-//!    of magnitude more than the smallest meaningful precision for the measurement system and/or
-//!    the application.
-//!
-//! If a user can supply a tolerance that represents the largest acceptable round-trip accuracy of
-//! any value in their dataset, the storage algorithm can find a representation scheme that uses
-//! the smallest amount of bytes necessary to guarantee every position is recovered within that
-//! tolerance.
+//! - A [`Curve2`](crate::Curve2) or [`Curve3`](crate::Curve3) carries a chordal reconstruction
+//!   tolerance, which is not a property of the stored points. It travels as item metadata under
+//!   [`curve::CHORD_TOL`], a key the format stores and never interprets.
+//! - The format stores geometry only, so writing a mesh carrying attributes is an error naming
+//!   them rather than a silent loss. See the [`mesh`] module.
 
-pub mod core;
 pub mod curve;
 pub mod mesh;

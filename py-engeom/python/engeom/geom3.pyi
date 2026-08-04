@@ -2515,9 +2515,13 @@ class Mesh3:
     def load_tcmesh(path: str | Path, is_solid: bool = False) -> Mesh3:
         """
         Load a mesh from a tolerance-compressed mesh (.tcmesh) file. The tcmesh format stores vertex
-        positions as variable-width integers scaled within the bounding box of each partition,
-        using the minimum number of bytes needed to guarantee a round-trip accuracy at or below the
-        tolerance that was specified when the file was written.
+        positions as integers scaled within the bounding box of the point data, using the narrowest
+        bit width per axis needed to guarantee a round-trip accuracy at or below the tolerance that
+        was specified when the file was written.
+
+        Note that vertices are renumbered when a mesh is written, so the mesh loaded here describes
+        the same surface as the one that was saved but does not necessarily use the same vertex
+        indices.
 
         :param path: the path to the .tcmesh file to load.
         :param is_solid: whether distance queries should treat points inside the mesh as being at zero distance
@@ -2525,19 +2529,22 @@ class Mesh3:
         """
         ...
 
-    def save_tcmesh(self, path: str | Path, tol: float, allow_attribute_loss: bool = False):
+    def save_tcmesh(self, path: str | Path, tol: float):
         """
         Write the mesh to a tolerance-compressed mesh (.tcmesh) file. The tolerance controls the
         maximum allowable round-trip position error for any vertex: a smaller tolerance produces a
         more accurate file at the cost of more bytes per vertex, while a larger tolerance allows
         greater compression.
 
-        The format stores geometry and nothing else, so a mesh carrying any attributes at all is refused rather than
-        silently stripped, unless `allow_attribute_loss` is set.
+        Vertices and faces are reordered so that the connectivity compresses, which is where most of
+        the format's advantage comes from. The saved mesh describes the same surface but does not
+        necessarily use the same vertex indices.
+
+        The format stores geometry and nothing else, so a mesh carrying any attributes at all is
+        refused with an error naming them, rather than being silently stripped.
 
         :param path: the path to the .tcmesh file to write.
         :param tol: the maximum acceptable round-trip position error, in model units.
-        :param allow_attribute_loss: accept the loss of every attribute this mesh carries.
         """
         ...
 

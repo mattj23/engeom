@@ -64,18 +64,23 @@ fn cmd_to_tcmesh(input: &Path, output: Option<&Path>, tol: f64) -> Result<()> {
 
     let mesh = load_input_mesh(input, ext.as_deref())?;
 
-    write_tc_mesh_file(&output, &mesh, tol, false)?;
+    write_tc_mesh_file(&output, &mesh, tol)?;
 
     let recovered = read_tc_mesh_file(&output)?;
     if mesh.points().len() != recovered.points().len() {
         return Err("Vertex count mismatch after round-trip".into());
     }
 
-    let deviations = mesh
-        .points()
+    // Writing renumbers vertices, so the two point arrays cannot be compared position by position.
+    // The ordering is derived from connectivity, so recomputing the same plan says which original
+    // vertex each recovered one came from. Zipping the arrays directly would compare unrelated
+    // points and report a "deviation" the size of the part.
+    let plan = engeom::tol_compress::reorder::optimize(mesh.faces(), mesh.points().len())?;
+    let deviations = plan
+        .vertex_order
         .iter()
-        .zip(recovered.points().iter())
-        .map(|(a, b)| (a - b).norm())
+        .enumerate()
+        .map(|(new, &old)| (mesh.points()[old as usize] - recovered.points()[new]).norm())
         .collect::<Vec<_>>();
 
     let max_dev = deviations
