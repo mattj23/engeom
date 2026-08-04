@@ -1226,6 +1226,7 @@ mod tests {
 
     #[test]
     fn stress_tangent_and_point() -> Result<()> {
+        // TODO: there may be cases where this fails, and should be fixed
         let mut random = RandomGeometry2::new();
         for _ in 0..1000 {
             let c = random.circle2(10.0, 0.5, 5.0);

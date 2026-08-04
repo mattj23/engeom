@@ -1,16 +1,19 @@
 //! This module contains an abstraction for a mesh of triangles, represented by vertices and their
 //! indices into the vertex list.  This abstraction is built around the `TriMesh` type from the
 //! `parry3d` crate.
+//!
+//! For the connectivity-first view of the same surface, used by repair, smoothing and decimation,
+//! see [`half_edge3`](crate::geom3::half_edge3). [`MeshEditor`] is the handle which converts across,
+//! runs a sequence of edits, and converts back.
 
 pub mod algorithms;
 mod collisions;
 mod conformal;
 pub mod data;
-mod edges;
+pub(crate) mod edges;
 mod editor;
 pub mod filtering;
-pub mod half_edge;
-mod measurement;
+pub(crate) mod measurement;
 mod nav_structure;
 mod outline;
 pub mod patches;
@@ -26,7 +29,7 @@ pub use collisions::MeshCollisionSet;
 pub use data::{Attr3, MeshAttrSet3, MeshData3};
 pub use edges::MeshEdges;
 pub use editor::{EditReport, MeshEditor};
-pub use half_edge::HalfEdgeMesh;
+pub use measurement::SurfaceDeviation;
 pub use nav_structure::MeshNav;
 use parry3d_f64::bounding_volume::Aabb;
 use parry3d_f64::shape::{TriMesh, TriMeshFlags};

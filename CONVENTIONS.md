@@ -25,6 +25,14 @@ For now, these are the guidelines for user-facing structs that represent some co
 > [!NOTE]
 > **Known exception: the `Dof` family.** `Dof3` (in `geom2::align2`) and `Dof6` (in `geom3::align3`) are numbered by their degree-of-freedom count, not by dimension. This collides visually with the suffix rule above: `Dof3` lives in the 2D module but its `3` refers to `tx`/`ty`/`rz`. The count is the more useful thing to convey for these types, so the exception stands deliberately. Note to future self: don't get clever and "fix" `Dof3` to `Dof2`.
 
+## Coherence with Foreign Library Entity Names
+
+This example came up while working on mesh decimation. The `alum` library uses the spelling "decimater" due to its OpenMesh origins, while the spelling "decimator" is more comfortable to Americans and throws off less spell-checkers.
+
+In cases where a library has an undesirable or unfamiliar spelling of an entity, whether or not it may be renamed in interacting parts of `engeom` depends on how public facing the entity is.  An inconsistent spelling is worse than an unfamiliar one, so if `engeom` requires that a user is interacting with that entity directly as a normal part of the associated workflow, it's better to keep the spelling consistent.
+
+In the case of "decimater" vs "decimator", `alum`'s `alum::Decimater` is not directly needed for normal uses of the decimation machinery, and `alum`'s half edge `PolyMeshT` is wrapped by our `HalfEdgeMesh3`.  Because `alum` is mostly contained, and in congruence with wrapping `alum` in the event that it would ever need to be replaced, I chose to use the spelling `Decimator` within `engeom`.
+
 ## General Conventions for Function Names
 
 These conventions apply to the naming of all functions, including trait and struct implementations.
@@ -107,8 +115,6 @@ This is worth doing when *all* the following hold:
 - The foreign name actually violates a rule here, rather than merely being unfamiliar.
 - The operation is part of the everyday surface that users will reach for, not an obscure corner.
 - The extension trait already owns that part of the namespace, so the addition completes an existing family instead of starting a redundant parallel one.
-
-The worked example is `IsoExtensions2/3::from_translation` and `from_rotation`, added July 2026. nalgebra spells these `Iso3::translation(x, y, z)` and `Iso3::rotation(axisangle)`, which read as accessors rather than the constructors they are. `IsoExtensions3` already held twelve `from_*` constructors (`from_array`, six `from_basis_*`, `from_rot_axis`, `from_rx`/`ry`/`rz`, `from_z_arbitrary_xy`), so the two most basic constructors were a hole in that family: autocompleting `Iso3::from_` suggested no way to build a plain translation.  Additionally, nalgebra uses the name `translation` for both the constructor *and* the isometry's public field, so `iso.translation.x` and `Iso3::translation(..)` sit side by side meaning different things; `from_translation` can't be confused with the field. 
 
 # Implementation Conventions
 

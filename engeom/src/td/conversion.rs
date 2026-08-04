@@ -1,5 +1,5 @@
 use crate::Mesh3;
-use crate::geom3::mesh::HalfEdgeMesh;
+use crate::geom3::HalfEdgeMesh3;
 use alum::{Handle, HasIterators, HasTopology};
 use three_d::CpuMesh;
 
@@ -32,8 +32,8 @@ impl ToCpuMesh for Mesh3 {
     }
 }
 
-impl ToCpuMesh for HalfEdgeMesh {
-    /// Generates a `CpuMesh` from the `HalfEdgeMesh`.
+impl ToCpuMesh for HalfEdgeMesh3 {
+    /// Generates a `CpuMesh` from the `HalfEdgeMesh3`.
     fn to_cpu_mesh(&self) -> CpuMesh {
         let mesh = self.as_alum();
         let point_prop = mesh.points();

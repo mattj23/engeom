@@ -291,9 +291,9 @@ impl PatchStats {
 /// The three threshold criteria measure genuinely different things and scan data usually wants
 /// more than one. `min_faces` is cheap but tracks tessellation density rather than physical size,
 /// so it will keep a dense speckle and discard a coarsely tessellated real feature. `min_area` is
-/// the honest measure of how much surface a patch represents. `min_aabb_diagonal` catches the
-/// patch which covers almost no area but spans a long distance, such as the sliver a bad scan line
-/// drags out. Prefer the two physical measures when the tessellation density is not uniform.
+/// the measure of how much surface a patch represents. `min_aabb_diagonal` catches the patch which
+/// covers almost no area but spans a long distance, such as the sliver a bad scan line drags out.
+/// Prefer the two physical measures when the tessellation density is not uniform.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct PatchFilter {

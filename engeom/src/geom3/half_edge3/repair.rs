@@ -31,9 +31,9 @@
 //! be oriented consistently and would only push the problem into pass 4.
 
 use crate::common::IndexMask;
+use crate::geom3::half_edge3::HalfEdgeMesh3;
 use crate::geom3::mesh::algorithms::normals::compute_face_normal;
 use crate::geom3::mesh::edges::edge_key;
-use crate::geom3::mesh::half_edge::HalfEdgeMesh;
 use crate::{Mesh3, Point3, Result};
 use faer::prelude::default;
 use parry3d_f64::utils::hashmap::HashMap;
@@ -48,7 +48,7 @@ use parry3d_f64::utils::hashset::HashSet;
 /// Marked `#[non_exhaustive]`, so build one with the chained setters rather than a struct literal:
 ///
 /// ```
-/// use engeom::geom3::mesh::half_edge::RepairOpts;
+/// use engeom::geom3::half_edge3::RepairOpts;
 ///
 /// let opts = RepairOpts::default().with_orient_consistently(false);
 /// ```
@@ -737,7 +737,7 @@ fn drop_isolated_vertices(
     report.isolated_vertices_removed = removed;
 }
 
-impl HalfEdgeMesh {
+impl HalfEdgeMesh3 {
     /// Build a half-edge mesh from a `Mesh3`, repairing whatever topology the structure cannot
     /// accept and reporting what had to change.
     ///
@@ -754,7 +754,7 @@ impl HalfEdgeMesh {
     /// * `mesh`: the mesh to convert
     /// * `opts`: which repairs to attempt
     ///
-    /// returns: `Result<(HalfEdgeMesh, RepairReport)>`
+    /// returns: `Result<(HalfEdgeMesh3, RepairReport)>`
     pub fn from_mesh_repaired(mesh: &Mesh3, opts: &RepairOpts) -> Result<(Self, RepairReport)> {
         let repaired = repair_buffers(mesh.points(), mesh.faces(), opts)?;
         Self::from_repaired(repaired)
@@ -1036,11 +1036,12 @@ mod tests {
         let mesh = Mesh3::new(points, faces, false);
 
         assert!(
-            HalfEdgeMesh::try_from(&mesh).is_err(),
+            HalfEdgeMesh3::try_from(&mesh).is_err(),
             "three faces on one edge should be refused by the strict path"
         );
 
-        let (he, report) = HalfEdgeMesh::from_mesh_repaired(&mesh, &RepairOpts::default()).unwrap();
+        let (he, report) =
+            HalfEdgeMesh3::from_mesh_repaired(&mesh, &RepairOpts::default()).unwrap();
 
         assert_eq!(report.nonmanifold_edges, 1);
         assert_eq!(report.faces_rejected_by_ingest, 0);
@@ -1060,7 +1061,7 @@ mod tests {
         let faces = vec![tri(0, 1, 2), tri(0, 1, 3)];
         let mesh = Mesh3::new(points.clone(), faces.clone(), false);
 
-        assert!(HalfEdgeMesh::try_from(&mesh).is_err());
+        assert!(HalfEdgeMesh3::try_from(&mesh).is_err());
 
         let out = repair_buffers(&points, &faces, &RepairOpts::default()).unwrap();
 
@@ -1069,7 +1070,7 @@ mod tests {
         assert_eq!(out.report.faces_reoriented, 1);
         assert_eq!(out.report.faces_dropped_for_orientation, 0);
 
-        let (_, report) = HalfEdgeMesh::from_mesh_repaired(&mesh, &RepairOpts::default()).unwrap();
+        let (_, report) = HalfEdgeMesh3::from_mesh_repaired(&mesh, &RepairOpts::default()).unwrap();
         assert_eq!(report.faces_rejected_by_ingest, 0);
     }
 
@@ -1107,7 +1108,7 @@ mod tests {
             let expected = repaired.faces.len();
 
             let (he, report) =
-                HalfEdgeMesh::from_mesh_repaired(&mesh, &RepairOpts::default()).unwrap();
+                HalfEdgeMesh3::from_mesh_repaired(&mesh, &RepairOpts::default()).unwrap();
 
             assert_eq!(
                 report.faces_rejected_by_ingest, 0,
@@ -1139,13 +1140,13 @@ mod tests {
         let mesh = Mesh3::stanford_bunny_res4();
 
         let without = RepairOpts::default().with_split_bowtie_vertices(false);
-        let (_, report) = HalfEdgeMesh::from_mesh_repaired(&mesh, &without).unwrap();
+        let (_, report) = HalfEdgeMesh3::from_mesh_repaired(&mesh, &without).unwrap();
         assert_eq!(
             report.faces_rejected_by_ingest, 13,
             "without the split, alum should refuse these faces"
         );
 
-        let (_, report) = HalfEdgeMesh::from_mesh_repaired(&mesh, &RepairOpts::default()).unwrap();
+        let (_, report) = HalfEdgeMesh3::from_mesh_repaired(&mesh, &RepairOpts::default()).unwrap();
         assert_eq!(report.faces_rejected_by_ingest, 0);
     }
 

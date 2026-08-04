@@ -66,14 +66,60 @@ impl Segment2 {
         rot90(Cw) * direction
     }
 
-    pub fn intersects_other(&self, other: &Segment2) -> bool {
-        let l0 = self.to_line();
-        let l1 = other.to_line();
-        let Some((t0, t1)) = l0.intersection_params(&l1) else {
-            return l0.distance_to(&l1.origin) < 1e-12;
-        };
+    /// The parameters at which this segment crosses `other`, or `None` if they do not cross.
+    ///
+    /// Both are in the normalized `0.0..1.0` form used by [`at`](Segment::at), so
+    /// `self.at(t)` and `other.at(u)` are the same point.
+    ///
+    /// `None` covers three cases which a caller almost always wants to treat alike: the supporting
+    /// lines are parallel, they are collinear, or they meet somewhere outside one or both segments.
+    /// Use [`Line::closest_approach`](crate::common::Line::closest_approach) on
+    /// [`to_line`](Segment::to_line) to get the parameters regardless of whether they land in range.
+    ///
+    /// A crossing exactly at an endpoint counts. Callers which need a strictly interior crossing
+    /// should test the returned parameters against their own margin.
+    ///
+    /// # Arguments
+    ///
+    /// * `other`: the segment to test against
+    ///
+    /// returns: Option<(f64, f64)>, the parameter on `self` followed by the parameter on `other`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::Point2;
+    /// use engeom::geom2::Segment2;
+    /// use approx::assert_relative_eq;
+    ///
+    /// let a = Segment2::new(&Point2::new(0.0, 0.0), &Point2::new(2.0, 0.0)).unwrap();
+    /// let b = Segment2::new(&Point2::new(1.0, -1.0), &Point2::new(1.0, 3.0)).unwrap();
+    ///
+    /// let (t, u) = a.intersection_param(&b).unwrap();
+    /// assert_relative_eq!(t, 0.5, epsilon = 1e-12);
+    /// assert_relative_eq!(u, 0.25, epsilon = 1e-12);
+    /// assert_relative_eq!(a.at(t), b.at(u), epsilon = 1e-12);
+    ///
+    /// // The lines meet, but past the end of `a`.
+    /// let c = Segment2::new(&Point2::new(5.0, -1.0), &Point2::new(5.0, 1.0)).unwrap();
+    /// assert!(a.intersection_param(&c).is_none());
+    /// ```
+    pub fn intersection_param(&self, other: &Segment2) -> Option<(f64, f64)> {
+        let (t, u) = self.to_line().intersection_params(&other.to_line())?;
+        ((0.0..=1.0).contains(&t) && (0.0..=1.0).contains(&u)).then_some((t, u))
+    }
 
-        t0 >= 0.0 && t1 >= 0.0 && t0 <= 1.0 && t1 <= 1.0
+    /// Whether this segment touches `other` anywhere.
+    pub fn intersects_other(&self, other: &Segment2) -> bool {
+        if self.intersection_param(other).is_some() {
+            return true;
+        }
+
+        // Parallel supporting lines yield no crossing parameters at all, and collinear ones are
+        // reported as touching. Note that this does not check the collinear overlap is real, which
+        // is long-standing behaviour rather than a decision made here.
+        let (l0, l1) = (self.to_line(), other.to_line());
+        l0.intersection_params(&l1).is_none() && l0.distance_to(&l1.origin) < 1e-12
     }
 }
 
@@ -109,6 +155,7 @@ impl BoundaryElement2 for Segment2 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::random_geometry::RandomGeometry;
     use approx::assert_relative_eq;
 
     #[test]
@@ -137,5 +184,79 @@ mod tests {
         let test_point = Point2::new(2.0, 3.0);
         let closest = seg.closest_to_point(&test_point);
         assert_relative_eq!(closest.point, Point2::new(2.0, 1.0), epsilon = 1e-6);
+    }
+
+    // intersection_param tests ──────────────────────────────────────────────
+
+    fn seg(ax: f64, ay: f64, bx: f64, by: f64) -> Segment2 {
+        Segment2::new(&Point2::new(ax, ay), &Point2::new(bx, by)).unwrap()
+    }
+
+    #[test]
+    fn intersection_param_lands_on_the_same_point() {
+        let a = seg(0.0, 0.0, 4.0, 2.0);
+        let b = seg(0.0, 3.0, 3.0, -1.5);
+
+        let (t, u) = a.intersection_param(&b).unwrap();
+        assert_relative_eq!(a.at(t), b.at(u), epsilon = 1e-12);
+        assert!((0.0..=1.0).contains(&t) && (0.0..=1.0).contains(&u));
+    }
+
+    #[test]
+    fn intersection_param_refuses_a_crossing_off_the_end() {
+        // The supporting lines meet, but well beyond the end of both segments.
+        let a = seg(0.0, 0.0, 1.0, 0.0);
+        let b = seg(9.0, -1.0, 9.0, 1.0);
+        assert!(a.intersection_param(&b).is_none());
+    }
+
+    #[test]
+    fn intersection_param_refuses_parallel_and_collinear() {
+        let a = seg(0.0, 0.0, 2.0, 0.0);
+        assert!(a.intersection_param(&seg(0.0, 1.0, 2.0, 1.0)).is_none());
+        assert!(a.intersection_param(&seg(0.5, 0.0, 1.5, 0.0)).is_none());
+    }
+
+    #[test]
+    fn intersection_param_counts_an_endpoint_touch() {
+        // A T junction, where one segment ends on the other. Reported, because a caller wanting a
+        // strictly interior crossing can test the parameters itself.
+        let a = seg(0.0, 0.0, 2.0, 0.0);
+        let b = seg(1.0, 0.0, 1.0, 2.0);
+
+        let (t, u) = a.intersection_param(&b).unwrap();
+        assert_relative_eq!(t, 0.5, epsilon = 1e-12);
+        assert_relative_eq!(u, 0.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn intersection_param_is_symmetric() {
+        let a = seg(-1.0, -2.0, 3.0, 1.0);
+        let b = seg(2.0, -3.0, -0.5, 2.0);
+
+        let (t, u) = a.intersection_param(&b).unwrap();
+        let (u2, t2) = b.intersection_param(&a).unwrap();
+        assert_relative_eq!(t, t2, epsilon = 1e-12);
+        assert_relative_eq!(u, u2, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn stress_intersects_other_agrees_with_intersection_param() {
+        // The two now share their arithmetic, so this pins the one place they still differ: a
+        // collinear pair, which `intersects_other` reports as touching and which has no crossing
+        // parameters to report.
+        let mut rand = RandomGeometry::<2>::from_seed(0x5e62_c1a5);
+
+        for _ in 0..5000 {
+            let a = Segment2::new_unchecked(rand.point(3.0), rand.point(3.0));
+            let b = Segment2::new_unchecked(rand.point(3.0), rand.point(3.0));
+
+            if a.intersection_param(&b).is_some() {
+                assert!(
+                    a.intersects_other(&b),
+                    "a reported crossing was not reported as an intersection"
+                );
+            }
+        }
     }
 }

@@ -1,11 +1,11 @@
 //! This module implements simple smoothing algorithms for half-edge meshes.
 
-use super::HalfEdgeMesh;
+use super::HalfEdgeMesh3;
 use crate::common::points::dist;
 use crate::{Iso3, Point3, Result, SvdBasis3};
 use alum::{Handle, HasIterators, HasTopology};
 
-impl HalfEdgeMesh {
+impl HalfEdgeMesh3 {
     /// Smooth the mesh by fitting a plane to each vertex's one-ring and moving the vertex onto the
     /// average height of that ring within the fitted frame.
     ///

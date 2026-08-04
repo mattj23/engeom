@@ -71,3 +71,7 @@ harness = false
 [[bench]]
 name = "raster_ball_rolling"
 harness = false
+
+[[bench]]
+name = "mesh_decimate"
+harness = false
