@@ -104,6 +104,10 @@ impl VectorLengthAdaptor<3> for NaAdaptor {
     fn vector_length(v: Self::Vector) -> Self::Scalar {
         v.norm()
     }
+
+    fn vector_length_squared(v: Self::Vector) -> Self::Scalar {
+        v.norm_squared()
+    }
 }
 
 impl VectorNormalizeAdaptor<3> for NaAdaptor {
