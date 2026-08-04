@@ -29,7 +29,7 @@ pub use nav_structure::MeshNav;
 use parry3d_f64::bounding_volume::Aabb;
 use parry3d_f64::shape::{TriMesh, TriMeshFlags};
 use parry3d_f64::transformation;
-pub use patches::{PatchLabels, PatchStats};
+pub use patches::{PatchFilter, PatchLabels, PatchStats};
 pub use uv_mapping::UvMapping;
 
 #[cfg(feature = "ply")]
@@ -876,6 +876,52 @@ impl Mesh3 {
     pub fn compute_patch_labels(&self, mask: Option<&IndexMask>) -> Result<PatchLabels> {
         let nav = self.compute_nav();
         nav.patch_labels(mask)
+    }
+
+    /// Build a face mask selecting the connected patches which pass a filter.
+    ///
+    /// Use this rather than `remove_small_patches` when you want to see what would be discarded,
+    /// or to combine the selection with other criteria before extracting.
+    ///
+    /// # Arguments
+    ///
+    /// * `filter`: which patches are worth keeping
+    ///
+    /// returns: `Result<IndexMask>` over the mesh's faces
+    pub fn patch_mask(&self, filter: &PatchFilter) -> Result<IndexMask> {
+        let nav = self.compute_nav();
+        nav.patch_mask(filter, None)
+    }
+
+    /// Discard the connected patches which fail a filter, returning what is left.
+    ///
+    /// This is the tool for cleaning flying patches and speckle out of scan data. Every attribute
+    /// survives, because dropping whole faces keeps an index mapping back to the original.
+    ///
+    /// If no patch fails the filter the mesh is returned unchanged, rather than rebuilt, so a
+    /// filter which finds nothing to do is cheap and preserves the UV mapping.
+    ///
+    /// # Arguments
+    ///
+    /// * `filter`: which patches are worth keeping
+    ///
+    /// returns: `Result<Mesh3>`, failing if the filter would discard every face, since a mesh
+    /// needs at least one face
+    pub fn remove_small_patches(&self, filter: &PatchFilter) -> Result<Self> {
+        let mask = self.patch_mask(filter)?;
+        let kept = mask.count_true();
+
+        if kept == 0 {
+            return Err(
+                "Every patch was discarded by the filter, which would leave an empty mesh".into(),
+            );
+        }
+
+        if kept == self.faces().len() {
+            return Ok(self.clone());
+        }
+
+        self.extract_subset_faces(&mask)
     }
 
     /// Gets the boundary points of each patch in the mesh.  This function will return a list of

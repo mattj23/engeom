@@ -4,6 +4,8 @@ use crate::common::points::{dist, mean_point, triangle_area};
 use crate::common::{IndexMask, PCoords};
 use crate::geom3::mesh::MeshData3;
 use crate::geom3::mesh::algorithms::subsets::{compact_by_masks, compute_unique_point_mask};
+use crate::geom3::mesh::nav_structure::MeshNav;
+use crate::geom3::mesh::patches::PatchFilter;
 use crate::{Mesh3, Point3, SelectOp, Selection, SurfacePoint3, UnitVec3, Vector3};
 use crate::{Plane3, Result};
 use parry3d_f64::query::PointQuery;
@@ -166,6 +168,31 @@ impl TriangleFilter<'_> {
     /// * `mode`: the type of operation to perform with valid triangles
     ///
     /// returns: TriangleFilter
+    /// Select the triangles belonging to connected patches which pass a filter.
+    ///
+    /// Patch structure is computed among the faces this operation would consider, not the whole
+    /// mesh, which is what the other steps do and what makes the builder compose. Under
+    /// `SelectOp::KeepOnly` and `SelectOp::Remove` that is the current selection, so a preceding
+    /// step which carves the mesh up decides what counts as connected here; under `SelectOp::Add`
+    /// it is everything not currently selected.
+    ///
+    /// Note that this builds a `MeshNav` of its own, so a chain which uses it more than once pays
+    /// for the adjacency each time.
+    ///
+    /// # Arguments
+    ///
+    /// * `filter`: which patches are worth keeping
+    /// * `mode`: how the passing triangles combine with the current selection
+    ///
+    /// returns: `Result<TriangleFilter>`
+    pub fn keep_patches(self, filter: &PatchFilter, mode: SelectOp) -> Result<Self> {
+        let check_mask = self.to_check(mode);
+        let nav = MeshNav::new(self.mesh);
+        let op_mask = nav.patch_mask(filter, Some(&check_mask))?;
+
+        Ok(self.mutate_pass_list(mode, &op_mask))
+    }
+
     pub fn above_plane(self, plane: &Plane3, all_vertices: bool, mode: SelectOp) -> Self {
         let check_mask = self.to_check(mode);
         let mut op_mask = IndexMask::new(self.mesh.faces().len(), false);
@@ -709,6 +736,67 @@ mod tests {
             assert!(n.dot(&Vector3::z()) > 0.0);
         }
 
+        Ok(())
+    }
+
+    /// A body with a small flyer parked well away from it.
+    fn body_with_flyer() -> Mesh3 {
+        let mut mesh = Mesh3::create_box(20.0, 20.0, 20.0, false);
+        let mut flyer = Mesh3::create_box(0.5, 0.5, 0.5, false);
+        flyer.transform_in_place(&Iso3::translation(300.0, 0.0, 0.0));
+        mesh.append_in_place(&flyer).unwrap();
+        mesh
+    }
+
+    #[test]
+    fn keep_patches_selects_the_surviving_patches() -> Result<()> {
+        let mesh = body_with_flyer();
+        let kept = mesh
+            .face_select(Selection::All)
+            .keep_patches(&PatchFilter::keep_largest(), SelectOp::KeepOnly)?
+            .into_mesh()?;
+
+        assert_eq!(kept.faces().len(), 12);
+        Ok(())
+    }
+
+    /// Patch structure is computed among the faces the mode would consider, so a step which cuts
+    /// the mesh up first changes what counts as connected. Here only the +z faces of each box
+    /// survive the facing step, which leaves them touching at neither an edge nor a vertex.
+    #[test]
+    fn keep_patches_runs_within_the_current_selection() -> Result<()> {
+        let mesh = body_with_flyer();
+
+        let facing_up = mesh
+            .face_select(Selection::None)
+            .facing(&Vector3::z(), PI / 4.0, Add);
+        assert_eq!(facing_up.take_mask().count_true(), 4, "two faces per box");
+
+        // Both boxes contribute an equal-area pair, so the rank cut keeps one pair, not one face.
+        let kept = mesh
+            .face_select(Selection::None)
+            .facing(&Vector3::z(), PI / 4.0, Add)
+            .keep_patches(&PatchFilter::keep_largest(), SelectOp::KeepOnly)?
+            .take_mask();
+
+        assert_eq!(kept.count_true(), 2);
+        Ok(())
+    }
+
+    /// `Remove` takes the passing patches out of the selection rather than keeping them.
+    #[test]
+    fn keep_patches_can_remove_instead() -> Result<()> {
+        let mesh = body_with_flyer();
+        let remaining = mesh
+            .face_select(Selection::All)
+            .keep_patches(&PatchFilter::keep_largest(), SelectOp::Remove)?
+            .take_mask();
+
+        // The body passed the filter, so it is what gets removed, leaving the flyer.
+        assert_eq!(remaining.count_true(), 12);
+        for face in 0..12 {
+            assert!(!remaining.get(face));
+        }
         Ok(())
     }
 

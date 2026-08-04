@@ -96,6 +96,7 @@ fn register_geom3(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_class::<mesh::MeshData3>()?;
     child.add_class::<mesh::MeshCollisionSet>()?;
     child.add_class::<mesh::FaceFilterHandle>()?;
+    child.add_class::<mesh::PatchFilter>()?;
     child.add_class::<geom3::Curve3>()?;
     child.add_class::<geom3::CurveStation3>()?;
     child.add_class::<geom3::CubicSpline3>()?;

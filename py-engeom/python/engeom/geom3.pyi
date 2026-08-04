@@ -2973,6 +2973,34 @@ class Mesh3:
         """
         ...
 
+    def patch_mask(self, filter: PatchFilter) -> IndexMask:
+        """
+        Build a face mask selecting the connected patches which pass a filter.
+
+        Use this rather than `remove_small_patches` when you want to see what would be discarded, or to combine the
+        selection with other criteria before extracting.
+
+        :param filter: which patches are worth keeping.
+        :return: a mask over the mesh's faces.
+        """
+        ...
+
+    def remove_small_patches(self, filter: PatchFilter) -> Mesh3:
+        """
+        Discard the connected patches which fail a filter, returning what is left.
+
+        This is the tool for cleaning flying patches and speckle out of scan data. Every attribute survives, because
+        dropping whole faces keeps an index mapping back to the original.
+
+        If no patch fails the filter the mesh is returned unchanged, rather than rebuilt, so a filter which finds
+        nothing to do is cheap and preserves the UV mapping.
+
+        :param filter: which patches are worth keeping.
+        :return: a new mesh containing only the surviving patches.
+        :raises ValueError: if the filter would discard every face, since a mesh needs at least one face.
+        """
+        ...
+
     def find_points_in_tol(
             self,
             points: NDArray[float],
@@ -3348,6 +3376,70 @@ class Mesh3:
         ...
 
 
+class PatchFilter:
+    """
+    Which connected patches of a mesh are worth keeping.
+
+    Every criterion is optional and they combine as an intersection: a patch survives only if it passes all of the ones
+    which are set. A filter with nothing set keeps everything.
+
+    The three threshold criteria measure genuinely different things and scan data usually wants more than one.
+    `min_faces` is cheap but tracks tessellation density rather than physical size, so it will keep a dense speckle and
+    discard a coarsely tessellated real feature. `min_area` is the honest measure of how much surface a patch
+    represents. `min_aabb_diagonal` catches the patch which covers almost no area but spans a long distance, such as the
+    sliver a bad scan line drags out. Prefer the two physical measures when the tessellation density is not uniform.
+    """
+
+    def __init__(
+            self,
+            *,
+            min_faces: int | None = None,
+            min_area: float | None = None,
+            min_aabb_diagonal: float | None = None,
+            min_area_fraction: float | None = None,
+            keep_largest_n: int | None = None,
+    ):
+        """
+        Create a patch filter. All arguments are keyword-only and optional.
+
+        :param min_faces: discard a patch with fewer than this many faces.
+        :param min_area: discard a patch whose summed face area is below this, in the mesh's own units.
+        :param min_aabb_diagonal: discard a patch whose bounding box diagonal is below this, in the mesh's own units.
+            This is the criterion to reach for when the absolute size of the junk is known but its tessellation is not,
+            which is the usual situation with a flying patch.
+        :param min_area_fraction: discard a patch whose area is below this fraction of the largest patch's area. Needs
+            no knowledge of the part's size or units, which makes it the right default when the same filter runs across
+            parts of different scales.
+        :param keep_largest_n: keep only this many of the largest patches by area. Ranked by area rather than face
+            count, so a coarsely tessellated body still outranks a finely tessellated speck.
+        """
+        ...
+
+    @staticmethod
+    def keep_largest() -> PatchFilter:
+        """
+        Create a filter which keeps only the single largest patch by area and discards everything else.
+
+        :return: the new filter.
+        """
+        ...
+
+    @property
+    def min_faces(self) -> int | None: ...
+
+    @property
+    def min_area(self) -> float | None: ...
+
+    @property
+    def min_aabb_diagonal(self) -> float | None: ...
+
+    @property
+    def min_area_fraction(self) -> float | None: ...
+
+    @property
+    def keep_largest_n(self) -> int | None: ...
+
+
 class FaceFilterHandle:
     """
     A class that acts as a handle to a filtering (selection/deselection) operation of faces on a mesh.
@@ -3488,6 +3580,24 @@ class FaceFilterHandle:
         :param y: the y component of the direction to check against
         :param z: the z component of the direction to check against
         :param angle: the maximum angle in radians between the face normal and the filter direction
+        :param mode: the operation to perform on the faces, one of ``"add"``, ``"remove"``, or ``"keep"``
+        :return: the altered filter handle object
+        """
+        ...
+
+    def keep_patches(self, filter: PatchFilter, mode: engeom.SelectOp) -> FaceFilterHandle:
+        """
+        Add, remove, or keep only the faces belonging to connected patches which pass a filter.
+
+        Patch structure is computed among the faces this operation would consider, not the whole mesh, which is what
+        makes the filter chain compose. Under ``"keep"`` and ``"remove"`` that is the current selection, so a preceding
+        step which carves the mesh up decides what counts as connected here; under ``"add"`` it is everything not
+        currently selected.
+
+        This method will alter the filter handle object in place and return `self` to allow for the use of a fluent-like
+        interface if desired.
+
+        :param filter: which patches are worth keeping
         :param mode: the operation to perform on the faces, one of ``"add"``, ``"remove"``, or ``"keep"``
         :return: the altered filter handle object
         """

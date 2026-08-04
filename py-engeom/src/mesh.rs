@@ -22,6 +22,101 @@ use std::path::PathBuf;
 type VisualOutline<'py> = (Bound<'py, PyArrayDyn<f64>>, Bound<'py, PyArray1<u8>>);
 
 #[pyclass(from_py_object, module = "engeom.geom3")]
+#[derive(Clone)]
+pub struct PatchFilter {
+    inner: engeom::geom3::mesh::PatchFilter,
+}
+
+impl PatchFilter {
+    pub fn get_inner(&self) -> &engeom::geom3::mesh::PatchFilter {
+        &self.inner
+    }
+}
+
+#[pymethods]
+impl PatchFilter {
+    #[new]
+    #[pyo3(signature = (
+        *,
+        min_faces = None,
+        min_area = None,
+        min_aabb_diagonal = None,
+        min_area_fraction = None,
+        keep_largest_n = None,
+    ))]
+    fn new(
+        min_faces: Option<usize>,
+        min_area: Option<f64>,
+        min_aabb_diagonal: Option<f64>,
+        min_area_fraction: Option<f64>,
+        keep_largest_n: Option<usize>,
+    ) -> Self {
+        let mut inner = engeom::geom3::mesh::PatchFilter::default();
+        if let Some(v) = min_faces {
+            inner = inner.with_min_faces(v);
+        }
+        if let Some(v) = min_area {
+            inner = inner.with_min_area(v);
+        }
+        if let Some(v) = min_aabb_diagonal {
+            inner = inner.with_min_aabb_diagonal(v);
+        }
+        if let Some(v) = min_area_fraction {
+            inner = inner.with_min_area_fraction(v);
+        }
+        if let Some(v) = keep_largest_n {
+            inner = inner.with_keep_largest_n(v);
+        }
+
+        Self { inner }
+    }
+
+    #[staticmethod]
+    fn keep_largest() -> Self {
+        Self {
+            inner: engeom::geom3::mesh::PatchFilter::keep_largest(),
+        }
+    }
+
+    #[getter]
+    fn min_faces(&self) -> Option<usize> {
+        self.inner.min_faces
+    }
+
+    #[getter]
+    fn min_area(&self) -> Option<f64> {
+        self.inner.min_area
+    }
+
+    #[getter]
+    fn min_aabb_diagonal(&self) -> Option<f64> {
+        self.inner.min_aabb_diagonal
+    }
+
+    #[getter]
+    fn min_area_fraction(&self) -> Option<f64> {
+        self.inner.min_area_fraction
+    }
+
+    #[getter]
+    fn keep_largest_n(&self) -> Option<usize> {
+        self.inner.keep_largest_n
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "<PatchFilter min_faces={:?} min_area={:?} min_aabb_diagonal={:?} \
+             min_area_fraction={:?} keep_largest_n={:?}>",
+            self.inner.min_faces,
+            self.inner.min_area,
+            self.inner.min_aabb_diagonal,
+            self.inner.min_area_fraction,
+            self.inner.keep_largest_n
+        )
+    }
+}
+
+#[pyclass(from_py_object, module = "engeom.geom3")]
 pub struct Mesh3 {
     inner: engeom::Mesh3,
     points: Option<Py<PyArray2<f64>>>,
@@ -718,6 +813,22 @@ impl Mesh3 {
         Ok(labels_to_array(labels.labels()).into_pyarray(py))
     }
 
+    fn patch_mask(&self, filter: &PatchFilter) -> PyResult<IndexMask> {
+        let mask = self
+            .inner
+            .patch_mask(filter.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(IndexMask::from_inner(mask))
+    }
+
+    fn remove_small_patches(&self, filter: &PatchFilter) -> PyResult<Self> {
+        let inner = self
+            .inner
+            .remove_small_patches(filter.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(inner))
+    }
+
     #[pyo3(signature = (points, max_dist, max_angle, transform = None))]
     fn find_points_in_tol<'py>(
         &self,
@@ -904,6 +1015,25 @@ impl FaceFilterHandle {
             .inner
             .face_select(Selection::Indices(i))
             .facing(&normal, angle, op)
+            .collect_indices();
+        slf.into_pyobject(py)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    fn keep_patches<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        py: Python<'py>,
+        filter: &PatchFilter,
+        mode: &str,
+    ) -> PyResult<Bound<'py, Self>> {
+        let op = select_op_from_str(mode)?;
+        let temp = slf.mesh.bind(py).borrow();
+        let i = slf.indices.clone();
+        slf.indices = temp
+            .inner
+            .face_select(Selection::Indices(i))
+            .keep_patches(filter.get_inner(), op)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?
             .collect_indices();
         slf.into_pyobject(py)
             .map_err(|e| PyValueError::new_err(e.to_string()))

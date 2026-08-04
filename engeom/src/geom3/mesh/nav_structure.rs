@@ -5,7 +5,7 @@ use crate::Mesh3;
 use crate::Result;
 use crate::common::IndexMask;
 use crate::geom3::mesh::edges::edge_key;
-use crate::geom3::mesh::patches::PatchLabels;
+use crate::geom3::mesh::patches::{PatchFilter, PatchLabels};
 use faer::prelude::default;
 use parry3d_f64::utils::hashmap::HashMap;
 use parry3d_f64::utils::hashset::HashSet;
@@ -127,6 +127,24 @@ impl<'a> MeshNav<'a> {
         }
 
         PatchLabels::new(labels, count as usize)
+    }
+
+    /// Build a face mask selecting the connected patches which pass a filter.
+    ///
+    /// # Arguments
+    ///
+    /// * `filter`: which patches are worth keeping
+    /// * `mask`: an optional mask restricting which faces take part, as if the mesh had been
+    ///   pruned to it. Patch structure is computed among those faces only, so a face the mask
+    ///   excluded is never selected.
+    ///
+    /// returns: `Result<IndexMask>` over the mesh's faces
+    pub fn patch_mask(&self, filter: &PatchFilter, mask: Option<&IndexMask>) -> Result<IndexMask> {
+        let labels = self.patch_labels(mask)?;
+        let stats = labels.compute_stats(self.mesh)?;
+        let keep = filter.keep_flags(&stats);
+
+        Ok(labels.mask_where(|patch| keep[patch]))
     }
 
     /// Gets a list of boundary edges of the mesh. If a mask is provided, it will only consider
