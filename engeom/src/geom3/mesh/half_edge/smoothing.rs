@@ -5,25 +5,30 @@ use crate::common::points::dist;
 use crate::{Iso3, Point3, Result, SvdBasis3};
 use alum::{Handle, HasIterators, HasTopology};
 
-pub trait HalfEdgeSmoothing {
-    fn neighborhood_smooth(&mut self) -> Result<()>;
-}
-
-impl HalfEdgeSmoothing for HalfEdgeMesh {
-    fn neighborhood_smooth(&mut self) -> Result<()> {
-        let vertices = self.vertices().collect::<Vec<_>>();
+impl HalfEdgeMesh {
+    /// Smooth the mesh by fitting a plane to each vertex's one-ring and moving the vertex onto the
+    /// average height of that ring within the fitted frame.
+    ///
+    /// A vertex with fewer than three neighbors is left where it is, since no plane can be fitted
+    /// to it. The pass is two-phase, collecting every adjustment before applying any of them, so
+    /// the result does not depend on the order the vertices are visited.
+    ///
+    /// This moves measured points, so it changes the geometry rather than only the topology.
+    pub fn neighborhood_smooth(&mut self) -> Result<()> {
+        let mesh = &mut self.inner;
+        let vertices = mesh.vertices().collect::<Vec<_>>();
         let mut adjusted = Vec::new();
 
         for vh in vertices {
-            let this_point: Point3 = self
+            let this_point: Point3 = mesh
                 .point(vh)
                 .map_err(|e| format!("Failed to get point for vertex {}: {:?}", vh.index(), e))?
                 .into();
 
             let mut neighbors = Vec::new();
-            for he in self.voh_ccw_iter(vh) {
-                let neighbor_point: Point3 = self
-                    .point(he.head(self))
+            for he in mesh.voh_ccw_iter(vh) {
+                let neighbor_point: Point3 = mesh
+                    .point(he.head(mesh))
                     .map_err(|e| {
                         format!("Failed to get point for half-edge {}: {:?}", he.index(), e)
                     })?
@@ -57,7 +62,7 @@ impl HalfEdgeSmoothing for HalfEdgeMesh {
 
         // Apply the adjustments
         for (vh, new_point) in adjusted {
-            self.set_point(vh, new_point.coords)
+            mesh.set_point(vh, new_point.coords)
                 .map_err(|e| format!("Failed to set point for vertex {}: {:?}", vh.index(), e))?;
         }
 
