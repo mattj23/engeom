@@ -3772,10 +3772,10 @@ class Curve3:
     def load_tccurve3(path: str | Path) -> Curve3:
         """
         Load a curve from a tolerance-compressed 3D curve (.tccurve3) file. The tccurve3 format
-        stores vertex positions as variable-width integers scaled within the bounding box of the
-        point data, using the minimum number of bytes needed to guarantee a round-trip accuracy at
-        or below the tolerance that was specified when the file was written. The curve's
-        reconstruction tolerance is also stored in the file.
+        stores vertex positions as integers scaled within the bounding box of the point data, using
+        the narrowest bit width per axis needed to guarantee a round-trip accuracy at or below the
+        tolerance that was specified when the file was written. The curve's reconstruction tolerance
+        is also stored in the file.
 
         :param path: the path to the .tccurve3 file to load.
         :return: the curve loaded from the file.

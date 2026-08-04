@@ -810,6 +810,7 @@ dependencies = [
  "stl_io",
  "test-case",
  "three-d",
+ "tol-compress",
  "uuid",
 ]
 

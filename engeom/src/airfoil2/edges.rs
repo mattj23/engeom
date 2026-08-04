@@ -509,9 +509,15 @@ pub fn fit_spline_max_k(
             break;
         }
 
-        // Find the halfway point and get a new inscribed circle
+        // Find the halfway point and get a new inscribed circle. A refinement line that crosses no
+        // section geometry means this end has run out before the stack converged, which is the same
+        // situation as the failed spline fit below: stop refining and keep what we have. Unwrapping
+        // here panicked on a section whose points sat a few microns from where they had been.
         let l = half_line(last_circle, &clip.direction, fittings.last().unwrap());
-        stack.refine_and_push(input.try_inscribed(&l).unwrap(), input);
+        let Some(inscribed) = input.try_inscribed(&l) else {
+            break;
+        };
+        stack.refine_and_push(inscribed, input);
 
         let clip = stack.end_clip_line()?;
         let (t0, t1) = stack.last_tangents()?;

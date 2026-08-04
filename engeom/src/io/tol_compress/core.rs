@@ -1,12 +1,12 @@
 use crate::Result;
 use std::io::{Read, Write};
 
+// The 2d half of this module is gone: curves now go through the `tol-compress` crate, and nothing
+// else ever used it. The 3d half survives only until meshes follow.
 mod indices;
-mod points2;
 mod points3;
 
 pub use indices::*;
-pub use points2::*;
 pub use points3::*;
 
 pub(crate) fn read_u8<R: Read>(reader: &mut R) -> crate::Result<u8> {

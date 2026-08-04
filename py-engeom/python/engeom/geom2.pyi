@@ -1159,10 +1159,10 @@ class Curve2:
     def load_tccurve2(path: str | Path) -> Curve2:
         """
         Load a curve from a tolerance-compressed 2D curve (.tccurve2) file. The tccurve2 format
-        stores vertex positions as variable-width integers scaled within the bounding box of the
-        point data, using the minimum number of bytes needed to guarantee a round-trip accuracy at
-        or below the tolerance that was specified when the file was written. The curve's closed/open
-        state and reconstruction tolerance are also stored in the file.
+        stores vertex positions as integers scaled within the bounding box of the point data, using
+        the narrowest bit width per axis needed to guarantee a round-trip accuracy at or below the
+        tolerance that was specified when the file was written. The curve's closed/open state and
+        reconstruction tolerance are also stored in the file.
 
         :param path: the path to the .tccurve2 file to load.
         :return: the curve loaded from the file.
