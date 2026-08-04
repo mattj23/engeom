@@ -2,12 +2,14 @@
 
 Tolerance-bounded compression of practical spatial coordinate data, no dependencies.
 
-For point clouds, meshes, and polylines (for now), you give it a tolerance in the same units as the coordinates, and it finds the smallest representation that guarantees every coordinate comes back within that distance of where it started.  On real scanned geometry that is roughly 60 to 70% smaller than the same data stored as `f32` coordinates with `u32` indices, and smaller than a gzipped 16-bit quantized format even without being compressed at all.
+For point clouds, meshes, and polylines, you give it a tolerance in the same units as the coordinates, and it finds the smallest representation that guarantees every coordinate comes back within that distance of where it started.  On real scanned geometry that is roughly 60 to 70% smaller than the same data stored as `f32` coordinates with `u32` indices.
 
 ```toml
 [dependencies]
 tol-compress = "0.1"
 ```
+
+---
 
 ## Quick start
 
@@ -15,6 +17,11 @@ tol-compress = "0.1"
 use tol_compress::{Mesh3, mesh};
 
 fn main() -> Result<(), tol_compress::Error> {
+    // `tol-compress` has no concept of units, so you just need to be consistent between
+    // your geometry and your tolerance. If these positions are in meters, then 1e-6 is
+    // a micron.  If they were millimeters, 1e-3 would be a micron.
+
+    //  We'll assume these numbers are in meters
     let points = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
     let faces = vec![[0u32, 1, 2]];
     let path = std::env::temp_dir().join("bracket.tcmesh");

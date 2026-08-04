@@ -57,15 +57,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # Verifies the `rust-version` promised in engeom/Cargo.toml. Only the engeom crate is checked,
-      # because it is the only one published to crates.io and so the only one making the promise.
-      # 1.88 is required by the stable let-chains used in the source; nalgebra only needs 1.87.
+      # Verifies the `rust-version` promised by the two crates that are published to crates.io and so
+      # are the only ones making the promise. Both declare 1.88: engeom needs it for the stable
+      # let-chains in its source (nalgebra only needs 1.87), while tol-compress compiles on less and
+      # declares 1.88 to match rather than out of necessity.
       - uses: dtolnay/rust-toolchain@1.88.0
       - uses: Swatinem/rust-cache@v2
       - name: Check with no features
         run: cargo check -p engeom
       - name: Check with the published feature set
         run: cargo check -p engeom --features stl,ply
+      - name: Check tol-compress
+        run: cargo check -p tol-compress
 
   features:
     name: Feature combinations
@@ -130,8 +133,25 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # Catches broken or missing publish metadata now, on a branch, instead of at tag time. This is
       # the class of failure that let the published versions drift.
-      - name: Dry-run the publish
+      - name: Dry-run the engeom publish
         run: cargo publish -p engeom --dry-run
+      - name: Dry-run the tol-compress publish
+        run: cargo publish -p tol-compress --dry-run
+      # A dry run only builds the lib at default features, so it cannot see a test target whose data
+      # was left out of the package. That is not hypothetical: `exclude = ["tests/data/*"]` shipped
+      # tests/real_fixtures.rs without the PLY files it reads, and every test in it failed for a
+      # consumer while every check here passed. Build and test the artifact as one is received.
+      # `cargo package` is run explicitly rather than reusing the dry run above: a dry run leaves
+      # only its extracted verify directory behind, not the .crate tarball, and the tarball is the
+      # artifact a consumer actually receives.
+      - name: Test the packaged tol-compress as a consumer receives it
+        run: |
+          set -euo pipefail
+          cargo package -p tol-compress
+          rm -rf /tmp/pkgcheck && mkdir -p /tmp/pkgcheck
+          tar xzf target/package/tol-compress-*.crate -C /tmp/pkgcheck
+          cd /tmp/pkgcheck/tol-compress-*
+          cargo test --all-features
 
   book:
     name: Book
