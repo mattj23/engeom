@@ -12,6 +12,7 @@ pub mod half_edge;
 mod measurement;
 mod nav_structure;
 mod outline;
+pub mod patches;
 mod queries;
 pub mod sampling;
 mod section;
@@ -28,6 +29,7 @@ pub use nav_structure::MeshNav;
 use parry3d_f64::bounding_volume::Aabb;
 use parry3d_f64::shape::{TriMesh, TriMeshFlags};
 use parry3d_f64::transformation;
+pub use patches::{PatchLabels, PatchStats};
 pub use uv_mapping::UvMapping;
 
 #[cfg(feature = "ply")]
@@ -855,18 +857,25 @@ impl Mesh3 {
         MeshNav::new(self)
     }
 
-    /// Calculates the patches in the mesh. If you are going to be doing multiple queries of the
-    /// structure of the mesh, either use the half-edge representation, or generate a `MeshNav`
-    /// through the `compute_nav()` method to avoid having to recompute the mesh structure each time.
+    /// Label every face with the connected patch it belongs to.
+    ///
+    /// The labeling costs one `u32` per face regardless of how many patches the mesh splits into.
+    /// Use `PatchLabels::mask_where` or `mask_of` to turn the result into face masks, one at a
+    /// time, rather than materializing all of them at once. See `MeshNav::patch_labels` for the
+    /// connectivity rule.
+    ///
+    /// This builds a `MeshNav` on every call. Build one yourself with `compute_nav()` if you are
+    /// going to query the structure of the mesh more than once.
     ///
     /// # Arguments
     ///
-    /// * `mask`:
+    /// * `mask`: an optional mask restricting which faces take part, as if the mesh had been
+    ///   pruned to it.
     ///
-    /// returns: Result<Vec<IndexMask, Global>, Box<dyn Error, Global>>
-    pub fn compute_patches(&self, mask: Option<&IndexMask>) -> Result<Vec<IndexMask>> {
+    /// returns: `Result<PatchLabels>`
+    pub fn compute_patch_labels(&self, mask: Option<&IndexMask>) -> Result<PatchLabels> {
         let nav = self.compute_nav();
-        nav.patches(mask)
+        nav.patch_labels(mask)
     }
 
     /// Gets the boundary points of each patch in the mesh.  This function will return a list of

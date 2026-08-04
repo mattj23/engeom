@@ -5,6 +5,7 @@ use crate::Mesh3;
 use crate::Result;
 use crate::common::IndexMask;
 use crate::geom3::mesh::edges::edge_key;
+use crate::geom3::mesh::patches::PatchLabels;
 use faer::prelude::default;
 use parry3d_f64::utils::hashmap::HashMap;
 use parry3d_f64::utils::hashset::HashSet;
@@ -48,45 +49,84 @@ impl<'a> MeshNav<'a> {
         indices
     }
 
-    pub fn patches(&self, mask: Option<&IndexMask>) -> Result<Vec<IndexMask>> {
-        let mut results = Vec::new();
-        let mut remaining = HashSet::with_hasher(default());
-        if let Some(m) = mask {
-            for i in m.iter_true() {
-                remaining.insert(i as u32);
-            }
-        } else {
-            for i in 0..self.mesh.faces().len() {
-                remaining.insert(i as u32);
-            }
+    /// Label every face with the connected patch it belongs to.
+    ///
+    /// Two faces are in the same patch when a path of shared *edges* connects them. Faces which
+    /// touch only at a single vertex are therefore separate patches, which is the useful
+    /// definition when the point of the exercise is discarding junk: a piece of surface hanging
+    /// off the body by one vertex is not attached in any meaningful sense.
+    ///
+    /// Patches are numbered in order of their lowest-indexed face, so the result is deterministic.
+    ///
+    /// This is the primitive behind `patches`, and is what to reach for on a mesh which may split
+    /// into many pieces, because it costs one `u32` per face rather than one mask per patch.
+    ///
+    /// # Arguments
+    ///
+    /// * `mask`: an optional mask restricting which faces take part, as if the mesh had been
+    ///   pruned to it. Excluded faces come back labeled `PatchLabels::NO_PATCH`.
+    ///
+    /// returns: `Result<PatchLabels>`
+    pub fn patch_labels(&self, mask: Option<&IndexMask>) -> Result<PatchLabels> {
+        let n_faces = self.mesh.faces().len();
+
+        if let Some(m) = mask
+            && m.len() != n_faces
+        {
+            return Err(format!(
+                "A face mask of length {} does not match a mesh with {} faces",
+                m.len(),
+                n_faces
+            )
+            .into());
         }
 
-        while !remaining.is_empty() {
-            let mut patch = IndexMask::new(self.mesh.faces().len(), false);
-            let start_face = *remaining.iter().next().unwrap();
-            remaining.remove(&start_face);
+        // Face indices are u32 throughout the adjacency maps, and NO_PATCH claims u32::MAX, so a
+        // mesh at that scale could not be labeled unambiguously.
+        if n_faces >= PatchLabels::NO_PATCH as usize {
+            return Err(format!(
+                "A mesh with {} faces is too large to label, the limit is {}",
+                n_faces,
+                PatchLabels::NO_PATCH - 1
+            )
+            .into());
+        }
 
-            let mut working_queue = vec![start_face];
-            patch.set(start_face as usize, true);
+        let included = |f: usize| mask.is_none_or(|m| m.get(f));
 
-            while let Some(face_index) = working_queue.pop() {
-                for &edge in &self.face_to_edges[face_index as usize] {
-                    if let Some(face_list) = self.edge_to_faces.get(&edge) {
-                        for &neighbor_face in face_list {
-                            if remaining.contains(&neighbor_face) {
-                                remaining.remove(&neighbor_face);
-                                patch.set(neighbor_face as usize, true);
-                                working_queue.push(neighbor_face);
-                            }
+        let mut labels = vec![PatchLabels::NO_PATCH; n_faces];
+        let mut count = 0u32;
+        let mut stack: Vec<u32> = Vec::new();
+
+        for start in 0..n_faces {
+            if labels[start] != PatchLabels::NO_PATCH || !included(start) {
+                continue;
+            }
+
+            let label = count;
+            count += 1;
+
+            labels[start] = label;
+            stack.push(start as u32);
+
+            while let Some(face_index) = stack.pop() {
+                for edge in &self.face_to_edges[face_index as usize] {
+                    let Some(face_list) = self.edge_to_faces.get(edge) else {
+                        continue;
+                    };
+
+                    for &neighbor in face_list {
+                        let n = neighbor as usize;
+                        if labels[n] == PatchLabels::NO_PATCH && included(n) {
+                            labels[n] = label;
+                            stack.push(neighbor);
                         }
                     }
                 }
             }
-
-            results.push(patch);
         }
 
-        Ok(results)
+        PatchLabels::new(labels, count as usize)
     }
 
     /// Gets a list of boundary edges of the mesh. If a mask is provided, it will only consider
@@ -336,14 +376,107 @@ mod tests {
         let indices = faces_from_mask(&mask, &mapping, &mesh);
 
         let nav = MeshNav::new(&mesh);
-        let patches = nav.patches(Some(&indices)).unwrap();
-        assert_eq!(patches.len(), 2, "Expected two patches from the mask");
+        let labels = nav.patch_labels(Some(&indices)).unwrap();
+        assert_eq!(labels.count(), 2, "Expected two patches from the mask");
 
-        let f0 = patches[0].count_true();
-        let f1 = patches[1].count_true();
+        let mut counts = labels.face_counts();
+        counts.sort();
 
-        assert_eq!(f0.min(f1), 1920, "Smaller patch should have 1920 faces");
-        assert_eq!(f0.max(f1), 5020, "Smaller patch should have 5020 faces");
+        assert_eq!(counts[0], 1920, "Smaller patch should have 1920 faces");
+        assert_eq!(counts[1], 5020, "Larger patch should have 5020 faces");
+    }
+
+    /// The expanded mask form is a view onto the label buffer, so the two must agree face for
+    /// face, including on which faces the mask excluded entirely.
+    #[test]
+    fn patch_labels_agree_with_expanded_masks() {
+        let (mut mask, mapping, mesh) = make_fixture();
+        mask.draw_rect_mut(Point2I::new(10, 10), Point2I::new(40, 40), true, true);
+        mask.draw_rect_mut(Point2I::new(10, 60), Point2I::new(90, 90), true, true);
+        let indices = faces_from_mask(&mask, &mapping, &mesh);
+
+        let nav = MeshNav::new(&mesh);
+        let labels = nav.patch_labels(Some(&indices)).unwrap();
+        let patches = labels.to_masks();
+
+        assert_eq!(labels.count(), patches.len());
+        assert_eq!(labels.len(), mesh.faces().len());
+
+        for face in 0..mesh.faces().len() {
+            match labels.label_of(face) {
+                Some(patch) => {
+                    assert!(
+                        indices.get(face),
+                        "Face {} was labeled but the mask excluded it",
+                        face
+                    );
+                    for (other, m) in patches.iter().enumerate() {
+                        assert_eq!(
+                            m.get(face),
+                            other == patch,
+                            "Face {} labeled {} disagrees with mask {}",
+                            face,
+                            patch,
+                            other
+                        );
+                    }
+                }
+                None => {
+                    assert!(
+                        !indices.get(face),
+                        "Face {} was left unlabeled but the mask included it",
+                        face
+                    );
+                    for m in patches.iter() {
+                        assert!(!m.get(face), "Unlabeled face {} appears in a patch", face);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Without a mask every face belongs to some patch, and the fixture is a single sheet.
+    #[test]
+    fn patch_labels_without_a_mask_cover_every_face() {
+        let (_, _, mesh) = make_fixture();
+        let nav = MeshNav::new(&mesh);
+        let labels = nav.patch_labels(None).unwrap();
+
+        assert_eq!(labels.count(), 1, "The fixture is one connected sheet");
+        assert!(labels.labels().iter().all(|&l| l == 0));
+        assert_eq!(labels.face_counts(), vec![mesh.faces().len()]);
+    }
+
+    /// Patches are numbered by their lowest-indexed face, which the old hash-set traversal did not
+    /// guarantee. Callers ranking patches depend on the numbering not moving between runs.
+    #[test]
+    fn patch_labels_are_deterministic() {
+        let (mut mask, mapping, mesh) = make_fixture();
+        mask.draw_rect_mut(Point2I::new(10, 10), Point2I::new(40, 40), true, true);
+        mask.draw_rect_mut(Point2I::new(10, 60), Point2I::new(90, 90), true, true);
+        let indices = faces_from_mask(&mask, &mapping, &mesh);
+
+        let nav = MeshNav::new(&mesh);
+        let first = nav.patch_labels(Some(&indices)).unwrap();
+
+        for _ in 0..8 {
+            assert_eq!(first, nav.patch_labels(Some(&indices)).unwrap());
+        }
+
+        // The first labeled face must belong to patch 0.
+        let first_labeled = (0..mesh.faces().len())
+            .find(|&f| first.label_of(f).is_some())
+            .unwrap();
+        assert_eq!(first.label_of(first_labeled), Some(0));
+    }
+
+    #[test]
+    fn patch_labels_reject_a_mismatched_mask() {
+        let (_, _, mesh) = make_fixture();
+        let nav = MeshNav::new(&mesh);
+        let wrong = IndexMask::new(mesh.faces().len() + 1, true);
+
+        assert!(nav.patch_labels(Some(&wrong)).is_err());
     }
 
     #[test]

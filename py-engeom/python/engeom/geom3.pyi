@@ -2953,12 +2953,22 @@ class Mesh3:
         """
         ...
 
-    def compute_patches(self, mask: IndexMask | None = None) -> List[IndexMask]:
+    def compute_patch_labels(self, mask: IndexMask | None = None) -> NDArray[numpy.uint32]:
         """
-        Partition the faces into connected patches, returning one face mask per patch.
+        Partition the faces into connected patches, labeling each face with the patch it belongs to.
+
+        Two faces belong to the same patch when a path of shared *edges* connects them. Faces which touch only at a
+        single vertex are therefore in different patches, which is the useful definition when discarding junk from
+        scan data. Patches are numbered in order of their lowest-indexed face, so the result is deterministic.
+
+        Faces excluded by `mask` are labeled ``2**32 - 1`` rather than being assigned to a patch.
+
+        The label array costs four bytes per face no matter how many patches the mesh splits into, unlike a list of
+        one mask per patch. Group with `numpy`, for example ``numpy.bincount(labels[labels != 2**32 - 1])`` for the
+        face count of each patch, or ``labels == i`` for a boolean selection of patch `i`.
 
         :param mask: an optional face mask limiting which faces are considered. If None, every face participates.
-        :return: a list of face masks, one per connected patch.
+        :return: an array of length `face_count` holding the patch index of each face.
         :raises ValueError: if the mask length does not match the face count.
         """
         ...

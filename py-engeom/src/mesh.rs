@@ -706,12 +706,16 @@ impl Mesh3 {
     }
 
     #[pyo3(signature = (mask = None))]
-    fn compute_patches(&self, mask: Option<&IndexMask>) -> PyResult<Vec<IndexMask>> {
-        let patches = self
+    fn compute_patch_labels<'py>(
+        &self,
+        py: Python<'py>,
+        mask: Option<&IndexMask>,
+    ) -> PyResult<Bound<'py, PyArray1<u32>>> {
+        let labels = self
             .inner
-            .compute_patches(mask.map(|m| m.get_inner()))
+            .compute_patch_labels(mask.map(|m| m.get_inner()))
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok(patches.into_iter().map(IndexMask::from_inner).collect())
+        Ok(labels_to_array(labels.labels()).into_pyarray(py))
     }
 
     #[pyo3(signature = (points, max_dist, max_angle, transform = None))]
@@ -733,15 +737,21 @@ impl Mesh3 {
     }
 
     fn separate_patches(&self) -> PyResult<Vec<Self>> {
-        let patch_groups = self
+        let labels = self
             .inner
-            .compute_patches(None)
+            .compute_patch_labels(None)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let mut results = Vec::with_capacity(patch_groups.len());
-        for mask in patch_groups.iter() {
+
+        // One mask at a time. Building all of them up front costs `patches * faces` bits, which is
+        // exactly the wrong shape for the scan data most likely to be separated in the first place.
+        let mut results = Vec::with_capacity(labels.count());
+        for patch in 0..labels.count() {
+            let mask = labels
+                .mask_of(patch)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
             results.push(
                 self.inner
-                    .extract_subset_faces(mask)
+                    .extract_subset_faces(&mask)
                     .map_err(|e| PyValueError::new_err(e.to_string()))?,
             );
         }

@@ -171,17 +171,43 @@ def test_mesh_extract_subset_faces_matches_the_index_route():
     assert numpy.array_equal(by_mask.faces, by_indices.faces)
 
 
-def test_mesh_compute_patches_finds_disconnected_pieces():
+def test_mesh_compute_patch_labels_finds_disconnected_pieces():
     m = Mesh3.create_box(1.0, 1.0, 1.0)
     other = Mesh3.create_box(1.0, 1.0, 1.0)
     other.transform_in_place(Iso3.from_translation(10.0, 0.0, 0.0))
     m.append_in_place(other)
 
-    patches = m.compute_patches()
+    labels = m.compute_patch_labels()
 
-    assert len(patches) == 2
-    assert all(len(p) == m.face_count for p in patches)
-    assert sum(p.count_true() for p in patches) == m.face_count
+    assert labels.dtype == numpy.uint32
+    assert len(labels) == m.face_count
+    assert set(numpy.unique(labels)) == {0, 1}
+
+    # Both boxes tessellate the same way, so the faces split evenly between the two patches.
+    counts = numpy.bincount(labels)
+    assert list(counts) == [m.face_count // 2, m.face_count // 2]
+
+    # Patches are numbered by their lowest-indexed face, so the box appended first is patch 0.
+    assert labels[0] == 0
+    assert labels[-1] == 1
+
+
+def test_mesh_compute_patch_labels_marks_masked_faces():
+    m = Mesh3.create_box(1.0, 1.0, 1.0)
+    other = Mesh3.create_box(1.0, 1.0, 1.0)
+    other.transform_in_place(Iso3.from_translation(10.0, 0.0, 0.0))
+    m.append_in_place(other)
+
+    # Keep only the first box, which is the first half of the faces.
+    half = m.face_count // 2
+    mask = IndexMask.from_indices(range(half), m.face_count)
+
+    labels = m.compute_patch_labels(mask)
+
+    no_patch = 2**32 - 1
+    assert set(numpy.unique(labels)) == {0, no_patch}
+    assert numpy.all(labels[: m.face_count // 2] == 0)
+    assert numpy.all(labels[m.face_count // 2 :] == no_patch)
 
 
 def test_mesh_find_points_in_tol_is_indexed_by_the_given_points():
