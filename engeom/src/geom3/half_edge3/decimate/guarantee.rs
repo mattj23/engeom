@@ -1085,6 +1085,7 @@ mod tests {
     use crate::geom3::half_edge3::RepairOpts;
     use crate::geom3::half_edge3::difference::ShapeDifference;
     use crate::{Mesh3, Point3};
+    use std::sync::OnceLock;
 
     /// The independent measurement every claim in this module is checked against.
     ///
@@ -1126,7 +1127,35 @@ mod tests {
         Mesh3::new(points, faces, false)
     }
 
+    /// Decimate the blade, serving the default run at [`BLADE_TOL`] from a memo.
+    ///
+    /// Five tests in this module ask for that one run: `the_budget_is_nearly_spent`,
+    /// `a_tighter_tolerance_decimates_less`, `the_overlay_is_what_makes_a_tight_tolerance_usable`,
+    /// `both_quadric_kinds_respect_the_bound` and `every_method_holds_the_bound`. The last three
+    /// reach it through a setter and so do not look like they are asking for the default, but
+    /// `ProjectedOverlay` and `QuadricKind::Triangle` are the defaults, so the options compare
+    /// equal and the runs are the same run. At roughly eight seconds each that was the largest
+    /// single cost in the module.
+    ///
+    /// Keyed on the whole options struct rather than on the tolerance alone so that a test which
+    /// changes any field gets its own run. `DecimateOpts` is `PartialEq`, so this cannot drift out
+    /// of agreement with what the callers actually asked for.
+    ///
+    /// This is a memo of a pure function, not shared state. `decimate_guaranteed` reads nothing a
+    /// test could have modified, so there is nothing here for one test to observe of another.
     fn decimate_blade(opts: &DecimateOpts) -> (Mesh3, Mesh3, DecimateReport) {
+        static DEFAULT_RUN: OnceLock<(Mesh3, Mesh3, DecimateReport)> = OnceLock::new();
+
+        if *opts == DecimateOpts::to_tolerance(BLADE_TOL) {
+            return DEFAULT_RUN
+                .get_or_init(|| decimate_blade_uncached(opts))
+                .clone();
+        }
+
+        decimate_blade_uncached(opts)
+    }
+
+    fn decimate_blade_uncached(opts: &DecimateOpts) -> (Mesh3, Mesh3, DecimateReport) {
         let original = crate::tests::engine_blade();
         let mut he = HalfEdgeMesh3::try_from(&original).unwrap();
         let report = he.decimate_guaranteed(opts).unwrap();
