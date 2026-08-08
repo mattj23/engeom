@@ -6,6 +6,7 @@ mod common;
 mod conversions;
 mod geom2;
 mod geom3;
+mod half_edge3;
 mod mesh;
 mod metrology;
 mod point_cloud;
@@ -96,6 +97,16 @@ fn register_geom3(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_class::<mesh::MeshData3>()?;
     child.add_class::<mesh::MeshCollisionSet>()?;
     child.add_class::<mesh::FaceFilterHandle>()?;
+    child.add_class::<mesh::PatchFilter>()?;
+
+    // Half-edge mesh editing: repair, decimation, smoothing
+    child.add_class::<half_edge3::HalfEdgeMesh3>()?;
+    child.add_class::<half_edge3::RepairOpts>()?;
+    child.add_class::<half_edge3::RepairReport>()?;
+    child.add_class::<half_edge3::DecimateOpts>()?;
+    child.add_class::<half_edge3::BestEffortOpts>()?;
+    child.add_class::<half_edge3::DecimateReport>()?;
+    child.add_class::<half_edge3::DecimateStats>()?;
     child.add_class::<geom3::Curve3>()?;
     child.add_class::<geom3::CurveStation3>()?;
     child.add_class::<geom3::CubicSpline3>()?;

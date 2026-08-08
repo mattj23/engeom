@@ -1,6 +1,7 @@
 //! Distance queries and measurements on meshes
 
 use super::{Mesh3, MeshSurfPoint};
+use crate::common::barycentric::barycentric_point;
 use crate::common::points::dist;
 use crate::common::{IndexMask, PCoords};
 use crate::{Iso3, Plane3, Point3, Result, SurfacePoint3};
@@ -46,9 +47,9 @@ impl Mesh3 {
         }
 
         let face = self.shape.triangle(face_id);
-        let coords = face.a.coords * bc[0] + face.b.coords * bc[1] + face.c.coords * bc[2];
+        let at = barycentric_point(&face.a, &face.b, &face.c, bc);
         let normal = face.normal().ok_or("No face normal found")?;
-        let sp = SurfacePoint3::new(coords.into(), normal);
+        let sp = SurfacePoint3::new(at, normal);
         Ok(MeshSurfPoint {
             face_index: face_id,
             bc,

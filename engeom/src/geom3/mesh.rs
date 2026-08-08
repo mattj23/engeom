@@ -1,17 +1,22 @@
 //! This module contains an abstraction for a mesh of triangles, represented by vertices and their
 //! indices into the vertex list.  This abstraction is built around the `TriMesh` type from the
 //! `parry3d` crate.
+//!
+//! For the connectivity-first view of the same surface, used by repair, smoothing and decimation,
+//! see [`half_edge3`](crate::geom3::half_edge3). [`MeshEditor`] is the handle which converts across,
+//! runs a sequence of edits, and converts back.
 
 pub mod algorithms;
 mod collisions;
 mod conformal;
 pub mod data;
-mod edges;
+pub(crate) mod edges;
+mod editor;
 pub mod filtering;
-pub mod half_edge;
-mod measurement;
+pub(crate) mod measurement;
 mod nav_structure;
 mod outline;
+pub mod patches;
 mod queries;
 pub mod sampling;
 mod section;
@@ -23,11 +28,13 @@ use crate::{Iso3, Point2, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
 pub use collisions::MeshCollisionSet;
 pub use data::{Attr3, MeshAttrSet3, MeshData3};
 pub use edges::MeshEdges;
-pub use half_edge::HalfEdgeMesh;
+pub use editor::{EditReport, MeshEditor};
+pub use measurement::SurfaceDeviation;
 pub use nav_structure::MeshNav;
 use parry3d_f64::bounding_volume::Aabb;
 use parry3d_f64::shape::{TriMesh, TriMeshFlags};
 use parry3d_f64::transformation;
+pub use patches::{PatchFilter, PatchLabels, PatchStats};
 pub use uv_mapping::UvMapping;
 
 #[cfg(feature = "ply")]
@@ -855,18 +862,71 @@ impl Mesh3 {
         MeshNav::new(self)
     }
 
-    /// Calculates the patches in the mesh. If you are going to be doing multiple queries of the
-    /// structure of the mesh, either use the half-edge representation, or generate a `MeshNav`
-    /// through the `compute_nav()` method to avoid having to recompute the mesh structure each time.
+    /// Label every face with the connected patch it belongs to.
+    ///
+    /// The labeling costs one `u32` per face regardless of how many patches the mesh splits into.
+    /// Use `PatchLabels::mask_where` or `mask_of` to turn the result into face masks, one at a
+    /// time, rather than materializing all of them at once. See `MeshNav::patch_labels` for the
+    /// connectivity rule.
+    ///
+    /// This builds a `MeshNav` on every call. Build one yourself with `compute_nav()` if you are
+    /// going to query the structure of the mesh more than once.
     ///
     /// # Arguments
     ///
-    /// * `mask`:
+    /// * `mask`: an optional mask restricting which faces take part, as if the mesh had been
+    ///   pruned to it.
     ///
-    /// returns: Result<Vec<IndexMask, Global>, Box<dyn Error, Global>>
-    pub fn compute_patches(&self, mask: Option<&IndexMask>) -> Result<Vec<IndexMask>> {
+    /// returns: `Result<PatchLabels>`
+    pub fn compute_patch_labels(&self, mask: Option<&IndexMask>) -> Result<PatchLabels> {
         let nav = self.compute_nav();
-        nav.patches(mask)
+        nav.patch_labels(mask)
+    }
+
+    /// Build a face mask selecting the connected patches which pass a filter.
+    ///
+    /// Use this rather than `remove_small_patches` when you want to see what would be discarded,
+    /// or to combine the selection with other criteria before extracting.
+    ///
+    /// # Arguments
+    ///
+    /// * `filter`: which patches are worth keeping
+    ///
+    /// returns: `Result<IndexMask>` over the mesh's faces
+    pub fn patch_mask(&self, filter: &PatchFilter) -> Result<IndexMask> {
+        let nav = self.compute_nav();
+        nav.patch_mask(filter, None)
+    }
+
+    /// Discard the connected patches which fail a filter, returning what is left.
+    ///
+    /// This is the tool for cleaning flying patches and speckle out of scan data. Every attribute
+    /// survives, because dropping whole faces keeps an index mapping back to the original.
+    ///
+    /// If no patch fails the filter the mesh is returned unchanged, rather than rebuilt, so a
+    /// filter which finds nothing to do is cheap and preserves the UV mapping.
+    ///
+    /// # Arguments
+    ///
+    /// * `filter`: which patches are worth keeping
+    ///
+    /// returns: `Result<Mesh3>`, failing if the filter would discard every face, since a mesh
+    /// needs at least one face
+    pub fn remove_small_patches(&self, filter: &PatchFilter) -> Result<Self> {
+        let mask = self.patch_mask(filter)?;
+        let kept = mask.count_true();
+
+        if kept == 0 {
+            return Err(
+                "Every patch was discarded by the filter, which would leave an empty mesh".into(),
+            );
+        }
+
+        if kept == self.faces().len() {
+            return Ok(self.clone());
+        }
+
+        self.extract_subset_faces(&mask)
     }
 
     /// Gets the boundary points of each patch in the mesh.  This function will return a list of

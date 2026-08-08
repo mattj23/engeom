@@ -1,7 +1,7 @@
 //! This module contains an abstraction for mapping triangles in a mesh to a 2D UV space.
 
 use crate::common::PCoords;
-use crate::common::points::barycentric;
+use crate::common::barycentric::barycentric;
 use crate::raster2::RasterMapping;
 use crate::{Point2, Result, Vector2};
 use parry2d_f64::partitioning::TraversalAction;

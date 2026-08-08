@@ -2953,13 +2953,51 @@ class Mesh3:
         """
         ...
 
-    def compute_patches(self, mask: IndexMask | None = None) -> List[IndexMask]:
+    def compute_patch_labels(self, mask: IndexMask | None = None) -> NDArray[numpy.uint32]:
         """
-        Partition the faces into connected patches, returning one face mask per patch.
+        Partition the faces into connected patches, labeling each face with the patch it belongs to.
+
+        Two faces belong to the same patch when a path of shared *edges* connects them. Faces which touch only at a
+        single vertex are therefore in different patches, which is the useful definition when discarding junk from
+        scan data. Patches are numbered in order of their lowest-indexed face, so the result is deterministic.
+
+        Faces excluded by `mask` are labeled ``2**32 - 1`` rather than being assigned to a patch.
+
+        The label array costs four bytes per face no matter how many patches the mesh splits into, unlike a list of
+        one mask per patch. Group with `numpy`, for example ``numpy.bincount(labels[labels != 2**32 - 1])`` for the
+        face count of each patch, or ``labels == i`` for a boolean selection of patch `i`.
 
         :param mask: an optional face mask limiting which faces are considered. If None, every face participates.
-        :return: a list of face masks, one per connected patch.
+        :return: an array of length `face_count` holding the patch index of each face.
         :raises ValueError: if the mask length does not match the face count.
+        """
+        ...
+
+    def patch_mask(self, filter: PatchFilter) -> IndexMask:
+        """
+        Build a face mask selecting the connected patches which pass a filter.
+
+        Use this rather than `remove_small_patches` when you want to see what would be discarded, or to combine the
+        selection with other criteria before extracting.
+
+        :param filter: which patches are worth keeping.
+        :return: a mask over the mesh's faces.
+        """
+        ...
+
+    def remove_small_patches(self, filter: PatchFilter) -> Mesh3:
+        """
+        Discard the connected patches which fail a filter, returning what is left.
+
+        This is the tool for cleaning flying patches and speckle out of scan data. Every attribute survives, because
+        dropping whole faces keeps an index mapping back to the original.
+
+        If no patch fails the filter the mesh is returned unchanged, rather than rebuilt, so a filter which finds
+        nothing to do is cheap and preserves the UV mapping.
+
+        :param filter: which patches are worth keeping.
+        :return: a new mesh containing only the surviving patches.
+        :raises ValueError: if the filter would discard every face, since a mesh needs at least one face.
         """
         ...
 
@@ -3338,6 +3376,70 @@ class Mesh3:
         ...
 
 
+class PatchFilter:
+    """
+    Which connected patches of a mesh are worth keeping.
+
+    Every criterion is optional and they combine as an intersection: a patch survives only if it passes all of the ones
+    which are set. A filter with nothing set keeps everything.
+
+    The three threshold criteria measure genuinely different things and scan data usually wants more than one.
+    `min_faces` is cheap but tracks tessellation density rather than physical size, so it will keep a dense speckle and
+    discard a coarsely tessellated real feature. `min_area` is the honest measure of how much surface a patch
+    represents. `min_aabb_diagonal` catches the patch which covers almost no area but spans a long distance, such as the
+    sliver a bad scan line drags out. Prefer the two physical measures when the tessellation density is not uniform.
+    """
+
+    def __init__(
+            self,
+            *,
+            min_faces: int | None = None,
+            min_area: float | None = None,
+            min_aabb_diagonal: float | None = None,
+            min_area_fraction: float | None = None,
+            keep_largest_n: int | None = None,
+    ):
+        """
+        Create a patch filter. All arguments are keyword-only and optional.
+
+        :param min_faces: discard a patch with fewer than this many faces.
+        :param min_area: discard a patch whose summed face area is below this, in the mesh's own units.
+        :param min_aabb_diagonal: discard a patch whose bounding box diagonal is below this, in the mesh's own units.
+            This is the criterion to reach for when the absolute size of the junk is known but its tessellation is not,
+            which is the usual situation with a flying patch.
+        :param min_area_fraction: discard a patch whose area is below this fraction of the largest patch's area. Needs
+            no knowledge of the part's size or units, which makes it the right default when the same filter runs across
+            parts of different scales.
+        :param keep_largest_n: keep only this many of the largest patches by area. Ranked by area rather than face
+            count, so a coarsely tessellated body still outranks a finely tessellated speck.
+        """
+        ...
+
+    @staticmethod
+    def keep_largest() -> PatchFilter:
+        """
+        Create a filter which keeps only the single largest patch by area and discards everything else.
+
+        :return: the new filter.
+        """
+        ...
+
+    @property
+    def min_faces(self) -> int | None: ...
+
+    @property
+    def min_area(self) -> float | None: ...
+
+    @property
+    def min_aabb_diagonal(self) -> float | None: ...
+
+    @property
+    def min_area_fraction(self) -> float | None: ...
+
+    @property
+    def keep_largest_n(self) -> int | None: ...
+
+
 class FaceFilterHandle:
     """
     A class that acts as a handle to a filtering (selection/deselection) operation of faces on a mesh.
@@ -3478,6 +3580,24 @@ class FaceFilterHandle:
         :param y: the y component of the direction to check against
         :param z: the z component of the direction to check against
         :param angle: the maximum angle in radians between the face normal and the filter direction
+        :param mode: the operation to perform on the faces, one of ``"add"``, ``"remove"``, or ``"keep"``
+        :return: the altered filter handle object
+        """
+        ...
+
+    def keep_patches(self, filter: PatchFilter, mode: engeom.SelectOp) -> FaceFilterHandle:
+        """
+        Add, remove, or keep only the faces belonging to connected patches which pass a filter.
+
+        Patch structure is computed among the faces this operation would consider, not the whole mesh, which is what
+        makes the filter chain compose. Under ``"keep"`` and ``"remove"`` that is the current selection, so a preceding
+        step which carves the mesh up decides what counts as connected here; under ``"add"`` it is everything not
+        currently selected.
+
+        This method will alter the filter handle object in place and return `self` to allow for the use of a fluent-like
+        interface if desired.
+
+        :param filter: which patches are worth keeping
         :param mode: the operation to perform on the faces, one of ``"add"``, ``"remove"``, or ``"keep"``
         :return: the altered filter handle object
         """
@@ -5266,6 +5386,459 @@ class PointCloudData3:
         ...
 
     def __len__(self) -> int:
+        ...
+
+    def __repr__(self) -> str:
+        ...
+
+
+class RepairOpts:
+    """
+    Which repair passes to attempt when building a `HalfEdgeMesh3` from measured data.
+
+    Every pass defaults to on, which is what scan data normally wants. Each one discards or alters measured geometry,
+    so what a repair actually had to do is reported back through `HalfEdgeMesh3.repair_report` rather than being
+    silently absorbed.
+    """
+
+    def __init__(
+            self,
+            *,
+            drop_degenerate: bool = True,
+            drop_duplicate_faces: bool = True,
+            resolve_nonmanifold_edges: bool = True,
+            split_bowtie_vertices: bool = True,
+            orient_consistently: bool = True,
+            drop_isolated_vertices: bool = True,
+    ):
+        """
+        Create a repair option set. All arguments are keyword-only.
+
+        :param drop_degenerate: drop faces which repeat a vertex or enclose no area.
+        :param drop_duplicate_faces: drop faces which repeat a triangle already present, in either winding.
+        :param resolve_nonmanifold_edges: drop faces until no edge is shared by more than two of them.
+        :param split_bowtie_vertices: split a vertex whose incident faces form more than one fan into one vertex per
+            fan.
+        :param orient_consistently: flip faces so that every face in a connected component agrees on which side is out.
+        :param drop_isolated_vertices: drop points which no surviving face references.
+        """
+        ...
+
+    @staticmethod
+    def none() -> RepairOpts:
+        """
+        Create an option set with every pass disabled, as a base for turning on only what you want.
+
+        :return: the new option set.
+        """
+        ...
+
+    @property
+    def drop_degenerate(self) -> bool: ...
+
+    @property
+    def drop_duplicate_faces(self) -> bool: ...
+
+    @property
+    def resolve_nonmanifold_edges(self) -> bool: ...
+
+    @property
+    def split_bowtie_vertices(self) -> bool: ...
+
+    @property
+    def orient_consistently(self) -> bool: ...
+
+    @property
+    def drop_isolated_vertices(self) -> bool: ...
+
+    def __repr__(self) -> str:
+        ...
+
+
+class RepairReport:
+    """
+    An account of everything a repair changed.
+
+    Every field counts measured data that was altered or discarded, so a caller can decide whether the result is still
+    worth trusting. `is_clean` is the quick check that nothing happened at all.
+    """
+
+    @property
+    def degenerate_removed(self) -> int: ...
+
+    @property
+    def duplicate_faces_removed(self) -> int: ...
+
+    @property
+    def nonmanifold_edges(self) -> int: ...
+
+    @property
+    def faces_dropped_at_nonmanifold(self) -> int: ...
+
+    @property
+    def faces_dropped_for_orientation(self) -> int: ...
+
+    @property
+    def bowtie_vertices_split(self) -> int: ...
+
+    @property
+    def points_added_by_splitting(self) -> int: ...
+
+    @property
+    def faces_reoriented(self) -> int: ...
+
+    @property
+    def nonorientable_components(self) -> int: ...
+
+    @property
+    def faces_rejected_by_ingest(self) -> int: ...
+
+    def is_clean(self) -> bool:
+        """
+        Whether the repair had to change anything at all.
+
+        :return: True if every counter is zero.
+        """
+        ...
+
+    def __repr__(self) -> str:
+        ...
+
+
+class DecimateOpts:
+    """
+    How guaranteed decimation should behave.
+
+    The tolerance is a genuine two-sided bound over the surfaces, not just at sampled points or at the original
+    vertices: no part of the result strays further than `tol` from the original, and no part of the original is left
+    further than `tol` from the result. The bound holds across repeated runs on the same `HalfEdgeMesh3` rather than
+    per call.
+    """
+
+    def __init__(
+            self,
+            tol: float,
+            *,
+            face_count: int | None = None,
+            ratio: float | None = None,
+            max_normal_deviation: float | None = None,
+            min_aspect: float | None = None,
+            lock_boundary: bool | None = None,
+            boundary_tol: float | None = None,
+            placement: Literal["optimal", "midpoint", "endpoint"] | None = None,
+            quadric: Literal["triangle", "probabilistic"] | None = None,
+            error_method: Literal["contraction", "affine_face_map", "projected_overlay"] | None = None,
+    ):
+        """
+        Create a decimation option set. Everything but the tolerance is keyword-only and optional.
+
+        :param tol: the farthest the surface may move from the original, in the mesh's own units.
+        :param face_count: stop once the mesh is down to this many faces, or sooner if the tolerance refuses
+            everything. Mutually exclusive with `ratio`; supplying neither runs to the tolerance.
+        :param ratio: stop at this fraction of the starting face count, in (0, 1]. Mutually exclusive with
+            `face_count`.
+        :param max_normal_deviation: the most a face normal may rotate in a collapse, in radians.
+        :param min_aspect: the worst triangle aspect ratio a collapse may produce, where 0 is degenerate and 1 is
+            equilateral.
+        :param lock_boundary: whether the mesh outline is held fixed. Defaults to True, which preserves the outline of
+            an open mesh at the cost of some reduction near it.
+        :param boundary_tol: a separate, usually tighter tolerance budget for boundary vertices.
+        :param placement: where the surviving vertex of a collapse goes. `"optimal"` minimizes the quadric and gives
+            the most reduction; `"endpoint"` keeps every surviving point one that was actually measured.
+        :param quadric: which quadric orders the queue. `"probabilistic"` is more stable on noisy input.
+        :param error_method: how the error volume's growth is worked out. `"projected_overlay"` is the default and the
+            only one usable at a metrologist's tolerance; the other two are kept for cross-checking.
+        """
+        ...
+
+    @property
+    def tol(self) -> float: ...
+
+    @property
+    def face_count(self) -> int | None: ...
+
+    @property
+    def ratio(self) -> float | None: ...
+
+    @property
+    def max_normal_deviation(self) -> float: ...
+
+    @property
+    def min_aspect(self) -> float: ...
+
+    @property
+    def lock_boundary(self) -> bool: ...
+
+    @property
+    def boundary_tol(self) -> float | None: ...
+
+    @property
+    def placement(self) -> Literal["optimal", "midpoint", "endpoint"]: ...
+
+    @property
+    def quadric(self) -> Literal["triangle", "probabilistic"]: ...
+
+    @property
+    def error_method(self) -> Literal["contraction", "affine_face_map", "projected_overlay"]: ...
+
+    def __repr__(self) -> str:
+        ...
+
+
+class BestEffortOpts:
+    """
+    How best-effort decimation should behave.
+
+    Faster and considerably more aggressive than the guaranteed path, and `tol` is an estimate which the result
+    routinely exceeds rather than a bound. It holds every *original vertex* inside the tolerance and says nothing about
+    the surface between them. Use it for display meshes and for geometry which scaffolds a measurement rather than
+    carrying one.
+    """
+
+    def __init__(
+            self,
+            tol: float,
+            *,
+            face_count: int | None = None,
+            ratio: float | None = None,
+            max_normal_deviation: float | None = None,
+            min_aspect: float | None = None,
+            lock_boundary: bool | None = None,
+            placement: Literal["optimal", "midpoint", "endpoint"] | None = None,
+            quadric: Literal["triangle", "probabilistic"] | None = None,
+    ):
+        """
+        Create a best-effort decimation option set. Everything but the tolerance is keyword-only and optional.
+
+        :param tol: how far an original vertex may end up from the result, in the mesh's own units. Set this loose,
+            around half the mesh's edge length or more; set tight it stops meaning much.
+        :param face_count: stop once the mesh is down to this many faces. Mutually exclusive with `ratio`.
+        :param ratio: stop at this fraction of the starting face count, in (0, 1]. Mutually exclusive with
+            `face_count`.
+        :param max_normal_deviation: the most a face normal may rotate in a collapse, in radians.
+        :param min_aspect: the worst triangle aspect ratio a collapse may produce.
+        :param lock_boundary: whether the mesh outline is held fixed. Defaults to True.
+        :param placement: where the surviving vertex of a collapse goes.
+        :param quadric: which quadric orders the queue and decides the collapse.
+        """
+        ...
+
+    @property
+    def tol(self) -> float: ...
+
+    @property
+    def face_count(self) -> int | None: ...
+
+    @property
+    def ratio(self) -> float | None: ...
+
+    @property
+    def max_normal_deviation(self) -> float: ...
+
+    @property
+    def min_aspect(self) -> float: ...
+
+    @property
+    def lock_boundary(self) -> bool: ...
+
+    @property
+    def placement(self) -> Literal["optimal", "midpoint", "endpoint"]: ...
+
+    @property
+    def quadric(self) -> Literal["triangle", "probabilistic"]: ...
+
+    def __repr__(self) -> str:
+        ...
+
+
+class DecimateStats:
+    """
+    Counts of the work a decimation run did and why it refused what it refused.
+
+    These exist to make optimization decisions from measurement rather than from argument. The veto counters say which
+    test is actually binding. A veto is counted at the point it fires and testing stops there, so these are counts of
+    decisions rather than of how many tests each candidate would have failed.
+    """
+
+    @property
+    def evaluations(self) -> int: ...
+
+    @property
+    def acceptance_tests(self) -> int: ...
+
+    @property
+    def veto_normal(self) -> int: ...
+
+    @property
+    def veto_aspect(self) -> int: ...
+
+    @property
+    def veto_degenerate(self) -> int: ...
+
+    @property
+    def veto_error(self) -> int: ...
+
+    @property
+    def method_not_applicable(self) -> int: ...
+
+    def vetoes(self) -> int:
+        """
+        Every veto, however it fired.
+
+        :return: the summed veto counters.
+        """
+        ...
+
+    def __repr__(self) -> str:
+        ...
+
+
+class DecimateReport:
+    """
+    What a decimation run did.
+    """
+
+    @property
+    def collapses(self) -> int: ...
+
+    @property
+    def faces_before(self) -> int: ...
+
+    @property
+    def faces_after(self) -> int: ...
+
+    @property
+    def stats(self) -> DecimateStats: ...
+
+    def ratio(self) -> float:
+        """
+        The fraction of the starting face count which survived.
+
+        :return: `faces_after / faces_before`.
+        """
+        ...
+
+    def __repr__(self) -> str:
+        ...
+
+
+class HalfEdgeMesh3:
+    """
+    A half-edge representation of a triangle mesh, which is what topology edits are driven through.
+
+    Reach for this when an operation needs to navigate topology, such as decimation or smoothing. `Mesh3` remains the
+    right type for geometric queries, since it carries a BVH and this does not. Neither direction carries attributes,
+    `is_solid`, or the UV mapping, because this structure has nowhere to put them.
+
+    This object is pinned to the thread which created it, because the underlying structure cannot be shared between
+    threads. Touching it from another thread raises. Convert with `to_mesh` first if the result is needed elsewhere.
+    """
+
+    def __init__(self, mesh: Mesh3, *, repair: RepairOpts | None = None):
+        """
+        Build a half-edge structure from a mesh.
+
+        :param mesh: the mesh to build from.
+        :param repair: if given, repair whatever topology the structure will not accept, recording what had to change
+            in `repair_report`. If omitted, the build is strict and fails on the first element it will not accept, which
+            is appropriate only when the mesh is known to be clean. Measured data is routinely non-manifold and should
+            supply this.
+        """
+        ...
+
+    @property
+    def repair_report(self) -> RepairReport:
+        """
+        What the repairing constructor had to change, or an empty report if none was requested.
+        """
+        ...
+
+    @property
+    def vertex_count(self) -> int:
+        """
+        The number of vertices, including any which are deleted but not yet collected.
+        """
+        ...
+
+    @property
+    def face_count(self) -> int:
+        """
+        The number of faces, including any which are deleted but not yet collected.
+        """
+        ...
+
+    @property
+    def edge_count(self) -> int:
+        """
+        The number of edges, including any which are deleted but not yet collected.
+        """
+        ...
+
+    @property
+    def error_volume_is_current(self) -> bool:
+        """
+        Whether the decimation error volume still accounts for everything done to this mesh.
+
+        False once `decimate_best_effort` has run, after which `decimate_guaranteed` refuses.
+        """
+        ...
+
+    def decimate_guaranteed(self, opts: DecimateOpts) -> DecimateReport:
+        """
+        Decimate the mesh, keeping both surfaces within the tolerance of each other.
+
+        The bound holds across repeated calls rather than per call: the error volume accumulates on this object, so
+        several runs at a given tolerance land inside that tolerance rather than inside the sum of them.
+
+        :param opts: how decimation should behave.
+        :return: what the run did.
+        :raises ValueError: if the options are invalid, or if `decimate_best_effort` has already run on this mesh. That
+            path leaves the error volume describing less than what has happened to the surface, so a bound computed
+            from it afterwards would not be one.
+        """
+        ...
+
+    def decimate_best_effort(self, opts: BestEffortOpts) -> DecimateReport:
+        """
+        Decimate the mesh by estimated deviation rather than by a guaranteed bound.
+
+        This invalidates the error volume, so `decimate_guaranteed` refuses afterwards on this object.
+
+        :param opts: how decimation should behave.
+        :return: what the run did.
+        :raises ValueError: if the options are invalid.
+        """
+        ...
+
+    def smooth(self, iterations: int = 1) -> None:
+        """
+        Smooth the mesh, fitting a plane to each vertex's one-ring and moving the vertex onto the average height of
+        that ring.
+
+        This moves measured points and is not bounded by any tolerance, so it changes the geometry rather than only the
+        topology.
+
+        :param iterations: how many passes to apply. Zero is a no-op.
+        """
+        ...
+
+    def garbage_collect(self) -> None:
+        """
+        Discard elements marked deleted, compacting the structure.
+        """
+        ...
+
+    def to_mesh(self, is_solid: bool = False) -> Mesh3:
+        """
+        Build a `Mesh3` from the current state.
+
+        This compacts the structure first, so any index taken from it beforehand is invalid afterwards. Nothing is
+        carried but geometry.
+
+        :param is_solid: whether the result should answer distance queries as a solid.
+        :return: the new mesh.
+        :raises ValueError: if the structure has no faces left.
+        """
         ...
 
     def __repr__(self) -> str:

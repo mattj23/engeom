@@ -1,6 +1,7 @@
 pub mod align;
 mod angles;
 pub mod average;
+pub mod barycentric;
 pub mod consensus;
 mod convert_2d_3d;
 pub mod cubic_spline;
@@ -27,6 +28,7 @@ use crate::na::{Point, SVector, Unit};
 pub use align::{DistMode, RefinementHalt, SolveQuality, TerminationReason};
 pub use angles::*;
 pub use average::Averager;
+pub use barycentric::*;
 pub use consensus::{ConsensusFit, ConsensusModel, Magsac};
 pub use convert_2d_3d::{To2D, To3D};
 pub use discrete_domain::{DiscreteDomain, linear_space};

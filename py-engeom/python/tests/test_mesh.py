@@ -1,7 +1,7 @@
 import numpy
 import pytest
 from numpy import linalg
-from engeom.geom3 import Mesh3, Iso3, Plane3
+from engeom.geom3 import Mesh3, Iso3, Plane3, PatchFilter
 from engeom.common import IndexMask
 
 
@@ -171,17 +171,122 @@ def test_mesh_extract_subset_faces_matches_the_index_route():
     assert numpy.array_equal(by_mask.faces, by_indices.faces)
 
 
-def test_mesh_compute_patches_finds_disconnected_pieces():
+def test_mesh_compute_patch_labels_finds_disconnected_pieces():
     m = Mesh3.create_box(1.0, 1.0, 1.0)
     other = Mesh3.create_box(1.0, 1.0, 1.0)
     other.transform_in_place(Iso3.from_translation(10.0, 0.0, 0.0))
     m.append_in_place(other)
 
-    patches = m.compute_patches()
+    labels = m.compute_patch_labels()
 
-    assert len(patches) == 2
-    assert all(len(p) == m.face_count for p in patches)
-    assert sum(p.count_true() for p in patches) == m.face_count
+    assert labels.dtype == numpy.uint32
+    assert len(labels) == m.face_count
+    assert set(numpy.unique(labels)) == {0, 1}
+
+    # Both boxes tessellate the same way, so the faces split evenly between the two patches.
+    counts = numpy.bincount(labels)
+    assert list(counts) == [m.face_count // 2, m.face_count // 2]
+
+    # Patches are numbered by their lowest-indexed face, so the box appended first is patch 0.
+    assert labels[0] == 0
+    assert labels[-1] == 1
+
+
+def test_mesh_compute_patch_labels_marks_masked_faces():
+    m = Mesh3.create_box(1.0, 1.0, 1.0)
+    other = Mesh3.create_box(1.0, 1.0, 1.0)
+    other.transform_in_place(Iso3.from_translation(10.0, 0.0, 0.0))
+    m.append_in_place(other)
+
+    # Keep only the first box, which is the first half of the faces.
+    half = m.face_count // 2
+    mask = IndexMask.from_indices(range(half), m.face_count)
+
+    labels = m.compute_patch_labels(mask)
+
+    no_patch = 2**32 - 1
+    assert set(numpy.unique(labels)) == {0, no_patch}
+    assert numpy.all(labels[: m.face_count // 2] == 0)
+    assert numpy.all(labels[m.face_count // 2 :] == no_patch)
+
+
+def _body_with_flyer() -> Mesh3:
+    """A body with a small flyer parked well away from it, as scan data tends to produce."""
+    m = Mesh3.create_box(20.0, 20.0, 20.0)
+    flyer = Mesh3.create_box(0.5, 0.5, 0.5)
+    flyer.transform_in_place(Iso3.from_translation(300.0, 0.0, 0.0))
+    m.append_in_place(flyer)
+    return m
+
+
+def test_mesh_remove_small_patches_drops_the_flyer():
+    m = _body_with_flyer()
+    assert m.compute_patch_labels().max() == 1
+
+    cleaned = m.remove_small_patches(PatchFilter.keep_largest())
+
+    assert cleaned.face_count == 12
+    assert cleaned.compute_patch_labels().max() == 0
+
+    # With the flyer gone the bounding box is the body alone.
+    lo, hi = cleaned.aabb.min, cleaned.aabb.max
+    assert hi.x - lo.x == pytest.approx(20.0, abs=1e-9)
+
+
+@pytest.mark.parametrize(
+    "filter_",
+    [
+        PatchFilter(min_faces=None, min_area=10.0),
+        PatchFilter(min_aabb_diagonal=5.0),
+        PatchFilter(min_area_fraction=0.01),
+        PatchFilter(keep_largest_n=1),
+    ],
+)
+def test_mesh_remove_small_patches_criteria_each_catch_the_flyer(filter_):
+    cleaned = _body_with_flyer().remove_small_patches(filter_)
+    assert cleaned.face_count == 12
+
+
+def test_mesh_patch_mask_reports_what_would_be_kept():
+    m = _body_with_flyer()
+    mask = m.patch_mask(PatchFilter.keep_largest())
+
+    assert len(mask) == m.face_count
+    assert mask.count_true() == 12
+    kept = mask.to_indices()
+    assert list(kept) == list(range(12))
+
+
+def test_mesh_remove_small_patches_keeping_everything_is_a_no_op():
+    m = _body_with_flyer()
+    same = m.remove_small_patches(PatchFilter())
+
+    assert same.face_count == m.face_count
+    assert same.point_count == m.point_count
+
+
+def test_mesh_remove_small_patches_rejects_discarding_everything():
+    m = _body_with_flyer()
+    with pytest.raises(ValueError):
+        m.remove_small_patches(PatchFilter(min_faces=1_000_000))
+
+
+def test_patch_filter_exposes_its_criteria():
+    f = PatchFilter(min_faces=50, min_area_fraction=0.01)
+
+    assert f.min_faces == 50
+    assert f.min_area_fraction == 0.01
+    assert f.min_area is None
+    assert f.min_aabb_diagonal is None
+    assert f.keep_largest_n is None
+    assert PatchFilter.keep_largest().keep_largest_n == 1
+
+
+def test_face_select_keep_patches():
+    m = _body_with_flyer()
+    kept = m.face_select("all").keep_patches(PatchFilter.keep_largest(), "keep").to_mesh()
+
+    assert kept.face_count == 12
 
 
 def test_mesh_find_points_in_tol_is_indexed_by_the_given_points():

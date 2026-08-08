@@ -54,7 +54,7 @@ use crate::io::{StlWriteOpts, load_stl_mesh_data, write_stl_mesh_data};
 /// - You are doing something custom with serialization or deserialization
 ///
 /// If you need to perform spatial queries or do the types of edits requiring a half-edge
-/// representation, you should use the `Mesh3` and `HalfEdgeMesh` types, respectively. The
+/// representation, you should use the `Mesh3` and `HalfEdgeMesh3` types, respectively. The
 /// `MeshData3` type has consuming `TryFrom<T>` and `TryInto<T>` implementations for these types.
 ///
 /// # Invariants

@@ -63,9 +63,9 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "alum"
-version = "0.6.1"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91a8fb111fb7ce06dc6cac9e157f83ef550e100fa4752450cca5821c8b40cc2e"
+checksum = "2db942c9565204f22985f90cf9389a3d2ee26fe8323fd8524cbc0056d1777a7a"
 dependencies = [
  "tobj",
 ]
