@@ -571,8 +571,15 @@ mod tests {
         write_points(&mut a, &clean.points, clean.tol).unwrap();
         write_points(&mut b, &noisy.points, noisy.tol).unwrap();
 
-        // Same tolerance and near-identical extents, so today the two are the same size. Once
-        // prediction lands in increment 5 this is the pair that should visibly diverge.
-        assert_eq!(a.len(), b.len());
+        // The two have the same tolerance and near-identical extents, so a single bounding box
+        // charges them identically and this pair used to come out byte for byte the same. What
+        // separates them now is partitioning: noise pushes points out of the tight local boxes a
+        // clean surface falls into, so fewer cuts pay and the ones that do save less.
+        assert!(
+            a.len() < b.len(),
+            "noise should cost bits: clean {} against noisy {}",
+            a.len(),
+            b.len()
+        );
     }
 }

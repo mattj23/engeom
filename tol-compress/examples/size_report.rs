@@ -25,12 +25,17 @@
 //! vertices and faces renumbered by `reorder`. The `mode` column says which index coding won: `hw`
 //! for high-water-mark deltas, `abs` for plain absolute indices, which is what a block too small to
 //! pay for the block coder's overheads falls back to.
+//!
+//! Everything is measured at `Effort::Balanced`, which is the default. `parts` is how many
+//! partitions the points block came out in, and `vs quick` is what those partitions were worth
+//! against `Effort::Quick`, which writes the single partition the format used to write. A row at
+//! one partition and 0.0% is a case with no locality for the segmenter to trade on.
 
 #[path = "../tests/support/ply.rs"]
 mod ply;
 
 use tol_compress::corpus::{self, Case};
-use tol_compress::{Cloud3, Mesh3, cloud, mesh, reorder, write_indices, write_points};
+use tol_compress::{Cloud3, Effort, Mesh3, cloud, mesh, reorder, write_indices, write_points_with};
 
 fn main() {
     println!("# tol-compress size report\n");
@@ -62,9 +67,10 @@ fn main() {
 
     println!("\n## Noise sweep\n");
     println!(
-        "Coordinate prediction was measured and dropped, so noise costs nothing in the points \
-         block and these rows stay identical. Noise does not disturb connectivity either, so the \
-         index blocks match too.\n"
+        "Coordinate prediction was measured and dropped, so noise costs nothing in the widths \
+         themselves. What it costs is partitioning: noise pushes points out of the tight local \
+         boxes a clean surface falls into, so fewer cuts pay for their header and the ones that \
+         do save less. Noise does not disturb connectivity, so the index blocks stay identical.\n"
     );
     let noise: Vec<(String, Case)> = [0.0, 0.005, 0.05, 0.5]
         .iter()
@@ -82,14 +88,16 @@ fn main() {
 
 fn print_table(rows: &[(String, Case)]) {
     println!(
-        "| case | verts | faces | tol | coords | indices | mode | file | over | B/vert | vs old | vs f32 |"
+        "| case | verts | faces | tol | coords | parts | vs quick | indices | mode | file | over | B/vert | vs old | vs f32 |"
     );
-    println!("| --- | --: | --: | --: | --: | --: | :-: | --: | --: | --: | --: | --: |");
+    println!(
+        "| --- | --: | --: | --: | --: | --: | --: | --: | :-: | --: | --: | --: | --: | --: |"
+    );
 
     for (label, case) in rows {
         let Some(m) = measure(case) else {
             println!(
-                "| {label} | {} | {} | {:.0e} | | | | | | | not representable |",
+                "| {label} | {} | {} | {:.0e} | | | | | | | | | | not representable |",
                 case.points.len(),
                 case.faces.len(),
                 case.tol
@@ -104,11 +112,13 @@ fn print_table(rows: &[(String, Case)]) {
         };
 
         println!(
-            "| {label} | {} | {} | {:.0e} | {} | {} | {} | {} | {} | {:.2} | {} | {} |",
+            "| {label} | {} | {} | {:.0e} | {} | {} | {} | {} | {} | {} | {} | {:.2} | {} | {} |",
             case.points.len(),
             case.faces.len(),
             case.tol,
             m.coords,
+            m.partitions,
+            percent(m.coords, m.quick_coords),
             m.indices,
             m.mode,
             m.file,
@@ -131,6 +141,10 @@ fn percent(actual: usize, baseline: usize) -> String {
 
 struct Measurement {
     coords: usize,
+    /// How many partitions the points block came out in.
+    partitions: u32,
+    /// The same coordinates at `Effort::Quick`, which is one partition over the whole set.
+    quick_coords: usize,
     indices: usize,
     /// Which index coding won, or a dash where there are no indices to code.
     mode: &'static str,
@@ -169,7 +183,11 @@ fn measure(case: &Case) -> Option<Measurement> {
     };
 
     let mut coord_buf = Vec::new();
-    write_points(&mut coord_buf, &points, case.tol).ok()?;
+    write_points_with(&mut coord_buf, &points, case.tol, Effort::Balanced).ok()?;
+    let partitions = u32::from_le_bytes(coord_buf[1..5].try_into().ok()?);
+
+    let mut quick_buf = Vec::new();
+    write_points_with(&mut quick_buf, &points, case.tol, Effort::Quick).ok()?;
 
     let mut index_buf = Vec::new();
     let limit = case.points.len() as u32;
@@ -213,6 +231,8 @@ fn measure(case: &Case) -> Option<Measurement> {
 
     Some(Measurement {
         coords: coord_buf.len(),
+        partitions,
+        quick_coords: quick_buf.len(),
         indices: index_buf.len(),
         mode,
         file: file_buf.len(),

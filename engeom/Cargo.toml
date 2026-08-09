@@ -11,6 +11,16 @@ documentation = "https://docs.rs/engeom"
 keywords = ["geometry", "metrology", "mesh", "engineering", "cad"]
 categories = ["science", "mathematics", "graphics"]
 
+# Reads PLY, so it is only built where that reader exists. It measures files too large to keep in
+# the repository, so it is an example rather than a test: there is nothing for CI to point it at.
+[[example]]
+name = "tc_size_row"
+required-features = ["ply"]
+
+[[example]]
+name = "tc_obb_probe"
+required-features = ["ply"]
+
 [features]
 stl = ["dep:stl_io"]
 three_d = ["dep:three-d"]
@@ -27,7 +37,7 @@ uuid = { workspace = true, features = ["v4"] }
 
 # Both halves are needed: `path` so workspace changes are picked up without a release, `version` so
 # engeom can be published against the crates.io release.
-tol-compress = { version = "0.1", path = "../tol-compress" }
+tol-compress = { version = "0.2", path = "../tol-compress" }
 
 alum = { version = "0.7.1", default-features = false, features = ["decimate", "subdiv"] }
 three-d = { version = "0.18.2", optional = true }
