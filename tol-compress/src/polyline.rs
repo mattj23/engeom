@@ -29,9 +29,10 @@
 //! ```
 
 use crate::container::{self, Kind, Named, item};
+use crate::effort::Effort;
 use crate::error::{Error, Result};
 use crate::metadata::Metadata;
-use crate::points::{read_points, write_points};
+use crate::points::{read_points, write_points_with};
 use crate::raw::MAX_PREALLOC;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
@@ -102,6 +103,41 @@ fn kind_for<const N: usize>() -> Kind {
     }
 }
 
+/// Everything [`write_to_with`] can be told beyond the geometry and the tolerance.
+///
+/// Non-exhaustive, so that later settings do not break callers. Build one with [`WriteOptions::new`]
+/// and the `with_` methods, or from [`Default`], and set the fields on it directly from there.
+///
+/// There is no ordering setting here: a polyline's point order is the curve itself, so there is
+/// nothing an encoder could renumber.
+#[non_exhaustive]
+#[derive(Debug, Clone, Default)]
+pub struct WriteOptions {
+    /// File-level metadata. Stored, never interpreted.
+    pub metadata: Metadata,
+    /// How hard to search for a smaller file. Changes size and encoding time, nothing else.
+    pub effort: Effort,
+}
+
+impl WriteOptions {
+    /// The defaults: no metadata, [`Effort::Balanced`].
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The same options carrying file-level metadata.
+    pub fn with_metadata(mut self, metadata: Metadata) -> Self {
+        self.metadata = metadata;
+        self
+    }
+
+    /// The same options at a different search effort.
+    pub fn with_effort(mut self, effort: Effort) -> Self {
+        self.effort = effort;
+        self
+    }
+}
+
 /// Write a collection of polylines, every item at the same storage tolerance.
 ///
 /// # Errors
@@ -113,22 +149,33 @@ pub fn write_to<W: Write, const N: usize>(
     polylines: &[Polyline<N>],
     tol: f64,
 ) -> Result<()> {
-    write_to_with_meta(writer, polylines, tol, &Metadata::new())
+    write_to_with(writer, polylines, tol, &WriteOptions::default())
 }
 
-/// Write a collection of polylines with file-level metadata attached. See [`write_to`].
+/// Write a collection of polylines with file-level metadata attached. See [`write_to_with`].
 pub fn write_to_with_meta<W: Write, const N: usize>(
     writer: &mut W,
     polylines: &[Polyline<N>],
     tol: f64,
     file_metadata: &Metadata,
 ) -> Result<()> {
+    let options = WriteOptions::new().with_metadata(file_metadata.clone());
+    write_to_with(writer, polylines, tol, &options)
+}
+
+/// Write a collection of polylines with full control over metadata and effort. See [`write_to`].
+pub fn write_to_with<W: Write, const N: usize>(
+    writer: &mut W,
+    polylines: &[Polyline<N>],
+    tol: f64,
+    options: &WriteOptions,
+) -> Result<()> {
     let count = u32::try_from(polylines.len())
         .map_err(|_| Error::Malformed("container holds more items than a u32 can count"))?;
-    container::write_header(writer, kind_for::<N>(), count, file_metadata)?;
+    container::write_header(writer, kind_for::<N>(), count, &options.metadata)?;
 
     for polyline in polylines {
-        write_item(writer, polyline, tol)?;
+        write_item(writer, polyline, tol, options.effort)?;
     }
 
     Ok(())
@@ -177,10 +224,23 @@ pub fn read_one_from<R: Read, const N: usize>(reader: &mut R) -> Result<Polyline
 
 /// Write a collection of polylines to a file. See [`write_to`].
 pub fn write_file<const N: usize>(path: &Path, polylines: &[Polyline<N>], tol: f64) -> Result<()> {
+    write_file_with(path, polylines, tol, &WriteOptions::default())
+}
+
+/// Write a collection of polylines to a file with full control over metadata and effort.
+///
+/// The counterpart of [`write_to_with`] for callers who are writing a path rather than a writer,
+/// which is otherwise the only way to reach those settings.
+pub fn write_file_with<const N: usize>(
+    path: &Path,
+    polylines: &[Polyline<N>],
+    tol: f64,
+    options: &WriteOptions,
+) -> Result<()> {
     // Buffering is required, not tidiness: the bit reader and writer move a byte at a time, so an
     // unbuffered File would mean a syscall per byte.
     let mut writer = BufWriter::new(File::create(path)?);
-    write_to(&mut writer, polylines, tol)?;
+    write_to_with(&mut writer, polylines, tol, options)?;
     writer.flush()?;
     Ok(())
 }
@@ -206,6 +266,7 @@ fn write_item<W: Write, const N: usize>(
     writer: &mut W,
     polyline: &Polyline<N>,
     tol: f64,
+    effort: Effort,
 ) -> Result<()> {
     item::write_preamble(
         writer,
@@ -213,7 +274,7 @@ fn write_item<W: Write, const N: usize>(
         &polyline.metadata,
         polyline.closed,
     )?;
-    write_points(writer, &polyline.points, tol)?;
+    write_points_with(writer, &polyline.points, tol, effort)?;
 
     Ok(())
 }

@@ -49,6 +49,11 @@
 //! interpreted, so a caller can record whatever their domain needs without this crate learning
 //! anything about it.
 //!
+//! How hard the encoder works for a smaller file is one setting, [`Effort`], rather than a flag per
+//! technique. Each container's `write_to_with` and `write_file_with` take a `WriteOptions` carrying
+//! it, alongside that container's own semantic settings. See the [`effort`] module for what does
+//! and does not belong on that dial.
+//!
 //! # Underneath
 //!
 //! The containers are built from block encoders that are useful on their own if you are storing
@@ -59,6 +64,8 @@
 //! - [`indices`] encodes simplex connectivity, exactly, at whichever of its two codings is smaller.
 //! - [`reorder`] renumbers a mesh so its indices compress. [`mesh`] applies this by default; see
 //!   its documentation if you hold per-vertex data outside the file.
+//! - [`segment`] plans where a point sequence wants to be cut into partitions, and [`transform`]
+//!   carries the frame a partition can be written in, which nothing currently chooses.
 //! - [`blocks`] and [`bits`] are the packing layer everything else sits on.
 //!
 //! # Errors and forward compatibility
@@ -66,10 +73,16 @@
 //! Everything fallible returns [`Error`], which implements [`std::error::Error`], so a caller using
 //! a boxed-error alias absorbs it through `?` with no glue.
 //!
-//! Several fields in the format are reserved for features not yet implemented: compression,
-//! per-item attributes, a point-block transform, and multiple partitions. A reader from this
-//! version meeting a file that uses one of them **fails with a specific error rather than
-//! misreading it**, and files written today stay readable as those features arrive.
+//! Two fields in the format are reserved for features not yet implemented: compression and
+//! per-item attributes. A reader from this version meeting a file that uses one of them **fails
+//! with a specific error rather than misreading it**, and files written today stay readable as
+//! those features arrive. The multiple-partition field was reserved the same way and is now in use;
+//! because the decoder always read it generically, a reader built before partitioning shipped reads
+//! a partitioned file correctly.
+//!
+//! The point block's per-partition transform is further along than either: both ends of it are
+//! implemented and tested, but nothing chooses a frame, so no file this version writes uses it. See
+//! [`transform`] for what it is worth and why it is idle.
 
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
@@ -79,6 +92,7 @@ pub mod blocks;
 pub mod bounds;
 pub mod cloud;
 pub mod container;
+pub mod effort;
 pub mod error;
 pub mod indices;
 pub mod mesh;
@@ -88,6 +102,8 @@ pub mod polyline;
 pub mod quantize;
 mod raw;
 pub mod reorder;
+pub mod segment;
+pub mod transform;
 
 /// Compiles and runs the README's examples as doctests, so the first thing a reader copies cannot
 /// silently rot. Not part of the public API and not rendered anywhere.
@@ -106,11 +122,12 @@ pub use blocks::BLOCK;
 pub use bounds::Bounds;
 pub use cloud::{Cloud, Cloud2, Cloud3};
 pub use container::{Header, Kind, Named, find_by_name, probe};
+pub use effort::Effort;
 pub use error::{Error, Result};
 pub use indices::{bits_for_count, read_indices, write_indices};
-pub use mesh::{Mesh3, VertexOrder, WriteOptions};
+pub use mesh::{Mesh3, VertexOrder};
 pub use metadata::{Metadata, Value};
-pub use points::{read_points, write_points};
+pub use points::{read_points, write_points, write_points_with};
 pub use polyline::{Polyline, Polyline2, Polyline3};
 pub use quantize::{Quantizer, bits_for_tol};
 pub use reorder::{Reordering, permute};

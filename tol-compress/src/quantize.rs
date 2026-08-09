@@ -1,6 +1,5 @@
-//! Mapping real values onto integer lattices narrow enough to meet a stated tolerance.
-//!
-//! This is where the format's guarantee is actually decided. Everything else is packing.
+//! This module has the machinery to map real values onto integer lattices, and the supporting
+//! tooling to decide the lattice width needed to meet a desired tolerance.
 
 use crate::error::{Error, Result};
 
@@ -18,6 +17,23 @@ const MAX_BITS: u8 = 53;
 /// never the binding constraint: it permits a range-to-tolerance ratio around 4.5e13, which is a
 /// kilometre-long part measured to a fraction of an angstrom.
 const REPRESENTATION_MARGIN: f64 = 100.0;
+
+/// Whether a lattice `bits` wide recovers any value in `range` to within `tol`.
+///
+/// Rounding to the nearest lattice point puts the worst case at a midpoint, half a spacing away, so
+/// the requirement is `range / max_int <= 2 * tol`.
+///
+/// This is the format's guarantee as a single predicate, which is what [`bits_for_tol`] searches
+/// with. It is public because a caller stepping widths upward as a box grows, which is what
+/// [`crate::segment`] does for every candidate run it prices, must not arrive at a different answer
+/// than a search from scratch would.
+///
+/// Returns true at a width of zero only for a range of zero, which is the degenerate axis the
+/// encoders store for free.
+pub fn width_fits(range: f64, tol: f64, bits: u8) -> bool {
+    let max_int = if bits == 0 { 0u64 } else { (1u64 << bits) - 1 };
+    range <= 2.0 * tol * max_int as f64
+}
 
 /// The number of bits needed to represent `range` such that any value within it round-trips to
 /// within `tol`.
@@ -44,13 +60,10 @@ pub fn bits_for_tol(range: f64, tol: f64) -> Result<u8> {
         return Err(fail());
     }
 
-    // Rounding to the nearest lattice point puts the worst case at a midpoint, half a spacing
-    // away, so the requirement is `range / max_int <= 2 * tol`. Stepping the width one bit at a
-    // time with an exact comparison avoids the off-by-one a `log2` would risk, and a width that
-    // came out one bit low would silently break the guarantee.
+    // Stepping the width one bit at a time with an exact comparison avoids the off-by-one a `log2`
+    // would risk, and a width that came out one bit low would silently break the guarantee.
     for bits in 1..=MAX_BITS {
-        let max_int = ((1u64 << bits) - 1) as f64;
-        if range <= 2.0 * tol * max_int {
+        if width_fits(range, tol, bits) {
             return Ok(bits);
         }
     }

@@ -1,7 +1,7 @@
 //! Curve (2d and 3d) serialization for the practical tol-compression format.
 //!
 //! This is a thin adapter over the [`tol_compress`] crate: it converts between engeom's [`Curve2`]
-//! and [`Curve3`] and that crate's dimension-generic polyline containers, and adds nothing of its
+//! and [`Curve3`] and that crate's 2D and 3D polyline containers, and adds nothing of its
 //! own. The `tol` parameter throughout is the maximum acceptable round-trip position error for any
 //! vertex, in the same units as the coordinates.
 //!

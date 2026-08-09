@@ -53,7 +53,7 @@ use std::io::{Read, Write};
 pub const MAGIC: [u8; 4] = *b"TOLC";
 
 /// The format version this build writes.
-pub const VERSION: u8 = 1;
+pub const VERSION: u8 = 2;
 
 /// What a container holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

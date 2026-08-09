@@ -3,11 +3,11 @@
 //! The simplest container there is: a points block and a preamble. No connectivity, no ordering
 //! guarantee beyond the one the caller supplied, nothing else.
 //!
-//! Point order *is* preserved. Unlike [`crate::mesh`], which renumbers vertices to make its
-//! indices compress, there is no connectivity here to compress against, so nothing is gained by
-//! moving points around and they are left where the caller put them.
+//! Point order is currently preserved, but I think there may be some potential to shrink poorly
+//! ordered files beyond where they currently are by relaxing this.  If I go that route, I'll
+//! include the option to preserve the order just like with the mesh.
 //!
-//! Like every container in this crate, a cloud file is an ordered collection, so several scans or
+//! Like every container in this crate, a cloud file itself is an ordered collection of clouds, so
 //! several passes can live in one file. See [`crate::find_by_name`].
 //!
 //! ```
@@ -25,9 +25,10 @@
 //! ```
 
 use crate::container::{self, Kind, Named, item};
+use crate::effort::Effort;
 use crate::error::{Error, Result};
 use crate::metadata::Metadata;
-use crate::points::{read_points, write_points};
+use crate::points::{read_points, write_points_with};
 use crate::raw::MAX_PREALLOC;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
@@ -92,6 +93,43 @@ fn kind_for<const N: usize>() -> Kind {
     }
 }
 
+/// Everything [`write_to_with`] can be told beyond the geometry and the tolerance.
+///
+/// Non-exhaustive, so that later settings do not break callers. Build one with [`WriteOptions::new`]
+/// and the `with_` methods, or from [`Default`], and set the fields on it directly from there.
+///
+/// There is no ordering setting here: point order is preserved as given, and the reordering
+/// partitioning that would change that is not implemented yet. When it arrives it will be a
+/// setting of its own here rather than something [`Effort`] turns on, since it changes what the
+/// caller gets back.
+#[non_exhaustive]
+#[derive(Debug, Clone, Default)]
+pub struct WriteOptions {
+    /// File-level metadata. Stored, never interpreted.
+    pub metadata: Metadata,
+    /// How hard to search for a smaller file. Changes size and encoding time, nothing else.
+    pub effort: Effort,
+}
+
+impl WriteOptions {
+    /// The defaults: no metadata, [`Effort::Balanced`].
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The same options carrying file-level metadata.
+    pub fn with_metadata(mut self, metadata: Metadata) -> Self {
+        self.metadata = metadata;
+        self
+    }
+
+    /// The same options at a different search effort.
+    pub fn with_effort(mut self, effort: Effort) -> Self {
+        self.effort = effort;
+        self
+    }
+}
+
 /// Write a collection of clouds, every item at the same storage tolerance.
 ///
 /// # Errors
@@ -103,22 +141,33 @@ pub fn write_to<W: Write, const N: usize>(
     clouds: &[Cloud<N>],
     tol: f64,
 ) -> Result<()> {
-    write_to_with_meta(writer, clouds, tol, &Metadata::new())
+    write_to_with(writer, clouds, tol, &WriteOptions::default())
 }
 
-/// Write a collection of clouds with file-level metadata attached. See [`write_to`].
+/// Write a collection of clouds with file-level metadata attached. See [`write_to_with`].
 pub fn write_to_with_meta<W: Write, const N: usize>(
     writer: &mut W,
     clouds: &[Cloud<N>],
     tol: f64,
     file_metadata: &Metadata,
 ) -> Result<()> {
+    let options = WriteOptions::new().with_metadata(file_metadata.clone());
+    write_to_with(writer, clouds, tol, &options)
+}
+
+/// Write a collection of clouds with full control over metadata and effort. See [`write_to`].
+pub fn write_to_with<W: Write, const N: usize>(
+    writer: &mut W,
+    clouds: &[Cloud<N>],
+    tol: f64,
+    options: &WriteOptions,
+) -> Result<()> {
     let count = u32::try_from(clouds.len())
         .map_err(|_| Error::Malformed("container holds more items than a u32 can count"))?;
-    container::write_header(writer, kind_for::<N>(), count, file_metadata)?;
+    container::write_header(writer, kind_for::<N>(), count, &options.metadata)?;
 
     for cloud in clouds {
-        write_item(writer, cloud, tol)?;
+        write_item(writer, cloud, tol, options.effort)?;
     }
 
     Ok(())
@@ -166,10 +215,23 @@ pub fn read_one_from<R: Read, const N: usize>(reader: &mut R) -> Result<Cloud<N>
 
 /// Write a collection of clouds to a file. See [`write_to`].
 pub fn write_file<const N: usize>(path: &Path, clouds: &[Cloud<N>], tol: f64) -> Result<()> {
+    write_file_with(path, clouds, tol, &WriteOptions::default())
+}
+
+/// Write a collection of clouds to a file with full control over metadata and effort.
+///
+/// The counterpart of [`write_to_with`] for callers who are writing a path rather than a writer,
+/// which is otherwise the only way to reach those settings.
+pub fn write_file_with<const N: usize>(
+    path: &Path,
+    clouds: &[Cloud<N>],
+    tol: f64,
+    options: &WriteOptions,
+) -> Result<()> {
     // Buffering is required, not tidiness: the bit reader and writer move a byte at a time, so an
     // unbuffered File would mean a syscall per byte.
     let mut writer = BufWriter::new(File::create(path)?);
-    write_to(&mut writer, clouds, tol)?;
+    write_to_with(&mut writer, clouds, tol, options)?;
     writer.flush()?;
     Ok(())
 }
@@ -191,9 +253,14 @@ pub fn read_one_file<const N: usize>(path: &Path) -> Result<Cloud<N>> {
     read_one_from(&mut reader)
 }
 
-fn write_item<W: Write, const N: usize>(writer: &mut W, cloud: &Cloud<N>, tol: f64) -> Result<()> {
+fn write_item<W: Write, const N: usize>(
+    writer: &mut W,
+    cloud: &Cloud<N>,
+    tol: f64,
+    effort: Effort,
+) -> Result<()> {
     item::write_preamble(writer, cloud.name.as_deref(), &cloud.metadata, false)?;
-    write_points(writer, &cloud.points, tol)?;
+    write_points_with(writer, &cloud.points, tol, effort)?;
     Ok(())
 }
 

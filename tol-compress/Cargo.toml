@@ -4,7 +4,7 @@ description = "Tolerance-bounded compression of spatial coordinate data, for sto
 license = "MIT OR Apache-2.0"
 # Deliberately NOT `version.workspace = true`. This crate releases on its own cadence, under its
 # own `tol-compress-vX.Y.Z` tags, independent of the engeom version.
-version = "0.1.0"
+version = "0.2.0"
 edition.workspace = true
 rust-version = "1.88"
 readme = "README.md"

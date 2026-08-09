@@ -1156,6 +1156,15 @@ mod tests {
         Ok(())
     }
 
+    /// How far a vertex may sit from the embedded fixture's idea of it.
+    ///
+    /// The fixture is a quantized file, so it never held the PLY's coordinates to better than its
+    /// own tolerance, which is about 1.9 um. It was re-encoded once when the point block format
+    /// changed, and re-encoding a quantized file necessarily moves its points by up to that same
+    /// tolerance again. This is the sum of the two, rounded up, and it is still four orders of
+    /// magnitude below anything a genuine reader fault would produce on a 150 mm part.
+    const REFERENCE_EPS: f64 = 4e-6;
+
     /// The positions and faces must match what the old reader produced, so that swapping the
     /// implementation cannot have moved any geometry.
     ///
@@ -1177,7 +1186,7 @@ mod tests {
             for corner in 0..3 {
                 let a = mesh.points()[mesh.faces()[old as usize][corner] as usize];
                 let b = expected.points()[expected.faces()[new][corner] as usize];
-                assert_relative_eq!(a, b, epsilon = 0.000002);
+                assert_relative_eq!(a, b, epsilon = REFERENCE_EPS);
             }
         }
 
@@ -1185,7 +1194,7 @@ mod tests {
             assert_relative_eq!(
                 mesh.points()[old as usize],
                 expected.points()[new],
-                epsilon = 0.000002
+                epsilon = REFERENCE_EPS
             );
         }
 
