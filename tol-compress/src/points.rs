@@ -30,9 +30,49 @@
 use crate::bits::{BitReader, BitWriter, read_payload};
 use crate::bounds::Bounds;
 use crate::error::{Error, Result};
-use crate::quantize::Quantizer;
+use crate::quantize::{Quantizer, bits_for_tol};
 use crate::raw::{MAX_PREALLOC, read_f64, read_u8, read_u32, write_f64, write_u8, write_u32};
 use std::io::{Read, Write};
+
+/// The number of bytes one partition of `count` points at `widths` occupies.
+///
+/// A partition always takes a whole number of bytes: its header is byte oriented and
+/// [`BitWriter`] pads the payload out to a boundary, so there is no fractional part to carry
+/// between partitions.
+///
+/// This exists for the same reason [`crate::blocks::encoded_bits`] does. Anything deciding where to
+/// cut a point set into partitions has to score its candidates against what the writer will
+/// actually emit.
+pub fn partition_bytes<const N: usize>(count: usize, widths: &[u8; N]) -> u64 {
+    // An empty partition ends after its count, carrying neither bounds nor widths.
+    if count == 0 {
+        return 4;
+    }
+
+    // Count, transform flag, two `f64` corners, and a width byte per axis.
+    let header = 4 + 1 + 16 * N as u64 + N as u64;
+    let per_point: u64 = widths.iter().map(|&w| u64::from(w)).sum();
+
+    header + (count as u64 * per_point).div_ceil(8)
+}
+
+/// The narrowest per-axis widths that recover any point in `bounds` to within `tol`.
+///
+/// # Errors
+///
+/// [`Error::ToleranceNotRepresentable`] if any axis spans a range too wide to meet `tol`.
+fn widths_for<const N: usize>(bounds: &Bounds<N>, tol: f64) -> Result<[u8; N]> {
+    // Splitting the budget in quadrature: N axes each within tol/sqrt(N) put the point within tol.
+    let axis_tol = tol / (N as f64).sqrt();
+    let extents = bounds.extents();
+
+    let mut widths = [0u8; N];
+    for (i, w) in widths.iter_mut().enumerate() {
+        *w = bits_for_tol(extents[i], axis_tol)?;
+    }
+
+    Ok(widths)
+}
 
 /// Write a block of points, choosing the narrowest per-axis widths that meet `tol`.
 ///
@@ -59,45 +99,54 @@ pub fn write_points<W: Write, const N: usize>(
     // loops, so adding it will not change the format.
     write_u32(writer, 1)?;
 
-    write_partition(writer, points, tol)
+    // An empty partition ends after its count. There is no meaningful bounding box to record
+    // so we write nothing.
+    if points.is_empty() {
+        return write_u32(writer, 0);
+    }
+
+    let bounds = Bounds::from_points(points)?;
+    let widths = widths_for(&bounds, tol)?;
+
+    write_partition(writer, points, &bounds, &widths)
 }
 
+/// Write one non-empty partition against a box and a set of widths already decided for it.
+///
+/// The bounds and widths are handed in rather than derived here so that whatever chose them, which
+/// from the next increment onwards is a planner that had to price the partition before committing
+/// to it, and the codes written against them cannot come from different passes over the data.
 fn write_partition<W: Write, const N: usize>(
     writer: &mut W,
     points: &[[f64; N]],
-    tol: f64,
+    bounds: &Bounds<N>,
+    widths: &[u8; N],
 ) -> Result<()> {
+    debug_assert!(
+        !points.is_empty(),
+        "an empty partition has no bounds to write"
+    );
+
     let count = u32::try_from(points.len())
         .map_err(|_| Error::Malformed("partition holds more points than a u32 can index"))?;
     write_u32(writer, count)?;
-
-    // An empty partition ends after its count. There is no meaningful bounding box to record and
-    // inventing one would be a lie a decoder might believe.
-    if points.is_empty() {
-        return Ok(());
-    }
-
     write_u8(writer, 0)?;
 
-    let bounds = Bounds::from_points(points)?;
     for i in 0..N {
         write_f64(writer, bounds.mins[i])?;
     }
     for i in 0..N {
         write_f64(writer, bounds.maxs[i])?;
     }
-
-    // Splitting the budget in quadrature: N axes each within tol/sqrt(N) put the point within tol.
-    let axis_tol = tol / (N as f64).sqrt();
-    let extents = bounds.extents();
-    let mut quants = Vec::with_capacity(N);
-    for (i, &extent) in extents.iter().enumerate() {
-        quants.push(Quantizer::from_tol(bounds.mins[i], extent, axis_tol)?);
+    for &w in widths.iter() {
+        write_u8(writer, w)?;
     }
 
-    for q in &quants {
-        write_u8(writer, q.bits())?;
-    }
+    // Rebuilt from the bounds and widths the header just recorded, which is the same lattice the
+    // decoder will reconstruct from them.
+    let quants: Vec<Quantizer> = (0..N)
+        .map(|i| Quantizer::new(bounds.mins[i], bounds.maxs[i] - bounds.mins[i], widths[i]))
+        .collect();
 
     let mut bw = BitWriter::new(&mut *writer);
     for p in points {
@@ -368,6 +417,50 @@ mod tests {
         let expected = header + payload_bits.div_ceil(8) as usize;
 
         assert_eq!(buf.len(), expected);
+    }
+
+    /// The accounting a planner prices candidate partitions with has to match what the writer
+    /// emits, or the plan is optimizing a cost the file does not have. Counts either side of a
+    /// payload byte boundary are where a `div_ceil` gone the wrong way would show up.
+    #[test]
+    fn partition_bytes_matches_the_writer() {
+        let mut rng = Rng::new(17);
+        let tol = 1e-3;
+
+        let cases = [
+            (1usize, [100.0, 100.0, 100.0]),
+            (7, [100.0, 1.0, 0.001]),
+            (63, [1000.0, 10.0, 0.0]),
+            (64, [1000.0, 10.0, 0.0]),
+            (65, [1000.0, 10.0, 0.0]),
+            (1000, [100.0, 100.0, 100.0]),
+            (1001, [0.0, 0.0, 0.0]),
+        ];
+
+        for (count, spans) in cases {
+            let points: Vec<[f64; 3]> = (0..count)
+                .map(|_| std::array::from_fn(|i| rng.next_f64() * spans[i]))
+                .collect();
+
+            let mut buf = Vec::new();
+            write_points(&mut buf, &points, tol).unwrap();
+
+            // Widths sit after the dimension, partition count, point count, transform flag, bounds.
+            let widths_at = 1 + 4 + 4 + 1 + 8 * 2 * 3;
+            let widths: [u8; 3] = buf[widths_at..widths_at + 3].try_into().unwrap();
+
+            assert_eq!(
+                buf.len() as u64,
+                1 + 4 + partition_bytes(count, &widths),
+                "count {count}, spans {spans:?}, widths {widths:?}"
+            );
+        }
+
+        // And the empty partition, which stops after its count.
+        let mut buf = Vec::new();
+        let empty: Vec<[f64; 3]> = Vec::new();
+        write_points(&mut buf, &empty, tol).unwrap();
+        assert_eq!(buf.len() as u64, 1 + 4 + partition_bytes(0, &[0u8; 3]));
     }
 
     /// Against the previous whole-byte scheme, which charged 3 bytes per axis here.
