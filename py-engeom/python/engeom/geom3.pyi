@@ -4063,180 +4063,6 @@ class RayBundle3:
         ...
 
 
-class PointCloud:
-    """
-
-    """
-
-    def __init__(self, points: NDArray[float], normals: NDArray[float] | None = None,
-                 colors: NDArray[numpy.uint8] | None = None):
-        ...
-
-    @property
-    def points(self) -> NDArray[float]:
-        """
-        Get the points of the point cloud as a numpy array of shape (n, 3).
-        :return: a numpy array of shape (n, 3) containing the points of the point cloud.
-        """
-        ...
-
-    @property
-    def normals(self) -> NDArray[float] | None:
-        """
-        Get the normals of the point cloud as a numpy array of shape (n, 3). If no normals were provided, this will
-        return None.
-        :return: a numpy array of shape (n, 3) containing the normals of the point cloud, or None if no normals were
-        provided.
-        """
-        ...
-
-    @property
-    def colors(self) -> NDArray[numpy.uint8] | None:
-        """
-        Get the colors of the point cloud as a numpy array of shape (n, 3). If no colors were provided, this will
-        return None.
-        :return: a numpy array of shape (n, 3) containing the colors of the point cloud, or None if no colors were
-        provided.
-        """
-        ...
-
-    def cloned(self) -> PointCloud:
-        """
-        Create a copy of the point cloud. This will return a new `PointCloud` object with the same points, normals, and
-        colors as the original.
-
-        :return: a new `PointCloud` object with the same points, normals, and colors as the original.
-        """
-        ...
-
-    @staticmethod
-    def load_lptf3(
-        path: str | Path,
-        take_every: int = 1,
-        look_scale: float | None = None,
-        weight_scale: float | None = None,
-        max_move: float | None = None,
-    ) -> PointCloud:
-        """
-        This function reads a LPTF3 file, which is a compact file format for storing 3D point data
-        taken from a laser profile triangulation scanner. The format is simple and compact, capable
-        of practically storing about 200k points (with an 8-bit color value each) per MB when using a
-        16-bit coordinate format, or half that when using a 32-bit coordinate format.
-
-        The way the data is loaded is controlled by the keyword arguments:
-          - By default (no smoothing parameters given) the points are decimated by row: `take_every=1`
-            loads every point, while `take_every=n` loads every nth row, roughly matching the x
-            spacing of the points to the gap distance between rows for an approximately uniform,
-            grid-like spacing. This is the fastest method.
-          - If the smoothing parameters `look_scale`, `weight_scale`, and `max_move` are all given, a
-            gaussian smoothing filter is applied on top of the decimation using the full original
-            cloud. This is the slowest method but can remove a significant amount of noise. The three
-            smoothing parameters must be given together or all left unset.
-
-        :param path: the path to the LPTF3 file to load.
-        :param take_every: the interval at which to take rows from the file. `take_every=1` loads every point.
-        :param look_scale: the smoothing sampling window relative to the `take_every` spacing (1 matches the
-            `take_every` spacing, 2 uses twice that). A reasonable default for preserving detail is 0.5. Must be
-            given together with `weight_scale` and `max_move`.
-        :param weight_scale: during smoothing, neighboring points are weighted by their distance from the point
-            being smoothed; at `weight_scale` of 1 the gaussian standard deviation is slightly larger than the
-            `look_scale` distance. Must be given together with `look_scale` and `max_move`.
-        :param max_move: the maximum distance a point can move when smoothing. A point attempting to move more than
-            10x this distance is not moved at all; otherwise it is clamped to this distance. Must be given together
-            with `look_scale` and `weight_scale`.
-        :raises ValueError: if only some of the smoothing parameters are supplied.
-        """
-        ...
-
-    def append(self, other: PointCloud) -> PointCloud:
-        """
-        Append another point cloud to this one. The points, normals, and colors from the other point cloud will be
-        added to this point cloud.
-
-        Will throw an error if the other point cloud has a different combination of normals and colors than this one.
-
-        :param other: the other point cloud to append.
-        :return: a new `PointCloud` object containing the combined points, normals, and colors.
-        """
-        ...
-
-    def sample_poisson_disk(self, radius: float) -> list[int]:
-        """
-        Sample a subset of points from the point cloud using a Poisson disk sampling algorithm. This will return a list
-        of indices of the points that were preserved. The points will be selected such that no two points are closer
-        than the given radius.
-
-        :param radius: the minimum distance between sampled points.
-        :return: a list of indices of the points that were selected.
-        """
-        ...
-
-    def create_from_indices(self, indices: list[int]) -> PointCloud:
-        """
-        Create a new point cloud from a subset of the points in this point cloud, specified by the given indices.
-        The normals and colors will also be subsetted to match the points.
-
-        :param indices: a list of indices to select from the point cloud.
-        :return: a new `PointCloud` object containing the selected points, normals, and colors.
-        """
-        ...
-
-    def create_from_poisson_sample(self, radius: float) -> PointCloud:
-        """
-        Create a new point cloud from a Poisson disk sampling of the points in this point cloud. The points will be
-        selected such that no two points are closer than the given radius.
-
-        :param radius: the minimum distance between sampled points.
-        :return: a new `PointCloud` object containing the sampled points, normals, and colors.
-        """
-        ...
-
-    def transform_by(self, iso: Iso3) -> PointCloud:
-        """
-        Transform the point cloud by an isometry. This will return a new `PointCloud` object with the transformed
-        points, normals, and colors.
-
-        :param iso: the isometry to transform the point cloud by.
-        :return: a new `PointCloud` object with the transformed points, normals, and colors.
-        """
-        ...
-
-    def overlap_points_by_reciprocity(self, other: PointCloud, max_distance: float) -> list[int]:
-        """
-        Find the indices of points in this point cloud that "overlap" with points in another point
-        cloud by looking for reciprocity in the closest point in each direction.
-
-        For each point in this point cloud "p_this", we will find the closest point in the other
-        point cloud "p_other".  Then we take "p_other" and find the closest point to it in this
-        point cloud, "p_recip".
-
-        In an ideally overlapping point cloud, "p_recip" should be the same as "p_this".  We will
-        use a maximum distance tolerance to determine if "p_recip" is close enough to "p_this" that
-        "p_this" is considered to be overlapping with the other point cloud.
-
-        :param other: the other point cloud to check for overlap.
-        :param max_distance: the maximum distance to consider a point as overlapping.
-        :return: a list of indices of points in this point cloud that overlap with points in the other point cloud.
-        """
-        ...
-
-    def overlap_mesh_by_reciprocity(self, mesh: Mesh3, max_distance: float) -> list[int]:
-        """
-        Find the indices of points in this point cloud that "overlap" with triangles in a mesh by looking for
-        reciprocity in the closest point in each direction.
-
-        For each point in this point cloud "p_this", we will find the closest point on the surface of the mesh
-        "p_other".  Then we will take "p_other" and find the closest point in the point cloud, "p_recip".
-
-        In an ideally overlapping point cloud, "p_this" should be the same as "p_recip".  We will use a maximum
-        distance tolerance instead to determine if "p_recip" is close enough to "p_this" that "p_this" is
-        considered to be overlapping with the mesh.
-
-        :param mesh: the mesh to check for overlap.
-        :param max_distance: the maximum distance to consider a point as overlapping.
-        :return: a list of indices of points in this point cloud that overlap with triangles in the mesh.
-        """
-        ...
 
 
 class CubicSpline3:
@@ -5164,13 +4990,12 @@ class MeshData3:
 
 class PointCloud3:
     """
-    The unaccelerated point cloud container: a buffer of points and the per-point attributes attached to them.
+    A 3D point cloud: a buffer of points and the per-point attributes attached to them.
 
-    This is the type to reach for when reading or writing files, or when editing point data. Call `to_cloud()` to
-    build the queryable `PointCloud` when you need nearest-neighbor queries.
+    There is no spatial acceleration stored on the cloud itself. The spatial queries below each build a k-d tree,
+    use it, and discard it, which is why they are cheap next to any real use of one and wasted if never called.
 
-    Unlike `PointCloud`, this type carries attributes through serialization, so a PLY loaded here keeps every property
-    the file declared.
+    Attributes are carried through serialization, so a PLY loaded here keeps every property the file declared.
     """
 
     def __init__(self, points: NDArray[float]):
@@ -5337,7 +5162,7 @@ class PointCloud3:
         """
         ...
 
-    def create_subset_indices(self, indices: List[int]) -> PointCloud3:
+    def extract_subset_indices(self, indices: List[int]) -> PointCloud3:
         """
         Create a new cloud containing the points at the given indices, in the order given. Indices may repeat. Every
         attribute is carried through.
@@ -5347,24 +5172,48 @@ class PointCloud3:
         """
         ...
 
-    def to_cloud(self) -> PointCloud:
+    def sample_poisson_disk(self, radius: float) -> List[int]:
         """
-        Build the queryable `PointCloud` from this data.
+        Poisson disk sample the cloud, returning the indices of a subset of points no two of which are closer
+        together than `radius`.
 
-        Only the normals, colors, and standard deviations come across; `PointCloud` has nowhere to put the open-map
-        attributes.
-
-        :return: the queryable point cloud.
+        :param radius: the minimum spacing between sampled points.
+        :return: the indices of the sampled points.
         """
         ...
 
-    @staticmethod
-    def from_cloud(cloud: PointCloud) -> PointCloud3:
+    def extract_poisson_sample(self, radius: float) -> PointCloud3:
         """
-        Copy the buffer and attributes out of a queryable `PointCloud`.
+        Poisson disk sample the cloud and return the result as a new cloud, carrying attributes across.
 
-        :param cloud: the cloud to copy from.
-        :return: the point data.
+        :param radius: the minimum spacing between sampled points.
+        :return: the sampled cloud.
+        """
+        ...
+
+    def overlap_points_by_reciprocity(self, other: PointCloud3, max_distance: float) -> List[int]:
+        """
+        Find the indices of points in this cloud which overlap another cloud, by checking that the closest point
+        in each direction agrees.
+
+        For each point `p_this`, the closest point in `other` is found, and then the closest point back in this
+        cloud. Where the two clouds cover the same surface those agree, so `p_this` counts as overlapping when the
+        round trip lands within `max_distance`.
+
+        :param other: the cloud to check against.
+        :param max_distance: how far the round trip may land from the original point.
+        :return: the indices of the overlapping points.
+        """
+        ...
+
+    def overlap_mesh_by_reciprocity(self, mesh: Mesh3, max_distance: float) -> List[int]:
+        """
+        Find the indices of points in this cloud which overlap a mesh, by checking that the closest point in each
+        direction agrees.
+
+        :param mesh: the mesh to check against.
+        :param max_distance: how far the round trip may land from the original point.
+        :return: the indices of the overlapping points.
         """
         ...
 

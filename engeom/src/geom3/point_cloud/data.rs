@@ -6,22 +6,15 @@
 //! serialization vocabulary. The attribute half is literally the same code, `PointAttrSet3`, which
 //! `MeshAttrSet3` also composes.
 //!
-//! There is no spatial acceleration here of any kind. Convert to `PointCloud` and build its k-d
-//! tree when you need nearest-neighbor queries.
-//!
-//! # `PointCloud3` and `PointCloud` are different types, for now
-//!
-//! The similar names are transitional, not a typo. `PointCloud3` is this type, the owning
-//! container, renamed from `PointCloudData3`. `PointCloud` is the older accelerated type which
-//! pairs a point buffer with an externally held k-d tree and a UUID to check the two still match.
-//! It is being retired: the tree is moving into a borrowed `CloudIndex3<'a>` whose lifetime makes
-//! the staleness check unnecessary, and `PointCloud` will be deleted when it does. Until then both
-//! names exist and mean different things.
+//! There is no spatial acceleration here of any kind. Call `compute_index` for a `CloudIndex3`
+//! when you need nearest-neighbor queries.
 
 use crate::common::IndexMask;
+use crate::common::poisson_disk::sample_poisson_disk_all;
 use crate::geom3::Aabb3;
 use crate::geom3::attributes3::{Attr3, PointAttrSet3};
-use crate::{Iso3, Point3, PointCloud, PointCloudFeatures, Result, UnitVec3};
+use crate::geom3::point_cloud::CloudIndex3;
+use crate::{Iso3, KdTree3, Point3, Result, SurfacePoint3, UnitVec3};
 use std::fmt;
 
 #[cfg(feature = "ply")]
@@ -42,11 +35,11 @@ use std::path::Path;
 /// - You don't need any spatial queries at all
 /// - You are editing the contents of the buffers
 /// - You are doing something custom with serialization or deserialization
-/// - You need to carry attributes which `PointCloud` has no field for
+/// - You are carrying open-map attributes alongside the typed ones
 ///
-/// For nearest-neighbor queries, overlap checks, and Poisson sampling, convert to `PointCloud` with
-/// `to_cloud` and build its k-d tree. Note that `PointCloud` holds only normals, colors, and
-/// standard deviations, so the open-map attributes do not survive that conversion.
+/// For nearest-neighbor queries, overlap checks, and Poisson sampling, call `compute_index` to get a
+/// `CloudIndex3` borrowing this cloud. The index holds the cloud immutably for its lifetime, so
+/// nothing can move the points out from under its tree.
 ///
 /// # Invariants
 ///
@@ -102,41 +95,88 @@ impl PointCloud3 {
         Self::new(Vec::new())
     }
 
-    /// Copy the contents of a `PointCloud` into plain point data.
+    /// Build a cloud from surface points, keeping their normals.
     ///
-    /// # Arguments
-    ///
-    /// * `cloud`: the cloud to copy from
-    ///
-    /// returns: `Result<PointCloud3>`
-    pub fn from_cloud(cloud: &PointCloud) -> Result<Self> {
-        let n = cloud.points().len();
+    /// returns: `PointCloud3`
+    pub fn from_surface_points(points: &[SurfacePoint3]) -> Self {
+        let normals: Vec<UnitVec3> = points.iter().map(|p| p.normal).collect();
         let mut attrs = PointAttrSet3::empty();
-        attrs.set_normals(cloud.normals().map(|v| v.to_vec()), n)?;
-        attrs.set_colors(cloud.colors().map(|v| v.to_vec()), n)?;
-        attrs.set_stdev(cloud.std_devs().map(|v| v.to_vec()), n)?;
+        attrs
+            .set_normals(Some(normals), points.len())
+            .expect("one normal per point by construction");
 
-        Ok(Self {
-            points: cloud.points().to_vec(),
+        Self {
+            points: points.iter().map(|p| p.point).collect(),
             attrs,
-        })
+        }
     }
 
-    /// Copy this point data into a `PointCloud`, which can then build a k-d tree for spatial
-    /// queries.
+    /// Build a k-d tree over this cloud and return it as a borrowed index.
     ///
-    /// **The open-map attributes are not carried across**, because `PointCloud` has nowhere to put
-    /// them. Only the normals, colors, and standard deviations survive. The original is left intact,
-    /// so anything dropped here is still reachable through it.
+    /// The index holds this cloud immutably for its lifetime, which is what makes it impossible for
+    /// the tree to go stale. Building costs roughly what `0.4 * N` nearest-neighbor queries do (see
+    /// `engeom/tests/kd_tree_backends.md`), so an index is cheap next to any real use of one and
+    /// wasted if never queried, which is why it is requested rather than maintained automatically.
     ///
-    /// returns: `Result<PointCloud>`
-    pub fn to_cloud(&self) -> Result<PointCloud> {
-        PointCloud::try_new(
-            self.points.clone(),
-            self.attrs.normals().map(|v| v.to_vec()),
-            self.attrs.colors().map(|v| v.to_vec()),
-            self.attrs.stdev().map(|v| v.to_vec()),
-        )
+    /// returns: `Result<CloudIndex3>`, failing only if the tree could not be built
+    pub fn compute_index(&self) -> Result<CloudIndex3<'_>> {
+        CloudIndex3::try_new(self)
+    }
+
+    /// Pair this cloud with a k-d tree the caller has already built over it, skipping the build.
+    ///
+    /// # This is unchecked, and getting it wrong is silent
+    ///
+    /// **Nothing verifies that `tree` was built from this cloud.** If it was not, every query
+    /// returns indices into a point set that is not this one. Those indices are in range whenever
+    /// the other cloud was at least as large, so there is no panic and no error: you get plausible,
+    /// confidently wrong answers, and a downstream alignment or overlap check quietly uses them.
+    /// A tree built over a *smaller* cloud is worse only in that it eventually panics on a
+    /// subscript, which at least tells you something is broken.
+    ///
+    /// The obligation is that `tree` was built from `self.points()` **as they are now**. A tree is
+    /// invalidated by anything which adds, removes, reorders or moves a point:
+    /// `transform_in_place`, `scale_in_place`, `append_in_place`, `points_mut`, and any subset
+    /// extraction, which produces a different cloud entirely. Attribute changes do not invalidate
+    /// it, since the tree indexes positions only.
+    ///
+    /// # Use [`PointCloud3::compute_index`] instead
+    ///
+    /// The checked path builds the tree itself, so it cannot be mispaired, and the borrow checker
+    /// then prevents the cloud from being mutated while the index lives. It is also nearly free
+    /// relative to using an index at all: a build costs about what `0.4 * N` nearest-neighbor
+    /// queries do (`engeom/tests/kd_tree_backends.md`), and any real consumer does more than that.
+    ///
+    /// This exists for one situation: a long-lived wrapper which caches a tree across many calls and
+    /// drops it on every mutation, where the cache and the invalidation sit together in one place
+    /// and can be read side by side. The Python bindings are that wrapper. If you are reaching for
+    /// this anywhere else, you almost certainly want `compute_index`.
+    ///
+    /// This is the same hazard as the `tree_uuid` token that the `CloudIndex3` design replaced, kept
+    /// deliberately and narrowly rather than by accident. That token at least checked at runtime;
+    /// this does not check at all.
+    pub fn index_with_tree_unchecked<'a>(&'a self, tree: &'a KdTree3) -> CloudIndex3<'a> {
+        CloudIndex3::with_tree_unchecked(self, tree)
+    }
+
+    /// Poisson disk sample the cloud, returning a mask selecting a subset of its points no two of
+    /// which are closer together than `radius`.
+    ///
+    /// This lives on the cloud rather than on [`CloudIndex3`] because it does not use an index. The
+    /// sampler voxel-downsamples first and builds its own tree over the survivors, which is a much
+    /// smaller tree than one over the whole cloud, so handing it a prebuilt full-cloud index would
+    /// waste the build rather than save it.
+    pub fn sample_poisson_disk(&self, radius: f64) -> IndexMask {
+        sample_poisson_disk_all(self.points(), radius)
+    }
+
+    /// Poisson disk sample the cloud and extract the result as a new cloud, carrying attributes.
+    ///
+    /// Equivalent to [`PointCloud3::extract_subset_points`] with the mask from
+    /// [`PointCloud3::sample_poisson_disk`].
+    pub fn extract_poisson_sample(&self, radius: f64) -> Result<Self> {
+        let mask = self.sample_poisson_disk(radius);
+        self.extract_subset_points(&mask)
     }
 
     /// Consume the cloud and return ownership of its two components: the point buffer and the
@@ -500,7 +540,7 @@ impl PointCloud3 {
     /// * `mask`: a mask whose length must match the point count
     ///
     /// returns: `Result<PointCloud3>`
-    pub fn create_subset_points(&self, mask: &IndexMask) -> Result<Self> {
+    pub fn extract_subset_points(&self, mask: &IndexMask) -> Result<Self> {
         if mask.len() != self.points.len() {
             return Err(format!(
                 "The mask has {} entries, but the cloud has {} points",
@@ -524,7 +564,7 @@ impl PointCloud3 {
     /// * `indices`: the points to take, each of which must be less than the point count
     ///
     /// returns: `Result<PointCloud3>`
-    pub fn create_subset_indices(&self, indices: &[usize]) -> Result<Self> {
+    pub fn extract_subset_indices(&self, indices: &[usize]) -> Result<Self> {
         let n = self.points.len();
         if let Some(bad) = indices.iter().find(|&&i| i >= n) {
             return Err(format!("Index {bad} is out of bounds for a cloud with {n} points").into());
@@ -556,6 +596,7 @@ impl fmt::Debug for PointCloud3 {
 mod tests {
     use super::*;
     use crate::Vector3;
+    use crate::common::kd_tree::KdTreeSearch;
     use approx::assert_relative_eq;
     use std::f64::consts::FRAC_PI_2;
 
@@ -792,7 +833,7 @@ mod tests {
         let cloud = loaded_cloud();
         let mask = IndexMask::try_from_indices(&[1, 3], 4)?;
 
-        let sub = cloud.create_subset_points(&mask)?;
+        let sub = cloud.extract_subset_points(&mask)?;
 
         assert_eq!(sub.point_count(), 2);
         assert_relative_eq!(sub.points()[0], Point3::new(1.0, 0.0, 0.0), epsilon = 0.0);
@@ -812,7 +853,7 @@ mod tests {
         let cloud = loaded_cloud();
         assert!(
             cloud
-                .create_subset_points(&IndexMask::new(3, true))
+                .extract_subset_points(&IndexMask::new(3, true))
                 .is_err()
         );
     }
@@ -820,7 +861,7 @@ mod tests {
     #[test]
     fn subset_by_indices_preserves_order_and_allows_repeats() -> Result<()> {
         let cloud = loaded_cloud();
-        let sub = cloud.create_subset_indices(&[3, 0, 3])?;
+        let sub = cloud.extract_subset_indices(&[3, 0, 3])?;
 
         assert_eq!(sub.point_count(), 3);
         assert_relative_eq!(sub.points()[0], Point3::new(0.0, 0.0, 1.0), epsilon = 0.0);
@@ -833,26 +874,34 @@ mod tests {
 
     #[test]
     fn subset_by_indices_rejects_out_of_bounds() {
-        assert!(loaded_cloud().create_subset_indices(&[0, 4]).is_err());
+        assert!(loaded_cloud().extract_subset_indices(&[0, 4]).is_err());
     }
 
     // ===========================================================================================
     // Conversion
     // ===========================================================================================
 
+    /// Indexing a cloud no longer copies it into a second type, so nothing can be lost on the way
+    /// to a spatial query. This is what replaced the old lossy `to_cloud`/`from_cloud` round trip,
+    /// which could not carry the open-map attributes.
     #[test]
-    fn round_trip_through_point_cloud_keeps_the_typed_attributes() -> Result<()> {
-        let before = loaded_cloud();
-        let cloud = before.to_cloud()?;
-        let after = PointCloud3::from_cloud(&cloud)?;
+    fn indexing_a_cloud_does_not_disturb_its_attributes() -> Result<()> {
+        let cloud = loaded_cloud();
+        let index = cloud.compute_index()?;
 
-        assert_eq!(after.points(), before.points());
-        assert_eq!(after.point_colors(), before.point_colors());
-        assert_eq!(after.point_stdev(), before.point_stdev());
-        assert_eq!(after.point_normals(), before.point_normals());
+        assert_eq!(index.points(), cloud.points());
+        assert_eq!(index.len(), cloud.point_count());
 
-        // The open-map attributes cannot survive, since PointCloud has nowhere to put them.
-        assert!(after.point_attr("confidence").is_none());
+        // Every point is its own nearest neighbor, which is the cheapest check that the tree was
+        // built over the buffer the index reports.
+        for (i, p) in cloud.points().iter().enumerate() {
+            let (found, d) = index.nearest_one(p);
+            assert_eq!(found, i);
+            assert!(d < 1e-12);
+        }
+
+        // The cloud is untouched, open-map attributes included.
+        assert!(cloud.point_attr("confidence").is_some());
 
         Ok(())
     }

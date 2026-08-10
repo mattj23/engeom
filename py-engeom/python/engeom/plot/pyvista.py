@@ -19,7 +19,7 @@ except ImportError as _e:
         "Install it with `pip install engeom[pyvista]`."
     ) from _e
 
-from engeom.geom3 import Mesh3, Curve3, Iso3, SurfacePoint3, PointCloud, Circle3, Sphere3
+from engeom.geom3 import Mesh3, Curve3, Iso3, SurfacePoint3, PointCloud3, Circle3, Sphere3
 from engeom.metrology import Distance3
 
 from ._coerce import Coords3, to_tuple3
@@ -220,10 +220,10 @@ class PlotterHelper:
         data = pyvista.PolyData(mesh.points, faces)
         return self.pv.add_mesh(data, **kwargs)
 
-    def draw_point_cloud(self, cloud: PointCloud, use_colors: bool = True,
+    def draw_point_cloud(self, cloud: PointCloud3, use_colors: bool = True,
                          normal_arrow_size: float = 0.0, **kwargs) -> list[pyvista.vtkActor]:
         """
-        Add a `PointCloud` to the plotter, optionally colored by the cloud's own per-point colors and
+        Add a `PointCloud3` to the plotter, optionally colored by the cloud's own per-point colors and
         optionally overlaid with arrows showing the per-point normals.
 
         :param cloud: The point cloud to plot.
@@ -235,15 +235,15 @@ class PlotterHelper:
         :return: A list of the PyVista actors that were added to the plotter.
         """
         actors = []
-        if normal_arrow_size > 0.0 and cloud.normals is not None:
+        if normal_arrow_size > 0.0 and cloud.point_normals is not None:
             arrow_color = kwargs.get("color", "gray")
-            arrow_actor = self.pv.add_arrows(cloud.points, cloud.normals, mag=normal_arrow_size,
+            arrow_actor = self.pv.add_arrows(cloud.points, cloud.point_normals, mag=normal_arrow_size,
                                              color=arrow_color, reset_camera=False)
             actors.append(arrow_actor)
 
-        if use_colors and cloud.colors is not None:
+        if use_colors and cloud.point_colors is not None:
             kwargs.pop("color", None)  # Remove color if it's set, as colors will be used from the cloud
-            kwargs["scalars"] = cloud.colors
+            kwargs["scalars"] = cloud.point_colors
             kwargs["rgba"] = True
 
         point_actor = self.pv.add_points(cloud.points, **kwargs)

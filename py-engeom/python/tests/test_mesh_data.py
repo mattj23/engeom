@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy
 import pytest
 
-from engeom.geom3 import Iso3, Mesh3, MeshData3, Point3, PointCloud, PointCloud3, Vector3
+from engeom.geom3 import Iso3, Mesh3, MeshData3, Point3, PointCloud3, Vector3
 from engeom.common import IndexMask
 
 
@@ -275,18 +275,45 @@ def test_a_faceless_mesh_cannot_become_a_mesh():
         data.to_mesh()
 
 
-def test_cloud_data_round_trips_through_point_cloud():
-    before = loaded_cloud_data()
-    cloud = before.to_cloud()
+def test_cloud_spatial_queries_do_not_disturb_attributes():
+    """Indexing no longer copies the cloud into a second type, so nothing can be lost on the way to
+    a spatial query. This replaced a lossy `to_cloud`/`from_cloud` round trip."""
+    cloud = loaded_cloud_data()
 
-    assert isinstance(cloud, PointCloud)
-    assert cloud.points.shape == (3, 3)
+    kept = cloud.sample_poisson_disk(0.0001)
+    assert len(kept) == 3
 
-    after = PointCloud3.from_cloud(cloud)
+    sampled = cloud.extract_poisson_sample(0.0001)
+    assert sampled.points == pytest.approx(cloud.points)
+    assert sampled.point_stdev == pytest.approx(cloud.point_stdev)
+    assert numpy.array_equal(sampled.point_colors, cloud.point_colors)
 
-    assert after.points == pytest.approx(before.points)
-    assert after.point_stdev == pytest.approx(before.point_stdev)
-    assert numpy.array_equal(after.point_colors, before.point_colors)
+
+def test_cloud_spatial_queries_see_mutations():
+    """The class caches its k-d tree between queries, so what can go wrong is a query answered from
+    a tree built before the points changed. Every mutator drops the cache; this checks the drop
+    actually happens rather than trusting the discipline.
+
+    It has to use an overlap query, because that is the only binding which touches the cached tree.
+    Poisson sampling builds its own tree over a voxel-downsampled subset and would pass whether or
+    not the cache were invalidated, which makes it useless as a check here."""
+    other = PointCloud3(numpy.array([[5.0, 0.0, 0.0]]))
+
+    cloud = PointCloud3(numpy.array([[0.0, 0.0, 0.0]]))
+    assert cloud.overlap_points_by_reciprocity(other, 0.001) == [0]
+
+    # Add the point that `other` actually sits on. With a fresh tree the round trip from `other`
+    # now lands on index 1, so index 0 stops overlapping and index 1 starts. A stale tree still
+    # holds only the original point and would keep answering [0].
+    cloud.append_in_place(PointCloud3(numpy.array([[5.0, 0.0, 0.0]])))
+    assert cloud.overlap_points_by_reciprocity(other, 0.001) == [1]
+
+
+def test_cloud_overlap_accepts_the_same_cloud_twice():
+    """The cached tree is built through a shared borrow specifically so that passing one cloud as
+    both arguments works rather than raising a borrow error."""
+    cloud = PointCloud3(numpy.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]))
+    assert cloud.overlap_points_by_reciprocity(cloud, 0.001) == [0, 1]
 
 
 # ================================================================================================
@@ -316,7 +343,7 @@ def test_cloud_append_in_place_rejects_a_mismatch_without_modifying_the_target()
 
 
 def test_cloud_subset_indices_carries_the_attributes():
-    sub = loaded_cloud_data().create_subset_indices([2, 0])
+    sub = loaded_cloud_data().extract_subset_indices([2, 0])
 
     assert len(sub) == 2
     assert sub.points[0] == pytest.approx([0.0, 1.0, 0.0])
