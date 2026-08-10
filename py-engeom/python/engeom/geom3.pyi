@@ -2407,7 +2407,7 @@ class Mesh3:
         mesh representation.
 
         Every attribute the file carries is preserved on the mesh. A PLY point cloud, which has no faces, is refused;
-        load those with `PointCloudData3.load_ply`.
+        load those with `PointCloud3.load_ply`.
 
         :param path: The file path to the PLY file, provided as a string or Path object.
         :param is_solid: whether distance queries should treat points inside the mesh as being at zero distance
@@ -4664,7 +4664,7 @@ class MeshData3:
         Read a LPTF3 laser profile scan and build a triangle mesh from it, connecting points in adjacent rows.
 
         Points which end up in no face are discarded, so the point buffer is a subset of what
-        `PointCloudData3.load_lptf3` returns for the same file. Use that instead when every measured point matters.
+        `PointCloud3.load_lptf3` returns for the same file. Use that instead when every measured point matters.
 
         The way the data is loaded is controlled by the keyword arguments:
 
@@ -5173,7 +5173,7 @@ class MeshData3:
         ...
 
 
-class PointCloudData3:
+class PointCloud3:
     """
     The unaccelerated point cloud container: a buffer of points and the per-point attributes attached to them.
 
@@ -5193,7 +5193,7 @@ class PointCloudData3:
         ...
 
     @staticmethod
-    def load_ply(path: str | Path) -> PointCloudData3:
+    def load_ply(path: str | Path) -> PointCloud3:
         """
         Load a point cloud from a PLY file, preserving every property the file carries.
 
@@ -5221,7 +5221,7 @@ class PointCloudData3:
         look_scale: float | None = None,
         weight_scale: float | None = None,
         max_move: float | None = None,
-    ) -> PointCloudData3:
+    ) -> PointCloud3:
         """
         Read a LPTF3 laser profile scan as a point cloud, keeping every measured point.
 
@@ -5308,7 +5308,7 @@ class PointCloudData3:
         """
         ...
 
-    def transform_copy(self, iso: Iso3) -> PointCloudData3:
+    def transform_copy(self, iso: Iso3) -> PointCloud3:
         """
         Return a copy of the cloud transformed by a rigid isometry, leaving this one unchanged.
 
@@ -5328,7 +5328,7 @@ class PointCloudData3:
         """
         ...
 
-    def scale_copy(self, scale: float) -> PointCloudData3:
+    def scale_copy(self, scale: float) -> PointCloud3:
         """
         Return a copy of the cloud scaled about the origin by a uniform factor, leaving this one unchanged.
 
@@ -5337,7 +5337,7 @@ class PointCloudData3:
         """
         ...
 
-    def append_in_place(self, other: PointCloudData3):
+    def append_in_place(self, other: PointCloud3):
         """
         Append another cloud onto the end of this one.
 
@@ -5348,7 +5348,7 @@ class PointCloudData3:
         """
         ...
 
-    def create_subset_indices(self, indices: List[int]) -> PointCloudData3:
+    def create_subset_indices(self, indices: List[int]) -> PointCloud3:
         """
         Create a new cloud containing the points at the given indices, in the order given. Indices may repeat. Every
         attribute is carried through.
@@ -5370,7 +5370,7 @@ class PointCloudData3:
         ...
 
     @staticmethod
-    def from_cloud(cloud: PointCloud) -> PointCloudData3:
+    def from_cloud(cloud: PointCloud) -> PointCloud3:
         """
         Copy the buffer and attributes out of a queryable `PointCloud`.
 
@@ -5379,7 +5379,7 @@ class PointCloudData3:
         """
         ...
 
-    def cloned(self) -> PointCloudData3:
+    def cloned(self) -> PointCloud3:
         """
         Create a copy of this point data.
         """

@@ -48,7 +48,7 @@ mod uncertainty;
 use crate::geom3::mesh::MeshData3;
 use crate::io::lptf3::downsample::load_downsample_filter_lptf3;
 use crate::io::lptf3::mesh::load_lptf3_mesh_data_core;
-use crate::{Point3, PointCloud, PointCloudData3, Result};
+use crate::{Point3, PointCloud, PointCloud3, Result};
 use std::path::Path;
 
 pub use self::comprehensive::*;
@@ -136,7 +136,7 @@ pub fn load_lptf3(file_path: &Path, load: Lptf3Load) -> Result<PointCloud> {
     load_lptf3_point_data(file_path, load)?.to_cloud()
 }
 
-/// Read a lptf3 (Laser Profile Triangulation Format 3D) file and return a `PointCloudData3`.
+/// Read a lptf3 (Laser Profile Triangulation Format 3D) file and return a `PointCloud3`.
 ///
 /// This is the same load as [`load_lptf3`], which is a thin wrapper over it, but it returns the
 /// plain data container rather than the queryable `PointCloud`. Prefer it when you are going to
@@ -154,15 +154,15 @@ pub fn load_lptf3(file_path: &Path, load: Lptf3Load) -> Result<PointCloud> {
 /// * `file_path`: A path to the LPTF3 file to load.
 /// * `load`: An enum specifying how to load the data from the file.
 ///
-/// returns: `Result<PointCloudData3>`
-pub fn load_lptf3_point_data(file_path: &Path, load: Lptf3Load) -> Result<PointCloudData3> {
+/// returns: `Result<PointCloud3>`
+pub fn load_lptf3_point_data(file_path: &Path, load: Lptf3Load) -> Result<PointCloud3> {
     let (points, colors) = match load {
         Lptf3Load::All => load_take_every(file_path, None)?,
         Lptf3Load::TakeEveryN(n) => load_take_every(file_path, Some(n))?,
         Lptf3Load::SmoothSample(params) => load_downfilter_points(file_path, params)?,
     };
 
-    let mut data = PointCloudData3::new(points);
+    let mut data = PointCloud3::new(points);
     if colors.is_some() {
         data.set_point_colors(colors)?;
     }

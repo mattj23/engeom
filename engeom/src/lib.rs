@@ -62,7 +62,7 @@ pub use geom2::{
 // Extremely common 3D types
 pub use geom3::{
     Curve3, CurveStation3, HalfEdgeMesh3, Iso3, KdTree3, Line3, Manifold1Pos3, Mesh3, MeshData3,
-    Plane3, Point3, PointCloud, PointCloudData3, PointCloudFeatures, PointCloudKdTree,
+    Plane3, Point3, PointCloud, PointCloud3, PointCloudFeatures, PointCloudKdTree,
     PointCloudOverlap, Sphere3, SurfacePoint3, SvdBasis3, UnitVec3, Vector3,
 };
 

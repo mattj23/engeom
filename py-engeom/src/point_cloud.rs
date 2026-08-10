@@ -243,7 +243,7 @@ impl PointCloud {
 }
 
 // ================================================================================================
-// PointCloudData3
+// PointCloud3
 // ================================================================================================
 
 /// The unaccelerated point cloud container, holding the point buffer and its per-point attributes.
@@ -251,15 +251,15 @@ impl PointCloud {
 /// Numpy arrays handed out through the getters are cached and invalidated by any method which can
 /// change what they hold, so repeated access does not repeatedly copy the buffer.
 #[pyclass(from_py_object, module = "engeom.geom3")]
-pub struct PointCloudData3 {
-    inner: engeom::PointCloudData3,
+pub struct PointCloud3 {
+    inner: engeom::PointCloud3,
     points: Option<Py<PyArray2<f64>>>,
     point_normals: Option<Py<PyArray2<f64>>>,
     point_colors: Option<Py<PyArray2<u8>>>,
     point_stdev: Option<Py<PyArray1<f64>>>,
 }
 
-impl PointCloudData3 {
+impl PointCloud3 {
     fn clear_cached(&mut self) {
         self.points = None;
         self.point_normals = None;
@@ -267,11 +267,11 @@ impl PointCloudData3 {
         self.point_stdev = None;
     }
 
-    pub fn get_inner(&self) -> &engeom::PointCloudData3 {
+    pub fn get_inner(&self) -> &engeom::PointCloud3 {
         &self.inner
     }
 
-    pub fn from_inner(inner: engeom::PointCloudData3) -> Self {
+    pub fn from_inner(inner: engeom::PointCloud3) -> Self {
         Self {
             inner,
             points: None,
@@ -282,26 +282,26 @@ impl PointCloudData3 {
     }
 }
 
-impl Clone for PointCloudData3 {
+impl Clone for PointCloud3 {
     fn clone(&self) -> Self {
         Self::from_inner(self.inner.clone())
     }
 }
 
 #[pymethods]
-impl PointCloudData3 {
+impl PointCloud3 {
     #[new]
     fn new<'py>(points: PyReadonlyArray2<'py, f64>) -> PyResult<Self> {
         let points = array_to_points3(&points.as_array())?;
-        Ok(Self::from_inner(engeom::PointCloudData3::new(points)))
+        Ok(Self::from_inner(engeom::PointCloud3::new(points)))
     }
 
     // --- Serialization ---------------------------------------------------------------------
 
     #[staticmethod]
     fn load_ply(path: PathBuf) -> PyResult<Self> {
-        let inner = engeom::PointCloudData3::load_ply(&path)
-            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        let inner =
+            engeom::PointCloud3::load_ply(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
         Ok(Self::from_inner(inner))
     }
 
@@ -428,7 +428,7 @@ impl PointCloudData3 {
         Ok(Self::from_inner(inner))
     }
 
-    fn append_in_place(&mut self, other: &PointCloudData3) -> PyResult<()> {
+    fn append_in_place(&mut self, other: &PointCloud3) -> PyResult<()> {
         self.clear_cached();
         self.inner
             .append_in_place(&other.inner)
@@ -462,7 +462,7 @@ impl PointCloudData3 {
     /// Copy the buffer and attributes out of a queryable `PointCloud`.
     #[staticmethod]
     fn from_cloud(cloud: &PointCloud) -> PyResult<Self> {
-        let inner = engeom::PointCloudData3::from_cloud(cloud.get_inner())
+        let inner = engeom::PointCloud3::from_cloud(cloud.get_inner())
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(inner))
     }
@@ -472,6 +472,6 @@ impl PointCloudData3 {
     }
 
     fn __repr__(&self) -> String {
-        format!("<PointCloudData3 {} points>", self.inner.point_count())
+        format!("<PointCloud3 {} points>", self.inner.point_count())
     }
 }

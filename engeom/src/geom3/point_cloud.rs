@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::common::IndexMask;
 use crate::common::poisson_disk::sample_poisson_disk_all;
 use crate::geom3::Aabb3;
-pub use data::PointCloudData3;
+pub use data::PointCloud3;
 pub use normal_estimation::{NormalEstimates, estimate_by_neighborhood};
 
 pub trait PointCloudOverlap<TOther> {
@@ -84,6 +84,24 @@ pub trait PointCloudFeatures {
 }
 
 /// A mutable point cloud with optional normals and colors.
+///
+/// # Being retired, do not build on this
+///
+/// This is the pre-overhaul accelerated type, and it is not the same thing as [`PointCloud3`],
+/// which is the owning container that was called `PointCloudData3` until the rename. The similar
+/// names are transitional.
+///
+/// Three things are wrong with this type and all three are being fixed together. It carries four
+/// bare `Option<Vec<_>>` fields instead of a [`PointAttrSet3`](crate::geom3::attributes3::PointAttrSet3),
+/// so it cannot hold the open-map attributes that survive a PLY round trip. Its k-d tree lives
+/// outside it, matched by a `tree_uuid` that every mutating method has to remember to bump, which is
+/// the stored-token pattern the `MeshData3` design rejected on the grounds that forgetting is
+/// silent. And `merge` and `append` do in fact forget: neither carries `std_devs`, so either one
+/// leaves that array shorter than `points` and breaks the invariant `try_new` enforces.
+///
+/// The replacement is `PointCloud3` plus a borrowed `CloudIndex3<'a>` holding the tree, where the
+/// borrow makes staleness a compile error rather than a runtime check. New code should use
+/// `PointCloud3`.
 #[derive(Clone)]
 pub struct PointCloud {
     tree_uuid: Uuid,

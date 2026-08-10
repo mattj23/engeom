@@ -1,5 +1,5 @@
 """
-Tests for the unaccelerated data containers, `MeshData3` and `PointCloudData3`.
+Tests for the unaccelerated data containers, `MeshData3` and `PointCloud3`.
 
 These focus on the parts the bindings are actually responsible for: the numpy shapes and dtypes
 crossing the boundary, the attribute setters accepting and rejecting arrays, the serialization
@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy
 import pytest
 
-from engeom.geom3 import Iso3, Mesh3, MeshData3, Point3, PointCloud, PointCloudData3, Vector3
+from engeom.geom3 import Iso3, Mesh3, MeshData3, Point3, PointCloud, PointCloud3, Vector3
 from engeom.common import IndexMask
 
 
@@ -36,8 +36,8 @@ def loaded_mesh_data() -> MeshData3:
     return data
 
 
-def loaded_cloud_data() -> PointCloudData3:
-    cloud = PointCloudData3(triangle_points())
+def loaded_cloud_data() -> PointCloud3:
+    cloud = PointCloud3(triangle_points())
     cloud.set_point_normals(numpy.tile([0.0, 0.0, 1.0], (3, 1)))
     cloud.set_point_colors(numpy.array([[255, 0, 0], [0, 255, 0], [0, 0, 255]], dtype=numpy.uint8))
     cloud.set_point_stdev(numpy.array([0.001, 0.002, 0.003]))
@@ -60,7 +60,7 @@ def test_mesh_data_buffers_have_the_documented_shapes_and_dtypes():
 
 
 def test_cloud_data_buffers_have_the_documented_shapes_and_dtypes():
-    cloud = PointCloudData3(triangle_points())
+    cloud = PointCloud3(triangle_points())
 
     assert cloud.points.shape == (3, 3)
     assert cloud.points.dtype == numpy.float64
@@ -76,7 +76,7 @@ def test_attributes_are_none_on_a_bare_container():
     assert data.face_colors is None
     assert data.face_labels is None
 
-    assert PointCloudData3(triangle_points()).point_stdev is None
+    assert PointCloud3(triangle_points()).point_stdev is None
 
 
 def test_attribute_shapes_and_dtypes():
@@ -189,7 +189,7 @@ def test_cloud_data_ply_round_trip(tmp_path, binary):
     path = tmp_path / "cloud.ply"
 
     before.save_ply(path, binary=binary)
-    after = PointCloudData3.load_ply(path)
+    after = PointCloud3.load_ply(path)
 
     assert after.points == pytest.approx(before.points)
     assert after.point_normals == pytest.approx(before.point_normals)
@@ -202,7 +202,7 @@ def test_loading_a_mesh_as_a_point_cloud_is_refused(tmp_path):
     loaded_mesh_data().save_ply(path)
 
     with pytest.raises(IOError) as info:
-        PointCloudData3.load_ply(path)
+        PointCloud3.load_ply(path)
 
     assert "MeshData3" in str(info.value)
 
@@ -282,7 +282,7 @@ def test_cloud_data_round_trips_through_point_cloud():
     assert isinstance(cloud, PointCloud)
     assert cloud.points.shape == (3, 3)
 
-    after = PointCloudData3.from_cloud(cloud)
+    after = PointCloud3.from_cloud(cloud)
 
     assert after.points == pytest.approx(before.points)
     assert after.point_stdev == pytest.approx(before.point_stdev)
@@ -336,7 +336,7 @@ def test_cloned_is_independent():
 
 def test_repr_says_what_it_holds():
     assert "MeshData3" in repr(loaded_mesh_data())
-    assert "PointCloudData3" in repr(loaded_cloud_data())
+    assert "PointCloud3" in repr(loaded_cloud_data())
 
 
 # ================================================================================================

@@ -1,4 +1,4 @@
-//! This module contains `PointCloudData3`, a plain container for a buffer of points and the
+//! This module contains `PointCloud3`, a plain container for a buffer of points and the
 //! per-point attributes attached to them.
 //!
 //! It is the point-cloud counterpart to `MeshData3`, and the two are deliberately shaped the same
@@ -8,6 +8,15 @@
 //!
 //! There is no spatial acceleration here of any kind. Convert to `PointCloud` and build its k-d
 //! tree when you need nearest-neighbor queries.
+//!
+//! # `PointCloud3` and `PointCloud` are different types, for now
+//!
+//! The similar names are transitional, not a typo. `PointCloud3` is this type, the owning
+//! container, renamed from `PointCloudData3`. `PointCloud` is the older accelerated type which
+//! pairs a point buffer with an externally held k-d tree and a UUID to check the two still match.
+//! It is being retired: the tree is moving into a borrowed `CloudIndex3<'a>` whose lifetime makes
+//! the staleness check unnecessary, and `PointCloud` will be deleted when it does. Until then both
+//! names exist and mean different things.
 
 use crate::common::IndexMask;
 use crate::geom3::Aabb3;
@@ -28,7 +37,7 @@ use std::path::Path;
 ///
 /// # Relationship with Other Representations
 ///
-/// `PointCloudData3` is the serialization gateway for point data, and is the default choice when:
+/// `PointCloud3` is the serialization gateway for point data, and is the default choice when:
 ///
 /// - You don't need any spatial queries at all
 /// - You are editing the contents of the buffers
@@ -41,14 +50,14 @@ use std::path::Path;
 ///
 /// # Invariants
 ///
-/// A `PointCloudData3` is never allowed to exist in an incoherent state. Every attribute array has
+/// A `PointCloud3` is never allowed to exist in an incoherent state. Every attribute array has
 /// a length matching the point count. This is checked on construction and maintained by every
 /// method which modifies the cloud, which is why the point buffer is private and why attributes are
 /// set through methods that supply the count on the caller's behalf.
 ///
 /// An empty cloud is legal.
 #[derive(Clone, PartialEq)]
-pub struct PointCloudData3 {
+pub struct PointCloud3 {
     points: Vec<Point3>,
     attrs: PointAttrSet3,
 }
@@ -57,7 +66,7 @@ pub struct PointCloudData3 {
 // Construction
 // ===============================================================================================
 
-impl PointCloudData3 {
+impl PointCloud3 {
     /// Create a new point cloud from a buffer of points, with no attributes attached.
     ///
     /// Unlike `MeshData3::new` this cannot fail, because a bare point buffer has no internal
@@ -67,7 +76,7 @@ impl PointCloudData3 {
     ///
     /// * `points`: the point positions
     ///
-    /// returns: `PointCloudData3`
+    /// returns: `PointCloud3`
     pub fn new(points: Vec<Point3>) -> Self {
         Self {
             points,
@@ -82,7 +91,7 @@ impl PointCloudData3 {
     /// * `points`: the point positions
     /// * `attrs`: the attributes to attach, whose arrays must match the point count
     ///
-    /// returns: `Result<PointCloudData3>`, failing if any attribute array is the wrong length
+    /// returns: `Result<PointCloud3>`, failing if any attribute array is the wrong length
     pub fn new_with_attrs(points: Vec<Point3>, attrs: PointAttrSet3) -> Result<Self> {
         attrs.validate(points.len())?;
         Ok(Self { points, attrs })
@@ -99,7 +108,7 @@ impl PointCloudData3 {
     ///
     /// * `cloud`: the cloud to copy from
     ///
-    /// returns: `Result<PointCloudData3>`
+    /// returns: `Result<PointCloud3>`
     pub fn from_cloud(cloud: &PointCloud) -> Result<Self> {
         let n = cloud.points().len();
         let mut attrs = PointAttrSet3::empty();
@@ -148,7 +157,7 @@ impl PointCloudData3 {
 // Serialization
 // ===============================================================================================
 
-impl PointCloudData3 {
+impl PointCloud3 {
     /// Load a point cloud from a PLY file, preserving every property the file carries.
     ///
     /// The file must have a `vertex` element with `x`, `y`, and `z` properties. A file which
@@ -159,7 +168,7 @@ impl PointCloudData3 {
     ///
     /// * `path`: the path to the PLY file
     ///
-    /// returns: `Result<PointCloudData3>`
+    /// returns: `Result<PointCloud3>`
     #[cfg(feature = "ply")]
     pub fn load_ply(path: &Path) -> Result<Self> {
         let (points, attrs, has_faces) = load_ply_points(path)?;
@@ -228,7 +237,7 @@ impl PointCloudData3 {
 // Core access
 // ===============================================================================================
 
-impl PointCloudData3 {
+impl PointCloud3 {
     /// Get a reference to the points of the cloud.
     pub fn points(&self) -> &[Point3] {
         &self.points
@@ -271,7 +280,7 @@ impl PointCloudData3 {
 // Attribute access
 // ===============================================================================================
 
-impl PointCloudData3 {
+impl PointCloud3 {
     /// Get the per-point unit normals, if present.
     pub fn point_normals(&self) -> Option<&[UnitVec3]> {
         self.attrs.normals()
@@ -298,7 +307,7 @@ impl PointCloudData3 {
 // Attribute mutation
 // ===============================================================================================
 
-impl PointCloudData3 {
+impl PointCloud3 {
     /// Set or clear the per-point unit normals.
     ///
     /// # Arguments
@@ -375,7 +384,7 @@ impl PointCloudData3 {
 // Whole-cloud operations
 // ===============================================================================================
 
-impl PointCloudData3 {
+impl PointCloud3 {
     /// Transform the cloud in place by a rigid isometry.
     ///
     /// The points are moved, and any stored normals and `Vector` attributes are rotated with them.
@@ -399,7 +408,7 @@ impl PointCloudData3 {
     ///
     /// * `iso`: the isometry to apply
     ///
-    /// returns: `PointCloudData3`
+    /// returns: `PointCloud3`
     pub fn transform_copy(&self, iso: &Iso3) -> Self {
         let mut result = self.clone();
         result.transform_in_place(iso);
@@ -450,7 +459,7 @@ impl PointCloudData3 {
     ///
     /// * `scale`: the factor to scale by, which must be finite and non-zero
     ///
-    /// returns: `Result<PointCloudData3>`
+    /// returns: `Result<PointCloud3>`
     pub fn scale_copy(&self, scale: f64) -> Result<Self> {
         let mut result = self.clone();
         result.scale_in_place(scale)?;
@@ -469,7 +478,7 @@ impl PointCloudData3 {
     /// * `other`: the cloud to append
     ///
     /// returns: `Result<()>`
-    pub fn append_in_place(&mut self, other: &PointCloudData3) -> Result<()> {
+    pub fn append_in_place(&mut self, other: &PointCloud3) -> Result<()> {
         // Attributes are checked and merged first, because that is the step which can fail. Once it
         // succeeds, extending the point buffer cannot.
         self.attrs.extend_from(&other.attrs)?;
@@ -482,7 +491,7 @@ impl PointCloudData3 {
 // Subsetting
 // ===============================================================================================
 
-impl PointCloudData3 {
+impl PointCloud3 {
     /// Create a new cloud containing only the points marked `true` in the given mask, preserving
     /// their original order. Every attribute is carried through.
     ///
@@ -490,7 +499,7 @@ impl PointCloudData3 {
     ///
     /// * `mask`: a mask whose length must match the point count
     ///
-    /// returns: `Result<PointCloudData3>`
+    /// returns: `Result<PointCloud3>`
     pub fn create_subset_points(&self, mask: &IndexMask) -> Result<Self> {
         if mask.len() != self.points.len() {
             return Err(format!(
@@ -514,7 +523,7 @@ impl PointCloudData3 {
     ///
     /// * `indices`: the points to take, each of which must be less than the point count
     ///
-    /// returns: `Result<PointCloudData3>`
+    /// returns: `Result<PointCloud3>`
     pub fn create_subset_indices(&self, indices: &[usize]) -> Result<Self> {
         let n = self.points.len();
         if let Some(bad) = indices.iter().find(|&&i| i >= n) {
@@ -532,11 +541,11 @@ impl PointCloudData3 {
 // Helpers
 // ===============================================================================================
 
-impl fmt::Debug for PointCloudData3 {
+impl fmt::Debug for PointCloud3 {
     /// Summarize the cloud rather than dumping its buffer, which is routinely large enough to make
     /// a derived `Debug` implementation useless.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("PointCloudData3")
+        f.debug_struct("PointCloud3")
             .field("points", &self.points.len())
             .field("attrs", &self.attrs)
             .finish()
@@ -551,8 +560,8 @@ mod tests {
     use std::f64::consts::FRAC_PI_2;
 
     /// A four point cloud carrying one attribute of every kind an operation might have to touch.
-    fn loaded_cloud() -> PointCloudData3 {
-        let mut cloud = PointCloudData3::new(vec![
+    fn loaded_cloud() -> PointCloud3 {
+        let mut cloud = PointCloud3::new(vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(0.0, 1.0, 0.0),
@@ -580,7 +589,7 @@ mod tests {
 
     #[test]
     fn a_bare_cloud_has_no_attributes() {
-        let cloud = PointCloudData3::new(vec![Point3::origin()]);
+        let cloud = PointCloud3::new(vec![Point3::origin()]);
 
         assert_eq!(cloud.point_count(), 1);
         assert!(!cloud.is_empty());
@@ -590,7 +599,7 @@ mod tests {
 
     #[test]
     fn an_empty_cloud_is_legal() {
-        let cloud = PointCloudData3::empty();
+        let cloud = PointCloud3::empty();
         assert!(cloud.is_empty());
         assert_eq!(cloud.point_count(), 0);
     }
@@ -601,7 +610,7 @@ mod tests {
         attrs.set_stdev(Some(vec![0.1]), 1).unwrap();
 
         // The attribute set is internally consistent for a one-point cloud, but not for this one.
-        assert!(PointCloudData3::new_with_attrs(vec![Point3::origin(); 4], attrs).is_err());
+        assert!(PointCloud3::new_with_attrs(vec![Point3::origin(); 4], attrs).is_err());
     }
 
     #[test]
@@ -835,7 +844,7 @@ mod tests {
     fn round_trip_through_point_cloud_keeps_the_typed_attributes() -> Result<()> {
         let before = loaded_cloud();
         let cloud = before.to_cloud()?;
-        let after = PointCloudData3::from_cloud(&cloud)?;
+        let after = PointCloud3::from_cloud(&cloud)?;
 
         assert_eq!(after.points(), before.points());
         assert_eq!(after.point_colors(), before.point_colors());
@@ -850,7 +859,7 @@ mod tests {
 
     #[test]
     fn check_attribute_loss_only_complains_when_there_is_something_to_lose() -> Result<()> {
-        let bare = PointCloudData3::new(vec![Point3::origin()]);
+        let bare = PointCloud3::new(vec![Point3::origin()]);
         bare.check_attribute_loss("XYZ", false)?;
 
         let loaded = loaded_cloud();
@@ -901,7 +910,7 @@ mod tests {
         let file = TempPly::new("round-trip");
 
         before.save_ply(file.path(), &PlyWriteOpts::default())?;
-        let after = PointCloudData3::load_ply(file.path())?;
+        let after = PointCloud3::load_ply(file.path())?;
 
         assert_eq!(after.point_count(), before.point_count());
         for (p, q) in before.points().iter().zip(after.points()) {
@@ -950,7 +959,7 @@ mod tests {
         let file = TempPly::new("is-a-mesh");
         mesh.save_ply(file.path(), &PlyWriteOpts::default())?;
 
-        let result = PointCloudData3::load_ply(file.path());
+        let result = PointCloud3::load_ply(file.path());
         assert!(result.is_err());
 
         // The message has to say what to do instead, not just that it failed.
@@ -963,14 +972,14 @@ mod tests {
     #[cfg(feature = "ply")]
     #[test]
     fn a_bare_cloud_round_trips_without_inventing_attributes() -> Result<()> {
-        let before = PointCloudData3::new(vec![
+        let before = PointCloud3::new(vec![
             Point3::new(1.0, 2.0, 3.0),
             Point3::new(-4.0, 5.0, -6.0),
         ]);
 
         let file = TempPly::new("bare");
         before.save_ply(file.path(), &PlyWriteOpts::default())?;
-        let after = PointCloudData3::load_ply(file.path())?;
+        let after = PointCloud3::load_ply(file.path())?;
 
         assert_eq!(after.point_count(), 2);
         assert!(after.attrs().is_empty());
