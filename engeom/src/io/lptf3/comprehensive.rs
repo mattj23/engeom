@@ -2,7 +2,7 @@ use crate::common::{DiscreteDomain, IndexMask};
 use crate::io::lptf3::{Lptf3Loader, Lptf3UncertaintyModel};
 use crate::io::{Lptf3DsParams, Lptf3Load, load_lptf3_mesh_data};
 use crate::sensors::LaserProfileGeom;
-use crate::{Mesh3, Point3, PointCloud, Result, SurfacePoint3, UnitVec3};
+use crate::{Mesh3, Point3, PointCloud3, Result, SurfacePoint3, UnitVec3};
 use parry3d_f64::query::{Ray, RayCast};
 use rayon::prelude::*;
 use std::path::Path;
@@ -30,7 +30,7 @@ pub fn load_lptf3_comprehensive(
     uncertainty_model: &dyn Lptf3UncertaintyModel,
     bad_edge_count: usize,
     ray_check: Option<(&LaserProfileGeom, f64)>,
-) -> Result<PointCloud> {
+) -> Result<PointCloud3> {
     // This mesh is used only as a query surface, to get a normal at every point and to check
     // whether a point is occluded from the detector, so it carries no attributes of its own.
     let base_params = Lptf3Load::SmoothSample(Lptf3DsParams::new(8, 1.5, 1.0, 1.0));
@@ -150,5 +150,12 @@ pub fn load_lptf3_comprehensive(
 
     let c = if loader.has_color { Some(colors) } else { None };
 
-    PointCloud::try_new(points, Some(normals), c, Some(uncertainties))
+    let mut cloud = PointCloud3::new(points);
+    cloud.set_point_normals(Some(normals))?;
+    if c.is_some() {
+        cloud.set_point_colors(c)?;
+    }
+    cloud.set_point_stdev(Some(uncertainties))?;
+
+    Ok(cloud)
 }

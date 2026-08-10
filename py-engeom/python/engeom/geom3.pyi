@@ -4148,17 +4148,6 @@ class PointCloud:
         """
         ...
 
-    @staticmethod
-    def load_bxyz(path: str | Path) -> PointCloud:
-        """
-        Load a point cloud from a BXYZ file. The BXYZ format is a binary format for storing 3D point clouds with
-        optional normals and colors.
-
-        :param path: the path to the BXYZ file to load.
-        :return: a new `PointCloud` object containing the points, normals, and colors from the BXYZ file.
-        """
-        ...
-
     def append(self, other: PointCloud) -> PointCloud:
         """
         Append another point cloud to this one. The points, normals, and colors from the other point cloud will be
