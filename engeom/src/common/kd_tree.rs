@@ -1,7 +1,26 @@
+//! A thin wrapper over the k-d tree backend, exposing the three queries `engeom` currently uses.
+//! The backend used to be `kd-tree`, but I switched back to `kiddo` after doing some benchmarks and
+//! seeing how much faster it is.  There are some additional tests in the library now to catch the
+//! correctness bugs I was finding last year, but it looks like they got fixed.
+//!
+//! The backend is `kiddo`'s [`ImmutableKdTree`], which bulk-loads a point set that is known 100% up
+//! front and is then only queried, which is every use in this crate. In addition to speed, bulk
+//! loading picks split planes from the whole set at the beginning, so the tree ends up balanced
+//! regardless of point order.  This avoids some of the dengenerate orderings that caused issues on
+//! the `kd-tree` backend.
+//!
+//! <div class="warning">
+//!
+//! Important to note, distances cross this boundary as normal, non-squared Euclidean distances. For
+//! optimization purposes, `kiddo` ingests and reports squared values, so distances are squared on
+//! the way in and square-rooted (is that a word?) on the way out.
+//!
+//! </div>
+
 use crate::Result;
 use crate::common::{IndexMask, PCoords};
-use kdtree::KdTree as KdTreeInner;
-use kdtree::distance::squared_euclidean;
+use kiddo::{ImmutableKdTree, SquaredEuclidean};
+use std::num::NonZeroUsize;
 use uuid::Uuid;
 
 /// A KD tree associated with a unique UUID, such that it can be checked to be matched against a
@@ -39,113 +58,106 @@ pub trait KdTreeSearch<const D: usize> {
 
 /// An immutable k-dimensional tree for fast searches on points in D dimensions
 pub struct KdTree<const D: usize> {
-    tree: KdTreeInner<f64, usize, [f64; D]>,
+    tree: ImmutableKdTree<f64, D>,
+
+    /// The point count, kept alongside the tree because an empty tree is legal here and has to be
+    /// detected before a query, not during one.
+    len: usize,
 }
 
 impl<const D: usize> KdTree<D> {
-    /// Create a new immutable kd-tree from a list of points.
+    /// Build a k-d tree over a set of points.
     ///
-    /// # Arguments
-    ///
-    /// * `points`: A slice of points.
-    ///
-    /// returns: KdTree<{ D }>
+    /// The returned indices of every query are indices into `points`. An empty set is allowed and
+    /// produces a tree whose queries all come back empty.
     pub fn try_new(points: &[impl PCoords<D>]) -> Result<Self> {
-        let mut entries: Vec<[f64; D]> = Vec::with_capacity(points.len());
-        for p in points {
-            entries.push(p.coords().into());
+        let entries: Vec<[f64; D]> = points.iter().map(|p| p.coords().into()).collect();
+
+        // An empty slice has no split plane to choose, so the backend is not asked for one.
+        if entries.is_empty() {
+            return Ok(Self {
+                tree: ImmutableKdTree::new_from_slice(&[])
+                    .map_err(|e| format!("Failed to build an empty k-d tree: {e}"))?,
+                len: 0,
+            });
         }
-        let mut tree = KdTreeInner::new(D);
-        for (i, e) in entries.iter().enumerate() {
-            tree.add(*e, i)?;
-        }
-        Ok(Self { tree })
+
+        let tree = ImmutableKdTree::new_from_slice(&entries).map_err(|e| {
+            format!(
+                "Failed to build a k-d tree over {} points: {e}",
+                entries.len()
+            )
+        })?;
+
+        Ok(Self {
+            tree,
+            len: entries.len(),
+        })
+    }
+
+    /// The query point as the fixed-size array the backend wants.
+    fn key(point: &impl PCoords<D>) -> [f64; D] {
+        point.coords().into()
     }
 }
 
 impl<const D: usize> KdTreeSearch<D> for KdTree<D> {
-    /// Find the nearest point in the kd-tree to a given test point, returning the index of the
-    /// nearest point and the distance to it.
+    /// Find the single nearest point to `point`, as an index into the set the tree was built over
+    /// and the distance to it.
     ///
-    /// # Arguments
-    ///
-    /// * `point`: A test point to find the nearest point to.
-    ///
-    /// returns: (usize, f64)
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    ///
-    /// ```
+    /// An empty tree reports `(usize::MAX, f64::INFINITY)`, which is a sentinel rather than an
+    /// index and will panic if used to subscript the point set. Check [`KdTreeSearch::is_empty`]
+    /// first where an empty tree is possible.
     fn nearest_one(&self, point: &impl PCoords<D>) -> (usize, f64) {
-        if let Ok(item) = self
-            .tree
-            .nearest(point.coords().as_slice(), 1, &squared_euclidean)
-        {
-            let (d, u) = &item[0];
-            (**u, d.sqrt())
-        } else {
-            (usize::MAX, f64::INFINITY)
+        if self.len == 0 {
+            return (usize::MAX, f64::INFINITY);
         }
+
+        let found = self
+            .tree
+            .query(&Self::key(point))
+            .nearest_one::<SquaredEuclidean<f64>>()
+            .execute();
+
+        (found.item as usize, found.distance.sqrt())
     }
 
-    /// Find the nearest `count` points in the kd-tree to a given point.
+    /// Find the `count` nearest points to `point`, ordered nearest first.
     ///
-    /// # Arguments
-    ///
-    /// * `point`:
-    /// * `count`:
-    ///
-    /// returns: Vec<(usize, f64), Global>
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
+    /// Returns fewer than `count` entries when the tree holds fewer points, and none when `count`
+    /// is zero.
     fn nearest(&self, point: &impl PCoords<D>, count: usize) -> Vec<(usize, f64)> {
-        let result = self
-            .tree
-            .nearest(point.coords().as_slice(), count, &squared_euclidean);
+        let Some(count) = NonZeroUsize::new(count.min(self.len)) else {
+            return Vec::new();
+        };
 
-        if let Ok(neighbors) = result {
-            neighbors.iter().map(|(d, u)| (**u, d.sqrt())).collect()
-        } else {
-            Vec::new()
-        }
+        self.tree
+            .query(&Self::key(point))
+            .nearest_n::<SquaredEuclidean<f64>>(count)
+            .execute()
+            .into_iter()
+            .map(|f| (f.item as usize, f.distance.sqrt()))
+            .collect()
     }
 
-    /// Find all points within a given radius of a point.
-    ///
-    /// # Arguments
-    ///
-    /// * `point`:
-    /// * `radius`:
-    ///
-    /// returns: Vec<(usize, f64), Global>
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
+    /// Find every point within `radius` of `point`, ordered nearest first. The bound is inclusive.
     fn within(&self, point: &impl PCoords<D>, radius: f64) -> Vec<(usize, f64)> {
-        if let Ok(result) = self.tree.within(
-            point.coords().as_slice(),
-            radius * radius,
-            &squared_euclidean,
-        ) {
-            result.iter().map(|(d, u)| (**u, d.sqrt())).collect()
-        } else {
-            Vec::new()
+        if self.len == 0 {
+            return Vec::new();
         }
+
+        self.tree
+            .query(&Self::key(point))
+            .within::<SquaredEuclidean<f64>>(radius * radius)
+            .execute()
+            .into_iter()
+            .map(|f| (f.item as usize, f.distance.sqrt()))
+            .collect()
     }
 
     /// Get the number of points in the kd-tree.
     fn len(&self) -> usize {
-        self.tree.size()
+        self.len
     }
 }
 
@@ -160,22 +172,12 @@ pub struct PartialKdTree<const D: usize> {
 impl<const D: usize> PartialKdTree<D> {
     /// Create a new partial kd-tree from a list of points and a list of indices into the original.
     ///
-    /// The `indices` array should be a list of indices into the `all_points` array. The tree will
-    /// be built using only the points at those indices, *however*, the indices returned by the
-    /// search methods will be the indices into the original `all_points` array.
+    /// The tree is built over only the points `mask` selects, *however* the indices returned by
+    /// every query are indices into the full `all_points` array, not into the selected subset.
     ///
-    /// # Arguments
+    /// # Panics
     ///
-    /// * `all_points`: A slice of points.
-    /// * `indices`: A slice of indices into the `all_points` array to use for the tree.
-    ///
-    /// returns: PartialKdTree<{ D }>
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
+    /// If `mask` is not the same length as `all_points`.
     pub fn try_new(all_points: &[impl PCoords<D>], mask: &IndexMask) -> Result<Self> {
         if mask.len() != all_points.len() {
             panic!("Mask length must match the length of all_points");
@@ -390,6 +392,72 @@ mod tests {
             let tested = tree.within(query, search_dist).len();
             assert_eq!(tested, expected);
         }
+    }
+
+    /// A radius query must return every point inside the radius at a point count large enough to
+    /// matter, checked against brute force.
+    ///
+    /// This exists because of the specific way the previous backend failed. `engeom` moved off
+    /// `kiddo` in Sept 2025 over a radius query that did not return all of its neighbors *once the
+    /// point count grew large*, and every other correctness test in this crate runs at a few
+    /// thousand points: the Stanford bunny is about 8k, and `check_kiddo_bug` queries a Poisson
+    /// sample of a couple of thousand. None of them reach the regime the bug lived in, so none of
+    /// them would have caught it coming back.
+    ///
+    /// Brute force over every query would be O(N^2), so a small number of query points is checked
+    /// exhaustively against the whole set instead. The radius is chosen to return a substantial
+    /// neighborhood, since the failure mode was omission rather than a wrong answer.
+    #[test]
+    fn kd_tree_within_matches_brute_force_at_scale() {
+        const N: usize = 500_000;
+        const QUERIES: usize = 100;
+
+        let points = fibonacci_sphere(N, 100.0);
+        let tree = KdTree::try_new(&points).expect("KD tree creation failed");
+
+        // Roughly a few hundred neighbors at this density.
+        let radius = 30.0 * 200.0 / (N as f64).sqrt();
+
+        for q in (0..QUERIES).map(|i| points[(i * (N / QUERIES)) % N]) {
+            let mut expected: Vec<usize> = points
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| dist(&q, *p) <= radius)
+                .map(|(i, _)| i)
+                .collect();
+
+            let mut actual: Vec<usize> = tree.within(&q, radius).iter().map(|(i, _)| *i).collect();
+
+            assert!(
+                expected.len() > 50,
+                "radius {radius} returned only {} neighbors, too few to be a meaningful check",
+                expected.len()
+            );
+
+            expected.sort_unstable();
+            actual.sort_unstable();
+            assert_eq!(
+                actual, expected,
+                "radius query missed or invented neighbors"
+            );
+        }
+    }
+
+    /// Deterministic surface-distributed points, so a failure is reproducible.
+    fn fibonacci_sphere(n: usize, radius: f64) -> Vec<Point3> {
+        let golden = std::f64::consts::PI * (3.0 - 5.0_f64.sqrt());
+        (0..n)
+            .map(|i| {
+                let y = 1.0 - (i as f64 / (n as f64 - 1.0)) * 2.0;
+                let r = (1.0 - y * y).max(0.0).sqrt();
+                let theta = golden * i as f64;
+                Point3::new(
+                    radius * theta.cos() * r,
+                    radius * y,
+                    radius * theta.sin() * r,
+                )
+            })
+            .collect()
     }
 
     /// Returns the `count` nearest points to `query` as `(index, distance)` pairs,

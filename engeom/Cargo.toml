@@ -50,7 +50,21 @@ levenberg-marquardt = "0.15.0"
 stl_io = { version = "0.8.5", optional = true }
 num-traits = "0.2.19"
 faer = "0.24"
-kdtree = "0.7.0"
+
+# Going back to the `kiddo` library because it's wildly faster than `kd-tree`, but there do seem to 
+# be some packaging issues with this version.
+#
+# `multi-threaded` turns on kiddo's parallel bulk construction when there's over 262k points
+#
+# `fixed` supports fixed-point coordinate types we never use, and it is declared optional, but as of
+# 6.0.1 the crate does not compile without it: `src/dist/*/mod.rs` and `src/leaf_view/mod.rs` all
+# `use fixed::` unconditionally. Do not bother trying to turn it off again until that is fixed
+# upstream. Together these two are just kiddo's defaults, spelled out so the evaluation is recorded.
+#
+# Also note kiddo 6.0.1 declares `test-log` (with `trace`) as a non-optional normal dependency, which
+# drags a test utility and `env_logger` into every downstream build of `engeom`. Nothing we can do
+# from here, I opened an issue on upstream and we'll see what happens.
+kiddo = { version = "6.0.1", default-features = false, features = ["fixed", "multi-threaded"] }
 
 imageproc = "0.25.0"
 colorgrad = "0.7.2"
