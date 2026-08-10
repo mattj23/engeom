@@ -85,3 +85,7 @@ harness = false
 [[bench]]
 name = "mesh_decimate"
 harness = false
+
+[[bench]]
+name = "kd_tree"
+harness = false
