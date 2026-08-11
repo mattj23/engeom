@@ -56,6 +56,7 @@
 //! retained only because `multi_mesh` still depends on them. New work should use
 //! [`AlignParams3`].
 
+mod cloud;
 pub mod jacobian;
 mod mesh;
 mod multi_mesh;
@@ -75,6 +76,7 @@ use parry3d_f64::na::{Translation3, UnitQuaternion, Vector6};
 /// rz.
 pub type AlignStorage3 = Vector6<f64>;
 
+pub use self::cloud::CloudTarget3;
 pub use self::mesh::*;
 pub use self::multi_mesh::{
     MMOpts, MulMeshAlignPoint, multi_mesh_adjustment, multi_mesh_adjustment_with_points,
