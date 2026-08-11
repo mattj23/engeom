@@ -1,7 +1,7 @@
 //! This module contains tools for performing Poisson disk sampling on points in 2D and 3D.
 
 use crate::common::kd_tree::{KdTreeSearch, PartialKdTree};
-use crate::common::{IndexMask, PCoords, voxel_downsample};
+use crate::common::{IndexMask, PCoords, compute_first_per_voxel_mask};
 
 /// Performs Poisson disk sampling on a set of points in D-dimensional space, returning a mask
 /// indicating which points are retained.
@@ -27,7 +27,7 @@ pub fn sample_poisson_disk_all<const D: usize>(
     points: &[impl PCoords<D>],
     radius: f64,
 ) -> IndexMask {
-    let pre_mask = voxel_downsample(points, radius * 0.25);
+    let pre_mask = compute_first_per_voxel_mask(points, radius * 0.25);
     let partial_tree = PartialKdTree::try_new(points, &pre_mask)
         .expect("KD tree construction failed. Are there enough points?");
 

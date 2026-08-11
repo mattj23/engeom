@@ -599,7 +599,8 @@ impl PointCloud3 {
     /// averaged point.
     ///
     /// This is not the same operation as [`PointCloud3::sample_poisson_disk`] or
-    /// `voxel_downsample`, both of which *select* original points. This one *creates* new ones, so
+    /// `compute_first_per_voxel_mask`, both of which *select* original points. This one *creates* new
+    /// ones, so
     /// the output positions are not a subset of the input and the noise on them is lower: averaging
     /// `n` independent samples of a surface reduces the noise by `sqrt(n)`. That makes it the right
     /// tool for building a smooth coarse representation, and the wrong tool when you need the
@@ -659,7 +660,7 @@ impl PointCloud3 {
         for g in groups.iter() {
             let mut sum = Vector3::zeros();
             for &i in g {
-                sum += self.points[i].coords;
+                sum += self.points[i as usize].coords;
             }
             points.push(Point3::from(sum / g.len() as f64));
             counts.push(g.len() as u32);
@@ -674,7 +675,7 @@ impl PointCloud3 {
             for g in groups.iter() {
                 let mut sum = Vector3::zeros();
                 for &i in g {
-                    sum += normals[i].into_inner();
+                    sum += normals[i as usize].into_inner();
                 }
 
                 let mean = sum / g.len() as f64;
@@ -687,7 +688,7 @@ impl PointCloud3 {
                 reduced.push(if length > 1e-12 {
                     UnitVec3::new_unchecked(mean / length)
                 } else {
-                    normals[g[0]]
+                    normals[g[0] as usize]
                 });
             }
 
@@ -699,7 +700,10 @@ impl PointCloud3 {
             let reduced = groups
                 .iter()
                 .map(|g| {
-                    let sum_sq: f64 = g.iter().map(|&i| stdev[i] * stdev[i]).sum();
+                    let sum_sq: f64 = g
+                        .iter()
+                        .map(|&i| stdev[i as usize] * stdev[i as usize])
+                        .sum();
                     sum_sq.sqrt() / g.len() as f64
                 })
                 .collect();
@@ -709,7 +713,7 @@ impl PointCloud3 {
         if let Some(colors) = self.attrs.colors() {
             let reduced = groups
                 .iter()
-                .map(|g| mean_color(g.iter().map(|&i| colors[i])))
+                .map(|g| mean_color(g.iter().map(|&i| colors[i as usize])))
                 .collect();
             attrs.set_colors(Some(reduced), n_out)?;
         }
@@ -757,14 +761,14 @@ fn reduce_attr(attr: &Attr3, groups: &VoxelGroups) -> Attr3 {
         Attr3::Scalar(values) => Attr3::Scalar(
             groups
                 .iter()
-                .map(|g| g.iter().map(|&i| values[i]).sum::<f64>() / g.len() as f64)
+                .map(|g| g.iter().map(|&i| values[i as usize]).sum::<f64>() / g.len() as f64)
                 .collect(),
         ),
         Attr3::Vector(values) => Attr3::Vector(
             groups
                 .iter()
                 .map(|g| {
-                    let sum: Vector3 = g.iter().map(|&i| values[i]).sum();
+                    let sum: Vector3 = g.iter().map(|&i| values[i as usize]).sum();
                     sum / g.len() as f64
                 })
                 .collect(),
@@ -772,13 +776,13 @@ fn reduce_attr(attr: &Attr3, groups: &VoxelGroups) -> Attr3 {
         Attr3::Color(values) => Attr3::Color(
             groups
                 .iter()
-                .map(|g| mean_color(g.iter().map(|&i| values[i])))
+                .map(|g| mean_color(g.iter().map(|&i| values[i as usize])))
                 .collect(),
         ),
         Attr3::Label(values) => Attr3::Label(
             groups
                 .iter()
-                .map(|g| modal_label(g.iter().map(|&i| values[i])))
+                .map(|g| modal_label(g.iter().map(|&i| values[i as usize])))
                 .collect(),
         ),
     }

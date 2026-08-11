@@ -22,7 +22,7 @@ pub mod surface_point;
 pub mod svd_basis;
 pub mod triangulation;
 pub mod vec_f64;
-mod voxel_downsample;
+mod voxel_grid;
 
 use crate::na::{Point, SVector, Unit};
 pub use align::{DistMode, RefinementHalt, SolveQuality, TerminationReason};
@@ -40,7 +40,7 @@ pub use parry3d_f64::query::SplitResult;
 pub use points::*;
 pub use segment::Segment;
 pub use surface_point::{SurfacePoint, SurfacePointCollection};
-pub use voxel_downsample::{VoxelGroups, compute_voxel_groups, voxel_downsample};
+pub use voxel_grid::{VoxelGroups, compute_first_per_voxel_mask, compute_voxel_groups};
 
 /// A type alias for signed integer indices for rasters
 pub type PointNI<const D: usize> = Point<i32, D>;

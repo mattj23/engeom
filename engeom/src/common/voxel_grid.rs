@@ -1,9 +1,18 @@
-//! This module provides functionality for voxel downsampling of points.
+//! Mapping points onto a regular grid of voxels, and the two ways of using that grid to make a
+//! large point set smaller.
 //!
-//! Two operations live here and they are not the same thing. [`voxel_downsample`] *thins*: it keeps
-//! one original point per voxel and throws the rest away, which is what a pre-filter wants.
-//! [`compute_voxel_groups`] *partitions*: it reports every point in every voxel, which is what a
-//! caller wants when it intends to combine them, as `PointCloud3::reduce_by_voxel` does.
+//! Both operations start the same way, by dividing each coordinate by the cell size and flooring it
+//! to an integer key, so that two points share a cell exactly when their keys match. What they do
+//! afterwards is different, and the difference matters more than the shared name suggests.
+//!
+//! [`compute_first_per_voxel_mask`] **thins**: it keeps one original point per occupied cell and
+//! discards the rest, reporting the survivors as a mask. Nothing is averaged, so every surviving
+//! point is a measurement that was actually taken, carrying its original noise.
+//!
+//! [`compute_voxel_groups`] **partitions**: it reports every point in every occupied cell, which is
+//! what a caller needs when it intends to combine them. `PointCloud3::reduce_by_voxel` builds on it
+//! to **reduce**, replacing each cell with a new averaged point that was never measured but is
+//! correspondingly less noisy.
 //!
 //! They use different algorithms on purpose. Thinning only needs to answer "have I seen this voxel
 //! before", so a hash set does it in one linear pass. Grouping needs the members of each voxel
@@ -17,25 +26,41 @@ use crate::na::SVector;
 use faer::prelude::default;
 use parry3d_f64::utils::hashmap::HashMap;
 
-/// Perform a voxel downsample of the given set of points, returning a mask that indicates which
-/// points are retained after the operation.
+/// Thin a set of points by keeping the first one encountered in each voxel, reported as a mask over
+/// the input.
 ///
-/// A voxel downsampling is a relatively fast operation that converts the point coordinates to
-/// integers representing a grid the size of the voxel spacing, and then retains only the first
-/// point encountered in each voxel.
+/// One linear pass and a hash set, which makes this the cheapest thing in this module and a good
+/// pre-filter for anything more expensive. Poisson disk sampling uses it that way, to shrink the
+/// point set before paying for a spatial tree.
 ///
-/// While this doesn't guarantee anything resembling a uniform distribution, it does serve as a
-/// fast and effective pre-filtering step for more complicated downsampling methods, such as the
-/// Poisson disk sampling method which has to construct a spatial tree.
+/// # Which point survives, and why the name says so
+///
+/// The survivor is the **lowest-indexed** point in each cell, which is what makes the result
+/// deterministic. It is worth knowing that this is not a neutral choice. Real scan data arrives in
+/// acquisition order, so "lowest index" usually means "earliest in the scan", and the survivors are
+/// therefore biased toward one side of each cell rather than scattered within it. Where that bias
+/// matters, [`compute_voxel_groups`] and a centroid give an unbiased cell representative instead.
+///
+/// This also guarantees nothing about the minimum spacing of the result. Two survivors in adjacent
+/// cells can be arbitrarily close to each other; the guarantee is one point per cell, not a minimum
+/// distance. Poisson disk sampling is the tool for that use case.
+///
+/// You _can_ safely assume that if two neighboring voxels are occupied the _maximum_ distance
+/// between the associated points will be `√(2v² + (2v)²)`, or roughly `2.5v`, where `v` is
+/// the voxel edge size.  So if you have points that were originally more dense than than voxel edge
+/// spacing, you know that the distance between neighboring points in the output mask will be no
+/// smaller than the floating point epsilon and no larger than 2.5x the voxel edge size.
 ///
 /// # Arguments
 ///
 /// * `points`: A slice of points implementing the `PCoords` trait for the specified dimension `D`.
-/// * `voxel_size`: The size of the voxel grid to use for downsampling. This value should be
-///   positive and non-zero.
+/// * `voxel_size`: The size of the voxel grid to use. This value should be positive and non-zero.
 ///
 /// returns: IndexMask
-pub fn voxel_downsample<const D: usize>(points: &[impl PCoords<D>], voxel_size: f64) -> IndexMask {
+pub fn compute_first_per_voxel_mask<const D: usize>(
+    points: &[impl PCoords<D>],
+    voxel_size: f64,
+) -> IndexMask {
     let mut voxel_map = HashMap::with_hasher(default());
     let mut mask = IndexMask::new(points.len(), false);
 
@@ -60,11 +85,16 @@ pub fn voxel_downsample<const D: usize>(points: &[impl PCoords<D>], voxel_size: 
 /// order, so the same input always produces the same output.
 pub struct VoxelGroups {
     /// Point indices, arranged so that the members of each voxel are contiguous.
-    indices: Vec<usize>,
+    ///
+    /// These are `u32` rather than `usize` because this is the largest thing the partition
+    /// allocates, at one entry per input point, and a cloud large enough to exhaust a `u32` index
+    /// space would be consuming well over a hundred gigabytes in its coordinates alone.
+    /// `compute_voxel_groups` rejects such an input rather than truncating.
+    indices: Vec<u32>,
 
     /// Where each group starts in `indices`, with a trailing entry holding `indices.len()` so that
     /// group `i` is always `indices[offsets[i]..offsets[i + 1]]`.
-    offsets: Vec<usize>,
+    offsets: Vec<u32>,
 }
 
 impl VoxelGroups {
@@ -73,17 +103,22 @@ impl VoxelGroups {
         self.offsets.len() - 1
     }
 
+    /// The total number of points across all groups, which is the size of the input.
+    pub fn point_count(&self) -> usize {
+        self.indices.len()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
     /// The point indices in group `i`, ascending.
-    pub fn group(&self, i: usize) -> &[usize] {
-        &self.indices[self.offsets[i]..self.offsets[i + 1]]
+    pub fn group(&self, i: usize) -> &[u32] {
+        &self.indices[self.offsets[i] as usize..self.offsets[i + 1] as usize]
     }
 
     /// Every group in order, each as a slice of ascending point indices.
-    pub fn iter(&self) -> impl Iterator<Item = &[usize]> {
+    pub fn iter(&self) -> impl Iterator<Item = &[u32]> {
         (0..self.len()).map(|i| self.group(i))
     }
 }
@@ -92,7 +127,8 @@ impl VoxelGroups {
 ///
 /// Only occupied voxels are reported, so the result has one group per distinct voxel and every
 /// group is non-empty. See the module documentation for why this is separate from
-/// [`voxel_downsample`] rather than sharing its implementation.
+/// [`compute_first_per_voxel_mask`] rather than sharing its implementation: thinning only needs to
+/// know whether a cell has been seen, while grouping needs its members gathered together.
 ///
 /// # Arguments
 ///
@@ -115,6 +151,14 @@ pub fn compute_voxel_groups<const D: usize>(
         return Err(format!("Voxel size must be finite and positive, got {voxel_size}").into());
     }
 
+    if points.len() > u32::MAX as usize {
+        return Err(format!(
+            "Voxel grouping indexes points with u32 and cannot take {} of them",
+            points.len()
+        )
+        .into());
+    }
+
     if points.is_empty() {
         return Ok(VoxelGroups {
             indices: Vec::new(),
@@ -124,7 +168,7 @@ pub fn compute_voxel_groups<const D: usize>(
 
     // Key every point, then sort by (key, index). Including the index makes the order total, so the
     // result does not depend on the sort being stable.
-    let mut keyed: Vec<([i32; D], usize)> = points
+    let mut keyed: Vec<([i32; D], u32)> = points
         .iter()
         .enumerate()
         .map(|(i, p)| {
@@ -132,24 +176,24 @@ pub fn compute_voxel_groups<const D: usize>(
             for (d, &coord) in p.coords().iter().enumerate() {
                 key[d] = (coord / voxel_size).floor() as i32;
             }
-            (key, i)
+            (key, i as u32)
         })
         .collect();
 
     keyed.sort_unstable();
 
-    let mut indices = Vec::with_capacity(keyed.len());
-    let mut offsets = vec![0usize];
+    let mut indices: Vec<u32> = Vec::with_capacity(keyed.len());
+    let mut offsets: Vec<u32> = vec![0];
 
     let mut current = keyed[0].0;
     for (key, i) in keyed {
         if key != current {
-            offsets.push(indices.len());
+            offsets.push(indices.len() as u32);
             current = key;
         }
         indices.push(i);
     }
-    offsets.push(indices.len());
+    offsets.push(indices.len() as u32);
 
     Ok(VoxelGroups { indices, offsets })
 }
@@ -175,7 +219,7 @@ mod tests {
             }
         }
 
-        let mask = voxel_downsample(&points, 0.1);
+        let mask = compute_first_per_voxel_mask(&points, 0.1);
         let thinned = mask.clone_indices_of(&points)?;
 
         for i in 0..100 {
@@ -215,7 +259,7 @@ mod tests {
         for g in groups.iter() {
             assert!(!g.is_empty(), "a reported group was empty");
             for &i in g {
-                seen[i] += 1;
+                seen[i as usize] += 1;
             }
         }
 
@@ -297,10 +341,11 @@ mod tests {
         assert!(groups.is_empty());
     }
 
-    /// The first index of each group is the lowest, which is the same point `voxel_downsample`
-    /// keeps. The two are independent implementations, so this pins them to the same answer.
+    /// The first index of each group is the lowest, which is the same point
+    /// `compute_first_per_voxel_mask` keeps. The two are independent implementations, one hashing
+    /// and one sorting, so this pins them to the same answer.
     #[test]
-    fn voxel_groups_agree_with_voxel_downsample_on_which_point_comes_first() {
+    fn voxel_groups_agree_with_the_thinning_mask_on_which_point_comes_first() {
         let points: Vec<Point3> = (0..300)
             .map(|i| {
                 let t = i as f64 * 0.21;
@@ -309,9 +354,9 @@ mod tests {
             .collect();
 
         let groups = compute_voxel_groups(&points, 0.75).expect("grouping failed");
-        let mask = voxel_downsample(&points, 0.75);
+        let mask = compute_first_per_voxel_mask(&points, 0.75);
 
-        let mut from_groups: Vec<usize> = groups.iter().map(|g| g[0]).collect();
+        let mut from_groups: Vec<usize> = groups.iter().map(|g| g[0] as usize).collect();
         from_groups.sort_unstable();
 
         assert_eq!(from_groups, mask.to_indices());
