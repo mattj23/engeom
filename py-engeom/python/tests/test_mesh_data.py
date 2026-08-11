@@ -364,6 +364,57 @@ def test_cloud_reports_its_size_and_bounds():
     assert len(blank) == 0
 
 
+def test_cloud_reduce_by_voxel_averages_and_reports_its_work():
+    """The reduction creates new points, so the checks are that positions are centroids and that
+    the two derived attributes come back through the bindings. Without those getters the coherence
+    signal would exist in Rust and be invisible from Python."""
+    cloud = PointCloud3(numpy.array([
+        [0.0, 0.0, 0.0],
+        [0.2, 0.0, 0.0],
+        [0.0, 0.4, 0.0],
+        [0.2, 0.4, 0.0],
+        [5.5, 0.0, 0.0],
+    ]))
+
+    out = cloud.reduce_by_voxel(1.0)
+
+    assert len(out) == 2
+    assert out.points[0] == pytest.approx([0.1, 0.2, 0.0])
+    assert out.points[1] == pytest.approx([5.5, 0.0, 0.0])
+
+    assert list(out.voxel_count) == [4, 1]
+    # No normals went in, so there is nothing to report coherence about.
+    assert out.voxel_coherence is None
+
+
+def test_cloud_reduce_by_voxel_reports_coherence_when_normals_are_present():
+    cloud = PointCloud3(numpy.array([
+        [0.1, 0.0, 0.0],
+        [0.2, 0.0, 0.0],
+        [5.1, 0.0, 0.0],
+        [5.2, 0.0, 0.0],
+    ]))
+    cloud.set_point_normals(numpy.array([
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, -1.0],
+    ]))
+
+    out = cloud.reduce_by_voxel(1.0)
+
+    coherence = out.voxel_coherence
+    assert coherence is not None
+    assert coherence[0] == pytest.approx(1.0)   # agreeing normals
+    assert coherence[1] == pytest.approx(0.0)   # opposed normals cancel
+
+
+def test_cloud_reduce_by_voxel_rejects_a_nonsense_size():
+    cloud = PointCloud3(numpy.array([[0.0, 0.0, 0.0]]))
+    with pytest.raises(ValueError):
+        cloud.reduce_by_voxel(0.0)
+
+
 def test_cloud_overlap_accepts_the_same_cloud_twice():
     """The cached tree is built through a shared borrow specifically so that passing one cloud as
     both arguments works rather than raising a borrow error."""

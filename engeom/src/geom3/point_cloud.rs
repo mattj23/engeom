@@ -41,7 +41,7 @@ use crate::common::kd_tree::KdTreeSearch;
 use crate::common::points::dist;
 use crate::{KdTree3, Mesh3, Point3, Result};
 
-pub use data::PointCloud3;
+pub use data::{PointCloud3, VOXEL_COHERENCE_ATTR, VOXEL_COUNT_ATTR};
 pub use normal_estimation::NormalEstimates;
 
 /// Finding which points of one entity are also covered by another, by testing whether the closest

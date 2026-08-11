@@ -5191,6 +5191,52 @@ class PointCloud3:
         """
         ...
 
+    def reduce_by_voxel(self, voxel_size: float) -> PointCloud3:
+        """
+        Reduce the cloud onto a coarser grid, replacing the points in each voxel with a single averaged point.
+
+        This *creates* new points rather than selecting existing ones, which is what distinguishes it from
+        `sample_poisson_disk`. Averaging `n` measurements of a surface lowers their noise by `sqrt(n)`, so the result
+        is smoother than the input, but its points are no longer measurements that were actually taken.
+
+        Output points are voxel centroids rather than voxel centers, so two neighbouring output points can be closer
+        together than `voxel_size`. There is no minimum spacing guarantee; use `sample_poisson_disk` if you need one.
+
+        Attributes are each combined by a rule that suits them: normals are averaged and renormalized, standard
+        deviations are propagated as the standard deviation of a mean, colors and scalars are averaged, and labels
+        take the most common value in the voxel. Two attributes are added, readable through `voxel_coherence` and
+        `voxel_count`.
+
+        :param voxel_size: the edge length of the grid cells, which must be finite and positive.
+        :return: the reduced cloud.
+        :raises ValueError: if the voxel size is not positive and finite, or if the cloud already carries an
+        attribute named `voxel_coherence` or `voxel_count`, which the reduction would otherwise overwrite.
+        """
+        ...
+
+    @property
+    def voxel_coherence(self) -> NDArray[float] | None:
+        """
+        How well the normals within each voxel agreed, as an `(n,)` float64 array in `[0, 1]`, or `None` on a cloud
+        which is not the output of `reduce_by_voxel` or whose input carried no normals.
+
+        Near 1 where a voxel's normals all pointed the same way, falling toward 0 where the voxel straddled an edge
+        or a thin wall. A low value means the averaged point there is a blend of surfaces facing different
+        directions, so this is a natural weight to apply when using a reduced cloud for fitting or alignment.
+        """
+        ...
+
+    @property
+    def voxel_count(self) -> NDArray[numpy.uint32] | None:
+        """
+        How many input points went into each output point, as an `(n,)` uint32 array, or `None` on a cloud which is
+        not the output of `reduce_by_voxel`.
+
+        Averaging `n` independent measurements lowers their noise by `sqrt(n)`, so this says how much each reduced
+        point gained, and is useful as a weight in its own right.
+        """
+        ...
+
     def compute_aabb(self) -> Aabb3:
         """
         Compute the axis-aligned bounding box of the points.

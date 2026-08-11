@@ -35,7 +35,9 @@ pub use manifold::Manifold1Pos3;
 pub use mesh::{Mesh3, MeshAttrSet3, MeshCollisionSet, MeshData3, UvMapping};
 use parry3d_f64::query::Ray;
 pub use plane3::Plane3;
-pub use point_cloud::{CloudIndex3, PointCloud3, PointCloudOverlap};
+pub use point_cloud::{
+    CloudIndex3, PointCloud3, PointCloudOverlap, VOXEL_COHERENCE_ATTR, VOXEL_COUNT_ATTR,
+};
 pub use segment3::Segment3;
 pub use sphere3::Sphere3;
 use std::ops;

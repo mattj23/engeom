@@ -2,7 +2,7 @@ use crate::bounding::Aabb3;
 use crate::common::IndexMask;
 use crate::conversions::{
     array_to_colors, array_to_points3, array_to_unit_vectors3, array_to_vec, array_to_vectors3,
-    colors_to_array, points_to_array, scalars_to_array, unit_vectors_to_array,
+    colors_to_array, labels_to_array, points_to_array, scalars_to_array, unit_vectors_to_array,
 };
 use crate::geom3::Iso3;
 use crate::mesh::Mesh3;
@@ -75,6 +75,8 @@ pub struct PointCloud3 {
     point_normals: Option<Py<PyArray2<f64>>>,
     point_colors: Option<Py<PyArray2<u8>>>,
     point_stdev: Option<Py<PyArray1<f64>>>,
+    voxel_coherence: Option<Py<PyArray1<f64>>>,
+    voxel_count: Option<Py<PyArray1<u32>>>,
 }
 
 impl PointCloud3 {
@@ -90,6 +92,8 @@ impl PointCloud3 {
         self.point_normals = None;
         self.point_colors = None;
         self.point_stdev = None;
+        self.voxel_coherence = None;
+        self.voxel_count = None;
     }
 
     /// The cloud paired with its cached tree, building the tree on first use.
@@ -126,6 +130,8 @@ impl PointCloud3 {
             point_normals: None,
             point_colors: None,
             point_stdev: None,
+            voxel_coherence: None,
+            voxel_count: None,
         }
     }
 }
@@ -304,6 +310,63 @@ impl PointCloud3 {
             .extract_subset_points(point_mask.get_inner())
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(inner))
+    }
+
+    /// Reduce the cloud onto a coarser grid, replacing the points in each voxel with a single
+    /// averaged point.
+    ///
+    /// This creates new points rather than selecting existing ones, so the result is less noisy
+    /// than the input but is no longer a set of measurements that were actually taken. Output
+    /// points are voxel centroids, not voxel centers, so there is no minimum spacing guarantee;
+    /// use `sample_poisson_disk` when you need one.
+    ///
+    /// Every attribute is combined by whatever rule suits it, and two are added: see
+    /// `voxel_coherence` and `voxel_count`.
+    fn reduce_by_voxel(&self, voxel_size: f64) -> PyResult<Self> {
+        self.inner
+            .reduce_by_voxel(voxel_size)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+            .map(Self::from_inner)
+    }
+
+    /// How well the normals within each voxel agreed, in `[0, 1]`, or `None` on a cloud which is
+    /// not the output of `reduce_by_voxel` or whose input had no normals.
+    ///
+    /// Near 1 where a voxel's normals all pointed the same way, falling toward 0 where the voxel
+    /// straddled an edge or a thin wall. A low value means the averaged point in that voxel is a
+    /// blend of surfaces that face different directions, so it is a natural weight to apply when
+    /// using a reduced cloud for fitting or alignment.
+    #[getter]
+    fn voxel_coherence<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray1<f64>>> {
+        let values = self
+            .inner
+            .point_attr(engeom::VOXEL_COHERENCE_ATTR)
+            .and_then(|a| a.as_scalar())?;
+
+        if self.voxel_coherence.is_none() {
+            let array = scalars_to_array(values);
+            self.voxel_coherence = Some(array.into_pyarray(py).unbind());
+        }
+        Some(self.voxel_coherence.as_ref().unwrap().bind(py))
+    }
+
+    /// How many input points went into each output point, or `None` on a cloud which is not the
+    /// output of `reduce_by_voxel`.
+    ///
+    /// Averaging `n` independent measurements lowers their noise by `sqrt(n)`, so this is what says
+    /// how much a given reduced point gained, and is useful as a weight in its own right.
+    #[getter]
+    fn voxel_count<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray1<u32>>> {
+        let values = self
+            .inner
+            .point_attr(engeom::VOXEL_COUNT_ATTR)
+            .and_then(|a| a.as_label())?;
+
+        if self.voxel_count.is_none() {
+            let array = labels_to_array(values);
+            self.voxel_count = Some(array.into_pyarray(py).unbind());
+        }
+        Some(self.voxel_count.as_ref().unwrap().bind(py))
     }
 
     /// The axis-aligned bounding box of the points.
