@@ -11,10 +11,11 @@
 
 use crate::common::IndexMask;
 use crate::common::poisson_disk::sample_poisson_disk_all;
+use crate::common::{VoxelGroups, compute_voxel_groups};
 use crate::geom3::Aabb3;
 use crate::geom3::attributes3::{Attr3, PointAttrSet3};
 use crate::geom3::point_cloud::CloudIndex3;
-use crate::{Iso3, KdTree3, Point3, Result, SurfacePoint3, UnitVec3};
+use crate::{Iso3, KdTree3, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
 use std::fmt;
 
 #[cfg(feature = "ply")]
@@ -125,12 +126,14 @@ impl PointCloud3 {
 
     /// Pair this cloud with a k-d tree the caller has already built over it, skipping the build.
     ///
-    /// # This is unchecked, and getting it wrong is silent
+    /// # This is unchecked!
+    ///
+    /// <div class="warning">
     ///
     /// **Nothing verifies that `tree` was built from this cloud.** If it was not, every query
     /// returns indices into a point set that is not this one. Those indices are in range whenever
     /// the other cloud was at least as large, so there is no panic and no error: you get plausible,
-    /// confidently wrong answers, and a downstream alignment or overlap check quietly uses them.
+    /// confidently wrong answers, and a downstream alignment or overlap check happily uses them.
     /// A tree built over a *smaller* cloud is worse only in that it eventually panics on a
     /// subscript, which at least tells you something is broken.
     ///
@@ -140,21 +143,23 @@ impl PointCloud3 {
     /// extraction, which produces a different cloud entirely. Attribute changes do not invalidate
     /// it, since the tree indexes positions only.
     ///
+    /// </div>
+    ///
     /// # Use [`PointCloud3::compute_index`] instead
+    ///
+    /// This constructor was created for the Python bindings.  You _probably_ don't mean to be using
+    /// it, and if you do, you either know what you're doing and plan on doing it carefully, or
+    /// you're going to find out.
     ///
     /// The checked path builds the tree itself, so it cannot be mispaired, and the borrow checker
     /// then prevents the cloud from being mutated while the index lives. It is also nearly free
     /// relative to using an index at all: a build costs about what `0.4 * N` nearest-neighbor
     /// queries do (`engeom/tests/kd_tree_backends.md`), and any real consumer does more than that.
     ///
-    /// This exists for one situation: a long-lived wrapper which caches a tree across many calls and
-    /// drops it on every mutation, where the cache and the invalidation sit together in one place
-    /// and can be read side by side. The Python bindings are that wrapper. If you are reaching for
-    /// this anywhere else, you almost certainly want `compute_index`.
-    ///
-    /// This is the same hazard as the `tree_uuid` token that the `CloudIndex3` design replaced, kept
-    /// deliberately and narrowly rather than by accident. That token at least checked at runtime;
-    /// this does not check at all.
+    /// This exists for use in a long-lived wrapper that caches the tree across many calls and
+    /// manages the the complexity of being sure to drop it on every mutation.  Aka, the Python
+    /// bindings.  If you're not doing something similar, you almost certainly want `compute_index`
+    /// instead of this.
     pub fn index_with_tree_unchecked<'a>(&'a self, tree: &'a KdTree3) -> CloudIndex3<'a> {
         CloudIndex3::with_tree_unchecked(self, tree)
     }
@@ -578,6 +583,239 @@ impl PointCloud3 {
 }
 
 // ===============================================================================================
+// Voxel reduction
+// ===============================================================================================
+
+/// The name under which [`PointCloud3::reduce_by_voxel`] records how well each voxel's normals
+/// agreed, as a `Scalar` in `[0, 1]`.
+pub const VOXEL_COHERENCE_ATTR: &str = "voxel_coherence";
+
+/// The name under which [`PointCloud3::reduce_by_voxel`] records how many original points went into
+/// each output point, as a `Label`.
+pub const VOXEL_COUNT_ATTR: &str = "voxel_count";
+
+impl PointCloud3 {
+    /// Reduce the cloud onto a coarser grid, replacing the points in each voxel with a single
+    /// averaged point.
+    ///
+    /// This is not the same operation as [`PointCloud3::sample_poisson_disk`] or
+    /// `voxel_downsample`, both of which *select* original points. This one *creates* new ones, so
+    /// the output positions are not a subset of the input and the noise on them is lower: averaging
+    /// `n` independent samples of a surface reduces the noise by `sqrt(n)`. That makes it the right
+    /// tool for building a smooth coarse representation, and the wrong tool when you need the
+    /// output to consist of measurements you actually took.
+    ///
+    /// Note that output points are voxel centroids, not voxel centers, so two adjacent outputs can
+    /// be closer together than `voxel_size`. There is no minimum spacing guarantee; use Poisson disk
+    /// sampling if that is what you need.
+    ///
+    /// # How each attribute is combined
+    ///
+    /// - **normals**: summed and renormalized. Where the sum is degenerate, meaning the voxel's
+    ///   normals cancel out, the lowest-indexed point's normal is kept so the output stays a unit
+    ///   vector, and the coherence below reports zero.
+    /// - **stdev**: `sqrt(sum(sigma_i^2)) / n`, the standard deviation of the mean of `n`
+    ///   independent measurements. For equal inputs this is the familiar `sigma / sqrt(n)`.
+    /// - **colors**: per-channel mean, rounded.
+    /// - **open-map `Scalar`, `Vector`, `Color`**: mean.
+    /// - **open-map `Label`**: the most common value, ties broken toward the lower value so the
+    ///   result does not depend on iteration order.
+    ///
+    /// # Two attributes are added
+    ///
+    /// [`VOXEL_COHERENCE_ATTR`] is the length of the mean normal *before* renormalizing, in
+    /// `[0, 1]`. It is near 1 where a voxel's normals all agree and drops toward 0 where the voxel
+    /// straddles an edge or a thin wall, so a voxel whose averaged position is meaningless says so
+    /// about itself. It is only written when the cloud has normals.
+    ///
+    /// [`VOXEL_COUNT_ATTR`] is how many input points each output point came from, which is what the
+    /// `sqrt(n)` noise argument above depends on, and is useful as a weight.
+    ///
+    /// Both names would collide if the input already carries them, so an input which does is
+    /// rejected rather than silently overwritten.
+    ///
+    /// # Arguments
+    ///
+    /// * `voxel_size`: the edge length of the grid cells, which must be finite and positive
+    ///
+    /// returns: `Result<PointCloud3>`
+    pub fn reduce_by_voxel(&self, voxel_size: f64) -> Result<Self> {
+        for name in [VOXEL_COHERENCE_ATTR, VOXEL_COUNT_ATTR] {
+            if self.attrs.attr(name).is_some() {
+                return Err(format!(
+                    "The cloud already has an attribute named '{name}', which the reduction would \
+                     overwrite. Remove it first if it is no longer wanted."
+                )
+                .into());
+            }
+        }
+
+        let groups = compute_voxel_groups(&self.points, voxel_size)?;
+        let n_out = groups.len();
+
+        let mut points = Vec::with_capacity(n_out);
+        let mut counts = Vec::with_capacity(n_out);
+
+        for g in groups.iter() {
+            let mut sum = Vector3::zeros();
+            for &i in g {
+                sum += self.points[i].coords;
+            }
+            points.push(Point3::from(sum / g.len() as f64));
+            counts.push(g.len() as u32);
+        }
+
+        let mut attrs = PointAttrSet3::empty();
+
+        if let Some(normals) = self.attrs.normals() {
+            let mut reduced = Vec::with_capacity(n_out);
+            let mut coherence = Vec::with_capacity(n_out);
+
+            for g in groups.iter() {
+                let mut sum = Vector3::zeros();
+                for &i in g {
+                    sum += normals[i].into_inner();
+                }
+
+                let mean = sum / g.len() as f64;
+                let length = mean.norm();
+
+                // The length of the mean of unit vectors is 1 when they all agree and 0 when they
+                // cancel, which is the coherence signal. Renormalizing throws it away, so it is
+                // captured first.
+                coherence.push(length.min(1.0));
+                reduced.push(if length > 1e-12 {
+                    UnitVec3::new_unchecked(mean / length)
+                } else {
+                    normals[g[0]]
+                });
+            }
+
+            attrs.set_normals(Some(reduced), n_out)?;
+            attrs.insert_attr(VOXEL_COHERENCE_ATTR, Attr3::Scalar(coherence), n_out)?;
+        }
+
+        if let Some(stdev) = self.attrs.stdev() {
+            let reduced = groups
+                .iter()
+                .map(|g| {
+                    let sum_sq: f64 = g.iter().map(|&i| stdev[i] * stdev[i]).sum();
+                    sum_sq.sqrt() / g.len() as f64
+                })
+                .collect();
+            attrs.set_stdev(Some(reduced), n_out)?;
+        }
+
+        if let Some(colors) = self.attrs.colors() {
+            let reduced = groups
+                .iter()
+                .map(|g| mean_color(g.iter().map(|&i| colors[i])))
+                .collect();
+            attrs.set_colors(Some(reduced), n_out)?;
+        }
+
+        for name in self
+            .attrs
+            .attr_names()
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+        {
+            let attr = self
+                .attrs
+                .attr(&name)
+                .expect("the name came from this attribute set");
+            attrs.insert_attr(&name, reduce_attr(attr, &groups), n_out)?;
+        }
+
+        attrs.insert_attr(VOXEL_COUNT_ATTR, Attr3::Label(counts), n_out)?;
+
+        Ok(Self { points, attrs })
+    }
+}
+
+/// The per-channel mean of a set of colors, rounded rather than truncated.
+fn mean_color(colors: impl Iterator<Item = [u8; 3]>) -> [u8; 3] {
+    let mut sums = [0u32; 3];
+    let mut n = 0u32;
+    for c in colors {
+        for (s, v) in sums.iter_mut().zip(c.iter()) {
+            *s += u32::from(*v);
+        }
+        n += 1;
+    }
+
+    let mut out = [0u8; 3];
+    for (o, s) in out.iter_mut().zip(sums.iter()) {
+        *o = ((*s + n / 2) / n) as u8;
+    }
+    out
+}
+
+/// Combine an open-map attribute across each voxel, by the rules in `reduce_by_voxel`.
+fn reduce_attr(attr: &Attr3, groups: &VoxelGroups) -> Attr3 {
+    match attr {
+        Attr3::Scalar(values) => Attr3::Scalar(
+            groups
+                .iter()
+                .map(|g| g.iter().map(|&i| values[i]).sum::<f64>() / g.len() as f64)
+                .collect(),
+        ),
+        Attr3::Vector(values) => Attr3::Vector(
+            groups
+                .iter()
+                .map(|g| {
+                    let sum: Vector3 = g.iter().map(|&i| values[i]).sum();
+                    sum / g.len() as f64
+                })
+                .collect(),
+        ),
+        Attr3::Color(values) => Attr3::Color(
+            groups
+                .iter()
+                .map(|g| mean_color(g.iter().map(|&i| values[i])))
+                .collect(),
+        ),
+        Attr3::Label(values) => Attr3::Label(
+            groups
+                .iter()
+                .map(|g| modal_label(g.iter().map(|&i| values[i])))
+                .collect(),
+        ),
+    }
+}
+
+/// The most common label in a group, ties broken toward the lower value.
+///
+/// A label names a category, so averaging it would invent a value that means nothing. The mode is
+/// the only summary that keeps the result inside the original set of categories.
+fn modal_label(labels: impl Iterator<Item = u32>) -> u32 {
+    let mut sorted: Vec<u32> = labels.collect();
+    sorted.sort_unstable();
+
+    let mut best = sorted[0];
+    let mut best_count = 0usize;
+    let mut current = sorted[0];
+    let mut count = 0usize;
+
+    for v in sorted {
+        if v == current {
+            count += 1;
+        } else {
+            current = v;
+            count = 1;
+        }
+
+        // Strictly greater keeps the first, and the scan is ascending, so ties go to the lower.
+        if count > best_count {
+            best = current;
+            best_count = count;
+        }
+    }
+
+    best
+}
+
+// ===============================================================================================
 // Helpers
 // ===============================================================================================
 
@@ -875,6 +1113,268 @@ mod tests {
     #[test]
     fn subset_by_indices_rejects_out_of_bounds() {
         assert!(loaded_cloud().extract_subset_indices(&[0, 4]).is_err());
+    }
+
+    // ===========================================================================================
+    // Voxel reduction
+    // ===========================================================================================
+
+    /// Four points in one voxel collapse to their centroid, and the count records how many.
+    #[test]
+    fn reduce_by_voxel_averages_positions() -> Result<()> {
+        let cloud = PointCloud3::new(vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(0.2, 0.0, 0.0),
+            Point3::new(0.0, 0.4, 0.0),
+            Point3::new(0.2, 0.4, 0.0),
+            // A second voxel, well clear of the first.
+            Point3::new(5.5, 0.0, 0.0),
+        ]);
+
+        let out = cloud.reduce_by_voxel(1.0)?;
+
+        assert_eq!(out.point_count(), 2);
+        assert_relative_eq!(out.points()[0], Point3::new(0.1, 0.2, 0.0), epsilon = 1e-12);
+        assert_relative_eq!(out.points()[1], Point3::new(5.5, 0.0, 0.0), epsilon = 1e-12);
+
+        let counts = out
+            .point_attr(VOXEL_COUNT_ATTR)
+            .and_then(|a| a.as_label())
+            .expect("counts were written");
+        assert_eq!(counts, &[4, 1]);
+
+        Ok(())
+    }
+
+    /// Coherence is the whole point of the reduction reporting on itself: near 1 where a voxel's
+    /// normals agree, near 0 where they cancel.
+    #[test]
+    fn reduce_by_voxel_reports_normal_coherence() -> Result<()> {
+        let mut cloud = PointCloud3::new(vec![
+            // A flat voxel: both normals agree.
+            Point3::new(0.1, 0.0, 0.0),
+            Point3::new(0.2, 0.0, 0.0),
+            // An edge voxel: normals at right angles.
+            Point3::new(5.1, 0.0, 0.0),
+            Point3::new(5.2, 0.0, 0.0),
+            // A fold voxel: normals directly opposed.
+            Point3::new(9.1, 0.0, 0.0),
+            Point3::new(9.2, 0.0, 0.0),
+        ]);
+        cloud.set_point_normals(Some(vec![
+            UnitVec3::new_normalize(Vector3::z()),
+            UnitVec3::new_normalize(Vector3::z()),
+            UnitVec3::new_normalize(Vector3::z()),
+            UnitVec3::new_normalize(Vector3::x()),
+            UnitVec3::new_normalize(Vector3::z()),
+            UnitVec3::new_normalize(-Vector3::z()),
+        ]))?;
+
+        let out = cloud.reduce_by_voxel(1.0)?;
+        assert_eq!(out.point_count(), 3);
+
+        let coherence = out
+            .point_attr(VOXEL_COHERENCE_ATTR)
+            .and_then(|a| a.as_scalar())
+            .expect("coherence was written");
+
+        assert_relative_eq!(coherence[0], 1.0, epsilon = 1e-12);
+        assert_relative_eq!(coherence[1], 0.5_f64.sqrt(), epsilon = 1e-12);
+        assert_relative_eq!(coherence[2], 0.0, epsilon = 1e-12);
+
+        // Even where the normals cancel the output must still be a unit vector.
+        let normals = out.point_normals().expect("normals were written");
+        for n in normals {
+            assert_relative_eq!(n.norm(), 1.0, epsilon = 1e-12);
+        }
+
+        Ok(())
+    }
+
+    /// Averaging `n` independent measurements divides the standard deviation by `sqrt(n)`.
+    #[test]
+    fn reduce_by_voxel_propagates_stdev() -> Result<()> {
+        let mut cloud = PointCloud3::new(vec![
+            Point3::new(0.1, 0.0, 0.0),
+            Point3::new(0.2, 0.0, 0.0),
+            Point3::new(0.3, 0.0, 0.0),
+            Point3::new(0.4, 0.0, 0.0),
+        ]);
+        cloud.set_point_stdev(Some(vec![0.01; 4]))?;
+
+        let out = cloud.reduce_by_voxel(1.0)?;
+
+        let stdev = out.point_stdev().expect("stdev was written");
+        assert_eq!(stdev.len(), 1);
+        assert_relative_eq!(stdev[0], 0.01 / 2.0, epsilon = 1e-12);
+
+        Ok(())
+    }
+
+    /// A label names a category, so it takes the mode rather than a mean which would invent a
+    /// value outside the original set.
+    #[test]
+    fn reduce_by_voxel_takes_the_modal_label() -> Result<()> {
+        let mut cloud = PointCloud3::new(vec![
+            Point3::new(0.1, 0.0, 0.0),
+            Point3::new(0.2, 0.0, 0.0),
+            Point3::new(0.3, 0.0, 0.0),
+            // A voxel where two labels tie, which must resolve to the lower.
+            Point3::new(5.1, 0.0, 0.0),
+            Point3::new(5.2, 0.0, 0.0),
+        ]);
+        cloud.insert_point_attr("pass", Attr3::Label(vec![7, 7, 3, 9, 4]))?;
+
+        let out = cloud.reduce_by_voxel(1.0)?;
+
+        let labels = out
+            .point_attr("pass")
+            .and_then(|a| a.as_label())
+            .expect("the label attribute came through");
+        assert_eq!(labels, &[7, 4]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn reduce_by_voxel_averages_open_map_scalars_and_colors() -> Result<()> {
+        let mut cloud =
+            PointCloud3::new(vec![Point3::new(0.1, 0.0, 0.0), Point3::new(0.2, 0.0, 0.0)]);
+        cloud.insert_point_attr("deviation", Attr3::Scalar(vec![1.0, 3.0]))?;
+        cloud.set_point_colors(Some(vec![[0, 10, 255], [2, 11, 255]]))?;
+
+        let out = cloud.reduce_by_voxel(1.0)?;
+
+        let dev = out
+            .point_attr("deviation")
+            .and_then(|a| a.as_scalar())
+            .expect("scalar came through");
+        assert_relative_eq!(dev[0], 2.0, epsilon = 1e-12);
+
+        // 10 and 11 average to 10.5, which rounds up rather than truncating down.
+        assert_eq!(
+            out.point_colors().expect("colors came through"),
+            &[[1, 11, 255]]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn reduce_by_voxel_refuses_to_overwrite_its_own_attributes() -> Result<()> {
+        let mut cloud = PointCloud3::new(vec![Point3::origin()]);
+        cloud.insert_point_attr(VOXEL_COUNT_ATTR, Attr3::Label(vec![1]))?;
+
+        assert!(cloud.reduce_by_voxel(1.0).is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn reduce_by_voxel_rejects_a_nonsense_size() {
+        let cloud = PointCloud3::new(vec![Point3::origin()]);
+        assert!(cloud.reduce_by_voxel(0.0).is_err());
+        assert!(cloud.reduce_by_voxel(f64::NAN).is_err());
+    }
+
+    /// A reduction of a sphere sample must still lie on the sphere, within the error a centroid of
+    /// points inside one voxel can introduce.
+    /// The mesh route wanted no new mesh code: a dense surface sample already carries normals, so
+    /// mesh -> sample -> cloud -> reduce works with one reducer rather than a second one written
+    /// for meshes. This is the check that the route actually composes.
+    #[test]
+    fn a_mesh_reduces_through_a_sample_without_mesh_specific_code() -> Result<()> {
+        let mesh = crate::Mesh3::create_sphere(50.0, 80, 80);
+        let sampled = mesh.sample_dense(1.0, None);
+
+        let cloud = PointCloud3::from_surface_points(&sampled);
+        assert!(
+            cloud.point_normals().is_some(),
+            "the sample carried normals"
+        );
+
+        let out = cloud.reduce_by_voxel(5.0)?;
+
+        assert!(out.point_count() < cloud.point_count() / 4);
+        assert!(out.point_normals().is_some());
+
+        // A sphere is smooth, so every voxel's normals should agree well.
+        let coherence = out
+            .point_attr(VOXEL_COHERENCE_ATTR)
+            .and_then(|a| a.as_scalar())
+            .expect("coherence was written");
+        let worst = coherence.iter().copied().fold(f64::INFINITY, f64::min);
+        assert!(
+            worst > 0.9,
+            "worst coherence on a smooth sphere was {worst}"
+        );
+
+        Ok(())
+    }
+
+    /// The same reduction over a box, where the coherence signal has something to find: voxels
+    /// straddling an edge must score lower than voxels in the middle of a face.
+    #[test]
+    fn reduce_by_voxel_coherence_finds_the_edges_of_a_box() -> Result<()> {
+        let mesh = crate::Mesh3::create_box(40.0, 40.0, 40.0, false);
+        let sampled = mesh.sample_dense(0.5, None);
+        let cloud = PointCloud3::from_surface_points(&sampled);
+
+        let out = cloud.reduce_by_voxel(4.0)?;
+        let coherence = out
+            .point_attr(VOXEL_COHERENCE_ATTR)
+            .and_then(|a| a.as_scalar())
+            .expect("coherence was written");
+
+        let worst = coherence.iter().copied().fold(f64::INFINITY, f64::min);
+        let best = coherence.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+
+        assert!(
+            best > 0.99,
+            "a flat face should be almost perfectly coherent"
+        );
+        assert!(
+            worst < 0.9,
+            "an edge voxel should be measurably less coherent, worst was {worst}"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn reduce_by_voxel_keeps_a_sphere_on_its_surface() -> Result<()> {
+        let radius = 50.0;
+        let n = 20_000;
+        let golden = std::f64::consts::PI * (3.0 - 5.0_f64.sqrt());
+        let points: Vec<Point3> = (0..n)
+            .map(|i| {
+                let y = 1.0 - (i as f64 / (n as f64 - 1.0)) * 2.0;
+                let r = (1.0 - y * y).max(0.0).sqrt();
+                let theta = golden * i as f64;
+                Point3::new(
+                    radius * theta.cos() * r,
+                    radius * y,
+                    radius * theta.sin() * r,
+                )
+            })
+            .collect();
+
+        let voxel = 5.0;
+        let out = PointCloud3::new(points).reduce_by_voxel(voxel)?;
+
+        assert!(out.point_count() < n / 4, "the reduction did not reduce");
+
+        // A centroid of points inside one voxel can fall at most half a voxel diagonal off the
+        // surface, and in practice far less.
+        let limit = voxel * 3.0_f64.sqrt() / 2.0;
+        for p in out.points() {
+            assert!(
+                (p.coords.norm() - radius).abs() < limit,
+                "reduced point {p:?} left the sphere by more than {limit}"
+            );
+        }
+
+        Ok(())
     }
 
     // ===========================================================================================

@@ -40,7 +40,7 @@ pub use parry3d_f64::query::SplitResult;
 pub use points::*;
 pub use segment::Segment;
 pub use surface_point::{SurfacePoint, SurfacePointCollection};
-pub use voxel_downsample::voxel_downsample;
+pub use voxel_downsample::{VoxelGroups, compute_voxel_groups, voxel_downsample};
 
 /// A type alias for signed integer indices for rasters
 pub type PointNI<const D: usize> = Point<i32, D>;
