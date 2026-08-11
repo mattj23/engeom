@@ -21,6 +21,7 @@ mod queries;
 pub mod sampling;
 mod section;
 mod uv_mapping;
+pub mod voxelize;
 
 use crate::common::{IndexMask, PCoords};
 use crate::na::SVector;
