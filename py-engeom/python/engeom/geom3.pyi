@@ -4992,8 +4992,10 @@ class PointCloud3:
     """
     A 3D point cloud: a buffer of points and the per-point attributes attached to them.
 
-    There is no spatial acceleration stored on the cloud itself. The spatial queries below each build a k-d tree,
-    use it, and discard it, which is why they are cheap next to any real use of one and wasted if never called.
+    Spatial queries (`estimate_normals`, the `overlap_*` pair) are backed by a k-d tree which is built the first
+    time one is needed and then reused. Any method which changes the points discards it, so the tree can never
+    answer from stale positions. Building it is not free on a large cloud, so a cloud you only load, filter and
+    save never pays for one.
 
     Attributes are carried through serialization, so a PLY loaded here keeps every property the file declared.
     """
@@ -5003,6 +5005,13 @@ class PointCloud3:
         Create point data from a point buffer.
 
         :param points: a numpy array of shape (n, 3) and dtype float64 with the point positions.
+        """
+        ...
+
+    @staticmethod
+    def empty() -> PointCloud3:
+        """
+        Create an empty point cloud, with no points and no attributes.
         """
         ...
 
@@ -5169,6 +5178,58 @@ class PointCloud3:
 
         :param indices: the points to take.
         :return: the new cloud.
+        """
+        ...
+
+    def extract_subset_points(self, point_mask: IndexMask) -> PointCloud3:
+        """
+        Create a new cloud containing the points the mask selects, in their original order. Every attribute is
+        carried through.
+
+        :param point_mask: a mask whose length matches the point count.
+        :return: the new cloud.
+        """
+        ...
+
+    def compute_aabb(self) -> Aabb3:
+        """
+        Compute the axis-aligned bounding box of the points.
+
+        :return: the bounding box.
+        """
+        ...
+
+    def point_count(self) -> int:
+        """
+        The number of points in the cloud. Same as `len(cloud)`.
+        """
+        ...
+
+    def is_empty(self) -> bool:
+        """
+        Whether the cloud has no points.
+        """
+        ...
+
+    def estimate_normals(
+            self,
+            must_match: NDArray[float],
+            radius: float,
+    ) -> Tuple[NDArray[float], NDArray[float]]:
+        """
+        Estimate a normal at every point by fitting a plane to the neighbors within `radius`.
+
+        A plane fit recovers an axis rather than a direction and cannot resolve the sign on its own, which is why
+        `must_match` is required rather than optional: each estimated normal is flipped to agree with the
+        corresponding row. For scan data the usual choice is the vector from each point back toward the sensor.
+
+        Points with fewer than three neighbors within the radius are given `+Z` at zero confidence.
+
+        :param must_match: an `(n, 3)` array of directions, one per point, which the estimates are flipped to agree
+        with.
+        :param radius: the neighborhood radius used for the plane fit.
+        :return: a tuple of an `(n, 3)` array of unit normals and an `(n,)` array of confidences in `[0, 1]`, where
+        low confidence means the neighborhood was not plane-like, as on an edge or in a sparse region.
         """
         ...
 

@@ -309,6 +309,61 @@ def test_cloud_spatial_queries_see_mutations():
     assert cloud.overlap_points_by_reciprocity(other, 0.001) == [1]
 
 
+def test_cloud_estimate_normals_recovers_a_plane():
+    """A plane fit recovers an axis, not a direction, so `must_match` decides the sign. On a flat
+    grid the answer should be +/-Z depending only on which way `must_match` points, and the
+    confidence should be near 1 because the neighborhood really is planar."""
+    xs, ys = numpy.meshgrid(numpy.arange(9.0), numpy.arange(9.0))
+    pts = numpy.column_stack([xs.ravel(), ys.ravel(), numpy.zeros(xs.size)])
+    cloud = PointCloud3(pts)
+
+    up = numpy.tile([0.0, 0.0, 1.0], (len(pts), 1))
+    normals, confidence = cloud.estimate_normals(up, 2.5)
+
+    assert normals.shape == (len(pts), 3)
+    assert confidence.shape == (len(pts),)
+    assert normals[:, 2] == pytest.approx(1.0, abs=1e-9)
+    assert numpy.all(confidence > 0.5)
+
+    # Flip the reference and every normal flips with it.
+    down = -up
+    flipped, _ = cloud.estimate_normals(down, 2.5)
+    assert flipped[:, 2] == pytest.approx(-1.0, abs=1e-9)
+
+
+def test_cloud_estimate_normals_rejects_a_mismatched_reference():
+    cloud = PointCloud3(numpy.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]))
+    with pytest.raises(ValueError):
+        cloud.estimate_normals(numpy.tile([0.0, 0.0, 1.0], (3, 1)), 2.0)
+
+
+def test_cloud_extract_subset_points_takes_a_mask():
+    cloud = loaded_cloud_data()
+    mask = IndexMask.from_indices([0, 2], 3)
+
+    sub = cloud.extract_subset_points(mask)
+
+    assert len(sub) == 2
+    assert sub.points == pytest.approx(cloud.points[[0, 2]])
+    assert sub.point_stdev == pytest.approx([0.001, 0.003])
+
+
+def test_cloud_reports_its_size_and_bounds():
+    cloud = PointCloud3(numpy.array([[0.0, 0.0, 0.0], [1.0, 2.0, 3.0]]))
+
+    assert cloud.point_count() == 2
+    assert len(cloud) == 2
+    assert not cloud.is_empty()
+
+    aabb = cloud.compute_aabb()
+    assert aabb.min.x == pytest.approx(0.0)
+    assert aabb.max.z == pytest.approx(3.0)
+
+    blank = PointCloud3.empty()
+    assert blank.is_empty()
+    assert len(blank) == 0
+
+
 def test_cloud_overlap_accepts_the_same_cloud_twice():
     """The cached tree is built through a shared borrow specifically so that passing one cloud as
     both arguments works rather than raising a borrow error."""

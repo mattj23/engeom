@@ -1,6 +1,8 @@
+use crate::bounding::Aabb3;
+use crate::common::IndexMask;
 use crate::conversions::{
-    array_to_colors, array_to_points3, array_to_unit_vectors3, array_to_vec, colors_to_array,
-    points_to_array, scalars_to_array, unit_vectors_to_array,
+    array_to_colors, array_to_points3, array_to_unit_vectors3, array_to_vec, array_to_vectors3,
+    colors_to_array, points_to_array, scalars_to_array, unit_vectors_to_array,
 };
 use crate::geom3::Iso3;
 use crate::mesh::Mesh3;
@@ -41,6 +43,10 @@ pub fn lptf3_load_from_args(
         )),
     }
 }
+
+/// The pair of arrays `estimate_normals` hands back: an `(n, 3)` of unit normals and an `(n,)` of
+/// per-point confidences.
+type NormalEstimateArrays<'py> = (Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<f64>>);
 
 // ================================================================================================
 // PointCloud3
@@ -136,6 +142,12 @@ impl PointCloud3 {
     fn new<'py>(points: PyReadonlyArray2<'py, f64>) -> PyResult<Self> {
         let points = array_to_points3(&points.as_array())?;
         Ok(Self::from_inner(engeom::PointCloud3::new(points)))
+    }
+
+    /// Create an empty point cloud, with no points and no attributes.
+    #[staticmethod]
+    fn empty() -> Self {
+        Self::from_inner(engeom::PointCloud3::empty())
     }
 
     // --- Serialization ---------------------------------------------------------------------
@@ -285,6 +297,28 @@ impl PointCloud3 {
         Ok(Self::from_inner(inner))
     }
 
+    /// Extract the points selected by a mask as a new cloud, carrying attributes across.
+    fn extract_subset_points(&self, point_mask: &IndexMask) -> PyResult<Self> {
+        let inner = self
+            .inner
+            .extract_subset_points(point_mask.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(inner))
+    }
+
+    /// The axis-aligned bounding box of the points.
+    fn compute_aabb(&self) -> Aabb3 {
+        Aabb3::from_inner(self.inner.compute_aabb())
+    }
+
+    fn point_count(&self) -> usize {
+        self.inner.point_count()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
     fn cloned(&self) -> Self {
         self.clone()
     }
@@ -320,6 +354,35 @@ impl PointCloud3 {
         Ok(self
             .index()?
             .overlap_by_reciprocity(&other.index()?, max_distance))
+    }
+
+    /// Estimate a normal at every point by fitting a plane to the neighbors within `radius`.
+    ///
+    /// Returns the normals and a per-point confidence in `[0, 1]` saying how plane-like the
+    /// neighborhood was, which is low on edges and corners and in sparse regions. Points with
+    /// fewer than three neighbors get `+Z` at zero confidence.
+    ///
+    /// `must_match` supplies one direction per point which the estimate is flipped to agree with.
+    /// A plane fit recovers an axis rather than a direction and cannot resolve the sign on its own,
+    /// so this is required rather than optional: for scan data the usual choice is the vector from
+    /// each point back toward the sensor.
+    fn estimate_normals<'py>(
+        &self,
+        py: Python<'py>,
+        must_match: PyReadonlyArray2<'py, f64>,
+        radius: f64,
+    ) -> PyResult<NormalEstimateArrays<'py>> {
+        let must_match = array_to_vectors3(&must_match.as_array())?;
+
+        let estimates = self
+            .index()?
+            .estimate_normals(&must_match, radius)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        let normals = unit_vectors_to_array(&estimates.normals).into_pyarray(py);
+        let confidence = scalars_to_array(&estimates.confidence).into_pyarray(py);
+
+        Ok((normals, confidence))
     }
 
     /// Find the indices of points in this cloud which overlap a mesh, by checking that the closest

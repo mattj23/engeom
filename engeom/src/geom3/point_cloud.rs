@@ -34,7 +34,6 @@
 //! setting things up this way now so that, if in the course of putting some city miles on the
 //! abstraction it turns out to have been a bad choice, I know to revert it and not try this again.
 
-
 mod data;
 mod normal_estimation;
 
