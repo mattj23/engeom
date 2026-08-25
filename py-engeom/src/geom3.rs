@@ -1155,6 +1155,14 @@ impl Sphere3 {
     }
 
     #[staticmethod]
+    fn from_min_enclosing<'py>(points: PyReadonlyArray2<'py, f64>) -> PyResult<Self> {
+        let points = array_to_points3(&points.as_array())?;
+        engeom::Sphere3::from_min_enclosing(&points)
+            .map(Self::from_inner)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[staticmethod]
     #[pyo3(signature=(points, weights=None))]
     fn from_fit<'py>(
         points: PyReadonlyArray2<'py, f64>,

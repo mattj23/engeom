@@ -1686,6 +1686,20 @@ class Sphere3:
         ...
 
     @staticmethod
+    def from_min_enclosing(points: NDArray[float]) -> Sphere3:
+        """
+        Create the smallest sphere containing every point.
+
+        A single point or identical points produce a zero-radius sphere. Collinear and coplanar
+        points produce the smallest sphere in their affine subspace. Raises ``ValueError`` for an
+        empty array.
+
+        :param points: a numpy array of shape ``(n, 3)`` containing the points to enclose.
+        :return: a new ``Sphere3``.
+        """
+        ...
+
+    @staticmethod
     def from_fit(points: NDArray[float], weights: NDArray[float] | None = None) -> Sphere3:
         """
         Fit a sphere to a set of points by ordinary least squares. A closed-form algebraic (Kåsa-style) estimate

@@ -601,7 +601,7 @@ impl PointCloud3 {
     /// This is not the same operation as [`PointCloud3::sample_poisson_disk`] or
     /// `compute_first_per_voxel_mask`, both of which *select* original points. This one _creates_
     /// new ones, so the output positions are not a subset of the input and the noise on them is
-    /// lower, since averaging `n` independent samples of a surface reduces the noise by `√n`. 
+    /// lower, since averaging `n` independent samples of a surface reduces the noise by `√n`.
     ///
     /// That makes it a good tool for building a smooth, coarse representation, and a pretty
     /// terrible one to take measurements off of.

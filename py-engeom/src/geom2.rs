@@ -702,6 +702,14 @@ impl Circle2 {
     }
 
     #[staticmethod]
+    fn from_min_enclosing<'py>(points: PyReadonlyArray2<'py, f64>) -> PyResult<Self> {
+        let points = array_to_points2(&points.as_array())?;
+        engeom::Circle2::from_min_enclosing(&points)
+            .map(Self::from_inner)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[staticmethod]
     fn from_tangent_to_corner(
         corner: &Point2,
         d0: &Vector2,
