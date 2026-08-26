@@ -53,6 +53,7 @@
 //! that comparison is easy to make.
 
 pub mod jacobian;
+mod multi_params;
 mod options;
 mod params;
 mod points_to_surface;
@@ -63,6 +64,7 @@ use parry2d_f64::na::Vector3;
 /// The storage for the three parameters of a 2D alignment problem, in the order tx, ty, rz.
 pub type AlignStorage2 = Vector3<f64>;
 
+pub use self::multi_params::MultiAlignParams2;
 pub use self::options::*;
 pub use self::params::*;
 pub use self::points_to_surface::points_to_surface2;
