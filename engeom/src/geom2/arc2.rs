@@ -1,7 +1,9 @@
 use crate::AngleDir::{Ccw, Cw};
 use crate::common::points::dist;
+use crate::common::consensus::Magsac;
 use crate::common::{
-    ANGLE_TOL, PCoords, angle_in_direction, angle_signed_pi, linear_space, shortest_angle_between,
+    ANGLE_TOL, PCoords, angle_in_direction, angle_signed_pi, angle_to_2pi, linear_space,
+    shortest_angle_between,
 };
 use crate::geom2::aabb2::arc_aabb2;
 use crate::geom2::{Aabb2, BoundaryElement2, Manifold1Pos2, directed_angle, rot90};
@@ -172,6 +174,79 @@ impl Arc2 {
         }
     }
 
+    /// Fit a circular arc to a set of points using MAGSAC++ robust consensus estimation.
+    ///
+    /// A robust circle is estimated with the same MAGSAC++ consensus fit as
+    /// [`Circle2::from_consensus`], rejecting gross outliers. The arc's angular bounds are then set
+    /// to the smallest sector (about the fitted circle's center) that contains all of the *inlier*
+    /// points, so outliers influence neither the circle nor the arc's extent. The returned arc
+    /// always has a non-negative (counter-clockwise) sweep.
+    ///
+    /// # Arguments
+    ///
+    /// * `points`: the points to fit the arc to
+    /// * `sigma_max`: the upper bound on the expected inlier noise, in the same units as the points
+    /// * `min_r`: an optional minimum radius; candidate circles smaller than this are rejected
+    /// * `max_r`: an optional maximum radius; candidate circles larger than this are rejected
+    /// * `options`: an optional [`Magsac`] configuration to override the iteration count, refinement
+    ///   steps, confidence, or RNG seed. Its `sigma_max` field is overridden by the `sigma_max`
+    ///   argument.
+    ///
+    /// returns: Result<Arc2, Box<dyn Error, Global>>
+    pub fn from_consensus(
+        points: &[Point2],
+        sigma_max: f64,
+        min_r: Option<f64>,
+        max_r: Option<f64>,
+        options: Option<Magsac>,
+    ) -> Result<Self> {
+        let min_r = min_r.unwrap_or(0.0);
+        let max_r = max_r.unwrap_or(f64::INFINITY);
+
+        let mut magsac = options.unwrap_or_else(|| Magsac::new(sigma_max));
+        magsac.sigma_max = sigma_max;
+
+        let fit =
+            magsac.fit_filtered::<2, Circle2, _>(points, |c| c.r() >= min_r && c.r() <= max_r)?;
+        let circle = fit.model;
+
+        if fit.inliers.is_empty() {
+            return Err("Consensus fit produced no inliers to bound the arc".into());
+        }
+
+        // Angle of every inlier about the fitted circle's center, normalized to [0, 2*PI).
+        let mut angles: Vec<f64> = fit
+            .inliers
+            .iter()
+            .map(|&i| angle_to_2pi(circle.angle_of_point(&points[i])))
+            .collect();
+        angles.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+        // The smallest covering sector is the complement of the largest angular gap between
+        // consecutive inlier angles. The sorted angles are treated as a cyclic sequence, so the
+        // wrap from the last angle back to the first is one of the candidate gaps; the arc starts
+        // at the angle just after that largest gap and sweeps counter-clockwise across the rest.
+        let n = angles.len();
+        let mut max_gap = 0.0;
+        let mut start_idx = 0;
+        for i in 0..n {
+            let next = (i + 1) % n;
+            let gap = if next == 0 {
+                angles[0] + 2.0 * PI - angles[n - 1]
+            } else {
+                angles[next] - angles[i]
+            };
+            if gap > max_gap {
+                max_gap = gap;
+                start_idx = next;
+            }
+        }
+
+        let angle0 = angles[start_idx];
+        let sweep = 2.0 * PI - max_gap;
+        Ok(Arc2::from_circle(circle, angle0, sweep))
+    }
+
     pub fn length(&self) -> f64 {
         self.radius * self.angle.abs()
     }
@@ -305,8 +380,9 @@ mod tests {
     use super::*;
     use crate::common::points::mid_point;
 
+    use crate::common::consensus::Magsac;
     use crate::common::random_geometry::RandomGeometry2;
-    use crate::{Arc2, Curve2};
+    use crate::{Arc2, Circle2, Curve2, Result};
     use approx::assert_relative_eq;
 
     use std::f64::consts::PI;
@@ -451,5 +527,48 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn arc_from_consensus_bounds_inlier_sector() -> Result<()> {
+        use std::f64::consts::TAU;
+
+        // Inliers spread over the CCW sector [0, PI] (an upper half) of a known circle, with a
+        // small deterministic radial perturbation.
+        let (cx, cy, r) = (2.0, -1.0, 1.3);
+        let mut points = Vec::new();
+        let inlier_count = 90;
+        for i in 0..inlier_count {
+            let t = PI * i as f64 / (inlier_count - 1) as f64;
+            let rr = r + 0.003 * (5.0 * t).sin();
+            points.push(Point2::new(cx + rr * t.cos(), cy + rr * t.sin()));
+        }
+
+        // A dense cluster of gross outliers well off the circle (near the empty lower sector).
+        for i in 0..40 {
+            let t = TAU * i as f64 / 40.0;
+            points.push(Point2::new(cx + 0.4 * t.cos(), cy - 4.0 + 0.4 * t.sin()));
+        }
+
+        let magsac = Magsac {
+            sigma_max: 0.02,
+            max_iterations: Some(400),
+            refinement_steps: 4,
+            confidence: 0.99,
+            seed: Some(42),
+        };
+        let arc = Arc2::from_consensus(&points, 0.02, None, None, Some(magsac))?;
+
+        // The fitted circle is recovered.
+        assert_relative_eq!(arc.center.x, cx, epsilon = 5.0e-3);
+        assert_relative_eq!(arc.center.y, cy, epsilon = 5.0e-3);
+        assert_relative_eq!(arc.radius, r, epsilon = 5.0e-3);
+
+        // The arc spans only the inlier sector [0, PI], not the outlier-adjacent lower half.
+        assert!(arc.angle > 0.0, "sweep should be counter-clockwise (positive)");
+        assert_relative_eq!(arc.angle0, 0.0, epsilon = 2.0e-2);
+        assert_relative_eq!(arc.angle, PI, epsilon = 2.0e-2);
+
+        Ok(())
     }
 }
