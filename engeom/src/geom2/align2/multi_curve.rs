@@ -61,12 +61,12 @@ use crate::Result;
 use crate::common::align::{RefinementHalt, SolveQuality, TerminationReason};
 use crate::common::consensus::weights::MagsacWeight;
 use crate::common::points::dist;
-use crate::geom2::align2::curve::{
-    AlignmentGroup, CAPParams, CurveSurfPoint, generate_alignment_points,
-};
+use crate::geom2::align2::curve::{CAPParams, CurveSurfPoint, generate_alignment_points};
 use crate::geom2::align2::jacobian::{point_surf_jacobian2, point_surf_jacobian2_rev};
 use crate::geom2::align2::{AlignValues2, Dof3, MultiAlignParams2};
-use crate::geom2::{Alignment2, MultiAlignOutcome2, Point2, SurfacePoint2, Vector2};
+use crate::geom2::{
+    Alignment2, CurveGroup2, Iso2, MultiAlignOutcome2, Point2, SurfacePoint2, Vector2,
+};
 use crate::na::{DMatrix, DVector, Dyn, Matrix, Owned, U1, Vector};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use rayon::prelude::*;
@@ -224,8 +224,8 @@ impl MulCurveAlignPoint {
 ///
 /// # Arguments
 ///
-/// * `groups`: the bodies taking part, each with its own optional uncertainty, initial pose, and
-///   weight providers
+/// * `groups`: the bodies taking part
+/// * `initial`: an optional starting pose per body. `None` starts every body at the identity.
 /// * `points`: the correspondences, each naming the body it was sampled from and the body it is
 ///   matched against
 /// * `static_i`: the index of the body to hold fixed, which becomes the frame every result is
@@ -238,16 +238,32 @@ impl MulCurveAlignPoint {
 /// all: rejected arguments, or an initial solve that broke down. A solve which merely exhausts
 /// its budget is reported on the outcome and its alignments kept.
 pub fn multi_curve_adjustment_with_points(
-    groups: &[AlignmentGroup],
+    groups: &[CurveGroup2],
+    initial: Option<&[Iso2]>,
     points: Vec<MulCurveAlignPoint>,
     static_i: usize,
     opts: &MultiAlignOptions2,
 ) -> Result<MultiAlignOutcome2> {
+    let poses = resolve_poses(groups, initial)?;
     validate(groups, &points, static_i, opts)?;
     solve_bundle(
-        MultiCurveProblem::new(groups, points, static_i, opts)?,
+        MultiCurveProblem::new(groups, poses, points, static_i, opts)?,
         opts,
     )
+}
+
+/// Expands the optional per-body starting poses into one pose per body, validating the length.
+fn resolve_poses(groups: &[CurveGroup2], initial: Option<&[Iso2]>) -> Result<Vec<Iso2>> {
+    match initial {
+        None => Ok(vec![Iso2::identity(); groups.len()]),
+        Some(t) if t.len() == groups.len() => Ok(t.to_vec()),
+        Some(t) => Err(format!(
+            "there are {} bodies but {} initial transforms",
+            groups.len(),
+            t.len()
+        )
+        .into()),
+    }
 }
 
 /// Samples correspondences between every pair of bodies and runs a simultaneous alignment.
@@ -259,8 +275,8 @@ pub fn multi_curve_adjustment_with_points(
 ///
 /// # Arguments
 ///
-/// * `groups`: the bodies taking part, each with its own optional uncertainty, initial pose, and
-///   weight providers. At least two are required.
+/// * `groups`: the bodies taking part. At least two are required.
+/// * `initial`: an optional starting pose per body. `None` starts every body at the identity.
 /// * `opts`: the solver options, which must carry a correspondence distance gate
 /// * `sample_opts`: the parameters controlling which points along each body's members become
 ///   correspondences
@@ -270,7 +286,8 @@ pub fn multi_curve_adjustment_with_points(
 /// As with [`multi_curve_adjustment_with_points`], `Err` is reserved for the case where there is
 /// no answer at all.
 pub fn multi_curve_adjustment(
-    groups: &[AlignmentGroup],
+    groups: &[CurveGroup2],
+    initial: Option<&[Iso2]>,
     opts: &MultiAlignOptions2,
     sample_opts: &CAPParams,
 ) -> Result<MultiAlignOutcome2> {
@@ -281,11 +298,12 @@ pub fn multi_curve_adjustment(
         )
         .into());
     }
+    let poses = resolve_poses(groups, initial)?;
 
-    let reference_order = reference_priority(groups, sample_opts);
+    let reference_order = reference_priority(groups, &poses, sample_opts);
     let static_i = reference_order[0];
 
-    // Build the work list so that each unordered pair of curves produces correspondences in one
+    // Build the work list so that each unordered pair of bodies produces correspondences in one
     // direction only, never both.
     let mut work_list = Vec::new();
     let mut bodies_to_test = (0..groups.len()).collect::<Vec<_>>();
@@ -299,28 +317,19 @@ pub fn multi_curve_adjustment(
     let points = work_list
         .par_iter()
         .map(|&(group_i, ref_i)| {
-            let t = groups[ref_i]
-                .transform()
-                .inv_mul(&groups[group_i].transform());
-            let samples = generate_alignment_points(
-                groups[group_i].group,
-                groups[ref_i].group,
-                &t,
-                sample_opts,
-            );
+            let t = poses[ref_i].inv_mul(&poses[group_i]);
+            let samples =
+                generate_alignment_points(&groups[group_i], &groups[ref_i], &t, sample_opts);
 
             samples
                 .into_iter()
-                .map(|cp| {
-                    let weight = groups[group_i].weight_at(&cp);
-                    MulCurveAlignPoint::new(group_i, cp, ref_i, weight)
-                })
+                .map(|cp| MulCurveAlignPoint::new(group_i, cp, ref_i, 1.0))
                 .collect::<Vec<_>>()
         })
         .flatten()
         .collect::<Vec<_>>();
 
-    multi_curve_adjustment_with_points(groups, points, static_i, opts)
+    multi_curve_adjustment_with_points(groups, initial, points, static_i, opts)
 }
 
 // ================================================================================================
@@ -328,7 +337,7 @@ pub fn multi_curve_adjustment(
 // ================================================================================================
 
 fn validate(
-    groups: &[AlignmentGroup],
+    groups: &[CurveGroup2],
     points: &[MulCurveAlignPoint],
     static_i: usize,
     opts: &MultiAlignOptions2,
@@ -369,23 +378,6 @@ fn validate(
         .into());
     }
 
-    // Uncertainty is interpolated between the two vertices of the edge a sample lands on, within
-    // the owning member's span of the concatenated values, so a short slice would panic partway
-    // through a solve rather than here.
-    for (i, c) in groups.iter().enumerate() {
-        if let Some(u) = c.uncertainty
-            && u.len() != c.group.vertex_count()
-        {
-            return Err(format!(
-                "body {} has {} vertices across its members but {} uncertainty values",
-                i,
-                c.group.vertex_count(),
-                u.len()
-            )
-            .into());
-        }
-    }
-
     Ok(())
 }
 
@@ -411,8 +403,6 @@ fn solve_bundle(
                 let weighting = MagsacWeight::new(sigma_max, RESIDUAL_DOF);
 
                 for _ in 0..opts.refinement_steps {
-                    problem.refresh_inv_sigma();
-
                     let weighted = problem.count_if_reweighted(&weighting);
                     if weighted < n_params {
                         halt = Some(RefinementHalt::Underdetermined {
@@ -453,7 +443,7 @@ fn run<'a>(
 fn resolve_sigma_max(opts: &MultiAlignOptions2, problem: &MultiCurveProblem<'_>) -> Option<f64> {
     match opts.sigma_max {
         Some(s) => Some(s),
-        None => estimate_sigma_max(&problem.normalized_residuals()),
+        None => estimate_sigma_max(&problem.residuals),
     }
 }
 
@@ -490,11 +480,10 @@ struct Moved {
     c_world: SurfacePoint2,
     residual: f64,
     target_weight: f64,
-    target_sigma: f64,
 }
 
 struct MultiCurveProblem<'a> {
-    groups: &'a [AlignmentGroup<'a>],
+    groups: &'a [CurveGroup2],
     handles: Vec<MulCurveAlignPoint>,
     params: MultiAlignParams2,
 
@@ -511,19 +500,6 @@ struct MultiCurveProblem<'a> {
     /// The signed geometric distance of each correspondence, in model units.
     residuals: Vec<f64>,
 
-    /// Each test point's own measurement standard deviation, interpolated from its body once at
-    /// construction because the point never moves within its own body.
-    test_sigma: Vec<f64>,
-
-    /// The reference body's standard deviation at each current match, resolved through the
-    /// member the match landed on.
-    target_sigma: Vec<f64>,
-
-    /// The reciprocal of the combined test-and-target standard deviation, or 1.0 where there is no
-    /// uncertainty at all. Held fixed across a solve and refreshed between them, for the same
-    /// reason as in the single-body case.
-    inv_sigma: Vec<f64>,
-
     /// The weight contributed by the correspondence itself: the point's base weight and the two
     /// geometric gates.
     target_weights: Vec<f64>,
@@ -537,26 +513,16 @@ struct MultiCurveProblem<'a> {
 
 impl<'a> MultiCurveProblem<'a> {
     fn new(
-        groups: &'a [AlignmentGroup],
+        groups: &'a [CurveGroup2],
+        poses: Vec<Iso2>,
         handles: Vec<MulCurveAlignPoint>,
         static_i: usize,
         opts: &MultiAlignOptions2,
     ) -> Result<Self> {
-        let centers = groups
-            .iter()
-            .map(|c| c.group.aabb().center())
-            .collect::<Vec<_>>();
-        let initial = groups.iter().map(|c| c.transform()).collect::<Vec<_>>();
-        let params = MultiAlignParams2::from_centers(static_i, &centers, Some(&initial), opts.dof)?;
+        let centers = groups.iter().map(|g| g.aabb().center()).collect::<Vec<_>>();
+        let params = MultiAlignParams2::from_centers(static_i, &centers, Some(&poses), opts.dof)?;
 
         let n = handles.len();
-
-        // A test point is fixed within its own curve, so its uncertainty never changes and is
-        // resolved once here rather than on every step.
-        let test_sigma = handles
-            .iter()
-            .map(|h| groups[h.group_i].sigma_at(&h.cp))
-            .collect();
 
         let values = params.compute_all_values();
         let mut item = Self {
@@ -567,9 +533,6 @@ impl<'a> MultiCurveProblem<'a> {
             moved: vec![Point2::origin(); n],
             closest: vec![SurfacePoint2::new(Point2::origin(), Vector2::y_axis()); n],
             residuals: vec![0.0; n],
-            test_sigma,
-            target_sigma: vec![0.0; n],
-            inv_sigma: vec![1.0; n],
             target_weights: vec![1.0; n],
             magsac_weights: vec![1.0; n],
             max_distance: opts.max_distance,
@@ -577,7 +540,6 @@ impl<'a> MultiCurveProblem<'a> {
         };
 
         item.move_points();
-        item.refresh_inv_sigma();
         Ok(item)
     }
 
@@ -603,11 +565,10 @@ impl<'a> MultiCurveProblem<'a> {
                 // the closest point on any of its members.
                 let p_world = t_test * h.cp.sp.point;
                 let query = t_ref.inverse_transform_point(&p_world);
-                let (ref_m, station) = groups[h.ref_i].group.at_closest_to_point(&query);
-                let cp = CurveSurfPoint::from_station(&station, ref_m);
+                let (_, station) = groups[h.ref_i].at_closest_to_point(&query);
 
                 // ...and back out to the world, where the residual is measured.
-                let c_world = cp.sp.transformed_by(&t_ref);
+                let c_world = station.surface_point().transformed_by(&t_ref);
 
                 let d = dist(&p_world, &c_world.point);
                 let residual = d * c_world.scalar_projection(&p_world).signum();
@@ -628,7 +589,6 @@ impl<'a> MultiCurveProblem<'a> {
                     c_world,
                     residual,
                     target_weight: weight,
-                    target_sigma: groups[h.ref_i].sigma_at(&cp),
                 }
             })
             .collect();
@@ -638,7 +598,6 @@ impl<'a> MultiCurveProblem<'a> {
             self.closest[i] = m.c_world;
             self.residuals[i] = m.residual;
             self.target_weights[i] = m.target_weight;
-            self.target_sigma[i] = m.target_sigma;
         }
     }
 
@@ -648,42 +607,20 @@ impl<'a> MultiCurveProblem<'a> {
         self.move_points();
     }
 
-    /// Recombines the test and target standard deviations in quadrature.
-    fn refresh_inv_sigma(&mut self) {
-        for i in 0..self.handles.len() {
-            let t = self.test_sigma[i];
-            let r = self.target_sigma[i];
-            let combined = (t * t + r * r).sqrt();
-            self.inv_sigma[i] = if combined > 0.0 { 1.0 / combined } else { 1.0 };
-        }
-    }
-
-    fn normalized_residuals(&self) -> Vec<f64> {
-        self.residuals
-            .iter()
-            .zip(self.inv_sigma.iter())
-            .map(|(r, inv)| r * inv)
-            .collect()
-    }
-
     /// The factor applied to both the residual and the jacobian row of a correspondence.
     fn scale(&self, i: usize) -> f64 {
-        (self.target_weights[i] * self.magsac_weights[i]).sqrt() * self.inv_sigma[i]
+        (self.target_weights[i] * self.magsac_weights[i]).sqrt()
     }
 
     fn apply_magsac_weights(&mut self, weighting: &MagsacWeight) {
         for i in 0..self.handles.len() {
-            let r = (self.residuals[i] * self.inv_sigma[i]).abs();
-            self.magsac_weights[i] = weighting.weight(r);
+            self.magsac_weights[i] = weighting.weight(self.residuals[i].abs());
         }
     }
 
     fn count_if_reweighted(&self, weighting: &MagsacWeight) -> usize {
         (0..self.handles.len())
-            .filter(|&i| {
-                let r = (self.residuals[i] * self.inv_sigma[i]).abs();
-                self.target_weights[i] * weighting.weight(r) > 0.0
-            })
+            .filter(|&i| self.target_weights[i] * weighting.weight(self.residuals[i].abs()) > 0.0)
             .count()
     }
 
@@ -758,8 +695,8 @@ impl LeastSquaresProblem<f64, Dyn, Dyn> for MultiCurveProblem<'_> {
 
 /// Orders the bodies by how broadly the others reference them, most-referenced first. The head
 /// of the returned order is the best candidate for the static body.
-fn reference_priority(groups: &[AlignmentGroup], params: &CAPParams) -> Vec<usize> {
-    let matrix = correspondence_matrix(groups, params);
+fn reference_priority(groups: &[CurveGroup2], poses: &[Iso2], params: &CAPParams) -> Vec<usize> {
+    let matrix = correspondence_matrix(groups, poses, params);
     let max = matrix.max();
     let mut corr = if max > 0.0 {
         &matrix / max
@@ -778,7 +715,11 @@ fn reference_priority(groups: &[AlignmentGroup], params: &CAPParams) -> Vec<usiz
     pairs.iter().map(|(i, _)| *i).collect()
 }
 
-fn correspondence_matrix(groups: &[AlignmentGroup], params: &CAPParams) -> DMatrix<f64> {
+fn correspondence_matrix(
+    groups: &[CurveGroup2],
+    poses: &[Iso2],
+    params: &CAPParams,
+) -> DMatrix<f64> {
     // Each i, j entry is the number of sample points in body j which are a good match for body
     // i. The row with the highest column sum has the most points referencing it, but a raw count
     // would let two heavily overlapping bodies inflate each other without either being a good
@@ -798,8 +739,8 @@ fn correspondence_matrix(groups: &[AlignmentGroup], params: &CAPParams) -> DMatr
     let collected = work_list
         .par_iter()
         .map(|&(i, j)| {
-            let t = groups[i].transform().inv_mul(&groups[j].transform());
-            let samples = generate_alignment_points(groups[j].group, groups[i].group, &t, params);
+            let t = poses[i].inv_mul(&poses[j]);
+            let samples = generate_alignment_points(&groups[j], &groups[i], &t, params);
             (i, j, samples.len() as f64)
         })
         .collect::<Vec<_>>();
@@ -865,17 +806,6 @@ mod tests {
         curves.iter().cloned().map(CurveGroup2::from).collect()
     }
 
-    fn alignment_groups<'a>(
-        groups: &'a [CurveGroup2],
-        initial: &'a [Iso2],
-    ) -> Vec<AlignmentGroup<'a>> {
-        groups
-            .iter()
-            .zip(initial.iter())
-            .map(|(g, t)| AlignmentGroup::new(g, None, Some(t), None))
-            .collect()
-    }
-
     // ============================================================================================
     // Recovery
     // ============================================================================================
@@ -889,10 +819,10 @@ mod tests {
         let initial = vec![Iso2::identity(), disturb];
 
         let groups = groups_of_one(&curves);
-        let acs = alignment_groups(&groups, &initial);
         let points = chain_points(&curves, 0.4);
 
-        let outcome = multi_curve_adjustment_with_points(&acs, points, 0, &test_opts())?;
+        let outcome =
+            multi_curve_adjustment_with_points(&groups, Some(&initial), points, 0, &test_opts())?;
 
         assert_eq!(outcome.len(), 2);
         // Curve 0 is static and must not have moved at all.
@@ -921,10 +851,10 @@ mod tests {
         ];
 
         let groups = groups_of_one(&curves);
-        let acs = alignment_groups(&groups, &initial);
         let points = chain_points(&curves, 0.5);
 
-        let outcome = multi_curve_adjustment_with_points(&acs, points, 0, &test_opts())?;
+        let outcome =
+            multi_curve_adjustment_with_points(&groups, Some(&initial), points, 0, &test_opts())?;
 
         for i in 0..3 {
             assert_relative_eq!(
@@ -942,11 +872,15 @@ mod tests {
         let curves = vec![rect_curve(), rect_curve()];
         let initial = vec![Iso2::translation(0.3, 0.0), Iso2::translation(0.0, 0.25)];
         let groups = groups_of_one(&curves);
-        let acs = alignment_groups(&groups, &initial);
 
         // Make curve 1 the static one this time, so the check is not trivially about index zero.
-        let outcome =
-            multi_curve_adjustment_with_points(&acs, chain_points(&curves, 0.5), 1, &test_opts())?;
+        let outcome = multi_curve_adjustment_with_points(
+            &groups,
+            Some(&initial),
+            chain_points(&curves, 0.5),
+            1,
+            &test_opts(),
+        )?;
 
         assert_relative_eq!(
             outcome.alignment(1).full_transform().to_matrix(),
@@ -962,13 +896,13 @@ mod tests {
         let curves = vec![rect_curve(), rect_curve(), rect_curve()];
         let initial = vec![Iso2::identity(); 3];
         let groups = groups_of_one(&curves);
-        let acs = alignment_groups(&groups, &initial);
         let points = chain_points(&curves, 0.6);
 
         let from_1 = points.iter().filter(|p| p.group_i == 1).count();
         let from_2 = points.iter().filter(|p| p.group_i == 2).count();
 
-        let outcome = multi_curve_adjustment_with_points(&acs, points, 0, &test_opts())?;
+        let outcome =
+            multi_curve_adjustment_with_points(&groups, Some(&initial), points, 0, &test_opts())?;
 
         // Curve 0 sourced no correspondences, so it has no residuals of its own.
         assert_eq!(outcome.alignment(0).residuals().len(), 0);
@@ -987,14 +921,18 @@ mod tests {
         let curves = vec![rect_curve(), rect_curve()];
         let initial = vec![Iso2::identity(), Iso2::translation(0.3, 0.0)];
         let groups = groups_of_one(&curves);
-        let acs = alignment_groups(&groups, &initial);
 
         let opts = MultiAlignOptions2 {
             dof: Some(Dof3::new(false, true, true)),
             ..test_opts()
         };
-        let outcome =
-            multi_curve_adjustment_with_points(&acs, chain_points(&curves, 0.5), 0, &opts)?;
+        let outcome = multi_curve_adjustment_with_points(
+            &groups,
+            Some(&initial),
+            chain_points(&curves, 0.5),
+            0,
+            &opts,
+        )?;
 
         // tx is locked, so the x displacement cannot be undone and must survive untouched.
         assert_relative_eq!(
@@ -1014,14 +952,18 @@ mod tests {
             Iso2::new(Vector2::new(1.5, -1.0), PI / 12.0),
         ];
         let groups = groups_of_one(&curves);
-        let acs = alignment_groups(&groups, &initial);
 
         let opts = MultiAlignOptions2 {
             patience: 1,
             ..test_opts()
         };
-        let outcome =
-            multi_curve_adjustment_with_points(&acs, chain_points(&curves, 0.5), 0, &opts)?;
+        let outcome = multi_curve_adjustment_with_points(
+            &groups,
+            Some(&initial),
+            chain_points(&curves, 0.5),
+            0,
+            &opts,
+        )?;
 
         assert_eq!(outcome.quality(), SolveQuality::Unconverged);
         assert!(outcome.solves().contains(&TerminationReason::LostPatience));
@@ -1039,7 +981,6 @@ mod tests {
         let disturb = Iso2::new(Vector2::new(0.2, -0.15), PI / 120.0);
         let initial = vec![Iso2::identity(), disturb];
         let groups = groups_of_one(&curves);
-        let acs = alignment_groups(&groups, &initial);
 
         // Corrupt a tenth of the correspondences by throwing their sample points off the curve.
         let mut points = chain_points(&curves, 0.4);
@@ -1050,7 +991,8 @@ mod tests {
         }
 
         let naive = multi_curve_adjustment_with_points(
-            &acs,
+            &groups,
+            Some(&initial),
             points.clone(),
             0,
             &MultiAlignOptions2 {
@@ -1058,7 +1000,8 @@ mod tests {
                 ..test_opts()
             },
         )?;
-        let robust = multi_curve_adjustment_with_points(&acs, points, 0, &test_opts())?;
+        let robust =
+            multi_curve_adjustment_with_points(&groups, Some(&initial), points, 0, &test_opts())?;
 
         let error = |o: &MultiAlignOutcome2| {
             (o.alignment(1).full_transform().to_matrix() - Iso2::identity().to_matrix()).norm()
@@ -1086,7 +1029,6 @@ mod tests {
         let curves = vec![rect_curve(), rect_curve()];
         let initial = vec![Iso2::identity(), Iso2::identity()];
         let groups = groups_of_one(&curves);
-        let acs = alignment_groups(&groups, &initial);
 
         // Both bodies start on the answer, so any motion at all is damage. A twentieth of the
         // correspondences are thrown well clear of the curve, standing in for points sampled over
@@ -1106,9 +1048,20 @@ mod tests {
             (o.alignment(1).full_transform().to_matrix() - Iso2::identity().to_matrix()).norm()
         };
 
-        let ungated =
-            multi_curve_adjustment_with_points(&acs, points.clone(), 0, &unweighted(WIDE_GATE))?;
-        let gated = multi_curve_adjustment_with_points(&acs, points, 0, &unweighted(1.0))?;
+        let ungated = multi_curve_adjustment_with_points(
+            &groups,
+            Some(&initial),
+            points.clone(),
+            0,
+            &unweighted(WIDE_GATE),
+        )?;
+        let gated = multi_curve_adjustment_with_points(
+            &groups,
+            Some(&initial),
+            points,
+            0,
+            &unweighted(1.0),
+        )?;
 
         assert!(
             drift(&ungated) > 1e-3,
@@ -1130,7 +1083,6 @@ mod tests {
         let curves = vec![rect_curve(), rect_curve()];
         let initial = vec![Iso2::identity(), Iso2::identity()];
         let groups = groups_of_one(&curves);
-        let acs = alignment_groups(&groups, &initial);
 
         let mut points = chain_points(&curves, 0.5);
         let far = points.len() / 2;
@@ -1143,7 +1095,8 @@ mod tests {
             refinement_steps: 0,
             ..test_opts()
         };
-        let outcome = multi_curve_adjustment_with_points(&acs, points, 0, &opts)?;
+        let outcome =
+            multi_curve_adjustment_with_points(&groups, Some(&initial), points, 0, &opts)?;
 
         assert_relative_eq!(
             outcome.alignment(1).full_transform().to_matrix(),
@@ -1159,9 +1112,8 @@ mod tests {
         // A point whose normal faces the opposite way from its match is suppressed, which is what
         // keeps a match from landing on the far side of a thin wall.
         let curves = vec![rect_curve(), rect_curve()];
-        let initial = vec![Iso2::identity(), Iso2::identity()];
+        let initial = [Iso2::identity(), Iso2::identity()];
         let groups = groups_of_one(&curves);
-        let acs = alignment_groups(&groups, &initial);
 
         // One correspondence, sampled mid-way along the bottom edge and then flipped so its
         // normal points inward while its match still points outward.
@@ -1175,7 +1127,7 @@ mod tests {
             ..test_opts()
         };
         let points = vec![MulCurveAlignPoint::new(1, cp, 0, 1.0)];
-        let problem = MultiCurveProblem::new(&acs, points, 0, &opts)?;
+        let problem = MultiCurveProblem::new(&groups, initial.to_vec(), points, 0, &opts)?;
 
         assert_eq!(problem.target_weights[0], 0.0);
 
@@ -1197,13 +1149,12 @@ mod tests {
         // Here body 1 is a reference for body 2's correspondences *and* is free to move, which is
         // the configuration that puts the reverse block to work.
         let curves = vec![rect_curve(), rect_curve(), rect_curve()];
-        let initial = vec![
+        let initial = [
             Iso2::identity(),
             Iso2::new(Vector2::new(0.21, -0.13), 0.03),
             Iso2::new(Vector2::new(-0.17, 0.11), -0.04),
         ];
         let groups = groups_of_one(&curves);
-        let acs = alignment_groups(&groups, &initial);
 
         // Sample points well away from the corners of the rectangle, so every projection lands in
         // the interior of an edge. The analytic jacobian holds the correspondence fixed, which is
@@ -1222,7 +1173,7 @@ mod tests {
             refinement_steps: 0,
             ..test_opts()
         };
-        let mut problem = MultiCurveProblem::new(&acs, points, 0, &opts)?;
+        let mut problem = MultiCurveProblem::new(&groups, initial.to_vec(), points, 0, &opts)?;
 
         let x0 = problem.params.storage().clone();
         let analytic = problem.jacobian().unwrap();
@@ -1259,18 +1210,17 @@ mod tests {
         // dropped: correspondences sourced from body 2 must produce nonzero derivatives in body
         // 1's columns, because body 1 is what they are matched against.
         let curves = vec![rect_curve(), rect_curve(), rect_curve()];
-        let initial = vec![
+        let initial = [
             Iso2::identity(),
             Iso2::translation(0.2, 0.0),
             Iso2::translation(0.0, 0.2),
         ];
         let groups = groups_of_one(&curves);
-        let acs = alignment_groups(&groups, &initial);
 
         let cp = CurveSurfPoint::from_station(&curves[2].at_length(5.0).unwrap(), 0);
         let points = vec![MulCurveAlignPoint::new(2, cp, 1, 1.0)];
 
-        let problem = MultiCurveProblem::new(&acs, points, 0, &test_opts())?;
+        let problem = MultiCurveProblem::new(&groups, initial.to_vec(), points, 0, &test_opts())?;
         let jac = problem.jacobian().unwrap();
 
         let body1 = problem.params.column_offset(1).unwrap();
@@ -1301,14 +1251,13 @@ mod tests {
         // This is why the blocks are accumulated rather than assigned. Overwriting would keep only
         // the reverse block and report a spurious sensitivity for a correspondence that has none.
         let curves = vec![rect_curve(), rect_curve()];
-        let initial = vec![Iso2::identity(), Iso2::translation(0.3, -0.2)];
+        let initial = [Iso2::identity(), Iso2::translation(0.3, -0.2)];
         let groups = groups_of_one(&curves);
-        let acs = alignment_groups(&groups, &initial);
 
         let cp = CurveSurfPoint::from_station(&curves[1].at_length(5.0).unwrap(), 0);
         let points = vec![MulCurveAlignPoint::new(1, cp, 1, 1.0)];
 
-        let problem = MultiCurveProblem::new(&acs, points, 0, &test_opts())?;
+        let problem = MultiCurveProblem::new(&groups, initial.to_vec(), points, 0, &test_opts())?;
         let jac = problem.jacobian().unwrap();
 
         for k in 0..jac.ncols() {
@@ -1327,7 +1276,6 @@ mod tests {
         let curves = vec![rect_curve(), rect_curve()];
         let initial = vec![Iso2::identity(); 2];
         let groups = groups_of_one(&curves);
-        let acs = alignment_groups(&groups, &initial);
         let points = chain_points(&curves, 1.0);
 
         let bad_patience = MultiAlignOptions2 {
@@ -1335,25 +1283,51 @@ mod tests {
             ..test_opts()
         };
         assert!(
-            multi_curve_adjustment_with_points(&acs, points.clone(), 0, &bad_patience).is_err()
+            multi_curve_adjustment_with_points(
+                &groups,
+                Some(&initial),
+                points.clone(),
+                0,
+                &bad_patience
+            )
+            .is_err()
         );
 
         let bad_sigma = MultiAlignOptions2 {
             sigma_max: Some(-1.0),
             ..test_opts()
         };
-        assert!(multi_curve_adjustment_with_points(&acs, points.clone(), 0, &bad_sigma).is_err());
+        assert!(
+            multi_curve_adjustment_with_points(
+                &groups,
+                Some(&initial),
+                points.clone(),
+                0,
+                &bad_sigma
+            )
+            .is_err()
+        );
 
         let bad_distance = MultiAlignOptions2 {
             max_distance: 0.0,
             ..test_opts()
         };
         assert!(
-            multi_curve_adjustment_with_points(&acs, points.clone(), 0, &bad_distance).is_err()
+            multi_curve_adjustment_with_points(
+                &groups,
+                Some(&initial),
+                points.clone(),
+                0,
+                &bad_distance
+            )
+            .is_err()
         );
 
         // A static index past the end of the curve list.
-        assert!(multi_curve_adjustment_with_points(&acs, points, 5, &test_opts()).is_err());
+        assert!(
+            multi_curve_adjustment_with_points(&groups, Some(&initial), points, 5, &test_opts())
+                .is_err()
+        );
     }
 
     #[test]
@@ -1361,38 +1335,34 @@ mod tests {
         let curves = vec![rect_curve(), rect_curve()];
         let initial = vec![Iso2::identity(); 2];
         let groups = groups_of_one(&curves);
-        let acs = alignment_groups(&groups, &initial);
 
         let mut points = chain_points(&curves, 1.0);
         points[0].ref_i = 7;
 
-        let err = multi_curve_adjustment_with_points(&acs, points, 0, &test_opts())
-            .unwrap_err()
-            .to_string();
+        let err =
+            multi_curve_adjustment_with_points(&groups, Some(&initial), points, 0, &test_opts())
+                .unwrap_err()
+                .to_string();
         assert!(err.contains("only 2 bodies"), "unexpected message: {err}");
     }
 
     #[test]
-    fn a_mismatched_uncertainty_slice_is_rejected() {
-        // Uncertainty is interpolated between the vertices of the edge a sample lands on, so a
-        // short slice would panic partway through a solve. It has to be caught up front.
+    fn a_mismatched_initial_slice_is_rejected() {
         let curves = vec![rect_curve(), rect_curve()];
-        let initial = [Iso2::identity(); 2];
-        let short = [0.01; 2];
+        let groups = groups_of_one(&curves);
+        let short = [Iso2::identity(); 1];
 
-        let g0 = CurveGroup2::from(curves[0].clone());
-        let g1 = CurveGroup2::from(curves[1].clone());
-        let acs = vec![
-            AlignmentGroup::new(&g0, None, Some(&initial[0]), None),
-            AlignmentGroup::new(&g1, Some(&short), Some(&initial[1]), None),
-        ];
-
-        let err =
-            multi_curve_adjustment_with_points(&acs, chain_points(&curves, 1.0), 0, &test_opts())
-                .unwrap_err()
-                .to_string();
+        let err = multi_curve_adjustment_with_points(
+            &groups,
+            Some(&short),
+            chain_points(&curves, 1.0),
+            0,
+            &test_opts(),
+        )
+        .unwrap_err()
+        .to_string();
         assert!(
-            err.contains("uncertainty values"),
+            err.contains("initial transforms"),
             "unexpected message: {err}"
         );
     }
@@ -1412,9 +1382,13 @@ mod tests {
             Iso2::new(Vector2::new(-0.1, 0.12), -PI / 100.0),
         ];
         let groups = groups_of_one(&curves);
-        let acs = alignment_groups(&groups, &initial);
 
-        let outcome = multi_curve_adjustment(&acs, &test_opts(), &CAPParams::defaults(0.5))?;
+        let outcome = multi_curve_adjustment(
+            &groups,
+            Some(&initial),
+            &test_opts(),
+            &CAPParams::defaults(0.5),
+        )?;
 
         assert_eq!(outcome.len(), 3);
 
@@ -1451,9 +1425,12 @@ mod tests {
         let curves = [left, middle, right];
         let initial = [Iso2::identity(); 3];
         let groups = groups_of_one(&curves);
-        let acs = alignment_groups(&groups, &initial);
 
-        let order = reference_priority(&acs, &CAPParams::new(0.25, PI / 3.0, 0.25, None));
+        let order = reference_priority(
+            &groups,
+            &initial,
+            &CAPParams::new(0.25, PI / 3.0, 0.25, None),
+        );
 
         assert_eq!(order[0], 1, "the middle curve should be the static one");
     }
@@ -1467,9 +1444,12 @@ mod tests {
         ];
         let initial = [Iso2::identity(); 3];
         let groups = groups_of_one(&curves);
-        let acs = alignment_groups(&groups, &initial);
 
-        let m = correspondence_matrix(&acs, &CAPParams::new(0.25, PI / 3.0, 0.25, None));
+        let m = correspondence_matrix(
+            &groups,
+            &initial,
+            &CAPParams::new(0.25, PI / 3.0, 0.25, None),
+        );
 
         for i in 0..3 {
             assert_eq!(m[(i, i)], 0.0);
@@ -1489,17 +1469,23 @@ mod tests {
         let curves = vec![rect_curve()];
         let initial = vec![Iso2::identity()];
         let groups = groups_of_one(&curves);
-        let acs = alignment_groups(&groups, &initial);
 
-        let err = multi_curve_adjustment(&acs, &test_opts(), &CAPParams::defaults(0.5))
-            .unwrap_err()
-            .to_string();
+        let err = multi_curve_adjustment(
+            &groups,
+            Some(&initial),
+            &test_opts(),
+            &CAPParams::defaults(0.5),
+        )
+        .unwrap_err()
+        .to_string();
         assert!(
             err.contains("at least two bodies"),
             "unexpected message: {err}"
         );
 
-        let empty: Vec<AlignmentGroup> = Vec::new();
-        assert!(multi_curve_adjustment(&empty, &test_opts(), &CAPParams::defaults(0.5)).is_err());
+        let empty: Vec<CurveGroup2> = Vec::new();
+        assert!(
+            multi_curve_adjustment(&empty, None, &test_opts(), &CAPParams::defaults(0.5)).is_err()
+        );
     }
 }

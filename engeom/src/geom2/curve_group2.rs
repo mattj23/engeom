@@ -17,9 +17,7 @@ use parry2d_f64::bounding_volume::BoundingVolume;
 /// multi-component `Mesh3` plays for surfaces, where disconnected patches are still one body.
 ///
 /// Members keep their identity: queries that land on the group report which member they landed
-/// on, and per-vertex data (such as measurement uncertainty) is addressed by concatenating the
-/// members' vertices in member order, with [`CurveGroup2::vertex_offset`] locating each member's
-/// span.
+/// on.
 ///
 /// A group is never empty; construction rejects an empty collection because a group with no
 /// members has no bounding box or closest point, and every consumer would otherwise need to
@@ -27,10 +25,6 @@ use parry2d_f64::bounding_volume::BoundingVolume;
 #[derive(Clone)]
 pub struct CurveGroup2 {
     curves: Vec<Curve2>,
-
-    /// The start index of each member's vertices in a concatenated per-vertex array, in member
-    /// order. Computed once at construction.
-    vertex_offsets: Vec<usize>,
 }
 
 impl CurveGroup2 {
@@ -49,17 +43,7 @@ impl CurveGroup2 {
             return Err("a curve group must have at least one member curve".into());
         }
 
-        let mut vertex_offsets = Vec::with_capacity(curves.len());
-        let mut total = 0;
-        for c in &curves {
-            vertex_offsets.push(total);
-            total += c.count();
-        }
-
-        Ok(Self {
-            curves,
-            vertex_offsets,
-        })
+        Ok(Self { curves })
     }
 
     /// The member curves, in member order.
@@ -91,17 +75,6 @@ impl CurveGroup2 {
         self.curves.iter().map(|c| c.length()).sum()
     }
 
-    /// The total number of vertices across all member curves.
-    pub fn vertex_count(&self) -> usize {
-        self.vertex_offsets.last().unwrap() + self.curves.last().unwrap().count()
-    }
-
-    /// The index at which a member's vertices begin in an array of per-vertex values covering the
-    /// whole group, concatenated in member order.
-    pub fn vertex_offset(&self, member: usize) -> usize {
-        self.vertex_offsets[member]
-    }
-
     /// Finds the closest position on any member curve to the test point, returning the index of
     /// the owning member along with the station on it.
     ///
@@ -122,8 +95,8 @@ impl CurveGroup2 {
             .expect("a curve group is never empty")
     }
 
-    /// Returns a new group with every member transformed by the isometry. Member order, and with
-    /// it vertex addressing, is preserved.
+    /// Returns a new group with every member transformed by the isometry. Member order is
+    /// preserved.
     pub fn new_transformed_by(&self, iso: &Iso2) -> Self {
         Self {
             curves: self
@@ -131,7 +104,6 @@ impl CurveGroup2 {
                 .iter()
                 .map(|c| c.new_transformed_by(iso))
                 .collect(),
-            vertex_offsets: self.vertex_offsets.clone(),
         }
     }
 }
@@ -141,7 +113,6 @@ impl From<Curve2> for CurveGroup2 {
     /// uses. Infallible because the one-member group is always valid.
     fn from(curve: Curve2) -> Self {
         Self {
-            vertex_offsets: vec![0],
             curves: vec![curve],
         }
     }
@@ -153,9 +124,8 @@ mod tests {
     use crate::geom2::{Point2, Vector2};
     use approx::assert_relative_eq;
 
-    /// A closed unit square with its lower-left corner at (x0, y0), wound counter-clockwise. It
-    /// has a length of 4 and, like every closed `Curve2`, a closing vertex duplicating the first,
-    /// so it counts 5 vertices.
+    /// A closed unit square with its lower-left corner at (x0, y0), wound counter-clockwise,
+    /// with a length of 4.
     fn square_at(x0: f64, y0: f64) -> Curve2 {
         let points = [
             Point2::new(x0, y0),
@@ -182,8 +152,6 @@ mod tests {
 
         assert_eq!(group.len(), 1);
         assert!(!group.is_empty());
-        assert_eq!(group.vertex_offset(0), 0);
-        assert_eq!(group.vertex_count(), 5);
     }
 
     #[test]
@@ -201,19 +169,6 @@ mod tests {
     fn the_length_is_the_sum_of_the_members() {
         let group = CurveGroup2::new(vec![square_at(0.0, 0.0), segment()]).unwrap();
         assert_relative_eq!(group.length(), 5.0, epsilon = 1e-12);
-    }
-
-    #[test]
-    fn vertex_offsets_concatenate_the_members_in_order() {
-        // A closed square carries 5 vertices (its seam vertex is stored twice), the open
-        // segment 2.
-        let group =
-            CurveGroup2::new(vec![square_at(0.0, 0.0), segment(), square_at(3.0, 0.0)]).unwrap();
-
-        assert_eq!(group.vertex_offset(0), 0);
-        assert_eq!(group.vertex_offset(1), 5);
-        assert_eq!(group.vertex_offset(2), 7);
-        assert_eq!(group.vertex_count(), 12);
     }
 
     #[test]
@@ -243,8 +198,6 @@ mod tests {
 
         assert_eq!(moved.len(), 2);
         assert_relative_eq!(moved.length(), group.length(), epsilon = 1e-10);
-        assert_eq!(moved.vertex_offset(1), group.vertex_offset(1));
-        assert_eq!(moved.vertex_count(), group.vertex_count());
 
         // Spot-check a vertex of each member against the isometry applied directly.
         for (a, b) in group.curves().iter().zip(moved.curves().iter()) {
