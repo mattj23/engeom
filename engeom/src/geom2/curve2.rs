@@ -5,6 +5,7 @@ use crate::geom2::hull::convex_hull_2d;
 use crate::geom2::{
     Iso2, Point2, Segment2, SurfacePoint2, UnitVec2, intersection_param, signed_angle,
 };
+use crate::io::{read_tc_curve2_file, write_tc_curve2_file};
 use crate::na::SVector;
 use crate::{Arc2, Circle2, Line2, Resample, Result, Series1};
 use parry2d_f64::bounding_volume::Aabb;
@@ -12,6 +13,7 @@ use parry2d_f64::na::Unit;
 use parry2d_f64::query::Ray;
 use parry2d_f64::shape::{ConvexPolygon, Polyline};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 mod densities;
 mod partitioning;
@@ -373,6 +375,42 @@ impl Curve2 {
         }
 
         if votes < 0.0 { Ok(c.reversed()) } else { Ok(c) }
+    }
+
+    /// Read a curve from a tolerance-compressed `.tccurve2` file.
+    ///
+    /// The vertex positions are recovered within the tolerance the file was written at, and the
+    /// curve's own chord tolerance and closed state are restored from it.
+    ///
+    /// # Failure
+    ///
+    /// A file holding more than one curve is refused rather than yielding its first, since
+    /// returning part of a collection would silently discard the rest. Use
+    /// [`crate::geom2::CurveGroup2::load_tccurve2`] for those.
+    ///
+    /// A file which engeom did not write has no chord tolerance recorded in it and is also
+    /// refused, because guessing one would change how the curve resamples with nothing to show it
+    /// happened.
+    pub fn load_tccurve2(path: &Path) -> Result<Self> {
+        read_tc_curve2_file(path)
+    }
+
+    /// Write this curve to a tolerance-compressed `.tccurve2` file.
+    ///
+    /// Vertex positions are quantized to the narrowest bit width per axis which keeps every one of
+    /// them within `tol` of where it started. A smaller tolerance costs more bytes per vertex. The
+    /// curve's chord tolerance and closed state travel alongside the points and are unaffected by
+    /// this one, which is purely about storage.
+    ///
+    /// # Arguments
+    ///
+    /// * `path`: the path to write to, which is overwritten if it already exists
+    /// * `tol`: the largest acceptable round-trip position error for any vertex, in the same units
+    ///   as the coordinates
+    ///
+    /// returns: `Result<()>`
+    pub fn save_tccurve2(&self, path: &Path, tol: f64) -> Result<()> {
+        write_tc_curve2_file(path, self, tol)
     }
 
     /// Returns the number of vertices in the curve.
@@ -1079,6 +1117,46 @@ pub mod tests {
         assert_eq!(p.index, 1);
         assert_relative_eq!(1.0, p.point.x, epsilon = 1e-8);
         assert_relative_eq!(0.5, p.point.y, epsilon = 1e-8);
+    }
+
+    /// The container methods have to be a real path to the format, not just a forwarder that
+    /// compiles. The chord tolerance and the closed flag are carried as file metadata and a flag
+    /// bit rather than as geometry, so they are the things most likely to be quietly lost.
+    #[test]
+    fn a_curve_round_trips_through_the_container_methods() {
+        let points = sample_points(&sample1());
+        let curve = Curve2::from_points(&points, 1e-4, true).unwrap();
+        assert!(curve.is_closed());
+
+        let path = std::env::temp_dir().join("engeom_curve2_container.tccurve2");
+        let tol = 1e-6;
+
+        curve.save_tccurve2(&path, tol).unwrap();
+        let back = Curve2::load_tccurve2(&path).unwrap();
+
+        assert_eq!(back.count(), curve.count());
+        assert_eq!(back.is_closed(), curve.is_closed());
+        assert_relative_eq!(back.tol(), curve.tol(), epsilon = 1e-15);
+        for (a, b) in curve.points().iter().zip(back.points().iter()) {
+            assert_relative_eq!(a, b, epsilon = tol);
+        }
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// An open curve must not come back closed, which is the failure that would follow from
+    /// dropping the flag rather than storing it.
+    #[test]
+    fn an_open_curve_stays_open_through_the_container_methods() {
+        let points = sample_points(&sample1());
+        let curve = Curve2::from_points(&points, 1e-6, false).unwrap();
+        assert!(!curve.is_closed());
+
+        let path = std::env::temp_dir().join("engeom_curve2_container_open.tccurve2");
+        curve.save_tccurve2(&path, 1e-6).unwrap();
+
+        assert!(!Curve2::load_tccurve2(&path).unwrap().is_closed());
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

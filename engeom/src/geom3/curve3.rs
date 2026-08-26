@@ -4,10 +4,12 @@ use crate::common::points::{dist, ramer_douglas_peucker};
 use crate::errors::InvalidGeometry;
 use crate::geom2::Curve2;
 use crate::geom3::{Aabb3, Iso3, Plane3, Point3, UnitVec3};
+use crate::io::{read_tc_curve3_file, write_tc_curve3_file};
 use crate::{Func1, Polynomial, Resample, Result, Smoothing, SurfacePoint3, SvdBasis3};
 use parry3d_f64::na::Unit;
 use parry3d_f64::query::PointQueryWithLocation;
 use parry3d_f64::shape::Polyline;
+use std::path::Path;
 
 #[derive(Copy, Clone)]
 pub struct CurveStation3<'a> {
@@ -170,6 +172,41 @@ impl Curve3 {
         }
 
         Ok(Self { line, lengths, tol })
+    }
+
+    /// Read a curve from a tolerance-compressed `.tccurve3` file.
+    ///
+    /// The vertex positions are recovered within the tolerance the file was written at, and the
+    /// curve's own chord tolerance is restored from it.
+    ///
+    /// # Failure
+    ///
+    /// A file holding more than one curve is refused rather than yielding its first, since
+    /// returning part of a collection would silently discard the rest. Use
+    /// [`crate::geom3::CurveGroup3::load_tccurve3`] for those.
+    ///
+    /// A `Curve3` has no notion of being closed, so a file marked closed is refused rather than
+    /// quietly flattened into an open curve.
+    pub fn load_tccurve3(path: &Path) -> Result<Self> {
+        read_tc_curve3_file(path)
+    }
+
+    /// Write this curve to a tolerance-compressed `.tccurve3` file.
+    ///
+    /// Vertex positions are quantized to the narrowest bit width per axis which keeps every one of
+    /// them within `tol` of where it started. A smaller tolerance costs more bytes per vertex. The
+    /// curve's chord tolerance travels alongside the points and is unaffected by this one, which is
+    /// purely about storage.
+    ///
+    /// # Arguments
+    ///
+    /// * `path`: the path to write to, which is overwritten if it already exists
+    /// * `tol`: the largest acceptable round-trip position error for any vertex, in the same units
+    ///   as the coordinates
+    ///
+    /// returns: `Result<()>`
+    pub fn save_tccurve3(&self, path: &Path, tol: f64) -> Result<()> {
+        write_tc_curve3_file(path, self, tol)
     }
 
     pub fn count(&self) -> usize {
@@ -522,6 +559,27 @@ mod tests {
         .unwrap();
 
         assert!(curve.to_2d_in_plane(&Plane3::xy()).is_err());
+    }
+
+    /// The container methods have to be a real path to the format, not just a forwarder that
+    /// compiles: the chord tolerance is carried as file metadata rather than as geometry, so it is
+    /// the thing most likely to be quietly lost.
+    #[test]
+    fn a_curve_round_trips_through_the_container_methods() {
+        let curve = square_at(2.0);
+        let path = std::env::temp_dir().join("engeom_curve3_container.tccurve3");
+        let tol = 1e-6;
+
+        curve.save_tccurve3(&path, tol).unwrap();
+        let back = Curve3::load_tccurve3(&path).unwrap();
+
+        assert_eq!(back.count(), curve.count());
+        assert_relative_eq!(back.tol(), curve.tol(), epsilon = 1e-15);
+        for (a, b) in curve.vertices().iter().zip(back.vertices().iter()) {
+            assert_relative_eq!(a, b, epsilon = tol);
+        }
+
+        let _ = std::fs::remove_file(&path);
     }
 
     /// Two planes differing only in offset give the same in-plane coordinates, since the frame

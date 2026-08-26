@@ -5,7 +5,9 @@ use crate::common::points::dist;
 use crate::geom2::CurveGroup2;
 use crate::geom3::curve3::CurveStation3;
 use crate::geom3::{Aabb3, Curve3, Iso3, Plane3, Point3};
+use crate::io::{read_tc_curves3_file, write_tc_curves3_file};
 use parry3d_f64::bounding_volume::BoundingVolume;
+use std::path::Path;
 
 /// A `CurveGroup3` is a collection of disjoint `Curve3` polylines treated as a single rigid
 /// entity, such as the loops and open segments produced by a planar section of a `Mesh3` before
@@ -69,6 +71,35 @@ impl CurveGroup3 {
     /// Whether the group has no members, which construction guarantees it never does.
     pub fn is_empty(&self) -> bool {
         self.curves.is_empty()
+    }
+
+    /// Read a group from a tolerance-compressed `.tccurve3` file, taking every curve in it as a
+    /// member in the order the file stores them.
+    ///
+    /// This is the counterpart of [`CurveGroup3::save_tccurve3`], and it also reads a file written
+    /// by [`Curve3::save_tccurve3`], which arrives as a group of one.
+    ///
+    /// # Failure
+    ///
+    /// A file holding no curves at all is refused, since a group is never empty.
+    pub fn load_tccurve3(path: &Path) -> Result<Self> {
+        Self::new(read_tc_curves3_file(path)?)
+    }
+
+    /// Write this group to a single tolerance-compressed `.tccurve3` file, one item per member.
+    ///
+    /// Member order is the file item order, so a group read back has the same member indices it
+    /// was saved with. Each member keeps its own chord tolerance.
+    ///
+    /// # Arguments
+    ///
+    /// * `path`: the path to write to, which is overwritten if it already exists
+    /// * `tol`: the largest acceptable round-trip position error for any vertex of any member, in
+    ///   the same units as the coordinates
+    ///
+    /// returns: `Result<()>`
+    pub fn save_tccurve3(&self, path: &Path, tol: f64) -> Result<()> {
+        write_tc_curves3_file(path, &self.curves, tol)
     }
 
     /// The axis-aligned bounding box enclosing every member curve.
@@ -184,6 +215,83 @@ mod tests {
             1e-8,
         )
         .unwrap()
+    }
+
+    /// A path in the temp directory, tagged so concurrent tests cannot collide on it.
+    fn temp_path(tag: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("engeom_curve_group3_{tag}.tccurve3"))
+    }
+
+    /// Order, count and each member's own chord tolerance have to survive the file, the same way
+    /// they do in 2D.
+    #[test]
+    fn a_group_round_trips_through_a_tccurve3_file() -> Result<()> {
+        let group = CurveGroup3::new(vec![
+            square_at(0.0, 0.0, 0.0),
+            segment(),
+            square_at(10.0, 0.0, 3.0),
+        ])?;
+        let path = temp_path("round_trip");
+        let tol = 1e-6;
+
+        group.save_tccurve3(&path, tol)?;
+        let back = CurveGroup3::load_tccurve3(&path)?;
+
+        assert_eq!(back.len(), group.len());
+        for (i, (a, b)) in group.curves().iter().zip(back.curves().iter()).enumerate() {
+            assert_eq!(a.count(), b.count(), "member {i} vertex count");
+            assert_relative_eq!(a.tol(), b.tol(), epsilon = 1e-15);
+            for (p, q) in a.vertices().iter().zip(b.vertices().iter()) {
+                assert_relative_eq!(p, q, epsilon = tol);
+            }
+        }
+
+        let _ = std::fs::remove_file(&path);
+        Ok(())
+    }
+
+    /// A loop is a loop because its first and last vertices coincide, and that is the only record
+    /// of its closure a `Curve3` has. If the file did not preserve it, projecting a restored
+    /// section would silently produce open curves.
+    #[test]
+    fn a_restored_loop_still_projects_to_a_closed_curve() -> Result<()> {
+        let group = CurveGroup3::from(square_at(0.0, 0.0, 0.0));
+        let path = temp_path("loop");
+
+        group.save_tccurve3(&path, 1e-9)?;
+        let back = CurveGroup3::load_tccurve3(&path)?;
+
+        let flat = back.to_2d_in_plane(&Plane3::xy())?;
+        assert!(flat.curves()[0].is_closed());
+
+        let _ = std::fs::remove_file(&path);
+        Ok(())
+    }
+
+    /// A single-curve file is a collection of one, and loads as a group of one.
+    #[test]
+    fn a_single_curve_file_loads_as_a_group_of_one() -> Result<()> {
+        let path = temp_path("single");
+        square_at(0.0, 0.0, 0.0).save_tccurve3(&path, 1e-6)?;
+
+        assert_eq!(CurveGroup3::load_tccurve3(&path)?.len(), 1);
+
+        let _ = std::fs::remove_file(&path);
+        Ok(())
+    }
+
+    /// ...and a group file is refused by the single-curve reader rather than truncated to its
+    /// first member.
+    #[test]
+    fn a_group_file_is_refused_by_the_single_curve_reader() -> Result<()> {
+        let group = CurveGroup3::new(vec![square_at(0.0, 0.0, 0.0), segment()])?;
+        let path = temp_path("refuse_single");
+        group.save_tccurve3(&path, 1e-6)?;
+
+        assert!(Curve3::load_tccurve3(&path).is_err());
+
+        let _ = std::fs::remove_file(&path);
+        Ok(())
     }
 
     #[test]

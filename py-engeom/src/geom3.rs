@@ -2138,13 +2138,14 @@ impl Curve3 {
 
     #[staticmethod]
     fn load_tccurve3(path: PathBuf) -> PyResult<Self> {
-        let curve = engeom::io::read_tc_curve3_file(&path)
-            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        let curve =
+            engeom::Curve3::load_tccurve3(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
         Ok(Self::from_inner(curve))
     }
 
-    fn write_tccurve3(&self, path: PathBuf, tol: f64) -> PyResult<()> {
-        engeom::io::write_tc_curve3_file(&path, &self.inner, tol)
+    fn save_tccurve3(&self, path: PathBuf, tol: f64) -> PyResult<()> {
+        self.inner
+            .save_tccurve3(&path, tol)
             .map_err(|e| PyIOError::new_err(e.to_string()))
     }
 }

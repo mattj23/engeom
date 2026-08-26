@@ -5,7 +5,9 @@ use crate::common::PCoords;
 use crate::common::points::dist;
 use crate::geom2::curve2::CurveStation2;
 use crate::geom2::{Aabb2, Curve2, Iso2};
+use crate::io::{read_tc_curves2_file, write_tc_curves2_file};
 use parry2d_f64::bounding_volume::BoundingVolume;
+use std::path::Path;
 
 /// A `CurveGroup2` is a collection of disjoint `Curve2` polylines treated as a single rigid
 /// entity, such as the loops and open segments produced by a planar section of a `Mesh3`.
@@ -64,6 +66,36 @@ impl CurveGroup2 {
     /// Whether the group has no members, which construction guarantees it never does.
     pub fn is_empty(&self) -> bool {
         self.curves.is_empty()
+    }
+
+    /// Read a group from a tolerance-compressed `.tccurve2` file, taking every curve in it as a
+    /// member in the order the file stores them.
+    ///
+    /// This is the counterpart of [`CurveGroup2::save_tccurve2`], and it also reads a file written
+    /// by [`Curve2::save_tccurve2`], which arrives as a group of one.
+    ///
+    /// # Failure
+    ///
+    /// A file holding no curves at all is refused, since a group is never empty.
+    pub fn load_tccurve2(path: &Path) -> Result<Self> {
+        Self::new(read_tc_curves2_file(path)?)
+    }
+
+    /// Write this group to a single tolerance-compressed `.tccurve2` file, one item per member.
+    ///
+    /// Member order is the file item order, so a group read back has the same member indices it
+    /// was saved with. Each member keeps its own chord tolerance and closed state, so a group
+    /// mixing closed loops with open strands round-trips as one.
+    ///
+    /// # Arguments
+    ///
+    /// * `path`: the path to write to, which is overwritten if it already exists
+    /// * `tol`: the largest acceptable round-trip position error for any vertex of any member, in
+    ///   the same units as the coordinates
+    ///
+    /// returns: `Result<()>`
+    pub fn save_tccurve2(&self, path: &Path, tol: f64) -> Result<()> {
+        write_tc_curves2_file(path, &self.curves, tol)
     }
 
     /// The axis-aligned bounding box enclosing every member curve.
@@ -144,6 +176,93 @@ mod tests {
     /// An open two-vertex segment from (0, 5) to (1, 5).
     fn segment() -> Curve2 {
         Curve2::from_points(&[Point2::new(0.0, 5.0), Point2::new(1.0, 5.0)], 1e-8, false).unwrap()
+    }
+
+    /// A path in the temp directory, tagged so concurrent tests cannot collide on it.
+    fn temp_path(tag: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("engeom_curve_group2_{tag}.tccurve2"))
+    }
+
+    /// The whole point of putting a group in one file: order, count, closedness and each member's
+    /// own chord tolerance all have to survive, or the group that comes back is a different body
+    /// from the one that went in.
+    #[test]
+    fn a_group_round_trips_through_a_tccurve2_file() -> Result<()> {
+        let group = CurveGroup2::new(vec![square_at(0.0, 0.0), segment(), square_at(10.0, 0.0)])?;
+        let path = temp_path("round_trip");
+        let tol = 1e-6;
+
+        group.save_tccurve2(&path, tol)?;
+        let back = CurveGroup2::load_tccurve2(&path)?;
+
+        assert_eq!(back.len(), group.len());
+        for (i, (a, b)) in group.curves().iter().zip(back.curves().iter()).enumerate() {
+            assert_eq!(a.is_closed(), b.is_closed(), "member {i} closed state");
+            assert_eq!(a.points().len(), b.points().len(), "member {i} point count");
+            assert_relative_eq!(a.tol(), b.tol(), epsilon = 1e-15);
+            for (p, q) in a.points().iter().zip(b.points().iter()) {
+                assert_relative_eq!(p, q, epsilon = tol);
+            }
+        }
+
+        let _ = std::fs::remove_file(&path);
+        Ok(())
+    }
+
+    /// Members are told apart by their index, so a group whose members are the same shape in a
+    /// different order must not come back reordered.
+    #[test]
+    fn member_order_is_the_file_order() -> Result<()> {
+        let a = CurveGroup2::new(vec![segment(), square_at(0.0, 0.0)])?;
+        let path = temp_path("order");
+
+        a.save_tccurve2(&path, 1e-6)?;
+        let back = CurveGroup2::load_tccurve2(&path)?;
+
+        // The segment is open and one unit long; the square is closed and four.
+        assert!(!back.curves()[0].is_closed());
+        assert_relative_eq!(back.curves()[0].length(), 1.0, epsilon = 1e-9);
+        assert!(back.curves()[1].is_closed());
+        assert_relative_eq!(back.curves()[1].length(), 4.0, epsilon = 1e-9);
+
+        let _ = std::fs::remove_file(&path);
+        Ok(())
+    }
+
+    /// A single-curve file is just a collection of one, so loading it as a group has to work
+    /// rather than being a different format the caller has to know about in advance.
+    #[test]
+    fn a_single_curve_file_loads_as_a_group_of_one() -> Result<()> {
+        let curve = square_at(0.0, 0.0);
+        let path = temp_path("single");
+
+        curve.save_tccurve2(&path, 1e-6)?;
+        let group = CurveGroup2::load_tccurve2(&path)?;
+
+        assert_eq!(group.len(), 1);
+        assert!(group.curves()[0].is_closed());
+
+        let _ = std::fs::remove_file(&path);
+        Ok(())
+    }
+
+    /// The reverse is not true, and must not silently become true: reading one curve out of a
+    /// multi-curve file would discard the rest with nothing to show for it.
+    #[test]
+    fn a_group_file_is_refused_by_the_single_curve_reader() -> Result<()> {
+        let group = CurveGroup2::new(vec![square_at(0.0, 0.0), segment()])?;
+        let path = temp_path("refuse_single");
+        group.save_tccurve2(&path, 1e-6)?;
+
+        // Matched rather than unwrapped: `Curve2` is not `Debug`, so `unwrap_err` will not compile.
+        let refused = match Curve2::load_tccurve2(&path) {
+            Err(_) => true,
+            Ok(_) => false,
+        };
+        assert!(refused, "a two-curve file must not read back as one curve");
+
+        let _ = std::fs::remove_file(&path);
+        Ok(())
     }
 
     #[test]

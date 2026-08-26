@@ -1164,12 +1164,15 @@ class Curve2:
         tolerance that was specified when the file was written. The curve's closed/open state and
         reconstruction tolerance are also stored in the file.
 
+        These files may hold more than one curve. This raises an IOError on such a file rather
+        than returning its first curve, since that would silently discard the rest.
+
         :param path: the path to the .tccurve2 file to load.
         :return: the curve loaded from the file.
         """
         ...
 
-    def write_tccurve2(self, path: str | Path, tol: float):
+    def save_tccurve2(self, path: str | Path, tol: float):
         """
         Write the curve to a tolerance-compressed 2D curve (.tccurve2) file. The tolerance controls
         the maximum allowable round-trip position error for any vertex: a smaller tolerance produces
