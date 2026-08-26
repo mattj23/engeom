@@ -2,8 +2,9 @@
 
 use crate::Result;
 use crate::common::points::dist;
+use crate::geom2::CurveGroup2;
 use crate::geom3::curve3::CurveStation3;
-use crate::geom3::{Aabb3, Curve3, Iso3, Point3};
+use crate::geom3::{Aabb3, Curve3, Iso3, Plane3, Point3};
 use parry3d_f64::bounding_volume::BoundingVolume;
 
 /// A `CurveGroup3` is a collection of disjoint `Curve3` polylines treated as a single rigid
@@ -102,6 +103,35 @@ impl CurveGroup3 {
             .min_by(|a, b| a.1.total_cmp(&b.1))
             .map(|(i, _, station)| (i, station))
             .expect("a curve group is never empty")
+    }
+
+    /// Projects every member onto a plane and returns the result as a two-dimensional group,
+    /// expressed in that plane's own coordinate frame. Member order is preserved.
+    ///
+    /// This is the ordinary way to bring a planar section of a mesh into two dimensions for the
+    /// tools in [`crate::geom2`], including the multi-curve alignment, which works on
+    /// [`CurveGroup2`] bodies. Passing the same plane that produced the section is the usual case,
+    /// and it recovers a faithful 2D copy of it.
+    ///
+    /// See [`Curve3::to_2d_in_plane`] for how each member is converted, and
+    /// [`Plane3::compute_frame`] for the frame the result is expressed in.
+    ///
+    /// # Failure
+    ///
+    /// A member which collapses under the projection is an error for the whole group rather than
+    /// being dropped from it. Silently returning a smaller group would renumber the members, and a
+    /// member that collapses is a sign the group was not in this plane to begin with, so it is
+    /// better raised than hidden.
+    pub fn to_2d_in_plane(&self, plane: &Plane3) -> Result<CurveGroup2> {
+        let mut curves = Vec::with_capacity(self.curves.len());
+        for (i, curve) in self.curves.iter().enumerate() {
+            let projected = curve.to_2d_in_plane(plane).map_err(|e| {
+                format!("member curve {i} could not be projected onto the plane: {e}")
+            })?;
+            curves.push(projected);
+        }
+
+        CurveGroup2::new(curves)
     }
 
     /// Returns a new group with every member transformed by the isometry. Member order is
@@ -231,6 +261,105 @@ mod tests {
                 assert_relative_eq!(iso * p, *q, epsilon = 1e-12);
             }
         }
+    }
+
+    // ============================================================================================
+    // Projection into a plane
+    // ============================================================================================
+
+    /// Every member has to come through, in order, and the group's own invariants with it.
+    #[test]
+    fn a_projected_group_keeps_its_members_and_their_order() {
+        let group = CurveGroup3::new(vec![
+            square_at(0.0, 0.0, 0.0),
+            segment(),
+            square_at(10.0, 0.0, 0.0),
+        ])
+        .unwrap();
+
+        let flat = group.to_2d_in_plane(&Plane3::xy()).unwrap();
+
+        assert_eq!(flat.len(), 3);
+        assert_relative_eq!(flat.curves()[0].length(), 4.0, epsilon = 1e-12);
+        assert_relative_eq!(flat.curves()[1].length(), 1.0, epsilon = 1e-12);
+        assert_relative_eq!(flat.curves()[2].length(), 4.0, epsilon = 1e-12);
+
+        // The closed members stay closed and the open one stays open.
+        assert!(flat.curves()[0].is_closed());
+        assert!(!flat.curves()[1].is_closed());
+        assert!(flat.curves()[2].is_closed());
+    }
+
+    /// A member that collapses fails the whole group rather than quietly renumbering the rest.
+    #[test]
+    fn a_collapsing_member_fails_the_group() {
+        let along_normal = Curve3::from_points(
+            &[Point3::new(5.0, 5.0, 0.0), Point3::new(5.0, 5.0, 9.0)],
+            1e-8,
+        )
+        .unwrap();
+        let group = CurveGroup3::new(vec![square_at(0.0, 0.0, 0.0), along_normal]).unwrap();
+
+        let err = match group.to_2d_in_plane(&Plane3::xy()) {
+            Err(e) => e.to_string(),
+            Ok(g) => panic!("a collapsing member yielded a group of {}", g.len()),
+        };
+        assert!(err.contains("member curve 1"), "unexpected message: {err}");
+    }
+
+    /// The end-to-end path this exists for: cut a mesh, bring the section into the plane it came
+    /// from, and get back a faithful 2D copy of it.
+    #[test]
+    fn a_mesh_section_projects_back_into_its_own_plane() {
+        use crate::Mesh3;
+
+        let mesh = Mesh3::create_box(2.0, 4.0, 6.0, false);
+        let plane = Plane3::xy();
+
+        let section = mesh.section_with_plane(&plane, Some(1e-9), None).unwrap();
+        let flat = section.to_2d_in_plane(&plane).unwrap();
+
+        assert_eq!(flat.len(), 1);
+
+        let loop_2d = &flat.curves()[0];
+        assert!(loop_2d.is_closed(), "a box sections into a closed loop");
+
+        // The box is 2 by 4 in the cutting plane, so the loop is its perimeter.
+        assert_relative_eq!(loop_2d.length(), 12.0, epsilon = 1e-6);
+
+        let aabb = loop_2d.aabb();
+        assert_relative_eq!(aabb.mins.x, -1.0, epsilon = 1e-9);
+        assert_relative_eq!(aabb.maxs.x, 1.0, epsilon = 1e-9);
+        assert_relative_eq!(aabb.mins.y, -2.0, epsilon = 1e-9);
+        assert_relative_eq!(aabb.maxs.y, 2.0, epsilon = 1e-9);
+    }
+
+    /// The same cut taken on a tilted plane has to produce the same 2D shape, since the frame
+    /// follows the plane. This is what makes the projection independent of how the part is posed.
+    #[test]
+    fn a_tilted_section_has_the_same_shape_as_an_upright_one() {
+        use crate::{Iso3, Mesh3};
+
+        let mesh = Mesh3::create_box(2.0, 4.0, 6.0, false);
+        let upright = mesh
+            .section_with_plane(&Plane3::xy(), Some(1e-9), None)
+            .unwrap()
+            .to_2d_in_plane(&Plane3::xy())
+            .unwrap();
+
+        // Rotate the part, and cut with the correspondingly rotated plane.
+        let iso = Iso3::new(Vector3::new(10.0, -5.0, 2.0), Vector3::new(0.3, -0.5, 0.2));
+        let moved = mesh.transform_copy(&iso);
+        let plane = Plane3::xy().transformed_by(&iso);
+
+        let tilted = moved
+            .section_with_plane(&plane, Some(1e-9), None)
+            .unwrap()
+            .to_2d_in_plane(&plane)
+            .unwrap();
+
+        assert_eq!(tilted.len(), upright.len());
+        assert_relative_eq!(tilted.length(), upright.length(), epsilon = 1e-6);
     }
 
     #[test]

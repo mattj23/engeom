@@ -1,8 +1,8 @@
 use crate::common::PCoords;
 use crate::common::consensus::{ConsensusModel, Magsac};
 use crate::common::svd_basis::SvdBasis;
-use crate::geom3::UnitVec3;
 use crate::geom3::line3::Line3;
+use crate::geom3::{IsoExtensions3, UnitVec3};
 use crate::{Iso3, Point3, Result, SurfacePoint3, Vector3};
 use std::ops;
 
@@ -225,6 +225,69 @@ impl Plane3 {
         v - self.normal.into_inner() * self.normal.dot(v)
     }
 
+    /// Computes a deterministic orthonormal coordinate frame lying in this plane, as the isometry
+    /// which takes a point expressed in that frame to where it lies in the world.
+    ///
+    /// This is what gives the plane a two-dimensional coordinate system, so that geometry can be
+    /// brought into it and back out again reproducibly. Use the inverse to go from the world into
+    /// the plane, where a point on the plane has a zero z coordinate.
+    ///
+    /// The frame is built so that:
+    ///
+    /// - its origin is the point of the plane closest to the world origin,
+    /// - its z axis is the plane normal, so `x`, `y`, `z` stay right-handed, and
+    /// - its x axis is the world x axis projected onto the plane, falling back to the world y axis
+    ///   when the plane normal is too close to x for that to be meaningful.
+    ///
+    /// The consequence worth knowing is that **`Plane3::xy().compute_frame()` is the identity**, so
+    /// bringing geometry into the x-y plane is exactly dropping the z coordinate, and doing it to
+    /// any plane `z = k` with a `+z` normal leaves x and y untouched. A plane with a `-z` normal is
+    /// instead seen from its own normal side, which negates y; that is not an accident, it is what
+    /// keeps the frame right-handed and the inside/outside sense of a section intact.
+    ///
+    /// Unlike [`crate::geom3::IsoExtensions3::from_z_arbitrary_xy`], which promises nothing about
+    /// where x and y land, this is stable for a given plane and is safe to depend on.
+    ///
+    /// The frame is derived from the plane's fields rather than stored, so a caller using it in a
+    /// loop should compute it once and keep it.
+    ///
+    /// returns: Isometry<f64, Unit<Quaternion<f64>>, 3>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use approx::assert_relative_eq;
+    /// use engeom::{Plane3, Point3};
+    ///
+    /// // Into the plane `z = 5`, whose frame differs from the world only by that offset.
+    /// let plane = Plane3::xy().offset_by(5.0);
+    /// let to_plane = plane.compute_frame().inverse();
+    ///
+    /// let in_plane = to_plane * Point3::new(2.0, 3.0, 5.0);
+    /// assert_relative_eq!(in_plane, Point3::new(2.0, 3.0, 0.0), epsilon = 1e-12);
+    /// ```
+    pub fn compute_frame(&self) -> Iso3 {
+        let n = self.normal.into_inner();
+
+        // Chosen by the normal rather than by testing the projection afterwards, so that the
+        // vector being normalized is never a near-zero remainder: this keeps `|u|` at or above
+        // 0.43 in every case.
+        let reference = if n.x.abs() < 0.9 {
+            Vector3::x()
+        } else {
+            Vector3::y()
+        };
+
+        let u = self.project_vector(&reference);
+        let v = n.cross(&u);
+        let origin = Point3::from(n * self.d);
+
+        // `u` and `v` are perpendicular, both well away from zero, and neither is parallel to the
+        // other, so the only way this fails is if the invariant above is broken.
+        Iso3::from_basis_xy(&u, &v, Some(origin))
+            .expect("a plane frame is built from two non-degenerate perpendicular vectors")
+    }
+
     /// Intersects this plane with another plane, returning the line of intersection, or `None` if
     /// the planes are parallel (or coincident).
     ///
@@ -345,6 +408,129 @@ mod tests {
     use crate::common::consensus::Magsac;
     use crate::common::random_geometry::RandomGeometry3;
     use approx::assert_relative_eq;
+
+    // ============================================================================================
+    // The in-plane coordinate frame
+    // ============================================================================================
+
+    /// The whole point of the frame: projecting onto the x-y plane has to be the same operation as
+    /// dropping the z coordinate, or nothing built on top of it lines up with `To2D`.
+    #[test]
+    fn the_xy_plane_frame_is_the_identity() {
+        assert_relative_eq!(
+            Plane3::xy().compute_frame().to_matrix(),
+            Iso3::identity().to_matrix(),
+            epsilon = 1e-12
+        );
+    }
+
+    /// A plane parallel to x-y differs from the world only by the offset, so x and y have to come
+    /// through a round trip untouched.
+    #[test]
+    fn an_offset_xy_plane_leaves_x_and_y_alone() {
+        let plane = Plane3::xy().offset_by(5.0);
+        let to_plane = plane.compute_frame().inverse();
+
+        let p = to_plane * Point3::new(2.0, 3.0, 5.0);
+        assert_relative_eq!(p, Point3::new(2.0, 3.0, 0.0), epsilon = 1e-12);
+    }
+
+    /// Reversing the normal looks at the plane from the other side, which has to negate exactly one
+    /// in-plane axis. If it negated both, the frame would be a rotation rather than a reflection and
+    /// a section's inside/outside sense would silently flip.
+    #[test]
+    fn a_reversed_normal_negates_one_axis() {
+        let frame = Plane3::xy().normal_reversed().compute_frame();
+
+        assert_relative_eq!(
+            frame * Point3::new(1.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            epsilon = 1e-12
+        );
+        assert_relative_eq!(
+            frame * Point3::new(0.0, 1.0, 0.0),
+            Point3::new(0.0, -1.0, 0.0),
+            epsilon = 1e-12
+        );
+    }
+
+    /// The frame has to be a frame *of the plane*: its origin on the plane and its z axis the
+    /// normal, whatever the plane is.
+    #[test]
+    fn stress_a_frame_sits_on_its_plane() {
+        let mut rg = RandomGeometry3::from_seed(31);
+
+        for _ in 0..500 {
+            let plane = Plane3::from_point_normal(
+                &Point3::new(rg.f64_sym(50.0), rg.f64_sym(50.0), rg.f64_sym(50.0)),
+                &rg.unit_vec(),
+            );
+            let frame = plane.compute_frame();
+
+            let origin = frame * Point3::origin();
+            assert_relative_eq!(plane.signed_distance_to_point(&origin), 0.0, epsilon = 1e-9);
+
+            // The z axis is the normal, and the other two therefore lie in the plane.
+            let z = frame * Vector3::z();
+            assert_relative_eq!(z, plane.normal.into_inner(), epsilon = 1e-9);
+
+            let x = frame * Vector3::x();
+            let y = frame * Vector3::y();
+            assert_relative_eq!(x.dot(&plane.normal), 0.0, epsilon = 1e-9);
+            assert_relative_eq!(y.dot(&plane.normal), 0.0, epsilon = 1e-9);
+
+            // ...and it is orthonormal and right-handed.
+            assert_relative_eq!(x.dot(&y), 0.0, epsilon = 1e-9);
+            assert_relative_eq!(x.cross(&y), z, epsilon = 1e-9);
+        }
+    }
+
+    /// A point on the plane has a zero z coordinate in the frame, which is what makes dropping it
+    /// a projection rather than a truncation.
+    #[test]
+    fn stress_points_on_a_plane_have_no_local_z() {
+        let mut rg = RandomGeometry3::from_seed(77);
+
+        for _ in 0..300 {
+            let plane = Plane3::from_point_normal(
+                &Point3::new(rg.f64_sym(20.0), rg.f64_sym(20.0), rg.f64_sym(20.0)),
+                &rg.unit_vec(),
+            );
+            let to_plane = plane.compute_frame().inverse();
+
+            let on_plane = plane.project_point(&Point3::new(
+                rg.f64_sym(20.0),
+                rg.f64_sym(20.0),
+                rg.f64_sym(20.0),
+            ));
+            assert_relative_eq!((to_plane * on_plane).z, 0.0, epsilon = 1e-9);
+        }
+    }
+
+    /// The frame has to survive a normal pointing along the axis the x fallback exists for.
+    #[test]
+    fn a_plane_normal_to_x_falls_back_to_the_y_axis() {
+        let frame = Plane3::yz().compute_frame();
+
+        assert_relative_eq!(frame * Vector3::x(), Vector3::y(), epsilon = 1e-12);
+        assert_relative_eq!(frame * Vector3::y(), Vector3::z(), epsilon = 1e-12);
+        assert_relative_eq!(frame * Vector3::z(), Vector3::x(), epsilon = 1e-12);
+    }
+
+    /// Nothing about the frame may depend on how the plane was built or on call order.
+    #[test]
+    fn a_frame_is_reproducible() {
+        let plane = Plane3::from_point_normal(
+            &Point3::new(1.0, -2.0, 3.0),
+            &UnitVec3::new_normalize(Vector3::new(0.3, -0.7, 0.5)),
+        );
+
+        assert_relative_eq!(
+            plane.compute_frame().to_matrix(),
+            plane.compute_frame().to_matrix(),
+            epsilon = 1e-15
+        );
+    }
 
     /// Build two orthonormal in-plane basis vectors spanning `plane`.
     fn in_plane_basis(plane: &Plane3) -> (Vector3, Vector3) {
