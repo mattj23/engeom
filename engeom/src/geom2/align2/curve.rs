@@ -51,27 +51,37 @@ use std::f64::consts::PI;
 // Sample point container
 // ===============================================================================================
 
-/// An owned sample point taken from a `Curve2`, holding both where the sample sits on the curve
-/// and the surface point itself.
+/// An owned sample point taken from a curve within a [`crate::geom2::CurveGroup2`], holding
+/// which member it sits on, where on that member it sits, and the surface point itself.
 ///
 /// This is the 2D counterpart of `MeshSurfPoint`. Where that struct locates a sample by face index
 /// and barycentric coordinates, this one locates it by edge index and the fraction along that
-/// edge, which is the same idea in one dimension fewer.
+/// edge, which is the same idea in one dimension fewer. What has no 3D counterpart is `member`: a
+/// multi-component mesh is still one `Mesh3` with one face index space, while a group of curves
+/// keeps its members separate, so the member index is part of the sample's address.
+///
+/// `index`, `fraction`, and `length_along` are all local to the member curve, not to the group.
 ///
 /// `length_along` is redundant with `index` and `fraction` but is kept because arc length is the
 /// natural coordinate for a curve, and recovering it later would require the parent curve, which a
 /// [`CurveWeight`] does not have. Every field is filled in by [`CurveSurfPoint::from_station`], so
-/// the three stay consistent by construction.
+/// they stay consistent by construction.
 #[derive(Debug, Clone, Copy)]
 pub struct CurveSurfPoint {
-    /// The index of the vertex in the underlying polyline which directly precedes this point.
+    /// The index of the member curve this point belongs to, within its owning group. A sample
+    /// taken from a lone curve uses `0`, matching the group of one that `CurveGroup2::from`
+    /// builds.
+    pub member: usize,
+
+    /// The index of the vertex in the member's underlying polyline which directly precedes this
+    /// point.
     pub index: usize,
 
     /// The fraction of the distance between the vertex at `index` and the next one at which this
     /// point is located, in the range `[0, 1]`.
     pub fraction: f64,
 
-    /// The distance along the curve from its start to this point.
+    /// The distance along the member curve from its start to this point.
     pub length_along: f64,
 
     /// The surface point (position and normal) corresponding to this location on the curve.
@@ -79,9 +89,11 @@ pub struct CurveSurfPoint {
 }
 
 impl CurveSurfPoint {
-    /// Captures a station on a curve as an owned sample point.
-    pub fn from_station(station: &CurveStation2) -> Self {
+    /// Captures a station on a curve as an owned sample point, recording which member of its
+    /// group the curve is.
+    pub fn from_station(station: &CurveStation2, member: usize) -> Self {
         Self {
+            member,
             index: station.index(),
             fraction: station.fraction(),
             length_along: station.length_along(),
@@ -431,7 +443,7 @@ pub fn generate_alignment_points(
             continue;
         }
 
-        let ref_cp = CurveSurfPoint::from_station(&station);
+        let ref_cp = CurveSurfPoint::from_station(&station, 0);
         if ref_cp.sp.normal.dot(&moved.normal) < 0.0 {
             continue;
         }
@@ -478,7 +490,9 @@ fn sample_curve(curve: &Curve2, spacing: f64) -> Vec<CurveSurfPoint> {
     (0..count)
         .filter_map(|k| {
             let l = (k as f64 + 0.5) * spacing;
-            curve.at_length(l).map(|s| CurveSurfPoint::from_station(&s))
+            curve
+                .at_length(l)
+                .map(|s| CurveSurfPoint::from_station(&s, 0))
         })
         .collect()
 }
@@ -528,7 +542,7 @@ mod tests {
     }
 
     fn sample_at(curve: &Curve2, length: f64) -> CurveSurfPoint {
-        CurveSurfPoint::from_station(&curve.at_length(length).unwrap())
+        CurveSurfPoint::from_station(&curve.at_length(length).unwrap(), 0)
     }
 
     #[test]
@@ -537,6 +551,7 @@ mod tests {
         // One quarter of the way along the second edge, which runs from (2,0) to (2,2).
         let cp = sample_at(&curve, 2.5);
 
+        assert_eq!(cp.member, 0);
         assert_eq!(cp.index, 1);
         assert_relative_eq!(cp.fraction, 0.25, epsilon = 1e-12);
         assert_relative_eq!(cp.length_along, 2.5, epsilon = 1e-12);

@@ -594,7 +594,7 @@ impl<'a> MultiCurveProblem<'a> {
                 let p_world = t_test * h.cp.sp.point;
                 let query = t_ref.inverse_transform_point(&p_world);
                 let station = curves[h.ref_i].curve.at_closest_to_point(&query);
-                let cp = CurveSurfPoint::from_station(&station);
+                let cp = CurveSurfPoint::from_station(&station, 0);
 
                 // ...and back out to the world, where the residual is measured.
                 let c_world = cp.sp.transformed_by(&t_ref);
@@ -841,7 +841,7 @@ mod tests {
             for k in 0..n {
                 let l = (k as f64 + 0.5) * spacing;
                 if let Some(station) = curve.at_length(l) {
-                    let cp = CurveSurfPoint::from_station(&station);
+                    let cp = CurveSurfPoint::from_station(&station, 0);
                     points.push(MulCurveAlignPoint::new(i, cp, i - 1, 1.0));
                 }
             }
@@ -1137,7 +1137,7 @@ mod tests {
         // One correspondence, sampled mid-way along the bottom edge and then flipped so its
         // normal points inward while its match still points outward.
         let station = curves[1].at_length(5.0).unwrap();
-        let mut cp = CurveSurfPoint::from_station(&station);
+        let mut cp = CurveSurfPoint::from_station(&station, 0);
         cp.sp.normal = -cp.sp.normal;
 
         let opts = MultiAlignOptions2 {
@@ -1183,7 +1183,7 @@ mod tests {
         let mut points = Vec::new();
         for body in [1usize, 2] {
             for l in probes {
-                let cp = CurveSurfPoint::from_station(&curves[body].at_length(l).unwrap());
+                let cp = CurveSurfPoint::from_station(&curves[body].at_length(l).unwrap(), 0);
                 points.push(MulCurveAlignPoint::new(body, cp, body - 1, 1.0));
             }
         }
@@ -1236,7 +1236,7 @@ mod tests {
         ];
         let acs = alignment_curves(&curves, &initial);
 
-        let cp = CurveSurfPoint::from_station(&curves[2].at_length(5.0).unwrap());
+        let cp = CurveSurfPoint::from_station(&curves[2].at_length(5.0).unwrap(), 0);
         let points = vec![MulCurveAlignPoint::new(2, cp, 1, 1.0)];
 
         let problem = MultiCurveProblem::new(&acs, points, 0, &test_opts())?;
@@ -1273,7 +1273,7 @@ mod tests {
         let initial = vec![Iso2::identity(), Iso2::translation(0.3, -0.2)];
         let acs = alignment_curves(&curves, &initial);
 
-        let cp = CurveSurfPoint::from_station(&curves[1].at_length(5.0).unwrap());
+        let cp = CurveSurfPoint::from_station(&curves[1].at_length(5.0).unwrap(), 0);
         let points = vec![MulCurveAlignPoint::new(1, cp, 1, 1.0)];
 
         let problem = MultiCurveProblem::new(&acs, points, 0, &test_opts())?;
