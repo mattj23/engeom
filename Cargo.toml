@@ -12,7 +12,6 @@ parry2d-f64 = { version = "0.25.1", features = ["serde-serialize"] }
 rand = "0.10.0"
 rand_distr = "0.6.0"
 rayon = "1.11.0"
-uuid = "1.18.0"
 
 # This is here for the tests. Everything in this workspace is numeric code over meshes with tens of
 # thousands of faces, and unoptimized it runs upwards of 20x slower: on a 20 core machine the mesh

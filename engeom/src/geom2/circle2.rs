@@ -138,6 +138,41 @@ impl Circle2 {
         }
     }
 
+    /// Creates the smallest circle containing every point in expected O(n) time.
+    ///
+    /// A single point or identical points produce a zero-radius circle. Collinear points produce
+    /// the circle whose diameter is the extreme pair. Returns an error for an empty point set.
+    ///
+    /// # Arguments
+    ///
+    /// * `points`: a slice of points to enclose; must not be empty
+    ///
+    /// returns: Result<Circle2, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::{Circle2, Point2};
+    /// use approx::assert_relative_eq;
+    ///
+    /// let points = [
+    ///     Point2::new(0.0, 0.0),
+    ///     Point2::new(2.0, 0.0),
+    ///     Point2::new(2.0, 2.0),
+    ///     Point2::new(0.0, 2.0),
+    ///     Point2::new(1.0, 1.5),
+    /// ];
+    ///
+    /// let circle = Circle2::from_min_enclosing(&points).unwrap();
+    /// assert_relative_eq!(circle.x(), 1.0, epsilon = 1e-12);
+    /// assert_relative_eq!(circle.y(), 1.0, epsilon = 1e-12);
+    /// assert_relative_eq!(circle.r(), 2.0_f64.sqrt(), epsilon = 1e-12);
+    /// ```
+    pub fn from_min_enclosing(points: &[impl PCoords<2>]) -> Result<Self> {
+        let (center, radius) = crate::common::min_ball::compute_min_ball(points)?;
+        Ok(Self { center, radius })
+    }
+
     /// Creates a circle at the tangent of a corner.  The corner is defined by a corner point and
     /// two direction vectors which define the directions of the two lines which meet at the corner.
     /// The radius argument specifies the radius of the tangent circle.  The circle is created by
@@ -917,6 +952,21 @@ mod tests {
     use crate::common::random_geometry::RandomGeometry2;
     use std::f64::consts::PI;
     use test_case::test_case;
+
+    #[test]
+    fn min_enclosing_mixed_boundary_and_interior() {
+        // Two antipodal points fix the circle; everything else is strictly interior
+        let points = [
+            Point2::new(-3.0, 1.0),
+            Point2::new(5.0, 1.0),
+            Point2::new(1.0, 2.0),
+            Point2::new(0.0, 0.0),
+            Point2::new(3.0, -1.0),
+        ];
+        let circle = Circle2::from_min_enclosing(&points).unwrap();
+        assert_relative_eq!(circle.center, Point2::new(1.0, 1.0), epsilon = 1e-12);
+        assert_relative_eq!(circle.r(), 4.0, epsilon = 1e-12);
+    }
 
     #[test]
     fn simple_tangent_corner() {

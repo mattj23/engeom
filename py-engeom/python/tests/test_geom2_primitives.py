@@ -271,3 +271,17 @@ def test_circle2_contained_points_none_inside():
     points = numpy.array([[5.0, 5.0], [-3.0, 0.0]])
     result = c.contained_points(points)
     assert result.shape == (0, 2)
+
+
+def test_circle2_from_min_enclosing():
+    points = numpy.array([[0.0, 0.0], [2.0, 0.0], [2.0, 2.0], [0.0, 2.0], [1.0, 1.5]])
+    circle = Circle2.from_min_enclosing(points)
+    assert abs(circle.x - 1.0) < 1e-12
+    assert abs(circle.y - 1.0) < 1e-12
+    assert abs(circle.r - math.sqrt(2.0)) < 1e-12
+
+
+def test_circle2_from_min_enclosing_empty_raises():
+    points = numpy.empty((0, 2))
+    with pytest.raises(ValueError):
+        Circle2.from_min_enclosing(points)

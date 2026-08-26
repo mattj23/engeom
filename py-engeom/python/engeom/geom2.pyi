@@ -1377,6 +1377,19 @@ class Circle2:
         ...
 
     @staticmethod
+    def from_min_enclosing(points: NDArray[float]) -> Circle2:
+        """
+        Create the smallest circle containing every point.
+
+        A single point or identical points produce a zero-radius circle. Collinear points produce
+        the circle whose diameter is the extreme pair. Raises ``ValueError`` for an empty array.
+
+        :param points: a numpy array of shape ``(n, 2)`` containing the points to enclose.
+        :return: a new ``Circle2``.
+        """
+        ...
+
+    @staticmethod
     def from_tangent_to_corner(corner: Point2, d0: Vector2, d1: Vector2, radius: float) -> Circle2:
         """
         Create a circle tangent to the corner formed by two lines. The corner is defined by a point

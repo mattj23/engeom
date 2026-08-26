@@ -17,7 +17,7 @@ pytest.importorskip("pyvista")
 
 import pyvista
 
-from engeom.geom3 import (Circle3, Curve3, Iso3, Mesh3, Point3, PointCloud, PointCloudData3,
+from engeom.geom3 import (Circle3, Curve3, Iso3, Mesh3, Point3, PointCloud3, PointCloud3,
                           Sphere3, Vector3)
 from engeom.metrology import Distance3
 from engeom.plot._common import LABEL_PLACES
@@ -50,14 +50,14 @@ def a_curve() -> Curve3:
     return Curve3(numpy.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0]]), tol=1e-6)
 
 
-def a_cloud(normals: bool = False, colors: bool = False) -> PointCloud:
-    data = PointCloudData3(numpy.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]))
+def a_cloud(normals: bool = False, colors: bool = False) -> PointCloud3:
+    data = PointCloud3(numpy.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]))
     if normals:
         data.set_point_normals(numpy.array([[0.0, 0.0, 1.0]] * 3))
     if colors:
         data.set_point_colors(numpy.array([[255, 0, 0], [0, 255, 0], [0, 0, 255]],
                                           dtype=numpy.uint8))
-    return data.to_cloud()
+    return data
 
 
 def a_distance() -> Distance3:

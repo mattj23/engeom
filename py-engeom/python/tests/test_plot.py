@@ -30,7 +30,7 @@ from matplotlib.text import Annotation
 from engeom.airfoil2 import AfGeometry, OrientFwdAft, OrientUpperLower
 from engeom.geom2 import (Aabb2, Arc2, BoundaryData2, Circle2, CubicSpline2, Curve2, Line2, Point2,
                           Segment2, SurfacePoint2, Vector2)
-from engeom.geom3 import (Aabb3, Circle3, Curve3, Iso3, Line3, Mesh3, Plane3, Point3, PointCloud,
+from engeom.geom3 import (Aabb3, Circle3, Curve3, Iso3, Line3, Mesh3, Plane3, Point3, PointCloud3,
                           Vector3)
 from engeom.metrology import Distance2, Distance3
 from engeom.plot import LabelPlace
@@ -792,7 +792,7 @@ def test_viewport_draw_curve_projects_the_curve_vertices():
 
 def test_viewport_draw_point_cloud_draws_markers_without_connecting_them():
     view = new_viewport()
-    line = view.draw_point_cloud(PointCloud(numpy.array([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]])))[0]
+    line = view.draw_point_cloud(PointCloud3(numpy.array([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]])))[0]
     assert line.get_linestyle() == "None"
     assert len(line.get_xdata()) == 2
 

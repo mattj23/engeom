@@ -1,9 +1,13 @@
 """
-Tests for the unaccelerated data containers, `MeshData3` and `PointCloudData3`.
+Tests for `MeshData3`, and for the behaviour it shares with `PointCloud3`.
 
 These focus on the parts the bindings are actually responsible for: the numpy shapes and dtypes
 crossing the boundary, the attribute setters accepting and rejecting arrays, the serialization
 round trips, and the bridges to the accelerated types.
+
+The two containers share an attribute set and an `_in_place` / `_copy` vocabulary, so the tests for
+those run against both here rather than being written twice. Everything specific to point clouds,
+including the spatial operations and the voxel reduction, is in `test_point_cloud3.py`.
 """
 
 from pathlib import Path
@@ -11,7 +15,7 @@ from pathlib import Path
 import numpy
 import pytest
 
-from engeom.geom3 import Iso3, Mesh3, MeshData3, Point3, PointCloud, PointCloudData3, Vector3
+from engeom.geom3 import Iso3, Mesh3, MeshData3, Point3, PointCloud3, Vector3
 from engeom.common import IndexMask
 
 
@@ -36,8 +40,8 @@ def loaded_mesh_data() -> MeshData3:
     return data
 
 
-def loaded_cloud_data() -> PointCloudData3:
-    cloud = PointCloudData3(triangle_points())
+def loaded_cloud_data() -> PointCloud3:
+    cloud = PointCloud3(triangle_points())
     cloud.set_point_normals(numpy.tile([0.0, 0.0, 1.0], (3, 1)))
     cloud.set_point_colors(numpy.array([[255, 0, 0], [0, 255, 0], [0, 0, 255]], dtype=numpy.uint8))
     cloud.set_point_stdev(numpy.array([0.001, 0.002, 0.003]))
@@ -59,14 +63,6 @@ def test_mesh_data_buffers_have_the_documented_shapes_and_dtypes():
     assert len(data) == 3
 
 
-def test_cloud_data_buffers_have_the_documented_shapes_and_dtypes():
-    cloud = PointCloudData3(triangle_points())
-
-    assert cloud.points.shape == (3, 3)
-    assert cloud.points.dtype == numpy.float64
-    assert len(cloud) == 3
-
-
 def test_attributes_are_none_on_a_bare_container():
     data = MeshData3(triangle_points(), triangle_faces())
 
@@ -76,7 +72,7 @@ def test_attributes_are_none_on_a_bare_container():
     assert data.face_colors is None
     assert data.face_labels is None
 
-    assert PointCloudData3(triangle_points()).point_stdev is None
+    assert PointCloud3(triangle_points()).point_stdev is None
 
 
 def test_attribute_shapes_and_dtypes():
@@ -152,15 +148,6 @@ def test_transform_in_place_invalidates_the_cached_points():
     assert data.points[0] == pytest.approx([10.0, 0.0, 0.0])
 
 
-def test_transform_in_place_rotates_the_stored_normals():
-    cloud = loaded_cloud_data()
-
-    # A quarter turn about +x maps +z onto -y. The angle is in radians.
-    cloud.transform_in_place(Iso3.from_rotation(numpy.pi / 2.0, 1.0, 0.0, 0.0))
-
-    assert cloud.point_normals[0] == pytest.approx([0.0, -1.0, 0.0], abs=1e-12)
-
-
 # ================================================================================================
 # Serialization
 # ================================================================================================
@@ -183,26 +170,12 @@ def test_mesh_data_ply_round_trip(tmp_path, binary):
     assert numpy.array_equal(after.face_labels, before.face_labels)
 
 
-@pytest.mark.parametrize("binary", [True, False])
-def test_cloud_data_ply_round_trip(tmp_path, binary):
-    before = loaded_cloud_data()
-    path = tmp_path / "cloud.ply"
-
-    before.save_ply(path, binary=binary)
-    after = PointCloudData3.load_ply(path)
-
-    assert after.points == pytest.approx(before.points)
-    assert after.point_normals == pytest.approx(before.point_normals)
-    assert numpy.array_equal(after.point_colors, before.point_colors)
-    assert after.point_stdev == pytest.approx(before.point_stdev)
-
-
 def test_loading_a_mesh_as_a_point_cloud_is_refused(tmp_path):
     path = tmp_path / "actually_a_mesh.ply"
     loaded_mesh_data().save_ply(path)
 
     with pytest.raises(IOError) as info:
-        PointCloudData3.load_ply(path)
+        PointCloud3.load_ply(path)
 
     assert "MeshData3" in str(info.value)
 
@@ -275,68 +248,14 @@ def test_a_faceless_mesh_cannot_become_a_mesh():
         data.to_mesh()
 
 
-def test_cloud_data_round_trips_through_point_cloud():
-    before = loaded_cloud_data()
-    cloud = before.to_cloud()
-
-    assert isinstance(cloud, PointCloud)
-    assert cloud.points.shape == (3, 3)
-
-    after = PointCloudData3.from_cloud(cloud)
-
-    assert after.points == pytest.approx(before.points)
-    assert after.point_stdev == pytest.approx(before.point_stdev)
-    assert numpy.array_equal(after.point_colors, before.point_colors)
-
-
 # ================================================================================================
-# Cloud operations
+# Behaviour shared by both containers
 # ================================================================================================
-
-
-def test_cloud_append_in_place_unions_the_attributes():
-    cloud = loaded_cloud_data()
-    cloud.append_in_place(loaded_cloud_data())
-
-    assert len(cloud) == 6
-    assert cloud.point_stdev.shape == (6,)
-    assert cloud.point_colors.shape == (6, 3)
-
-
-def test_cloud_append_in_place_rejects_a_mismatch_without_modifying_the_target():
-    cloud = loaded_cloud_data()
-    other = loaded_cloud_data()
-    other.set_point_stdev(None)
-
-    with pytest.raises(ValueError):
-        cloud.append_in_place(other)
-
-    assert len(cloud) == 3
-    assert cloud.point_stdev == pytest.approx([0.001, 0.002, 0.003])
-
-
-def test_cloud_subset_indices_carries_the_attributes():
-    sub = loaded_cloud_data().create_subset_indices([2, 0])
-
-    assert len(sub) == 2
-    assert sub.points[0] == pytest.approx([0.0, 1.0, 0.0])
-    assert sub.point_stdev == pytest.approx([0.003, 0.001])
-    assert numpy.array_equal(sub.point_colors, [[0, 0, 255], [255, 0, 0]])
-
-
-def test_cloned_is_independent():
-    original = loaded_cloud_data()
-    copy = original.cloned()
-
-    copy.set_point_stdev(numpy.array([9.0, 9.0, 9.0]))
-
-    assert original.point_stdev == pytest.approx([0.001, 0.002, 0.003])
-    assert copy.point_stdev == pytest.approx([9.0, 9.0, 9.0])
 
 
 def test_repr_says_what_it_holds():
     assert "MeshData3" in repr(loaded_mesh_data())
-    assert "PointCloudData3" in repr(loaded_cloud_data())
+    assert "PointCloud3" in repr(loaded_cloud_data())
 
 
 # ================================================================================================

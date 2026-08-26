@@ -3,7 +3,7 @@
 //!
 //! A mesh has two element domains, and this type is the point domain plus the face domain. The
 //! point half is `PointAttrSet3`, written once in `geom3::attributes3` and shared with
-//! `PointCloudData3`; everything defined here is either the face domain or the glue that runs an
+//! `PointCloud3`; everything defined here is either the face domain or the glue that runs an
 //! operation across both.
 //!
 //! Every point-domain method is a one-line delegation. That is deliberate: the alternative is a

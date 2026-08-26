@@ -124,7 +124,7 @@ pub fn read_ply_mesh_data<R: BufRead>(source: R) -> Result<MeshData3> {
 /// Read the point data of a PLY file, ignoring any connectivity it declares.
 ///
 /// This is the point-domain half of [`read_ply_mesh_data`], and routes the `vertex` element's
-/// properties exactly the same way. It is the reader behind `PointCloudData3::load_ply`.
+/// properties exactly the same way. It is the reader behind `PointCloud3::load_ply`.
 ///
 /// A `face` element is **not** an error here, but it is reported through the returned flag so that
 /// a caller loading what it believes to be a point cloud can refuse a file which is really a mesh
@@ -334,7 +334,7 @@ pub fn write_ply_to<W: Write>(out: &mut W, mesh: &MeshData3, opts: &PlyWriteOpts
 ///
 /// The vertex section is byte-identical to what [`write_ply_mesh_data`] produces for the same
 /// points and attributes; the file simply has no `face` element. This is the writer behind
-/// `PointCloudData3::save_ply`.
+/// `PointCloud3::save_ply`.
 ///
 /// # Arguments
 ///

@@ -21,6 +21,7 @@ mod queries;
 pub mod sampling;
 mod section;
 mod uv_mapping;
+pub mod voxelize;
 
 use crate::common::{IndexMask, PCoords};
 use crate::na::SVector;
@@ -439,7 +440,7 @@ impl Mesh3 {
     ///
     /// The file must have a `vertex` element with `x`, `y`, and `z` properties, and a `face`
     /// element with at least one face. A PLY point cloud is refused, since there is nothing for an
-    /// acceleration structure to be built over; load those with `PointCloudData3::load_ply`.
+    /// acceleration structure to be built over; load those with `PointCloud3::load_ply`.
     ///
     /// # Arguments
     ///
@@ -1724,9 +1725,9 @@ mod tests {
     #[cfg(feature = "ply")]
     #[test]
     fn loading_a_point_cloud_ply_as_a_mesh_is_refused() -> Result<()> {
-        use crate::geom3::PointCloudData3;
+        use crate::geom3::PointCloud3;
 
-        let cloud = PointCloudData3::new(vec![Point3::origin(), Point3::new(1.0, 0.0, 0.0)]);
+        let cloud = PointCloud3::new(vec![Point3::origin(), Point3::new(1.0, 0.0, 0.0)]);
         let file = TempFile::new("is-a-cloud", "ply");
         cloud.save_ply(file.path(), &PlyWriteOpts::default())?;
 

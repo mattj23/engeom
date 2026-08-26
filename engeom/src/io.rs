@@ -2,7 +2,6 @@ mod binary_mesh;
 mod g3d;
 mod lptf3;
 mod ply;
-mod point_cloud;
 mod stl;
 pub mod tol_compress;
 pub use tol_compress::curve::*;
@@ -12,7 +11,6 @@ use crate::{Point3, Result, Vector3};
 pub use binary_mesh::*;
 pub use g3d::*;
 pub use lptf3::*;
-pub use point_cloud::*;
 use serde::Serialize;
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
@@ -23,8 +21,6 @@ pub use ply::*;
 
 #[cfg(feature = "stl")]
 pub use stl::*;
-
-// TODO: create a separate module for point clouds, including binary versions
 
 pub fn write_xyz(path: &Path, points: &[Point3]) -> Result<()> {
     if path.exists() {

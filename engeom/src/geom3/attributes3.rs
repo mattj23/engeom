@@ -1,6 +1,6 @@
 //! This module contains the per-element attribute arrays which can be attached to any of the 3D
 //! geometry containers through an attribute set: `MeshData3` and `Mesh3` on either the point or the
-//! face domain, and `PointCloudData3` on the point domain.
+//! face domain, and `PointCloud3` on the point domain.
 //!
 //! It lives here, outside `mesh`, because nothing about the array itself is specific to a mesh. The
 //! attribute set types which own these arrays and know the element counts to validate against are

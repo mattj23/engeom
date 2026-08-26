@@ -1,6 +1,7 @@
 use crate::conversions::array_to_points3;
 use crate::geom3::{Iso3, Point3};
 use crate::mesh::Mesh3;
+use crate::point_cloud::PointCloud3;
 use engeom::geom3::align3::{AlignOrigin3, Dof6 as InnerDof6};
 use numpy::ndarray::Array1;
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray2};
@@ -439,6 +440,87 @@ pub fn points_to_mesh(
     let result = engeom::geom3::align3::points_to_surface3(
         &points,
         mesh.get_inner(),
+        params.get_inner().clone(),
+        &opts,
+    );
+
+    match result {
+        Ok(outcome) => Ok(AlignOutcome3::from_inner(outcome)),
+        Err(e) => Err(PyValueError::new_err(e.to_string())),
+    }
+}
+
+/// Align a set of 3-D points to a point cloud, by repeatedly projecting them onto the tangent plane
+/// at their nearest neighbour as the solver moves them.
+///
+/// This is the point-cloud counterpart of `points_to_mesh` and takes the same options, but a cloud
+/// is only samples of a surface rather than a surface, which brings two differences worth knowing.
+///
+/// The match is the query projected onto the tangent plane at the nearest cloud point, not that
+/// point itself. Matching to the nearest point would leave a residual floor of roughly half the
+/// sample spacing even at a perfect pose, since a test point between samples can get no closer than
+/// the gap between them. On an engine blade sampled at 2 mm this is the difference between
+/// recovering a pose to 4.7e-6 mm and to 2.1e-2 mm.
+///
+/// Because of that, the cloud **must carry per-point normals**: a normal supplies both the tangent
+/// plane and the sign of the residual, and neither can be recovered from positions alone. Use
+/// `PointCloud3.estimate_normals` if the cloud does not already have them.
+///
+/// A `ValueError` is raised only when there is no answer at all: the arguments were rejected, the
+/// cloud has no normals, or the initial solve broke down. A solve that merely exhausts its
+/// evaluation budget returns normally with `quality == "unconverged"` on the outcome.
+///
+/// :param points: an `(n, 3)` array of the points to align, in their own coordinate system.
+/// :param cloud: the stationary `PointCloud3` to align to, which must carry normals. If it carries
+///     `point_stdev` that uncertainty is used automatically, and if it carries `voxel_coherence`
+///     from `reduce_by_voxel` that becomes the per-match weight, so voxels which straddled an edge
+///     count for less.
+/// :param params: an `AlignParams3` describing how the alignment is parameterized.
+/// :param max_extrapolation: how far *laterally* a point may sit from the nearest cloud point and
+///     still count as on-surface. This bounds the in-plane distance only, never the distance along
+///     the normal, because that component is the misalignment being solved for. It exists to catch
+///     points which have wandered past the edge of the cloud, where the tangent plane is an
+///     extrapolation into space nothing was measured in. Set it at a small multiple of the sample
+///     spacing. Points beyond it are still matched, but are only discarded if `ignore_off_target`
+///     is set.
+/// :param ignore_off_target: weight points at 0.0 when they fall beyond `max_extrapolation`.
+/// :param refinement_steps: rounds of robust reweighting after the initial solve.
+/// :param sigma_max: the MAGSAC++ upper noise bound. Estimated from the data when `None`.
+/// :param point_sigma: optional per-point standard deviations, one per input point. Combines in
+///     quadrature with any uncertainty the cloud reports.
+/// :param patience: the Levenberg-Marquardt evaluation budget, as a multiplier on the parameter
+///     count.
+#[pyfunction]
+#[pyo3(signature = (points, cloud, params, max_extrapolation, ignore_off_target=false,
+                    refinement_steps=4, sigma_max=None, point_sigma=None, patience=100))]
+#[allow(clippy::too_many_arguments)]
+pub fn points_to_cloud(
+    points: PyReadonlyArray2<'_, f64>,
+    cloud: &PointCloud3,
+    params: AlignParams3,
+    max_extrapolation: f64,
+    ignore_off_target: bool,
+    refinement_steps: usize,
+    sigma_max: Option<f64>,
+    point_sigma: Option<Vec<f64>>,
+    patience: usize,
+) -> PyResult<AlignOutcome3> {
+    let points = array_to_points3(&points.as_array())?;
+
+    let target = engeom::geom3::align3::CloudTarget3::try_new(cloud.get_inner(), max_extrapolation)
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+    let opts = engeom::geom3::align3::AlignOptions3 {
+        ignore_off_target,
+        refinement_steps,
+        sigma_max,
+        point_sigma: point_sigma.as_deref(),
+        patience,
+    };
+
+    let result = engeom::geom3::align3::points_to_surface3(
+        &points,
+        &target,
         params.get_inner().clone(),
         &opts,
     );

@@ -113,8 +113,8 @@ fn register_geom3(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_class::<geom3::CubicSplineQueries3>()?;
     child.add_class::<geom2::SplineProjection>()?;
     child.add_function(wrap_pyfunction!(geom3::fit_spline_to_points, &child)?)?;
-    child.add_class::<point_cloud::PointCloud>()?;
-    child.add_class::<point_cloud::PointCloudData3>()?;
+
+    child.add_class::<point_cloud::PointCloud3>()?;
 
     // Bounding and tools
     child.add_class::<bounding::Aabb3>()?;
@@ -133,6 +133,7 @@ fn register_align3_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_class::<align3::Alignment3>()?;
     child.add_class::<align3::AlignOutcome3>()?;
     child.add_function(wrap_pyfunction!(align3::points_to_mesh, &child)?)?;
+    child.add_function(wrap_pyfunction!(align3::points_to_cloud, &child)?)?;
     parent_module.add_submodule(&child)
 }
 

@@ -13,7 +13,7 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Ellipse, Polygon
 
 from engeom.geom2 import Point2, Vector2
-from engeom.geom3 import Aabb3, Circle3, Curve3, Iso3, Line3, Mesh3, Plane3, Point3, PointCloud, Vector3
+from engeom.geom3 import Aabb3, Circle3, Curve3, Iso3, Line3, Mesh3, Plane3, Point3, PointCloud3, Vector3
 from engeom.metrology import Distance2, Distance3
 
 from .._common import LabelPlace, plane_basis
@@ -128,7 +128,7 @@ class ViewPort3:
             drawn.append(self.helper.ax.plot(points[:, 0], points[:, 1], **kwargs)[0])
         return drawn
 
-    def draw_point_cloud(self, *clouds: PointCloud, marker: str = ".", markersize: float = 1.0,
+    def draw_point_cloud(self, *clouds: PointCloud3, marker: str = ".", markersize: float = 1.0,
                          color: str | None = None, alpha: float | None = None,
                          label: str | None = None, **kwargs) -> list[Line2D]:
         """
