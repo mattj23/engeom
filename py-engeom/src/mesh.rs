@@ -298,10 +298,8 @@ impl Mesh3 {
     #[staticmethod]
     #[pyo3(signature = (path, is_solid = false))]
     fn load_tcmesh(path: PathBuf, is_solid: bool) -> PyResult<Self> {
-        let data =
-            engeom::io::read_tc_mesh_file(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
-        let mesh = engeom::Mesh3::from_data(data, is_solid)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let mesh = engeom::Mesh3::load_tcmesh(&path, is_solid)
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
         Ok(Self::from_inner(mesh))
     }
 
@@ -309,7 +307,8 @@ impl Mesh3 {
     // the tcmesh format refuses an attributed mesh outright now.
     #[pyo3(signature = (path, tol))]
     fn save_tcmesh(&self, path: PathBuf, tol: f64) -> PyResult<()> {
-        engeom::io::write_tc_mesh_file(&path, &self.inner.to_data(), tol)
+        self.inner
+            .save_tcmesh(&path, tol)
             .map_err(|e| PyIOError::new_err(e.to_string()))
     }
 

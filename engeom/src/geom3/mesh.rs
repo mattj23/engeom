@@ -534,6 +534,35 @@ impl Mesh3 {
     pub fn load_g3d(path: &Path, is_solid: bool) -> Result<Self> {
         Self::from_data(MeshData3::load_g3d(path)?, is_solid)
     }
+
+    /// Load a triangle mesh from a tolerance-compressed `.tcmesh` file. See
+    /// [`MeshData3::load_tcmesh`] for the guarantees the format makes.
+    ///
+    /// # Arguments
+    ///
+    /// * `path`: the path to the `.tcmesh` file
+    /// * `is_solid`: whether distance queries should treat points inside the mesh as being at
+    ///   zero distance
+    ///
+    /// returns: `Result<Mesh3>`
+    pub fn load_tcmesh(path: &Path, is_solid: bool) -> Result<Self> {
+        Self::from_data(MeshData3::load_tcmesh(path)?, is_solid)
+    }
+
+    /// Write this mesh to a tolerance-compressed `.tcmesh` file, which carries geometry and
+    /// nothing else. See [`MeshData3::save_tcmesh`] for what the tolerance buys and for the vertex
+    /// renumbering the format performs.
+    ///
+    /// # Arguments
+    ///
+    /// * `path`: the path to write to, which is overwritten if it already exists
+    /// * `tol`: the largest acceptable round-trip position error for any vertex, in the same units
+    ///   as the coordinates
+    ///
+    /// returns: `Result<()>`, failing if the mesh carries any attributes
+    pub fn save_tcmesh(&self, path: &Path, tol: f64) -> Result<()> {
+        self.to_data().save_tcmesh(path, tol)
+    }
 }
 
 // ===============================================================================================
@@ -1170,6 +1199,36 @@ mod tests {
     use approx::assert_relative_eq;
     use parry3d_f64::query::SplitResult;
     use std::f64::consts::FRAC_PI_2;
+
+    /// `Mesh3` reaches the format through `MeshData3`, and the only thing it adds is the `is_solid`
+    /// flag, which the file does not carry and the caller therefore has to supply on load.
+    #[test]
+    fn a_tcmesh_round_trips_and_is_solid_comes_from_the_caller() -> Result<()> {
+        let mesh = Mesh3::create_sphere(1.0, 20, 20);
+        let tol = 1e-5;
+        let path = std::env::temp_dir().join("engeom_mesh3_tcmesh_round_trip.tcmesh");
+
+        mesh.save_tcmesh(&path, tol)?;
+
+        let recovered = Mesh3::load_tcmesh(&path, true)?;
+        assert_eq!(recovered.point_count(), mesh.point_count());
+        assert_eq!(recovered.face_count(), mesh.face_count());
+        assert!(recovered.is_solid());
+
+        assert!(!Mesh3::load_tcmesh(&path, false)?.is_solid());
+
+        Ok(())
+    }
+
+    #[test]
+    fn saving_a_tcmesh_refuses_a_mesh_carrying_attributes() -> Result<()> {
+        let mesh = Mesh3::from_data(attributed_data(), false)?;
+        let path = std::env::temp_dir().join("engeom_mesh3_tcmesh_refused.tcmesh");
+
+        assert!(mesh.save_tcmesh(&path, 1e-5).is_err());
+
+        Ok(())
+    }
 
     #[test]
     fn point_normals_match_point_count() -> Result<()> {
