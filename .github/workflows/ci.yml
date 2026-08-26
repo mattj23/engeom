@@ -53,22 +53,24 @@ jobs:
         run: cargo test --workspace
 
   msrv:
-    name: MSRV (1.88)
+    name: MSRV (engeom 1.89, tol-compress 1.88)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       # Verifies the `rust-version` promised by the two crates that are published to crates.io and so
-      # are the only ones making the promise. Both declare 1.88: engeom needs it for the stable
-      # let-chains in its source (nalgebra only needs 1.87), while tol-compress compiles on less and
-      # declares 1.88 to match rather than out of necessity.
+      # are the only ones making the promise. The two deliberately diverge: engeom declares 1.89
+      # because every kiddo 6.x does (its own source only needs the 1.88 let-chains), while
+      # tol-compress does not depend on kiddo and keeps its true 1.88 promise. Both toolchains are
+      # installed and each check pins the one it is verifying.
       - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: dtolnay/rust-toolchain@1.89.0
       - uses: Swatinem/rust-cache@v2
       - name: Check with no features
-        run: cargo check -p engeom
+        run: cargo +1.89.0 check -p engeom
       - name: Check with the published feature set
-        run: cargo check -p engeom --features stl,ply
+        run: cargo +1.89.0 check -p engeom --features stl,ply
       - name: Check tol-compress
-        run: cargo check -p tol-compress
+        run: cargo +1.88.0 check -p tol-compress
 
   features:
     name: Feature combinations
