@@ -52,6 +52,7 @@
 //! change to either should be considered for the other, and the file layout is kept parallel so
 //! that comparison is easy to make.
 
+mod curve;
 pub mod jacobian;
 mod multi_params;
 mod options;
@@ -64,6 +65,7 @@ use parry2d_f64::na::Vector3;
 /// The storage for the three parameters of a 2D alignment problem, in the order tx, ty, rz.
 pub type AlignStorage2 = Vector3<f64>;
 
+pub use self::curve::*;
 pub use self::multi_params::MultiAlignParams2;
 pub use self::options::*;
 pub use self::params::*;
