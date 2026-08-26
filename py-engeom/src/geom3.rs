@@ -1,8 +1,8 @@
 use crate::bounding::Aabb3;
 use crate::common::Resample;
 use crate::conversions::{
-    array_to_points3, array_to_vectors3, dvec_from_array, dvec_to_array, points_to_array,
-    vectors_to_array,
+    array_to_points3, array_to_surface_points3, array_to_vectors3, dvec_from_array,
+    dvec_to_array, points_to_array, vectors_to_array,
 };
 use crate::geom2::{Point2, SplineProjection, SurfacePoint2, Vector2};
 use engeom::common::To2D;
@@ -1602,6 +1602,33 @@ impl Cylinder3 {
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
+    #[staticmethod]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature=(points, normals, sigma_max, min_r=None, max_r=None, max_iterations=None, refinement_steps=None, confidence=None, seed=None))]
+    fn from_consensus<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        normals: PyReadonlyArray2<'py, f64>,
+        sigma_max: f64,
+        min_r: Option<f64>,
+        max_r: Option<f64>,
+        max_iterations: Option<usize>,
+        refinement_steps: Option<usize>,
+        confidence: Option<f64>,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        let points = array_to_surface_points3(&points.as_array(), &normals.as_array())?;
+        let options = magsac_options(sigma_max, max_iterations, refinement_steps, confidence, seed);
+        let result = engeom::geom3::Cylinder3::from_consensus(
+            &points,
+            sigma_max,
+            min_r,
+            max_r,
+            Some(options),
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(result))
+    }
+
     fn __repr__(&self) -> String {
         let c = self.inner.center;
         let d = self.inner.direction;
@@ -1778,6 +1805,33 @@ impl Cone3 {
         engeom::geom3::Cone3::from_points(tip.get_inner(), base_center.get_inner(), radius)
             .map(Self::from_inner)
             .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[staticmethod]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature=(points, normals, sigma_max, min_half_angle=None, max_half_angle=None, max_iterations=None, refinement_steps=None, confidence=None, seed=None))]
+    fn from_consensus<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        normals: PyReadonlyArray2<'py, f64>,
+        sigma_max: f64,
+        min_half_angle: Option<f64>,
+        max_half_angle: Option<f64>,
+        max_iterations: Option<usize>,
+        refinement_steps: Option<usize>,
+        confidence: Option<f64>,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        let points = array_to_surface_points3(&points.as_array(), &normals.as_array())?;
+        let options = magsac_options(sigma_max, max_iterations, refinement_steps, confidence, seed);
+        let result = engeom::geom3::Cone3::from_consensus(
+            &points,
+            sigma_max,
+            min_half_angle,
+            max_half_angle,
+            Some(options),
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(result))
     }
 
     fn __repr__(&self) -> String {

@@ -2065,6 +2065,32 @@ class Cylinder3:
         """
         ...
 
+    @staticmethod
+    def from_consensus(points: NDArray[float], normals: NDArray[float], sigma_max: float,
+                       min_r: float | None = None, max_r: float | None = None,
+                       max_iterations: int | None = None, refinement_steps: int | None = None,
+                       confidence: float | None = None, seed: int | None = None) -> Cylinder3:
+        """
+        Fit a cylinder to a set of oriented surface points robustly using the MAGSAC++ consensus algorithm. Unlike a
+        fixed-threshold RANSAC, this takes an upper bound on the inlier noise (`sigma_max`) rather than a hard
+        inlier/outlier threshold, and refines each candidate with noise-marginalized iteratively reweighted least
+        squares. The point normals are used only to bootstrap the axis estimate; scoring and refinement use the point
+        positions alone. The returned cylinder is bounded to the axial extent of its inlier points.
+
+        :param points: the point positions to fit the cylinder to, as an (n, 3) array.
+        :param normals: the surface normals at each point, as a matching (n, 3) array. Each is normalized internally.
+        :param sigma_max: the upper bound on the expected inlier noise, in the same units as the points.
+        :param min_r: the minimum radius of the cylinder. If None, no minimum will be enforced.
+        :param max_r: the maximum radius of the cylinder. If None, no maximum will be enforced.
+        :param max_iterations: the maximum number of minimal-sample iterations. If None, a default of 500 is used.
+        :param refinement_steps: the number of iteratively reweighted refinement steps per candidate. If None, a
+            default of 4 is used.
+        :param confidence: the probability used for adaptive termination. If None, a default of 0.99 is used.
+        :param seed: an optional fixed RNG seed for reproducible sampling. If None, a random seed is used.
+        :return: a new ``Cylinder3`` object representing the fitted cylinder.
+        """
+        ...
+
     @property
     def center(self) -> Point3:
         """
@@ -2237,6 +2263,32 @@ class Cone3:
         :param radius: the radius of the circular base.
         :return: a new `Cone3`.
         :raises ValueError: if tip and base_center are coincident.
+        """
+        ...
+
+    @staticmethod
+    def from_consensus(points: NDArray[float], normals: NDArray[float], sigma_max: float,
+                       min_half_angle: float | None = None, max_half_angle: float | None = None,
+                       max_iterations: int | None = None, refinement_steps: int | None = None,
+                       confidence: float | None = None, seed: int | None = None) -> Cone3:
+        """
+        Fit a cone to a set of oriented surface points robustly using the MAGSAC++ consensus algorithm. Unlike a
+        fixed-threshold RANSAC, this takes an upper bound on the inlier noise (`sigma_max`) rather than a hard
+        inlier/outlier threshold, and refines each candidate with noise-marginalized iteratively reweighted least
+        squares. The point normals are used only to bootstrap the apex estimate; scoring and refinement use the point
+        positions alone. The returned cone is bounded to the axial extent of its inlier points.
+
+        :param points: the point positions to fit the cone to, as an (n, 3) array.
+        :param normals: the surface normals at each point, as a matching (n, 3) array. Each is normalized internally.
+        :param sigma_max: the upper bound on the expected inlier noise, in the same units as the points.
+        :param min_half_angle: the minimum half-angle of the cone, in radians. If None, no minimum will be enforced.
+        :param max_half_angle: the maximum half-angle of the cone, in radians. If None, no maximum will be enforced.
+        :param max_iterations: the maximum number of minimal-sample iterations. If None, a default of 500 is used.
+        :param refinement_steps: the number of iteratively reweighted refinement steps per candidate. If None, a
+            default of 4 is used.
+        :param confidence: the probability used for adaptive termination. If None, a default of 0.99 is used.
+        :param seed: an optional fixed RNG seed for reproducible sampling. If None, a random seed is used.
+        :return: a new ``Cone3`` object representing the fitted cone.
         """
         ...
 

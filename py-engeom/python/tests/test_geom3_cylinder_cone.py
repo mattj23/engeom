@@ -2,6 +2,7 @@
     Tests of the Cylinder3 and Cone3 geometric primitives in the geom3 module.
 """
 import math
+import numpy as np
 import pytest
 from engeom.geom3 import (
     Vector3,
@@ -281,3 +282,66 @@ def test_cone3_pickle_roundtrip():
 def test_cone3_repr():
     cone = Cone3(0, 0, 0, 0, 0, 1, 10.0, 2.0)
     assert "Cone3" in repr(cone)
+
+
+# ==============================================================================
+# MAGSAC++ consensus fitting (binding smoke tests)
+# ==============================================================================
+
+def test_cylinder3_from_consensus_recovers_cylinder():
+    rng = np.random.default_rng(0)
+    radius = 2.0
+    # Surface points + outward normals for a cylinder along +z at the origin.
+    n = 300
+    t = rng.uniform(0.0, 2.0 * np.pi, n)
+    h = rng.uniform(0.0, 10.0, n)
+    noise = rng.normal(0.0, 0.005, n)
+    surf_pts = np.column_stack([(radius + noise) * np.cos(t), (radius + noise) * np.sin(t), h])
+    surf_nrm = np.column_stack([np.cos(t), np.sin(t), np.zeros(n)])
+
+    # Gross outliers well off the surface, with arbitrary normals.
+    m = 60
+    out_pts = rng.uniform(-8.0, 8.0, (m, 3))
+    out_nrm = rng.normal(0.0, 1.0, (m, 3))
+
+    points = np.vstack([surf_pts, out_pts])
+    normals = np.vstack([surf_nrm, out_nrm])
+
+    cyl = Cylinder3.from_consensus(points, normals, 0.02, seed=42)
+    assert cyl.r == pytest.approx(radius, abs=2e-2)
+    assert abs(cyl.direction.z) == pytest.approx(1.0, abs=1e-2)
+
+
+def test_cone3_from_consensus_recovers_cone():
+    rng = np.random.default_rng(1)
+    half_angle = np.deg2rad(20.0)
+    # Surface points + outward normals for a cone with apex at the origin, axis +z.
+    n = 300
+    t = rng.uniform(0.0, 2.0 * np.pi, n)
+    z = rng.uniform(1.0, 10.0, n)
+    r = z * np.tan(half_angle)
+    noise = rng.normal(0.0, 0.005, n)
+    surf_pts = np.column_stack([(r + noise) * np.cos(t), (r + noise) * np.sin(t), z])
+    surf_nrm = np.column_stack([
+        np.cos(half_angle) * np.cos(t),
+        np.cos(half_angle) * np.sin(t),
+        -np.sin(half_angle) * np.ones(n),
+    ])
+
+    m = 60
+    out_pts = rng.uniform(-8.0, 8.0, (m, 3))
+    out_nrm = rng.normal(0.0, 1.0, (m, 3))
+
+    points = np.vstack([surf_pts, out_pts])
+    normals = np.vstack([surf_nrm, out_nrm])
+
+    cone = Cone3.from_consensus(points, normals, 0.02, seed=42)
+    assert cone.half_angle() == pytest.approx(half_angle, abs=2e-2)
+    assert abs(cone.direction.z) == pytest.approx(1.0, abs=1e-2)
+
+
+def test_cylinder3_from_consensus_mismatched_lengths_raises():
+    points = np.zeros((5, 3))
+    normals = np.zeros((4, 3))
+    with pytest.raises(ValueError):
+        Cylinder3.from_consensus(points, normals, 0.02)

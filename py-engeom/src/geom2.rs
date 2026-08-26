@@ -1771,6 +1771,26 @@ impl Arc2 {
         ))
     }
 
+    #[staticmethod]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature=(points, sigma_max, min_r=None, max_r=None, max_iterations=None, refinement_steps=None, confidence=None, seed=None))]
+    fn from_consensus<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        sigma_max: f64,
+        min_r: Option<f64>,
+        max_r: Option<f64>,
+        max_iterations: Option<usize>,
+        refinement_steps: Option<usize>,
+        confidence: Option<f64>,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        let points = array_to_points2(&points.as_array())?;
+        let options = magsac_options(sigma_max, max_iterations, refinement_steps, confidence, seed);
+        let result = engeom::Arc2::from_consensus(&points, sigma_max, min_r, max_r, Some(options))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(result))
+    }
+
     fn length(&self) -> f64 {
         self.inner.length()
     }

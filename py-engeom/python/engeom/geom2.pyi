@@ -2544,6 +2544,31 @@ class Arc2:
         """
         ...
 
+    @staticmethod
+    def from_consensus(points: NDArray[float], sigma_max: float, min_r: float | None = None,
+                       max_r: float | None = None, max_iterations: int | None = None,
+                       refinement_steps: int | None = None, confidence: float | None = None,
+                       seed: int | None = None) -> Arc2:
+        """
+        Fit a circular arc to a set of points robustly using the MAGSAC++ consensus algorithm. A robust circle is
+        estimated the same way as `Circle2.from_consensus`, rejecting gross outliers; the arc is then bounded to the
+        smallest angular sector (about the fitted circle's center) that contains all of the inlier points, so outliers
+        influence neither the circle nor the arc's extent. The returned arc always has a non-negative
+        (counter-clockwise) sweep.
+
+        :param points: the points to fit the arc to.
+        :param sigma_max: the upper bound on the expected inlier noise, in the same units as the points.
+        :param min_r: the minimum radius of the arc's circle. If None, no minimum will be enforced.
+        :param max_r: the maximum radius of the arc's circle. If None, no maximum will be enforced.
+        :param max_iterations: the maximum number of minimal-sample iterations. If None, a default of 500 is used.
+        :param refinement_steps: the number of iteratively reweighted refinement steps per candidate. If None, a
+            default of 4 is used.
+        :param confidence: the probability used for adaptive termination. If None, a default of 0.99 is used.
+        :param seed: an optional fixed RNG seed for reproducible sampling. If None, a random seed is used.
+        :return: a new ``Arc2`` object representing the fitted arc.
+        """
+        ...
+
     def length(self) -> float:
         """
         Return the arc length: the radius times the absolute value of the sweep angle.
