@@ -56,11 +56,13 @@ use crate::Result;
 use crate::common::align::{RefinementHalt, SolveQuality, TerminationReason};
 use crate::common::consensus::weights::MagsacWeight;
 use crate::common::points::dist;
-use crate::geom2::align2::curve::{AlignmentCurve, CurveSurfPoint};
+use crate::geom2::align2::curve::{
+    AlignmentCurve, CAPParams, CurveSurfPoint, generate_alignment_points,
+};
 use crate::geom2::align2::jacobian::{point_surf_jacobian2, point_surf_jacobian2_rev};
 use crate::geom2::align2::{AlignValues2, Dof3, MultiAlignParams2};
 use crate::geom2::{Alignment2, MultiAlignOutcome2, Point2, SurfacePoint2, Vector2};
-use crate::na::{DVector, Dyn, Matrix, Owned, U1, Vector};
+use crate::na::{DMatrix, DVector, Dyn, Matrix, Owned, U1, Vector};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use rayon::prelude::*;
 
@@ -238,6 +240,79 @@ pub fn multi_curve_adjustment_with_points(
         MultiCurveProblem::new(curves, points, static_i, opts)?,
         opts,
     )
+}
+
+/// Samples correspondences between every pair of curves and runs a simultaneous alignment.
+///
+/// The static curve is chosen automatically as the one the others reference most broadly; see
+/// `correspondence_matrix` for how that is scored. Correspondences are sampled with
+/// [`generate_alignment_points`], and each unordered pair of curves produces correspondences in
+/// one direction only.
+///
+/// # Arguments
+///
+/// * `curves`: the bodies taking part, each with its own optional uncertainty, initial pose, and
+///   weight providers. At least two are required.
+/// * `opts`: the solver options, which must carry a correspondence distance gate
+/// * `sample_opts`: the parameters controlling which points along each curve become
+///   correspondences
+///
+/// # Failure
+///
+/// As with [`multi_curve_adjustment_with_points`], `Err` is reserved for the case where there is
+/// no answer at all.
+pub fn multi_curve_adjustment(
+    curves: &[AlignmentCurve],
+    opts: &MultiAlignOptions2,
+    sample_opts: &CAPParams,
+) -> Result<MultiAlignOutcome2> {
+    if curves.len() < 2 {
+        return Err(format!(
+            "a multi-curve alignment needs at least two curves, but {} were given",
+            curves.len()
+        )
+        .into());
+    }
+
+    let reference_order = reference_priority(curves, sample_opts);
+    let static_i = reference_order[0];
+
+    // Build the work list so that each unordered pair of curves produces correspondences in one
+    // direction only, never both.
+    let mut work_list = Vec::new();
+    let mut curves_to_test = (0..curves.len()).collect::<Vec<_>>();
+    for ref_i in reference_order {
+        curves_to_test.retain(|j| *j != ref_i);
+        for &curve_i in curves_to_test.iter() {
+            work_list.push((curve_i, ref_i));
+        }
+    }
+
+    let points = work_list
+        .par_iter()
+        .map(|&(curve_i, ref_i)| {
+            let t = curves[ref_i]
+                .transform()
+                .inv_mul(&curves[curve_i].transform());
+            let samples = generate_alignment_points(
+                curves[curve_i].curve,
+                curves[ref_i].curve,
+                &t,
+                sample_opts,
+            );
+
+            samples
+                .into_iter()
+                .map(|cp| {
+                    let weight = curves[curve_i].weight_at(&cp);
+                    MulCurveAlignPoint::new(curve_i, cp, ref_i, weight)
+                })
+                .collect::<Vec<_>>()
+        })
+        .flatten()
+        .collect::<Vec<_>>();
+
+    multi_curve_adjustment_with_points(curves, points, static_i, opts)
 }
 
 // ================================================================================================
@@ -667,6 +742,66 @@ impl LeastSquaresProblem<f64, Dyn, Dyn> for MultiCurveProblem<'_> {
     }
 }
 
+// ================================================================================================
+// Choosing the static curve
+// ================================================================================================
+
+/// Orders the curves by how broadly the others reference them, most-referenced first. The head of
+/// the returned order is the best candidate for the static curve.
+fn reference_priority(curves: &[AlignmentCurve], params: &CAPParams) -> Vec<usize> {
+    let matrix = correspondence_matrix(curves, params);
+    let max = matrix.max();
+    let mut corr = if max > 0.0 {
+        &matrix / max
+    } else {
+        matrix.clone()
+    };
+    corr.apply(|x| *x = x.sqrt());
+
+    let mut pairs = corr
+        .column_sum()
+        .iter()
+        .enumerate()
+        .map(|(i, x)| (i, *x))
+        .collect::<Vec<_>>();
+    pairs.sort_by(|a, b| b.1.total_cmp(&a.1));
+    pairs.iter().map(|(i, _)| *i).collect()
+}
+
+fn correspondence_matrix(curves: &[AlignmentCurve], params: &CAPParams) -> DMatrix<f64> {
+    // Each i, j entry is the number of sample points in curve j which are a good match for curve
+    // i. The row with the highest column sum has the most points referencing it, but a raw count
+    // would let two heavily overlapping curves inflate each other without either being a good
+    // static reference.
+    //
+    // Instead each cell is scaled to the range 0..1 and square-rooted, which grants diminishing
+    // returns to a large count from any single curve and favors curves referenced by many others.
+    let mut matrix = DMatrix::<f64>::zeros(curves.len(), curves.len());
+
+    let mut work_list = Vec::new();
+    for i in 0..curves.len() {
+        for j in (i + 1)..curves.len() {
+            work_list.push((i, j));
+        }
+    }
+
+    let collected = work_list
+        .par_iter()
+        .map(|&(i, j)| {
+            let t = curves[i].transform().inv_mul(&curves[j].transform());
+            let samples = generate_alignment_points(curves[j].curve, curves[i].curve, &t, params);
+            (i, j, samples.len() as f64)
+        })
+        .collect::<Vec<_>>();
+
+    for (i, j, count) in collected {
+        matrix[(i, j)] = count;
+        matrix[(j, i)] = count;
+    }
+
+    matrix
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -689,6 +824,11 @@ mod tests {
         let points =
             [(-5.0, -3.0), (5.0, -3.0), (5.0, 3.0), (-5.0, 3.0)].map(|(x, y)| Point2::new(x, y));
         Curve2::from_points(&points, 1e-8, true).unwrap()
+    }
+
+    /// A straight open segment along the x axis, from `x0` to `x1`.
+    fn segment_curve(x0: f64, x1: f64) -> Curve2 {
+        Curve2::from_points(&[Point2::new(x0, 0.0), Point2::new(x1, 0.0)], 1e-8, false).unwrap()
     }
 
     /// Correspondences from every curve onto the one before it, sampled at a uniform arc length
@@ -1219,5 +1359,107 @@ mod tests {
             err.contains("uncertainty values"),
             "unexpected message: {err}"
         );
+    }
+
+    // ============================================================================================
+    // The automatic entry point
+    // ============================================================================================
+
+    #[test]
+    fn sampled_correspondences_settle_three_curves_together() -> Result<()> {
+        // The same recovery as `three_curves_settle_together`, but letting the entry point choose
+        // the static curve and sample the correspondences itself.
+        let curves = vec![rect_curve(), rect_curve(), rect_curve()];
+        let initial = vec![
+            Iso2::identity(),
+            Iso2::new(Vector2::new(0.15, -0.1), PI / 120.0),
+            Iso2::new(Vector2::new(-0.1, 0.12), -PI / 100.0),
+        ];
+        let acs = alignment_curves(&curves, &initial);
+
+        let outcome = multi_curve_adjustment(&acs, &test_opts(), &CAPParams::defaults(0.5))?;
+
+        assert_eq!(outcome.len(), 3);
+
+        // Whichever curve was held static keeps its starting pose, and the others come into
+        // agreement with it. Every pair of curves should end up coincident, which is the same
+        // thing as every relative transform being the identity.
+        let t: Vec<Iso2> = (0..3)
+            .map(|i| *outcome.alignment(i).full_transform())
+            .collect();
+        for i in 0..3 {
+            for j in 0..3 {
+                assert_relative_eq!(
+                    t[i].inv_mul(&t[j]).to_matrix(),
+                    Iso2::identity().to_matrix(),
+                    epsilon = 1e-5
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn the_static_curve_is_the_one_the_others_reference_most() {
+        // Three curves in a row, overlapping only with their neighbors: the middle one is seen by
+        // both of the others and is the only sensible frame to express the result in.
+        //
+        // Each is a straight open segment, so the ends are the only thing that can disqualify a
+        // sample and the counts reflect overlap rather than shape.
+        let left = segment_curve(0.0, 6.0);
+        let middle = segment_curve(4.0, 12.0);
+        let right = segment_curve(10.0, 16.0);
+
+        let curves = [left, middle, right];
+        let initial = [Iso2::identity(); 3];
+        let acs = alignment_curves(&curves, &initial);
+
+        let order = reference_priority(&acs, &CAPParams::new(0.25, PI / 3.0, 0.25, None));
+
+        assert_eq!(order[0], 1, "the middle curve should be the static one");
+    }
+
+    #[test]
+    fn a_correspondence_matrix_is_symmetric_and_empty_on_the_diagonal() {
+        let curves = [
+            segment_curve(0.0, 6.0),
+            segment_curve(4.0, 12.0),
+            segment_curve(20.0, 26.0),
+        ];
+        let initial = [Iso2::identity(); 3];
+        let acs = alignment_curves(&curves, &initial);
+
+        let m = correspondence_matrix(&acs, &CAPParams::new(0.25, PI / 3.0, 0.25, None));
+
+        for i in 0..3 {
+            assert_eq!(m[(i, i)], 0.0);
+            for j in 0..3 {
+                assert_eq!(m[(i, j)], m[(j, i)]);
+            }
+        }
+
+        // The first two overlap, the third is off on its own.
+        assert!(m[(0, 1)] > 0.0);
+        assert_eq!(m[(0, 2)], 0.0);
+        assert_eq!(m[(1, 2)], 0.0);
+    }
+
+    #[test]
+    fn fewer_than_two_curves_is_rejected() {
+        let curves = vec![rect_curve()];
+        let initial = vec![Iso2::identity()];
+        let acs = alignment_curves(&curves, &initial);
+
+        let err = multi_curve_adjustment(&acs, &test_opts(), &CAPParams::defaults(0.5))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("at least two curves"),
+            "unexpected message: {err}"
+        );
+
+        let empty: Vec<AlignmentCurve> = Vec::new();
+        assert!(multi_curve_adjustment(&empty, &test_opts(), &CAPParams::defaults(0.5)).is_err());
     }
 }

@@ -68,7 +68,8 @@ pub type AlignStorage2 = Vector3<f64>;
 
 pub use self::curve::*;
 pub use self::multi_curve::{
-    MulCurveAlignPoint, MultiAlignOptions2, multi_curve_adjustment_with_points,
+    MulCurveAlignPoint, MultiAlignOptions2, multi_curve_adjustment,
+    multi_curve_adjustment_with_points,
 };
 pub use self::multi_params::MultiAlignParams2;
 pub use self::options::*;

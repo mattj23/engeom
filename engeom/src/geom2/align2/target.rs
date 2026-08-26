@@ -125,7 +125,7 @@ impl SurfaceTarget2 for Curve2 {
 /// `Curve2::at_closest_to_point` clamps to the nearest edge, so a projection past either end of
 /// an open curve always lands with `fraction` exactly `0.0` or `1.0` at the first or last edge
 /// respectively; there is no tolerance band to worry about.
-fn is_curve_endpoint(station: &CurveStation2, curve: &Curve2) -> bool {
+pub(crate) fn is_curve_endpoint(station: &CurveStation2, curve: &Curve2) -> bool {
     let last_edge = curve.count() - 2;
     (station.index() == 0 && station.fraction() == 0.0)
         || (station.index() == last_edge && station.fraction() == 1.0)
