@@ -5,18 +5,48 @@
 use super::Mesh3;
 use crate::geom3::Aabb3;
 use crate::geom3::mesh::edges::edge_key;
-use crate::{Curve3, IndexMask, Line3, Plane3, Point3, Result, Vector3};
+use crate::{Curve3, CurveGroup3, IndexMask, Line3, Plane3, Point3, Result, Vector3};
 use parry3d_f64::partitioning::TraversalAction;
 use parry3d_f64::shape::TriMesh;
 use std::collections::{HashMap, HashSet};
 
 impl Mesh3 {
+    /// Computes the intersection between this mesh and a plane, returning the resulting curves as
+    /// a single [`CurveGroup3`].
+    ///
+    /// A planar section of a mesh is naturally several curves rather than one: a part with a hole
+    /// through it sections into an outer loop and an inner one, and an open mesh sections into
+    /// unclosed strands. They move together as one rigid body, which is what the group represents.
+    ///
+    /// Closed loops come back with their first vertex repeated as the last, since a `Curve3` has
+    /// no closed flag of its own. That is what lets [`CurveGroup3::to_2d_in_plane`] and
+    /// [`crate::common::To2D`] recover the closure, so do not strip it.
+    ///
+    /// Each curve is wound so that, brought into the plane, its 2D normal points the same way the
+    /// original triangle normals did, preserving the inside/outside sense of the surface.
+    ///
+    /// # Arguments
+    ///
+    /// * `plane`: the plane to cut with
+    /// * `curve_tol`: the chordal tolerance given to the resulting curves, which is also the
+    ///   distance within which their vertices are de-duplicated. Defaults to `1e-6`.
+    /// * `faces`: an optional mask limiting the cut to a subset of the faces. Must be the same
+    ///   length as the mesh has faces.
+    ///
+    /// returns: Result<CurveGroup3, Box<dyn Error, Global>>
+    ///
+    /// # Failure
+    ///
+    /// A plane which does not intersect the mesh, or which misses every selected face, is an
+    /// error rather than an empty group. A group with no members has no bounding box and no
+    /// closest point, so there is nothing meaningful to hand back; a caller who expects to miss
+    /// should match on the error rather than counting members.
     pub fn section_with_plane(
         &self,
         plane: &Plane3,
         curve_tol: Option<f64>,
         faces: Option<&IndexMask>,
-    ) -> Result<Vec<Curve3>> {
+    ) -> Result<CurveGroup3> {
         let curve_tol = curve_tol.unwrap_or(1e-6);
 
         if let Some(mask) = faces
@@ -146,7 +176,17 @@ impl Mesh3 {
             results.push(Curve3::from_points(&curve_points, curve_tol)?);
         }
 
-        Ok(results)
+        // Reported here rather than left to `CurveGroup3::new`, whose message is about groups in
+        // general and would not tell the caller that it was the plane which missed.
+        if results.is_empty() {
+            return Err(if faces.is_some() {
+                "the plane does not intersect any of the selected faces".into()
+            } else {
+                Box::<dyn std::error::Error>::from("the plane does not intersect the mesh")
+            });
+        }
+
+        CurveGroup3::new(results)
     }
 }
 
@@ -278,6 +318,36 @@ mod tests {
         Ok(())
     }
 
+    /// A plane which misses is an error rather than an empty group, so that a caller cannot mistake
+    /// "no intersection" for a group it can query.
+    #[test]
+    fn a_plane_which_misses_the_mesh_is_an_error() {
+        let mesh = Mesh3::create_box(2.0, 2.0, 2.0, false);
+        let plane = Plane3::new(Vector3::z_axis(), 50.0);
+
+        let err = match mesh.section_with_plane(&plane, None, None) {
+            Err(e) => e.to_string(),
+            Ok(g) => panic!("a plane 50 units away cut {} curves", g.len()),
+        };
+        assert!(
+            err.contains("does not intersect"),
+            "unexpected message: {err}"
+        );
+    }
+
+    /// The same, but where the mesh is in the way and the face selection is what excludes it.
+    #[test]
+    fn a_face_mask_which_selects_nothing_is_an_error() {
+        let mesh = Mesh3::create_box(2.0, 2.0, 2.0, false);
+        let mask = IndexMask::new(mesh.face_count(), false);
+
+        let err = match mesh.section_with_plane(&Plane3::xy(), None, Some(&mask)) {
+            Err(e) => e.to_string(),
+            Ok(g) => panic!("an empty face mask cut {} curves", g.len()),
+        };
+        assert!(err.contains("selected faces"), "unexpected message: {err}");
+    }
+
     #[test]
     fn unit_cylinder_in_xz_plane_creates_one_circle_curve() {
         let mesh = Mesh3::create_cylinder(1.0, 2.0, 256);
@@ -288,7 +358,7 @@ mod tests {
             .unwrap();
         assert_eq!(curves.len(), 1);
 
-        let curve = &curves[0];
+        let curve = &curves.curves()[0];
         assert!(curve.count() >= 3);
 
         for vertex in curve.vertices() {
@@ -320,7 +390,7 @@ mod tests {
             .unwrap();
         assert_eq!(curves.len(), 2);
 
-        for curve in curves.iter() {
+        for curve in curves.curves().iter() {
             assert!(curve.count() >= 3);
             assert_relative_eq!(curve.length(), TAU, epsilon = 1.0e-2);
 

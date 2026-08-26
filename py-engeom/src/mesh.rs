@@ -712,7 +712,13 @@ impl Mesh3 {
             .section_with_plane(plane.get_inner(), tol, faces.map(|m| m.get_inner()))
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
-        Ok(results.into_iter().map(Curve3::from_inner).collect())
+        // Unwrapped to a list for now so the Python API is unchanged; the `CurveGroup3` class
+        // that replaces this arrives with the rest of the group bindings.
+        Ok(results
+            .into_curves()
+            .into_iter()
+            .map(Curve3::from_inner)
+            .collect())
     }
 
     /// Start a face filter. `start` is either the token `"none"` or `"all"`, or an `IndexMask` over

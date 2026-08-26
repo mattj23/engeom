@@ -51,6 +51,11 @@ impl CurveGroup2 {
         &self.curves
     }
 
+    /// Consumes the group and returns its member curves, in member order.
+    pub fn into_curves(self) -> Vec<Curve2> {
+        self.curves
+    }
+
     /// The number of member curves.
     pub fn len(&self) -> usize {
         self.curves.len()
