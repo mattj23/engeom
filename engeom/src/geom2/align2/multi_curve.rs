@@ -1,30 +1,35 @@
-//! A simultaneous alignment of several curves to each other in one combined Levenberg-Marquardt
-//! minimization.
+//! A simultaneous alignment of several curve bodies to each other in one combined
+//! Levenberg-Marquardt minimization.
 //!
 //! This is a bundle adjustment rather than a pose graph optimization: it carries a single
-//! transformation for each curve except one, which is held fixed, and solves for all of them at
+//! transformation for each body except one, which is held fixed, and solves for all of them at
 //! once against the raw correspondences. It was built to register metrology-quality profiles of
-//! objects with unambiguous morphology, and it works best on low-noise curves which have already
+//! objects with unambiguous morphology, and it works best on low-noise data which has already
 //! been pre-aligned close to each other with substantial overlap.
+//!
+//! Each body is a [`crate::geom2::CurveGroup2`]: one or more disjoint curves moving together
+//! rigidly, such as the loops and open segments a planar section of a mesh produces. Everything
+//! per-body is indexed by the body, while a sample point's `member` field records which curve
+//! within its body it sits on.
 //!
 //! This is the 2D counterpart of `geom3::align3::multi_mesh`, and is deliberately structured
 //! identically to it.
 //!
 //! # How a correspondence constrains two bodies
 //!
-//! Every alignment point belongs to one curve and is matched against another, and *both* of those
-//! curves are moving. A single residual therefore contributes two blocks to its jacobian row: the
-//! forward derivative with respect to the test curve's parameters, and the reverse derivative with
-//! respect to the reference curve's. See [`point_surf_jacobian2`] and [`point_surf_jacobian2_rev`].
+//! Every alignment point belongs to one body and is matched against another, and *both* of those
+//! bodies are moving. A single residual therefore contributes two blocks to its jacobian row: the
+//! forward derivative with respect to the test body's parameters, and the reverse derivative with
+//! respect to the reference body's. See [`point_surf_jacobian2`] and [`point_surf_jacobian2_rev`].
 //!
 //! # Coordinate frames
 //!
-//! Everything is measured in world coordinates. A test point is moved by its own curve's
-//! transform, the query is pushed into the reference curve's frame only long enough to find the
-//! closest point on it, and that match is brought back out to the world before the residual is
-//! taken.
+//! Everything is measured in world coordinates. A test point is moved by its own body's
+//! transform, the query is pushed into the reference body's frame only long enough to find the
+//! closest point on any of its members, and that match is brought back out to the world before
+//! the residual is taken.
 //!
-//! This matters because each curve's [`AlignValues2`] describes its transform *to the world*, so
+//! This matters because each body's [`AlignValues2`] describes its transform *to the world*, so
 //! the residual and both jacobian blocks have to live there too for the derivatives to be
 //! consistent with it.
 //!
@@ -57,7 +62,7 @@ use crate::common::align::{RefinementHalt, SolveQuality, TerminationReason};
 use crate::common::consensus::weights::MagsacWeight;
 use crate::common::points::dist;
 use crate::geom2::align2::curve::{
-    AlignmentCurve, CAPParams, CurveSurfPoint, generate_alignment_points,
+    AlignmentGroup, CAPParams, CurveSurfPoint, generate_alignment_points,
 };
 use crate::geom2::align2::jacobian::{point_surf_jacobian2, point_surf_jacobian2_rev};
 use crate::geom2::align2::{AlignValues2, Dof3, MultiAlignParams2};
@@ -143,14 +148,14 @@ pub struct MultiAlignOptions2 {
     /// The Levenberg-Marquardt evaluation budget, as a multiplier on the parameter count.
     ///
     /// A multi-body solve carries `3 * (n - 1)` parameters, so this budget stretches a long way
-    /// with many curves. A solve which exhausts it is not a failure: the alignments are kept and
+    /// with many bodies. A solve which exhausts it is not a failure: the alignments are kept and
     /// the outcome reports [`crate::common::SolveQuality::Unconverged`]. That is a common outcome
     /// here, since correspondences flip between every overlapping pair.
     ///
     /// Must be greater than zero.
     pub patience: usize,
 
-    /// An optional degree-of-freedom constraint applied to every non-static curve.
+    /// An optional degree-of-freedom constraint applied to every non-static body.
     pub dof: Option<Dof3>,
 }
 
@@ -177,17 +182,20 @@ impl MultiAlignOptions2 {
 // Alignment points
 // ================================================================================================
 
-/// A single correspondence in a multi-curve adjustment: a sample point on one curve which is being
-/// matched against another curve.
+/// A single correspondence in a multi-curve adjustment: a sample point on one body which is
+/// being matched against another body.
+///
+/// `group_i` and `ref_i` are body indices; which member curve *within* each body is involved is
+/// carried by the sample point's own `member` field.
 #[derive(Clone, Debug)]
 pub struct MulCurveAlignPoint {
-    /// The index of the curve this point was sampled from.
-    pub curve_i: usize,
+    /// The index of the body this point was sampled from.
+    pub group_i: usize,
 
-    /// The sample point, in the coordinates of its own curve.
+    /// The sample point, in the coordinates of its own body.
     pub cp: CurveSurfPoint,
 
-    /// The index of the curve this point is being matched against.
+    /// The index of the body this point is being matched against.
     pub ref_i: usize,
 
     /// A base weight for the correspondence, applied on top of any robust weighting.
@@ -195,9 +203,9 @@ pub struct MulCurveAlignPoint {
 }
 
 impl MulCurveAlignPoint {
-    pub fn new(curve_i: usize, cp: CurveSurfPoint, ref_i: usize, weight: f64) -> Self {
+    pub fn new(group_i: usize, cp: CurveSurfPoint, ref_i: usize, weight: f64) -> Self {
         Self {
-            curve_i,
+            group_i,
             cp,
             ref_i,
             weight,
@@ -216,11 +224,11 @@ impl MulCurveAlignPoint {
 ///
 /// # Arguments
 ///
-/// * `curves`: the bodies taking part, each with its own optional uncertainty, initial pose, and
+/// * `groups`: the bodies taking part, each with its own optional uncertainty, initial pose, and
 ///   weight providers
-/// * `points`: the correspondences, each naming the curve it was sampled from and the curve it is
+/// * `points`: the correspondences, each naming the body it was sampled from and the body it is
 ///   matched against
-/// * `static_i`: the index of the curve to hold fixed, which becomes the frame every result is
+/// * `static_i`: the index of the body to hold fixed, which becomes the frame every result is
 ///   expressed in
 /// * `opts`: the solver options, which must carry a correspondence distance gate
 ///
@@ -230,31 +238,31 @@ impl MulCurveAlignPoint {
 /// all: rejected arguments, or an initial solve that broke down. A solve which merely exhausts
 /// its budget is reported on the outcome and its alignments kept.
 pub fn multi_curve_adjustment_with_points(
-    curves: &[AlignmentCurve],
+    groups: &[AlignmentGroup],
     points: Vec<MulCurveAlignPoint>,
     static_i: usize,
     opts: &MultiAlignOptions2,
 ) -> Result<MultiAlignOutcome2> {
-    validate(curves, &points, static_i, opts)?;
+    validate(groups, &points, static_i, opts)?;
     solve_bundle(
-        MultiCurveProblem::new(curves, points, static_i, opts)?,
+        MultiCurveProblem::new(groups, points, static_i, opts)?,
         opts,
     )
 }
 
-/// Samples correspondences between every pair of curves and runs a simultaneous alignment.
+/// Samples correspondences between every pair of bodies and runs a simultaneous alignment.
 ///
-/// The static curve is chosen automatically as the one the others reference most broadly; see
+/// The static body is chosen automatically as the one the others reference most broadly; see
 /// `correspondence_matrix` for how that is scored. Correspondences are sampled with
-/// [`generate_alignment_points`], and each unordered pair of curves produces correspondences in
+/// [`generate_alignment_points`], and each unordered pair of bodies produces correspondences in
 /// one direction only.
 ///
 /// # Arguments
 ///
-/// * `curves`: the bodies taking part, each with its own optional uncertainty, initial pose, and
+/// * `groups`: the bodies taking part, each with its own optional uncertainty, initial pose, and
 ///   weight providers. At least two are required.
 /// * `opts`: the solver options, which must carry a correspondence distance gate
-/// * `sample_opts`: the parameters controlling which points along each curve become
+/// * `sample_opts`: the parameters controlling which points along each body's members become
 ///   correspondences
 ///
 /// # Failure
@@ -262,41 +270,41 @@ pub fn multi_curve_adjustment_with_points(
 /// As with [`multi_curve_adjustment_with_points`], `Err` is reserved for the case where there is
 /// no answer at all.
 pub fn multi_curve_adjustment(
-    curves: &[AlignmentCurve],
+    groups: &[AlignmentGroup],
     opts: &MultiAlignOptions2,
     sample_opts: &CAPParams,
 ) -> Result<MultiAlignOutcome2> {
-    if curves.len() < 2 {
+    if groups.len() < 2 {
         return Err(format!(
-            "a multi-curve alignment needs at least two curves, but {} were given",
-            curves.len()
+            "a multi-curve alignment needs at least two bodies, but {} were given",
+            groups.len()
         )
         .into());
     }
 
-    let reference_order = reference_priority(curves, sample_opts);
+    let reference_order = reference_priority(groups, sample_opts);
     let static_i = reference_order[0];
 
     // Build the work list so that each unordered pair of curves produces correspondences in one
     // direction only, never both.
     let mut work_list = Vec::new();
-    let mut curves_to_test = (0..curves.len()).collect::<Vec<_>>();
+    let mut bodies_to_test = (0..groups.len()).collect::<Vec<_>>();
     for ref_i in reference_order {
-        curves_to_test.retain(|j| *j != ref_i);
-        for &curve_i in curves_to_test.iter() {
-            work_list.push((curve_i, ref_i));
+        bodies_to_test.retain(|j| *j != ref_i);
+        for &group_i in bodies_to_test.iter() {
+            work_list.push((group_i, ref_i));
         }
     }
 
     let points = work_list
         .par_iter()
-        .map(|&(curve_i, ref_i)| {
-            let t = curves[ref_i]
+        .map(|&(group_i, ref_i)| {
+            let t = groups[ref_i]
                 .transform()
-                .inv_mul(&curves[curve_i].transform());
+                .inv_mul(&groups[group_i].transform());
             let samples = generate_alignment_points(
-                curves[curve_i].curve,
-                curves[ref_i].curve,
+                groups[group_i].group,
+                groups[ref_i].group,
                 &t,
                 sample_opts,
             );
@@ -304,15 +312,15 @@ pub fn multi_curve_adjustment(
             samples
                 .into_iter()
                 .map(|cp| {
-                    let weight = curves[curve_i].weight_at(&cp);
-                    MulCurveAlignPoint::new(curve_i, cp, ref_i, weight)
+                    let weight = groups[group_i].weight_at(&cp);
+                    MulCurveAlignPoint::new(group_i, cp, ref_i, weight)
                 })
                 .collect::<Vec<_>>()
         })
         .flatten()
         .collect::<Vec<_>>();
 
-    multi_curve_adjustment_with_points(curves, points, static_i, opts)
+    multi_curve_adjustment_with_points(groups, points, static_i, opts)
 }
 
 // ================================================================================================
@@ -320,7 +328,7 @@ pub fn multi_curve_adjustment(
 // ================================================================================================
 
 fn validate(
-    curves: &[AlignmentCurve],
+    groups: &[AlignmentGroup],
     points: &[MulCurveAlignPoint],
     static_i: usize,
     opts: &MultiAlignOptions2,
@@ -340,37 +348,38 @@ fn validate(
         )
         .into());
     }
-    if static_i >= curves.len() {
+    if static_i >= groups.len() {
         return Err(format!(
-            "the static curve index {} is out of range for {} curves",
+            "the static body index {} is out of range for {} bodies",
             static_i,
-            curves.len()
+            groups.len()
         )
         .into());
     }
     if let Some(p) = points
         .iter()
-        .find(|p| p.curve_i >= curves.len() || p.ref_i >= curves.len())
+        .find(|p| p.group_i >= groups.len() || p.ref_i >= groups.len())
     {
         return Err(format!(
-            "an alignment point references curve {} against curve {}, but there are only {} curves",
-            p.curve_i,
+            "an alignment point references body {} against body {}, but there are only {} bodies",
+            p.group_i,
             p.ref_i,
-            curves.len()
+            groups.len()
         )
         .into());
     }
 
-    // Uncertainty is interpolated between the two vertices of the edge a sample lands on, so a
-    // short slice would panic partway through a solve rather than here.
-    for (i, c) in curves.iter().enumerate() {
+    // Uncertainty is interpolated between the two vertices of the edge a sample lands on, within
+    // the owning member's span of the concatenated values, so a short slice would panic partway
+    // through a solve rather than here.
+    for (i, c) in groups.iter().enumerate() {
         if let Some(u) = c.uncertainty
-            && u.len() != c.curve.count()
+            && u.len() != c.group.vertex_count()
         {
             return Err(format!(
-                "curve {} has {} vertices but {} uncertainty values",
+                "body {} has {} vertices across its members but {} uncertainty values",
                 i,
-                c.curve.count(),
+                c.group.vertex_count(),
                 u.len()
             )
             .into());
@@ -389,7 +398,7 @@ fn solve_bundle(
 
     let (mut problem, termination) = run(&lm, problem);
     if !SolveQuality::from_termination(&termination).is_usable() {
-        return Err(format!("Failed to align curves to each other: {termination:?}").into());
+        return Err(format!("Failed to align bodies to each other: {termination:?}").into());
     }
 
     let mut solves = vec![termination];
@@ -485,7 +494,7 @@ struct Moved {
 }
 
 struct MultiCurveProblem<'a> {
-    curves: &'a [AlignmentCurve<'a>],
+    groups: &'a [AlignmentGroup<'a>],
     handles: Vec<MulCurveAlignPoint>,
     params: MultiAlignParams2,
 
@@ -502,11 +511,12 @@ struct MultiCurveProblem<'a> {
     /// The signed geometric distance of each correspondence, in model units.
     residuals: Vec<f64>,
 
-    /// Each test point's own measurement standard deviation, interpolated from its curve once at
-    /// construction because the point never moves within its own curve.
+    /// Each test point's own measurement standard deviation, interpolated from its body once at
+    /// construction because the point never moves within its own body.
     test_sigma: Vec<f64>,
 
-    /// The reference curve's standard deviation at each current match.
+    /// The reference body's standard deviation at each current match, resolved through the
+    /// member the match landed on.
     target_sigma: Vec<f64>,
 
     /// The reciprocal of the combined test-and-target standard deviation, or 1.0 where there is no
@@ -527,16 +537,16 @@ struct MultiCurveProblem<'a> {
 
 impl<'a> MultiCurveProblem<'a> {
     fn new(
-        curves: &'a [AlignmentCurve],
+        groups: &'a [AlignmentGroup],
         handles: Vec<MulCurveAlignPoint>,
         static_i: usize,
         opts: &MultiAlignOptions2,
     ) -> Result<Self> {
-        let centers = curves
+        let centers = groups
             .iter()
-            .map(|c| c.curve.aabb().center())
+            .map(|c| c.group.aabb().center())
             .collect::<Vec<_>>();
-        let initial = curves.iter().map(|c| c.transform()).collect::<Vec<_>>();
+        let initial = groups.iter().map(|c| c.transform()).collect::<Vec<_>>();
         let params = MultiAlignParams2::from_centers(static_i, &centers, Some(&initial), opts.dof)?;
 
         let n = handles.len();
@@ -545,12 +555,12 @@ impl<'a> MultiCurveProblem<'a> {
         // resolved once here rather than on every step.
         let test_sigma = handles
             .iter()
-            .map(|h| curves[h.curve_i].sigma_at(&h.cp))
+            .map(|h| groups[h.group_i].sigma_at(&h.cp))
             .collect();
 
         let values = params.compute_all_values();
         let mut item = Self {
-            curves,
+            groups,
             handles,
             params,
             values,
@@ -571,14 +581,14 @@ impl<'a> MultiCurveProblem<'a> {
         Ok(item)
     }
 
-    /// Moves every test point into world coordinates, finds its match on the reference curve,
+    /// Moves every test point into world coordinates, finds its match on the reference body,
     /// brings that match back out to the world, and recomputes the residual and the geometric
     /// weights.
     fn move_points(&mut self) {
         self.values = self.params.compute_all_values();
 
         let values = &self.values;
-        let curves = self.curves;
+        let groups = self.groups;
         let max_distance = self.max_distance;
         let min_normal_dot = self.min_normal_dot;
 
@@ -586,15 +596,15 @@ impl<'a> MultiCurveProblem<'a> {
             .handles
             .par_iter()
             .map(|h| {
-                let t_test = values[h.curve_i].transform;
+                let t_test = values[h.group_i].transform;
                 let t_ref = values[h.ref_i].transform;
 
-                // Into the world, then into the reference curve's frame just long enough to find
-                // the closest point on it.
+                // Into the world, then into the reference body's frame just long enough to find
+                // the closest point on any of its members.
                 let p_world = t_test * h.cp.sp.point;
                 let query = t_ref.inverse_transform_point(&p_world);
-                let station = curves[h.ref_i].curve.at_closest_to_point(&query);
-                let cp = CurveSurfPoint::from_station(&station, 0);
+                let (ref_m, station) = groups[h.ref_i].group.at_closest_to_point(&query);
+                let cp = CurveSurfPoint::from_station(&station, ref_m);
 
                 // ...and back out to the world, where the residual is measured.
                 let c_world = cp.sp.transformed_by(&t_ref);
@@ -618,7 +628,7 @@ impl<'a> MultiCurveProblem<'a> {
                     c_world,
                     residual,
                     target_weight: weight,
-                    target_sigma: curves[h.ref_i].sigma_at(&cp),
+                    target_sigma: groups[h.ref_i].sigma_at(&cp),
                 }
             })
             .collect();
@@ -677,11 +687,11 @@ impl<'a> MultiCurveProblem<'a> {
             .count()
     }
 
-    /// Builds one [`Alignment2`] per curve, with that curve's own correspondence residuals.
+    /// Builds one [`Alignment2`] per body, with that body's own correspondence residuals.
     fn alignments(&self) -> Vec<Alignment2> {
-        let mut grouped = vec![Vec::new(); self.curves.len()];
+        let mut grouped = vec![Vec::new(); self.groups.len()];
         for (i, h) in self.handles.iter().enumerate() {
-            grouped[h.curve_i].push(self.residuals[i]);
+            grouped[h.group_i].push(self.residuals[i]);
         }
 
         self.values
@@ -730,8 +740,8 @@ impl LeastSquaresProblem<f64, Dyn, Dyn> for MultiCurveProblem<'_> {
             let c = &self.closest[i];
 
             // The correspondence constrains the test curve...
-            let fwd = point_surf_jacobian2(p, c, &self.values[h.curve_i]) * scale;
-            self.params.add_jacobian_block(&mut jac, i, h.curve_i, &fwd);
+            let fwd = point_surf_jacobian2(p, c, &self.values[h.group_i]) * scale;
+            self.params.add_jacobian_block(&mut jac, i, h.group_i, &fwd);
 
             // ...and the reference curve, which is also free to move.
             let rev = point_surf_jacobian2_rev(p, c, &self.values[h.ref_i]) * scale;
@@ -746,10 +756,10 @@ impl LeastSquaresProblem<f64, Dyn, Dyn> for MultiCurveProblem<'_> {
 // Choosing the static curve
 // ================================================================================================
 
-/// Orders the curves by how broadly the others reference them, most-referenced first. The head of
-/// the returned order is the best candidate for the static curve.
-fn reference_priority(curves: &[AlignmentCurve], params: &CAPParams) -> Vec<usize> {
-    let matrix = correspondence_matrix(curves, params);
+/// Orders the bodies by how broadly the others reference them, most-referenced first. The head
+/// of the returned order is the best candidate for the static body.
+fn reference_priority(groups: &[AlignmentGroup], params: &CAPParams) -> Vec<usize> {
+    let matrix = correspondence_matrix(groups, params);
     let max = matrix.max();
     let mut corr = if max > 0.0 {
         &matrix / max
@@ -768,19 +778,19 @@ fn reference_priority(curves: &[AlignmentCurve], params: &CAPParams) -> Vec<usiz
     pairs.iter().map(|(i, _)| *i).collect()
 }
 
-fn correspondence_matrix(curves: &[AlignmentCurve], params: &CAPParams) -> DMatrix<f64> {
-    // Each i, j entry is the number of sample points in curve j which are a good match for curve
+fn correspondence_matrix(groups: &[AlignmentGroup], params: &CAPParams) -> DMatrix<f64> {
+    // Each i, j entry is the number of sample points in body j which are a good match for body
     // i. The row with the highest column sum has the most points referencing it, but a raw count
-    // would let two heavily overlapping curves inflate each other without either being a good
+    // would let two heavily overlapping bodies inflate each other without either being a good
     // static reference.
     //
     // Instead each cell is scaled to the range 0..1 and square-rooted, which grants diminishing
-    // returns to a large count from any single curve and favors curves referenced by many others.
-    let mut matrix = DMatrix::<f64>::zeros(curves.len(), curves.len());
+    // returns to a large count from any single body and favors bodies referenced by many others.
+    let mut matrix = DMatrix::<f64>::zeros(groups.len(), groups.len());
 
     let mut work_list = Vec::new();
-    for i in 0..curves.len() {
-        for j in (i + 1)..curves.len() {
+    for i in 0..groups.len() {
+        for j in (i + 1)..groups.len() {
             work_list.push((i, j));
         }
     }
@@ -788,8 +798,8 @@ fn correspondence_matrix(curves: &[AlignmentCurve], params: &CAPParams) -> DMatr
     let collected = work_list
         .par_iter()
         .map(|&(i, j)| {
-            let t = curves[i].transform().inv_mul(&curves[j].transform());
-            let samples = generate_alignment_points(curves[j].curve, curves[i].curve, &t, params);
+            let t = groups[i].transform().inv_mul(&groups[j].transform());
+            let samples = generate_alignment_points(groups[j].group, groups[i].group, &t, params);
             (i, j, samples.len() as f64)
         })
         .collect::<Vec<_>>();
@@ -805,7 +815,7 @@ fn correspondence_matrix(curves: &[AlignmentCurve], params: &CAPParams) -> DMatr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geom2::{Curve2, Iso2};
+    use crate::geom2::{Curve2, CurveGroup2, Iso2};
     use approx::assert_relative_eq;
     use std::f64::consts::PI;
 
@@ -849,11 +859,20 @@ mod tests {
         points
     }
 
-    fn alignment_curves<'a>(curves: &'a [Curve2], initial: &'a [Iso2]) -> Vec<AlignmentCurve<'a>> {
-        curves
+    /// Wraps each fixture curve as a body of one, which is how the pre-group tests exercise the
+    /// solver. Multi-member bodies build their own groups.
+    fn groups_of_one(curves: &[Curve2]) -> Vec<CurveGroup2> {
+        curves.iter().cloned().map(CurveGroup2::from).collect()
+    }
+
+    fn alignment_groups<'a>(
+        groups: &'a [CurveGroup2],
+        initial: &'a [Iso2],
+    ) -> Vec<AlignmentGroup<'a>> {
+        groups
             .iter()
             .zip(initial.iter())
-            .map(|(c, t)| AlignmentCurve::new(c, None, Some(t), None))
+            .map(|(g, t)| AlignmentGroup::new(g, None, Some(t), None))
             .collect()
     }
 
@@ -869,7 +888,8 @@ mod tests {
         let disturb = Iso2::new(Vector2::new(0.2, -0.15), PI / 90.0);
         let initial = vec![Iso2::identity(), disturb];
 
-        let acs = alignment_curves(&curves, &initial);
+        let groups = groups_of_one(&curves);
+        let acs = alignment_groups(&groups, &initial);
         let points = chain_points(&curves, 0.4);
 
         let outcome = multi_curve_adjustment_with_points(&acs, points, 0, &test_opts())?;
@@ -900,7 +920,8 @@ mod tests {
             Iso2::new(Vector2::new(-0.1, 0.12), -PI / 100.0),
         ];
 
-        let acs = alignment_curves(&curves, &initial);
+        let groups = groups_of_one(&curves);
+        let acs = alignment_groups(&groups, &initial);
         let points = chain_points(&curves, 0.5);
 
         let outcome = multi_curve_adjustment_with_points(&acs, points, 0, &test_opts())?;
@@ -920,7 +941,8 @@ mod tests {
     fn the_static_curve_never_moves() -> Result<()> {
         let curves = vec![rect_curve(), rect_curve()];
         let initial = vec![Iso2::translation(0.3, 0.0), Iso2::translation(0.0, 0.25)];
-        let acs = alignment_curves(&curves, &initial);
+        let groups = groups_of_one(&curves);
+        let acs = alignment_groups(&groups, &initial);
 
         // Make curve 1 the static one this time, so the check is not trivially about index zero.
         let outcome =
@@ -939,11 +961,12 @@ mod tests {
     fn residuals_are_grouped_by_the_curve_they_came_from() -> Result<()> {
         let curves = vec![rect_curve(), rect_curve(), rect_curve()];
         let initial = vec![Iso2::identity(); 3];
-        let acs = alignment_curves(&curves, &initial);
+        let groups = groups_of_one(&curves);
+        let acs = alignment_groups(&groups, &initial);
         let points = chain_points(&curves, 0.6);
 
-        let from_1 = points.iter().filter(|p| p.curve_i == 1).count();
-        let from_2 = points.iter().filter(|p| p.curve_i == 2).count();
+        let from_1 = points.iter().filter(|p| p.group_i == 1).count();
+        let from_2 = points.iter().filter(|p| p.group_i == 2).count();
 
         let outcome = multi_curve_adjustment_with_points(&acs, points, 0, &test_opts())?;
 
@@ -963,7 +986,8 @@ mod tests {
     fn locked_dof_are_honored() -> Result<()> {
         let curves = vec![rect_curve(), rect_curve()];
         let initial = vec![Iso2::identity(), Iso2::translation(0.3, 0.0)];
-        let acs = alignment_curves(&curves, &initial);
+        let groups = groups_of_one(&curves);
+        let acs = alignment_groups(&groups, &initial);
 
         let opts = MultiAlignOptions2 {
             dof: Some(Dof3::new(false, true, true)),
@@ -989,7 +1013,8 @@ mod tests {
             Iso2::identity(),
             Iso2::new(Vector2::new(1.5, -1.0), PI / 12.0),
         ];
-        let acs = alignment_curves(&curves, &initial);
+        let groups = groups_of_one(&curves);
+        let acs = alignment_groups(&groups, &initial);
 
         let opts = MultiAlignOptions2 {
             patience: 1,
@@ -1013,7 +1038,8 @@ mod tests {
         let curves = vec![rect_curve(), rect_curve()];
         let disturb = Iso2::new(Vector2::new(0.2, -0.15), PI / 120.0);
         let initial = vec![Iso2::identity(), disturb];
-        let acs = alignment_curves(&curves, &initial);
+        let groups = groups_of_one(&curves);
+        let acs = alignment_groups(&groups, &initial);
 
         // Corrupt a tenth of the correspondences by throwing their sample points off the curve.
         let mut points = chain_points(&curves, 0.4);
@@ -1059,7 +1085,8 @@ mod tests {
     fn without_a_distance_gate_the_unweighted_solve_is_dragged() -> Result<()> {
         let curves = vec![rect_curve(), rect_curve()];
         let initial = vec![Iso2::identity(), Iso2::identity()];
-        let acs = alignment_curves(&curves, &initial);
+        let groups = groups_of_one(&curves);
+        let acs = alignment_groups(&groups, &initial);
 
         // Both bodies start on the answer, so any motion at all is damage. A twentieth of the
         // correspondences are thrown well clear of the curve, standing in for points sampled over
@@ -1102,7 +1129,8 @@ mod tests {
     fn the_distance_gate_excludes_far_correspondences() -> Result<()> {
         let curves = vec![rect_curve(), rect_curve()];
         let initial = vec![Iso2::identity(), Iso2::identity()];
-        let acs = alignment_curves(&curves, &initial);
+        let groups = groups_of_one(&curves);
+        let acs = alignment_groups(&groups, &initial);
 
         let mut points = chain_points(&curves, 0.5);
         let far = points.len() / 2;
@@ -1132,7 +1160,8 @@ mod tests {
         // keeps a match from landing on the far side of a thin wall.
         let curves = vec![rect_curve(), rect_curve()];
         let initial = vec![Iso2::identity(), Iso2::identity()];
-        let acs = alignment_curves(&curves, &initial);
+        let groups = groups_of_one(&curves);
+        let acs = alignment_groups(&groups, &initial);
 
         // One correspondence, sampled mid-way along the bottom edge and then flipped so its
         // normal points inward while its match still points outward.
@@ -1173,7 +1202,8 @@ mod tests {
             Iso2::new(Vector2::new(0.21, -0.13), 0.03),
             Iso2::new(Vector2::new(-0.17, 0.11), -0.04),
         ];
-        let acs = alignment_curves(&curves, &initial);
+        let groups = groups_of_one(&curves);
+        let acs = alignment_groups(&groups, &initial);
 
         // Sample points well away from the corners of the rectangle, so every projection lands in
         // the interior of an edge. The analytic jacobian holds the correspondence fixed, which is
@@ -1234,7 +1264,8 @@ mod tests {
             Iso2::translation(0.2, 0.0),
             Iso2::translation(0.0, 0.2),
         ];
-        let acs = alignment_curves(&curves, &initial);
+        let groups = groups_of_one(&curves);
+        let acs = alignment_groups(&groups, &initial);
 
         let cp = CurveSurfPoint::from_station(&curves[2].at_length(5.0).unwrap(), 0);
         let points = vec![MulCurveAlignPoint::new(2, cp, 1, 1.0)];
@@ -1271,7 +1302,8 @@ mod tests {
         // the reverse block and report a spurious sensitivity for a correspondence that has none.
         let curves = vec![rect_curve(), rect_curve()];
         let initial = vec![Iso2::identity(), Iso2::translation(0.3, -0.2)];
-        let acs = alignment_curves(&curves, &initial);
+        let groups = groups_of_one(&curves);
+        let acs = alignment_groups(&groups, &initial);
 
         let cp = CurveSurfPoint::from_station(&curves[1].at_length(5.0).unwrap(), 0);
         let points = vec![MulCurveAlignPoint::new(1, cp, 1, 1.0)];
@@ -1294,7 +1326,8 @@ mod tests {
     fn invalid_options_and_indices_are_rejected() {
         let curves = vec![rect_curve(), rect_curve()];
         let initial = vec![Iso2::identity(); 2];
-        let acs = alignment_curves(&curves, &initial);
+        let groups = groups_of_one(&curves);
+        let acs = alignment_groups(&groups, &initial);
         let points = chain_points(&curves, 1.0);
 
         let bad_patience = MultiAlignOptions2 {
@@ -1327,7 +1360,8 @@ mod tests {
     fn out_of_range_alignment_points_are_rejected() {
         let curves = vec![rect_curve(), rect_curve()];
         let initial = vec![Iso2::identity(); 2];
-        let acs = alignment_curves(&curves, &initial);
+        let groups = groups_of_one(&curves);
+        let acs = alignment_groups(&groups, &initial);
 
         let mut points = chain_points(&curves, 1.0);
         points[0].ref_i = 7;
@@ -1335,7 +1369,7 @@ mod tests {
         let err = multi_curve_adjustment_with_points(&acs, points, 0, &test_opts())
             .unwrap_err()
             .to_string();
-        assert!(err.contains("only 2 curves"), "unexpected message: {err}");
+        assert!(err.contains("only 2 bodies"), "unexpected message: {err}");
     }
 
     #[test]
@@ -1346,9 +1380,11 @@ mod tests {
         let initial = [Iso2::identity(); 2];
         let short = [0.01; 2];
 
+        let g0 = CurveGroup2::from(curves[0].clone());
+        let g1 = CurveGroup2::from(curves[1].clone());
         let acs = vec![
-            AlignmentCurve::new(&curves[0], None, Some(&initial[0]), None),
-            AlignmentCurve::new(&curves[1], Some(&short), Some(&initial[1]), None),
+            AlignmentGroup::new(&g0, None, Some(&initial[0]), None),
+            AlignmentGroup::new(&g1, Some(&short), Some(&initial[1]), None),
         ];
 
         let err =
@@ -1375,7 +1411,8 @@ mod tests {
             Iso2::new(Vector2::new(0.15, -0.1), PI / 120.0),
             Iso2::new(Vector2::new(-0.1, 0.12), -PI / 100.0),
         ];
-        let acs = alignment_curves(&curves, &initial);
+        let groups = groups_of_one(&curves);
+        let acs = alignment_groups(&groups, &initial);
 
         let outcome = multi_curve_adjustment(&acs, &test_opts(), &CAPParams::defaults(0.5))?;
 
@@ -1413,7 +1450,8 @@ mod tests {
 
         let curves = [left, middle, right];
         let initial = [Iso2::identity(); 3];
-        let acs = alignment_curves(&curves, &initial);
+        let groups = groups_of_one(&curves);
+        let acs = alignment_groups(&groups, &initial);
 
         let order = reference_priority(&acs, &CAPParams::new(0.25, PI / 3.0, 0.25, None));
 
@@ -1428,7 +1466,8 @@ mod tests {
             segment_curve(20.0, 26.0),
         ];
         let initial = [Iso2::identity(); 3];
-        let acs = alignment_curves(&curves, &initial);
+        let groups = groups_of_one(&curves);
+        let acs = alignment_groups(&groups, &initial);
 
         let m = correspondence_matrix(&acs, &CAPParams::new(0.25, PI / 3.0, 0.25, None));
 
@@ -1449,17 +1488,18 @@ mod tests {
     fn fewer_than_two_curves_is_rejected() {
         let curves = vec![rect_curve()];
         let initial = vec![Iso2::identity()];
-        let acs = alignment_curves(&curves, &initial);
+        let groups = groups_of_one(&curves);
+        let acs = alignment_groups(&groups, &initial);
 
         let err = multi_curve_adjustment(&acs, &test_opts(), &CAPParams::defaults(0.5))
             .unwrap_err()
             .to_string();
         assert!(
-            err.contains("at least two curves"),
+            err.contains("at least two bodies"),
             "unexpected message: {err}"
         );
 
-        let empty: Vec<AlignmentCurve> = Vec::new();
+        let empty: Vec<AlignmentGroup> = Vec::new();
         assert!(multi_curve_adjustment(&empty, &test_opts(), &CAPParams::defaults(0.5)).is_err());
     }
 }

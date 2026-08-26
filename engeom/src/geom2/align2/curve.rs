@@ -15,36 +15,41 @@
 //! in 3D. It exists because `CurveStation2` borrows its parent curve and so cannot be stored
 //! across the transforms a multi-body solve applies.
 //!
-//! ## Alignment curve container
+//! ## Alignment body container
 //!
-//! [`AlignmentCurve`] wraps a `&Curve2` together with optional per-vertex uncertainty values, an
-//! initial transform, and a list of [`CurveWeight`] providers. It is used by the multi-curve
-//! bundle adjustment solver where each entity needs its own configuration.
+//! [`AlignmentGroup`] wraps a `&CurveGroup2` together with optional per-vertex uncertainty
+//! values, an initial transform, and a list of [`CurveWeight`] providers. It is used by the
+//! multi-curve bundle adjustment solver where each rigid body needs its own configuration. A
+//! body is always a group; a lone curve rides along as a group of one via `CurveGroup2::from`.
 //!
 //! ## Residual weighting
 //!
 //! The [`CurveWeight`] trait and its two built-in implementations let callers scale alignment
 //! residuals by region:
 //!
-//! - [`LengthRangeWeight`] - applies a weight to points whose distance along the curve falls
-//!   within a given range, leaving all other points at weight `1.0`. This is the 2D stand-in for
-//!   `FaceIndexWeight`: a curve is parameterized by arc length, so a contiguous span is the
-//!   natural way to name a region of it.
+//! - [`LengthRangeWeight`] - applies a weight to points on one named member whose distance
+//!   along that member falls within a given range, leaving all other points at weight `1.0`.
+//!   This is the 2D stand-in for `FaceIndexWeight`: a member curve is parameterized by arc
+//!   length, so a member plus a span of it is the natural way to name a region of a body.
 //! - [`NearCurveWeight`] - applies a weight to points that are close to (and similarly oriented
 //!   as) a second reference curve, based on distance and normal angle thresholds.
 //!
 //! # Uncertainty
 //!
-//! Unlike `Mesh3`, a `Curve2` carries no per-vertex standard deviation of its own, so there is no
+//! Unlike `Mesh3`, a curve carries no per-vertex standard deviation of its own, so there is no
 //! equivalent of the `Mesh3::point_stdev` fallback that 3D enjoys. An explicit slice supplied to
-//! [`AlignmentCurve`] is the only source of target-side uncertainty in 2D, and a curve without one
-//! contributes a sigma of zero.
+//! [`AlignmentGroup`] is the only source of target-side uncertainty in 2D, and a body without
+//! one contributes a sigma of zero.
+//!
+//! The slice covers the whole group, with the members' vertices concatenated in member order;
+//! `CurveGroup2::vertex_offset` locates each member's span. Note that a closed member stores its
+//! seam vertex twice, so it counts one more value than it has corners.
 
 use crate::common::points::dist;
 use crate::common::vec_f64::mean_and_stdev;
 use crate::geom2::align2::target::is_curve_endpoint;
 use crate::geom2::curve2::CurveStation2;
-use crate::geom2::{Curve2, Iso2, SurfacePoint2};
+use crate::geom2::{Curve2, CurveGroup2, Iso2, SurfacePoint2};
 use std::f64::consts::PI;
 
 // ===============================================================================================
@@ -124,64 +129,72 @@ pub(crate) fn interpolated_stdev(cp: &CurveSurfPoint, stdev: &[f64]) -> f64 {
 }
 
 // ===============================================================================================
-// Alignment curve container
+// Alignment body container
 // ===============================================================================================
 
-/// A container structure that holds all the information necessary to align this curve against a
+/// A container structure that holds all the information necessary to align this body against a
 /// reference. This provides a unified interface for all additional options used to refine the
 /// alignment process, such as the uncertainty of the curve vertex points, an initial alignment,
 /// and methods of applying weights to the sample points.
-pub struct AlignmentCurve<'a> {
-    pub curve: &'a Curve2,
+///
+/// A body is a [`CurveGroup2`]: one or more disjoint curves that move together rigidly, such as
+/// the loops and open segments a planar section of a mesh produces. To align a lone curve, wrap
+/// it in a group of one with `CurveGroup2::from`.
+pub struct AlignmentGroup<'a> {
+    pub group: &'a CurveGroup2,
     pub uncertainty: Option<&'a [f64]>,
     pub initial: Option<&'a Iso2>,
     pub weights: Option<&'a [Box<dyn CurveWeight + Sync>]>,
 }
 
-impl<'a> AlignmentCurve<'a> {
-    /// Creates a new `AlignmentCurve` instance.
+impl<'a> AlignmentGroup<'a> {
+    /// Creates a new `AlignmentGroup` instance.
     ///
     /// # Arguments
     ///
-    /// * `curve`: The curve to align.
+    /// * `group`: The group of curves to align as one rigid body.
     /// * `uncertainty`: Optional uncertainty values for the curve vertices, should be in the form
-    ///   of a slice of f64 values the same length as the number of vertices in the curve. The
-    ///   values should represent standard deviations of distance the vertex would be from the
-    ///   current position upon repeated measurements. A normal distribution is assumed for the
-    ///   sake of calculating relative probabilities.
-    /// * `initial`: Optional initial transformation for the curve. If not specified, the identity
+    ///   of a slice of f64 values whose length is the group's total vertex count, with the
+    ///   members' vertices concatenated in member order. The values should represent standard
+    ///   deviations of distance the vertex would be from the current position upon repeated
+    ///   measurements. A normal distribution is assumed for the sake of calculating relative
+    ///   probabilities.
+    /// * `initial`: Optional initial transformation for the body. If not specified, the identity
     ///   transformation will be used.
     /// * `weights`: An optional list of weight providing entities that will be used to calculate
     ///   weights of the alignment points _once_ upon initialization. These weights will be
     ///   combined and will then scale the residual calculated at the associated alignment point.
     pub fn new(
-        curve: &'a Curve2,
+        group: &'a CurveGroup2,
         uncertainty: Option<&'a [f64]>,
         initial: Option<&'a Iso2>,
         weights: Option<&'a [Box<dyn CurveWeight + Sync>]>,
     ) -> Self {
         Self {
-            curve,
+            group,
             uncertainty,
             initial,
             weights,
         }
     }
 
-    /// The starting pose of this curve, or the identity if none was given.
+    /// The starting pose of this body, or the identity if none was given.
     pub fn transform(&self) -> Iso2 {
         *self.initial.unwrap_or(&Iso2::identity())
     }
 
-    /// The standard deviation of the curve at a sample point, or zero if this curve has no
-    /// uncertainty values.
+    /// The standard deviation of the body at a sample point, interpolated within the owning
+    /// member's span of the concatenated uncertainty values, or zero if this body has none.
     pub fn sigma_at(&self, cp: &CurveSurfPoint) -> f64 {
-        self.uncertainty
-            .map_or(0.0, |stdev| interpolated_stdev(cp, stdev))
+        self.uncertainty.map_or(0.0, |stdev| {
+            let o = self.group.vertex_offset(cp.member);
+            let n = self.group.curves()[cp.member].count();
+            interpolated_stdev(cp, &stdev[o..o + n])
+        })
     }
 
     /// The combined weight of every [`CurveWeight`] provider at a sample point, or `1.0` if this
-    /// curve has none.
+    /// body has none.
     pub fn weight_at(&self, cp: &CurveSurfPoint) -> f64 {
         self.weights
             .map_or(1.0, |ws| ws.iter().map(|w| w.weight(cp)).product())
@@ -207,10 +220,15 @@ pub trait CurveWeight {
     fn weight(&self, point: &CurveSurfPoint) -> f64;
 }
 
-/// Applies a weight to sample points whose distance along the curve falls within a given range.
-/// Points outside the range are left at a weight of `1.0`.
+/// Applies a weight to sample points on one named member whose distance along that member falls
+/// within a given range. Points on other members, or outside the range, are left at a weight of
+/// `1.0`.
+///
+/// The member index is part of the address because `length_along` is a member-local coordinate:
+/// a span of arc length means nothing without saying which member it is measured along.
 #[derive(Clone)]
 pub struct LengthRangeWeight {
+    member: usize,
     start: f64,
     end: f64,
     weight: f64,
@@ -221,11 +239,17 @@ impl LengthRangeWeight {
     ///
     /// # Arguments
     ///
-    /// * `start`: The distance along the curve at which the range begins, inclusive.
-    /// * `end`: The distance along the curve at which the range ends, inclusive.
+    /// * `member`: The index of the member curve the range lies on.
+    /// * `start`: The distance along the member at which the range begins, inclusive.
+    /// * `end`: The distance along the member at which the range ends, inclusive.
     /// * `weight`: The weight to apply to the points within the range.
-    pub fn new(start: f64, end: f64, weight: f64) -> Self {
-        Self { start, end, weight }
+    pub fn new(member: usize, start: f64, end: f64, weight: f64) -> Self {
+        Self {
+            member,
+            start,
+            end,
+            weight,
+        }
     }
 
     pub fn to_boxed_trait(self) -> Box<dyn CurveWeight + Sync> {
@@ -235,7 +259,10 @@ impl LengthRangeWeight {
 
 impl CurveWeight for LengthRangeWeight {
     fn weight(&self, point: &CurveSurfPoint) -> f64 {
-        if point.length_along >= self.start && point.length_along <= self.end {
+        if point.member == self.member
+            && point.length_along >= self.start
+            && point.length_along <= self.end
+        {
             self.weight
         } else {
             1.0
@@ -386,75 +413,84 @@ impl CAPParams {
     }
 }
 
-/// A sampling algorithm that finds a set of good alignment points on a test curve which can be
-/// used to align it with a reference curve. Pay close attention to the parameters.
+/// A sampling algorithm that finds a set of good alignment points on a test body which can be
+/// used to align it with a reference body. Pay close attention to the parameters.
 ///
-/// The method walks the test curve at a uniform arc length spacing and keeps the samples which
-/// look like they will behave during a solve. A sample is retained when:
+/// The method walks every member of the test group at a uniform arc length spacing and keeps the
+/// samples which look like they will behave during a solve. Each check runs against the member
+/// curve that owns the position being checked, so a group mixing closed loops and open segments
+/// is treated at every position like the single curve that position belongs to. A sample is
+/// retained when:
 ///
-/// 1. It is at least `end_margin` from either end of the test curve, if that curve is open.
-/// 2. The normals one sample spacing to either side of it, along the test curve, are within
+/// 1. It is at least `end_margin` from either end of its own member, if that member is open.
+/// 2. The normals one sample spacing to either side of it, along its own member, are within
 ///    `max_corner_angle` of its own.
-/// 3. After being moved by `iso`, its closest point on the reference curve is not a clamped
-///    endpoint of an open reference curve.
+/// 3. After being moved by `iso`, its closest point on any member of the reference group is not
+///    a clamped endpoint of an open member.
 /// 4. The normal at that closest point faces the same way as the moved sample's normal.
-/// 5. The reference curve satisfies the same corner and end-margin checks at the closest point.
+/// 5. The owning reference member satisfies the same corner and end-margin checks at the closest
+///    point.
 ///
 /// At the very end, if a sigma value is provided in `filter_distances`, the mean and standard
 /// deviation of the distance from each candidate to its corresponding projected point are
 /// computed, and any candidates further than `sigma` standard deviations above the mean are
-/// discarded.
+/// discarded. The filter is pooled across the whole body rather than run per member, because it
+/// measures body-to-body convergence.
 ///
 /// # Arguments
 ///
-/// * `test_curve`: The curve which will be sampled for alignment points: the resulting points
-///   will be on this curve, in its own coordinates.
-/// * `ref_curve`: The curve which is used as a reference for the alignment. The resulting points
-///   will be good points to use when aligning the test curve to this reference curve.
-/// * `iso`: An initial transform that will be applied to the test curve points before projecting
-///   them onto the reference curve. This would represent an initial guess of the alignment that is
-///   to follow, and takes the test curve's coordinates into the reference curve's.
+/// * `test`: The body which will be sampled for alignment points: the resulting points will be
+///   on this group's members, in the group's own coordinates.
+/// * `reference`: The body which is used as a reference for the alignment. The resulting points
+///   will be good points to use when aligning the test body to this reference body.
+/// * `iso`: An initial transform that will be applied to the test body's points before
+///   projecting them onto the reference. This would represent an initial guess of the alignment
+///   that is to follow, and takes the test body's coordinates into the reference's.
 /// * `params`: The parameters for the sampling algorithm.
 ///
 /// returns: Vec<CurveSurfPoint, Global>
 pub fn generate_alignment_points(
-    test_curve: &Curve2,
-    ref_curve: &Curve2,
+    test: &CurveGroup2,
+    reference: &CurveGroup2,
     iso: &Iso2,
     params: &CAPParams,
 ) -> Vec<CurveSurfPoint> {
     let mut candidates = Vec::new();
 
-    for cp in sample_curve(test_curve, params.sample_spacing) {
-        if !clear_of_the_ends(test_curve, cp.length_along, params.end_margin) {
-            continue;
-        }
-        if !turns_gently(test_curve, &cp, params) {
-            continue;
-        }
+    for (member, test_curve) in test.curves().iter().enumerate() {
+        for cp in sample_curve(test_curve, params.sample_spacing, member) {
+            if !clear_of_the_ends(test_curve, cp.length_along, params.end_margin) {
+                continue;
+            }
+            if !turns_gently(test_curve, &cp, params) {
+                continue;
+            }
 
-        // Move the sample into the reference curve's frame and find where it lands.
-        let moved = cp.sp.transformed_by(iso);
-        let station = ref_curve.at_closest_to_point(&moved.point);
+            // Move the sample into the reference body's frame and find where it lands, on
+            // whichever member is nearest.
+            let moved = cp.sp.transformed_by(iso);
+            let (ref_m, station) = reference.at_closest_to_point(&moved.point);
+            let ref_curve = &reference.curves()[ref_m];
 
-        // A projection past the end of an open reference curve clamps to the endpoint, which is
-        // not a real correspondence.
-        if !ref_curve.is_closed() && is_curve_endpoint(&station, ref_curve) {
-            continue;
-        }
+            // A projection past the end of an open member clamps to the endpoint, which is not a
+            // real correspondence.
+            if !ref_curve.is_closed() && is_curve_endpoint(&station, ref_curve) {
+                continue;
+            }
 
-        let ref_cp = CurveSurfPoint::from_station(&station, 0);
-        if ref_cp.sp.normal.dot(&moved.normal) < 0.0 {
-            continue;
-        }
-        if !clear_of_the_ends(ref_curve, ref_cp.length_along, params.end_margin) {
-            continue;
-        }
-        if !turns_gently(ref_curve, &ref_cp, params) {
-            continue;
-        }
+            let ref_cp = CurveSurfPoint::from_station(&station, ref_m);
+            if ref_cp.sp.normal.dot(&moved.normal) < 0.0 {
+                continue;
+            }
+            if !clear_of_the_ends(ref_curve, ref_cp.length_along, params.end_margin) {
+                continue;
+            }
+            if !turns_gently(ref_curve, &ref_cp, params) {
+                continue;
+            }
 
-        candidates.push((dist(&moved.point, &ref_cp.sp.point), cp));
+            candidates.push((dist(&moved.point, &ref_cp.sp.point), cp));
+        }
     }
 
     // Lastly, filter out candidates with distances more than a specified number of standard
@@ -479,9 +515,10 @@ pub fn generate_alignment_points(
     candidates.into_iter().map(|(_, cp)| cp).collect()
 }
 
-/// Walks a curve at a uniform arc length spacing, offset by half a spacing so that samples do not
-/// land on the vertices of a regularly shaped polyline, where the normal is ambiguous.
-fn sample_curve(curve: &Curve2, spacing: f64) -> Vec<CurveSurfPoint> {
+/// Walks a member curve at a uniform arc length spacing, offset by half a spacing so that
+/// samples do not land on the vertices of a regularly shaped polyline, where the normal is
+/// ambiguous. The samples are stamped with the member index they belong to.
+fn sample_curve(curve: &Curve2, spacing: f64, member: usize) -> Vec<CurveSurfPoint> {
     if !spacing.is_finite() || spacing <= 0.0 || curve.length() <= 0.0 {
         return Vec::new();
     }
@@ -492,7 +529,7 @@ fn sample_curve(curve: &Curve2, spacing: f64) -> Vec<CurveSurfPoint> {
             let l = (k as f64 + 0.5) * spacing;
             curve
                 .at_length(l)
-                .map(|s| CurveSurfPoint::from_station(&s, 0))
+                .map(|s| CurveSurfPoint::from_station(&s, member))
         })
         .collect()
 }
@@ -545,6 +582,11 @@ mod tests {
         CurveSurfPoint::from_station(&curve.at_length(length).unwrap(), 0)
     }
 
+    /// Wraps a fixture curve as a body of one for the container tests.
+    fn group_of(curve: &Curve2) -> CurveGroup2 {
+        CurveGroup2::from(curve.clone())
+    }
+
     #[test]
     fn a_sample_records_where_it_came_from() {
         let curve = square(false);
@@ -574,8 +616,9 @@ mod tests {
     #[test]
     fn uncertainty_is_interpolated_along_the_edge() {
         let curve = square(false);
+        let group = group_of(&curve);
         let stdev = [0.1, 0.5, 0.2, 0.4];
-        let ac = AlignmentCurve::new(&curve, Some(&stdev), None, None);
+        let ac = AlignmentGroup::new(&group, Some(&stdev), None, None);
 
         // At a vertex the value is the vertex's own.
         assert_relative_eq!(ac.sigma_at(&sample_at(&curve, 0.0)), 0.1, epsilon = 1e-12);
@@ -591,7 +634,8 @@ mod tests {
     #[test]
     fn a_curve_without_uncertainty_contributes_no_sigma() {
         let curve = square(false);
-        let ac = AlignmentCurve::new(&curve, None, None, None);
+        let group = group_of(&curve);
+        let ac = AlignmentGroup::new(&group, None, None, None);
 
         assert_eq!(ac.sigma_at(&sample_at(&curve, 1.0)), 0.0);
     }
@@ -599,7 +643,8 @@ mod tests {
     #[test]
     fn the_transform_defaults_to_the_identity() {
         let curve = square(false);
-        let ac = AlignmentCurve::new(&curve, None, None, None);
+        let group = group_of(&curve);
+        let ac = AlignmentGroup::new(&group, None, None, None);
         assert_relative_eq!(
             ac.transform().to_matrix(),
             Iso2::identity().to_matrix(),
@@ -607,7 +652,7 @@ mod tests {
         );
 
         let initial = Iso2::new(Vector2::new(1.0, 2.0), 0.3);
-        let ac = AlignmentCurve::new(&curve, None, Some(&initial), None);
+        let ac = AlignmentGroup::new(&group, None, Some(&initial), None);
         assert_relative_eq!(
             ac.transform().to_matrix(),
             initial.to_matrix(),
@@ -618,7 +663,7 @@ mod tests {
     #[test]
     fn a_length_range_weight_applies_only_inside_its_span() {
         let curve = square(false);
-        let w = LengthRangeWeight::new(1.0, 3.0, 0.25);
+        let w = LengthRangeWeight::new(0, 1.0, 3.0, 0.25);
 
         assert_relative_eq!(w.weight(&sample_at(&curve, 0.5)), 1.0);
         assert_relative_eq!(w.weight(&sample_at(&curve, 2.0)), 0.25);
@@ -633,10 +678,11 @@ mod tests {
     fn weights_from_several_providers_multiply() {
         let curve = square(false);
         let weights: Vec<Box<dyn CurveWeight + Sync>> = vec![
-            LengthRangeWeight::new(0.0, 3.0, 0.5).to_boxed_trait(),
-            LengthRangeWeight::new(2.0, 6.0, 0.5).to_boxed_trait(),
+            LengthRangeWeight::new(0, 0.0, 3.0, 0.5).to_boxed_trait(),
+            LengthRangeWeight::new(0, 2.0, 6.0, 0.5).to_boxed_trait(),
         ];
-        let ac = AlignmentCurve::new(&curve, None, None, Some(&weights));
+        let group = group_of(&curve);
+        let ac = AlignmentGroup::new(&group, None, None, Some(&weights));
 
         // Only the first span.
         assert_relative_eq!(ac.weight_at(&sample_at(&curve, 1.0)), 0.5, epsilon = 1e-12);
@@ -649,7 +695,8 @@ mod tests {
     #[test]
     fn a_curve_without_weight_providers_is_unweighted() {
         let curve = square(false);
-        let ac = AlignmentCurve::new(&curve, None, None, None);
+        let group = group_of(&curve);
+        let ac = AlignmentGroup::new(&group, None, None, None);
         assert_relative_eq!(ac.weight_at(&sample_at(&curve, 1.0)), 1.0);
     }
 
@@ -716,7 +763,7 @@ mod tests {
     #[test]
     fn samples_are_spaced_along_the_curve_and_miss_the_vertices() {
         let curve = rect_curve();
-        let samples = sample_curve(&curve, 0.5);
+        let samples = sample_curve(&curve, 0.5, 0);
 
         // A perimeter of 32 at a spacing of 0.5 gives 64 samples, offset by half a spacing so
         // that none of them land on a corner.
@@ -733,9 +780,9 @@ mod tests {
     #[test]
     fn a_degenerate_spacing_samples_nothing() {
         let curve = rect_curve();
-        assert!(sample_curve(&curve, 0.0).is_empty());
-        assert!(sample_curve(&curve, -1.0).is_empty());
-        assert!(sample_curve(&curve, f64::NAN).is_empty());
+        assert!(sample_curve(&curve, 0.0, 0).is_empty());
+        assert!(sample_curve(&curve, -1.0, 0).is_empty());
+        assert!(sample_curve(&curve, f64::NAN, 0).is_empty());
     }
 
     #[test]
@@ -779,7 +826,12 @@ mod tests {
         let reference = rect_curve();
         let params = CAPParams::defaults(0.5);
 
-        let points = generate_alignment_points(&test, &reference, &Iso2::identity(), &params);
+        let points = generate_alignment_points(
+            &group_of(&test),
+            &group_of(&reference),
+            &Iso2::identity(),
+            &params,
+        );
 
         // Two of the 64 samples beside each of the four corners are rejected on the test curve,
         // and the reference curve rejects the same ones, leaving 56.
@@ -805,7 +857,12 @@ mod tests {
         let params = CAPParams::defaults(0.5);
         assert!(params.filter_distances.is_some());
 
-        let points = generate_alignment_points(&test, &reference, &Iso2::identity(), &params);
+        let points = generate_alignment_points(
+            &group_of(&test),
+            &group_of(&reference),
+            &Iso2::identity(),
+            &params,
+        );
         assert!(!points.is_empty());
     }
 
@@ -825,6 +882,8 @@ mod tests {
         let unfiltered = CAPParams::new(0.25, PI / 3.0, 0.5, None);
         let filtered = CAPParams::new(0.25, PI / 3.0, 0.5, Some(1.0));
 
+        let test = group_of(&test);
+        let reference = group_of(&reference);
         let a = generate_alignment_points(&test, &reference, &Iso2::identity(), &unfiltered);
         let b = generate_alignment_points(&test, &reference, &Iso2::identity(), &filtered);
 
@@ -854,7 +913,12 @@ mod tests {
         .unwrap();
 
         let params = CAPParams::new(0.5, PI / 3.0, 1.0, None);
-        let points = generate_alignment_points(&test, &reference, &Iso2::identity(), &params);
+        let points = generate_alignment_points(
+            &group_of(&test),
+            &group_of(&reference),
+            &Iso2::identity(),
+            &params,
+        );
 
         assert!(points.is_empty());
     }
@@ -869,7 +933,12 @@ mod tests {
                 .unwrap();
 
         let params = CAPParams::new(0.5, PI / 3.0, 0.5, None);
-        let points = generate_alignment_points(&test, &reference, &Iso2::identity(), &params);
+        let points = generate_alignment_points(
+            &group_of(&test),
+            &group_of(&reference),
+            &Iso2::identity(),
+            &params,
+        );
 
         assert!(!points.is_empty());
         for p in &points {
@@ -879,5 +948,63 @@ mod tests {
                 p.length_along
             );
         }
+    }
+
+    #[test]
+    fn samples_carry_their_member_and_respect_each_members_ends() {
+        // A test body of two parallel open lines just off a common reference line. Samples must
+        // come from both members, stamped with the right index, and each member's end margin is
+        // measured along that member.
+        let above = Curve2::from_points(
+            &[Point2::new(0.0, 0.1), Point2::new(10.0, 0.1)],
+            1e-8,
+            false,
+        )
+        .unwrap();
+        let below = Curve2::from_points(
+            &[Point2::new(0.0, -0.1), Point2::new(10.0, -0.1)],
+            1e-8,
+            false,
+        )
+        .unwrap();
+        let test = CurveGroup2::new(vec![above, below]).unwrap();
+        let reference = group_of(&open_line());
+
+        let params = CAPParams::new(0.5, PI / 3.0, 0.5, None);
+        let points = generate_alignment_points(&test, &reference, &Iso2::identity(), &params);
+
+        // Each 10-unit member yields 20 half-offset samples, of which the end margin removes the
+        // first and last, leaving 18 per member.
+        let from_0 = points.iter().filter(|p| p.member == 0).count();
+        let from_1 = points.iter().filter(|p| p.member == 1).count();
+        assert_eq!(from_0, 18);
+        assert_eq!(from_1, 18);
+        for p in &points {
+            assert!(p.length_along >= 0.5 && p.length_along <= 9.5);
+        }
+    }
+
+    #[test]
+    fn reference_checks_run_against_the_owning_member() {
+        // The reference body mixes a short open segment far away (member 0) with a closed
+        // rectangle (member 1), and the test body coincides with the rectangle. Every match
+        // lands on member 1, and the checks must be judged against it: if the endpoint clamp or
+        // end margin were wrongly evaluated against the short open member 0, nearly every sample
+        // would be rejected, because their arc lengths run far past its end.
+        let far_segment = Curve2::from_points(
+            &[Point2::new(0.0, 50.0), Point2::new(1.0, 50.0)],
+            1e-8,
+            false,
+        )
+        .unwrap();
+        let reference = CurveGroup2::new(vec![far_segment, rect_curve()]).unwrap();
+        let test = group_of(&rect_curve());
+
+        let params = CAPParams::defaults(0.5);
+        let points = generate_alignment_points(&test, &reference, &Iso2::identity(), &params);
+
+        // The same count the single-curve corner test establishes: 64 samples minus two beside
+        // each of the four corners.
+        assert_eq!(points.len(), 56);
     }
 }
