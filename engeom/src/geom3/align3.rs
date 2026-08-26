@@ -45,10 +45,14 @@
 //!
 //! # Relationship to `align2`
 //!
-//! [`crate::geom2::align2`] is the reference implementation of this design and this module mirrors
-//! it. The two are deliberately structural mirrors rather than a shared generic: 3D needs three
-//! Euler angles whose partial derivatives require a gimbal correction that 2D has no analogue
-//! for, and its parameter storage is twice the size.
+//! This module and [`crate::geom2::align2`] are deliberately structural mirrors rather than a
+//! shared generic: 3D needs three Euler angles whose partial derivatives require a gimbal
+//! correction that 2D has no analogue for, and its parameter storage is twice the size.
+//!
+//! Neither module is the authority. The 2D module was written first and this one was brought
+//! into line with it, but the multi-body work happened here and went back the other way. A
+//! change to either should be considered for the other, and the file layout is kept parallel so
+//! that comparison is easy to make.
 
 mod cloud;
 mod information;

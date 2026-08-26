@@ -42,13 +42,17 @@
 //!
 //! # Relationship to `align3`
 //!
-//! This module is the reference implementation for `engeom`'s alignment design, and the 3D
-//! machinery in [`crate::geom3::align3`] is being brought into line with it. The two are
-//! deliberately structural mirrors rather than a shared generic: 2D needs only a single rotation
-//! angle, whose partial derivative is a plain 90-degree turn with none of the Euler-angle gimbal
-//! correction that 3D requires, and its parameter storage is half the size.
+//! This module and the 3D machinery in [`crate::geom3::align3`] are deliberately structural
+//! mirrors rather than a shared generic: 2D needs only a single rotation angle, whose partial
+//! derivative is a plain 90-degree turn with none of the Euler-angle gimbal correction that 3D
+//! requires, and its parameter storage is half the size.
+//!
+//! Neither module is the authority. This one was written first and the 3D module was brought
+//! into line with it, but the multi-body work happened in 3D and came back the other way. A
+//! change to either should be considered for the other, and the file layout is kept parallel so
+//! that comparison is easy to make.
 
-mod jacobian;
+pub mod jacobian;
 mod options;
 mod params;
 mod points_to_surface;
