@@ -13,6 +13,7 @@
 
 mod attribute_set;
 mod editing;
+mod filtering;
 mod operations;
 mod primitives;
 mod subsets;
