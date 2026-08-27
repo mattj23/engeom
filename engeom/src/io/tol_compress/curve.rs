@@ -502,10 +502,7 @@ mod tests {
         let mut buf = Vec::new();
         write_tc_curves2_to(&mut buf, &curves, 1e-5).unwrap();
 
-        let refused = match read_tc_curve2_from(&mut Cursor::new(&buf)) {
-            Err(_) => true,
-            Ok(_) => false,
-        };
+        let refused = read_tc_curve2_from(&mut Cursor::new(&buf)).is_err();
         assert!(refused, "a two-curve file must not read back as one curve");
     }
 

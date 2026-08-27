@@ -142,7 +142,12 @@ pub struct MultiAlignOptions2 {
     pub refinement_steps: usize,
 
     /// The MAGSAC++ upper noise bound, estimated from the initial residuals via the median
-    /// absolute deviation when `None`. See `AlignOptions2::sigma_max` for the units.
+    /// absolute deviation when `None`.
+    ///
+    /// This is in the units of the geometry, not in units of sigma. The single-body solver
+    /// divides its residuals through by a measurement uncertainty before weighting them, so its
+    /// `AlignOptions2::sigma_max` is a multiple of that; there is no uncertainty on this path, so
+    /// the residuals reaching the weight function are plain distances and this bound is one too.
     pub sigma_max: Option<f64>,
 
     /// The Levenberg-Marquardt evaluation budget, as a multiplier on the parameter count.
@@ -756,9 +761,10 @@ fn correspondence_matrix(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::random_geometry::RandomGeometry2;
     use crate::geom2::{Curve2, CurveGroup2, Iso2};
     use approx::assert_relative_eq;
-    use std::f64::consts::PI;
+    use std::f64::consts::{PI, TAU};
 
     /// A correspondence gate wider than the test rectangles themselves, so that the synthetic
     /// cases exercise the solver rather than the gate. Cases which are about the gate set their
@@ -798,6 +804,42 @@ mod tests {
             }
         }
         points
+    }
+
+    /// A straight open segment along the y axis at `x`, from `y0` to `y1`.
+    fn vertical_segment(x: f64, y0: f64, y1: f64) -> Curve2 {
+        Curve2::from_points(&[Point2::new(x, y0), Point2::new(x, y1)], 1e-8, false).unwrap()
+    }
+
+    /// A closed circle of 64 segments, which turns gently everywhere and so has no corners for
+    /// the sampler to reject. This is the stand-in for the closed loops a real section produces.
+    ///
+    /// Note that it is not a stand-in for a rotationally symmetric body: the facets of a 64-gon
+    /// give a rotation of a fraction of a degree a real signal to work against, so a lone circle
+    /// does pin down its own orientation here.
+    fn circle_curve(cx: f64, cy: f64, r: f64) -> Curve2 {
+        const N: usize = 64;
+        let points = (0..N)
+            .map(|i| {
+                let a = TAU * (i as f64) / (N as f64);
+                Point2::new(cx + r * a.cos(), cy + r * a.sin())
+            })
+            .collect::<Vec<_>>();
+        Curve2::from_points(&points, 1e-8, true).unwrap()
+    }
+
+    /// A body of two circles ten units apart, centered on the origin as a whole.
+    fn two_circle_body() -> CurveGroup2 {
+        CurveGroup2::new(vec![
+            circle_curve(-5.0, 0.0, 2.0),
+            circle_curve(5.0, 0.0, 2.0),
+        ])
+        .unwrap()
+    }
+
+    /// A small rigid disturbance: a rotation about the world origin plus a translation.
+    fn small_disturbance(tx: f64, ty: f64, rz: f64) -> Iso2 {
+        Iso2::new(Vector2::new(tx, ty), rz)
     }
 
     /// Wraps each fixture curve as a body of one, which is how the pre-group tests exercise the
@@ -1487,5 +1529,187 @@ mod tests {
         assert!(
             multi_curve_adjustment(&empty, None, &test_opts(), &CAPParams::defaults(0.5)).is_err()
         );
+    }
+
+    // ============================================================================================
+    // Multi-member bodies
+    // ============================================================================================
+
+    #[test]
+    fn a_two_member_body_recovers_a_motion_neither_member_could() -> Result<()> {
+        // The point of a body being a group: its members constrain the pose together.
+        //
+        // A straight segment is blind to sliding along its own direction, and no amount of
+        // discretization changes that, so a body made only of a horizontal segment cannot see an
+        // x displacement. Add a vertical member and the pair sees both axes. The same disturbance
+        // is put to each, and the assertion is the contrast.
+        let disturb = small_disturbance(0.1, 0.08, 0.0);
+
+        let leftover_x = |groups: &[CurveGroup2]| -> Result<f64> {
+            let initial = vec![Iso2::identity(), disturb];
+            let outcome = multi_curve_adjustment(
+                groups,
+                Some(&initial),
+                &test_opts(),
+                &CAPParams::defaults(0.5),
+            )?;
+            // Body 0 is static, so body 1 carries whatever displacement survived.
+            Ok(outcome
+                .alignment(1)
+                .full_transform()
+                .translation
+                .vector
+                .x
+                .abs())
+        };
+
+        let cross = || {
+            CurveGroup2::new(vec![
+                segment_curve(-6.0, 6.0),
+                vertical_segment(10.0, -6.0, 6.0),
+            ])
+            .unwrap()
+        };
+        let pair = vec![cross(), cross()];
+        let lone = vec![
+            CurveGroup2::from(segment_curve(-6.0, 6.0)),
+            CurveGroup2::from(segment_curve(-6.0, 6.0)),
+        ];
+
+        let with_two = leftover_x(&pair)?;
+        let with_one = leftover_x(&lone)?;
+
+        assert!(
+            with_two < 1e-5,
+            "the two member body should have taken the x displacement out, \
+             but {with_two} was left"
+        );
+        assert!(
+            with_one > 0.5 * 0.1,
+            "a lone horizontal segment cannot see an x displacement, so most of the 0.1 \
+             should survive, but only {with_one} did"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn both_members_of_a_body_are_brought_onto_their_twins() -> Result<()> {
+        // Recovery stated geometrically rather than through the transform: every member of the
+        // moved body ends up back on the matching member of the static one, and none of them
+        // drifts onto a different member's twin.
+        //
+        // Note what this does not test. One transform moves the whole body, so the members cannot
+        // disagree about where they went, and a solve driven by only one of them would still land
+        // the rest correctly. The member coverage question is asked by
+        // `a_two_member_body_recovers_a_motion_neither_member_could` and by the sampler's own
+        // tests; what is checked here is that a body with several members comes back as a whole
+        // and that member identity survives the round trip.
+        let groups = vec![two_circle_body(), two_circle_body()];
+        let disturb = small_disturbance(0.08, 0.06, -0.015);
+        let initial = vec![Iso2::identity(), disturb];
+
+        let outcome = multi_curve_adjustment(
+            &groups,
+            Some(&initial),
+            &test_opts(),
+            &CAPParams::defaults(0.25),
+        )?;
+
+        let t = outcome.alignment(1).full_transform();
+        for (i, member) in groups[1].curves().iter().enumerate() {
+            let moved = member.new_transformed_by(t);
+            for p in moved.points() {
+                let (m, station) = groups[0].at_closest_to_point(p);
+                assert_eq!(m, i, "member {i} drifted onto member {m} of the reference");
+                assert!(
+                    dist(p, &station.point()) < 1e-4,
+                    "member {i} did not settle back onto its twin"
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn a_body_may_mix_open_and_closed_members() -> Result<()> {
+        // Sections produce closed loops and unclosed strands in the same cut, so a body has to
+        // tolerate both at once. The open member's ends are the part that needs care: a
+        // projection past one clamps, and the sampler is what keeps those out.
+        let body = || CurveGroup2::new(vec![rect_curve(), segment_curve(-4.0, 4.0)]).unwrap();
+        let groups = vec![body(), body()];
+        let disturb = small_disturbance(0.05, 0.04, 0.01);
+        let initial = vec![Iso2::identity(), disturb];
+
+        // Both members must actually contribute, or this is only testing the rectangle.
+        let samples = crate::geom2::align2::curve::generate_alignment_points(
+            &groups[1],
+            &groups[0],
+            &disturb,
+            &CAPParams::defaults(0.5),
+        );
+        assert!(samples.iter().any(|cp| cp.member == 0));
+        assert!(samples.iter().any(|cp| cp.member == 1));
+
+        let outcome = multi_curve_adjustment(
+            &groups,
+            Some(&initial),
+            &test_opts(),
+            &CAPParams::defaults(0.5),
+        )?;
+
+        assert_relative_eq!(
+            outcome.alignment(1).full_transform().to_matrix(),
+            Iso2::identity().to_matrix(),
+            epsilon = 1e-5
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn stress_two_member_bodies_recover_small_disturbances() -> Result<()> {
+        // Seeded, so a failure is reproducible and this can never join the flaky-by-RNG set.
+        let mut rg = RandomGeometry2::from_seed(0x9a1_c0de);
+
+        for _ in 0..20 {
+            let groups = vec![two_circle_body(), two_circle_body()];
+            let disturb = small_disturbance(rg.f64_sym(0.1), rg.f64_sym(0.1), rg.f64_sym(0.02));
+            let initial = vec![Iso2::identity(), disturb];
+
+            let outcome = multi_curve_adjustment(
+                &groups,
+                Some(&initial),
+                &test_opts(),
+                &CAPParams::defaults(0.25),
+            )?;
+
+            assert_relative_eq!(
+                outcome.alignment(1).full_transform().to_matrix(),
+                Iso2::identity().to_matrix(),
+                epsilon = 1e-4
+            );
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn static_selection_counts_a_multi_member_body_across_its_members() {
+        // Two lone segments which do not reach each other, plus a two member body with one
+        // member over each of them. Only the two member body sees both, so it is the one frame
+        // the others can be expressed in, and that has to be found by pooling its members.
+        let groups = vec![
+            CurveGroup2::from(segment_curve(0.0, 6.0)),
+            CurveGroup2::from(segment_curve(20.0, 26.0)),
+            CurveGroup2::new(vec![segment_curve(1.0, 5.0), segment_curve(21.0, 25.0)]).unwrap(),
+        ];
+        let poses = [Iso2::identity(); 3];
+
+        let order =
+            reference_priority(&groups, &poses, &CAPParams::new(0.25, PI / 3.0, 0.25, None));
+
+        assert_eq!(order[0], 2, "the two member body should be the static one");
     }
 }

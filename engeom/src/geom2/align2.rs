@@ -37,8 +37,12 @@
 //! of iteratively reweighted least-squares using MAGSAC++ noise-marginalized weights, with the
 //! weights held fixed inside each solve so the analytic jacobian stays consistent with the
 //! residual it differentiates. The noise bound can be supplied explicitly or estimated from the
-//! data via the median absolute deviation. Measurement uncertainty on either the test points or
-//! the target combines in quadrature and normalizes the residuals into units of sigma.
+//! data via the median absolute deviation.
+//!
+//! On the single-body path, measurement uncertainty on either the test points or the target
+//! combines in quadrature and normalizes the residuals into units of sigma. The multi-curve
+//! path carries no uncertainty at all, because nothing in 2D produces it: its residuals stay in
+//! the units of the geometry, and so does its noise bound.
 //!
 //! # Relationship to `align3`
 //!

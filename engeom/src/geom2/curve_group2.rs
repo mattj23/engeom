@@ -255,10 +255,7 @@ mod tests {
         group.save_tccurve2(&path, 1e-6)?;
 
         // Matched rather than unwrapped: `Curve2` is not `Debug`, so `unwrap_err` will not compile.
-        let refused = match Curve2::load_tccurve2(&path) {
-            Err(_) => true,
-            Ok(_) => false,
-        };
+        let refused = Curve2::load_tccurve2(&path).is_err();
         assert!(refused, "a two-curve file must not read back as one curve");
 
         let _ = std::fs::remove_file(&path);
