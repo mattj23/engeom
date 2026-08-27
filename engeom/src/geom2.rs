@@ -17,7 +17,7 @@ use crate::AngleDir;
 use crate::AngleDir::Cw;
 use crate::common::surface_point::SurfacePoint;
 use crate::common::svd_basis::SvdBasis;
-use crate::common::{PCoords, SurfacePointCollection};
+use crate::common::{PCoords, SPCoords, SurfacePointCollection};
 use crate::na::SVector;
 use parry2d_f64::na::UnitComplex;
 use serde::{Deserialize, Serialize};
@@ -138,6 +138,12 @@ impl Manifold1Pos2 {
 impl PCoords<2> for Manifold1Pos2 {
     fn coords(&self) -> SVector<f64, 2> {
         self.point.coords
+    }
+}
+
+impl SPCoords<2> for Manifold1Pos2 {
+    fn normal(&self) -> UnitVec2 {
+        self.normal
     }
 }
 

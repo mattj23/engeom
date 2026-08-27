@@ -1,13 +1,32 @@
 //! This module generalizes fitting of boundary geometry to sample points
 
 use crate::common::points::dist;
-use crate::geom2::Boundary2;
+use crate::common::{PCoords, SPCoords};
+use crate::geom2::{Boundary2, Manifold1Pos2};
 use crate::na::{DVector, Dyn, Matrix, Owned, U1, Vector};
 use crate::{Point2, Result, SurfacePoint2, VecDot};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 
 pub type BndBuildFn = Box<dyn Fn(&DVector<f64>) -> Result<Boundary2>>;
 const DELTA: f64 = 1e-6;
+
+/// The residual of a single sample: its distance to the closest position on the boundary, signed
+/// by which side of the boundary's normal it fell on.
+///
+/// The sign carries no extra information for the fit itself. Because the objective squares the
+/// residual, and because the jacobian picks up the same sign that the residual does, both `J^T J`
+/// and `J^T r` are unchanged by it: a signed and an unsigned fit take identical Levenberg-Marquardt
+/// steps and converge to the same parameters.
+///
+/// It is worth having for two other reasons. The jacobian here is a forward finite difference, and
+/// the derivative of an absolute value is wrong for any sample sitting within `DELTA` of the
+/// boundary, where the disturbed and undisturbed distances straddle zero. And a robust noise
+/// estimate by median absolute deviation assumes residuals that are centered on zero when the fit
+/// is good; unsigned distances are all positive, which would have it measure the spread about the
+/// typical distance instead and report a scale that is too small.
+fn signed_residual(m: &Manifold1Pos2, p: &impl PCoords<2>) -> f64 {
+    dist(m, p) * m.scalar_projection(p).signum()
+}
 
 #[derive(Clone)]
 pub struct BoundaryFitResult {
@@ -144,7 +163,7 @@ impl BoundaryFittable for BoundaryToPoints<'_> {
             if self.ignore_ends {
                 weights[i] = if bounds.contains(&m.l) { 1.0 } else { 0.0 };
             }
-            res[i] = dist(&m, &self.points[i]);
+            res[i] = signed_residual(&m, &self.points[i]);
         }
 
         (res, weights)
@@ -152,7 +171,7 @@ impl BoundaryFittable for BoundaryToPoints<'_> {
 
     fn residual_only(&self, sample_i: usize, boundary: &Boundary2) -> f64 {
         let (_, m) = boundary.at_closest_to_point(&self.points[sample_i]);
-        dist(&m, &self.points[sample_i])
+        signed_residual(&m, &self.points[sample_i])
     }
 }
 
@@ -297,7 +316,7 @@ impl BoundaryFittable for BoundaryToSurfacePoints<'_> {
                 weights[i] = 0.0;
             }
 
-            res[i] = dist(&m, &self.points[i]);
+            res[i] = signed_residual(&m, &self.points[i]);
         }
 
         (res, weights)
@@ -305,7 +324,7 @@ impl BoundaryFittable for BoundaryToSurfacePoints<'_> {
 
     fn residual_only(&self, sample_i: usize, boundary: &Boundary2) -> f64 {
         let (_, m) = boundary.at_closest_to_point(&self.points[sample_i]);
-        dist(&m, &self.points[sample_i])
+        signed_residual(&m, &self.points[sample_i])
     }
 }
 
@@ -440,6 +459,67 @@ mod tests {
     use crate::geom2::{BoundaryData2, BoundaryEditor};
     use approx::assert_relative_eq;
 
+    /// A closed counter-clockwise unit square from (0,0) to (1,1). Boundary normals point to the
+    /// right of the tangent, which for counter-clockwise winding means outward.
+    fn ccw_square() -> Boundary2 {
+        let mut bdata = BoundaryData2::new_closed();
+        let mut cursor = bdata.get_cursor(None);
+        cursor.add_seg_xy(0.0, 0.0);
+        cursor.add_seg_xy(1.0, 0.0);
+        cursor.add_seg_xy(1.0, 1.0);
+        cursor.add_seg_xy(0.0, 1.0);
+        bdata.try_to_boundary().unwrap()
+    }
+
+    #[test]
+    fn the_residual_is_signed_by_which_side_of_the_boundary_a_sample_falls_on() {
+        let square = ccw_square();
+
+        let outside = Point2::new(0.5, -0.25);
+        let inside = Point2::new(0.5, 0.25);
+
+        let (_, m_out) = square.at_closest_to_point(&outside);
+        let (_, m_in) = square.at_closest_to_point(&inside);
+
+        let r_out = signed_residual(&m_out, &outside);
+        let r_in = signed_residual(&m_in, &inside);
+
+        assert!(
+            r_out > 0.0,
+            "a point outside should be positive, got {r_out}"
+        );
+        assert!(r_in < 0.0, "a point inside should be negative, got {r_in}");
+
+        // The magnitude is still the plain distance to the boundary.
+        assert_relative_eq!(r_out.abs(), 0.25, epsilon = 1e-12);
+        assert_relative_eq!(r_in.abs(), 0.25, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn signing_leaves_the_size_of_the_residual_alone() {
+        // The objective squares the residual, so signing it cannot move the minimum. This pins
+        // that down directly: the magnitude at every sample matches the unsigned distance the
+        // residual used to be.
+        let square = ccw_square();
+        let samples = fill_gaps(
+            &to_points(&[
+                [-0.4, -0.4],
+                [1.4, -0.4],
+                [1.4, 1.4],
+                [-0.4, 1.4],
+                [-0.4, -0.4],
+            ]),
+            0.1,
+        );
+
+        for p in &samples {
+            let (_, m) = square.at_closest_to_point(p);
+            assert_relative_eq!(signed_residual(&m, p).abs(), dist(&m, p), epsilon = 1e-12);
+        }
+    }
+
+    /// This and `surface_normal_line` assert converged parameters to 1e-6, so between them they
+    /// are the regression net for the claim that signing the residual does not move a fit.
     #[test]
     fn simple_triangle() {
         let corners = to_points(&[[1.0, 1.0], [3.0, 2.0], [2.0, 4.0], [1.0, 1.0]]);
