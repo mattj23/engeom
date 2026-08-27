@@ -61,7 +61,7 @@ impl SolveQuality {
     }
 
     /// Returns the worse of two qualities, ordered `Converged` then `Unconverged` then `Failed`.
-    fn worse_of(self, other: Self) -> Self {
+    pub(crate) fn worse_of(self, other: Self) -> Self {
         match (self, other) {
             (SolveQuality::Failed, _) | (_, SolveQuality::Failed) => SolveQuality::Failed,
             (SolveQuality::Unconverged, _) | (_, SolveQuality::Unconverged) => {

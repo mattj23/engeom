@@ -318,8 +318,16 @@ pub fn fit_boundary_to_points<'py>(
     let initial_vec = dvec_from_array(&initial)?;
     let bld = make_builder(builder);
 
-    let result = engeom::geom2::fit_boundary_to_points(&pts, &bld, initial_vec, ignore_ends)
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    // Robust refinement stays off from Python for now: every builder call re-enters the GIL, so
+    // the extra solves are far more expensive here than they are on the Rust side.
+    let result = engeom::geom2::fit_boundary_to_points(
+        &pts,
+        &bld,
+        initial_vec,
+        ignore_ends,
+        &engeom::geom2::BoundaryFitOptions::default(),
+    )
+    .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
     Ok(dvec_to_array(py, result.params))
 }
@@ -361,6 +369,7 @@ pub fn fit_boundary_to_surface_points<'py>(
         initial_vec,
         weight_mode,
         ignore_ends,
+        &engeom::geom2::BoundaryFitOptions::default(),
     )
     .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
