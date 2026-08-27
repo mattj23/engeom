@@ -1,8 +1,8 @@
 use crate::bounding::Aabb3;
 use crate::common::Resample;
 use crate::conversions::{
-    array_to_points3, array_to_surface_points3, array_to_vectors3, dvec_from_array,
-    dvec_to_array, points_to_array, vectors_to_array,
+    array_to_points3, array_to_surface_points3, array_to_vectors3, dvec_from_array, dvec_to_array,
+    points_to_array, vectors_to_array,
 };
 use crate::geom2::{Point2, SplineProjection, SurfacePoint2, Vector2};
 use engeom::common::To2D;
@@ -12,8 +12,8 @@ use numpy::{
     IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods,
 };
 use parry3d_f64::na::{Quaternion, Translation3, UnitQuaternion};
-use pyo3::exceptions::PyIndexError;
 use pyo3::exceptions::PyIOError;
+use pyo3::exceptions::PyIndexError;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::PyAnyMethods;
 use pyo3::types::PyIterator;
@@ -1618,7 +1618,13 @@ impl Cylinder3 {
         seed: Option<u64>,
     ) -> PyResult<Self> {
         let points = array_to_surface_points3(&points.as_array(), &normals.as_array())?;
-        let options = magsac_options(sigma_max, max_iterations, refinement_steps, confidence, seed);
+        let options = magsac_options(
+            sigma_max,
+            max_iterations,
+            refinement_steps,
+            confidence,
+            seed,
+        );
         let result = engeom::geom3::Cylinder3::from_consensus(
             &points,
             sigma_max,
@@ -1823,7 +1829,13 @@ impl Cone3 {
         seed: Option<u64>,
     ) -> PyResult<Self> {
         let points = array_to_surface_points3(&points.as_array(), &normals.as_array())?;
-        let options = magsac_options(sigma_max, max_iterations, refinement_steps, confidence, seed);
+        let options = magsac_options(
+            sigma_max,
+            max_iterations,
+            refinement_steps,
+            confidence,
+            seed,
+        );
         let result = engeom::geom3::Cone3::from_consensus(
             &points,
             sigma_max,
@@ -2187,8 +2199,9 @@ impl CurveGroup3 {
 impl CurveGroup3 {
     #[new]
     fn new(curves: Vec<Curve3>) -> PyResult<Self> {
-        let inner = engeom::CurveGroup3::new(curves.iter().map(|c| c.get_inner().clone()).collect())
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let inner =
+            engeom::CurveGroup3::new(curves.iter().map(|c| c.get_inner().clone()).collect())
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self { inner })
     }
 

@@ -1785,7 +1785,13 @@ impl Arc2 {
         seed: Option<u64>,
     ) -> PyResult<Self> {
         let points = array_to_points2(&points.as_array())?;
-        let options = magsac_options(sigma_max, max_iterations, refinement_steps, confidence, seed);
+        let options = magsac_options(
+            sigma_max,
+            max_iterations,
+            refinement_steps,
+            confidence,
+            seed,
+        );
         let result = engeom::Arc2::from_consensus(&points, sigma_max, min_r, max_r, Some(options))
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(result))
@@ -2195,8 +2201,9 @@ impl CurveGroup2 {
 impl CurveGroup2 {
     #[new]
     fn new(curves: Vec<Curve2>) -> PyResult<Self> {
-        let inner = engeom::CurveGroup2::new(curves.iter().map(|c| c.get_inner().clone()).collect())
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let inner =
+            engeom::CurveGroup2::new(curves.iter().map(|c| c.get_inner().clone()).collect())
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self { inner })
     }
 

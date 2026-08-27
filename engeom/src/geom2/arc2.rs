@@ -1,6 +1,6 @@
 use crate::AngleDir::{Ccw, Cw};
-use crate::common::points::dist;
 use crate::common::consensus::Magsac;
+use crate::common::points::dist;
 use crate::common::{
     ANGLE_TOL, PCoords, angle_in_direction, angle_signed_pi, angle_to_2pi, linear_space,
     shortest_angle_between,
@@ -565,7 +565,10 @@ mod tests {
         assert_relative_eq!(arc.radius, r, epsilon = 5.0e-3);
 
         // The arc spans only the inlier sector [0, PI], not the outlier-adjacent lower half.
-        assert!(arc.angle > 0.0, "sweep should be counter-clockwise (positive)");
+        assert!(
+            arc.angle > 0.0,
+            "sweep should be counter-clockwise (positive)"
+        );
         assert_relative_eq!(arc.angle0, 0.0, epsilon = 2.0e-2);
         assert_relative_eq!(arc.angle, PI, epsilon = 2.0e-2);
 
