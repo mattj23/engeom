@@ -56,6 +56,7 @@ fn register_geom2(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     // Curves and other complex geometries
     child.add_class::<geom2::Curve2>()?;
     child.add_class::<geom2::CurveStation2>()?;
+    child.add_class::<geom2::CurveGroup2>()?;
 
     // Boundary geometry
     child.add_class::<boundary2::Manifold1Pos2>()?;
@@ -109,6 +110,7 @@ fn register_geom3(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_class::<half_edge3::DecimateStats>()?;
     child.add_class::<geom3::Curve3>()?;
     child.add_class::<geom3::CurveStation3>()?;
+    child.add_class::<geom3::CurveGroup3>()?;
     child.add_class::<geom3::CubicSpline3>()?;
     child.add_class::<geom3::CubicSplineQueries3>()?;
     child.add_class::<geom2::SplineProjection>()?;

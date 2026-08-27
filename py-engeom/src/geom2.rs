@@ -12,7 +12,7 @@ use numpy::{
     IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods,
 };
 use parry2d_f64::na::{Translation2, UnitComplex};
-use pyo3::exceptions::{PyIOError, PyValueError};
+use pyo3::exceptions::{PyIOError, PyIndexError, PyValueError};
 use pyo3::prelude::PyAnyMethods;
 use pyo3::types::PyIterator;
 use pyo3::{
@@ -2167,6 +2167,103 @@ impl Curve2 {
             } else {
                 "open"
             }
+        )
+    }
+}
+
+// ================================================================================================
+// Curve groups
+// ================================================================================================
+
+#[pyclass(from_py_object, module = "engeom.geom2")]
+#[derive(Clone)]
+pub struct CurveGroup2 {
+    inner: engeom::CurveGroup2,
+}
+
+impl CurveGroup2 {
+    pub fn get_inner(&self) -> &engeom::CurveGroup2 {
+        &self.inner
+    }
+
+    pub fn from_inner(inner: engeom::CurveGroup2) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl CurveGroup2 {
+    #[new]
+    fn new(curves: Vec<Curve2>) -> PyResult<Self> {
+        let inner = engeom::CurveGroup2::new(curves.iter().map(|c| c.get_inner().clone()).collect())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self { inner })
+    }
+
+    #[getter]
+    fn curves(&self) -> Vec<Curve2> {
+        self.inner
+            .curves()
+            .iter()
+            .map(|c| Curve2::from_inner(c.clone()))
+            .collect()
+    }
+
+    fn __len__(&self) -> usize {
+        self.inner.len()
+    }
+
+    fn __getitem__(&self, index: isize) -> PyResult<Curve2> {
+        let n = self.inner.len() as isize;
+        // Negative indices count from the end, as they do for any Python sequence.
+        let i = if index < 0 { index + n } else { index };
+        if i < 0 || i >= n {
+            return Err(PyIndexError::new_err("curve group index out of range"));
+        }
+        Ok(Curve2::from_inner(self.inner.curves()[i as usize].clone()))
+    }
+
+    fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyIterator>> {
+        let items = self.curves();
+        PyIterator::from_object(&items.into_pyobject(py)?)
+    }
+
+    #[getter]
+    fn aabb(&self) -> Aabb2 {
+        Aabb2::from_inner(self.inner.aabb())
+    }
+
+    fn length(&self) -> f64 {
+        self.inner.length()
+    }
+
+    fn at_closest_to_point(&self, point: Point2) -> (usize, CurveStation2) {
+        let (member, station) = self.inner.at_closest_to_point(point.get_inner());
+        (member, station.into())
+    }
+
+    fn new_transformed_by(&self, iso: &Iso2) -> Self {
+        Self::from_inner(self.inner.new_transformed_by(iso.get_inner()))
+    }
+
+    #[staticmethod]
+    fn load_tccurve2(path: PathBuf) -> PyResult<Self> {
+        let group = engeom::CurveGroup2::load_tccurve2(&path)
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(group))
+    }
+
+    fn save_tccurve2(&self, path: PathBuf, tol: f64) -> PyResult<()> {
+        self.inner
+            .save_tccurve2(&path, tol)
+            .map_err(|e| PyIOError::new_err(e.to_string()))
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "<CurveGroup2 n={}, l={}>",
+            self.inner.len(),
+            self.inner.length()
         )
     }
 }

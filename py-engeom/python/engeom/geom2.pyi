@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Callable, Iterable, Tuple, TypeVar, Iterator, Any, List
 
 from numpy.typing import NDArray
@@ -1178,6 +1179,121 @@ class Curve2:
         the maximum allowable round-trip position error for any vertex: a smaller tolerance produces
         a more accurate file at the cost of more bytes per vertex, while a larger tolerance allows
         greater compression.
+
+        :param path: the path to the .tccurve2 file to write.
+        :param tol: the maximum acceptable round-trip position error, in model units.
+        """
+        ...
+
+
+class CurveGroup2:
+    """
+    A collection of disjoint `Curve2` polylines treated as a single rigid entity, such as the loops
+    and open segments produced by a planar section of a `Mesh3`.
+
+    Where a `Curve2` is a single connected polyline, a group holds any number of them, closed or
+    open in any mixture, and answers the whole-entity questions that treating them one at a time
+    would get wrong: the bounding box of everything, the closest position on *any* member, and a
+    rigid transform applied to all of them together.
+
+    Members keep their identity, and queries that land on the group report which member they landed
+    on. A group is never empty; construction rejects an empty collection.
+
+    The group behaves as a sequence, so `len(group)`, `group[i]` and `for curve in group` all work
+    and yield the member curves in order.
+    """
+
+    def __init__(self, curves: List[Curve2]) -> None:
+        """
+        Create a curve group from its member curves, which are kept in the order given. That order
+        defines the member indices reported by queries.
+
+        :param curves: the member curves. At least one is required.
+        :raises ValueError: if no curves are given.
+        """
+        ...
+
+    def __len__(self) -> int:
+        """
+        The number of member curves.
+        """
+        ...
+
+    def __getitem__(self, index: int) -> Curve2:
+        """
+        Get a member curve by index. Negative indices count from the end.
+
+        :param index: the member index.
+        :return: the member curve at that index.
+        :raises IndexError: if the index is out of range.
+        """
+        ...
+
+    def __iter__(self) -> Iterator[Curve2]:
+        """
+        Iterate over the member curves, in member order.
+        """
+        ...
+
+    @property
+    def curves(self) -> List[Curve2]:
+        """
+        The member curves, in member order.
+        """
+        ...
+
+    @property
+    def aabb(self) -> Aabb2:
+        """
+        The axis-aligned bounding box enclosing every member curve.
+        """
+        ...
+
+    def length(self) -> float:
+        """
+        The total arc length of all member curves.
+        """
+        ...
+
+    def at_closest_to_point(self, point: Point2) -> Tuple[int, CurveStation2]:
+        """
+        Find the closest position on any member curve to a test point. Ties between members are
+        broken in favor of the lower member index.
+
+        :param point: the test point.
+        :return: a tuple of the owning member index and the station on that member.
+        """
+        ...
+
+    def new_transformed_by(self, iso: Iso2) -> CurveGroup2:
+        """
+        Get a new group with every member transformed by the isometry. Member order is preserved.
+
+        :param iso: the isometry to transform the group by.
+        :return: a new, transformed curve group.
+        """
+        ...
+
+    @staticmethod
+    def load_tccurve2(path: str | Path) -> CurveGroup2:
+        """
+        Load a group from a tolerance-compressed 2D curve (.tccurve2) file, taking every curve in
+        the file as a member in the order the file stores them.
+
+        These files are collections, so this also reads a file written by `Curve2.save_tccurve2`,
+        which arrives as a group of one.
+
+        :param path: the path to the .tccurve2 file to load.
+        :return: the curve group loaded from the file.
+        :raises IOError: if the file holds no curves at all, since a group is never empty.
+        """
+        ...
+
+    def save_tccurve2(self, path: str | Path, tol: float):
+        """
+        Write the group to a single tolerance-compressed 2D curve (.tccurve2) file, one item per
+        member. Member order is the file order, so a group read back has the same member indices it
+        was saved with, and each member keeps its own closed state and reconstruction tolerance.
 
         :param path: the path to the .tccurve2 file to write.
         :param tol: the maximum acceptable round-trip position error, in model units.

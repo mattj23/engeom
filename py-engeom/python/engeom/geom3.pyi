@@ -7,7 +7,7 @@ import numpy
 from numpy.typing import NDArray
 import engeom
 from typing import Callable
-from engeom.geom2 import Vector2, Point2, SurfacePoint2, SplineProjection, Curve2
+from engeom.geom2 import Vector2, Point2, SurfacePoint2, SplineProjection, Curve2, CurveGroup2
 from engeom.common import IndexMask
 
 import metrology
@@ -2915,9 +2915,18 @@ class Mesh3:
             plane: Plane3,
             tol: float | None = None,
             faces: IndexMask | None = None
-    ) -> List[Curve3]:
+    ) -> CurveGroup3:
         """
-        Calculate and return the intersection curves between the mesh and a plane.
+        Calculate and return the intersection curves between the mesh and a plane, as a single
+        `CurveGroup3`.
+
+        A planar section is naturally several curves rather than one: a part with a hole through it
+        sections into an outer loop and an inner one. They move together as one rigid body, which is
+        what the group represents. The group is a sequence, so `len(...)`, indexing and iteration
+        all work on the result.
+
+        Closed loops come back with their first vertex repeated as the last, since a `Curve3` has no
+        closed flag of its own. That is what lets `CurveGroup3.to_2d_in_plane` recover the closure.
 
         :param plane: The plane to intersect the mesh with.
         :param tol: The curve tolerance to use when constructing the intersection curves. See the `Curve3` class
@@ -3968,6 +3977,140 @@ class Curve3:
         the maximum allowable round-trip position error for any vertex: a smaller tolerance produces
         a more accurate file at the cost of more bytes per vertex, while a larger tolerance allows
         greater compression.
+
+        :param path: the path to the .tccurve3 file to write.
+        :param tol: the maximum acceptable round-trip position error, in model units.
+        """
+        ...
+
+
+class CurveGroup3:
+    """
+    A collection of disjoint `Curve3` polylines treated as a single rigid entity, such as the loops
+    and open segments produced by a planar section of a `Mesh3` before they are brought into two
+    dimensions.
+
+    Members keep their identity, and queries that land on the group report which member they landed
+    on. A group is never empty; construction rejects an empty collection.
+
+    The group behaves as a sequence, so `len(group)`, `group[i]` and `for curve in group` all work
+    and yield the member curves in order.
+
+    Unlike `CurveGroup2`, a `Curve3` carries no notion of being closed, so a loop is represented by
+    its first and last vertices coinciding. `to_2d_in_plane` relies on that to recover the closure.
+    """
+
+    def __init__(self, curves: List[Curve3]) -> None:
+        """
+        Create a curve group from its member curves, which are kept in the order given. That order
+        defines the member indices reported by queries.
+
+        :param curves: the member curves. At least one is required.
+        :raises ValueError: if no curves are given.
+        """
+        ...
+
+    def __len__(self) -> int:
+        """
+        The number of member curves.
+        """
+        ...
+
+    def __getitem__(self, index: int) -> Curve3:
+        """
+        Get a member curve by index. Negative indices count from the end.
+
+        :param index: the member index.
+        :return: the member curve at that index.
+        :raises IndexError: if the index is out of range.
+        """
+        ...
+
+    def __iter__(self) -> Iterator[Curve3]:
+        """
+        Iterate over the member curves, in member order.
+        """
+        ...
+
+    @property
+    def curves(self) -> List[Curve3]:
+        """
+        The member curves, in member order.
+        """
+        ...
+
+    @property
+    def aabb(self) -> Aabb3:
+        """
+        The axis-aligned bounding box enclosing every member curve.
+        """
+        ...
+
+    def length(self) -> float:
+        """
+        The total arc length of all member curves.
+        """
+        ...
+
+    def at_closest_to_point(self, point: Point3) -> Tuple[int, CurveStation3]:
+        """
+        Find the closest position on any member curve to a test point. Ties between members are
+        broken in favor of the lower member index.
+
+        :param point: the test point.
+        :return: a tuple of the owning member index and the station on that member.
+        """
+        ...
+
+    def new_transformed_by(self, iso: Iso3) -> CurveGroup3:
+        """
+        Get a new group with every member transformed by the isometry. Member order is preserved.
+
+        :param iso: the isometry to transform the group by.
+        :return: a new, transformed curve group.
+        """
+        ...
+
+    def to_2d_in_plane(self, plane: Plane3) -> CurveGroup2:
+        """
+        Project every member onto a plane and return the result as a two-dimensional group,
+        expressed in that plane's own coordinate frame. Member order is preserved.
+
+        This is the ordinary way to bring a planar section of a mesh into two dimensions. Passing
+        the same plane that produced the section recovers a faithful 2D copy of it.
+
+        The plane's frame is built so that projecting onto the x-y plane is exactly the same
+        operation as dropping the z coordinate. A member which was a closed loop comes back as a
+        closed `Curve2`.
+
+        :param plane: the plane to project onto, whose frame gives the result its coordinates.
+        :return: a new `CurveGroup2` containing the projected members.
+        :raises ValueError: if any member collapses under the projection, for instance a curve
+            running along the plane normal. A collapsing member fails the whole group rather than
+            being dropped from it, which would renumber the remaining members.
+        """
+        ...
+
+    @staticmethod
+    def load_tccurve3(path: str | Path) -> CurveGroup3:
+        """
+        Load a group from a tolerance-compressed 3D curve (.tccurve3) file, taking every curve in
+        the file as a member in the order the file stores them.
+
+        These files are collections, so this also reads a file written by `Curve3.save_tccurve3`,
+        which arrives as a group of one.
+
+        :param path: the path to the .tccurve3 file to load.
+        :return: the curve group loaded from the file.
+        :raises IOError: if the file holds no curves at all, since a group is never empty.
+        """
+        ...
+
+    def save_tccurve3(self, path: str | Path, tol: float):
+        """
+        Write the group to a single tolerance-compressed 3D curve (.tccurve3) file, one item per
+        member. Member order is the file order, so a group read back has the same member indices it
+        was saved with, and each member keeps its own reconstruction tolerance.
 
         :param path: the path to the .tccurve3 file to write.
         :param tol: the maximum acceptable round-trip position error, in model units.

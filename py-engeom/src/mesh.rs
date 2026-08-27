@@ -5,7 +5,7 @@ use crate::conversions::{
     colors_to_array, faces_to_array, labels_to_array, points_to_array, scalars_to_array,
     unit_vectors_to_array,
 };
-use crate::geom3::{Curve3, Iso3, Plane3, Point3, SurfacePoint3, Vector3};
+use crate::geom3::{Curve3, CurveGroup3, Iso3, Plane3, Point3, SurfacePoint3, Vector3};
 use crate::metrology::Distance3;
 use crate::point_cloud::lptf3_load_from_args;
 use engeom::Selection;
@@ -706,19 +706,13 @@ impl Mesh3 {
         plane: Plane3,
         tol: Option<f64>,
         faces: Option<&IndexMask>,
-    ) -> PyResult<Vec<Curve3>> {
+    ) -> PyResult<CurveGroup3> {
         let results = self
             .inner
             .section_with_plane(plane.get_inner(), tol, faces.map(|m| m.get_inner()))
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
-        // Unwrapped to a list for now so the Python API is unchanged; the `CurveGroup3` class
-        // that replaces this arrives with the rest of the group bindings.
-        Ok(results
-            .into_curves()
-            .into_iter()
-            .map(Curve3::from_inner)
-            .collect())
+        Ok(CurveGroup3::from_inner(results))
     }
 
     /// Start a face filter. `start` is either the token `"none"` or `"all"`, or an `IndexMask` over
