@@ -57,6 +57,7 @@
 //! that comparison is easy to make.
 
 mod curve;
+mod information;
 pub mod jacobian;
 mod multi_curve;
 mod multi_params;
@@ -71,6 +72,7 @@ use parry2d_f64::na::Vector3;
 pub type AlignStorage2 = Vector3<f64>;
 
 pub use self::curve::*;
+pub use self::information::*;
 pub use self::multi_curve::{
     MulCurveAlignPoint, MultiAlignOptions2, multi_curve_adjustment,
     multi_curve_adjustment_with_points,
