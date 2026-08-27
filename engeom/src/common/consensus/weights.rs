@@ -17,6 +17,8 @@
 //! embedded in `D`-dimensional space, so `ν = D ≥ 2` and the exponent `a = (ν−1)/2 ≥ 0.5`, which
 //! keeps `Γ(a, 0) = Γ(a)` finite and the weight bounded as `r → 0`.
 
+use crate::common::vec_f64::median;
+
 const LANCZOS_G: f64 = 7.0;
 
 /// Lanczos approximation coefficients (g = 7, n = 9). These are the standard published constants;
@@ -196,8 +198,54 @@ impl MagsacWeight {
     }
 }
 
+/// The scale factor that turns a median absolute deviation into a consistent estimate of the
+/// standard deviation of normally distributed data.
+pub(crate) const MAD_TO_SIGMA: f64 = 1.4826;
+
+/// Estimates a MAGSAC++ `sigma_max` from a set of residuals via the median absolute deviation.
+///
+/// MAD is used rather than the standard deviation because it is insensitive to the gross outliers
+/// the robust weighting exists to suppress: contaminating up to half the data cannot move it
+/// arbitrarily, whereas a single distant point can dominate a standard deviation.
+///
+/// The residuals are expected to be *signed*, so that a well-fitted set is centered near zero.
+/// Feeding unsigned distances in works, but measures the spread about the typical distance rather
+/// than about zero, which biases the estimate low.
+///
+/// Returns `None` when the spread is zero or non-finite, which happens when the fit is already
+/// essentially exact and there is nothing to reweight.
+pub(crate) fn estimate_sigma_max(residuals: &[f64]) -> Option<f64> {
+    let center = median(residuals)?;
+    let deviations: Vec<f64> = residuals.iter().map(|r| (r - center).abs()).collect();
+    let sigma = MAD_TO_SIGMA * median(&deviations)?;
+
+    (sigma.is_finite() && sigma > 0.0).then_some(sigma)
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn sigma_estimate_is_robust_to_outliers() {
+        // Eleven values with unit spread, plus one enormous outlier. A standard deviation would
+        // be dominated by the outlier; the MAD-based estimate should barely notice it.
+        let mut values: Vec<f64> = (-5..=5).map(|i| i as f64).collect();
+        let clean = estimate_sigma_max(&values).unwrap();
+
+        values.push(10_000.0);
+        let contaminated = estimate_sigma_max(&values).unwrap();
+
+        assert!(
+            (contaminated - clean).abs() < 0.5 * clean,
+            "outlier moved the estimate too far: {clean} -> {contaminated}"
+        );
+    }
+
+    #[test]
+    fn sigma_estimate_rejects_degenerate_spread() {
+        // Every residual identical means no spread to estimate from.
+        assert_eq!(estimate_sigma_max(&[2.0; 10]), None);
+        assert_eq!(estimate_sigma_max(&[]), None);
+    }
     use super::*;
     use approx::assert_relative_eq;
 

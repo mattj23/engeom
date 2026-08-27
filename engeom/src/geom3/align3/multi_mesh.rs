@@ -40,7 +40,7 @@
 
 use crate::Result;
 use crate::common::align::{RefinementHalt, SolveQuality, TerminationReason};
-use crate::common::consensus::weights::MagsacWeight;
+use crate::common::consensus::weights::{MagsacWeight, estimate_sigma_max};
 use crate::common::points::dist;
 use crate::geom3::align3::jacobian::{point_surf_jacobian, point_surf_jacobian_rev};
 use crate::geom3::align3::mesh::{AlignmentMesh, generate_alignment_points, interpolated_stdev};
@@ -55,10 +55,6 @@ use rayon::prelude::*;
 /// Euclidean point-to-surface distance in space, so it follows a chi distribution with three
 /// degrees of freedom.
 const RESIDUAL_DOF: usize = 3;
-
-/// The scale factor that turns a median absolute deviation into a consistent estimate of the
-/// standard deviation of normally distributed data.
-const MAD_TO_SIGMA: f64 = 1.4826;
 
 // ================================================================================================
 // Options
@@ -374,29 +370,6 @@ fn resolve_sigma_max(opts: &MultiAlignOptions3, problem: &MultiMeshProblem<'_>) 
         Some(s) => Some(s),
         None => estimate_sigma_max(&problem.normalized_residuals()),
     }
-}
-
-/// Estimates a MAGSAC++ `sigma_max` from residuals via the median absolute deviation, which is
-/// insensitive to the gross outliers the robust weighting exists to suppress.
-fn estimate_sigma_max(residuals: &[f64]) -> Option<f64> {
-    let center = median(residuals)?;
-    let deviations: Vec<f64> = residuals.iter().map(|r| (r - center).abs()).collect();
-    let sigma = MAD_TO_SIGMA * median(&deviations)?;
-    (sigma.is_finite() && sigma > 0.0).then_some(sigma)
-}
-
-fn median(values: &[f64]) -> Option<f64> {
-    if values.is_empty() {
-        return None;
-    }
-    let mut sorted = values.to_vec();
-    sorted.sort_by(|a, b| a.total_cmp(b));
-    let n = sorted.len();
-    Some(if n.is_multiple_of(2) {
-        0.5 * (sorted[n / 2 - 1] + sorted[n / 2])
-    } else {
-        sorted[n / 2]
-    })
 }
 
 // ================================================================================================

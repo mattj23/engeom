@@ -1,6 +1,6 @@
 use crate::common::SPCoords;
 use crate::common::align::{RefinementHalt, SolveQuality, TerminationReason};
-use crate::common::consensus::weights::MagsacWeight;
+use crate::common::consensus::weights::{MagsacWeight, estimate_sigma_max};
 use crate::common::dist;
 use crate::geom3::align3::jacobian::{copy_jacobian, point_surf_jacobian};
 use crate::geom3::align3::{
@@ -16,10 +16,6 @@ use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 /// degrees of freedom. (`MagsacWeight` requires at least 2; a point-to-plane residual would be a
 /// one-dimensional projection and would need the weight function extended.)
 const RESIDUAL_DOF: usize = 3;
-
-/// The scale factor that turns a median absolute deviation into a consistent estimate of the
-/// standard deviation of normally distributed data.
-const MAD_TO_SIGMA: f64 = 1.4826;
 
 /// The number of free parameters in a 3D alignment (tx, ty, tz, rx, ry, rz).
 const N_PARAMS: usize = 6;
@@ -200,43 +196,6 @@ fn resolve_sigma_max<T: SurfaceTarget3>(
         Some(s) => Some(s),
         None => estimate_sigma_max(&problem.normalized_residuals()),
     }
-}
-
-/// Estimates a MAGSAC++ `sigma_max` from a set of residuals via the median absolute deviation.
-///
-/// MAD is used rather than the standard deviation because it is insensitive to the gross outliers
-/// the robust weighting exists to suppress: contaminating up to half the data cannot move it
-/// arbitrarily, whereas a single distant point can dominate a standard deviation.
-///
-/// Returns `None` when the spread is zero or non-finite, which happens when the fit is already
-/// essentially exact and there is nothing to reweight.
-fn estimate_sigma_max(residuals: &[f64]) -> Option<f64> {
-    let center = median(residuals)?;
-    let deviations: Vec<f64> = residuals.iter().map(|r| (r - center).abs()).collect();
-    let sigma = MAD_TO_SIGMA * median(&deviations)?;
-
-    if sigma.is_finite() && sigma > 0.0 {
-        Some(sigma)
-    } else {
-        None
-    }
-}
-
-/// The median of a slice of finite values, or `None` if the slice is empty.
-fn median(values: &[f64]) -> Option<f64> {
-    if values.is_empty() {
-        return None;
-    }
-
-    let mut sorted = values.to_vec();
-    sorted.sort_by(|a, b| a.total_cmp(b));
-
-    let n = sorted.len();
-    Some(if n.is_multiple_of(2) {
-        0.5 * (sorted[n / 2 - 1] + sorted[n / 2])
-    } else {
-        sorted[n / 2]
-    })
 }
 
 struct PointsToSurface3<'a, T: SurfaceTarget3> {
@@ -1035,17 +994,4 @@ mod tests {
     // ============================================================================================
     // Supporting pieces
     // ============================================================================================
-
-    #[test]
-    fn median_handles_both_parities() {
-        assert_eq!(median(&[3.0, 1.0, 2.0]), Some(2.0));
-        assert_eq!(median(&[4.0, 1.0, 3.0, 2.0]), Some(2.5));
-        assert_eq!(median(&[]), None);
-    }
-
-    #[test]
-    fn sigma_estimate_rejects_degenerate_spread() {
-        assert_eq!(estimate_sigma_max(&[2.0; 10]), None);
-        assert_eq!(estimate_sigma_max(&[]), None);
-    }
 }
