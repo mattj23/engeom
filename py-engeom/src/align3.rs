@@ -2,6 +2,7 @@ use crate::conversions::array_to_points3;
 use crate::geom3::{Iso3, Point3};
 use crate::mesh::Mesh3;
 use crate::point_cloud::PointCloud3;
+use crate::solve_report::{halt_str, quality_str, termination_str};
 use engeom::geom3::align3::{AlignOrigin3, Dof6 as InnerDof6};
 use numpy::ndarray::Array1;
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray2};
@@ -268,56 +269,6 @@ impl Alignment3 {
 // ================================================================================================
 // AlignOutcome3
 // ================================================================================================
-
-/// How a single Levenberg-Marquardt solve ended, classified by whether its result can be used.
-///
-/// `"converged"` means a convergence criterion was met. `"unconverged"` means the solver ran out
-/// of its evaluation budget, so the parameters are the best it found but convergence was never
-/// demonstrated; the alignment is still valid geometry. A solve that broke down entirely is never
-/// reported here, because its result is discarded rather than returned.
-fn quality_str(q: engeom::common::SolveQuality) -> &'static str {
-    match q {
-        engeom::common::SolveQuality::Converged => "converged",
-        engeom::common::SolveQuality::Unconverged => "unconverged",
-        engeom::common::SolveQuality::Failed => "failed",
-    }
-}
-
-/// How a single Levenberg-Marquardt solve terminated, as a stable snake_case string rather than
-/// the solver crate's `Debug` formatting.
-fn termination_str(t: &engeom::common::TerminationReason) -> String {
-    use engeom::common::TerminationReason as T;
-    match t {
-        T::Converged { ftol, xtol } => match (ftol, xtol) {
-            (true, true) => "converged(ftol,xtol)".to_string(),
-            (true, false) => "converged(ftol)".to_string(),
-            (false, true) => "converged(xtol)".to_string(),
-            (false, false) => "converged".to_string(),
-        },
-        T::ResidualsZero => "residuals_zero".to_string(),
-        T::Orthogonal => "orthogonal".to_string(),
-        T::LostPatience => "lost_patience".to_string(),
-        T::Numerical(s) => format!("numerical({s})"),
-        T::User(s) => format!("user({s})"),
-        T::NoImprovementPossible(s) => format!("no_improvement_possible({s})"),
-        T::NoParameters => "no_parameters".to_string(),
-        T::NoResiduals => "no_residuals".to_string(),
-        T::WrongDimensions(s) => format!("wrong_dimensions({s})"),
-    }
-}
-
-/// Why robust refinement stopped before completing every requested round.
-fn halt_str(h: &engeom::common::RefinementHalt) -> String {
-    match h {
-        engeom::common::RefinementHalt::NoNoiseEstimate => "no_noise_estimate".to_string(),
-        engeom::common::RefinementHalt::Underdetermined { weighted, params } => {
-            format!("underdetermined({weighted} weighted points, {params} parameters)")
-        }
-        engeom::common::RefinementHalt::SolveFailed(t) => {
-            format!("solve_failed({})", termination_str(t))
-        }
-    }
-}
 
 /// The full outcome of a 3-D alignment: the `Alignment3` itself, plus a record of how the solves
 /// which produced it terminated.

@@ -64,6 +64,7 @@ mod multi_params;
 mod options;
 mod params;
 mod points_to_surface;
+mod pointset;
 mod target;
 
 use parry2d_f64::na::Vector3;
@@ -81,6 +82,7 @@ pub use self::multi_params::MultiAlignParams2;
 pub use self::options::*;
 pub use self::params::*;
 pub use self::points_to_surface::points_to_surface2;
+pub use self::pointset::PointSetTarget2;
 pub use self::target::*;
 
 /// A struct that handles constraints on degrees of freedom in R^2 space. Each dimension is

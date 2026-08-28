@@ -1,4 +1,5 @@
 mod airfoil2;
+mod align2;
 mod align3;
 mod boundary2;
 mod bounding;
@@ -14,6 +15,7 @@ mod raster;
 mod raster2;
 mod ray_casting;
 mod sensors;
+mod solve_report;
 mod svd_basis;
 
 use pyo3::prelude::*;
@@ -128,6 +130,21 @@ fn register_geom3(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     parent_module.add_submodule(&child)
 }
 
+fn register_align2_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
+    let child = PyModule::new(parent_module.py(), "_align2")?;
+    child.add_class::<align2::Dof3>()?;
+    child.add_class::<align2::AlignParams2>()?;
+    child.add_class::<align2::Alignment2>()?;
+    child.add_class::<align2::AlignOutcome2>()?;
+    child.add_class::<align2::MultiAlignOutcome2>()?;
+    child.add_function(wrap_pyfunction!(align2::points_to_curve, &child)?)?;
+    child.add_function(wrap_pyfunction!(align2::points_to_group, &child)?)?;
+    child.add_function(wrap_pyfunction!(align2::points_to_point_set, &child)?)?;
+    child.add_function(wrap_pyfunction!(align2::multi_curve_adjustment, &child)?)?;
+    parent_module.add_submodule(&child)?;
+    Ok(())
+}
+
 fn register_align3_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     let child = PyModule::new(parent_module.py(), "_align3")?;
     child.add_class::<align3::Dof6>()?;
@@ -220,6 +237,7 @@ fn py_engeom(m: &Bound<'_, PyModule>) -> PyResult<()> {
     register_raster3_module(m)?;
 
     // Alignment submodule
+    register_align2_module(m)?;
     register_align3_module(m)?;
 
     // Airfoil2 submodule
