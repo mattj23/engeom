@@ -212,11 +212,6 @@ impl<R, const D: usize> MultiAlignOutcome<R, D> {
         &self.alignments[body]
     }
 
-    /// Consumes the outcome and returns just the alignments, discarding the diagnostics.
-    pub fn into_alignments(self) -> Vec<Alignment<R, D>> {
-        self.alignments
-    }
-
     /// The number of bodies.
     pub fn len(&self) -> usize {
         self.alignments.len()

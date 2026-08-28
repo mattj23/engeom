@@ -23,7 +23,7 @@
 //! ```
 //!
 //! [`MultiAlignParams3::column_offset`] is the only thing that needs to know this, and it is what
-//! [`MultiAlignParams3::set_jacobian_block`] uses to place a body's six jacobian columns.
+//! [`MultiAlignParams3::add_jacobian_block`] uses to place a body's six jacobian columns.
 
 use crate::Result;
 use crate::geom3::align3::{AlignOrigin3, AlignParams3, AlignStorage3, AlignValues3, Dof6};
@@ -139,11 +139,6 @@ impl MultiAlignParams3 {
         self.bodies.len()
     }
 
-    /// The index of the body being held fixed.
-    pub fn static_index(&self) -> usize {
-        self.static_i
-    }
-
     /// The total number of free parameters, `6 * (body_count - 1)`.
     pub fn param_count(&self) -> usize {
         self.storage.len()
@@ -191,22 +186,6 @@ impl MultiAlignParams3 {
     /// worked out in a batch rather than recomputed inside the residual and jacobian loops.
     pub fn compute_all_values(&self) -> Vec<AlignValues3> {
         self.bodies.iter().map(|b| b.compute_values()).collect()
-    }
-
-    /// Writes a body's six jacobian values into the columns it owns, leaving the rest of the row
-    /// untouched. Writing for the static body is a no-op, since it has no columns.
-    pub fn set_jacobian_block(
-        &self,
-        matrix: &mut Jacobian,
-        row: usize,
-        body: usize,
-        values: &AlignStorage3,
-    ) {
-        if let Some(start) = self.column_offset(body) {
-            for (k, v) in values.iter().enumerate() {
-                matrix[(row, start + k)] = *v;
-            }
-        }
     }
 
     /// Adds a body's six jacobian values to the columns it owns.
@@ -387,7 +366,7 @@ mod tests {
         let mut jac = Jacobian::zeros(3, params.param_count());
 
         let values = AlignStorage3::new(1.0, 2.0, 3.0, 4.0, 5.0, 6.0);
-        params.set_jacobian_block(&mut jac, 0, 2, &values);
+        params.add_jacobian_block(&mut jac, 0, 2, &values);
 
         let start = params.column_offset(2).unwrap();
         for k in 0..6 {
@@ -403,7 +382,7 @@ mod tests {
         let params = MultiAlignParams3::from_centers(1, &centers(), None, None).unwrap();
         let mut jac = Jacobian::zeros(1, params.param_count());
 
-        params.set_jacobian_block(&mut jac, 0, 1, &AlignStorage3::from_element(9.0));
+        params.add_jacobian_block(&mut jac, 0, 1, &AlignStorage3::from_element(9.0));
 
         assert!(jac.iter().all(|v| *v == 0.0));
     }

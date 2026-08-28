@@ -115,7 +115,7 @@ pub struct BoundaryFitResult {
 }
 
 impl BoundaryFitResult {
-    pub fn new(
+    pub(crate) fn new(
         params: DVector<f64>,
         residuals: DVector<f64>,
         solves: Vec<TerminationReason>,
