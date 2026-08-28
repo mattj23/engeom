@@ -184,6 +184,10 @@ class MultiAlignOutcome2:
         """The alignment produced for each body, in the order the bodies were given."""
         ...
 
+    def __len__(self) -> int:
+        """The number of bodies which took part."""
+        ...
+
     def alignment(self, body: int) -> Alignment2:
         """
         The alignment produced for one body.
@@ -225,7 +229,7 @@ def points_to_curve(
     ignore_off_target: bool = False,
     refinement_steps: int = 4,
     sigma_max: float | None = None,
-    point_sigma: list[float] | None = None,
+    point_sigma: numpy.ndarray | list[float] | None = None,
     patience: int = 100,
 ) -> AlignOutcome2:
     """
@@ -255,7 +259,7 @@ def points_to_group(
     ignore_off_target: bool = False,
     refinement_steps: int = 4,
     sigma_max: float | None = None,
-    point_sigma: list[float] | None = None,
+    point_sigma: numpy.ndarray | list[float] | None = None,
     patience: int = 100,
 ) -> AlignOutcome2:
     """
@@ -283,11 +287,11 @@ def points_to_cloud(
     target_normals: numpy.ndarray[tuple[int, int], numpy.dtype[numpy.float64]],
     params: AlignParams2,
     max_extrapolation: float,
-    target_sigma: list[float] | None = None,
+    target_sigma: numpy.ndarray | list[float] | None = None,
     ignore_off_target: bool = False,
     refinement_steps: int = 4,
     sigma_max: float | None = None,
-    point_sigma: list[float] | None = None,
+    point_sigma: numpy.ndarray | list[float] | None = None,
     patience: int = 100,
 ) -> AlignOutcome2:
     """

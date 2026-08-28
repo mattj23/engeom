@@ -342,6 +342,50 @@ impl AlignOutcome3 {
 // Functions
 // ================================================================================================
 
+/// Build the single-body solver options from the loose keyword arguments the bindings take.
+fn single_opts(
+    ignore_off_target: bool,
+    refinement_steps: usize,
+    sigma_max: Option<f64>,
+    point_sigma: Option<&[f64]>,
+    patience: usize,
+) -> engeom::geom3::align3::AlignOptions3<'_> {
+    engeom::geom3::align3::AlignOptions3 {
+        ignore_off_target,
+        refinement_steps,
+        sigma_max,
+        point_sigma,
+        patience,
+    }
+}
+
+/// The shared tail of the single-body alignment functions: convert the points, build the
+/// options, run the solve, and map the error.
+#[allow(clippy::too_many_arguments)]
+fn points_to_target(
+    points: PyReadonlyArray2<'_, f64>,
+    target: &impl engeom::geom3::align3::SurfaceTarget3,
+    params: &AlignParams3,
+    ignore_off_target: bool,
+    refinement_steps: usize,
+    sigma_max: Option<f64>,
+    point_sigma: Option<Vec<f64>>,
+    patience: usize,
+) -> PyResult<AlignOutcome3> {
+    let points = array_to_points3(&points.as_array())?;
+    let opts = single_opts(
+        ignore_off_target,
+        refinement_steps,
+        sigma_max,
+        point_sigma.as_deref(),
+        patience,
+    );
+
+    engeom::geom3::align3::points_to_surface3(&points, target, params.get_inner().clone(), &opts)
+        .map(AlignOutcome3::from_inner)
+        .map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
 /// Align a set of 3-D points to a mesh by repeatedly projecting them onto their closest position
 /// on the surface as the solver moves them.
 ///
@@ -378,27 +422,16 @@ pub fn points_to_mesh(
     point_sigma: Option<Vec<f64>>,
     patience: usize,
 ) -> PyResult<AlignOutcome3> {
-    let points = array_to_points3(&points.as_array())?;
-
-    let opts = engeom::geom3::align3::AlignOptions3 {
+    points_to_target(
+        points,
+        mesh.get_inner(),
+        &params,
         ignore_off_target,
         refinement_steps,
         sigma_max,
-        point_sigma: point_sigma.as_deref(),
+        point_sigma,
         patience,
-    };
-
-    let result = engeom::geom3::align3::points_to_surface3(
-        &points,
-        mesh.get_inner(),
-        params.get_inner().clone(),
-        &opts,
-    );
-
-    match result {
-        Ok(outcome) => Ok(AlignOutcome3::from_inner(outcome)),
-        Err(e) => Err(PyValueError::new_err(e.to_string())),
-    }
+    )
 }
 
 /// Align a set of 3-D points to a point cloud, by repeatedly projecting them onto the tangent plane
@@ -456,28 +489,17 @@ pub fn points_to_cloud(
     point_sigma: Option<Vec<f64>>,
     patience: usize,
 ) -> PyResult<AlignOutcome3> {
-    let points = array_to_points3(&points.as_array())?;
-
     let target = engeom::geom3::align3::CloudTarget3::try_new(cloud.get_inner(), max_extrapolation)
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
-    let opts = engeom::geom3::align3::AlignOptions3 {
+    points_to_target(
+        points,
+        &target,
+        &params,
         ignore_off_target,
         refinement_steps,
         sigma_max,
-        point_sigma: point_sigma.as_deref(),
+        point_sigma,
         patience,
-    };
-
-    let result = engeom::geom3::align3::points_to_surface3(
-        &points,
-        &target,
-        params.get_inner().clone(),
-        &opts,
-    );
-
-    match result {
-        Ok(outcome) => Ok(AlignOutcome3::from_inner(outcome)),
-        Err(e) => Err(PyValueError::new_err(e.to_string())),
-    }
+    )
 }

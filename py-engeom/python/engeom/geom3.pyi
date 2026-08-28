@@ -2934,8 +2934,9 @@ class Mesh3:
         :param faces: an optional `IndexMask` over the mesh's faces which limits the section to the selected faces.
         Faces which are not selected are ignored entirely, so a section which crosses the boundary of the selection
         will produce open curves rather than closed loops. If `None` (the default) all faces are considered.
-        :return: a list of `Curve3` objects representing the intersection curves.
-        :raises ValueError: if `faces` is not a mask of the mesh's face count.
+        :return: a `CurveGroup3` holding the intersection curves.
+        :raises ValueError: if `faces` is not a mask of the mesh's face count, or if the plane
+            does not intersect the mesh at all, since a `CurveGroup3` cannot be empty.
         """
         ...
 
