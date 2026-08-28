@@ -654,59 +654,19 @@ impl LeastSquaresProblem<f64, Dyn, Dyn> for MultiMeshProblem<'_> {
 // ================================================================================================
 
 /// Orders the meshes by how broadly the others reference them, most-referenced first. The head of
-/// the returned order is the best candidate for the static mesh.
+/// the returned order is the best candidate for the static mesh. The scoring lives in
+/// [`crate::common::align::reference`].
 fn reference_priority(meshes: &[AlignmentMesh], params: &GAPParams) -> Vec<usize> {
-    let matrix = correspondence_matrix(meshes, params);
-    let max = matrix.max();
-    let mut corr = if max > 0.0 {
-        &matrix / max
-    } else {
-        matrix.clone()
-    };
-    corr.apply(|x| *x = x.sqrt());
-
-    let mut pairs = corr
-        .column_sum()
-        .iter()
-        .enumerate()
-        .map(|(i, x)| (i, *x))
-        .collect::<Vec<_>>();
-    pairs.sort_by(|a, b| b.1.total_cmp(&a.1));
-    pairs.iter().map(|(i, _)| *i).collect()
+    crate::common::align::reference::reference_priority(correspondence_matrix(meshes, params))
 }
 
+/// The pairwise correspondence counts of the meshes: each `i, j` entry is the number of sample
+/// points in mesh `j` which are a good match for mesh `i`.
 fn correspondence_matrix(meshes: &[AlignmentMesh], params: &GAPParams) -> DMatrix<f64> {
-    // Each i, j entry is the number of sample points in mesh j which are a good match for mesh i.
-    // The row with the highest column sum has the most points referencing it, but a raw count
-    // would let two heavily overlapping meshes inflate each other without either being a good
-    // static reference.
-    //
-    // Instead each cell is scaled to the range 0..1 and square-rooted, which grants diminishing
-    // returns to a large count from any single mesh and favors meshes referenced by many others.
-    let mut matrix = DMatrix::<f64>::zeros(meshes.len(), meshes.len());
-
-    let mut work_list = Vec::new();
-    for i in 0..meshes.len() {
-        for j in (i + 1)..meshes.len() {
-            work_list.push((i, j));
-        }
-    }
-
-    let collected = work_list
-        .par_iter()
-        .map(|&(i, j)| {
-            let t = meshes[i].transform().inv_mul(&meshes[j].transform());
-            let samples = generate_alignment_points(meshes[j].mesh, meshes[i].mesh, &t, params);
-            (i, j, samples.len() as f64)
-        })
-        .collect::<Vec<_>>();
-
-    for (i, j, count) in collected {
-        matrix[(i, j)] = count;
-        matrix[(j, i)] = count;
-    }
-
-    matrix
+    crate::common::align::reference::correspondence_matrix(meshes.len(), |i, j| {
+        let t = meshes[i].transform().inv_mul(&meshes[j].transform());
+        generate_alignment_points(meshes[j].mesh, meshes[i].mesh, &t, params).len() as f64
+    })
 }
 
 #[cfg(test)]

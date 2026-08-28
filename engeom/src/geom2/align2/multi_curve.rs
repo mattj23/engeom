@@ -672,63 +672,25 @@ impl LeastSquaresProblem<f64, Dyn, Dyn> for MultiCurveProblem<'_> {
 // ================================================================================================
 
 /// Orders the bodies by how broadly the others reference them, most-referenced first. The head
-/// of the returned order is the best candidate for the static body.
+/// of the returned order is the best candidate for the static body. The scoring lives in
+/// [`crate::common::align::reference`].
 fn reference_priority(groups: &[CurveGroup2], poses: &[Iso2], params: &CAPParams) -> Vec<usize> {
-    let matrix = correspondence_matrix(groups, poses, params);
-    let max = matrix.max();
-    let mut corr = if max > 0.0 {
-        &matrix / max
-    } else {
-        matrix.clone()
-    };
-    corr.apply(|x| *x = x.sqrt());
-
-    let mut pairs = corr
-        .column_sum()
-        .iter()
-        .enumerate()
-        .map(|(i, x)| (i, *x))
-        .collect::<Vec<_>>();
-    pairs.sort_by(|a, b| b.1.total_cmp(&a.1));
-    pairs.iter().map(|(i, _)| *i).collect()
+    crate::common::align::reference::reference_priority(correspondence_matrix(
+        groups, poses, params,
+    ))
 }
 
+/// The pairwise correspondence counts of the bodies: each `i, j` entry is the number of sample
+/// points in body `j` which are a good match for body `i`.
 fn correspondence_matrix(
     groups: &[CurveGroup2],
     poses: &[Iso2],
     params: &CAPParams,
 ) -> DMatrix<f64> {
-    // Each i, j entry is the number of sample points in body j which are a good match for body
-    // i. The row with the highest column sum has the most points referencing it, but a raw count
-    // would let two heavily overlapping bodies inflate each other without either being a good
-    // static reference.
-    //
-    // Instead each cell is scaled to the range 0..1 and square-rooted, which grants diminishing
-    // returns to a large count from any single body and favors bodies referenced by many others.
-    let mut matrix = DMatrix::<f64>::zeros(groups.len(), groups.len());
-
-    let mut work_list = Vec::new();
-    for i in 0..groups.len() {
-        for j in (i + 1)..groups.len() {
-            work_list.push((i, j));
-        }
-    }
-
-    let collected = work_list
-        .par_iter()
-        .map(|&(i, j)| {
-            let t = poses[i].inv_mul(&poses[j]);
-            let samples = generate_alignment_points(&groups[j], &groups[i], &t, params);
-            (i, j, samples.len() as f64)
-        })
-        .collect::<Vec<_>>();
-
-    for (i, j, count) in collected {
-        matrix[(i, j)] = count;
-        matrix[(j, i)] = count;
-    }
-
-    matrix
+    crate::common::align::reference::correspondence_matrix(groups.len(), |i, j| {
+        let t = poses[i].inv_mul(&poses[j]);
+        generate_alignment_points(&groups[j], &groups[i], &t, params).len() as f64
+    })
 }
 
 #[cfg(test)]
