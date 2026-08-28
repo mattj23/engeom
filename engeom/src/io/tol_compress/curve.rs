@@ -12,6 +12,19 @@
 //! so it travels as item metadata under [`CHORD_TOL`] rather than as a field of the format. The
 //! `tol-compress` crate stores it and never interprets it, which is the point: a general-purpose
 //! geometry format should not have to learn what engeom means by a chord tolerance.
+//!
+//! # One file, one or many curves
+//!
+//! These files are ordered collections, which is what lets a whole [`crate::geom2::CurveGroup2`] or
+//! [`crate::geom3::CurveGroup3`] live in one of them: a planar section is naturally several loops
+//! and strands, and splitting them across files would lose both their grouping and their order.
+//!
+//! The single-curve functions are a convenience over that rather than a separate format, and they
+//! **refuse a file holding several** rather than silently returning the first. The collection
+//! functions accept any count, including one, so reading a file written by either path works.
+//!
+//! Every curve keeps its own chord tolerance and closed state, so a collection may freely mix
+//! closed loops with open strands and curves built at different tolerances.
 
 use crate::Result;
 use crate::geom2::Curve2;
@@ -49,9 +62,7 @@ fn chord_tol(metadata: &tol_compress::Metadata, what: &str) -> Result<f64> {
 ///
 /// Use [`write_tc_curve2_file`] for the common case of writing directly to a file path.
 pub fn write_tc_curve2_to<W: Write>(writer: &mut W, curve: &Curve2, tol: f64) -> Result<()> {
-    let points = curve.points().iter().map(|p| [p.x, p.y]).collect();
-    let item = Polyline2::new(points, curve.is_closed()).with_meta(CHORD_TOL, curve.tol());
-    polyline::write_one_to(writer, &item, tol)?;
+    polyline::write_one_to(writer, &curve2_item(curve), tol)?;
     Ok(())
 }
 
@@ -62,34 +73,18 @@ pub fn write_tc_curve2_to<W: Write>(writer: &mut W, curve: &Curve2, tol: f64) ->
 ///
 /// Use [`read_tc_curve2_file`] for the common case of reading from a file path.
 pub fn read_tc_curve2_from<R: Read>(reader: &mut R) -> Result<Curve2> {
-    let item = polyline::read_one_from::<R, 2>(reader)?;
-    let tol = chord_tol(&item.metadata, "tccurve2 file")?;
-    let points: Vec<_> = item
-        .points
-        .iter()
-        .map(|p| crate::Point2::new(p[0], p[1]))
-        .collect();
-    Curve2::from_points(&points, tol, item.closed)
+    curve2_from(polyline::read_one_from::<R, 2>(reader)?)
 }
 
 /// Write a 2D curve to a tccurve2 file at the given path. See [`write_tc_curve2_to`] for format details.
 pub fn write_tc_curve2_file(path: &Path, curve: &Curve2, tol: f64) -> Result<()> {
-    let points = curve.points().iter().map(|p| [p.x, p.y]).collect();
-    let item = Polyline2::new(points, curve.is_closed()).with_meta(CHORD_TOL, curve.tol());
-    polyline::write_one_file(path, &item, tol)?;
+    polyline::write_one_file(path, &curve2_item(curve), tol)?;
     Ok(())
 }
 
 /// Read a 2D curve from a tccurve2 file at the given path. See [`read_tc_curve2_from`] for format details.
 pub fn read_tc_curve2_file(path: &Path) -> Result<Curve2> {
-    let item = polyline::read_one_file::<2>(path)?;
-    let tol = chord_tol(&item.metadata, "tccurve2 file")?;
-    let points: Vec<_> = item
-        .points
-        .iter()
-        .map(|p| crate::Point2::new(p[0], p[1]))
-        .collect();
-    Curve2::from_points(&points, tol, item.closed)
+    curve2_from(polyline::read_one_file::<2>(path)?)
 }
 
 /// Serialize a 3D curve into the tccurve3 format, writing to any [`Write`] sink.
@@ -123,6 +118,108 @@ pub fn write_tc_curve3_file(path: &Path, curve: &Curve3, tol: f64) -> Result<()>
 /// Read a 3D curve from a tccurve3 file at the given path. See [`read_tc_curve3_from`] for format details.
 pub fn read_tc_curve3_file(path: &Path) -> Result<Curve3> {
     curve3_from(polyline::read_one_file::<3>(path)?)
+}
+
+// ================================================================================================
+// Collections
+// ================================================================================================
+
+/// Serialize any number of 2D curves into a single tccurve2 stream, every one of them at the same
+/// storage tolerance.
+///
+/// Order is preserved, and each curve keeps its own closed state and chord tolerance. This is what
+/// a [`crate::geom2::CurveGroup2`] is written with.
+///
+/// Use [`write_tc_curves2_file`] for the common case of writing directly to a file path.
+pub fn write_tc_curves2_to<W: Write>(writer: &mut W, curves: &[Curve2], tol: f64) -> Result<()> {
+    let items: Vec<Polyline2> = curves.iter().map(curve2_item).collect();
+    polyline::write_to(writer, &items, tol)?;
+    Ok(())
+}
+
+/// Deserialize any number of 2D curves from a tccurve2-format byte stream, in the order they were
+/// written.
+///
+/// A file holding a single curve reads back as a one-element vector, so this accepts anything
+/// [`write_tc_curve2_to`] produces as well.
+///
+/// Use [`read_tc_curves2_file`] for the common case of reading from a file path.
+pub fn read_tc_curves2_from<R: Read>(reader: &mut R) -> Result<Vec<Curve2>> {
+    polyline::read_from::<R, 2>(reader)?
+        .into_iter()
+        .map(curve2_from)
+        .collect()
+}
+
+/// Write any number of 2D curves to a tccurve2 file. See [`write_tc_curves2_to`].
+pub fn write_tc_curves2_file(path: &Path, curves: &[Curve2], tol: f64) -> Result<()> {
+    let items: Vec<Polyline2> = curves.iter().map(curve2_item).collect();
+    polyline::write_file(path, &items, tol)?;
+    Ok(())
+}
+
+/// Read any number of 2D curves from a tccurve2 file. See [`read_tc_curves2_from`].
+pub fn read_tc_curves2_file(path: &Path) -> Result<Vec<Curve2>> {
+    polyline::read_file::<2>(path)?
+        .into_iter()
+        .map(curve2_from)
+        .collect()
+}
+
+/// Serialize any number of 3D curves into a single tccurve3 stream, every one of them at the same
+/// storage tolerance.
+///
+/// Order is preserved, and each curve keeps its own chord tolerance. This is what a
+/// [`crate::geom3::CurveGroup3`] is written with.
+///
+/// Use [`write_tc_curves3_file`] for the common case of writing directly to a file path.
+pub fn write_tc_curves3_to<W: Write>(writer: &mut W, curves: &[Curve3], tol: f64) -> Result<()> {
+    let items: Vec<Polyline3> = curves.iter().map(curve3_item).collect();
+    polyline::write_to(writer, &items, tol)?;
+    Ok(())
+}
+
+/// Deserialize any number of 3D curves from a tccurve3-format byte stream, in the order they were
+/// written.
+///
+/// Use [`read_tc_curves3_file`] for the common case of reading from a file path.
+pub fn read_tc_curves3_from<R: Read>(reader: &mut R) -> Result<Vec<Curve3>> {
+    polyline::read_from::<R, 3>(reader)?
+        .into_iter()
+        .map(curve3_from)
+        .collect()
+}
+
+/// Write any number of 3D curves to a tccurve3 file. See [`write_tc_curves3_to`].
+pub fn write_tc_curves3_file(path: &Path, curves: &[Curve3], tol: f64) -> Result<()> {
+    let items: Vec<Polyline3> = curves.iter().map(curve3_item).collect();
+    polyline::write_file(path, &items, tol)?;
+    Ok(())
+}
+
+/// Read any number of 3D curves from a tccurve3 file. See [`read_tc_curves3_from`].
+pub fn read_tc_curves3_file(path: &Path) -> Result<Vec<Curve3>> {
+    polyline::read_file::<3>(path)?
+        .into_iter()
+        .map(curve3_from)
+        .collect()
+}
+
+/// A 2D curve as a storable polyline, carrying its closed state and chord tolerance.
+fn curve2_item(curve: &Curve2) -> Polyline2 {
+    let points = curve.points().iter().map(|p| [p.x, p.y]).collect();
+    Polyline2::new(points, curve.is_closed()).with_meta(CHORD_TOL, curve.tol())
+}
+
+/// The inverse of [`curve2_item`].
+fn curve2_from(item: Polyline2) -> Result<Curve2> {
+    let tol = chord_tol(&item.metadata, "tccurve2 file")?;
+    let points: Vec<_> = item
+        .points
+        .iter()
+        .map(|p| crate::Point2::new(p[0], p[1]))
+        .collect();
+    Curve2::from_points(&points, tol, item.closed)
 }
 
 /// A 3D curve as a storable polyline. `Curve3` has no notion of closure, so the flag is always
@@ -305,6 +402,119 @@ mod tests {
 
         let mut cursor = Cursor::new(&buf);
         assert!(read_tc_curve2_from(&mut cursor).is_err());
+    }
+
+    // ============================================================================================
+    // Collections
+    // ============================================================================================
+
+    /// A collection has to keep its order and let its members differ from each other, which is what
+    /// makes it able to hold a whole curve group rather than a uniform batch.
+    #[test]
+    fn a_collection_of_curve2_round_trips_with_mixed_members() {
+        let tol = 1e-5;
+        let mut rg = RandomGeometry3::from_seed(101);
+        let curves = vec![
+            make_closed_curve2(&mut rg, 200, 1e-4),
+            make_curve2(&mut rg, 50, 1e-6),
+            make_closed_curve2(&mut rg, 75, 1e-3),
+        ];
+
+        let mut buf = Vec::new();
+        write_tc_curves2_to(&mut buf, &curves, tol).unwrap();
+        let back = read_tc_curves2_from(&mut Cursor::new(&buf)).unwrap();
+
+        assert_eq!(back.len(), curves.len());
+        for (a, b) in curves.iter().zip(back.iter()) {
+            check_curve2_round_trip(a, b, tol);
+        }
+
+        // The per-curve chord tolerances really are independent, not collapsed to a common one.
+        assert_relative_eq!(back[0].tol(), 1e-4);
+        assert_relative_eq!(back[1].tol(), 1e-6);
+        assert_relative_eq!(back[2].tol(), 1e-3);
+    }
+
+    #[test]
+    fn a_collection_of_curve3_round_trips() {
+        let tol = 1e-5;
+        let mut rg = RandomGeometry3::from_seed(202);
+        let curves = vec![
+            make_curve3(&mut rg, 300, 1e-6),
+            make_curve3(&mut rg, 40, 1e-4),
+        ];
+
+        let mut buf = Vec::new();
+        write_tc_curves3_to(&mut buf, &curves, tol).unwrap();
+        let back = read_tc_curves3_from(&mut Cursor::new(&buf)).unwrap();
+
+        assert_eq!(back.len(), curves.len());
+        for (a, b) in curves.iter().zip(back.iter()) {
+            check_curve3_round_trip(a, b, tol);
+        }
+    }
+
+    #[test]
+    fn a_collection_round_trips_through_a_real_file() {
+        let tol = 1e-5;
+        let mut rg = RandomGeometry3::from_seed(303);
+        let curves = vec![
+            make_closed_curve2(&mut rg, 120, 1e-4),
+            make_curve2(&mut rg, 60, 1e-4),
+        ];
+
+        let path = std::env::temp_dir().join("engeom_tc_curves2_collection.tccurve2");
+        write_tc_curves2_file(&path, &curves, tol).unwrap();
+        let back = read_tc_curves2_file(&path).unwrap();
+
+        assert_eq!(back.len(), 2);
+        for (a, b) in curves.iter().zip(back.iter()) {
+            check_curve2_round_trip(a, b, tol);
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// The two paths write the same format, so a file from either has to be readable by the
+    /// collection reader. Only the single reader is picky, and only about count.
+    #[test]
+    fn the_collection_reader_accepts_a_single_curve_file() {
+        let mut rg = RandomGeometry3::from_seed(404);
+        let curve = make_curve2(&mut rg, 30, 1e-6);
+
+        let mut buf = Vec::new();
+        write_tc_curve2_to(&mut buf, &curve, 1e-5).unwrap();
+
+        let back = read_tc_curves2_from(&mut Cursor::new(&buf)).unwrap();
+        assert_eq!(back.len(), 1);
+        check_curve2_round_trip(&curve, &back[0], 1e-5);
+    }
+
+    /// ...and the single reader refuses a collection rather than returning its first member, which
+    /// would discard the rest with no sign that it happened.
+    #[test]
+    fn the_single_reader_refuses_a_collection() {
+        let mut rg = RandomGeometry3::from_seed(505);
+        let curves = vec![
+            make_curve2(&mut rg, 20, 1e-6),
+            make_curve2(&mut rg, 20, 1e-6),
+        ];
+
+        let mut buf = Vec::new();
+        write_tc_curves2_to(&mut buf, &curves, 1e-5).unwrap();
+
+        let refused = read_tc_curve2_from(&mut Cursor::new(&buf)).is_err();
+        assert!(refused, "a two-curve file must not read back as one curve");
+    }
+
+    /// An empty collection is a valid file. It is the group constructors, not the format, which
+    /// decide that a body needs at least one curve.
+    #[test]
+    fn an_empty_collection_is_a_valid_file() {
+        let mut buf = Vec::new();
+        write_tc_curves2_to(&mut buf, &[], 1e-5).unwrap();
+
+        let back = read_tc_curves2_from(&mut Cursor::new(&buf)).unwrap();
+        assert!(back.is_empty());
     }
 
     /// The committed airfoil fixture is read by the airfoil test suite and will outlive any memory

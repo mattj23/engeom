@@ -1,11 +1,15 @@
+use crate::common::To2D;
 use crate::common::domain_window::DomainWindowIter;
 use crate::common::points::{dist, ramer_douglas_peucker};
 use crate::errors::InvalidGeometry;
-use crate::geom3::{Iso3, Plane3, Point3, UnitVec3};
+use crate::geom2::Curve2;
+use crate::geom3::{Aabb3, Iso3, Plane3, Point3, UnitVec3};
+use crate::io::{read_tc_curve3_file, write_tc_curve3_file};
 use crate::{Func1, Polynomial, Resample, Result, Smoothing, SurfacePoint3, SvdBasis3};
 use parry3d_f64::na::Unit;
 use parry3d_f64::query::PointQueryWithLocation;
 use parry3d_f64::shape::Polyline;
+use std::path::Path;
 
 #[derive(Copy, Clone)]
 pub struct CurveStation3<'a> {
@@ -101,6 +105,11 @@ impl Curve3 {
         self.line.vertices()[i]
     }
 
+    /// Returns the axis-aligned bounding box enclosing all curve vertices.
+    pub fn aabb(&self) -> Aabb3 {
+        self.line.local_aabb()
+    }
+
     pub fn new_transformed_by(&self, iso: &Iso3) -> Self {
         let points = self
             .line
@@ -109,6 +118,41 @@ impl Curve3 {
             .map(|p| iso * p)
             .collect::<Vec<_>>();
         Self::from_points(&points, self.tol).unwrap()
+    }
+
+    /// Projects this curve onto a plane and returns the result as a two-dimensional curve,
+    /// expressed in that plane's own coordinate frame.
+    ///
+    /// This is the general form of [`crate::common::To2D::to_2d`], which only ever drops the z
+    /// coordinate. Because [`Plane3::compute_frame`] is built so that the x-y plane's frame is the
+    /// identity, projecting onto `Plane3::xy()` here is exactly that same operation, and the two
+    /// agree vertex for vertex.
+    ///
+    /// The curve's chordal tolerance carries over, and the result is closed when the projected
+    /// first and last vertices land within it of each other. A section of a mesh therefore comes
+    /// back closed if it was a loop, since such a curve repeats its first vertex as its last.
+    ///
+    /// # Arguments
+    ///
+    /// * `plane`: the plane to project onto, whose frame gives the result its coordinates
+    ///
+    /// returns: Result<Curve2, Box<dyn Error, Global>>
+    ///
+    /// # Failure
+    ///
+    /// The projection can bring vertices closer together than the tolerance, and the
+    /// de-duplication that follows may leave fewer than two distinct points. A curve running along
+    /// the plane normal collapses to a point this way and is an error rather than a degenerate
+    /// curve.
+    pub fn to_2d_in_plane(&self, plane: &Plane3) -> Result<Curve2> {
+        let to_plane = plane.compute_frame().inverse();
+        let points = self
+            .vertices()
+            .iter()
+            .map(|p| (to_plane * p).to_2d())
+            .collect::<Vec<_>>();
+
+        Curve2::from_points(&points, self.tol, false)
     }
 
     pub fn from_points(points: &[Point3], tol: f64) -> Result<Self> {
@@ -128,6 +172,41 @@ impl Curve3 {
         }
 
         Ok(Self { line, lengths, tol })
+    }
+
+    /// Read a curve from a tolerance-compressed `.tccurve3` file.
+    ///
+    /// The vertex positions are recovered within the tolerance the file was written at, and the
+    /// curve's own chord tolerance is restored from it.
+    ///
+    /// # Failure
+    ///
+    /// A file holding more than one curve is refused rather than yielding its first, since
+    /// returning part of a collection would silently discard the rest. Use
+    /// [`crate::geom3::CurveGroup3::load_tccurve3`] for those.
+    ///
+    /// A `Curve3` has no notion of being closed, so a file marked closed is refused rather than
+    /// quietly flattened into an open curve.
+    pub fn load_tccurve3(path: &Path) -> Result<Self> {
+        read_tc_curve3_file(path)
+    }
+
+    /// Write this curve to a tolerance-compressed `.tccurve3` file.
+    ///
+    /// Vertex positions are quantized to the narrowest bit width per axis which keeps every one of
+    /// them within `tol` of where it started. A smaller tolerance costs more bytes per vertex. The
+    /// curve's chord tolerance travels alongside the points and is unaffected by this one, which is
+    /// purely about storage.
+    ///
+    /// # Arguments
+    ///
+    /// * `path`: the path to write to, which is overwritten if it already exists
+    /// * `tol`: the largest acceptable round-trip position error for any vertex, in the same units
+    ///   as the coordinates
+    ///
+    /// returns: `Result<()>`
+    pub fn save_tccurve3(&self, path: &Path, tol: f64) -> Result<()> {
+        write_tc_curve3_file(path, self, tol)
     }
 
     pub fn count(&self) -> usize {
@@ -365,6 +444,157 @@ impl<'a> Iterator for Curve3Iterator<'a> {
             Some(result)
         } else {
             None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geom3::Vector3;
+    use approx::assert_relative_eq;
+
+    /// A closed unit square in the plane `z = z0`, with its first vertex repeated as its last,
+    /// which is how a section of a mesh represents a loop.
+    fn square_at(z0: f64) -> Curve3 {
+        let points = [
+            Point3::new(0.0, 0.0, z0),
+            Point3::new(1.0, 0.0, z0),
+            Point3::new(1.0, 1.0, z0),
+            Point3::new(0.0, 1.0, z0),
+            Point3::new(0.0, 0.0, z0),
+        ];
+        Curve3::from_points(&points, 1e-8).unwrap()
+    }
+
+    /// The x-y plane's frame is the identity, so this projection has to agree with `to_2d` exactly
+    /// rather than merely closely. If these ever diverge, one of the two is wrong.
+    #[test]
+    fn projecting_onto_the_xy_plane_is_the_same_as_dropping_z() {
+        let curve = square_at(3.0);
+
+        let dropped = curve.to_2d().unwrap();
+        let projected = curve.to_2d_in_plane(&Plane3::xy()).unwrap();
+
+        assert_eq!(dropped.points().len(), projected.points().len());
+        for (a, b) in dropped.points().iter().zip(projected.points().iter()) {
+            assert_relative_eq!(a, b, epsilon = 1e-15);
+        }
+    }
+
+    /// A curve lying in the plane it is projected onto keeps its shape, so its length is unchanged.
+    #[test]
+    fn projecting_onto_its_own_plane_preserves_length() {
+        let curve = square_at(0.0);
+        let plane = Plane3::from_point_normal(
+            &Point3::new(0.0, 0.0, 0.0),
+            &UnitVec3::new_normalize(Vector3::new(0.0, 0.0, 1.0)),
+        );
+
+        let projected = curve.to_2d_in_plane(&plane).unwrap();
+        assert_relative_eq!(projected.length(), curve.length(), epsilon = 1e-12);
+    }
+
+    /// A loop has to come back closed, which is the property the multi-curve alignment depends on
+    /// and the reason sections repeat their first vertex.
+    #[test]
+    fn a_loop_projects_to_a_closed_curve() {
+        let projected = square_at(0.0).to_2d_in_plane(&Plane3::xy()).unwrap();
+        assert!(projected.is_closed());
+    }
+
+    /// ...and an open curve must not be closed by the projection.
+    #[test]
+    fn an_open_curve_stays_open() {
+        let curve = Curve3::from_points(
+            &[
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+            ],
+            1e-8,
+        )
+        .unwrap();
+
+        assert!(!curve.to_2d_in_plane(&Plane3::xy()).unwrap().is_closed());
+    }
+
+    /// A curve built in an arbitrary plane, projected back onto it, has to reproduce the 2D curve
+    /// it was lifted from. This is the round trip the section pipeline actually performs.
+    #[test]
+    fn a_curve_lifted_into_a_plane_projects_back_onto_itself() {
+        let plane = Plane3::from_point_normal(
+            &Point3::new(3.0, -1.0, 7.0),
+            &UnitVec3::new_normalize(Vector3::new(0.4, -0.6, 0.7)),
+        );
+        let frame = plane.compute_frame();
+
+        // Four corners of a square, expressed in the plane's own frame and lifted into the world.
+        let flat = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(2.0, 1.5, 0.0),
+            Point3::new(0.0, 1.5, 0.0),
+            Point3::new(0.0, 0.0, 0.0),
+        ];
+        let lifted = flat.iter().map(|p| frame * p).collect::<Vec<_>>();
+        let curve = Curve3::from_points(&lifted, 1e-9).unwrap();
+
+        let back = curve.to_2d_in_plane(&plane).unwrap();
+        assert!(back.is_closed());
+        assert_eq!(back.points().len(), flat.len());
+        for (want, got) in flat.iter().zip(back.points().iter()) {
+            assert_relative_eq!(want.to_2d(), *got, epsilon = 1e-9);
+        }
+    }
+
+    /// A curve running along the plane normal collapses to a point, which is an error rather than
+    /// a degenerate curve.
+    #[test]
+    fn a_curve_along_the_normal_collapses_and_errors() {
+        let curve = Curve3::from_points(
+            &[Point3::new(1.0, 2.0, 0.0), Point3::new(1.0, 2.0, 10.0)],
+            1e-8,
+        )
+        .unwrap();
+
+        assert!(curve.to_2d_in_plane(&Plane3::xy()).is_err());
+    }
+
+    /// The container methods have to be a real path to the format, not just a forwarder that
+    /// compiles: the chord tolerance is carried as file metadata rather than as geometry, so it is
+    /// the thing most likely to be quietly lost.
+    #[test]
+    fn a_curve_round_trips_through_the_container_methods() {
+        let curve = square_at(2.0);
+        let path = std::env::temp_dir().join("engeom_curve3_container.tccurve3");
+        let tol = 1e-6;
+
+        curve.save_tccurve3(&path, tol).unwrap();
+        let back = Curve3::load_tccurve3(&path).unwrap();
+
+        assert_eq!(back.count(), curve.count());
+        assert_relative_eq!(back.tol(), curve.tol(), epsilon = 1e-15);
+        for (a, b) in curve.vertices().iter().zip(back.vertices().iter()) {
+            assert_relative_eq!(a, b, epsilon = tol);
+        }
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Two planes differing only in offset give the same in-plane coordinates, since the frame
+    /// origin moves with the plane.
+    #[test]
+    fn a_parallel_plane_offset_does_not_move_the_projection() {
+        let curve = square_at(0.0);
+
+        let near = curve.to_2d_in_plane(&Plane3::xy()).unwrap();
+        let far = curve
+            .to_2d_in_plane(&Plane3::xy().offset_by(100.0))
+            .unwrap();
+
+        for (a, b) in near.points().iter().zip(far.points().iter()) {
+            assert_relative_eq!(a, b, epsilon = 1e-12);
         }
     }
 }

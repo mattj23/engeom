@@ -12,7 +12,8 @@ def main():
     mesh = Mesh3.load_umesh(DATA_DIR / "engine-blade.umesh.gz")
 
     # We'll create a plane that is parallel to the XY plane and passes through the Z coordinate of the mesh's AABB
-    # center. We'll then use the `section_with_plane` method to extract the curves that intersect the plane.
+    # center. We'll then use the `section_with_plane` method to extract the curves that intersect the plane. They
+    # come back as a `CurveGroup3`, which unpacks like a sequence.
     plane = Plane3.xy().offset_by(mesh.aabb.center.z)
     curves = mesh.section_with_plane(plane)
 

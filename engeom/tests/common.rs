@@ -2,8 +2,14 @@ use engeom::Result;
 use std::env;
 use std::path::{Path, PathBuf};
 
-const TEST_DATA_FOLDER: &str = "test-data";
-const RESULT_DATA_FOLDER: &str = "result-data";
+/// The directory name searched for when locating the private test data, and the sibling directory
+/// that test output is written into.
+///
+/// These carry the `engeom-` prefix deliberately. `find_private_test_data` walks up the parent
+/// chain from the current working directory looking for the first of these, so a generic name like
+/// `test-data` risks matching an unrelated directory that happens to sit in a shared parent.
+const TEST_DATA_FOLDER: &str = "engeom-test-data";
+const RESULT_DATA_FOLDER: &str = "engeom-result-data";
 
 pub struct PathPair {
     root_path: PathBuf,

@@ -20,97 +20,8 @@
 
 use super::*;
 use crate::geom3::align3::params::AlignValues3;
-use crate::geom3::{Point3, SurfacePoint3};
 use parry2d_f64::na::Dim;
 use parry3d_f64::na::{Matrix, RawStorageMut, Storage, U6};
-
-/// This is a helper function for computing the partial derivatives of the parameters (a single
-/// row of the Jacobian matrix) for a distance function approximated by a point and its closest
-/// point on a plane.  This is a reasonable approximation for distances measured between points and
-/// the surface of a mesh, or points and a point/normal cloud where the points act locally like
-/// planes.
-///
-/// This approximation assumes that the vector from the point to the closest point on the plane is
-/// very close to (if not exactly) the normal of the plane.
-///
-/// # Arguments
-///
-/// * `p`: the test point (a sample point in the data being optimized)
-/// * `c`: the reference surface point (a point and normal in the model) closest to `p`
-/// * `rc`: a point which is the center of rotation for the test points
-///
-/// returns: Matrix<f64, Const<6>, Const<1>, ArrayStorage<f64, 6, 1>>
-pub fn point_plane_jacobian(p: &Point3, c: &SurfacePoint3, params: &RcParams3) -> AlignStorage3 {
-    let s = c.scalar_projection(p).signum();
-
-    // The point with relation to the current center of rotation
-    let from_rc = Point3::from(p - params.current_rc());
-
-    point_plane_core(s, c, from_rc, params)
-}
-
-/// This is a helper function for computing the partial derivatives of the parameters for a
-/// distance function approximated by a point and its closest point on a plane (represented as
-/// a `SurfacePoint3`), but where the parameters being evaluated are the transform of the reference
-/// plane, not the test point.
-///
-/// This is very similar to `point_plane_jacobian`, but is used in multi-entity simultaneous
-/// alignments where not only are the test points being transformed, but the reference points are
-/// potentially being transformed by a transform on that entity.
-///
-/// # Arguments
-///
-/// * `p`: the test point (a sample point in the data being optimized)
-/// * `c`: the reference surface point (a point and normal in the model) closest to `p`
-/// * `rc`: a point which is the center of rotation **for the reference points**
-///
-/// returns: Matrix<f64, Const<6>, Const<1>, ArrayStorage<f64, 6, 1>>
-pub fn point_plane_jacobian_rev(
-    p: &Point3,
-    c: &SurfacePoint3,
-    params: &RcParams3,
-) -> AlignStorage3 {
-    let s = c.scalar_projection(p).signum();
-
-    // The point with relation to the current center of rotation
-    let from_rc = Point3::from(c.point - params.current_rc());
-
-    point_plane_core(-s, c, from_rc, params)
-}
-
-/// A core function for computing the partial derivatives of the parameters for a distance function
-/// approximated by a point and its closest point on a plane (represented as a `SurfacePoint3`).
-/// The internal functionality is common between `point_plane_jacobian` and
-/// `point_plane_jacobian_rev`, the two callers, which differ only in the sign of the scalar
-/// projection of the test point onto the plane.
-///
-/// # Arguments
-///
-/// * `s`: the sign of the scalar projection of the test point onto the plane
-/// * `c`: the reference surface point (a point and normal in the model) closest to `p`
-/// * `from_rc`: the point with relation to the current center of rotation
-/// * `params`: the parameters of the current alignment
-///
-/// returns: Matrix<f64, Const<6>, Const<1>, ArrayStorage<f64, 6, 1>>
-fn point_plane_core(
-    s: f64,
-    c: &SurfacePoint3,
-    from_rc: Point3,
-    params: &RcParams3,
-) -> AlignStorage3 {
-    let mut result = AlignStorage3::zeros();
-    let n = c.normal.into_inner() * s;
-
-    result[0] = n.x;
-    result[1] = n.y;
-    result[2] = n.z;
-
-    result[3] = n.dot(&(params.rotations().rd.x * from_rc).coords);
-    result[4] = n.dot(&(params.rotations().rd.y * from_rc).coords);
-    result[5] = n.dot(&(params.rotations().rd.z * from_rc).coords);
-
-    result
-}
 
 /// This is a helper function to calculate the partial derivatives of the parameters for a residual
 /// distance between a test point and a surface point on a target entity.
@@ -176,6 +87,65 @@ pub fn point_surf_jacobian(
     result
 }
 
+/// The counterpart to [`point_surf_jacobian`] for the case where it is the *target* entity whose
+/// transform is being optimized, rather than the test point's.
+///
+/// This is what a multi-body adjustment needs. When two measured meshes are aligned to each other,
+/// a correspondence between them constrains both bodies: moving the test mesh slides `p`, and
+/// moving the reference mesh slides `c`. Each contributes a block to the same jacobian row, and
+/// this function supplies the second one.
+///
+/// The residual is the same signed point-to-point distance that [`point_surf_jacobian`]
+/// differentiates, so the two differ only in which point the parameters move and therefore in
+/// sign: displacing the target by `v` changes the distance by `-dir . v` where `dir` is the unit
+/// deviation direction.
+///
+/// The rotation partials are evaluated at `c`, which is the point this function's parameters
+/// actually move. As in the forward case, though, the choice turns out not to matter: the
+/// skew-symmetry argument in [`point_surf_jacobian`] applies unchanged here, since the difference
+/// between evaluating at `p` and at `c` is still orthogonal to a `dir` that is still parallel to
+/// `p - c`. `stress_surf_rev_against_numeric` passes either way. `c` is used because it reads as
+/// the more honest derivative, not because the other form is wrong.
+///
+/// # Arguments
+///
+/// * `p`: the test point, in the common coordinate system the residual is measured in
+/// * `c`: the closest point on the target surface, in that same coordinate system, meaning it has
+///   already been moved by the target's current transform
+/// * `align`: the current alignment values of the **target** entity
+///
+/// returns: Matrix<f64, Const<6>, Const<1>, ArrayStorage<f64, 6, 1>>
+pub fn point_surf_jacobian_rev(
+    p: &impl PCoords<3>,
+    c: &impl SPCoords<3>,
+    align: &AlignValues3,
+) -> AlignStorage3 {
+    let mut result = AlignStorage3::zeros();
+
+    let sign = c.scalar_projection(p).signum();
+
+    let dev = p.coords() - c.coords();
+    let dir = if dev.norm_squared() < 1e-16 {
+        c.normal().into_inner()
+    } else {
+        dev.normalize() * sign
+    };
+
+    // The target moving away from the test point closes the same distance that the test point
+    // moving toward the target would, hence the negation.
+    let dir = -dir;
+
+    result[0] = val_or_zero(align.dtx.dot(&dir), align.dof.tx);
+    result[1] = val_or_zero(align.dty.dot(&dir), align.dof.ty);
+    result[2] = val_or_zero(align.dtz.dot(&dir), align.dof.tz);
+
+    result[3] = val_or_zero(align.drx(c).dot(&dir), align.dof.rx);
+    result[4] = val_or_zero(align.dry(c).dot(&dir), align.dof.ry);
+    result[5] = val_or_zero(align.drz(c).dot(&dir), align.dof.rz);
+
+    result
+}
+
 fn val_or_zero(value: f64, condition: bool) -> f64 {
     if condition { value } else { 0.0 }
 }
@@ -212,248 +182,133 @@ mod tests {
     //! straightforward, obviously correct option.  I use the numerical alternative to check against
     //! a few different categories of cases.
     use super::*;
-    use crate::geom3::Point3;
+    use crate::UnitVec3;
+    use crate::common::random_geometry::RandomGeometry3;
+    use crate::geom3::{Point3, SurfacePoint3, Vector3};
     use approx::assert_relative_eq;
     use parry3d_f64::na::{Dyn, Owned};
-    use std::f64::consts::PI;
 
     const NUMERIC_EPSILON: f64 = 1e-8;
 
-    fn point_plane_numeric(
-        params: &RcParams3,
+    // ============================================================================================
+    // The reverse point-to-surface jacobian, checked against finite differences
+    // ============================================================================================
+
+    /// The residual `point_surf_jacobian_rev` differentiates: the signed point-to-point distance
+    /// from a fixed test point to a target point which the target's own transform moves.
+    ///
+    /// `c_local` and `n_local` describe the match in the target's own coordinates, so that
+    /// perturbing the target's parameters moves it exactly as it would during a real solve.
+    fn surf_rev_residual(
+        params: &AlignParams3,
         p: &Point3,
-        closest: &SurfacePoint3,
+        c_local: &Point3,
+        n_local: &UnitVec3,
+    ) -> f64 {
+        let t = params.compute_transform();
+        let c = t * c_local;
+        let n = t.rotation * *n_local;
+        let sp = SurfacePoint3::new(c, n);
+        crate::common::dist(p, &c) * sp.scalar_projection(p).signum()
+    }
+
+    /// A finite-difference estimate of the partial derivative of that residual with respect to
+    /// one of the target's six parameters.
+    fn surf_rev_numeric(
+        params: &AlignParams3,
+        p: &Point3,
+        c_local: &Point3,
+        n_local: &UnitVec3,
         index: usize,
     ) -> f64 {
-        let mut params = params.clone();
-        let t_i = params.transform().inverse();
-        let mut x = *params.x();
-        x[index] += NUMERIC_EPSILON;
-        params.set(&x);
-        let t = params.transform() * t_i;
+        let mut lo = params.clone();
+        lo.set_index(index, params.storage()[index] - NUMERIC_EPSILON);
+        let mut hi = params.clone();
+        hi.set_index(index, params.storage()[index] + NUMERIC_EPSILON);
 
-        let moved = t * *p;
-        let d0 = closest.scalar_projection(p).abs();
-        let d1 = closest.scalar_projection(&moved).abs();
-        (d1 - d0) / NUMERIC_EPSILON
-    }
-
-    fn point_plane_numeric_rev(
-        params: &RcParams3,
-        p: &Point3,
-        closest: &SurfacePoint3,
-        index: usize,
-    ) -> f64 {
-        let mut params = params.clone();
-        let t_i = params.transform().inverse();
-        let mut x = *params.x();
-        x[index] += NUMERIC_EPSILON;
-        params.set(&x);
-        let t = params.transform() * t_i;
-
-        // Get the original value
-        let d0 = closest.scalar_projection(p);
-
-        // Move the reference point
-        let moved = closest.transformed_by(&t);
-        let d1 = moved.scalar_projection(p);
-
-        (d1 - d0) / NUMERIC_EPSILON
-    }
-
-    /// Numerical approximation of the derivative of the Euclidean distance |p - c| with respect
-    /// to parameter `index`, using a forward finite difference.  The point `p` is moved by the
-    /// incremental transform produced by perturbing the parameter, and the distance to the fixed
-    /// reference point `c` is measured before and after.
-    #[test]
-    fn test_point_plane_translation() {
-        let p = Point3::new(1.0, 2.0, 3.0);
-        let c = Point3::new(0.0, 0.0, 0.0);
-        let sp = SurfacePoint3::new_normalize(c, p - c);
-
-        let initial = Iso3::from_parts(
-            Translation3::new(8.0, -5.0, -6.0),
-            UnitQuaternion::from_euler_angles(-0.2, 0.3, 0.5),
-        );
-
-        let rc = Point3::new(-1.0, -2.0, 3.0);
-        let params = RcParams3::from_initial(&initial, &(initial.inverse() * rc));
-
-        let test = point_plane_jacobian(&p, &sp, &params);
-
-        assert_relative_eq!(
-            point_plane_numeric(&params, &p, &sp, 0),
-            test.x,
-            epsilon = 1e-6
-        );
-        assert_relative_eq!(
-            point_plane_numeric(&params, &p, &sp, 1),
-            test.y,
-            epsilon = 1e-6
-        );
-        assert_relative_eq!(
-            point_plane_numeric(&params, &p, &sp, 2),
-            test.z,
-            epsilon = 1e-6
-        );
-    }
-
-    /// This is the simplest possible test of the jacobians for the rotations, and involves a
-    /// parameter set that is currently an identity transform and a center of rotation which is
-    /// currently at the origin.
-    #[test]
-    fn test_point_plane_simple_rotations() {
-        let p = Point3::new(1.0, 2.0, 3.0);
-        let c = Point3::new(1.0, 3.0, 4.0);
-        let sp = SurfacePoint3::new_normalize(c, p - c);
-        let rc = Point3::origin();
-
-        let params = RcParams3::from_initial(&Iso3::identity(), &rc);
-        let test = point_plane_jacobian(&p, &sp, &params);
-
-        let expected_w = point_plane_numeric(&params, &p, &sp, 3);
-        let expected_a = point_plane_numeric(&params, &p, &sp, 4);
-        let expected_b = point_plane_numeric(&params, &p, &sp, 5);
-        assert_relative_eq!(expected_w, test.w, epsilon = 1e-6);
-        assert_relative_eq!(expected_a, test.a, epsilon = 1e-6);
-        assert_relative_eq!(expected_b, test.b, epsilon = 1e-6);
-    }
-
-    /// This test is a little more complicated, and involves a reference center of rotation which
-    /// is not at the origin. However the parameter set is still an identity transform.
-    #[test]
-    fn test_point_plane_centered_rotations() {
-        let p = Point3::new(1.0, 2.0, 3.0);
-        let c = Point3::new(1.0, 3.0, 4.0);
-        let sp = SurfacePoint3::new_normalize(c, p - c);
-        let rc = Point3::new(-1.2, -3.5, -0.75);
-
-        let params = RcParams3::from_initial(&Iso3::identity(), &rc);
-        let test = point_plane_jacobian(&p, &sp, &params);
-
-        let expected_w = point_plane_numeric(&params, &p, &sp, 3);
-        let expected_a = point_plane_numeric(&params, &p, &sp, 4);
-        let expected_b = point_plane_numeric(&params, &p, &sp, 5);
-        assert_relative_eq!(expected_w, test.w, epsilon = 1e-6);
-        assert_relative_eq!(expected_a, test.a, epsilon = 1e-6);
-        assert_relative_eq!(expected_b, test.b, epsilon = 1e-6);
+        let r_lo = surf_rev_residual(&lo, p, c_local, n_local);
+        let r_hi = surf_rev_residual(&hi, p, c_local, n_local);
+        (r_hi - r_lo) / (2.0 * NUMERIC_EPSILON)
     }
 
     #[test]
-    fn test_point_plane_initial_rz_rotation() {
-        let p1 = Point3::new(1.0, 0.0, 0.0);
-        let c = Point3::new(1.0, 0.0, 0.0);
-        let sp = SurfacePoint3::new_normalize(c, Vector3::new(0.0, 1.0, 0.0));
-        let rc1 = Point3::origin();
+    fn stress_surf_rev_against_numeric() {
+        // The analytic reverse jacobian against a central finite difference, over random local
+        // origins, working offsets, parameter vectors, and geometry. This is the gate on the
+        // reverse form: the sign convention and the requirement that the rotation partials be
+        // evaluated at `c` are both easy to get wrong by inspection and obvious here.
+        let mut rg = RandomGeometry3::from_seed(0x5eed_a11c);
 
-        let initial = Iso3::from_parts(
-            Translation3::identity(),
-            UnitQuaternion::from_euler_angles(0.0, 0.0, -PI / 2.0),
-        );
+        for _ in 0..2000 {
+            let params =
+                AlignParams3::new(AlignOrigin3::Local(rg.iso3(5.0)), Some(rg.iso3(5.0)), None)
+                    .with_storage(AlignStorage3::from_iterator((0..6).map(|i| {
+                        if i < 3 {
+                            rg.f64_sym(3.0)
+                        } else {
+                            rg.f64_sym(0.8)
+                        }
+                    })));
 
-        let rc0 = initial.inverse() * rc1;
-        let p0 = initial.inverse() * p1;
+            let c_local = rg.point(5.0);
+            let n_local = rg.unit_vec();
 
-        let params = RcParams3::from_initial(&initial, &rc0);
-        assert_relative_eq!(*params.current_rc(), rc1, epsilon = 1e-6);
-        assert_relative_eq!(params.transform() * p0, p1, epsilon = 1e-6);
+            // Keep the test point well away from the match, so the deviation direction is
+            // well conditioned and the residual is differentiable.
+            let t = params.compute_transform();
+            let c = t * c_local;
+            let n = t.rotation * n_local;
+            let p = c + n.into_inner() * rg.f64_sym(4.0).abs().max(0.5);
 
-        let test = point_plane_jacobian(&p1, &sp, &params);
-        //
-        let expected_w = point_plane_numeric(&params, &p1, &sp, 3);
-        let expected_a = point_plane_numeric(&params, &p1, &sp, 4);
-        let expected_b = point_plane_numeric(&params, &p1, &sp, 5);
-        assert_relative_eq!(expected_w, test.w, epsilon = 1e-6);
-        assert_relative_eq!(expected_a, test.a, epsilon = 1e-6);
-        assert_relative_eq!(expected_b, test.b, epsilon = 1e-6);
+            let analytic =
+                point_surf_jacobian_rev(&p, &SurfacePoint3::new(c, n), &params.compute_values());
+
+            for i in 0..6 {
+                let numeric = surf_rev_numeric(&params, &p, &c_local, &n_local, i);
+                assert_relative_eq!(analytic[i], numeric, epsilon = 1e-6);
+            }
+        }
     }
 
     #[test]
-    fn test_point_plane_rotation() {
-        // These are the constructs after being transformed by the initial transform
-        let p1 = Point3::new(10.0, 20.0, 30.0);
-        let r1 = Point3::new(5.0, 8.0, 18.0);
-        let c = Point3::new(12.0, 18.0, 28.0);
-        let sp = SurfacePoint3::new_normalize(c, p1 - c);
+    fn surf_rev_is_the_negative_of_the_forward_form_for_translations() {
+        // Sliding the target by `v` and sliding the test point by `-v` change the distance
+        // identically, so the translation partials of the two forms must be exact negatives. The
+        // rotation partials are not related this way, because they pivot about different points.
+        let params = AlignParams3::from_origin(None);
+        let values = params.compute_values();
 
-        let initial = Iso3::from_parts(
-            Translation3::new(8.0, -5.0, -6.0),
-            UnitQuaternion::from_euler_angles(-0.2, 0.3, 0.5),
-        );
+        let c = Point3::new(1.0, 2.0, 3.0);
+        let n = UnitVec3::new_normalize(Vector3::new(0.0, 0.0, 1.0));
+        let p = Point3::new(1.0, 2.0, 4.5);
+        let sp = SurfacePoint3::new(c, n);
 
-        let p0 = initial.inverse() * p1;
-        let r0 = initial.inverse() * r1;
+        let fwd = point_surf_jacobian(&p, &sp, &values);
+        let rev = point_surf_jacobian_rev(&p, &sp, &values);
 
-        let params = RcParams3::from_initial(&initial, &r0);
-        assert_relative_eq!(p1, params.transform() * p0, epsilon = 1e-8);
-        assert_relative_eq!(r1, params.transform() * r0, epsilon = 1e-8);
-
-        let test = point_plane_jacobian(&p1, &sp, &params);
-        let expected_w = point_plane_numeric(&params, &p1, &sp, 3);
-        let expected_a = point_plane_numeric(&params, &p1, &sp, 4);
-        let expected_b = point_plane_numeric(&params, &p1, &sp, 5);
-        assert_relative_eq!(expected_w, test.w, epsilon = 1e-6);
-        assert_relative_eq!(expected_a, test.a, epsilon = 1e-6);
-        assert_relative_eq!(expected_b, test.b, epsilon = 1e-6);
-    }
-
-    fn rev_test() -> (RcParams3, Point3, SurfacePoint3, AlignStorage3) {
-        let p = Point3::new(2.0, 3.0, 4.0);
-        let cp = Point3::new(1.0, 2.0, 3.0);
-        let cn = Vector3::new(1.0, 1.0, 1.0);
-        let c = SurfacePoint3::new_normalize(cp, cn);
-        let rc = Point3::new(-0.5, -0.75, 3.25);
-
-        let initial = Iso3::from_parts(
-            Translation3::new(4.0, 3.0, 2.0),
-            UnitQuaternion::from_euler_angles(0.2, -0.3, 0.5),
-        );
-
-        let rc0 = initial.inverse() * rc;
-        let params = RcParams3::from_initial(&initial, &rc0);
-
-        let test = point_plane_jacobian_rev(&p, &c, &params);
-        (params, p, c, test)
+        for i in 0..3 {
+            assert_relative_eq!(fwd[i], -rev[i], epsilon = 1e-12);
+        }
     }
 
     #[test]
-    fn test_point_plane_rev_translation() {
-        let (params, p, c, test) = rev_test();
-        assert_relative_eq!(
-            point_plane_numeric_rev(&params, &p, &c, 0),
-            test.x,
-            epsilon = 1e-6
-        );
-        assert_relative_eq!(
-            point_plane_numeric_rev(&params, &p, &c, 1),
-            test.y,
-            epsilon = 1e-6
-        );
-        assert_relative_eq!(
-            point_plane_numeric_rev(&params, &p, &c, 2),
-            test.z,
-            epsilon = 1e-6
-        );
-    }
+    fn surf_rev_respects_locked_dof() {
+        let dof = Dof6::new(true, false, true, false, true, false);
+        let params = AlignParams3::from_origin(Some(dof));
+        let values = params.compute_values();
 
-    #[test]
-    fn test_point_plane_rev_rotation() {
-        let (params, p, c, test) = rev_test();
-        assert_relative_eq!(
-            point_plane_numeric_rev(&params, &p, &c, 3),
-            test.w,
-            epsilon = 1e-6
-        );
-        assert_relative_eq!(
-            point_plane_numeric_rev(&params, &p, &c, 4),
-            test.a,
-            epsilon = 1e-6
-        );
-        assert_relative_eq!(
-            point_plane_numeric_rev(&params, &p, &c, 5),
-            test.b,
-            epsilon = 1e-6
-        );
+        let c = Point3::new(1.0, 2.0, 3.0);
+        let n = UnitVec3::new_normalize(Vector3::new(0.0, 1.0, 1.0));
+        let p = Point3::new(2.0, 3.0, 5.0);
+
+        let rev = point_surf_jacobian_rev(&p, &SurfacePoint3::new(c, n), &values);
+
+        for i in [1usize, 3, 5] {
+            assert_eq!(
+                rev[i], 0.0,
+                "locked parameter {i} should have a zero column"
+            );
+        }
     }
 
     #[test]

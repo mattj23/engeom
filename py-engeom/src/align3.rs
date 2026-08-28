@@ -2,6 +2,7 @@ use crate::conversions::array_to_points3;
 use crate::geom3::{Iso3, Point3};
 use crate::mesh::Mesh3;
 use crate::point_cloud::PointCloud3;
+use crate::solve_report::{halt_str, quality_str, termination_str};
 use engeom::geom3::align3::{AlignOrigin3, Dof6 as InnerDof6};
 use numpy::ndarray::Array1;
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray2};
@@ -186,27 +187,27 @@ impl AlignParams3 {
 }
 
 // ================================================================================================
-// Alignment3
+// Align3
 // ================================================================================================
 
 #[pyclass(from_py_object, module = "engeom.align3")]
 #[derive(Clone, Debug)]
-pub struct Alignment3 {
-    inner: engeom::geom3::Alignment3,
+pub struct Align3 {
+    inner: engeom::geom3::Align3,
 }
 
-impl Alignment3 {
-    pub fn from_inner(inner: engeom::geom3::Alignment3) -> Self {
+impl Align3 {
+    pub fn from_inner(inner: engeom::geom3::Align3) -> Self {
         Self { inner }
     }
 
-    pub fn get_inner(&self) -> &engeom::geom3::Alignment3 {
+    pub fn get_inner(&self) -> &engeom::geom3::Align3 {
         &self.inner
     }
 }
 
 #[pymethods]
-impl Alignment3 {
+impl Align3 {
     /// The full transformation from the test entity's coordinate system to the target's coordinate
     /// system. This is the composite $O * A * L^{-1}$ and is what you typically apply to the test
     /// geometry after alignment completes.
@@ -259,7 +260,7 @@ impl Alignment3 {
     pub fn __repr__(&self) -> String {
         let (mean, std) = self.inner.residual_mean_std_dev();
         format!(
-            "Alignment3(residual_mean={:.6}, residual_std_dev={:.6})",
+            "Align3(residual_mean={:.6}, residual_std_dev={:.6})",
             mean, std
         )
     }
@@ -269,57 +270,7 @@ impl Alignment3 {
 // AlignOutcome3
 // ================================================================================================
 
-/// How a single Levenberg-Marquardt solve ended, classified by whether its result can be used.
-///
-/// `"converged"` means a convergence criterion was met. `"unconverged"` means the solver ran out
-/// of its evaluation budget, so the parameters are the best it found but convergence was never
-/// demonstrated; the alignment is still valid geometry. A solve that broke down entirely is never
-/// reported here, because its result is discarded rather than returned.
-fn quality_str(q: engeom::common::SolveQuality) -> &'static str {
-    match q {
-        engeom::common::SolveQuality::Converged => "converged",
-        engeom::common::SolveQuality::Unconverged => "unconverged",
-        engeom::common::SolveQuality::Failed => "failed",
-    }
-}
-
-/// How a single Levenberg-Marquardt solve terminated, as a stable snake_case string rather than
-/// the solver crate's `Debug` formatting.
-fn termination_str(t: &engeom::common::TerminationReason) -> String {
-    use engeom::common::TerminationReason as T;
-    match t {
-        T::Converged { ftol, xtol } => match (ftol, xtol) {
-            (true, true) => "converged(ftol,xtol)".to_string(),
-            (true, false) => "converged(ftol)".to_string(),
-            (false, true) => "converged(xtol)".to_string(),
-            (false, false) => "converged".to_string(),
-        },
-        T::ResidualsZero => "residuals_zero".to_string(),
-        T::Orthogonal => "orthogonal".to_string(),
-        T::LostPatience => "lost_patience".to_string(),
-        T::Numerical(s) => format!("numerical({s})"),
-        T::User(s) => format!("user({s})"),
-        T::NoImprovementPossible(s) => format!("no_improvement_possible({s})"),
-        T::NoParameters => "no_parameters".to_string(),
-        T::NoResiduals => "no_residuals".to_string(),
-        T::WrongDimensions(s) => format!("wrong_dimensions({s})"),
-    }
-}
-
-/// Why robust refinement stopped before completing every requested round.
-fn halt_str(h: &engeom::common::RefinementHalt) -> String {
-    match h {
-        engeom::common::RefinementHalt::NoNoiseEstimate => "no_noise_estimate".to_string(),
-        engeom::common::RefinementHalt::Underdetermined { weighted, params } => {
-            format!("underdetermined({weighted} weighted points, {params} parameters)")
-        }
-        engeom::common::RefinementHalt::SolveFailed(t) => {
-            format!("solve_failed({})", termination_str(t))
-        }
-    }
-}
-
-/// The full outcome of a 3-D alignment: the `Alignment3` itself, plus a record of how the solves
+/// The full outcome of a 3-D alignment: the `Align3` itself, plus a record of how the solves
 /// which produced it terminated.
 ///
 /// This is only ever returned, never accepted as an argument, so unlike the other classes here it
@@ -341,8 +292,8 @@ impl AlignOutcome3 {
 impl AlignOutcome3 {
     /// The alignment which was produced.
     #[getter]
-    pub fn alignment(&self) -> Alignment3 {
-        Alignment3::from_inner(self.inner.alignment().clone())
+    pub fn alignment(&self) -> Align3 {
+        Align3::from_inner(self.inner.alignment().clone())
     }
 
     /// The quality of the weakest solve that contributed to the result, as `"converged"` or
@@ -391,6 +342,50 @@ impl AlignOutcome3 {
 // Functions
 // ================================================================================================
 
+/// Build the single-body solver options from the loose keyword arguments the bindings take.
+fn single_opts(
+    ignore_off_target: bool,
+    refinement_steps: usize,
+    sigma_max: Option<f64>,
+    point_sigma: Option<&[f64]>,
+    patience: usize,
+) -> engeom::geom3::align3::AlignOptions3<'_> {
+    engeom::geom3::align3::AlignOptions3 {
+        ignore_off_target,
+        refinement_steps,
+        sigma_max,
+        point_sigma,
+        patience,
+    }
+}
+
+/// The shared tail of the single-body alignment functions: convert the points, build the
+/// options, run the solve, and map the error.
+#[allow(clippy::too_many_arguments)]
+fn points_to_target(
+    points: PyReadonlyArray2<'_, f64>,
+    target: &impl engeom::geom3::align3::SurfaceTarget3,
+    params: &AlignParams3,
+    ignore_off_target: bool,
+    refinement_steps: usize,
+    sigma_max: Option<f64>,
+    point_sigma: Option<Vec<f64>>,
+    patience: usize,
+) -> PyResult<AlignOutcome3> {
+    let points = array_to_points3(&points.as_array())?;
+    let opts = single_opts(
+        ignore_off_target,
+        refinement_steps,
+        sigma_max,
+        point_sigma.as_deref(),
+        patience,
+    );
+
+    engeom::geom3::align3::points_to_surface3(&points, target, params.get_inner().clone(), &opts)
+        .map(AlignOutcome3::from_inner)
+        .map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
 /// Align a set of 3-D points to a mesh by repeatedly projecting them onto their closest position
 /// on the surface as the solver moves them.
 ///
@@ -427,27 +422,16 @@ pub fn points_to_mesh(
     point_sigma: Option<Vec<f64>>,
     patience: usize,
 ) -> PyResult<AlignOutcome3> {
-    let points = array_to_points3(&points.as_array())?;
-
-    let opts = engeom::geom3::align3::AlignOptions3 {
+    points_to_target(
+        points,
+        mesh.get_inner(),
+        &params,
         ignore_off_target,
         refinement_steps,
         sigma_max,
-        point_sigma: point_sigma.as_deref(),
+        point_sigma,
         patience,
-    };
-
-    let result = engeom::geom3::align3::points_to_surface3(
-        &points,
-        mesh.get_inner(),
-        params.get_inner().clone(),
-        &opts,
-    );
-
-    match result {
-        Ok(outcome) => Ok(AlignOutcome3::from_inner(outcome)),
-        Err(e) => Err(PyValueError::new_err(e.to_string())),
-    }
+    )
 }
 
 /// Align a set of 3-D points to a point cloud, by repeatedly projecting them onto the tangent plane
@@ -505,28 +489,17 @@ pub fn points_to_cloud(
     point_sigma: Option<Vec<f64>>,
     patience: usize,
 ) -> PyResult<AlignOutcome3> {
-    let points = array_to_points3(&points.as_array())?;
-
     let target = engeom::geom3::align3::CloudTarget3::try_new(cloud.get_inner(), max_extrapolation)
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
-    let opts = engeom::geom3::align3::AlignOptions3 {
+    points_to_target(
+        points,
+        &target,
+        &params,
         ignore_off_target,
         refinement_steps,
         sigma_max,
-        point_sigma: point_sigma.as_deref(),
+        point_sigma,
         patience,
-    };
-
-    let result = engeom::geom3::align3::points_to_surface3(
-        &points,
-        &target,
-        params.get_inner().clone(),
-        &opts,
-    );
-
-    match result {
-        Ok(outcome) => Ok(AlignOutcome3::from_inner(outcome)),
-        Err(e) => Err(PyValueError::new_err(e.to_string())),
-    }
+    )
 }

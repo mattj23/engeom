@@ -13,6 +13,7 @@
 
 mod attribute_set;
 mod editing;
+mod filtering;
 mod operations;
 mod primitives;
 mod subsets;
@@ -25,7 +26,7 @@ use crate::geom3::mesh::algorithms;
 use crate::geom3::mesh::algorithms::{
     OffsetOpts, compute_face_offset_points, compute_normal_displaced_points,
 };
-use crate::io::load_g3d_mesh_data;
+use crate::io::{load_g3d_mesh_data, read_tc_mesh_file, write_tc_mesh_file};
 use crate::{Point3, Result, UnitVec3};
 use std::fmt;
 use std::path::Path;
@@ -209,6 +210,47 @@ impl MeshData3 {
     /// returns: `Result<MeshData3>`
     pub fn load_g3d(path: &Path) -> Result<Self> {
         load_g3d_mesh_data(path)
+    }
+
+    /// Load a triangle mesh from a tolerance-compressed `.tcmesh` file.
+    ///
+    /// The recovered positions are guaranteed to be within the tolerance which was given at write
+    /// time, and the connectivity is exact. The vertices are not in the order they were in before
+    /// the file was written; see [`MeshData3::save_tcmesh`].
+    ///
+    /// # Arguments
+    ///
+    /// * `path`: the path to the `.tcmesh` file
+    ///
+    /// returns: `Result<MeshData3>`
+    pub fn load_tcmesh(path: &Path) -> Result<Self> {
+        read_tc_mesh_file(path)
+    }
+
+    /// Write this mesh to a tolerance-compressed `.tcmesh` file, which carries geometry and
+    /// nothing else.
+    ///
+    /// Vertex positions are quantized to the narrowest bit width per axis which keeps every one of
+    /// them within `tol` of where it started, while the connectivity is stored exactly. A smaller
+    /// tolerance costs more bytes per vertex.
+    ///
+    /// Writing **renumbers the vertices**, because reordering them is where most of the format's
+    /// advantage comes from. A mesh read back describes the same surface but not with the same
+    /// indices, so per-vertex data kept outside the file cannot assume it still lines up. See the
+    /// [`crate::io::tol_compress::mesh`] module for how to compute the same ordering up front.
+    ///
+    /// Unlike the other geometry-only formats here there is no attribute loss option: a mesh
+    /// carrying any attribute at all is refused, with the error naming what would have been lost.
+    ///
+    /// # Arguments
+    ///
+    /// * `path`: the path to write to, which is overwritten if it already exists
+    /// * `tol`: the largest acceptable round-trip position error for any vertex, in the same units
+    ///   as the coordinates
+    ///
+    /// returns: `Result<()>`, failing if the mesh carries any attributes
+    pub fn save_tcmesh(&self, path: &Path, tol: f64) -> Result<()> {
+        write_tc_mesh_file(path, self, tol)
     }
 }
 
@@ -610,6 +652,52 @@ mod tests {
     fn square_mesh() -> MeshData3 {
         let (points, faces) = unit_square();
         MeshData3::new(points, faces).unwrap()
+    }
+
+    /// The container method reaches the same writer and reader the `io` functions do. The format's
+    /// own round-trip guarantees are covered in `io::tol_compress::mesh`, so what is checked here
+    /// is the mapping: what went out came back, describing the same surface.
+    #[test]
+    fn a_tcmesh_round_trips_through_the_container_methods() -> Result<()> {
+        let mesh = square_mesh();
+        let tol = 1e-5;
+        let path = std::env::temp_dir().join("engeom_mesh_data_tcmesh_round_trip.tcmesh");
+
+        mesh.save_tcmesh(&path, tol)?;
+        let recovered = MeshData3::load_tcmesh(&path)?;
+
+        assert_eq!(recovered.point_count(), mesh.point_count());
+        assert_eq!(recovered.face_count(), mesh.face_count());
+
+        // Writing renumbers the vertices, so the assertion is over the set of positions rather than
+        // over the buffer order.
+        for point in recovered.points() {
+            assert!(
+                mesh.points().iter().any(|p| (p - point).norm() <= tol),
+                "{point:?} is not within {tol} of any original point"
+            );
+        }
+
+        let _ = std::fs::remove_file(&path);
+        Ok(())
+    }
+
+    /// The format stores geometry only and refuses anything else outright, and that refusal has to
+    /// survive the trip through the container method rather than being swallowed by it.
+    #[test]
+    fn saving_a_tcmesh_refuses_a_mesh_carrying_attributes() -> Result<()> {
+        let mut mesh = square_mesh();
+        mesh.set_point_stdev(Some(vec![0.0, 0.1, 0.2, 0.3]))?;
+
+        let path = std::env::temp_dir().join("engeom_mesh_data_tcmesh_refused.tcmesh");
+        let err = mesh.save_tcmesh(&path, 1e-5).unwrap_err().to_string();
+
+        assert!(
+            err.contains("stdev"),
+            "the error should name what would be lost: {err}"
+        );
+
+        Ok(())
     }
 
     #[test]

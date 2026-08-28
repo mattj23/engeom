@@ -55,15 +55,15 @@ pub type DMatrix = na::DMatrix<f64>;
 
 // Extremely common 2D types
 pub use geom2::{
-    Arc2, Circle2, Curve2, CurveStation2, Iso2, KdTree2, Line2, Point2, SurfacePoint2, SvdBasis2,
-    UnitVec2, Vector2,
+    Arc2, Circle2, Curve2, CurveGroup2, CurveStation2, Iso2, KdTree2, Line2, Point2, SurfacePoint2,
+    SvdBasis2, UnitVec2, Vector2,
 };
 
 // Extremely common 3D types
 pub use geom3::{
-    CloudIndex3, Curve3, CurveStation3, HalfEdgeMesh3, Iso3, KdTree3, Line3, Manifold1Pos3, Mesh3,
-    MeshData3, Plane3, Point3, PointCloud3, PointCloudOverlap, Sphere3, SurfacePoint3, SvdBasis3,
-    UnitVec3, VOXEL_COHERENCE_ATTR, VOXEL_COUNT_ATTR, Vector3,
+    Aabb3, CloudIndex3, Curve3, CurveGroup3, CurveStation3, HalfEdgeMesh3, Iso3, KdTree3, Line3,
+    Manifold1Pos3, Mesh3, MeshData3, Plane3, Point3, PointCloud3, PointCloudOverlap, Sphere3,
+    SurfacePoint3, SvdBasis3, UnitVec3, VOXEL_COHERENCE_ATTR, VOXEL_COUNT_ATTR, Vector3,
 };
 
 // Extremely common conversion tools

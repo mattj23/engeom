@@ -113,8 +113,9 @@ def main():
     # ---------------------------------------------------------------------------------------------
 
     # A round cross-section, taken just inside the flat cut end where the shank is unthreaded and the
-    # scan is clean. `section_with_plane` returns a list because one plane can cut a mesh in several
-    # places at once; here it is a single closed loop.
+    # scan is clean. `section_with_plane` returns a `CurveGroup3` because one plane can cut a mesh in
+    # several places at once, and those curves are one rigid body. A group indexes and iterates like
+    # a sequence; here it holds a single closed loop.
     cut_x = low.x + CROSS_SECTION_INSET
     cross_section = mesh.section_with_plane(Plane3.from_point_normal(cut_x, 0, 0, 1, 0, 0),
                                             tol=1e-3)[0]
@@ -138,9 +139,9 @@ def main():
           f"max {form_error.max():.4f}, rms {numpy.sqrt((form_error ** 2).mean()):.4f}")
 
     # A longitudinal section straight down the axis, which cuts the thread profile. This one comes
-    # back as two curves, one for each side of the part. You wouldn't inherently know that ahead
-    # of time, because how many curves come back depends on the connectivity of the triangles that
-    # the section plane passes through.
+    # back as a group of two curves, one for each side of the part. You wouldn't inherently know that
+    # ahead of time, because how many members come back depends on the connectivity of the triangles
+    # that the section plane passes through.
     axial_sections = mesh.section_with_plane(Plane3.from_point_normal(0, 0, 0, 0, 1, 0), tol=1e-3)
     print(f"Axial section: {len(axial_sections)} curves")
 

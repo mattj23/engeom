@@ -113,7 +113,7 @@ class AlignParams3:
         ...
 
 
-class Alignment3:
+class Align3:
     """
     The result of a completed 3-D alignment operation.
 
@@ -173,7 +173,7 @@ class Alignment3:
 
 class AlignOutcome3:
     """
-    The full outcome of a 3-D alignment: the `Alignment3` itself, plus a record of how the solves
+    The full outcome of a 3-D alignment: the `Align3` itself, plus a record of how the solves
     which produced it terminated.
 
     An alignment is only ever returned when it is usable, so receiving one of these already means
@@ -182,7 +182,7 @@ class AlignOutcome3:
     """
 
     @property
-    def alignment(self) -> Alignment3:
+    def alignment(self) -> Align3:
         """The alignment which was produced."""
         ...
 

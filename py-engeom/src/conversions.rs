@@ -180,6 +180,31 @@ pub fn array_to_colors(array: &ArrayView2<'_, u8>) -> PyResult<Vec<[u8; 3]>> {
         .collect())
 }
 
+/// Convert an Nx2 numpy array into unit vectors, normalizing each row.
+///
+/// A row of zero length has no direction and is rejected rather than being silently turned into an
+/// arbitrary one.
+pub fn array_to_unit_vectors2(array: &ArrayView2<'_, f64>) -> PyResult<Vec<engeom::UnitVec2>> {
+    let shape = array.shape();
+    if shape.len() != 2 || shape[1] != 2 {
+        return Err(PyValueError::new_err("Expected Nx2 array of directions"));
+    }
+
+    array
+        .rows()
+        .into_iter()
+        .enumerate()
+        .map(|(i, row)| {
+            let v = Vector2::new(row[0], row[1]);
+            engeom::UnitVec2::try_new(v, 1.0e-12).ok_or_else(|| {
+                PyValueError::new_err(format!(
+                    "Row {i} has zero length, which cannot be a direction"
+                ))
+            })
+        })
+        .collect()
+}
+
 /// Convert an Nx3 numpy array into unit vectors, normalizing each row.
 ///
 /// A row of zero length has no direction and is rejected rather than being silently turned into an

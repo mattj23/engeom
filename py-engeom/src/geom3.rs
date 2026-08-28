@@ -1,8 +1,8 @@
 use crate::bounding::Aabb3;
 use crate::common::Resample;
 use crate::conversions::{
-    array_to_points3, array_to_surface_points3, array_to_vectors3, dvec_from_array,
-    dvec_to_array, points_to_array, vectors_to_array,
+    array_to_points3, array_to_surface_points3, array_to_vectors3, dvec_from_array, dvec_to_array,
+    points_to_array, vectors_to_array,
 };
 use crate::geom2::{Point2, SplineProjection, SurfacePoint2, Vector2};
 use engeom::common::To2D;
@@ -13,6 +13,7 @@ use numpy::{
 };
 use parry3d_f64::na::{Quaternion, Translation3, UnitQuaternion};
 use pyo3::exceptions::PyIOError;
+use pyo3::exceptions::PyIndexError;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::PyAnyMethods;
 use pyo3::types::PyIterator;
@@ -1617,7 +1618,13 @@ impl Cylinder3 {
         seed: Option<u64>,
     ) -> PyResult<Self> {
         let points = array_to_surface_points3(&points.as_array(), &normals.as_array())?;
-        let options = magsac_options(sigma_max, max_iterations, refinement_steps, confidence, seed);
+        let options = magsac_options(
+            sigma_max,
+            max_iterations,
+            refinement_steps,
+            confidence,
+            seed,
+        );
         let result = engeom::geom3::Cylinder3::from_consensus(
             &points,
             sigma_max,
@@ -1822,7 +1829,13 @@ impl Cone3 {
         seed: Option<u64>,
     ) -> PyResult<Self> {
         let points = array_to_surface_points3(&points.as_array(), &normals.as_array())?;
-        let options = magsac_options(sigma_max, max_iterations, refinement_steps, confidence, seed);
+        let options = magsac_options(
+            sigma_max,
+            max_iterations,
+            refinement_steps,
+            confidence,
+            seed,
+        );
         let result = engeom::geom3::Cone3::from_consensus(
             &points,
             sigma_max,
@@ -2138,13 +2151,14 @@ impl Curve3 {
 
     #[staticmethod]
     fn load_tccurve3(path: PathBuf) -> PyResult<Self> {
-        let curve = engeom::io::read_tc_curve3_file(&path)
-            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        let curve =
+            engeom::Curve3::load_tccurve3(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
         Ok(Self::from_inner(curve))
     }
 
-    fn write_tccurve3(&self, path: PathBuf, tol: f64) -> PyResult<()> {
-        engeom::io::write_tc_curve3_file(&path, &self.inner, tol)
+    fn save_tccurve3(&self, path: PathBuf, tol: f64) -> PyResult<()> {
+        self.inner
+            .save_tccurve3(&path, tol)
             .map_err(|e| PyIOError::new_err(e.to_string()))
     }
 }
@@ -2157,6 +2171,112 @@ impl From<engeom::CurveStation3<'_>> for CurveStation3 {
             station.index(),
             station.fraction(),
             station.length_along(),
+        )
+    }
+}
+
+// ================================================================================================
+// Curve groups
+// ================================================================================================
+
+#[pyclass(from_py_object, module = "engeom.geom3")]
+#[derive(Clone)]
+pub struct CurveGroup3 {
+    inner: engeom::CurveGroup3,
+}
+
+impl CurveGroup3 {
+    pub fn get_inner(&self) -> &engeom::CurveGroup3 {
+        &self.inner
+    }
+
+    pub fn from_inner(inner: engeom::CurveGroup3) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl CurveGroup3 {
+    #[new]
+    fn new(curves: Vec<Curve3>) -> PyResult<Self> {
+        let inner =
+            engeom::CurveGroup3::new(curves.iter().map(|c| c.get_inner().clone()).collect())
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self { inner })
+    }
+
+    #[getter]
+    fn curves(&self) -> Vec<Curve3> {
+        self.inner
+            .curves()
+            .iter()
+            .map(|c| Curve3::from_inner(c.clone()))
+            .collect()
+    }
+
+    fn __len__(&self) -> usize {
+        self.inner.len()
+    }
+
+    fn __getitem__(&self, index: isize) -> PyResult<Curve3> {
+        let n = self.inner.len() as isize;
+        // Negative indices count from the end, as they do for any Python sequence.
+        let i = if index < 0 { index + n } else { index };
+        if i < 0 || i >= n {
+            return Err(PyIndexError::new_err("curve group index out of range"));
+        }
+        Ok(Curve3::from_inner(self.inner.curves()[i as usize].clone()))
+    }
+
+    fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyIterator>> {
+        let items = self.curves();
+        PyIterator::from_object(&items.into_pyobject(py)?)
+    }
+
+    #[getter]
+    fn aabb(&self) -> Aabb3 {
+        Aabb3::from_inner(self.inner.aabb())
+    }
+
+    fn length(&self) -> f64 {
+        self.inner.length()
+    }
+
+    fn at_closest_to_point(&self, point: Point3) -> (usize, CurveStation3) {
+        let (member, station) = self.inner.at_closest_to_point(point.get_inner());
+        (member, station.into())
+    }
+
+    fn new_transformed_by(&self, iso: Iso3) -> Self {
+        Self::from_inner(self.inner.new_transformed_by(iso.get_inner()))
+    }
+
+    fn to_2d_in_plane(&self, plane: Plane3) -> PyResult<crate::geom2::CurveGroup2> {
+        let flat = self
+            .inner
+            .to_2d_in_plane(plane.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(crate::geom2::CurveGroup2::from_inner(flat))
+    }
+
+    #[staticmethod]
+    fn load_tccurve3(path: PathBuf) -> PyResult<Self> {
+        let group = engeom::CurveGroup3::load_tccurve3(&path)
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(group))
+    }
+
+    fn save_tccurve3(&self, path: PathBuf, tol: f64) -> PyResult<()> {
+        self.inner
+            .save_tccurve3(&path, tol)
+            .map_err(|e| PyIOError::new_err(e.to_string()))
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "<CurveGroup3 n={}, l={}>",
+            self.inner.len(),
+            self.inner.length()
         )
     }
 }

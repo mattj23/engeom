@@ -16,7 +16,7 @@
 //!
 //! ## Alignment mesh container
 //!
-//! [`AlignmentMesh`] wraps a `&Mesh3` together with optional per-vertex uncertainty values, an
+//! [`AlignMesh`] wraps a `&Mesh3` together with optional per-vertex uncertainty values, an
 //! initial transform, and a list of [`MeshWeight`] providers.  It is used by the multi-mesh bundle
 //! adjustment solver (`multi_mesh`) where each entity needs its own configuration.
 //!
@@ -62,7 +62,7 @@ impl SurfaceTarget3 for Mesh3 {
 /// form would claim the centroid of a face is `1/sqrt(3)` times as uncertain as its corners,
 /// which is not true of a scanned surface. Linear interpolation keeps sigma continuous across
 /// faces and equal to the vertex value at each vertex, which is the behavior wanted here.
-fn interpolated_stdev(mesh: &Mesh3, m: &MeshSurfPoint, stdev: &[f64]) -> f64 {
+pub(crate) fn interpolated_stdev(mesh: &Mesh3, m: &MeshSurfPoint, stdev: &[f64]) -> f64 {
     let face = mesh.faces()[m.face_index as usize];
     m.bc.iter()
         .zip(face.iter())
@@ -78,15 +78,15 @@ fn interpolated_stdev(mesh: &Mesh3, m: &MeshSurfPoint, stdev: &[f64]) -> f64 {
 /// reference. This provides a unified interface for all additional options used to refine the
 /// alignment process, such as the uncertainty of the mesh vertex points, an initial alignment,
 /// and methods of applying weights to the sample points.
-pub struct AlignmentMesh<'a> {
+pub struct AlignMesh<'a> {
     pub mesh: &'a Mesh3,
     pub uncertainty: Option<&'a [f64]>,
     pub initial: Option<&'a Iso3>,
     pub weights: Option<&'a [Box<dyn MeshWeight + Sync>]>,
 }
 
-impl<'a> AlignmentMesh<'a> {
-    /// Creates a new `AlignmentMesh` instance.
+impl<'a> AlignMesh<'a> {
+    /// Creates a new `AlignMesh` instance.
     ///
     /// # Arguments
     ///
@@ -227,6 +227,11 @@ impl MeshWeight for NearMeshWeight {
 // Alignment point sampling
 // ===============================================================================================
 
+/// Generate-alignment-points parameters, controlling `generate_alignment_points`: how densely a
+/// test mesh is sampled and which samples are trusted enough to become alignment correspondences.
+///
+/// Its 2D counterpart is `CAPParams` in `align2`, named differently only so that the two can be
+/// glob-imported together.
 #[derive(Debug, Clone, Copy)]
 pub struct GAPParams {
     pub sample_spacing: f64,

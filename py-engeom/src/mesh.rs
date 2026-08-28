@@ -5,7 +5,7 @@ use crate::conversions::{
     colors_to_array, faces_to_array, labels_to_array, points_to_array, scalars_to_array,
     unit_vectors_to_array,
 };
-use crate::geom3::{Curve3, Iso3, Plane3, Point3, SurfacePoint3, Vector3};
+use crate::geom3::{Curve3, CurveGroup3, Iso3, Plane3, Point3, SurfacePoint3, Vector3};
 use crate::metrology::Distance3;
 use crate::point_cloud::lptf3_load_from_args;
 use engeom::Selection;
@@ -298,10 +298,8 @@ impl Mesh3 {
     #[staticmethod]
     #[pyo3(signature = (path, is_solid = false))]
     fn load_tcmesh(path: PathBuf, is_solid: bool) -> PyResult<Self> {
-        let data =
-            engeom::io::read_tc_mesh_file(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
-        let mesh = engeom::Mesh3::from_data(data, is_solid)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let mesh = engeom::Mesh3::load_tcmesh(&path, is_solid)
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
         Ok(Self::from_inner(mesh))
     }
 
@@ -309,7 +307,8 @@ impl Mesh3 {
     // the tcmesh format refuses an attributed mesh outright now.
     #[pyo3(signature = (path, tol))]
     fn save_tcmesh(&self, path: PathBuf, tol: f64) -> PyResult<()> {
-        engeom::io::write_tc_mesh_file(&path, &self.inner.to_data(), tol)
+        self.inner
+            .save_tcmesh(&path, tol)
             .map_err(|e| PyIOError::new_err(e.to_string()))
     }
 
@@ -707,13 +706,13 @@ impl Mesh3 {
         plane: Plane3,
         tol: Option<f64>,
         faces: Option<&IndexMask>,
-    ) -> PyResult<Vec<Curve3>> {
+    ) -> PyResult<CurveGroup3> {
         let results = self
             .inner
             .section_with_plane(plane.get_inner(), tol, faces.map(|m| m.get_inner()))
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
-        Ok(results.into_iter().map(Curve3::from_inner).collect())
+        Ok(CurveGroup3::from_inner(results))
     }
 
     /// Start a face filter. `start` is either the token `"none"` or `"all"`, or an `IndexMask` over

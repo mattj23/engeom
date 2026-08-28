@@ -24,8 +24,10 @@ pub mod faces;
 pub mod normals;
 pub mod offset;
 pub mod subsets;
+pub mod volumes;
 
 pub use faces::{compute_face_areas, compute_face_centers, compute_face_normals};
 pub use normals::{compute_point_normals, compute_point_normals_where_defined};
 pub use offset::{OffsetOpts, compute_face_offset_points, compute_normal_displaced_points};
 pub use subsets::{compact_by_masks, compute_unique_face_mask, compute_unique_point_mask};
+pub use volumes::{compute_face_mask_in_aabb, compute_point_mask_in_aabb};

@@ -1,7 +1,9 @@
 //! This module generalizes fitting of boundary geometry to sample points
 
+use crate::common::consensus::weights::{MagsacWeight, estimate_sigma_max};
 use crate::common::points::dist;
-use crate::geom2::Boundary2;
+use crate::common::{PCoords, RefinementHalt, SPCoords, SolveQuality, TerminationReason};
+use crate::geom2::{Boundary2, Manifold1Pos2};
 use crate::na::{DVector, Dyn, Matrix, Owned, U1, Vector};
 use crate::{Point2, Result, SurfacePoint2, VecDot};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
@@ -9,15 +11,150 @@ use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 pub type BndBuildFn = Box<dyn Fn(&DVector<f64>) -> Result<Boundary2>>;
 const DELTA: f64 = 1e-6;
 
-#[derive(Clone)]
+/// The residual of a single sample: its distance to the closest position on the boundary, signed
+/// by which side of the boundary's normal it fell on.
+///
+/// The sign carries no extra information for the fit itself. Because the objective squares the
+/// residual, and because the jacobian picks up the same sign that the residual does, both `J^T J`
+/// and `J^T r` are unchanged by it: a signed and an unsigned fit take identical Levenberg-Marquardt
+/// steps and converge to the same parameters.
+///
+/// It is worth having for two other reasons. The jacobian here is a forward finite difference, and
+/// the derivative of an absolute value is wrong for any sample sitting within `DELTA` of the
+/// boundary, where the disturbed and undisturbed distances straddle zero. And a robust noise
+/// estimate by median absolute deviation assumes residuals that are centered on zero when the fit
+/// is good; unsigned distances are all positive, which would have it measure the spread about the
+/// typical distance instead and report a scale that is too small.
+fn signed_residual(m: &Manifold1Pos2, p: &impl PCoords<2>) -> f64 {
+    dist(m, p) * m.scalar_projection(p).signum()
+}
+
+/// The residual degrees of freedom for the MAGSAC++ weight function. A boundary residual is a
+/// full point-to-manifold distance in the plane, so it follows a chi distribution with two
+/// degrees of freedom.
+const RESIDUAL_DOF: usize = 2;
+
+/// The default Levenberg-Marquardt evaluation budget, matching the `levenberg-marquardt` crate's
+/// own default so that the options struct changes nothing unless a caller asks it to.
+const DEFAULT_PATIENCE: usize = 100;
+
+/// Options controlling a boundary fit.
+///
+/// The default is a plain unweighted least-squares fit with no robust refinement, which is what
+/// this module did before the option existed. Robustness is opt-in because it is not free: each
+/// refinement round is a whole extra Levenberg-Marquardt solve, and every step of every solve
+/// rebuilds the boundary `n_params` times to take a finite-difference jacobian. Call
+/// [`BoundaryFitOptions::robust`] when the data is expected to carry outliers and the cost is
+/// worth paying.
+#[derive(Clone, Copy, Debug)]
+pub struct BoundaryFitOptions {
+    /// The number of iteratively reweighted refinement rounds to perform after the initial
+    /// unweighted solve. Zero, the default, disables robust weighting entirely.
+    pub refinement_steps: usize,
+
+    /// The MAGSAC++ upper noise bound, estimated from the initial residuals via the median
+    /// absolute deviation when `None`.
+    ///
+    /// This is in the units of the geometry: a residual is a signed distance from a sample to the
+    /// boundary, and nothing normalizes it. Supplying it explicitly is worth doing when the
+    /// measurement noise is known, since the estimate is taken from a fit that the outliers have
+    /// already influenced.
+    pub sigma_max: Option<f64>,
+
+    /// The Levenberg-Marquardt evaluation budget, as a multiplier on the parameter count. Must be
+    /// greater than zero.
+    pub patience: usize,
+}
+
+impl Default for BoundaryFitOptions {
+    fn default() -> Self {
+        Self {
+            refinement_steps: 0,
+            sigma_max: None,
+            patience: DEFAULT_PATIENCE,
+        }
+    }
+}
+
+impl BoundaryFitOptions {
+    /// Options with robust refinement switched on, using the default number of rounds and a noise
+    /// bound estimated from the data.
+    pub fn robust() -> Self {
+        Self {
+            refinement_steps: 4,
+            ..Default::default()
+        }
+    }
+
+    fn validate(&self) -> Result<()> {
+        if self.patience == 0 {
+            return Err("patience must be greater than zero".into());
+        }
+        if let Some(s) = self.sigma_max
+            && (!s.is_finite() || s <= 0.0)
+        {
+            return Err(
+                format!("sigma_max is {s}, but must be finite and strictly positive").into(),
+            );
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
 pub struct BoundaryFitResult {
     pub params: DVector<f64>,
+
+    /// The geometric residuals of the fit, signed distances in the units of the model. These are
+    /// the plain residuals, not the weighted values the solver minimized, so they describe the
+    /// geometry rather than the fitting machinery.
     pub residuals: DVector<f64>,
+
+    solves: Vec<TerminationReason>,
+    halt: Option<RefinementHalt>,
 }
 
 impl BoundaryFitResult {
-    pub fn new(params: DVector<f64>, residuals: DVector<f64>) -> Self {
-        Self { params, residuals }
+    pub(crate) fn new(
+        params: DVector<f64>,
+        residuals: DVector<f64>,
+        solves: Vec<TerminationReason>,
+        halt: Option<RefinementHalt>,
+    ) -> Self {
+        Self {
+            params,
+            residuals,
+            solves,
+            halt,
+        }
+    }
+
+    /// How every solve which contributed to this fit terminated, the initial one first.
+    pub fn solves(&self) -> &[TerminationReason] {
+        &self.solves
+    }
+
+    /// The number of robust refinement rounds which completed, which is zero for a plain fit.
+    pub fn refinement_rounds(&self) -> usize {
+        self.solves.len().saturating_sub(1)
+    }
+
+    /// The worst quality among the solves which contributed to this fit.
+    pub fn quality(&self) -> SolveQuality {
+        self.solves
+            .iter()
+            .map(SolveQuality::from_termination)
+            .fold(SolveQuality::Converged, SolveQuality::worse_of)
+    }
+
+    /// Whether every solve which contributed to this fit converged.
+    pub fn converged(&self) -> bool {
+        self.quality() == SolveQuality::Converged
+    }
+
+    /// Why robust refinement stopped early, if it did.
+    pub fn halt(&self) -> Option<&RefinementHalt> {
+        self.halt.as_ref()
     }
 }
 
@@ -71,7 +208,9 @@ impl BoundaryFitResult {
 /// // ------------------------------------------------------------------------------------------
 /// use engeom::{Point2, DVector};
 /// use engeom::common::{to_points, fill_gaps};
-/// use engeom::geom2::{BndBuildFn, fit_boundary_to_points, BoundaryData2, BoundaryEditor};
+/// use engeom::geom2::{
+///     BndBuildFn, BoundaryData2, BoundaryEditor, BoundaryFitOptions, fit_boundary_to_points,
+/// };
 /// use approx::assert_relative_eq;
 ///
 /// // We'll create the initial corners and then use the `fill_gaps` helper to generate points
@@ -93,7 +232,10 @@ impl BoundaryFitResult {
 /// // too large for the actual data and not aligned with the edges. Then we'll run the fitting
 /// // algorithm.
 /// let initial = DVector::from(vec![0.0, 0.0, 4.0, 0.0, 1.0, 7.0]);
-/// let result = fit_boundary_to_points(&points, &builder, initial, false).unwrap();
+/// let result = fit_boundary_to_points(
+///     &points, &builder, initial, false, &BoundaryFitOptions::default(),
+/// )
+/// .unwrap();
 ///
 /// // Finally we'll verify that the corners match the ones we originally provided.
 /// let expected = DVector::from(vec![1.0, 1.0, 3.0, 2.0, 2.0, 4.0]);
@@ -105,17 +247,10 @@ pub fn fit_boundary_to_points(
     builder: &BndBuildFn,
     initial: DVector<f64>,
     ignore_ends: bool,
+    opts: &BoundaryFitOptions,
 ) -> Result<BoundaryFitResult> {
     let fitting = BoundaryToPoints::new(points, ignore_ends);
-    let problem = BoundaryFit::try_new(&fitting, builder, initial)?;
-    let (result, report) = LevenbergMarquardt::new().minimize(problem);
-
-    if report.termination.was_successful() {
-        let residuals = result.residuals.unwrap();
-        Ok(BoundaryFitResult::new(result.params, residuals))
-    } else {
-        Err(format!("Fitting failed: {:?}", report.termination).into())
-    }
+    solve(&fitting, builder, initial, opts)
 }
 
 struct BoundaryToPoints<'a> {
@@ -144,7 +279,7 @@ impl BoundaryFittable for BoundaryToPoints<'_> {
             if self.ignore_ends {
                 weights[i] = if bounds.contains(&m.l) { 1.0 } else { 0.0 };
             }
-            res[i] = dist(&m, &self.points[i]);
+            res[i] = signed_residual(&m, &self.points[i]);
         }
 
         (res, weights)
@@ -152,7 +287,7 @@ impl BoundaryFittable for BoundaryToPoints<'_> {
 
     fn residual_only(&self, sample_i: usize, boundary: &Boundary2) -> f64 {
         let (_, m) = boundary.at_closest_to_point(&self.points[sample_i]);
-        dist(&m, &self.points[sample_i])
+        signed_residual(&m, &self.points[sample_i])
     }
 }
 
@@ -201,7 +336,10 @@ impl BoundaryFittable for BoundaryToPoints<'_> {
 /// // ------------------------------------------------------------------------------------------
 /// use engeom::{VecDot, Vector2, SurfacePoint2, DVector, Point2};
 /// use engeom::common::{to_points, fill_gaps, linear_space};
-/// use engeom::geom2::{BndBuildFn, fit_boundary_to_surface_points, BoundaryData2, BoundaryEditor};
+/// use engeom::geom2::{
+///     BndBuildFn, BoundaryData2, BoundaryEditor, BoundaryFitOptions,
+///     fit_boundary_to_surface_points,
+/// };
 /// use approx::assert_relative_eq;
 ///
 /// // We'll create ten points facing in +Y at Y=0
@@ -235,7 +373,9 @@ impl BoundaryFittable for BoundaryToPoints<'_> {
 /// // boundary normal is facing in the opposite direction of the good points, but will de-weight
 /// // the bad points because they are orthogonal.
 /// let result =
-///     fit_boundary_to_surface_points(&samples, &builder, initial, VecDot::Abs, false)
+///     fit_boundary_to_surface_points(
+///         &samples, &builder, initial, VecDot::Abs, false, &BoundaryFitOptions::default(),
+///     )
 ///     .unwrap();
 ///
 /// // As we can see, the fit ended at the position of the good points.
@@ -248,17 +388,10 @@ pub fn fit_boundary_to_surface_points(
     initial: DVector<f64>,
     weight_mode: VecDot,
     ignore_ends: bool,
+    opts: &BoundaryFitOptions,
 ) -> Result<BoundaryFitResult> {
     let fitting = BoundaryToSurfacePoints::new(points, weight_mode, ignore_ends);
-    let problem = BoundaryFit::try_new(&fitting, builder, initial)?;
-    let (result, report) = LevenbergMarquardt::new().minimize(problem);
-
-    if report.termination.was_successful() {
-        let residuals = result.residuals.unwrap();
-        Ok(BoundaryFitResult::new(result.params, residuals))
-    } else {
-        Err(format!("Fitting failed: {:?}", report.termination).into())
-    }
+    solve(&fitting, builder, initial, opts)
 }
 
 struct BoundaryToSurfacePoints<'a> {
@@ -297,7 +430,7 @@ impl BoundaryFittable for BoundaryToSurfacePoints<'_> {
                 weights[i] = 0.0;
             }
 
-            res[i] = dist(&m, &self.points[i]);
+            res[i] = signed_residual(&m, &self.points[i]);
         }
 
         (res, weights)
@@ -305,7 +438,7 @@ impl BoundaryFittable for BoundaryToSurfacePoints<'_> {
 
     fn residual_only(&self, sample_i: usize, boundary: &Boundary2) -> f64 {
         let (_, m) = boundary.at_closest_to_point(&self.points[sample_i]);
-        dist(&m, &self.points[sample_i])
+        signed_residual(&m, &self.points[sample_i])
     }
 }
 
@@ -313,6 +446,102 @@ impl BoundaryFittable for BoundaryToSurfacePoints<'_> {
 // `BoundaryFit` and `BoundaryFittable` together offer a generic mechanism for performing the
 // fitting of boundaries to a set of samples of a finite count.
 // =============================================================================================
+
+// =============================================================================================
+// The solve
+// =============================================================================================
+
+/// Runs the fit: one unweighted Levenberg-Marquardt solve, optionally followed by rounds of
+/// iteratively reweighted least squares using MAGSAC++ weights.
+///
+/// The structure mirrors `geom2::align2::points_to_surface2`, for the same reasons. An initial
+/// unweighted solve comes first because the noise scale has to be estimated from residuals, and
+/// there are none until something has been fitted. Within each refinement round the weights are
+/// held fixed, so that the jacobian stays consistent with the residual it differentiates.
+///
+/// An `Err` is reserved for having no answer at all: rejected options, a builder which fails on
+/// the initial parameters, or an initial solve which broke down. A refinement round which breaks
+/// down is rolled back to the previous round's parameters and reported on the result.
+fn solve(
+    fitting: &dyn BoundaryFittable,
+    builder: &BndBuildFn,
+    initial: DVector<f64>,
+    opts: &BoundaryFitOptions,
+) -> Result<BoundaryFitResult> {
+    opts.validate()?;
+
+    let lm = LevenbergMarquardt::new().with_patience(opts.patience);
+    let n_params = initial.len();
+
+    let problem = BoundaryFit::try_new(fitting, builder, initial)?;
+    let (mut problem, termination) = run(&lm, problem);
+    if !SolveQuality::from_termination(&termination).is_usable() {
+        return Err(format!("Fitting failed: {termination:?}").into());
+    }
+
+    let mut solves = vec![termination];
+    let mut halt = None;
+
+    if opts.refinement_steps > 0 {
+        match resolve_sigma_max(opts, &problem) {
+            None => halt = Some(RefinementHalt::NoNoiseEstimate),
+            Some(sigma_max) => {
+                let weighting = MagsacWeight::new(sigma_max, RESIDUAL_DOF);
+
+                for _ in 0..opts.refinement_steps {
+                    let weighted = problem.count_if_reweighted(&weighting);
+                    if weighted < n_params {
+                        halt = Some(RefinementHalt::Underdetermined {
+                            weighted,
+                            params: n_params,
+                        });
+                        break;
+                    }
+
+                    let last_good = problem.params.clone();
+                    problem.apply_magsac_weights(&weighting);
+
+                    let (next, termination) = run(&lm, problem);
+                    problem = next;
+
+                    if !SolveQuality::from_termination(&termination).is_usable() {
+                        problem.restore(&last_good);
+                        halt = Some(RefinementHalt::SolveFailed(termination));
+                        break;
+                    }
+                    solves.push(termination);
+                }
+            }
+        }
+    }
+
+    let residuals = problem
+        .residuals
+        .clone()
+        .ok_or("the fitted parameters do not produce a valid boundary")?;
+
+    Ok(BoundaryFitResult::new(
+        problem.params,
+        residuals,
+        solves,
+        halt,
+    ))
+}
+
+fn run<'a>(
+    lm: &LevenbergMarquardt<f64>,
+    problem: BoundaryFit<'a>,
+) -> (BoundaryFit<'a>, TerminationReason) {
+    let (result, report) = lm.minimize(problem);
+    (result, report.termination)
+}
+
+fn resolve_sigma_max(opts: &BoundaryFitOptions, problem: &BoundaryFit<'_>) -> Option<f64> {
+    match opts.sigma_max {
+        Some(s) => Some(s),
+        None => estimate_sigma_max(problem.residuals.as_ref()?.as_slice()),
+    }
+}
 
 pub trait BoundaryFittable {
     /// Given a boundary, this should return two equally sized `DVector`s of the residuals and
@@ -336,7 +565,15 @@ struct BoundaryFit<'a> {
     builder: &'a BndBuildFn,
     current: Option<Boundary2>,
     residuals: Option<DVector<f64>>,
+
+    /// The geometric weight of each sample, which depends on where the sample projects and so is
+    /// recomputed whenever the parameters move.
     weights: Option<DVector<f64>>,
+
+    /// The robust weight of each sample, held fixed for the whole of a solve and refreshed only
+    /// between them. Reweighting inside a solve would leave the jacobian differentiating a
+    /// different objective than the residual reports.
+    magsac_weights: DVector<f64>,
 }
 
 impl<'a> BoundaryFit<'a> {
@@ -355,11 +592,57 @@ impl<'a> BoundaryFit<'a> {
             current: None,
             residuals: None,
             weights: None,
+            magsac_weights: DVector::zeros(0),
         };
 
         problem.set_params(&initial);
 
+        // Sized once the first evaluation has told us how many samples there are, and left at one
+        // apiece so that the opening solve is unweighted.
+        let n = problem.residuals.as_ref().map_or(0, |r| r.len());
+        problem.magsac_weights = DVector::from_element(n, 1.0);
+
         Ok(problem)
+    }
+
+    /// The factor applied to both the residual and the jacobian row of a sample.
+    ///
+    /// The geometric weight enters linearly and the robust weight as a square root, which is not
+    /// an oversight. A residual scaled by `w` contributes `w^2 r^2` to the objective, so the
+    /// square root is what makes a MAGSAC weight mean what it says. The geometric weight predates
+    /// that and is left alone: it is a caller-facing knob whose established behavior is a scale on
+    /// the residual, and quietly changing it would move every existing fit.
+    fn scale(&self, weights: &DVector<f64>, i: usize) -> f64 {
+        weights[i] * self.magsac_weights[i].sqrt()
+    }
+
+    /// Recomputes the robust weights from the current residuals.
+    fn apply_magsac_weights(&mut self, weighting: &MagsacWeight) {
+        if let Some(residuals) = &self.residuals {
+            for i in 0..residuals.len() {
+                self.magsac_weights[i] = weighting.weight(residuals[i].abs());
+            }
+        }
+    }
+
+    /// How many samples would still carry weight after reweighting. A round which would leave
+    /// fewer of them than there are parameters is rank-deficient and must not be run.
+    ///
+    /// The `.abs()` on the geometric weight is not redundant: under `VecDot::AsIs` the weight is
+    /// a raw dot product and can be negative, and a negative weight still gives its sample
+    /// influence because the sign cancels in the squared objective.
+    fn count_if_reweighted(&self, weighting: &MagsacWeight) -> usize {
+        let (Some(residuals), Some(weights)) = (&self.residuals, &self.weights) else {
+            return 0;
+        };
+        (0..residuals.len())
+            .filter(|&i| weights[i].abs() * weighting.weight(residuals[i].abs()) > 0.0)
+            .count()
+    }
+
+    /// Puts the parameters back to a previous state and rebuilds the fit to match.
+    fn restore(&mut self, params: &DVector<f64>) {
+        self.set_params(params);
     }
 }
 
@@ -395,7 +678,7 @@ impl LeastSquaresProblem<f64, Dyn, Dyn> for BoundaryFit<'_> {
         };
         let mut res = DVector::zeros(residuals.len());
         for i in 0..residuals.len() {
-            res[i] = residuals[i] * weights[i];
+            res[i] = residuals[i] * self.scale(weights, i);
         }
 
         Some(res)
@@ -423,7 +706,7 @@ impl LeastSquaresProblem<f64, Dyn, Dyn> for BoundaryFit<'_> {
 
             for i in 0..residuals.len() {
                 let d = self.fitting.residual_only(i, &disturbed);
-                jac[(i, k)] = weights[i] * (d - residuals[i]) / DELTA;
+                jac[(i, k)] = self.scale(weights, i) * (d - residuals[i]) / DELTA;
             }
         }
 
@@ -437,9 +720,246 @@ mod tests {
     use crate::Vector2;
     use crate::common::linear_space;
     use crate::common::points::{fill_gaps, to_points};
+    use crate::common::random_geometry::RandomGeometry2;
     use crate::geom2::{BoundaryData2, BoundaryEditor};
     use approx::assert_relative_eq;
 
+    /// A closed counter-clockwise unit square from (0,0) to (1,1). Boundary normals point to the
+    /// right of the tangent, which for counter-clockwise winding means outward.
+    fn ccw_square() -> Boundary2 {
+        let mut bdata = BoundaryData2::new_closed();
+        let mut cursor = bdata.get_cursor(None);
+        cursor.add_seg_xy(0.0, 0.0);
+        cursor.add_seg_xy(1.0, 0.0);
+        cursor.add_seg_xy(1.0, 1.0);
+        cursor.add_seg_xy(0.0, 1.0);
+        bdata.try_to_boundary().unwrap()
+    }
+
+    #[test]
+    fn the_residual_is_signed_by_which_side_of_the_boundary_a_sample_falls_on() {
+        let square = ccw_square();
+
+        let outside = Point2::new(0.5, -0.25);
+        let inside = Point2::new(0.5, 0.25);
+
+        let (_, m_out) = square.at_closest_to_point(&outside);
+        let (_, m_in) = square.at_closest_to_point(&inside);
+
+        let r_out = signed_residual(&m_out, &outside);
+        let r_in = signed_residual(&m_in, &inside);
+
+        assert!(
+            r_out > 0.0,
+            "a point outside should be positive, got {r_out}"
+        );
+        assert!(r_in < 0.0, "a point inside should be negative, got {r_in}");
+
+        // The magnitude is still the plain distance to the boundary.
+        assert_relative_eq!(r_out.abs(), 0.25, epsilon = 1e-12);
+        assert_relative_eq!(r_in.abs(), 0.25, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn signing_leaves_the_size_of_the_residual_alone() {
+        // The objective squares the residual, so signing it cannot move the minimum. This pins
+        // that down directly: the magnitude at every sample matches the unsigned distance the
+        // residual used to be.
+        let square = ccw_square();
+        let samples = fill_gaps(
+            &to_points(&[
+                [-0.4, -0.4],
+                [1.4, -0.4],
+                [1.4, 1.4],
+                [-0.4, 1.4],
+                [-0.4, -0.4],
+            ]),
+            0.1,
+        );
+
+        for p in &samples {
+            let (_, m) = square.at_closest_to_point(p);
+            assert_relative_eq!(signed_residual(&m, p).abs(), dist(&m, p), epsilon = 1e-12);
+        }
+    }
+
+    // =========================================================================================
+    // Robust refinement
+    // =========================================================================================
+
+    /// The triangle fixture of `simple_triangle`, as (points, builder, initial).
+    fn triangle_case() -> (Vec<Point2>, BndBuildFn, DVector<f64>) {
+        let corners = to_points(&[[1.0, 1.0], [3.0, 2.0], [2.0, 4.0], [1.0, 1.0]]);
+        let points = fill_gaps(&corners, 0.1);
+
+        let builder: BndBuildFn = Box::new(|params: &DVector<f64>| {
+            let mut bdata = BoundaryData2::new_open(Point2::new(params[0], params[1]));
+            let mut cursor = bdata.get_cursor(None);
+            cursor.add_seg_xy(params[2], params[3]);
+            cursor.add_seg_xy(params[4], params[5]);
+            cursor.add_seg_xy(params[0], params[1]);
+            bdata.try_to_boundary()
+        });
+
+        let initial = DVector::from(vec![0.9, 0.9, 3.1, 2.1, 2.1, 4.1]);
+        (points, builder, initial)
+    }
+
+    #[test]
+    fn gross_outliers_are_rejected() {
+        // Clean samples carrying a little measurement noise, plus a tenth of them thrown well
+        // clear of the triangle. The plain fit has no defense against the strays; the robust one
+        // should weight them out and land close to the truth.
+        //
+        // The noise on the inliers is not decoration. MAGSAC separates outliers from inliers by
+        // a noise scale estimated from the residuals, so there has to be a visible inlier scale
+        // for it to find. Perfectly clean data plus large strays is the pathological case: the
+        // opening unweighted solve is dragged, and the only spread left to measure is the damage
+        // itself. That is the same trap `MultiOptions2::max_distance` exists to avoid.
+        let (mut points, builder, initial) = triangle_case();
+
+        let mut rg = RandomGeometry2::from_seed(0xb0_11d);
+        for p in points.iter_mut() {
+            *p += Vector2::new(rg.gaussian_f64(0.0, 0.01), rg.gaussian_f64(0.0, 0.01));
+        }
+        for (k, p) in points.iter_mut().enumerate() {
+            if k.is_multiple_of(10) {
+                *p += Vector2::new(0.0, 0.5);
+            }
+        }
+
+        let truth = DVector::from(vec![1.0, 1.0, 3.0, 2.0, 2.0, 4.0]);
+        let err = |r: &BoundaryFitResult| (&r.params - &truth).norm();
+
+        let naive = fit_boundary_to_points(
+            &points,
+            &builder,
+            initial.clone(),
+            false,
+            &Default::default(),
+        )
+        .unwrap();
+        let robust = fit_boundary_to_points(
+            &points,
+            &builder,
+            initial.clone(),
+            false,
+            &BoundaryFitOptions::robust(),
+        )
+        .unwrap();
+
+        assert!(
+            err(&robust) < 0.25 * err(&naive),
+            "robust weighting should have suppressed the outliers: naive {}, robust {}",
+            err(&naive),
+            err(&robust)
+        );
+        assert_eq!(robust.refinement_rounds(), 4);
+        assert!(robust.halt().is_none());
+
+        // A noise bound supplied outright does as well, and does not depend on the estimate being
+        // taken from a solve the outliers have already influenced.
+        let explicit = fit_boundary_to_points(
+            &points,
+            &builder,
+            initial,
+            false,
+            &BoundaryFitOptions {
+                sigma_max: Some(0.02),
+                ..BoundaryFitOptions::robust()
+            },
+        )
+        .unwrap();
+        assert!(err(&explicit) < 0.25 * err(&naive));
+    }
+
+    #[test]
+    fn refinement_is_off_by_default() {
+        let (points, builder, initial) = triangle_case();
+        let result =
+            fit_boundary_to_points(&points, &builder, initial, false, &Default::default()).unwrap();
+
+        assert_eq!(result.refinement_rounds(), 0);
+        assert_eq!(result.solves().len(), 1);
+        assert!(result.halt().is_none());
+    }
+
+    #[test]
+    fn refinement_on_essentially_exact_data_leaves_the_fit_alone() {
+        // The fixture samples sit on the triangle outright, so a converged fit leaves residuals
+        // at the level of floating point noise. Reweighting has nothing to find, and the rounds
+        // must not disturb an answer that is already right.
+        //
+        // Worth knowing: the noise estimate does not bail out here. It only rejects a spread that
+        // is zero or non-finite, and residuals of order 1e-16 are neither, so the rounds run on
+        // numerical noise rather than reporting `RefinementHalt::NoNoiseEstimate`. That is shared
+        // behavior with every alignment solver, not something specific to boundary fitting.
+        let (points, builder, initial) = triangle_case();
+        let result = fit_boundary_to_points(
+            &points,
+            &builder,
+            initial,
+            false,
+            &BoundaryFitOptions::robust(),
+        )
+        .unwrap();
+
+        let truth = DVector::from(vec![1.0, 1.0, 3.0, 2.0, 2.0, 4.0]);
+        assert_relative_eq!(result.params, truth, epsilon = 1.0e-5);
+        assert!(
+            result.halt().is_none(),
+            "unexpected halt: {:?}",
+            result.halt()
+        );
+    }
+
+    #[test]
+    fn a_patience_exhausted_initial_solve_is_reported_rather_than_raised() {
+        // Exhausting the evaluation budget leaves behind the best parameters the solver found,
+        // which is an answer whose convergence was not demonstrated, not the absence of an
+        // answer. The gate here has to match the alignment solvers, which classify
+        // `LostPatience` as usable (see `SolveQuality`).
+        let (mut points, builder, initial) = triangle_case();
+
+        let mut rg = RandomGeometry2::from_seed(0xb0_11d);
+        for p in points.iter_mut() {
+            *p += Vector2::new(rg.gaussian_f64(0.0, 0.01), rg.gaussian_f64(0.0, 0.01));
+        }
+
+        // A patience of one allows seven evaluations of a six-parameter problem, which cannot
+        // reach convergence from an initial guess this far off.
+        let opts = BoundaryFitOptions {
+            patience: 1,
+            ..Default::default()
+        };
+        let result = fit_boundary_to_points(&points, &builder, initial, false, &opts).unwrap();
+
+        assert_eq!(result.quality(), SolveQuality::Unconverged);
+        assert!(!result.converged());
+    }
+
+    #[test]
+    fn invalid_options_are_rejected() {
+        let (points, builder, initial) = triangle_case();
+
+        let bad_patience = BoundaryFitOptions {
+            patience: 0,
+            ..Default::default()
+        };
+        assert!(
+            fit_boundary_to_points(&points, &builder, initial.clone(), false, &bad_patience)
+                .is_err()
+        );
+
+        let bad_sigma = BoundaryFitOptions {
+            sigma_max: Some(-1.0),
+            ..BoundaryFitOptions::robust()
+        };
+        assert!(fit_boundary_to_points(&points, &builder, initial, false, &bad_sigma).is_err());
+    }
+
+    /// This and `surface_normal_line` assert converged parameters to 1e-6, so between them they
+    /// are the regression net for the claim that signing the residual does not move a fit.
     #[test]
     fn simple_triangle() {
         let corners = to_points(&[[1.0, 1.0], [3.0, 2.0], [2.0, 4.0], [1.0, 1.0]]);
@@ -455,7 +975,8 @@ mod tests {
         });
 
         let initial = DVector::from(vec![0.0, 0.0, 4.0, 0.0, 1.0, 7.0]);
-        let result = fit_boundary_to_points(&points, &builder, initial, false).unwrap();
+        let result =
+            fit_boundary_to_points(&points, &builder, initial, false, &Default::default()).unwrap();
         let expected = DVector::from(vec![1.0, 1.0, 3.0, 2.0, 2.0, 4.0]);
         assert_relative_eq!(result.params, expected, epsilon = 1.0e-6);
     }
@@ -481,9 +1002,15 @@ mod tests {
         });
         let initial = DVector::from(vec![1.0, 1.0]);
 
-        let result =
-            fit_boundary_to_surface_points(&samples, &builder, initial, VecDot::Abs, false)
-                .unwrap();
+        let result = fit_boundary_to_surface_points(
+            &samples,
+            &builder,
+            initial,
+            VecDot::Abs,
+            false,
+            &Default::default(),
+        )
+        .unwrap();
         let expected = DVector::from(vec![0.0, 0.0]);
         assert_relative_eq!(result.params, expected, epsilon = 1.0e-6);
     }

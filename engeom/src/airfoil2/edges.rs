@@ -4,8 +4,8 @@ use crate::airfoil2::{AfEdge, AfEdgeGeometry, SectionInput};
 use crate::common::cubic_spline::{SplineBuildFn, fit_spline_to_points};
 use crate::common::{PCoords, dist, mid_point};
 use crate::geom2::{
-    BndBuildFn, BoundaryData2, BoundaryEditor, BoundaryElement2, CubicSpline2, LineOps2, Segment2,
-    fit_boundary_to_points, signed_angle,
+    BndBuildFn, BoundaryData2, BoundaryEditor, BoundaryElement2, BoundaryFitOptions, CubicSpline2,
+    LineOps2, Segment2, fit_boundary_to_points, signed_angle,
 };
 use crate::{Arc2, Circle2, Curve2, DVector, Iso2, Line2, Point2, Result, SurfacePoint2, Vector2};
 use std::f64::consts::PI;
@@ -211,7 +211,13 @@ pub fn fit_square_edge(
         bdata.try_to_boundary()
     });
 
-    let result = fit_boundary_to_points(&working.fit_points, &builder, initial, false)?;
+    let result = fit_boundary_to_points(
+        &working.fit_points,
+        &builder,
+        initial,
+        false,
+        &BoundaryFitOptions::default(),
+    )?;
     let corner0 = Point2::new(result.params[0], result.params[1]);
     let corner1 = Point2::new(result.params[2], result.params[3]);
     let point = end_intersection(input, &working.last()?.c, &mid_point(&corner0, &corner1))?;
@@ -270,7 +276,13 @@ pub fn fit_rounded_square_edge(
         bdata.try_to_boundary()
     });
 
-    let result = fit_boundary_to_points(&working.fit_points, &builder, initial, false)?;
+    let result = fit_boundary_to_points(
+        &working.fit_points,
+        &builder,
+        initial,
+        false,
+        &BoundaryFitOptions::default(),
+    )?;
     let corner0 = Point2::new(result.params[0], result.params[1]);
     let corner1 = Point2::new(result.params[2], result.params[3]);
     let radius = result.params[4] as f32;
@@ -323,7 +335,13 @@ pub fn fit_sharp_edge(
         bdata.try_to_boundary()
     });
 
-    let result = fit_boundary_to_points(&working.fit_points, &builder, initial, false)?;
+    let result = fit_boundary_to_points(
+        &working.fit_points,
+        &builder,
+        initial,
+        false,
+        &BoundaryFitOptions::default(),
+    )?;
     let corner = Point2::new(result.params[0], result.params[1]);
     let point = end_intersection(input, &working.last()?.c, &corner)?;
 
@@ -372,7 +390,13 @@ pub fn fit_full_round_edge(
         bdata.try_to_boundary()
     });
 
-    let result = fit_boundary_to_points(&working.fit_points, &builder, initial, false)?;
+    let result = fit_boundary_to_points(
+        &working.fit_points,
+        &builder,
+        initial,
+        false,
+        &BoundaryFitOptions::default(),
+    )?;
     let circle = Circle2::new(result.params[0], result.params[1], result.params[2]);
     let point = end_intersection(input, &working.last()?.c, &circle)?;
 
@@ -451,7 +475,13 @@ pub fn fit_blended_round_edge(
     });
 
     // Perform the fitting and get the best fit circle
-    let result = fit_boundary_to_points(&working.fit_points, &builder, initial, false)?;
+    let result = fit_boundary_to_points(
+        &working.fit_points,
+        &builder,
+        initial,
+        false,
+        &BoundaryFitOptions::default(),
+    )?;
     let circle = Circle2::new(result.params[0], result.params[1], result.params[2]);
 
     // Now let's refine the inscribed circles to get closer to the edge circle

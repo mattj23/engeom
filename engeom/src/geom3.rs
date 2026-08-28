@@ -4,6 +4,7 @@ mod circle3;
 mod cone3;
 mod cubic_spline3;
 mod curve3;
+mod curve_group3;
 mod cylinder3;
 pub mod half_edge3;
 mod iso3;
@@ -16,6 +17,7 @@ mod segment3;
 mod sphere3;
 mod swept_boundary3;
 mod unroll_transform;
+mod xyz_quat;
 mod xyzwpr;
 
 use parry3d_f64::na::UnitQuaternion;
@@ -26,6 +28,7 @@ pub use attributes3::Attr3;
 pub use circle3::Circle3;
 pub use cone3::Cone3;
 pub use cubic_spline3::CubicSpline3;
+pub use curve_group3::CurveGroup3;
 pub use curve3::{Curve3, CurveStation3};
 pub use cylinder3::Cylinder3;
 pub use half_edge3::HalfEdgeMesh3;
@@ -43,6 +46,7 @@ pub use sphere3::Sphere3;
 use std::ops;
 pub use swept_boundary3::*;
 pub use unroll_transform::UnrollTransform;
+pub use xyz_quat::XyzQuat;
 pub use xyzwpr::XyzWpr;
 
 pub type Point3 = parry3d_f64::na::Point3<f64>;
@@ -60,9 +64,9 @@ pub type KdTree3 = crate::common::kd_tree::KdTree<3>;
 pub type SurfacePoint3 = SurfacePoint<3>;
 
 pub type SvdBasis3 = SvdBasis<3>;
-pub type Align3 = crate::common::align::Align<UnitQuaternion<f64>, 3>;
-pub type Alignment3 = crate::common::align::Alignment<UnitQuaternion<f64>, 3>;
+pub type Align3 = crate::common::align::Alignment<UnitQuaternion<f64>, 3>;
 pub type AlignOutcome3 = crate::common::align::AlignOutcome<UnitQuaternion<f64>, 3>;
+pub type MultiOutcome3 = crate::common::align::MultiOutcome<UnitQuaternion<f64>, 3>;
 
 pub type Aabb3 = parry3d_f64::bounding_volume::Aabb;
 
