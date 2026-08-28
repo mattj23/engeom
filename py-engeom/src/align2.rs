@@ -312,7 +312,7 @@ impl AlignOutcome2 {
 }
 
 // ================================================================================================
-// MultiAlignOutcome2
+// MultiOutcome2
 // ================================================================================================
 
 /// The full outcome of a simultaneous alignment of several bodies: one `Align2` per body,
@@ -322,18 +322,18 @@ impl AlignOutcome2 {
 /// least-squares problem: the bodies converge or fail to converge together.
 #[pyclass(module = "engeom.align2")]
 #[derive(Debug)]
-pub struct MultiAlignOutcome2 {
-    inner: engeom::geom2::MultiAlignOutcome2,
+pub struct MultiOutcome2 {
+    inner: engeom::geom2::MultiOutcome2,
 }
 
-impl MultiAlignOutcome2 {
-    pub fn from_inner(inner: engeom::geom2::MultiAlignOutcome2) -> Self {
+impl MultiOutcome2 {
+    pub fn from_inner(inner: engeom::geom2::MultiOutcome2) -> Self {
         Self { inner }
     }
 }
 
 #[pymethods]
-impl MultiAlignOutcome2 {
+impl MultiOutcome2 {
     /// The alignment produced for each body, in the order the bodies were given.
     #[getter]
     pub fn alignments(&self) -> Vec<Align2> {
@@ -393,7 +393,7 @@ impl MultiAlignOutcome2 {
 
     pub fn __repr__(&self) -> String {
         format!(
-            "MultiAlignOutcome2(bodies={}, quality={}, refinement_rounds={})",
+            "MultiOutcome2(bodies={}, quality={}, refinement_rounds={})",
             self.inner.len(),
             self.quality(),
             self.refinement_rounds()
@@ -653,12 +653,12 @@ pub fn multi_curve_adjustment(
     max_corner_angle: Option<f64>,
     end_margin: Option<f64>,
     filter_distances: Option<f64>,
-) -> PyResult<MultiAlignOutcome2> {
+) -> PyResult<MultiOutcome2> {
     let bodies: Vec<engeom::CurveGroup2> = groups.iter().map(|g| g.get_inner().clone()).collect();
     let poses: Option<Vec<engeom::Iso2>> =
         initial.map(|v| v.iter().map(|t| *t.get_inner()).collect());
 
-    let opts = engeom::geom2::align2::MultiAlignOptions2 {
+    let opts = engeom::geom2::align2::MultiOptions2 {
         max_distance,
         max_normal_angle,
         refinement_steps,
@@ -678,6 +678,6 @@ pub fn multi_curve_adjustment(
     };
 
     engeom::geom2::align2::multi_curve_adjustment(&bodies, poses.as_deref(), &opts, &sample_opts)
-        .map(MultiAlignOutcome2::from_inner)
+        .map(MultiOutcome2::from_inner)
         .map_err(|e| PyValueError::new_err(e.to_string()))
 }

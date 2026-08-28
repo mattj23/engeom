@@ -815,7 +815,7 @@ mod tests {
         // a noise scale estimated from the residuals, so there has to be a visible inlier scale
         // for it to find. Perfectly clean data plus large strays is the pathological case: the
         // opening unweighted solve is dragged, and the only spread left to measure is the damage
-        // itself. That is the same trap `MultiAlignOptions2::max_distance` exists to avoid.
+        // itself. That is the same trap `MultiOptions2::max_distance` exists to avoid.
         let (mut points, builder, initial) = triangle_case();
 
         let mut rg = RandomGeometry2::from_seed(0xb0_11d);

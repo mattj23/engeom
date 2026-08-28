@@ -19,7 +19,7 @@ use parry2d_f64::na::{Dim, Matrix, RawStorageMut, Storage, U3};
 ///   associated with the different partial differentials.
 ///
 /// returns: Matrix<f64, Const<3>, Const<1>, ArrayStorage<f64, 3, 1>>
-pub fn point_surf_jacobian2(
+pub fn point_surf_jacobian(
     p: &impl PCoords<2>,
     c: &impl SPCoords<2>,
     align: &AlignValues2,
@@ -69,7 +69,7 @@ pub fn point_surf_jacobian2(
     result
 }
 
-/// The counterpart to [`point_surf_jacobian2`] for the case where it is the *target* entity whose
+/// The counterpart to [`point_surf_jacobian`] for the case where it is the *target* entity whose
 /// transform is being optimized, rather than the test point's.
 ///
 /// This is what a multi-body adjustment needs. When two measured curves are aligned to each other,
@@ -77,14 +77,14 @@ pub fn point_surf_jacobian2(
 /// moving the reference curve slides `c`. Each contributes a block to the same jacobian row, and
 /// this function supplies the second one.
 ///
-/// The residual is the same signed point-to-point distance that [`point_surf_jacobian2`]
+/// The residual is the same signed point-to-point distance that [`point_surf_jacobian`]
 /// differentiates, so the two differ only in which point the parameters move and therefore in
 /// sign: displacing the target by `v` changes the distance by `-dir . v` where `dir` is the unit
 /// deviation direction.
 ///
 /// The rotation partial is evaluated at `c`, which is the point this function's parameters
 /// actually move. As in the forward case, the choice turns out not to matter: the skew-symmetry
-/// argument in [`point_surf_jacobian2`] applies unchanged here, since the difference between
+/// argument in [`point_surf_jacobian`] applies unchanged here, since the difference between
 /// evaluating at `p` and at `c` is still orthogonal to a `dir` that is still parallel to `p - c`.
 /// `stress_surf_rev_against_numeric` passes either way. `c` is used because it is the point the
 /// derivative is actually taken with respect to, not because the other form is wrong.
@@ -100,7 +100,7 @@ pub fn point_surf_jacobian2(
 /// * `align`: the current alignment values of the **target** entity
 ///
 /// returns: Matrix<f64, Const<3>, Const<1>, ArrayStorage<f64, 3, 1>>
-pub fn point_surf_jacobian2_rev(
+pub fn point_surf_jacobian_rev(
     p: &impl PCoords<2>,
     c: &impl SPCoords<2>,
     align: &AlignValues2,
@@ -162,7 +162,7 @@ mod tests {
 
     const NUMERIC_EPS: f64 = 1e-7;
 
-    /// The residual that `point_surf_jacobian2` differentiates: the signed distance from the test
+    /// The residual that `point_surf_jacobian` differentiates: the signed distance from the test
     /// point to its match, with the sign taken from which side of the target's normal it lies on.
     ///
     /// This must stay in step with the residual computed in `points_to_surface.rs`; the jacobian
@@ -208,7 +208,7 @@ mod tests {
         let p = Point2::new(1.0, 0.0);
         let c = make_match(&p, Vector2::new(-1.0, 0.0), false);
 
-        let j = point_surf_jacobian2(&p, &c, &params.compute_values());
+        let j = point_surf_jacobian(&p, &c, &params.compute_values());
 
         assert_relative_eq!(j.x, 1.0, epsilon = 1e-10);
         assert_relative_eq!(j.y, 0.0, epsilon = 1e-10);
@@ -223,7 +223,7 @@ mod tests {
         let p = Point2::new(1.0, 0.0);
         let c = make_match(&p, Vector2::new(-1.0, 0.0), true);
 
-        let j = point_surf_jacobian2(&p, &c, &params.compute_values());
+        let j = point_surf_jacobian(&p, &c, &params.compute_values());
 
         assert_relative_eq!(j.x, -1.0, epsilon = 1e-10);
     }
@@ -235,7 +235,7 @@ mod tests {
         let p = Point2::new(1.0, 2.0);
         let c = make_match(&p, Vector2::new(-0.5, -0.3), false);
 
-        let j = point_surf_jacobian2(&p, &c, &params.compute_values());
+        let j = point_surf_jacobian(&p, &c, &params.compute_values());
 
         assert_eq!(j.x, 0.0);
         assert_eq!(j.z, 0.0);
@@ -273,7 +273,7 @@ mod tests {
                 numeric(&params, &p_local, &c, 2),
             ];
 
-            let j = point_surf_jacobian2(&p, &c, &params.compute_values());
+            let j = point_surf_jacobian(&p, &c, &params.compute_values());
 
             assert_relative_eq!(j.x, expected[0], epsilon = 1e-5);
             assert_relative_eq!(j.y, expected[1], epsilon = 1e-5);
@@ -285,7 +285,7 @@ mod tests {
     // The reverse point-to-surface jacobian, checked against finite differences
     // ============================================================================================
 
-    /// The residual `point_surf_jacobian2_rev` differentiates: the signed point-to-point distance
+    /// The residual `point_surf_jacobian_rev` differentiates: the signed point-to-point distance
     /// from a fixed test point to a target point which the target's own transform moves.
     ///
     /// `c_local` and `n_local` describe the match in the target's own coordinates, so that
@@ -347,7 +347,7 @@ mod tests {
                 SurfacePoint2::new(c_local, n_local).transformed_by(&params.compute_transform());
             let p = sp.point + sp.normal.into_inner() * rg.f64_sym(4.0).abs().max(0.5);
 
-            let analytic = point_surf_jacobian2_rev(&p, &sp, &params.compute_values());
+            let analytic = point_surf_jacobian_rev(&p, &sp, &params.compute_values());
 
             for i in 0..3 {
                 let numeric = surf_rev_numeric(&params, &p, &c_local, &n_local, i);
@@ -369,8 +369,8 @@ mod tests {
         let p = Point2::new(1.0, 3.5);
         let sp = SurfacePoint2::new(c, n);
 
-        let fwd = point_surf_jacobian2(&p, &sp, &values);
-        let rev = point_surf_jacobian2_rev(&p, &sp, &values);
+        let fwd = point_surf_jacobian(&p, &sp, &values);
+        let rev = point_surf_jacobian_rev(&p, &sp, &values);
 
         for i in 0..2 {
             assert_relative_eq!(fwd[i], -rev[i], epsilon = 1e-12);
@@ -387,7 +387,7 @@ mod tests {
         let n = UnitVec2::new_normalize(Vector2::new(0.0, 1.0));
         let p = Point2::new(2.0, 3.0);
 
-        let rev = point_surf_jacobian2_rev(&p, &SurfacePoint2::new(c, n), &values);
+        let rev = point_surf_jacobian_rev(&p, &SurfacePoint2::new(c, n), &values);
 
         for i in [1usize, 2] {
             assert_eq!(

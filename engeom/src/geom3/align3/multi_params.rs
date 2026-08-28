@@ -6,7 +6,7 @@
 //! Levenberg-Marquardt solve wants.
 //!
 //! The bookkeeping is dimension-independent and lives in
-//! [`crate::common::align::multi_params::MultiAlignParams`]; this module supplies the 3D per-body
+//! [`crate::common::align::multi_params::MultiParams`]; this module supplies the 3D per-body
 //! parameterization through the [`BodyParams`] implementation on [`AlignParams3`], and the
 //! `geom2::align2::multi_params` module does the same for 2D.
 //!
@@ -20,13 +20,13 @@
 //! [ body 0: tx ty tz rx ry rz | body 2: tx ty tz rx ry rz | body 3: tx ty tz rx ry rz ]
 //! ```
 
-use crate::common::align::multi_params::{BodyParams, MultiAlignParams};
+use crate::common::align::multi_params::{BodyParams, MultiParams};
 use crate::geom3::align3::{AlignOrigin3, AlignParams3, AlignStorage3, AlignValues3, Dof6};
 use crate::geom3::{Iso3, Point3};
 
 /// The parameters of a simultaneous alignment of several 3D rigid bodies, one of which is held
 /// fixed. See the module documentation for the layout of the flat parameter vector.
-pub type MultiAlignParams3 = MultiAlignParams<AlignParams3, 6>;
+pub type MultiParams3 = MultiParams<AlignParams3, 6>;
 
 impl BodyParams<6> for AlignParams3 {
     type Point = Point3;
@@ -78,7 +78,7 @@ mod tests {
 
     #[test]
     fn the_static_body_contributes_no_parameters() {
-        let params = MultiAlignParams3::from_centers(1, &centers(), None, None).unwrap();
+        let params = MultiParams3::from_centers(1, &centers(), None, None).unwrap();
 
         assert_eq!(params.body_count(), 4);
         assert_eq!(params.param_count(), 18);
@@ -87,7 +87,7 @@ mod tests {
 
     #[test]
     fn columns_are_laid_out_in_body_order_skipping_the_static_one() {
-        let params = MultiAlignParams3::from_centers(1, &centers(), None, None).unwrap();
+        let params = MultiParams3::from_centers(1, &centers(), None, None).unwrap();
 
         assert_eq!(params.column_offset(0), Some(0));
         assert_eq!(params.column_offset(1), None);
@@ -97,7 +97,7 @@ mod tests {
 
     #[test]
     fn a_static_body_at_index_zero_shifts_everything_down() {
-        let params = MultiAlignParams3::from_centers(0, &centers(), None, None).unwrap();
+        let params = MultiParams3::from_centers(0, &centers(), None, None).unwrap();
 
         assert_eq!(params.column_offset(0), None);
         assert_eq!(params.column_offset(1), Some(0));
@@ -114,8 +114,7 @@ mod tests {
 
         for _ in 0..500 {
             let initial: Vec<Iso3> = (0..centers.len()).map(|_| rg.iso3(10.0)).collect();
-            let params =
-                MultiAlignParams3::from_centers(2, &centers, Some(&initial), None).unwrap();
+            let params = MultiParams3::from_centers(2, &centers, Some(&initial), None).unwrap();
 
             assert!(params.storage().iter().all(|v| *v == 0.0));
             for (i, expected) in initial.iter().enumerate() {
@@ -137,8 +136,7 @@ mod tests {
             Iso3::translation(0.0, 0.0, 3.0),
             Iso3::identity(),
         ];
-        let mut params =
-            MultiAlignParams3::from_centers(1, &centers, Some(&initial), None).unwrap();
+        let mut params = MultiParams3::from_centers(1, &centers, Some(&initial), None).unwrap();
 
         let before = params.transform(1);
         params.set_storage(&DVector::from_element(params.param_count(), 0.35));
@@ -150,7 +148,7 @@ mod tests {
     #[test]
     fn parameters_reach_the_body_they_belong_to() {
         let centers = centers();
-        let mut params = MultiAlignParams3::from_centers(1, &centers, None, None).unwrap();
+        let mut params = MultiParams3::from_centers(1, &centers, None, None).unwrap();
 
         // Translate body 2 by one unit in x, and nothing else.
         let mut x = DVector::zeros(params.param_count());
@@ -175,7 +173,7 @@ mod tests {
     fn bodies_rotate_about_their_own_centers() {
         // A body's rotation center is the one point a pure rotation parameter leaves in place.
         let centers = centers();
-        let mut params = MultiAlignParams3::from_centers(1, &centers, None, None).unwrap();
+        let mut params = MultiParams3::from_centers(1, &centers, None, None).unwrap();
 
         let mut x = DVector::zeros(params.param_count());
         // rz on body 0, which is the fourth of its six parameters plus two.
@@ -190,7 +188,7 @@ mod tests {
     fn locked_dof_are_enforced_on_every_body() {
         let centers = centers();
         let dof = Dof6::new(false, true, true, true, true, false);
-        let mut params = MultiAlignParams3::from_centers(1, &centers, None, Some(dof)).unwrap();
+        let mut params = MultiParams3::from_centers(1, &centers, None, Some(dof)).unwrap();
 
         params.set_storage(&DVector::from_element(params.param_count(), 0.5));
 
@@ -204,7 +202,7 @@ mod tests {
 
     #[test]
     fn jacobian_blocks_land_in_the_right_columns() {
-        let params = MultiAlignParams3::from_centers(1, &centers(), None, None).unwrap();
+        let params = MultiParams3::from_centers(1, &centers(), None, None).unwrap();
         let mut jac = Jacobian::zeros(3, params.param_count());
 
         let values = AlignStorage3::new(1.0, 2.0, 3.0, 4.0, 5.0, 6.0);
@@ -221,7 +219,7 @@ mod tests {
 
     #[test]
     fn jacobian_blocks_for_the_static_body_are_dropped() {
-        let params = MultiAlignParams3::from_centers(1, &centers(), None, None).unwrap();
+        let params = MultiParams3::from_centers(1, &centers(), None, None).unwrap();
         let mut jac = Jacobian::zeros(1, params.param_count());
 
         params.add_jacobian_block(&mut jac, 0, 1, &AlignStorage3::from_element(9.0));
@@ -233,7 +231,7 @@ mod tests {
     fn adding_jacobian_blocks_accumulates_rather_than_overwrites() {
         // A correspondence between two bodies contributes to both, and a body matched against
         // itself would contribute twice to the same columns.
-        let params = MultiAlignParams3::from_centers(1, &centers(), None, None).unwrap();
+        let params = MultiParams3::from_centers(1, &centers(), None, None).unwrap();
         let mut jac = Jacobian::zeros(1, params.param_count());
 
         let values = AlignStorage3::new(1.0, 2.0, 3.0, 4.0, 5.0, 6.0);
@@ -248,7 +246,7 @@ mod tests {
 
     #[test]
     fn compute_all_values_covers_every_body_in_order() {
-        let params = MultiAlignParams3::from_centers(1, &centers(), None, None).unwrap();
+        let params = MultiParams3::from_centers(1, &centers(), None, None).unwrap();
         let values = params.compute_all_values();
 
         assert_eq!(values.len(), params.body_count());
@@ -264,12 +262,12 @@ mod tests {
     #[test]
     fn degenerate_inputs_are_rejected() {
         let one = vec![Point3::origin()];
-        assert!(MultiAlignParams3::from_centers(0, &one, None, None).is_err());
+        assert!(MultiParams3::from_centers(0, &one, None, None).is_err());
 
         let centers = centers();
-        assert!(MultiAlignParams3::from_centers(9, &centers, None, None).is_err());
+        assert!(MultiParams3::from_centers(9, &centers, None, None).is_err());
 
         let short = vec![Iso3::identity(); 2];
-        assert!(MultiAlignParams3::from_centers(0, &centers, Some(&short), None).is_err());
+        assert!(MultiParams3::from_centers(0, &centers, Some(&short), None).is_err());
     }
 }

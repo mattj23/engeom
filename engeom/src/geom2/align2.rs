@@ -19,10 +19,10 @@
 //! Beyond the single-body path:
 //!
 //! - [`multi_curve_adjustment`] simultaneously aligns several [`crate::geom2::CurveGroup2`]
-//!   bodies to each other in one combined solve, holding one static, with [`MultiAlignParams2`]
-//!   carrying the concatenated per-body parameters and [`MultiAlignOptions2`] controlling the
+//!   bodies to each other in one combined solve, holding one static, with [`MultiParams2`]
+//!   carrying the concatenated per-body parameters and [`MultiOptions2`] controlling the
 //!   solve.
-//! - [`AlignInformation2`] asks how well a set of points constrains an alignment, exposes its
+//! - [`AlignInfo2`] asks how well a set of points constrains an alignment, exposes its
 //!   weak directions, and chooses D-optimal correspondence subsets for pruning.
 //!
 //! # Reporting
@@ -89,10 +89,9 @@ pub use self::cloud::CloudTarget2;
 pub use self::curve::*;
 pub use self::information::*;
 pub use self::multi_curve::{
-    MultiAlignOptions2, MultiCurveAlignPoint, multi_curve_adjustment,
-    multi_curve_adjustment_with_points,
+    CurveAlignPoint, MultiOptions2, multi_curve_adjustment, multi_curve_adjustment_with_points,
 };
-pub use self::multi_params::MultiAlignParams2;
+pub use self::multi_params::MultiParams2;
 pub use self::options::*;
 pub use self::params::*;
 pub use self::points_to_surface::points_to_surface2;

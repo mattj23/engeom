@@ -7,19 +7,19 @@
 //! per-body jacobian blocks all work the same way whether each body contributes three parameters
 //! or six.
 //!
-//! [`MultiAlignParams`] holds that shared logic once, generic over the per-body parameterization
+//! [`MultiParams`] holds that shared logic once, generic over the per-body parameterization
 //! `P` and the number of parameters `N` it contributes. The dimension-specific parts, which amount
 //! to constructing a body about a rotation center and pushing parameter values through to a
 //! concrete isometry, are supplied by the [`BodyParams`] implementation on `AlignParams2` and
 //! `AlignParams3`.
 //!
-//! The public faces are the aliases `geom2::align2::MultiAlignParams2` and
-//! `geom3::align3::MultiAlignParams3`, whose module docs show the concrete parameter layouts.
+//! The public faces are the aliases `geom2::align2::MultiParams2` and
+//! `geom3::align3::MultiParams3`, whose module docs show the concrete parameter layouts.
 
 use crate::Result;
 use crate::na::{DMatrix, DVector, SVector};
 
-/// The per-body parameterization a dimension supplies to [`MultiAlignParams`].
+/// The per-body parameterization a dimension supplies to [`MultiParams`].
 ///
 /// `N` is the number of parameters one body contributes to the flat vector: three in 2D
 /// (`tx`, `ty`, `rz`) and six in 3D (`tx`, `ty`, `tz`, `rx`, `ry`, `rz`).
@@ -69,10 +69,10 @@ pub trait BodyParams<const N: usize>: Clone {
 /// # Layout
 ///
 /// Parameters are laid out by body in index order, skipping the static one, `N` at a time.
-/// [`MultiAlignParams::column_offset`] is the only thing that needs to know this, and it is what
-/// [`MultiAlignParams::add_jacobian_block`] uses to place a body's jacobian columns.
+/// [`MultiParams::column_offset`] is the only thing that needs to know this, and it is what
+/// [`MultiParams::add_jacobian_block`] uses to place a body's jacobian columns.
 #[derive(Clone, Debug)]
-pub struct MultiAlignParams<P: BodyParams<N>, const N: usize> {
+pub struct MultiParams<P: BodyParams<N>, const N: usize> {
     /// The index of the body which is held fixed and contributes no parameters.
     static_i: usize,
 
@@ -84,11 +84,11 @@ pub struct MultiAlignParams<P: BodyParams<N>, const N: usize> {
     storage: DVector<f64>,
 }
 
-impl<P: BodyParams<N>, const N: usize> MultiAlignParams<P, N> {
+impl<P: BodyParams<N>, const N: usize> MultiParams<P, N> {
     /// Builds the parameterization from one per-body parameterization per body.
     ///
     /// Use this when the bodies need individually chosen local origins, working offsets, or
-    /// degree-of-freedom locks. [`MultiAlignParams::from_centers`] covers the common case.
+    /// degree-of-freedom locks. [`MultiParams::from_centers`] covers the common case.
     ///
     /// Returns an error if there are fewer than two bodies, or if `static_i` is out of range.
     pub fn new(static_i: usize, bodies: Vec<P>) -> Result<Self> {

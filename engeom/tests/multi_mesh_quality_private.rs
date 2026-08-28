@@ -18,14 +18,13 @@ mod common;
 use crate::common::PathPair;
 use engeom::common::DistMode;
 use engeom::common::kd_tree::KdTreeSearch;
-use engeom::geom3::MultiAlignOutcome3;
+use engeom::geom3::MultiOutcome3;
 use engeom::geom3::XyzQuat;
 use engeom::geom3::align3::jacobian::point_surf_jacobian;
 use engeom::geom3::align3::{
-    AlignInformation3, AlignOptions3, AlignOrigin3, AlignParams3, AlignStorage3, AlignValues3,
-    AlignmentMesh, Dof6, GAPParams, MultiAlignOptions3, MultiMeshAlignPoint,
-    generate_alignment_points, multi_mesh_adjustment, multi_mesh_adjustment_with_points,
-    points_to_surface3,
+    AlignInfo3, AlignMesh, AlignOptions3, AlignOrigin3, AlignParams3, AlignStorage3, AlignValues3,
+    Dof6, GAPParams, MeshAlignPoint, MultiOptions3, generate_alignment_points,
+    multi_mesh_adjustment, multi_mesh_adjustment_with_points, points_to_surface3,
 };
 use engeom::rayon::prelude::*;
 use engeom::{Iso3, KdTree3, Mesh3, Point3, Result, SurfacePoint3, UnitVec3};
@@ -1795,23 +1794,19 @@ const MULTI_MESH_SPACING: f64 = 2.0;
 const MULTI_MESH_MAX_DISTANCE: f64 = 1.0;
 
 /// Runs the simultaneous alignment from a given set of starting poses.
-fn run_multi_mesh(scans: &[Mesh3], start: &[Iso3]) -> Result<(Vec<Iso3>, MultiAlignOutcome3)> {
-    run_multi_mesh_with(
-        scans,
-        start,
-        &MultiAlignOptions3::new(MULTI_MESH_MAX_DISTANCE),
-    )
+fn run_multi_mesh(scans: &[Mesh3], start: &[Iso3]) -> Result<(Vec<Iso3>, MultiOutcome3)> {
+    run_multi_mesh_with(scans, start, &MultiOptions3::new(MULTI_MESH_MAX_DISTANCE))
 }
 
 fn run_multi_mesh_with(
     scans: &[Mesh3],
     start: &[Iso3],
-    opts: &MultiAlignOptions3,
-) -> Result<(Vec<Iso3>, MultiAlignOutcome3)> {
+    opts: &MultiOptions3,
+) -> Result<(Vec<Iso3>, MultiOutcome3)> {
     let meshes = scans
         .iter()
         .zip(start.iter())
-        .map(|(m, t)| AlignmentMesh::new(m, None, Some(t), None))
+        .map(|(m, t)| AlignMesh::new(m, None, Some(t), None))
         .collect::<Vec<_>>();
 
     let outcome = multi_mesh_adjustment(&meshes, opts, &GAPParams::defaults(MULTI_MESH_SPACING))?;
@@ -1851,7 +1846,7 @@ fn align_each_to_cad(loaded: &LoadedCase, cad: &Mesh3, pre: &[Iso3]) -> Result<V
 }
 
 /// Summarizes how a bundle adjustment terminated.
-fn outcome_summary(outcome: &MultiAlignOutcome3) -> String {
+fn outcome_summary(outcome: &MultiOutcome3) -> String {
     format!(
         "{:?} over {} solve(s), halt {:?}",
         outcome.quality(),
@@ -2059,7 +2054,7 @@ fn solver_candidates_meet_their_gates() -> Result<()> {
 /// These scans carry no per-point uncertainty, so the solver's `inv_sigma` is one throughout and
 /// its normalized residuals are the geometric ones an `Align3` reports. That makes this the
 /// same number the solver would have computed for itself.
-fn estimated_sigma_max(outcome: &MultiAlignOutcome3) -> f64 {
+fn estimated_sigma_max(outcome: &MultiOutcome3) -> f64 {
     const MAD_TO_SIGMA: f64 = 1.4826;
 
     let residuals = outcome
@@ -2119,9 +2114,9 @@ fn diagnose_warm_start_sigma_collapse() -> Result<()> {
         .collect::<Result<Vec<_>>>()?;
     let cold_seed = align_each_to_cad(&loaded, &cad, &pre)?;
 
-    let no_refine = MultiAlignOptions3 {
+    let no_refine = MultiOptions3 {
         refinement_steps: 0,
-        ..MultiAlignOptions3::new(MULTI_MESH_MAX_DISTANCE)
+        ..MultiOptions3::new(MULTI_MESH_MAX_DISTANCE)
     };
 
     // The two seeds, unrefined, purely to compare the noise scale each one would hand to MAGSAC.
@@ -2136,24 +2131,24 @@ fn diagnose_warm_start_sigma_collapse() -> Result<()> {
         estimated_sigma_max(&cold_raw)
     );
 
-    let trials: Vec<(String, MultiAlignOptions3)> = vec![
+    let trials: Vec<(String, MultiOptions3)> = vec![
         (
             "default, auto sigma".to_string(),
-            MultiAlignOptions3::new(MULTI_MESH_MAX_DISTANCE),
+            MultiOptions3::new(MULTI_MESH_MAX_DISTANCE),
         ),
         ("no refinement".to_string(), no_refine),
         (
             "explicit sigma_max 0.05".to_string(),
-            MultiAlignOptions3 {
+            MultiOptions3 {
                 sigma_max: Some(0.05),
-                ..MultiAlignOptions3::new(MULTI_MESH_MAX_DISTANCE)
+                ..MultiOptions3::new(MULTI_MESH_MAX_DISTANCE)
             },
         ),
         (
             "explicit sigma_max 0.15".to_string(),
-            MultiAlignOptions3 {
+            MultiOptions3 {
                 sigma_max: Some(0.15),
-                ..MultiAlignOptions3::new(MULTI_MESH_MAX_DISTANCE)
+                ..MultiOptions3::new(MULTI_MESH_MAX_DISTANCE)
             },
         ),
     ];
@@ -2186,7 +2181,7 @@ fn diagnose_warm_start_sigma_collapse() -> Result<()> {
 ///
 /// The previous experiment localized the failure to the initial unweighted solve, which moves a
 /// known-good configuration most of a millimetre before robust weighting ever runs. Least squares
-/// has no defense against a gross outlier, and `MultiAlignOptions3` leaves both geometric gates off
+/// has no defense against a gross outlier, and `MultiOptions3` leaves both geometric gates off
 /// by default, so with seventeen partially overlapping scans any correspondence sampled across a
 /// region the other scan never saw pulls on the solve at full strength.
 ///
@@ -2206,13 +2201,13 @@ fn diagnose_unweighted_solve_gates() -> Result<()> {
     // no longer allows to be expressed directly.
     const UNGATED: f64 = 1000.0;
 
-    let gated = |d: f64, a: Option<f64>| MultiAlignOptions3 {
+    let gated = |d: f64, a: Option<f64>| MultiOptions3 {
         max_normal_angle: a,
         refinement_steps: 0,
-        ..MultiAlignOptions3::new(d)
+        ..MultiOptions3::new(d)
     };
 
-    let trials: Vec<(String, MultiAlignOptions3)> = vec![
+    let trials: Vec<(String, MultiOptions3)> = vec![
         ("no gates".to_string(), gated(UNGATED, None)),
         ("max_distance 1.0".to_string(), gated(1.0, None)),
         ("max_distance 0.5".to_string(), gated(0.5, None)),
@@ -2262,7 +2257,7 @@ fn build_correspondences(
     scans: &[Mesh3],
     start: &[Iso3],
     sample: &GAPParams,
-) -> Vec<MultiMeshAlignPoint> {
+) -> Vec<MeshAlignPoint> {
     let mut pairs = Vec::new();
     for i in 0..scans.len() {
         for j in (i + 1)..scans.len() {
@@ -2276,7 +2271,7 @@ fn build_correspondences(
             let t = start[ref_i].inv_mul(&start[mesh_i]);
             generate_alignment_points(&scans[mesh_i], &scans[ref_i], &t, sample)
                 .into_iter()
-                .map(|mp| MultiMeshAlignPoint::new(mesh_i, mp, ref_i, 1.0))
+                .map(|mp| MeshAlignPoint::new(mesh_i, mp, ref_i, 1.0))
                 .collect::<Vec<_>>()
         })
         .collect()
@@ -2284,7 +2279,7 @@ fn build_correspondences(
 
 /// The jacobian row and world-frame correspondence for one alignment point at a given set of poses.
 fn forward_row(
-    point: &MultiMeshAlignPoint,
+    point: &MeshAlignPoint,
     scans: &[Mesh3],
     start: &[Iso3],
     values: &AlignValues3,
@@ -2309,14 +2304,14 @@ fn forward_row(
 /// That is an approximation worth naming. A correspondence also constrains the mesh it was matched
 /// against, through the reverse jacobian block, and this ignores that when deciding what to drop.
 /// The full treatment would be D-optimality over the whole `6 * (n - 1)` parameter space, which
-/// `AlignInformation3` is not built for. Whether the approximation costs anything is exactly what
+/// `AlignInfo3` is not built for. Whether the approximation costs anything is exactly what
 /// scoring the pruned result is meant to reveal.
 fn prune_d_optimal(
-    points: &[MultiMeshAlignPoint],
+    points: &[MeshAlignPoint],
     scans: &[Mesh3],
     start: &[Iso3],
     keep_per_body: usize,
-) -> Result<Vec<MultiMeshAlignPoint>> {
+) -> Result<Vec<MeshAlignPoint>> {
     let mut by_body = vec![Vec::new(); scans.len()];
     for (k, p) in points.iter().enumerate() {
         by_body[p.mesh_i].push(k);
@@ -2345,7 +2340,7 @@ fn prune_d_optimal(
             .collect::<Vec<_>>();
 
         let weights = vec![1.0; rows.len()];
-        let info = AlignInformation3::from_rows(rows, weights, Dof6::all())?;
+        let info = AlignInfo3::from_rows(rows, weights, Dof6::all())?;
 
         for s in info.select_d_optimal(keep_per_body, None) {
             kept.push(points[idxs[s]].clone());
@@ -2378,7 +2373,7 @@ fn diagnose_pruned_alignment() -> Result<()> {
         .ok_or("sample_00 not found")?;
     let loaded = LoadedCase::load(case)?;
 
-    let opts = MultiAlignOptions3::new(MULTI_MESH_MAX_DISTANCE);
+    let opts = MultiOptions3::new(MULTI_MESH_MAX_DISTANCE);
     let sample = GAPParams::defaults(MULTI_MESH_SPACING);
     let all = build_correspondences(&loaded.scans, &loaded.cad_align, &sample);
     println!("\n  {} correspondences before pruning", all.len());
@@ -2401,7 +2396,7 @@ fn diagnose_pruned_alignment() -> Result<()> {
                 .scans
                 .iter()
                 .zip(loaded.cad_align.iter())
-                .map(|(m, t)| AlignmentMesh::new(m, None, Some(t), None))
+                .map(|(m, t)| AlignMesh::new(m, None, Some(t), None))
                 .collect::<Vec<_>>(),
             points.clone(),
             0,

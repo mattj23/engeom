@@ -20,7 +20,7 @@
 //! Every alignment point belongs to one body and is matched against another, and *both* of those
 //! bodies are moving. A single residual therefore contributes two blocks to its jacobian row: the
 //! forward derivative with respect to the test body's parameters, and the reverse derivative with
-//! respect to the reference body's. See [`point_surf_jacobian2`] and [`point_surf_jacobian2_rev`].
+//! respect to the reference body's. See [`point_surf_jacobian`] and [`point_surf_jacobian_rev`].
 //!
 //! # Coordinate frames
 //!
@@ -35,7 +35,7 @@
 //!
 //! # The distance gate is not optional
 //!
-//! [`MultiAlignOptions2::max_distance`] must be supplied, and there is no `Default` for the
+//! [`MultiOptions2::max_distance`] must be supplied, and there is no `Default` for the
 //! options precisely so that it cannot be forgotten. See its documentation for the measurements
 //! behind that, which were taken on the 3D side but describe a property of the bundle rather than
 //! of the dimension.
@@ -62,9 +62,9 @@ use crate::common::align::{RefinementHalt, SolveQuality, TerminationReason};
 use crate::common::consensus::weights::{MagsacWeight, estimate_sigma_max};
 use crate::common::points::dist;
 use crate::geom2::align2::curve::{CAPParams, CurveSurfPoint, generate_alignment_points};
-use crate::geom2::align2::jacobian::{point_surf_jacobian2, point_surf_jacobian2_rev};
-use crate::geom2::align2::{AlignValues2, Dof3, MultiAlignParams2};
-use crate::geom2::{Align2, CurveGroup2, Iso2, MultiAlignOutcome2, Point2, SurfacePoint2, Vector2};
+use crate::geom2::align2::jacobian::{point_surf_jacobian, point_surf_jacobian_rev};
+use crate::geom2::align2::{AlignValues2, Dof3, MultiParams2};
+use crate::geom2::{Align2, CurveGroup2, Iso2, MultiOutcome2, Point2, SurfacePoint2, Vector2};
 use crate::na::{DMatrix, DVector, Dyn, Matrix, Owned, U1, Vector};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use rayon::prelude::*;
@@ -80,15 +80,15 @@ const RESIDUAL_DOF: usize = 2;
 
 /// Options controlling a simultaneous multi-curve alignment.
 ///
-/// Construct with [`MultiAlignOptions2::new`], which requires the correspondence distance gate,
+/// Construct with [`MultiOptions2::new`], which requires the correspondence distance gate,
 /// and override the remaining fields you care about. The robust-estimation fields mirror
 /// `AlignOptions2` and behave identically; the two gates at the top are specific to multi-body
 /// work.
 ///
-/// There is deliberately no `Default`. See [`MultiAlignOptions2::max_distance`] for why the gate
+/// There is deliberately no `Default`. See [`MultiOptions2::max_distance`] for why the gate
 /// cannot be left to a default.
 #[derive(Clone, Copy, Debug)]
-pub struct MultiAlignOptions2 {
+pub struct MultiOptions2 {
     /// A hard cutoff on correspondence distance, in the units of the geometry. A point whose
     /// closest match on the reference curve is further than this contributes nothing.
     ///
@@ -158,7 +158,7 @@ pub struct MultiAlignOptions2 {
     pub dof: Option<Dof3>,
 }
 
-impl MultiAlignOptions2 {
+impl MultiOptions2 {
     /// Options with the required correspondence distance gate and defaults for everything else.
     ///
     /// `max_distance` has no safe default and so has to be supplied; see its documentation for the
@@ -187,7 +187,7 @@ impl MultiAlignOptions2 {
 /// `group_i` and `ref_i` are body indices; which member curve *within* each body is involved is
 /// carried by the sample point's own `member` field.
 #[derive(Clone, Debug)]
-pub struct MultiCurveAlignPoint {
+pub struct CurveAlignPoint {
     /// The index of the body this point was sampled from.
     pub group_i: usize,
 
@@ -201,7 +201,7 @@ pub struct MultiCurveAlignPoint {
     pub weight: f64,
 }
 
-impl MultiCurveAlignPoint {
+impl CurveAlignPoint {
     /// Creates a correspondence from a sample `cp` on body `group_i`, matched against reference
     /// body `ref_i` with the given weight.
     pub fn new(group_i: usize, cp: CurveSurfPoint, ref_i: usize, weight: f64) -> Self {
@@ -241,10 +241,10 @@ impl MultiCurveAlignPoint {
 pub fn multi_curve_adjustment_with_points(
     groups: &[CurveGroup2],
     initial: Option<&[Iso2]>,
-    points: Vec<MultiCurveAlignPoint>,
+    points: Vec<CurveAlignPoint>,
     static_i: usize,
-    opts: &MultiAlignOptions2,
-) -> Result<MultiAlignOutcome2> {
+    opts: &MultiOptions2,
+) -> Result<MultiOutcome2> {
     let poses = resolve_poses(groups, initial)?;
     validate(groups, &points, static_i, opts)?;
     solve_bundle(
@@ -289,9 +289,9 @@ fn resolve_poses(groups: &[CurveGroup2], initial: Option<&[Iso2]>) -> Result<Vec
 pub fn multi_curve_adjustment(
     groups: &[CurveGroup2],
     initial: Option<&[Iso2]>,
-    opts: &MultiAlignOptions2,
+    opts: &MultiOptions2,
     sample_opts: &CAPParams,
-) -> Result<MultiAlignOutcome2> {
+) -> Result<MultiOutcome2> {
     if groups.len() < 2 {
         return Err(format!(
             "a multi-curve alignment needs at least two bodies, but {} were given",
@@ -324,7 +324,7 @@ pub fn multi_curve_adjustment(
 
             samples
                 .into_iter()
-                .map(|cp| MultiCurveAlignPoint::new(group_i, cp, ref_i, 1.0))
+                .map(|cp| CurveAlignPoint::new(group_i, cp, ref_i, 1.0))
                 .collect::<Vec<_>>()
         })
         .flatten()
@@ -339,9 +339,9 @@ pub fn multi_curve_adjustment(
 
 fn validate(
     groups: &[CurveGroup2],
-    points: &[MultiCurveAlignPoint],
+    points: &[CurveAlignPoint],
     static_i: usize,
-    opts: &MultiAlignOptions2,
+    opts: &MultiOptions2,
 ) -> Result<()> {
     if opts.patience == 0 {
         return Err("patience must be greater than zero".into());
@@ -382,10 +382,7 @@ fn validate(
     Ok(())
 }
 
-fn solve_bundle(
-    problem: MultiCurveProblem<'_>,
-    opts: &MultiAlignOptions2,
-) -> Result<MultiAlignOutcome2> {
+fn solve_bundle(problem: MultiCurveProblem<'_>, opts: &MultiOptions2) -> Result<MultiOutcome2> {
     let lm = LevenbergMarquardt::<f64>::new().with_patience(opts.patience);
     let n_params = problem.params.param_count();
 
@@ -430,7 +427,7 @@ fn solve_bundle(
         }
     }
 
-    Ok(MultiAlignOutcome2::new(problem.alignments(), solves, halt))
+    Ok(MultiOutcome2::new(problem.alignments(), solves, halt))
 }
 
 fn run<'a>(
@@ -441,7 +438,7 @@ fn run<'a>(
     (result, report.termination)
 }
 
-fn resolve_sigma_max(opts: &MultiAlignOptions2, problem: &MultiCurveProblem<'_>) -> Option<f64> {
+fn resolve_sigma_max(opts: &MultiOptions2, problem: &MultiCurveProblem<'_>) -> Option<f64> {
     match opts.sigma_max {
         Some(s) => Some(s),
         None => estimate_sigma_max(&problem.residuals),
@@ -462,8 +459,8 @@ struct Moved {
 
 struct MultiCurveProblem<'a> {
     groups: &'a [CurveGroup2],
-    handles: Vec<MultiCurveAlignPoint>,
-    params: MultiAlignParams2,
+    handles: Vec<CurveAlignPoint>,
+    params: MultiParams2,
 
     /// The alignment values of every body for the current parameters, cached so the residual and
     /// jacobian loops don't recompute them per correspondence.
@@ -493,12 +490,12 @@ impl<'a> MultiCurveProblem<'a> {
     fn new(
         groups: &'a [CurveGroup2],
         poses: Vec<Iso2>,
-        handles: Vec<MultiCurveAlignPoint>,
+        handles: Vec<CurveAlignPoint>,
         static_i: usize,
-        opts: &MultiAlignOptions2,
+        opts: &MultiOptions2,
     ) -> Result<Self> {
         let centers = groups.iter().map(|g| g.aabb().center()).collect::<Vec<_>>();
-        let params = MultiAlignParams2::from_centers(static_i, &centers, Some(&poses), opts.dof)?;
+        let params = MultiParams2::from_centers(static_i, &centers, Some(&poses), opts.dof)?;
 
         let n = handles.len();
 
@@ -655,11 +652,11 @@ impl LeastSquaresProblem<f64, Dyn, Dyn> for MultiCurveProblem<'_> {
             let c = &self.closest[i];
 
             // The correspondence constrains the test curve...
-            let fwd = point_surf_jacobian2(p, c, &self.values[h.group_i]) * scale;
+            let fwd = point_surf_jacobian(p, c, &self.values[h.group_i]) * scale;
             self.params.add_jacobian_block(&mut jac, i, h.group_i, &fwd);
 
             // ...and the reference curve, which is also free to move.
-            let rev = point_surf_jacobian2_rev(p, c, &self.values[h.ref_i]) * scale;
+            let rev = point_surf_jacobian_rev(p, c, &self.values[h.ref_i]) * scale;
             self.params.add_jacobian_block(&mut jac, i, h.ref_i, &rev);
         }
 
@@ -706,8 +703,8 @@ mod tests {
     /// own.
     const WIDE_GATE: f64 = 20.0;
 
-    fn test_opts() -> MultiAlignOptions2 {
-        MultiAlignOptions2::new(WIDE_GATE)
+    fn test_opts() -> MultiOptions2 {
+        MultiOptions2::new(WIDE_GATE)
     }
 
     /// A closed counter-clockwise rectangle 10 by 6, centered on the origin, so its normals point
@@ -726,7 +723,7 @@ mod tests {
     /// Correspondences from every curve onto the one before it, sampled at a uniform arc length
     /// spacing. The half-spacing offset keeps samples off the corners, where the normal of a
     /// polyline is ambiguous.
-    fn chain_points(curves: &[Curve2], spacing: f64) -> Vec<MultiCurveAlignPoint> {
+    fn chain_points(curves: &[Curve2], spacing: f64) -> Vec<CurveAlignPoint> {
         let mut points = Vec::new();
         for (i, curve) in curves.iter().enumerate().skip(1) {
             let n = (curve.length() / spacing).floor() as usize;
@@ -734,7 +731,7 @@ mod tests {
                 let l = (k as f64 + 0.5) * spacing;
                 if let Some(station) = curve.at_length(l) {
                     let cp = CurveSurfPoint::from_station(&station, 0);
-                    points.push(MultiCurveAlignPoint::new(i, cp, i - 1, 1.0));
+                    points.push(CurveAlignPoint::new(i, cp, i - 1, 1.0));
                 }
             }
         }
@@ -899,7 +896,7 @@ mod tests {
         let initial = vec![Iso2::identity(), Iso2::translation(0.3, 0.0)];
         let groups = groups_of_one(&curves);
 
-        let opts = MultiAlignOptions2 {
+        let opts = MultiOptions2 {
             dof: Some(Dof3::new(false, true, true)),
             ..test_opts()
         };
@@ -930,7 +927,7 @@ mod tests {
         ];
         let groups = groups_of_one(&curves);
 
-        let opts = MultiAlignOptions2 {
+        let opts = MultiOptions2 {
             patience: 1,
             ..test_opts()
         };
@@ -972,7 +969,7 @@ mod tests {
             Some(&initial),
             points.clone(),
             0,
-            &MultiAlignOptions2 {
+            &MultiOptions2 {
                 refinement_steps: 0,
                 ..test_opts()
             },
@@ -980,7 +977,7 @@ mod tests {
         let robust =
             multi_curve_adjustment_with_points(&groups, Some(&initial), points, 0, &test_opts())?;
 
-        let error = |o: &MultiAlignOutcome2| {
+        let error = |o: &MultiOutcome2| {
             (o.alignment(1).full_transform().to_matrix() - Iso2::identity().to_matrix()).norm()
         };
 
@@ -1017,11 +1014,11 @@ mod tests {
             }
         }
 
-        let unweighted = |gate: f64| MultiAlignOptions2 {
+        let unweighted = |gate: f64| MultiOptions2 {
             refinement_steps: 0,
-            ..MultiAlignOptions2::new(gate)
+            ..MultiOptions2::new(gate)
         };
-        let drift = |o: &MultiAlignOutcome2| {
+        let drift = |o: &MultiOutcome2| {
             (o.alignment(1).full_transform().to_matrix() - Iso2::identity().to_matrix()).norm()
         };
 
@@ -1067,7 +1064,7 @@ mod tests {
 
         // With a tight gate the distant point contributes nothing, so the fit is unchanged from
         // the identity it already sits at.
-        let opts = MultiAlignOptions2 {
+        let opts = MultiOptions2 {
             max_distance: 1.0,
             refinement_steps: 0,
             ..test_opts()
@@ -1098,12 +1095,12 @@ mod tests {
         let mut cp = CurveSurfPoint::from_station(&station, 0);
         cp.sp.normal = -cp.sp.normal;
 
-        let opts = MultiAlignOptions2 {
+        let opts = MultiOptions2 {
             max_normal_angle: Some(PI / 4.0),
             refinement_steps: 0,
             ..test_opts()
         };
-        let points = vec![MultiCurveAlignPoint::new(1, cp, 0, 1.0)];
+        let points = vec![CurveAlignPoint::new(1, cp, 0, 1.0)];
         let problem = MultiCurveProblem::new(&groups, initial.to_vec(), points, 0, &opts)?;
 
         assert_eq!(problem.target_weights[0], 0.0);
@@ -1142,11 +1139,11 @@ mod tests {
         for body in [1usize, 2] {
             for l in probes {
                 let cp = CurveSurfPoint::from_station(&curves[body].at_length(l).unwrap(), 0);
-                points.push(MultiCurveAlignPoint::new(body, cp, body - 1, 1.0));
+                points.push(CurveAlignPoint::new(body, cp, body - 1, 1.0));
             }
         }
 
-        let opts = MultiAlignOptions2 {
+        let opts = MultiOptions2 {
             refinement_steps: 0,
             ..test_opts()
         };
@@ -1195,7 +1192,7 @@ mod tests {
         let groups = groups_of_one(&curves);
 
         let cp = CurveSurfPoint::from_station(&curves[2].at_length(5.0).unwrap(), 0);
-        let points = vec![MultiCurveAlignPoint::new(2, cp, 1, 1.0)];
+        let points = vec![CurveAlignPoint::new(2, cp, 1, 1.0)];
 
         let problem = MultiCurveProblem::new(&groups, initial.to_vec(), points, 0, &test_opts())?;
         let jac = problem.jacobian().unwrap();
@@ -1232,7 +1229,7 @@ mod tests {
         let groups = groups_of_one(&curves);
 
         let cp = CurveSurfPoint::from_station(&curves[1].at_length(5.0).unwrap(), 0);
-        let points = vec![MultiCurveAlignPoint::new(1, cp, 1, 1.0)];
+        let points = vec![CurveAlignPoint::new(1, cp, 1, 1.0)];
 
         let problem = MultiCurveProblem::new(&groups, initial.to_vec(), points, 0, &test_opts())?;
         let jac = problem.jacobian().unwrap();
@@ -1255,7 +1252,7 @@ mod tests {
         let groups = groups_of_one(&curves);
         let points = chain_points(&curves, 1.0);
 
-        let bad_patience = MultiAlignOptions2 {
+        let bad_patience = MultiOptions2 {
             patience: 0,
             ..test_opts()
         };
@@ -1270,7 +1267,7 @@ mod tests {
             .is_err()
         );
 
-        let bad_sigma = MultiAlignOptions2 {
+        let bad_sigma = MultiOptions2 {
             sigma_max: Some(-1.0),
             ..test_opts()
         };
@@ -1285,7 +1282,7 @@ mod tests {
             .is_err()
         );
 
-        let bad_distance = MultiAlignOptions2 {
+        let bad_distance = MultiOptions2 {
             max_distance: 0.0,
             ..test_opts()
         };

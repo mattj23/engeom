@@ -4,7 +4,7 @@ use crate::common::align::{RefinementHalt, SolveQuality, TerminationReason};
 use crate::common::consensus::weights::{MagsacWeight, estimate_sigma_max};
 use crate::common::dist;
 use crate::geom2::Point2;
-use crate::geom2::align2::jacobian::{copy_jacobian, point_surf_jacobian2};
+use crate::geom2::align2::jacobian::{copy_jacobian, point_surf_jacobian};
 use crate::geom2::align2::{
     AlignOptions2, AlignParams2, AlignSurfMatch2, AlignValues2, SurfaceTarget2,
 };
@@ -399,7 +399,7 @@ impl<T: SurfaceTarget2> LeastSquaresProblem<f64, Dyn, U3> for PointsToSurface2<'
     fn jacobian(&self) -> Option<Matrix<f64, Dyn, U3, Self::JacobianStorage>> {
         let mut jac = Matrix::<f64, Dyn, U3, Self::JacobianStorage>::zeros(self.points.len());
         for (i, (p, c)) in self.moved.iter().zip(self.closest.iter()).enumerate() {
-            let values = point_surf_jacobian2(p, c, &self.current) * self.scale(i);
+            let values = point_surf_jacobian(p, c, &self.current) * self.scale(i);
             copy_jacobian(&values, &mut jac, i);
         }
 

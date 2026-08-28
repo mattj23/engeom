@@ -136,7 +136,7 @@ fn register_align2_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_class::<align2::AlignParams2>()?;
     child.add_class::<align2::Align2>()?;
     child.add_class::<align2::AlignOutcome2>()?;
-    child.add_class::<align2::MultiAlignOutcome2>()?;
+    child.add_class::<align2::MultiOutcome2>()?;
     child.add_function(wrap_pyfunction!(align2::points_to_curve, &child)?)?;
     child.add_function(wrap_pyfunction!(align2::points_to_group, &child)?)?;
     child.add_function(wrap_pyfunction!(align2::points_to_cloud, &child)?)?;

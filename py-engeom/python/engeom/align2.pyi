@@ -173,7 +173,7 @@ class AlignOutcome2:
         ...
 
 
-class MultiAlignOutcome2:
+class MultiOutcome2:
     """
     The full outcome of a simultaneous alignment of several bodies: one `Align2` per body,
     plus a shared record of how the solves which produced them terminated.
@@ -332,7 +332,7 @@ def multi_curve_adjustment(
     max_corner_angle: float | None = None,
     end_margin: float | None = None,
     filter_distances: float | None = 3.0,
-) -> MultiAlignOutcome2:
+) -> MultiOutcome2:
     """
     Simultaneously align several `CurveGroup2` bodies to each other in one combined solve.
 

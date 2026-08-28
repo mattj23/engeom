@@ -2,23 +2,23 @@
 //! subset of them that preserves that conditioning.
 //!
 //! The analysis itself is dimension-independent and lives in
-//! [`crate::common::align::information::AlignInformation`], whose module documentation explains
+//! [`crate::common::align::information::AlignInfo`], whose module documentation explains
 //! the information matrix and the two uses it serves:
 //!
 //! - **Diagnosis.** Is this alignment well conditioned, and if not, along what motion is it free
-//!   to slide? See [`AlignInformation3::marginal_precision`] and
-//!   [`AlignInformation3::weak_directions`]. In 3D the weak direction of an alignment is rarely
+//!   to slide? See [`AlignInfo3::marginal_precision`] and
+//!   [`AlignInfo3::weak_directions`]. In 3D the weak direction of an alignment is rarely
 //!   axis-aligned: points on a cylinder slide along a helix, points on a plane slide in any
 //!   in-plane direction and spin about the normal, and a shallow dish is weakest in a coupled
 //!   tilt-and-shift.
 //! - **Pruning.** Which points are actually carrying the alignment, and what is the smallest
-//!   subset that would constrain it just as well? See [`AlignInformation3::leverage`] and
-//!   [`AlignInformation3::select_d_optimal`]. Pruning is the reason this exists: a simultaneous
+//!   subset that would constrain it just as well? See [`AlignInfo3::leverage`] and
+//!   [`AlignInfo3::select_d_optimal`]. Pruning is the reason this exists: a simultaneous
 //!   alignment of fifteen or twenty scans is expensive in proportion to the number of alignment
 //!   points, and most of those points are redundant with their neighbors.
 //!
 //! This module supplies the 3D ingredients: the [`AlignDofs`] implementation on [`Dof6`] and the
-//! [`AlignInformation3::from_points`] constructor, which turns points and a [`SurfaceTarget3`]
+//! [`AlignInfo3::from_points`] constructor, which turns points and a [`SurfaceTarget3`]
 //! into jacobian rows. The `geom2::align2::information` module does the same for 2D.
 //!
 //! # A caveat about units
@@ -27,25 +27,25 @@
 //! rotation columns carry units of length, because a rotation partial scales with the distance
 //! from the local origin. `H` is therefore heterogeneous, and two consequences follow.
 //!
-//! [`AlignInformation3::marginal_precision`] is safe: each entry concerns a single parameter, so
-//! its units are internally consistent. [`AlignInformation3::weak_directions`] mixes translation
+//! [`AlignInfo3::marginal_precision`] is safe: each entry concerns a single parameter, so
+//! its units are internally consistent. [`AlignInfo3::weak_directions`] mixes translation
 //! and rotation in one vector and is only meaningful when the two are comparably scaled, which in
 //! practice means the local origin should sit near the middle of the point set (as
 //! `AlignParams3::from_center` arranges). Placing the origin far away inflates the rotation block
 //! and will make rotations look artificially well constrained.
 
 use crate::Point3;
-use crate::common::align::information::{AlignDofs, AlignInformation};
+use crate::common::align::information::{AlignDofs, AlignInfo};
 use crate::geom3::align3::jacobian::point_surf_jacobian;
 use crate::geom3::align3::{AlignParams3, Dof6, SurfaceTarget3};
 
 /// The information content of a set of test points with respect to a 3D alignment, over the six
 /// parameters `tx`, `ty`, `tz`, `rx`, `ry`, `rz`.
 ///
-/// Built with [`AlignInformation3::from_points`], which projects the points onto a target and
-/// takes the jacobian row of each correspondence, or with [`AlignInformation3::from_rows`] when
+/// Built with [`AlignInfo3::from_points`], which projects the points onto a target and
+/// takes the jacobian row of each correspondence, or with [`AlignInfo3::from_rows`] when
 /// the rows have already been computed. See the module documentation for what it is good for.
-pub type AlignInformation3 = AlignInformation<Dof6, 6>;
+pub type AlignInfo3 = AlignInfo<Dof6, 6>;
 
 impl AlignDofs<6> for Dof6 {
     fn free_indices(&self) -> Vec<usize> {
@@ -57,7 +57,7 @@ impl AlignDofs<6> for Dof6 {
     }
 }
 
-impl AlignInformation3 {
+impl AlignInfo3 {
     /// Builds the information content of a set of points against a target, in the pose described
     /// by `params`.
     ///
@@ -156,7 +156,7 @@ mod tests {
         // Points on a plane can only ever resist motion along its normal. Sliding in x or y, or
         // spinning about z, moves every point along the surface and changes no residual, so
         // exactly three of the six degrees of freedom are free.
-        let info = AlignInformation3::from_points(
+        let info = AlignInfo3::from_points(
             &plane_points(),
             &GroundPlane,
             &AlignParams3::from_origin(None),
@@ -190,7 +190,7 @@ mod tests {
 
     #[test]
     fn a_singular_problem_reports_rather_than_lying() {
-        let info = AlignInformation3::from_points(
+        let info = AlignInfo3::from_points(
             &plane_points(),
             &GroundPlane,
             &AlignParams3::from_origin(None),
@@ -207,7 +207,7 @@ mod tests {
         // fully determined, so the analysis should now succeed.
         let dof = Dof6::new(false, false, true, true, true, false);
         let params = AlignParams3::from_origin(Some(dof));
-        let info = AlignInformation3::from_points(&plane_points(), &GroundPlane, &params);
+        let info = AlignInfo3::from_points(&plane_points(), &GroundPlane, &params);
 
         assert_eq!(info.free_dof_count(), 3);
 
@@ -228,7 +228,7 @@ mod tests {
         let mesh = box_mesh();
         let points = box_points(&mesh);
         let params = AlignParams3::from_origin(None);
-        let info = AlignInformation3::from_points(&points, &mesh, &params);
+        let info = AlignInfo3::from_points(&points, &mesh, &params);
 
         assert_eq!(info.free_dof_count(), 6);
         let precision = info.marginal_precision().unwrap();
@@ -248,7 +248,7 @@ mod tests {
     fn leverage_sums_to_the_free_dof_count() {
         let mesh = box_mesh();
         let points = box_points(&mesh);
-        let info = AlignInformation3::from_points(&points, &mesh, &AlignParams3::from_origin(None));
+        let info = AlignInfo3::from_points(&points, &mesh, &AlignParams3::from_origin(None));
 
         let total: f64 = info.leverage().unwrap().iter().sum();
         assert_relative_eq!(total, 6.0, epsilon = 1e-9);
@@ -260,8 +260,7 @@ mod tests {
         let mesh = box_mesh();
         let points = box_points(&mesh);
         let dof = Dof6::new(false, true, true, true, false, true);
-        let info =
-            AlignInformation3::from_points(&points, &mesh, &AlignParams3::from_origin(Some(dof)));
+        let info = AlignInfo3::from_points(&points, &mesh, &AlignParams3::from_origin(Some(dof)));
 
         assert_eq!(info.free_dof_count(), 4);
         let total: f64 = info.leverage().unwrap().iter().sum();
@@ -299,7 +298,7 @@ mod tests {
         ];
         points.extend_from_slice(&isolated);
 
-        let info = AlignInformation3::from_points(&points, &mesh, &AlignParams3::from_origin(None));
+        let info = AlignInfo3::from_points(&points, &mesh, &AlignParams3::from_origin(None));
         let picked = info.select_d_optimal(7, None);
 
         assert_eq!(picked.len(), 7);
@@ -316,7 +315,7 @@ mod tests {
     fn selection_is_a_prefix_so_it_can_be_truncated() {
         let mesh = box_mesh();
         let points = box_points(&mesh);
-        let info = AlignInformation3::from_points(&points, &mesh, &AlignParams3::from_origin(None));
+        let info = AlignInfo3::from_points(&points, &mesh, &AlignParams3::from_origin(None));
 
         let long = info.select_d_optimal(20, None);
         let short = info.select_d_optimal(8, None);
@@ -331,7 +330,7 @@ mod tests {
         let mesh = box_mesh();
         let points = box_points(&mesh);
         let params = AlignParams3::from_origin(None);
-        let info = AlignInformation3::from_points(&points, &mesh, &params);
+        let info = AlignInfo3::from_points(&points, &mesh, &params);
 
         let n = 40;
         let picked = info.select_d_optimal(n, None);
@@ -344,7 +343,7 @@ mod tests {
         // tend to land on a single face of the box), and there is no finite precision to compare
         // in that case.
         let weakest = |pts: &[Point3]| -> f64 {
-            AlignInformation3::from_points(pts, &mesh, &params).weak_directions()[0].0
+            AlignInfo3::from_points(pts, &mesh, &params).weak_directions()[0].0
         };
 
         let chosen_weakest = weakest(&chosen);
@@ -358,7 +357,7 @@ mod tests {
 
         // ...and unlike the arbitrary subset, it should constrain the pose outright.
         assert!(
-            AlignInformation3::from_points(&chosen, &mesh, &params)
+            AlignInfo3::from_points(&chosen, &mesh, &params)
                 .marginal_precision()
                 .is_ok(),
             "the selected subset should leave no motion unconstrained"
@@ -369,7 +368,7 @@ mod tests {
     fn selection_respects_the_available_count() {
         let mesh = box_mesh();
         let points = box_points(&mesh);
-        let info = AlignInformation3::from_points(&points, &mesh, &AlignParams3::from_origin(None));
+        let info = AlignInfo3::from_points(&points, &mesh, &AlignParams3::from_origin(None));
 
         assert!(info.select_d_optimal(0, None).is_empty());
         assert_eq!(
@@ -388,7 +387,7 @@ mod tests {
         let weights = vec![1.0, 0.0, 1.0];
         let dof = Dof6::new(true, true, true, false, false, false);
 
-        let info = AlignInformation3::from_rows(rows, weights, dof).unwrap();
+        let info = AlignInfo3::from_rows(rows, weights, dof).unwrap();
         let picked = info.select_d_optimal(3, None);
 
         assert!(!picked.contains(&1), "a zero-weight point was selected");
@@ -403,7 +402,7 @@ mod tests {
     fn information_matrix_is_expanded_with_zeros_for_locked_dof() {
         let rows = vec![AlignStorage3::new(1.0, 2.0, 3.0, 0.0, 0.0, 0.0)];
         let dof = Dof6::new(true, true, true, false, false, false);
-        let info = AlignInformation3::from_rows(rows, vec![1.0], dof).unwrap();
+        let info = AlignInfo3::from_rows(rows, vec![1.0], dof).unwrap();
 
         let h = info.information();
         // The free block is the outer product of (1, 2, 3) with itself.
@@ -422,7 +421,7 @@ mod tests {
     #[test]
     fn mismatched_rows_and_weights_are_rejected() {
         let rows = vec![AlignStorage3::zeros(); 3];
-        let err = AlignInformation3::from_rows(rows, vec![1.0; 2], Dof6::all())
+        let err = AlignInfo3::from_rows(rows, vec![1.0; 2], Dof6::all())
             .unwrap_err()
             .to_string();
         assert!(err.contains("weights"), "unexpected message: {err}");
@@ -432,7 +431,7 @@ mod tests {
     fn invalid_weights_are_rejected() {
         for bad in [-1.0, f64::NAN, f64::INFINITY] {
             let rows = vec![AlignStorage3::zeros(); 2];
-            let result = AlignInformation3::from_rows(rows, vec![1.0, bad], Dof6::all());
+            let result = AlignInfo3::from_rows(rows, vec![1.0, bad], Dof6::all());
             assert!(result.is_err(), "weight {bad} should have been rejected");
         }
     }
@@ -440,8 +439,8 @@ mod tests {
     #[test]
     fn a_fully_locked_problem_degrades_gracefully() {
         let dof = Dof6::new(false, false, false, false, false, false);
-        let info = AlignInformation3::from_rows(vec![AlignStorage3::zeros(); 4], vec![1.0; 4], dof)
-            .unwrap();
+        let info =
+            AlignInfo3::from_rows(vec![AlignStorage3::zeros(); 4], vec![1.0; 4], dof).unwrap();
 
         assert_eq!(info.free_dof_count(), 0);
         assert!(info.weak_directions().is_empty());
@@ -456,9 +455,8 @@ mod tests {
         let mesh = box_mesh();
         let points = box_points(&mesh);
 
-        let at_origin =
-            AlignInformation3::from_points(&points, &mesh, &AlignParams3::from_origin(None));
-        let offset = AlignInformation3::from_points(
+        let at_origin = AlignInfo3::from_points(&points, &mesh, &AlignParams3::from_origin(None));
+        let offset = AlignInfo3::from_points(
             &points,
             &mesh,
             &AlignParams3::from_center(Point3::new(50.0, 0.0, 0.0), None),
@@ -478,14 +476,14 @@ mod tests {
         let mesh = box_mesh();
         let points = box_points(&mesh);
 
-        let here = AlignInformation3::from_points(&points, &mesh, &AlignParams3::from_origin(None));
+        let here = AlignInfo3::from_points(&points, &mesh, &AlignParams3::from_origin(None));
 
         let displaced = AlignParams3::new(
             crate::geom3::align3::AlignOrigin3::Origin,
             Some(Iso3::translation(0.0, 0.0, 20.0)),
             None,
         );
-        let there = AlignInformation3::from_points(&points, &mesh, &displaced);
+        let there = AlignInfo3::from_points(&points, &mesh, &displaced);
 
         let delta = (here.information() - there.information()).norm();
         assert!(

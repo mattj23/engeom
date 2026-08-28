@@ -19,9 +19,9 @@
 //! Beyond the single-body path:
 //!
 //! - [`multi_mesh_adjustment`] simultaneously aligns several meshes to each other in one combined
-//!   solve, holding one static, with [`MultiAlignParams3`] carrying the concatenated per-body
-//!   parameters and [`MultiAlignOptions3`] controlling the solve.
-//! - [`AlignInformation3`] asks how well a set of points constrains an alignment, exposes its
+//!   solve, holding one static, with [`MultiParams3`] carrying the concatenated per-body
+//!   parameters and [`MultiOptions3`] controlling the solve.
+//! - [`AlignInfo3`] asks how well a set of points constrains an alignment, exposes its
 //!   weak directions, and chooses D-optimal correspondence subsets for pruning.
 //!
 //! # Reporting
@@ -89,10 +89,9 @@ pub use self::cloud::CloudTarget3;
 pub use self::information::*;
 pub use self::mesh::*;
 pub use self::multi_mesh::{
-    MultiAlignOptions3, MultiMeshAlignPoint, multi_mesh_adjustment,
-    multi_mesh_adjustment_with_points,
+    MeshAlignPoint, MultiOptions3, multi_mesh_adjustment, multi_mesh_adjustment_with_points,
 };
-pub use self::multi_params::MultiAlignParams3;
+pub use self::multi_params::MultiParams3;
 pub use self::options::*;
 pub use self::params::*;
 pub use self::points_to_surface::*;

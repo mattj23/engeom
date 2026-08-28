@@ -2,20 +2,20 @@
 //! subset of them that preserves that conditioning.
 //!
 //! The analysis itself is dimension-independent and lives in
-//! [`crate::common::align::information::AlignInformation`], whose module documentation explains
+//! [`crate::common::align::information::AlignInfo`], whose module documentation explains
 //! the information matrix and the two uses it serves:
 //!
 //! - **Diagnosis.** Is this alignment well conditioned, and if not, along what motion is it free
-//!   to slide? See [`AlignInformation2::marginal_precision`] and
-//!   [`AlignInformation2::weak_directions`]. In 2D the weak direction of an alignment is rarely
+//!   to slide? See [`AlignInfo2::marginal_precision`] and
+//!   [`AlignInfo2::weak_directions`]. In 2D the weak direction of an alignment is rarely
 //!   axis-aligned: points on a circle can spin about its center, points on a straight line slide
 //!   along it, and a shallow arc is weakest in a coupled turn-and-shift.
 //! - **Pruning.** Which points are actually carrying the alignment, and what is the smallest
-//!   subset that would constrain it just as well? See [`AlignInformation2::leverage`] and
-//!   [`AlignInformation2::select_d_optimal`].
+//!   subset that would constrain it just as well? See [`AlignInfo2::leverage`] and
+//!   [`AlignInfo2::select_d_optimal`].
 //!
 //! This module supplies the 2D ingredients: the [`AlignDofs`] implementation on [`Dof3`] and the
-//! [`AlignInformation2::from_points`] constructor, which turns points and a [`SurfaceTarget2`]
+//! [`AlignInfo2::from_points`] constructor, which turns points and a [`SurfaceTarget2`]
 //! into jacobian rows. The `geom3::align3::information` module does the same for 3D.
 //!
 //! # A caveat about units
@@ -24,25 +24,25 @@
 //! rotation column carries units of length, because a rotation partial scales with the distance
 //! from the local origin. `H` is therefore heterogeneous, and two consequences follow.
 //!
-//! [`AlignInformation2::marginal_precision`] is safe: each entry concerns a single parameter, so
-//! its units are internally consistent. [`AlignInformation2::weak_directions`] mixes translation
+//! [`AlignInfo2::marginal_precision`] is safe: each entry concerns a single parameter, so
+//! its units are internally consistent. [`AlignInfo2::weak_directions`] mixes translation
 //! and rotation in one vector and is only meaningful when the two are comparably scaled, which in
 //! practice means the local origin should sit near the middle of the point set (as
 //! `AlignParams2::from_center` arranges). Placing the origin far away inflates the rotation term
 //! and will make rotation look artificially well constrained.
 
 use crate::Point2;
-use crate::common::align::information::{AlignDofs, AlignInformation};
-use crate::geom2::align2::jacobian::point_surf_jacobian2;
+use crate::common::align::information::{AlignDofs, AlignInfo};
+use crate::geom2::align2::jacobian::point_surf_jacobian;
 use crate::geom2::align2::{AlignParams2, Dof3, SurfaceTarget2};
 
 /// The information content of a set of test points with respect to a 2D alignment, over the three
 /// parameters `tx`, `ty`, `rz`.
 ///
-/// Built with [`AlignInformation2::from_points`], which projects the points onto a target and
-/// takes the jacobian row of each correspondence, or with [`AlignInformation2::from_rows`] when
+/// Built with [`AlignInfo2::from_points`], which projects the points onto a target and
+/// takes the jacobian row of each correspondence, or with [`AlignInfo2::from_rows`] when
 /// the rows have already been computed. See the module documentation for what it is good for.
-pub type AlignInformation2 = AlignInformation<Dof3, 3>;
+pub type AlignInfo2 = AlignInfo<Dof3, 3>;
 
 impl AlignDofs<3> for Dof3 {
     fn free_indices(&self) -> Vec<usize> {
@@ -54,7 +54,7 @@ impl AlignDofs<3> for Dof3 {
     }
 }
 
-impl AlignInformation2 {
+impl AlignInfo2 {
     /// Builds the information content of a set of points against a target, in the pose described
     /// by `params`.
     ///
@@ -87,7 +87,7 @@ impl AlignInformation2 {
             let m = current.transform * p;
             let c = target.find_align_match(&m);
 
-            rows.push(point_surf_jacobian2(&m, &c, &current));
+            rows.push(point_surf_jacobian(&m, &c, &current));
             weights.push(if c.sigma > 0.0 {
                 c.weight / (c.sigma * c.sigma)
             } else {
@@ -159,7 +159,7 @@ mod tests {
         // line moves every point parallel to the surface and changes no residual, so exactly one
         // of the three degrees of freedom is free. Rotation is not free, because turning the set
         // lifts points away from the line in proportion to how far out they sit.
-        let info = AlignInformation2::from_points(
+        let info = AlignInfo2::from_points(
             &line_points(),
             &GroundLine,
             &AlignParams2::from_origin(None),
@@ -188,7 +188,7 @@ mod tests {
 
     #[test]
     fn a_singular_problem_reports_rather_than_lying() {
-        let info = AlignInformation2::from_points(
+        let info = AlignInfo2::from_points(
             &line_points(),
             &GroundLine,
             &AlignParams2::from_origin(None),
@@ -205,7 +205,7 @@ mod tests {
         // determined, so the analysis should now succeed.
         let dof = Dof3::new(false, true, true);
         let params = AlignParams2::from_origin(Some(dof));
-        let info = AlignInformation2::from_points(&line_points(), &GroundLine, &params);
+        let info = AlignInfo2::from_points(&line_points(), &GroundLine, &params);
 
         assert_eq!(info.free_dof_count(), 2);
 
@@ -224,7 +224,7 @@ mod tests {
         let curve = rect_curve();
         let points = rect_points(&curve);
         let params = AlignParams2::from_origin(None);
-        let info = AlignInformation2::from_points(&points, &curve, &params);
+        let info = AlignInfo2::from_points(&points, &curve, &params);
 
         assert_eq!(info.free_dof_count(), 3);
         let precision = info.marginal_precision().unwrap();
@@ -244,8 +244,7 @@ mod tests {
     fn leverage_sums_to_the_free_dof_count() {
         let curve = rect_curve();
         let points = rect_points(&curve);
-        let info =
-            AlignInformation2::from_points(&points, &curve, &AlignParams2::from_origin(None));
+        let info = AlignInfo2::from_points(&points, &curve, &AlignParams2::from_origin(None));
 
         let total: f64 = info.leverage().unwrap().iter().sum();
         assert_relative_eq!(total, 3.0, epsilon = 1e-9);
@@ -257,8 +256,7 @@ mod tests {
         let curve = rect_curve();
         let points = rect_points(&curve);
         let dof = Dof3::new(false, true, true);
-        let info =
-            AlignInformation2::from_points(&points, &curve, &AlignParams2::from_origin(Some(dof)));
+        let info = AlignInfo2::from_points(&points, &curve, &AlignParams2::from_origin(Some(dof)));
 
         assert_eq!(info.free_dof_count(), 2);
         let total: f64 = info.leverage().unwrap().iter().sum();
@@ -294,8 +292,7 @@ mod tests {
         ];
         points.extend_from_slice(&isolated);
 
-        let info =
-            AlignInformation2::from_points(&points, &curve, &AlignParams2::from_origin(None));
+        let info = AlignInfo2::from_points(&points, &curve, &AlignParams2::from_origin(None));
         // Four picks, which is how many distinct positions are on offer once the cluster has
         // contributed the one row it has to give. Twenty of the twenty-four candidates are
         // cluster members, so picking arbitrarily would take about three of them.
@@ -323,8 +320,7 @@ mod tests {
     fn selection_is_a_prefix_so_it_can_be_truncated() {
         let curve = rect_curve();
         let points = rect_points(&curve);
-        let info =
-            AlignInformation2::from_points(&points, &curve, &AlignParams2::from_origin(None));
+        let info = AlignInfo2::from_points(&points, &curve, &AlignParams2::from_origin(None));
 
         let long = info.select_d_optimal(20, None);
         let short = info.select_d_optimal(8, None);
@@ -339,7 +335,7 @@ mod tests {
         let curve = rect_curve();
         let points = rect_points(&curve);
         let params = AlignParams2::from_origin(None);
-        let info = AlignInformation2::from_points(&points, &curve, &params);
+        let info = AlignInfo2::from_points(&points, &curve, &params);
 
         let n = 20;
         let picked = info.select_d_optimal(n, None);
@@ -351,7 +347,7 @@ mod tests {
         // because an arbitrary subset can be outright singular (the first `n` samples walk along
         // a single edge of the rectangle), and there is no finite precision to compare then.
         let weakest = |pts: &[Point2]| -> f64 {
-            AlignInformation2::from_points(pts, &curve, &params).weak_directions()[0].0
+            AlignInfo2::from_points(pts, &curve, &params).weak_directions()[0].0
         };
 
         let chosen_weakest = weakest(&chosen);
@@ -365,7 +361,7 @@ mod tests {
 
         // ...and unlike the arbitrary subset, it should constrain the pose outright.
         assert!(
-            AlignInformation2::from_points(&chosen, &curve, &params)
+            AlignInfo2::from_points(&chosen, &curve, &params)
                 .marginal_precision()
                 .is_ok(),
             "the selected subset should leave no motion unconstrained"
@@ -376,8 +372,7 @@ mod tests {
     fn selection_respects_the_available_count() {
         let curve = rect_curve();
         let points = rect_points(&curve);
-        let info =
-            AlignInformation2::from_points(&points, &curve, &AlignParams2::from_origin(None));
+        let info = AlignInfo2::from_points(&points, &curve, &AlignParams2::from_origin(None));
 
         assert!(info.select_d_optimal(0, None).is_empty());
         assert_eq!(
@@ -395,7 +390,7 @@ mod tests {
         ];
         let weights = vec![1.0, 0.0, 1.0];
 
-        let info = AlignInformation2::from_rows(rows, weights, Dof3::all()).unwrap();
+        let info = AlignInfo2::from_rows(rows, weights, Dof3::all()).unwrap();
         let picked = info.select_d_optimal(3, None);
 
         assert!(!picked.contains(&1), "a zero-weight point was selected");
@@ -410,7 +405,7 @@ mod tests {
     fn information_matrix_is_expanded_with_zeros_for_locked_dof() {
         let rows = vec![AlignStorage2::new(1.0, 2.0, 0.0)];
         let dof = Dof3::new(true, true, false);
-        let info = AlignInformation2::from_rows(rows, vec![1.0], dof).unwrap();
+        let info = AlignInfo2::from_rows(rows, vec![1.0], dof).unwrap();
 
         let h = info.information();
         // The free block is the outer product of (1, 2) with itself.
@@ -427,7 +422,7 @@ mod tests {
     #[test]
     fn mismatched_rows_and_weights_are_rejected() {
         let rows = vec![AlignStorage2::zeros(); 3];
-        let err = AlignInformation2::from_rows(rows, vec![1.0; 2], Dof3::all())
+        let err = AlignInfo2::from_rows(rows, vec![1.0; 2], Dof3::all())
             .unwrap_err()
             .to_string();
         assert!(err.contains("weights"), "unexpected message: {err}");
@@ -437,7 +432,7 @@ mod tests {
     fn invalid_weights_are_rejected() {
         for bad in [-1.0, f64::NAN, f64::INFINITY] {
             let rows = vec![AlignStorage2::zeros(); 2];
-            let result = AlignInformation2::from_rows(rows, vec![1.0, bad], Dof3::all());
+            let result = AlignInfo2::from_rows(rows, vec![1.0, bad], Dof3::all());
             assert!(result.is_err(), "weight {bad} should have been rejected");
         }
     }
@@ -445,8 +440,8 @@ mod tests {
     #[test]
     fn a_fully_locked_problem_degrades_gracefully() {
         let dof = Dof3::new(false, false, false);
-        let info = AlignInformation2::from_rows(vec![AlignStorage2::zeros(); 4], vec![1.0; 4], dof)
-            .unwrap();
+        let info =
+            AlignInfo2::from_rows(vec![AlignStorage2::zeros(); 4], vec![1.0; 4], dof).unwrap();
 
         assert_eq!(info.free_dof_count(), 0);
         assert!(info.weak_directions().is_empty());
@@ -461,9 +456,8 @@ mod tests {
         let curve = rect_curve();
         let points = rect_points(&curve);
 
-        let at_origin =
-            AlignInformation2::from_points(&points, &curve, &AlignParams2::from_origin(None));
-        let offset = AlignInformation2::from_points(
+        let at_origin = AlignInfo2::from_points(&points, &curve, &AlignParams2::from_origin(None));
+        let offset = AlignInfo2::from_points(
             &points,
             &curve,
             &AlignParams2::from_center(Point2::new(50.0, 0.0), None),
@@ -483,15 +477,14 @@ mod tests {
         let curve = rect_curve();
         let points = rect_points(&curve);
 
-        let here =
-            AlignInformation2::from_points(&points, &curve, &AlignParams2::from_origin(None));
+        let here = AlignInfo2::from_points(&points, &curve, &AlignParams2::from_origin(None));
 
         let displaced = AlignParams2::new(
             AlignOrigin2::Origin,
             Some(Iso2::translation(0.0, 20.0)),
             None,
         );
-        let there = AlignInformation2::from_points(&points, &curve, &displaced);
+        let there = AlignInfo2::from_points(&points, &curve, &displaced);
 
         let delta = (here.information() - there.information()).norm();
         assert!(

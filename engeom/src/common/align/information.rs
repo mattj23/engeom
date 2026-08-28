@@ -12,10 +12,10 @@
 //! point is a rank-1 update that can be added or removed in closed form.
 //!
 //! Nothing about that depends on the dimension: the analysis runs on jacobian rows of `N`
-//! parameters, whatever those parameters mean. [`AlignInformation`] holds it once, generic over
+//! parameters, whatever those parameters mean. [`AlignInfo`] holds it once, generic over
 //! `N` and the degree-of-freedom lock type `D`, whose [`AlignDofs`] implementation is the only
 //! dimension-specific ingredient. The public faces are the aliases
-//! `geom2::align2::AlignInformation2` and `geom3::align3::AlignInformation3`, whose modules
+//! `geom2::align2::AlignInfo2` and `geom3::align3::AlignInfo3`, whose modules
 //! supply the dimension-specific `from_points` constructors, geometric intuition, and unit
 //! caveats.
 
@@ -23,7 +23,7 @@ use crate::Result;
 use crate::na::{DMatrix, DVector, SMatrix, SVector};
 
 /// The relative size of the regularizing ridge used to start greedy selection. See
-/// [`AlignInformation::select_d_optimal`] for why one is needed.
+/// [`AlignInfo::select_d_optimal`] for why one is needed.
 const DEFAULT_RIDGE_REL: f64 = 1e-9;
 
 /// The degree-of-freedom locks of a dimension, viewed as a subset of its `N` parameters.
@@ -37,12 +37,12 @@ pub trait AlignDofs<const N: usize>: Copy {
 
 /// The information content of a set of test points with respect to an alignment.
 ///
-/// Built through the dimension-specific `from_points` constructors on the `AlignInformation2` and
-/// `AlignInformation3` aliases, which project points onto a target and take the jacobian row of
-/// each correspondence, or with [`AlignInformation::from_rows`] when the rows have already been
+/// Built through the dimension-specific `from_points` constructors on the `AlignInfo2` and
+/// `AlignInfo3` aliases, which project points onto a target and take the jacobian row of
+/// each correspondence, or with [`AlignInfo::from_rows`] when the rows have already been
 /// computed. See the alias modules' documentation for what it is good for.
 #[derive(Clone, Debug)]
-pub struct AlignInformation<D: AlignDofs<N>, const N: usize> {
+pub struct AlignInfo<D: AlignDofs<N>, const N: usize> {
     /// The jacobian row for each point. Locked degrees of freedom are already zero in these,
     /// because the jacobian functions zero their columns.
     rows: Vec<SVector<f64, N>>,
@@ -62,7 +62,7 @@ pub struct AlignInformation<D: AlignDofs<N>, const N: usize> {
     h: DMatrix<f64>,
 }
 
-impl<D: AlignDofs<N>, const N: usize> AlignInformation<D, N> {
+impl<D: AlignDofs<N>, const N: usize> AlignInfo<D, N> {
     /// Builds the information content directly from jacobian rows which have already been
     /// computed, for callers assembling a problem this module doesn't know how to build (a
     /// multi-body adjustment, for instance).
@@ -167,7 +167,7 @@ impl<D: AlignDofs<N>, const N: usize> AlignInformation<D, N> {
     /// Larger is better constrained. The units differ between translation and rotation entries.
     ///
     /// Returns an error if the points do not constrain every free degree of freedom, since then
-    /// `H` is singular and no finite precision exists. [`AlignInformation::weak_directions`]
+    /// `H` is singular and no finite precision exists. [`AlignInfo::weak_directions`]
     /// still works in that case and will show which motions are free.
     pub fn marginal_precision(&self) -> Result<[Option<f64>; N]> {
         let inverse = self.h.clone().try_inverse().ok_or_else(|| {
@@ -229,10 +229,10 @@ impl<D: AlignDofs<N>, const N: usize> AlignInformation<D, N> {
     ///
     /// This scores each point *independently*, which makes it a good diagnostic but a poor basis
     /// for pruning, since a pair of interchangeable points both score high. Use
-    /// [`AlignInformation::select_d_optimal`] to choose a subset.
+    /// [`AlignInfo::select_d_optimal`] to choose a subset.
     ///
     /// Returns an error if the information matrix is singular, for the same reason as
-    /// [`AlignInformation::marginal_precision`].
+    /// [`AlignInfo::marginal_precision`].
     pub fn leverage(&self) -> Result<Vec<f64>> {
         let inverse = self.h.clone().try_inverse().ok_or_else(|| {
             format!(

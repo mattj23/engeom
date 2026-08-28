@@ -31,7 +31,7 @@ pub type SvdBasis2 = SvdBasis<2>;
 pub type Ray2 = parry2d_f64::query::Ray;
 pub type Align2 = crate::common::align::Alignment<UnitComplex<f64>, 2>;
 pub type AlignOutcome2 = crate::common::align::AlignOutcome<UnitComplex<f64>, 2>;
-pub type MultiAlignOutcome2 = crate::common::align::MultiAlignOutcome<UnitComplex<f64>, 2>;
+pub type MultiOutcome2 = crate::common::align::MultiOutcome<UnitComplex<f64>, 2>;
 pub type KdTree2 = crate::common::kd_tree::KdTree<2>;
 
 /// A point in 2D space paired with a unit normal direction, representing a position on a

@@ -187,13 +187,13 @@ impl<R, const D: usize> AlignOutcome<R, D> {
 /// and one halt reason for the whole thing, not one per body. Only the alignments and their
 /// residuals are per body.
 #[derive(Debug)]
-pub struct MultiAlignOutcome<R, const D: usize> {
+pub struct MultiOutcome<R, const D: usize> {
     alignments: Vec<Alignment<R, D>>,
     solves: Vec<TerminationReason>,
     halt: Option<RefinementHalt>,
 }
 
-impl<R, const D: usize> MultiAlignOutcome<R, D> {
+impl<R, const D: usize> MultiOutcome<R, D> {
     pub(crate) fn new(
         alignments: Vec<Alignment<R, D>>,
         solves: Vec<TerminationReason>,

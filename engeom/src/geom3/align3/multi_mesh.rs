@@ -27,7 +27,7 @@
 //!
 //! # The distance gate is not optional
 //!
-//! [`MultiAlignOptions3::max_distance`] must be supplied, and there is no `Default` for the options
+//! [`MultiOptions3::max_distance`] must be supplied, and there is no `Default` for the options
 //! precisely so that it cannot be forgotten.
 //!
 //! Partially overlapping meshes produce correspondences into regions the other mesh never saw, and
@@ -36,17 +36,17 @@
 //! millimetre away from an already correct answer, and the robust refinement that follows made it
 //! worse rather than better: the noise scale is estimated from that spoiled solve, so the displaced
 //! mesh looks like an outlier and gets weighted out of its own correction. The measurements are on
-//! [`MultiAlignOptions3::max_distance`].
+//! [`MultiOptions3::max_distance`].
 
 use crate::Result;
 use crate::common::align::{RefinementHalt, SolveQuality, TerminationReason};
 use crate::common::consensus::weights::{MagsacWeight, estimate_sigma_max};
 use crate::common::points::dist;
 use crate::geom3::align3::jacobian::{point_surf_jacobian, point_surf_jacobian_rev};
-use crate::geom3::align3::mesh::{AlignmentMesh, generate_alignment_points, interpolated_stdev};
-use crate::geom3::align3::{AlignValues3, Dof6, GAPParams, MultiAlignParams3};
+use crate::geom3::align3::mesh::{AlignMesh, generate_alignment_points, interpolated_stdev};
+use crate::geom3::align3::{AlignValues3, Dof6, GAPParams, MultiParams3};
 use crate::geom3::mesh::MeshSurfPoint;
-use crate::geom3::{Align3, MultiAlignOutcome3, Point3, SurfacePoint3};
+use crate::geom3::{Align3, MultiOutcome3, Point3, SurfacePoint3};
 use crate::na::{DMatrix, DVector, Dyn, Matrix, Owned, U1, Vector};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use rayon::prelude::*;
@@ -62,15 +62,15 @@ const RESIDUAL_DOF: usize = 3;
 
 /// Options controlling a simultaneous multi-mesh alignment.
 ///
-/// Construct with [`MultiAlignOptions3::new`], which requires the correspondence distance gate,
+/// Construct with [`MultiOptions3::new`], which requires the correspondence distance gate,
 /// and override the remaining fields you care about. The robust-estimation fields mirror
 /// `AlignOptions3` and behave identically; the two gates at the top are specific to multi-mesh
 /// work.
 ///
-/// There is deliberately no `Default`. See [`MultiAlignOptions3::max_distance`] for why the gate
+/// There is deliberately no `Default`. See [`MultiOptions3::max_distance`] for why the gate
 /// cannot be left to a default.
 #[derive(Clone, Copy, Debug)]
-pub struct MultiAlignOptions3 {
+pub struct MultiOptions3 {
     /// A hard cutoff on correspondence distance, in the units of the geometry. A point whose
     /// closest match on the reference mesh is further than this contributes nothing.
     ///
@@ -131,7 +131,7 @@ pub struct MultiAlignOptions3 {
     pub dof: Option<Dof6>,
 }
 
-impl MultiAlignOptions3 {
+impl MultiOptions3 {
     /// Options with the required correspondence distance gate and defaults for everything else.
     ///
     /// `max_distance` has no safe default and so has to be supplied; see its documentation for the
@@ -157,7 +157,7 @@ impl MultiAlignOptions3 {
 /// A single correspondence in a multi-mesh adjustment: a sample point on one mesh which is being
 /// matched against the surface of another.
 #[derive(Clone, Debug)]
-pub struct MultiMeshAlignPoint {
+pub struct MeshAlignPoint {
     /// The index of the mesh this point was sampled from.
     pub mesh_i: usize,
 
@@ -171,7 +171,7 @@ pub struct MultiMeshAlignPoint {
     pub weight: f64,
 }
 
-impl MultiMeshAlignPoint {
+impl MeshAlignPoint {
     /// Creates a correspondence from a sample `mp` on mesh `mesh_i`, matched against reference
     /// mesh `ref_i` with the given weight.
     pub fn new(mesh_i: usize, mp: MeshSurfPoint, ref_i: usize, weight: f64) -> Self {
@@ -192,7 +192,7 @@ impl MultiMeshAlignPoint {
 ///
 /// Use this when the correspondences have already been chosen, whether by
 /// [`multi_mesh_adjustment`]'s own sampling or by pruning them with
-/// [`crate::geom3::align3::AlignInformation3`].
+/// [`crate::geom3::align3::AlignInfo3`].
 ///
 /// # Failure
 ///
@@ -200,11 +200,11 @@ impl MultiMeshAlignPoint {
 /// all: rejected arguments, or an initial solve that broke down. A solve which merely exhausts
 /// its budget is reported on the outcome and its alignments kept.
 pub fn multi_mesh_adjustment_with_points(
-    meshes: &[AlignmentMesh],
-    points: Vec<MultiMeshAlignPoint>,
+    meshes: &[AlignMesh],
+    points: Vec<MeshAlignPoint>,
     static_i: usize,
-    opts: &MultiAlignOptions3,
-) -> Result<MultiAlignOutcome3> {
+    opts: &MultiOptions3,
+) -> Result<MultiOutcome3> {
     validate(meshes, &points, static_i, opts)?;
     solve_bundle(MultiMeshProblem::new(meshes, points, static_i, opts)?, opts)
 }
@@ -214,10 +214,10 @@ pub fn multi_mesh_adjustment_with_points(
 /// The static mesh is chosen automatically as the one the others reference most broadly; see
 /// `correspondence_matrix` for how that is scored.
 pub fn multi_mesh_adjustment(
-    meshes: &[AlignmentMesh],
-    opts: &MultiAlignOptions3,
+    meshes: &[AlignMesh],
+    opts: &MultiOptions3,
     sample_opts: &GAPParams,
-) -> Result<MultiAlignOutcome3> {
+) -> Result<MultiOutcome3> {
     let reference_order = reference_priority(meshes, sample_opts);
     let static_i = reference_order[0];
 
@@ -247,7 +247,7 @@ pub fn multi_mesh_adjustment(
                     let weight = meshes[mesh_i].weights.map_or(1.0, |providers| {
                         providers.iter().map(|p| p.weight(&mp)).product()
                     });
-                    MultiMeshAlignPoint::new(mesh_i, mp, ref_i, weight)
+                    MeshAlignPoint::new(mesh_i, mp, ref_i, weight)
                 })
                 .collect::<Vec<_>>()
         })
@@ -262,10 +262,10 @@ pub fn multi_mesh_adjustment(
 // ================================================================================================
 
 fn validate(
-    meshes: &[AlignmentMesh],
-    points: &[MultiMeshAlignPoint],
+    meshes: &[AlignMesh],
+    points: &[MeshAlignPoint],
     static_i: usize,
-    opts: &MultiAlignOptions3,
+    opts: &MultiOptions3,
 ) -> Result<()> {
     if opts.patience == 0 {
         return Err("patience must be greater than zero".into());
@@ -306,10 +306,7 @@ fn validate(
     Ok(())
 }
 
-fn solve_bundle(
-    problem: MultiMeshProblem<'_>,
-    opts: &MultiAlignOptions3,
-) -> Result<MultiAlignOutcome3> {
+fn solve_bundle(problem: MultiMeshProblem<'_>, opts: &MultiOptions3) -> Result<MultiOutcome3> {
     let lm = LevenbergMarquardt::<f64>::new().with_patience(opts.patience);
     let n_params = problem.params.param_count();
 
@@ -356,7 +353,7 @@ fn solve_bundle(
         }
     }
 
-    Ok(MultiAlignOutcome3::new(problem.alignments(), solves, halt))
+    Ok(MultiOutcome3::new(problem.alignments(), solves, halt))
 }
 
 fn run<'a>(
@@ -367,7 +364,7 @@ fn run<'a>(
     (result, report.termination)
 }
 
-fn resolve_sigma_max(opts: &MultiAlignOptions3, problem: &MultiMeshProblem<'_>) -> Option<f64> {
+fn resolve_sigma_max(opts: &MultiOptions3, problem: &MultiMeshProblem<'_>) -> Option<f64> {
     match opts.sigma_max {
         Some(s) => Some(s),
         None => estimate_sigma_max(&problem.normalized_residuals()),
@@ -388,9 +385,9 @@ struct Moved {
 }
 
 struct MultiMeshProblem<'a> {
-    meshes: &'a [AlignmentMesh<'a>],
-    handles: Vec<MultiMeshAlignPoint>,
-    params: MultiAlignParams3,
+    meshes: &'a [AlignMesh<'a>],
+    handles: Vec<MeshAlignPoint>,
+    params: MultiParams3,
 
     /// The alignment values of every body for the current parameters, cached so the residual and
     /// jacobian loops don't recompute them per correspondence.
@@ -430,17 +427,17 @@ struct MultiMeshProblem<'a> {
 
 impl<'a> MultiMeshProblem<'a> {
     fn new(
-        meshes: &'a [AlignmentMesh],
-        handles: Vec<MultiMeshAlignPoint>,
+        meshes: &'a [AlignMesh],
+        handles: Vec<MeshAlignPoint>,
         static_i: usize,
-        opts: &MultiAlignOptions3,
+        opts: &MultiOptions3,
     ) -> Result<Self> {
         let centers = meshes
             .iter()
             .map(|m| m.mesh.aabb().center())
             .collect::<Vec<_>>();
         let initial = meshes.iter().map(|m| m.transform()).collect::<Vec<_>>();
-        let params = MultiAlignParams3::from_centers(static_i, &centers, Some(&initial), opts.dof)?;
+        let params = MultiParams3::from_centers(static_i, &centers, Some(&initial), opts.dof)?;
 
         let n = handles.len();
 
@@ -599,8 +596,8 @@ impl<'a> MultiMeshProblem<'a> {
 }
 
 /// The measurement uncertainty of a mesh at a surface point, preferring an explicit override on
-/// the [`AlignmentMesh`] over the mesh's own `point_stdev` attribute. Zero when neither is present.
-fn sigma_at(mesh: &AlignmentMesh, mp: &MeshSurfPoint) -> f64 {
+/// the [`AlignMesh`] over the mesh's own `point_stdev` attribute. Zero when neither is present.
+fn sigma_at(mesh: &AlignMesh, mp: &MeshSurfPoint) -> f64 {
     let stdev = mesh.uncertainty.or_else(|| mesh.mesh.point_stdev());
     stdev.map_or(0.0, |s| interpolated_stdev(mesh.mesh, mp, s))
 }
@@ -658,13 +655,13 @@ impl LeastSquaresProblem<f64, Dyn, Dyn> for MultiMeshProblem<'_> {
 /// Orders the meshes by how broadly the others reference them, most-referenced first. The head of
 /// the returned order is the best candidate for the static mesh. The scoring lives in
 /// [`crate::common::align::reference`].
-fn reference_priority(meshes: &[AlignmentMesh], params: &GAPParams) -> Vec<usize> {
+fn reference_priority(meshes: &[AlignMesh], params: &GAPParams) -> Vec<usize> {
     crate::common::align::reference::reference_priority(correspondence_matrix(meshes, params))
 }
 
 /// The pairwise correspondence counts of the meshes: each `i, j` entry is the number of sample
 /// points in mesh `j` which are a good match for mesh `i`.
-fn correspondence_matrix(meshes: &[AlignmentMesh], params: &GAPParams) -> DMatrix<f64> {
+fn correspondence_matrix(meshes: &[AlignMesh], params: &GAPParams) -> DMatrix<f64> {
     crate::common::align::reference::correspondence_matrix(meshes.len(), |i, j| {
         let t = meshes[i].transform().inv_mul(&meshes[j].transform());
         generate_alignment_points(meshes[j].mesh, meshes[i].mesh, &t, params).len() as f64
@@ -683,8 +680,8 @@ mod tests {
     /// exercise the solver rather than the gate. Cases which are about the gate set their own.
     const WIDE_GATE: f64 = 20.0;
 
-    fn test_opts() -> MultiAlignOptions3 {
-        MultiAlignOptions3::new(WIDE_GATE)
+    fn test_opts() -> MultiOptions3 {
+        MultiOptions3::new(WIDE_GATE)
     }
 
     fn box_mesh() -> Mesh3 {
@@ -694,21 +691,21 @@ mod tests {
     /// Correspondences from every mesh onto the one before it, sampled directly from the mesh
     /// surface. This bypasses `generate_alignment_points` so the tests exercise the solver rather
     /// than the candidate filtering.
-    fn chain_points(meshes: &[Mesh3], spacing: f64) -> Vec<MultiMeshAlignPoint> {
+    fn chain_points(meshes: &[Mesh3], spacing: f64) -> Vec<MeshAlignPoint> {
         let mut points = Vec::new();
         for (i, mesh) in meshes.iter().enumerate().skip(1) {
             for mp in mesh.sample_poisson(spacing, None) {
-                points.push(MultiMeshAlignPoint::new(i, mp, i - 1, 1.0));
+                points.push(MeshAlignPoint::new(i, mp, i - 1, 1.0));
             }
         }
         points
     }
 
-    fn alignment_meshes<'a>(meshes: &'a [Mesh3], initial: &'a [Iso3]) -> Vec<AlignmentMesh<'a>> {
+    fn alignment_meshes<'a>(meshes: &'a [Mesh3], initial: &'a [Iso3]) -> Vec<AlignMesh<'a>> {
         meshes
             .iter()
             .zip(initial.iter())
-            .map(|(m, t)| AlignmentMesh::new(m, None, Some(t), None))
+            .map(|(m, t)| AlignMesh::new(m, None, Some(t), None))
             .collect()
     }
 
@@ -823,7 +820,7 @@ mod tests {
         let initial = vec![Iso3::identity(), Iso3::translation(0.3, 0.0, 0.0)];
         let ams = alignment_meshes(&meshes, &initial);
 
-        let opts = MultiAlignOptions3 {
+        let opts = MultiOptions3 {
             dof: Some(Dof6::new(false, true, true, true, true, true)),
             ..test_opts()
         };
@@ -849,7 +846,7 @@ mod tests {
         ];
         let ams = alignment_meshes(&meshes, &initial);
 
-        let opts = MultiAlignOptions3 {
+        let opts = MultiOptions3 {
             patience: 1,
             ..test_opts()
         };
@@ -885,14 +882,14 @@ mod tests {
             &ams,
             points.clone(),
             0,
-            &MultiAlignOptions3 {
+            &MultiOptions3 {
                 refinement_steps: 0,
                 ..test_opts()
             },
         )?;
         let robust = multi_mesh_adjustment_with_points(&ams, points, 0, &test_opts())?;
 
-        let error = |o: &MultiAlignOutcome3| {
+        let error = |o: &MultiOutcome3| {
             (o.alignment(1).full_transform().to_matrix() - Iso3::identity().to_matrix()).norm()
         };
 
@@ -930,11 +927,11 @@ mod tests {
             }
         }
 
-        let unweighted = |gate: f64| MultiAlignOptions3 {
+        let unweighted = |gate: f64| MultiOptions3 {
             refinement_steps: 0,
-            ..MultiAlignOptions3::new(gate)
+            ..MultiOptions3::new(gate)
         };
-        let drift = |o: &MultiAlignOutcome3| {
+        let drift = |o: &MultiOutcome3| {
             (o.alignment(1).full_transform().to_matrix() - Iso3::identity().to_matrix()).norm()
         };
 
@@ -969,7 +966,7 @@ mod tests {
 
         // With a tight gate the distant point contributes nothing, so the fit is unchanged from
         // the identity it already sits at.
-        let opts = MultiAlignOptions3 {
+        let opts = MultiOptions3 {
             max_distance: 1.0,
             refinement_steps: 0,
             ..test_opts()
@@ -1017,12 +1014,12 @@ mod tests {
                 for j in -1..=1 {
                     let probe = Point3::new(i as f64 * 1.5, j as f64 * 1.5, 2.0);
                     let mp = meshes[body].surface_closest_to(&probe);
-                    points.push(MultiMeshAlignPoint::new(body, mp, body - 1, 1.0));
+                    points.push(MeshAlignPoint::new(body, mp, body - 1, 1.0));
                 }
             }
         }
 
-        let opts = MultiAlignOptions3 {
+        let opts = MultiOptions3 {
             refinement_steps: 0,
             ..test_opts()
         };
@@ -1067,7 +1064,7 @@ mod tests {
         let ams = alignment_meshes(&meshes, &initial);
 
         let mp = meshes[2].surface_closest_to(&Point3::new(0.0, 0.0, 2.0));
-        let points = vec![MultiMeshAlignPoint::new(2, mp, 1, 1.0)];
+        let points = vec![MeshAlignPoint::new(2, mp, 1, 1.0)];
 
         let problem = MultiMeshProblem::new(&ams, points, 0, &test_opts())?;
         let jac = problem.jacobian().unwrap();
@@ -1104,7 +1101,7 @@ mod tests {
         let ams = alignment_meshes(&meshes, &initial);
 
         let mp = meshes[1].surface_closest_to(&Point3::new(1.0, 1.0, 2.0));
-        let points = vec![MultiMeshAlignPoint::new(1, mp, 1, 1.0)];
+        let points = vec![MeshAlignPoint::new(1, mp, 1, 1.0)];
 
         let problem = MultiMeshProblem::new(&ams, points, 0, &test_opts())?;
         let jac = problem.jacobian().unwrap();
@@ -1127,19 +1124,19 @@ mod tests {
         let ams = alignment_meshes(&meshes, &initial);
         let points = chain_points(&meshes, 1.0);
 
-        let bad_patience = MultiAlignOptions3 {
+        let bad_patience = MultiOptions3 {
             patience: 0,
             ..test_opts()
         };
         assert!(multi_mesh_adjustment_with_points(&ams, points.clone(), 0, &bad_patience).is_err());
 
-        let bad_sigma = MultiAlignOptions3 {
+        let bad_sigma = MultiOptions3 {
             sigma_max: Some(-1.0),
             ..test_opts()
         };
         assert!(multi_mesh_adjustment_with_points(&ams, points.clone(), 0, &bad_sigma).is_err());
 
-        let bad_distance = MultiAlignOptions3 {
+        let bad_distance = MultiOptions3 {
             max_distance: 0.0,
             ..test_opts()
         };
