@@ -160,27 +160,27 @@ impl AlignParams2 {
 }
 
 // ================================================================================================
-// Alignment2
+// Align2
 // ================================================================================================
 
 #[pyclass(from_py_object, module = "engeom.align2")]
 #[derive(Clone, Debug)]
-pub struct Alignment2 {
-    inner: engeom::geom2::Alignment2,
+pub struct Align2 {
+    inner: engeom::geom2::Align2,
 }
 
-impl Alignment2 {
-    pub fn from_inner(inner: engeom::geom2::Alignment2) -> Self {
+impl Align2 {
+    pub fn from_inner(inner: engeom::geom2::Align2) -> Self {
         Self { inner }
     }
 
-    pub fn get_inner(&self) -> &engeom::geom2::Alignment2 {
+    pub fn get_inner(&self) -> &engeom::geom2::Align2 {
         &self.inner
     }
 }
 
 #[pymethods]
-impl Alignment2 {
+impl Align2 {
     /// The full transformation from the test entity's coordinate system to the target's coordinate
     /// system. This is the composite $O * A * L^{-1}$ and is what you typically apply to the test
     /// geometry after alignment completes.
@@ -233,7 +233,7 @@ impl Alignment2 {
     pub fn __repr__(&self) -> String {
         let (mean, std) = self.inner.residual_mean_std_dev();
         format!(
-            "Alignment2(residual_mean={:.6}, residual_std_dev={:.6})",
+            "Align2(residual_mean={:.6}, residual_std_dev={:.6})",
             mean, std
         )
     }
@@ -243,7 +243,7 @@ impl Alignment2 {
 // AlignOutcome2
 // ================================================================================================
 
-/// The full outcome of a 2-D alignment: the `Alignment2` itself, plus a record of how the solves
+/// The full outcome of a 2-D alignment: the `Align2` itself, plus a record of how the solves
 /// which produced it terminated.
 ///
 /// This is only ever returned, never accepted as an argument, so unlike the other classes here it
@@ -265,8 +265,8 @@ impl AlignOutcome2 {
 impl AlignOutcome2 {
     /// The alignment which was produced.
     #[getter]
-    pub fn alignment(&self) -> Alignment2 {
-        Alignment2::from_inner(self.inner.alignment().clone())
+    pub fn alignment(&self) -> Align2 {
+        Align2::from_inner(self.inner.alignment().clone())
     }
 
     /// The quality of the weakest solve that contributed to the result, as `"converged"` or
@@ -315,7 +315,7 @@ impl AlignOutcome2 {
 // MultiAlignOutcome2
 // ================================================================================================
 
-/// The full outcome of a simultaneous alignment of several bodies: one `Alignment2` per body,
+/// The full outcome of a simultaneous alignment of several bodies: one `Align2` per body,
 /// plus a record of how the solves which produced them terminated.
 ///
 /// The solve record is shared rather than per body, because a bundle adjustment is one
@@ -336,16 +336,16 @@ impl MultiAlignOutcome2 {
 impl MultiAlignOutcome2 {
     /// The alignment produced for each body, in the order the bodies were given.
     #[getter]
-    pub fn alignments(&self) -> Vec<Alignment2> {
+    pub fn alignments(&self) -> Vec<Align2> {
         self.inner
             .alignments()
             .iter()
-            .map(|a| Alignment2::from_inner(a.clone()))
+            .map(|a| Align2::from_inner(a.clone()))
             .collect()
     }
 
     /// The alignment produced for one body.
-    pub fn alignment(&self, body: usize) -> PyResult<Alignment2> {
+    pub fn alignment(&self, body: usize) -> PyResult<Align2> {
         if body >= self.inner.len() {
             return Err(PyIndexError::new_err(format!(
                 "body index {} is out of range for {} bodies",
@@ -353,7 +353,7 @@ impl MultiAlignOutcome2 {
                 self.inner.len()
             )));
         }
-        Ok(Alignment2::from_inner(self.inner.alignment(body).clone()))
+        Ok(Align2::from_inner(self.inner.alignment(body).clone()))
     }
 
     /// The number of bodies which took part.

@@ -8,7 +8,7 @@ use crate::geom2::align2::jacobian::{copy_jacobian, point_surf_jacobian2};
 use crate::geom2::align2::{
     AlignOptions2, AlignParams2, AlignSurfMatch2, AlignValues2, SurfaceTarget2,
 };
-use crate::geom2::{AlignOutcome2, Alignment2};
+use crate::geom2::{Align2, AlignOutcome2};
 use crate::na::{Dyn, Matrix, Owned, U1, U3, Vector};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 
@@ -121,7 +121,7 @@ pub fn points_to_surface2(
     }
 
     let c = problem.params.compute_values();
-    let alignment = Alignment2::new(
+    let alignment = Align2::new(
         c.transform,
         c.align,
         problem.params.local,

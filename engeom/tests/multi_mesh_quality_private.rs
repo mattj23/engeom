@@ -2057,7 +2057,7 @@ fn solver_candidates_meet_their_gates() -> Result<()> {
 /// standard deviation.
 ///
 /// These scans carry no per-point uncertainty, so the solver's `inv_sigma` is one throughout and
-/// its normalized residuals are the geometric ones an `Alignment3` reports. That makes this the
+/// its normalized residuals are the geometric ones an `Align3` reports. That makes this the
 /// same number the solver would have computed for itself.
 fn estimated_sigma_max(outcome: &MultiAlignOutcome3) -> f64 {
     const MAD_TO_SIGMA: f64 = 1.4826;

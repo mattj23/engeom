@@ -46,7 +46,7 @@ use crate::geom3::align3::jacobian::{point_surf_jacobian, point_surf_jacobian_re
 use crate::geom3::align3::mesh::{AlignmentMesh, generate_alignment_points, interpolated_stdev};
 use crate::geom3::align3::{AlignValues3, Dof6, GAPParams, MultiAlignParams3};
 use crate::geom3::mesh::MeshSurfPoint;
-use crate::geom3::{Alignment3, MultiAlignOutcome3, Point3, SurfacePoint3};
+use crate::geom3::{Align3, MultiAlignOutcome3, Point3, SurfacePoint3};
 use crate::na::{DMatrix, DVector, Dyn, Matrix, Owned, U1, Vector};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use rayon::prelude::*;
@@ -579,8 +579,8 @@ impl<'a> MultiMeshProblem<'a> {
             .count()
     }
 
-    /// Builds one [`Alignment3`] per mesh, with that mesh's own correspondence residuals.
-    fn alignments(&self) -> Vec<Alignment3> {
+    /// Builds one [`Align3`] per mesh, with that mesh's own correspondence residuals.
+    fn alignments(&self) -> Vec<Align3> {
         let mut grouped = vec![Vec::new(); self.meshes.len()];
         for (i, h) in self.handles.iter().enumerate() {
             grouped[h.mesh_i].push(self.residuals[i]);
@@ -592,7 +592,7 @@ impl<'a> MultiMeshProblem<'a> {
             .zip(grouped)
             .map(|((i, v), residuals)| {
                 let body = self.params.body(i);
-                Alignment3::new(v.transform, v.align, body.local, body.offset, residuals)
+                Align3::new(v.transform, v.align, body.local, body.offset, residuals)
             })
             .collect()
     }

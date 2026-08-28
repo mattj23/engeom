@@ -64,9 +64,7 @@ use crate::common::points::dist;
 use crate::geom2::align2::curve::{CAPParams, CurveSurfPoint, generate_alignment_points};
 use crate::geom2::align2::jacobian::{point_surf_jacobian2, point_surf_jacobian2_rev};
 use crate::geom2::align2::{AlignValues2, Dof3, MultiAlignParams2};
-use crate::geom2::{
-    Alignment2, CurveGroup2, Iso2, MultiAlignOutcome2, Point2, SurfacePoint2, Vector2,
-};
+use crate::geom2::{Align2, CurveGroup2, Iso2, MultiAlignOutcome2, Point2, SurfacePoint2, Vector2};
 use crate::na::{DMatrix, DVector, Dyn, Matrix, Owned, U1, Vector};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use rayon::prelude::*;
@@ -604,8 +602,8 @@ impl<'a> MultiCurveProblem<'a> {
             .count()
     }
 
-    /// Builds one [`Alignment2`] per body, with that body's own correspondence residuals.
-    fn alignments(&self) -> Vec<Alignment2> {
+    /// Builds one [`Align2`] per body, with that body's own correspondence residuals.
+    fn alignments(&self) -> Vec<Align2> {
         let mut grouped = vec![Vec::new(); self.groups.len()];
         for (i, h) in self.handles.iter().enumerate() {
             grouped[h.group_i].push(self.residuals[i]);
@@ -617,7 +615,7 @@ impl<'a> MultiCurveProblem<'a> {
             .zip(grouped)
             .map(|((i, v), residuals)| {
                 let body = self.params.body(i);
-                Alignment2::new(v.transform, v.align, body.local, body.offset, residuals)
+                Align2::new(v.transform, v.align, body.local, body.offset, residuals)
             })
             .collect()
     }

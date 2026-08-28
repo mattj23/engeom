@@ -187,27 +187,27 @@ impl AlignParams3 {
 }
 
 // ================================================================================================
-// Alignment3
+// Align3
 // ================================================================================================
 
 #[pyclass(from_py_object, module = "engeom.align3")]
 #[derive(Clone, Debug)]
-pub struct Alignment3 {
-    inner: engeom::geom3::Alignment3,
+pub struct Align3 {
+    inner: engeom::geom3::Align3,
 }
 
-impl Alignment3 {
-    pub fn from_inner(inner: engeom::geom3::Alignment3) -> Self {
+impl Align3 {
+    pub fn from_inner(inner: engeom::geom3::Align3) -> Self {
         Self { inner }
     }
 
-    pub fn get_inner(&self) -> &engeom::geom3::Alignment3 {
+    pub fn get_inner(&self) -> &engeom::geom3::Align3 {
         &self.inner
     }
 }
 
 #[pymethods]
-impl Alignment3 {
+impl Align3 {
     /// The full transformation from the test entity's coordinate system to the target's coordinate
     /// system. This is the composite $O * A * L^{-1}$ and is what you typically apply to the test
     /// geometry after alignment completes.
@@ -260,7 +260,7 @@ impl Alignment3 {
     pub fn __repr__(&self) -> String {
         let (mean, std) = self.inner.residual_mean_std_dev();
         format!(
-            "Alignment3(residual_mean={:.6}, residual_std_dev={:.6})",
+            "Align3(residual_mean={:.6}, residual_std_dev={:.6})",
             mean, std
         )
     }
@@ -270,7 +270,7 @@ impl Alignment3 {
 // AlignOutcome3
 // ================================================================================================
 
-/// The full outcome of a 3-D alignment: the `Alignment3` itself, plus a record of how the solves
+/// The full outcome of a 3-D alignment: the `Align3` itself, plus a record of how the solves
 /// which produced it terminated.
 ///
 /// This is only ever returned, never accepted as an argument, so unlike the other classes here it
@@ -292,8 +292,8 @@ impl AlignOutcome3 {
 impl AlignOutcome3 {
     /// The alignment which was produced.
     #[getter]
-    pub fn alignment(&self) -> Alignment3 {
-        Alignment3::from_inner(self.inner.alignment().clone())
+    pub fn alignment(&self) -> Align3 {
+        Align3::from_inner(self.inner.alignment().clone())
     }
 
     /// The quality of the weakest solve that contributed to the result, as `"converged"` or

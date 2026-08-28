@@ -87,7 +87,7 @@ class AlignParams2:
         ...
 
 
-class Alignment2:
+class Align2:
     """The transformation produced by a 2-D alignment, together with its residuals."""
 
     @property
@@ -135,12 +135,12 @@ class Alignment2:
 
 class AlignOutcome2:
     """
-    The full outcome of a 2-D alignment: the `Alignment2` itself, plus a record of how the solves
+    The full outcome of a 2-D alignment: the `Align2` itself, plus a record of how the solves
     which produced it terminated.
     """
 
     @property
-    def alignment(self) -> Alignment2:
+    def alignment(self) -> Align2:
         """The alignment which was produced."""
         ...
 
@@ -175,12 +175,12 @@ class AlignOutcome2:
 
 class MultiAlignOutcome2:
     """
-    The full outcome of a simultaneous alignment of several bodies: one `Alignment2` per body,
+    The full outcome of a simultaneous alignment of several bodies: one `Align2` per body,
     plus a shared record of how the solves which produced them terminated.
     """
 
     @property
-    def alignments(self) -> list[Alignment2]:
+    def alignments(self) -> list[Align2]:
         """The alignment produced for each body, in the order the bodies were given."""
         ...
 
@@ -188,7 +188,7 @@ class MultiAlignOutcome2:
         """The number of bodies which took part."""
         ...
 
-    def alignment(self, body: int) -> Alignment2:
+    def alignment(self, body: int) -> Align2:
         """
         The alignment produced for one body.
 

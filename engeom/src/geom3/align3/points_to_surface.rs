@@ -6,7 +6,7 @@ use crate::geom3::align3::jacobian::{copy_jacobian, point_surf_jacobian};
 use crate::geom3::align3::{
     AlignOptions3, AlignParams3, AlignSurfMatch3, AlignValues3, SurfaceTarget3,
 };
-use crate::geom3::{AlignOutcome3, Alignment3};
+use crate::geom3::{Align3, AlignOutcome3};
 use crate::na::{Dyn, Matrix, Owned, U1, U6, Vector};
 use crate::{Point3, Result};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
@@ -123,7 +123,7 @@ pub fn points_to_surface3(
     }
 
     let c = problem.params.compute_values();
-    let alignment = Alignment3::new(
+    let alignment = Align3::new(
         c.transform,
         c.align,
         problem.params.local,
