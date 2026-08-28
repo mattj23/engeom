@@ -1,3 +1,4 @@
+pub mod information;
 pub mod multi_params;
 
 use crate::common::vec_f64::mean_and_stdev;
