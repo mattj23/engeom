@@ -23,7 +23,6 @@ required-features = ["ply"]
 
 [features]
 stl = ["dep:stl_io"]
-three_d = ["dep:three-d"]
 ply = ["dep:ply-rs-bw"]
 private_tests = []
 
@@ -39,7 +38,6 @@ rand_distr = {workspace = true }
 tol-compress = { version = "0.2", path = "../tol-compress" }
 
 alum = { version = "0.7.1", default-features = false, features = ["decimate", "subdiv"] }
-three-d = { version = "0.18.2", optional = true }
 serde = { version = "1.0.219", features = ["derive"] }
 bitvec = {version = "1.0.1", features = ["serde"]}
 

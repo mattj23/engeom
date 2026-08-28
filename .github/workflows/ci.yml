@@ -85,11 +85,6 @@ jobs:
       - run: cargo check -p engeom --features stl
       - run: cargo check -p engeom --features ply
       - run: cargo check -p engeom --features stl,ply
-      - name: Check the three_d viewer feature
-        # The viewer is a debugging aid, not part of the shipped surface, and it drags in a large
-        # graphics stack. Surface its bit-rot without letting it block a merge.
-        continue-on-error: true
-        run: cargo check -p engeom --features three_d
 
   python:
     name: Python bindings

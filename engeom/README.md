@@ -40,7 +40,6 @@ Types that exist in both two and three dimensions carry a `2` or `3` suffix (`Ci
 |-----------------|----------------------------------------------------------------|
 | `stl`           | STL mesh import and export                                     |
 | `ply`           | PLY mesh and point cloud import and export                     |
-| `three_d`       | An interactive geometry viewer built on `three-d`, for debugging |
 | `private_tests` | Gates integration tests that depend on non-public test assets  |
 
 ## Python bindings

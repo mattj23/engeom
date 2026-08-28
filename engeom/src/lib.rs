@@ -14,9 +14,6 @@ pub mod raster2;
 pub mod raster3;
 pub mod sensors;
 pub mod stats;
-
-#[cfg(feature = "three_d")]
-pub mod td;
 pub mod utility;
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
@@ -38,10 +35,6 @@ pub use serde_json;
 // matching versions themselves. Writing a tcmesh renumbers vertices, and that is the module which
 // says how, so anyone holding per-vertex data outside the file needs it.
 pub use tol_compress;
-
-// Re-export the `three_d` crate if the feature is enabled
-#[cfg(feature = "three_d")]
-pub use three_d;
 
 // Common one-dimensional functions
 pub use func1::{Func1, Gaussian1, Line1, Polynomial, Series1};
