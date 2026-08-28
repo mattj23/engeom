@@ -189,7 +189,7 @@ impl MultiAlignOptions2 {
 /// `group_i` and `ref_i` are body indices; which member curve *within* each body is involved is
 /// carried by the sample point's own `member` field.
 #[derive(Clone, Debug)]
-pub struct MulCurveAlignPoint {
+pub struct MultiCurveAlignPoint {
     /// The index of the body this point was sampled from.
     pub group_i: usize,
 
@@ -203,7 +203,7 @@ pub struct MulCurveAlignPoint {
     pub weight: f64,
 }
 
-impl MulCurveAlignPoint {
+impl MultiCurveAlignPoint {
     pub fn new(group_i: usize, cp: CurveSurfPoint, ref_i: usize, weight: f64) -> Self {
         Self {
             group_i,
@@ -241,7 +241,7 @@ impl MulCurveAlignPoint {
 pub fn multi_curve_adjustment_with_points(
     groups: &[CurveGroup2],
     initial: Option<&[Iso2]>,
-    points: Vec<MulCurveAlignPoint>,
+    points: Vec<MultiCurveAlignPoint>,
     static_i: usize,
     opts: &MultiAlignOptions2,
 ) -> Result<MultiAlignOutcome2> {
@@ -324,7 +324,7 @@ pub fn multi_curve_adjustment(
 
             samples
                 .into_iter()
-                .map(|cp| MulCurveAlignPoint::new(group_i, cp, ref_i, 1.0))
+                .map(|cp| MultiCurveAlignPoint::new(group_i, cp, ref_i, 1.0))
                 .collect::<Vec<_>>()
         })
         .flatten()
@@ -339,7 +339,7 @@ pub fn multi_curve_adjustment(
 
 fn validate(
     groups: &[CurveGroup2],
-    points: &[MulCurveAlignPoint],
+    points: &[MultiCurveAlignPoint],
     static_i: usize,
     opts: &MultiAlignOptions2,
 ) -> Result<()> {
@@ -462,7 +462,7 @@ struct Moved {
 
 struct MultiCurveProblem<'a> {
     groups: &'a [CurveGroup2],
-    handles: Vec<MulCurveAlignPoint>,
+    handles: Vec<MultiCurveAlignPoint>,
     params: MultiAlignParams2,
 
     /// The alignment values of every body for the current parameters, cached so the residual and
@@ -493,7 +493,7 @@ impl<'a> MultiCurveProblem<'a> {
     fn new(
         groups: &'a [CurveGroup2],
         poses: Vec<Iso2>,
-        handles: Vec<MulCurveAlignPoint>,
+        handles: Vec<MultiCurveAlignPoint>,
         static_i: usize,
         opts: &MultiAlignOptions2,
     ) -> Result<Self> {
@@ -764,7 +764,7 @@ mod tests {
     /// Correspondences from every curve onto the one before it, sampled at a uniform arc length
     /// spacing. The half-spacing offset keeps samples off the corners, where the normal of a
     /// polyline is ambiguous.
-    fn chain_points(curves: &[Curve2], spacing: f64) -> Vec<MulCurveAlignPoint> {
+    fn chain_points(curves: &[Curve2], spacing: f64) -> Vec<MultiCurveAlignPoint> {
         let mut points = Vec::new();
         for (i, curve) in curves.iter().enumerate().skip(1) {
             let n = (curve.length() / spacing).floor() as usize;
@@ -772,7 +772,7 @@ mod tests {
                 let l = (k as f64 + 0.5) * spacing;
                 if let Some(station) = curve.at_length(l) {
                     let cp = CurveSurfPoint::from_station(&station, 0);
-                    points.push(MulCurveAlignPoint::new(i, cp, i - 1, 1.0));
+                    points.push(MultiCurveAlignPoint::new(i, cp, i - 1, 1.0));
                 }
             }
         }
@@ -1141,7 +1141,7 @@ mod tests {
             refinement_steps: 0,
             ..test_opts()
         };
-        let points = vec![MulCurveAlignPoint::new(1, cp, 0, 1.0)];
+        let points = vec![MultiCurveAlignPoint::new(1, cp, 0, 1.0)];
         let problem = MultiCurveProblem::new(&groups, initial.to_vec(), points, 0, &opts)?;
 
         assert_eq!(problem.target_weights[0], 0.0);
@@ -1180,7 +1180,7 @@ mod tests {
         for body in [1usize, 2] {
             for l in probes {
                 let cp = CurveSurfPoint::from_station(&curves[body].at_length(l).unwrap(), 0);
-                points.push(MulCurveAlignPoint::new(body, cp, body - 1, 1.0));
+                points.push(MultiCurveAlignPoint::new(body, cp, body - 1, 1.0));
             }
         }
 
@@ -1233,7 +1233,7 @@ mod tests {
         let groups = groups_of_one(&curves);
 
         let cp = CurveSurfPoint::from_station(&curves[2].at_length(5.0).unwrap(), 0);
-        let points = vec![MulCurveAlignPoint::new(2, cp, 1, 1.0)];
+        let points = vec![MultiCurveAlignPoint::new(2, cp, 1, 1.0)];
 
         let problem = MultiCurveProblem::new(&groups, initial.to_vec(), points, 0, &test_opts())?;
         let jac = problem.jacobian().unwrap();
@@ -1270,7 +1270,7 @@ mod tests {
         let groups = groups_of_one(&curves);
 
         let cp = CurveSurfPoint::from_station(&curves[1].at_length(5.0).unwrap(), 0);
-        let points = vec![MulCurveAlignPoint::new(1, cp, 1, 1.0)];
+        let points = vec![MultiCurveAlignPoint::new(1, cp, 1, 1.0)];
 
         let problem = MultiCurveProblem::new(&groups, initial.to_vec(), points, 0, &test_opts())?;
         let jac = problem.jacobian().unwrap();

@@ -23,7 +23,7 @@ use engeom::geom3::XyzQuat;
 use engeom::geom3::align3::jacobian::point_surf_jacobian;
 use engeom::geom3::align3::{
     AlignInformation3, AlignOptions3, AlignOrigin3, AlignParams3, AlignStorage3, AlignValues3,
-    AlignmentMesh, Dof6, GAPParams, MulMeshAlignPoint, MultiAlignOptions3,
+    AlignmentMesh, Dof6, GAPParams, MultiAlignOptions3, MultiMeshAlignPoint,
     generate_alignment_points, multi_mesh_adjustment, multi_mesh_adjustment_with_points,
     points_to_surface3,
 };
@@ -2262,7 +2262,7 @@ fn build_correspondences(
     scans: &[Mesh3],
     start: &[Iso3],
     sample: &GAPParams,
-) -> Vec<MulMeshAlignPoint> {
+) -> Vec<MultiMeshAlignPoint> {
     let mut pairs = Vec::new();
     for i in 0..scans.len() {
         for j in (i + 1)..scans.len() {
@@ -2276,7 +2276,7 @@ fn build_correspondences(
             let t = start[ref_i].inv_mul(&start[mesh_i]);
             generate_alignment_points(&scans[mesh_i], &scans[ref_i], &t, sample)
                 .into_iter()
-                .map(|mp| MulMeshAlignPoint::new(mesh_i, mp, ref_i, 1.0))
+                .map(|mp| MultiMeshAlignPoint::new(mesh_i, mp, ref_i, 1.0))
                 .collect::<Vec<_>>()
         })
         .collect()
@@ -2284,7 +2284,7 @@ fn build_correspondences(
 
 /// The jacobian row and world-frame correspondence for one alignment point at a given set of poses.
 fn forward_row(
-    point: &MulMeshAlignPoint,
+    point: &MultiMeshAlignPoint,
     scans: &[Mesh3],
     start: &[Iso3],
     values: &AlignValues3,
@@ -2312,11 +2312,11 @@ fn forward_row(
 /// `AlignInformation3` is not built for. Whether the approximation costs anything is exactly what
 /// scoring the pruned result is meant to reveal.
 fn prune_d_optimal(
-    points: &[MulMeshAlignPoint],
+    points: &[MultiMeshAlignPoint],
     scans: &[Mesh3],
     start: &[Iso3],
     keep_per_body: usize,
-) -> Result<Vec<MulMeshAlignPoint>> {
+) -> Result<Vec<MultiMeshAlignPoint>> {
     let mut by_body = vec![Vec::new(); scans.len()];
     for (k, p) in points.iter().enumerate() {
         by_body[p.mesh_i].push(k);

@@ -13,7 +13,7 @@ from engeom.align2 import (
     multi_curve_adjustment,
     points_to_curve,
     points_to_group,
-    points_to_point_set,
+    points_to_cloud,
 )
 from engeom.geom2 import Curve2, CurveGroup2, Iso2
 
@@ -166,12 +166,12 @@ class TestPointsToPointSet:
         )
 
         disturb = Iso2(0.1, -0.08, 0.015)
-        outcome = points_to_point_set(
+        outcome = points_to_cloud(
             moved(target_points, disturb),
             target_points,
             target_normals,
-            1.0,
             AlignParams2(),
+            1.0,
         )
 
         composed = outcome.alignment.full_transform @ disturb
@@ -184,14 +184,14 @@ class TestPointsToPointSet:
         normals = numpy.array([[0.0, 1.0], [0.0, 1.0]], dtype=numpy.float64)
 
         with pytest.raises(ValueError):
-            points_to_point_set(pts, pts, normals, 0.0, AlignParams2())
+            points_to_cloud(pts, pts, normals, AlignParams2(), 0.0)
 
     def test_mismatched_normals_are_rejected(self):
         pts = numpy.array([[0.0, 0.0], [1.0, 0.0]], dtype=numpy.float64)
         normals = numpy.array([[0.0, 1.0]], dtype=numpy.float64)
 
         with pytest.raises(ValueError):
-            points_to_point_set(pts, pts, normals, 1.0, AlignParams2())
+            points_to_cloud(pts, pts, normals, AlignParams2(), 1.0)
 
 
 class TestMultiCurveAdjustment:
@@ -230,5 +230,5 @@ class TestMultiCurveAdjustment:
         outcome = multi_curve_adjustment(groups, 20.0, sample_spacing=0.5)
 
         assert outcome.alignment(0) is not None
-        with pytest.raises(ValueError):
+        with pytest.raises(IndexError):
             outcome.alignment(5)

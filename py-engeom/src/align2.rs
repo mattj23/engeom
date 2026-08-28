@@ -4,7 +4,7 @@ use crate::solve_report::{halt_str, quality_str, termination_str};
 use engeom::geom2::align2::{AlignOrigin2, Dof3 as InnerDof3};
 use numpy::ndarray::Array1;
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray2};
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyIndexError, PyValueError};
 use pyo3::{Bound, PyRef, PyResult, Python, pyclass, pyfunction, pymethods};
 
 // ================================================================================================
@@ -347,7 +347,7 @@ impl MultiAlignOutcome2 {
     /// The alignment produced for one body.
     pub fn alignment(&self, body: usize) -> PyResult<Alignment2> {
         if body >= self.inner.len() {
-            return Err(PyValueError::new_err(format!(
+            return Err(PyIndexError::new_err(format!(
                 "body index {} is out of range for {} bodies",
                 body,
                 self.inner.len()
@@ -534,12 +534,12 @@ pub fn points_to_group(
 /// :param target_points: an `(m, 2)` array of the stationary measured positions.
 /// :param target_normals: an `(m, 2)` array of normals, one per target point. These supply both
 ///     the tangent line a match lands on and the sign of the residual.
+/// :param params: an `AlignParams2` describing how the alignment is parameterized.
 /// :param max_extrapolation: how far *along the surface* a query may sit from its nearest target
 ///     point and still count as on-surface. This is not a total distance: the normal component is
 ///     excluded, because that component is the residual the alignment exists to remove. Set it at
 ///     a small multiple of the target's sample spacing.
 /// :param target_sigma: optional per-target-point standard deviations, one per target point.
-/// :param params: an `AlignParams2` describing how the alignment is parameterized.
 /// :param ignore_off_target: weight points at 0.0 when they sit beyond `max_extrapolation`.
 /// :param refinement_steps: rounds of robust reweighting after the initial solve.
 /// :param sigma_max: the MAGSAC++ upper noise bound. Estimated from the data when `None`.
@@ -548,16 +548,16 @@ pub fn points_to_group(
 /// :param patience: the Levenberg-Marquardt evaluation budget, as a multiplier on the parameter
 ///     count.
 #[pyfunction]
-#[pyo3(signature = (points, target_points, target_normals, max_extrapolation, params,
+#[pyo3(signature = (points, target_points, target_normals, params, max_extrapolation,
                     target_sigma=None, ignore_off_target=false, refinement_steps=4,
                     sigma_max=None, point_sigma=None, patience=100))]
 #[allow(clippy::too_many_arguments)]
-pub fn points_to_point_set(
+pub fn points_to_cloud(
     points: PyReadonlyArray2<'_, f64>,
     target_points: PyReadonlyArray2<'_, f64>,
     target_normals: PyReadonlyArray2<'_, f64>,
-    max_extrapolation: f64,
     params: AlignParams2,
+    max_extrapolation: f64,
     target_sigma: Option<Vec<f64>>,
     ignore_off_target: bool,
     refinement_steps: usize,

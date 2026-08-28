@@ -157,7 +157,7 @@ impl MultiAlignOptions3 {
 /// A single correspondence in a multi-mesh adjustment: a sample point on one mesh which is being
 /// matched against the surface of another.
 #[derive(Clone, Debug)]
-pub struct MulMeshAlignPoint {
+pub struct MultiMeshAlignPoint {
     /// The index of the mesh this point was sampled from.
     pub mesh_i: usize,
 
@@ -171,7 +171,7 @@ pub struct MulMeshAlignPoint {
     pub weight: f64,
 }
 
-impl MulMeshAlignPoint {
+impl MultiMeshAlignPoint {
     pub fn new(mesh_i: usize, mp: MeshSurfPoint, ref_i: usize, weight: f64) -> Self {
         Self {
             mesh_i,
@@ -199,7 +199,7 @@ impl MulMeshAlignPoint {
 /// its budget is reported on the outcome and its alignments kept.
 pub fn multi_mesh_adjustment_with_points(
     meshes: &[AlignmentMesh],
-    points: Vec<MulMeshAlignPoint>,
+    points: Vec<MultiMeshAlignPoint>,
     static_i: usize,
     opts: &MultiAlignOptions3,
 ) -> Result<MultiAlignOutcome3> {
@@ -245,7 +245,7 @@ pub fn multi_mesh_adjustment(
                     let weight = meshes[mesh_i].weights.map_or(1.0, |providers| {
                         providers.iter().map(|p| p.weight(&mp)).product()
                     });
-                    MulMeshAlignPoint::new(mesh_i, mp, ref_i, weight)
+                    MultiMeshAlignPoint::new(mesh_i, mp, ref_i, weight)
                 })
                 .collect::<Vec<_>>()
         })
@@ -261,7 +261,7 @@ pub fn multi_mesh_adjustment(
 
 fn validate(
     meshes: &[AlignmentMesh],
-    points: &[MulMeshAlignPoint],
+    points: &[MultiMeshAlignPoint],
     static_i: usize,
     opts: &MultiAlignOptions3,
 ) -> Result<()> {
@@ -387,7 +387,7 @@ struct Moved {
 
 struct MultiMeshProblem<'a> {
     meshes: &'a [AlignmentMesh<'a>],
-    handles: Vec<MulMeshAlignPoint>,
+    handles: Vec<MultiMeshAlignPoint>,
     params: MultiAlignParams3,
 
     /// The alignment values of every body for the current parameters, cached so the residual and
@@ -429,7 +429,7 @@ struct MultiMeshProblem<'a> {
 impl<'a> MultiMeshProblem<'a> {
     fn new(
         meshes: &'a [AlignmentMesh],
-        handles: Vec<MulMeshAlignPoint>,
+        handles: Vec<MultiMeshAlignPoint>,
         static_i: usize,
         opts: &MultiAlignOptions3,
     ) -> Result<Self> {
@@ -732,11 +732,11 @@ mod tests {
     /// Correspondences from every mesh onto the one before it, sampled directly from the mesh
     /// surface. This bypasses `generate_alignment_points` so the tests exercise the solver rather
     /// than the candidate filtering.
-    fn chain_points(meshes: &[Mesh3], spacing: f64) -> Vec<MulMeshAlignPoint> {
+    fn chain_points(meshes: &[Mesh3], spacing: f64) -> Vec<MultiMeshAlignPoint> {
         let mut points = Vec::new();
         for (i, mesh) in meshes.iter().enumerate().skip(1) {
             for mp in mesh.sample_poisson(spacing, None) {
-                points.push(MulMeshAlignPoint::new(i, mp, i - 1, 1.0));
+                points.push(MultiMeshAlignPoint::new(i, mp, i - 1, 1.0));
             }
         }
         points
@@ -1055,7 +1055,7 @@ mod tests {
                 for j in -1..=1 {
                     let probe = Point3::new(i as f64 * 1.5, j as f64 * 1.5, 2.0);
                     let mp = meshes[body].surface_closest_to(&probe);
-                    points.push(MulMeshAlignPoint::new(body, mp, body - 1, 1.0));
+                    points.push(MultiMeshAlignPoint::new(body, mp, body - 1, 1.0));
                 }
             }
         }
@@ -1105,7 +1105,7 @@ mod tests {
         let ams = alignment_meshes(&meshes, &initial);
 
         let mp = meshes[2].surface_closest_to(&Point3::new(0.0, 0.0, 2.0));
-        let points = vec![MulMeshAlignPoint::new(2, mp, 1, 1.0)];
+        let points = vec![MultiMeshAlignPoint::new(2, mp, 1, 1.0)];
 
         let problem = MultiMeshProblem::new(&ams, points, 0, &test_opts())?;
         let jac = problem.jacobian().unwrap();
@@ -1142,7 +1142,7 @@ mod tests {
         let ams = alignment_meshes(&meshes, &initial);
 
         let mp = meshes[1].surface_closest_to(&Point3::new(1.0, 1.0, 2.0));
-        let points = vec![MulMeshAlignPoint::new(1, mp, 1, 1.0)];
+        let points = vec![MultiMeshAlignPoint::new(1, mp, 1, 1.0)];
 
         let problem = MultiMeshProblem::new(&ams, points, 0, &test_opts())?;
         let jac = problem.jacobian().unwrap();

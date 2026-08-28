@@ -76,7 +76,7 @@ pub use self::cloud::CloudTarget2;
 pub use self::curve::*;
 pub use self::information::*;
 pub use self::multi_curve::{
-    MulCurveAlignPoint, MultiAlignOptions2, multi_curve_adjustment,
+    MultiAlignOptions2, MultiCurveAlignPoint, multi_curve_adjustment,
     multi_curve_adjustment_with_points,
 };
 pub use self::multi_params::MultiAlignParams2;

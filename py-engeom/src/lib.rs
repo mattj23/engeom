@@ -139,7 +139,7 @@ fn register_align2_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_class::<align2::MultiAlignOutcome2>()?;
     child.add_function(wrap_pyfunction!(align2::points_to_curve, &child)?)?;
     child.add_function(wrap_pyfunction!(align2::points_to_group, &child)?)?;
-    child.add_function(wrap_pyfunction!(align2::points_to_point_set, &child)?)?;
+    child.add_function(wrap_pyfunction!(align2::points_to_cloud, &child)?)?;
     child.add_function(wrap_pyfunction!(align2::multi_curve_adjustment, &child)?)?;
     parent_module.add_submodule(&child)?;
     Ok(())

@@ -185,7 +185,11 @@ class MultiAlignOutcome2:
         ...
 
     def alignment(self, body: int) -> Alignment2:
-        """The alignment produced for one body."""
+        """
+        The alignment produced for one body.
+
+        :raises IndexError: if `body` is out of range for the number of bodies.
+        """
         ...
 
     @property
@@ -273,12 +277,12 @@ def points_to_group(
     ...
 
 
-def points_to_point_set(
+def points_to_cloud(
     points: numpy.ndarray[tuple[int, int], numpy.dtype[numpy.float64]],
     target_points: numpy.ndarray[tuple[int, int], numpy.dtype[numpy.float64]],
     target_normals: numpy.ndarray[tuple[int, int], numpy.dtype[numpy.float64]],
-    max_extrapolation: float,
     params: AlignParams2,
+    max_extrapolation: float,
     target_sigma: list[float] | None = None,
     ignore_off_target: bool = False,
     refinement_steps: int = 4,
@@ -296,11 +300,11 @@ def points_to_point_set(
     :param points: an `(n, 2)` array of the points to align, in their own coordinate system.
     :param target_points: an `(m, 2)` array of the stationary measured positions.
     :param target_normals: an `(m, 2)` array of normals, one per target point.
+    :param params: an `AlignParams2` describing how the alignment is parameterized.
     :param max_extrapolation: how far *along the surface* a query may sit from its nearest target
         point and still count as on-surface. The normal component is excluded, because that
         component is the residual the alignment exists to remove. Set it at a small multiple of
         the target's sample spacing.
-    :param params: an `AlignParams2` describing how the alignment is parameterized.
     :param target_sigma: optional per-target-point standard deviations.
     :param ignore_off_target: weight points at 0.0 when they sit beyond `max_extrapolation`.
     :param refinement_steps: rounds of robust reweighting after the initial solve.

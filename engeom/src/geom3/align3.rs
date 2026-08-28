@@ -78,7 +78,8 @@ pub use self::cloud::CloudTarget3;
 pub use self::information::*;
 pub use self::mesh::*;
 pub use self::multi_mesh::{
-    MulMeshAlignPoint, MultiAlignOptions3, multi_mesh_adjustment, multi_mesh_adjustment_with_points,
+    MultiAlignOptions3, MultiMeshAlignPoint, multi_mesh_adjustment,
+    multi_mesh_adjustment_with_points,
 };
 pub use self::multi_params::MultiAlignParams3;
 pub use self::options::*;
