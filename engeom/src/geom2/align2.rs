@@ -56,6 +56,7 @@
 //! change to either should be considered for the other, and the file layout is kept parallel so
 //! that comparison is easy to make.
 
+mod cloud;
 mod curve;
 mod information;
 pub mod jacobian;
@@ -64,7 +65,6 @@ mod multi_params;
 mod options;
 mod params;
 mod points_to_surface;
-mod pointset;
 mod target;
 
 use parry2d_f64::na::Vector3;
@@ -72,6 +72,7 @@ use parry2d_f64::na::Vector3;
 /// The storage for the three parameters of a 2D alignment problem, in the order tx, ty, rz.
 pub type AlignStorage2 = Vector3<f64>;
 
+pub use self::cloud::CloudTarget2;
 pub use self::curve::*;
 pub use self::information::*;
 pub use self::multi_curve::{
@@ -82,7 +83,6 @@ pub use self::multi_params::MultiAlignParams2;
 pub use self::options::*;
 pub use self::params::*;
 pub use self::points_to_surface::points_to_surface2;
-pub use self::pointset::PointSetTarget2;
 pub use self::target::*;
 
 /// A struct that handles constraints on degrees of freedom in R^2 space. Each dimension is

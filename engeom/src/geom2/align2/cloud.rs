@@ -27,11 +27,11 @@
 //! surface at all, because the closest point slides along to follow it. Only the normal component
 //! contributes.
 //!
-//! **This is not specific to a point set target.** A curve match landing inside a segment is the
+//! **This is not specific to this target.** A curve match landing inside a segment is the
 //! perpendicular distance to that segment's line, which is just as one-dimensional. The residual
 //! only regains a dimension where the projection clamps:
 //!
-//! | match lands | `Curve2` | `PointSetTarget2` |
+//! | match lands | `Curve2` | `CloudTarget2` |
 //! |---|---|---|
 //! | segment interior | 1-D, point to line | 1-D |
 //! | vertex, or past an open end | 2-D, point to point | 1-D, line extrapolated |
@@ -58,7 +58,7 @@ use crate::{Result, UnitVec2};
 ///
 /// See the module documentation for why the match is a projection onto the tangent line rather
 /// than the nearest point itself.
-pub struct PointSetTarget2<'a> {
+pub struct CloudTarget2<'a> {
     index: KdTree2,
 
     points: &'a [Point2],
@@ -71,7 +71,7 @@ pub struct PointSetTarget2<'a> {
     max_extrapolation: f64,
 }
 
-impl<'a> PointSetTarget2<'a> {
+impl<'a> CloudTarget2<'a> {
     /// Build an alignment target over a set of points which carry per-point normals.
     ///
     /// # Arguments
@@ -156,7 +156,7 @@ impl<'a> PointSetTarget2<'a> {
     }
 }
 
-impl SurfaceTarget2 for PointSetTarget2<'_> {
+impl SurfaceTarget2 for CloudTarget2<'_> {
     fn find_align_match(&self, p: &Point2) -> AlignSurfMatch2 {
         let (i, distance) = self.index.nearest_one(p);
 
@@ -200,20 +200,20 @@ mod tests {
     #[test]
     fn a_nonsense_extrapolation_bound_is_rejected() {
         let (points, normals) = flat_run();
-        assert!(PointSetTarget2::try_new(&points, &normals, None, 0.0).is_err());
-        assert!(PointSetTarget2::try_new(&points, &normals, None, -1.0).is_err());
-        assert!(PointSetTarget2::try_new(&points, &normals, None, f64::NAN).is_err());
+        assert!(CloudTarget2::try_new(&points, &normals, None, 0.0).is_err());
+        assert!(CloudTarget2::try_new(&points, &normals, None, -1.0).is_err());
+        assert!(CloudTarget2::try_new(&points, &normals, None, f64::NAN).is_err());
     }
 
     #[test]
     fn mismatched_or_empty_inputs_are_rejected() {
         let (points, normals) = flat_run();
 
-        assert!(PointSetTarget2::try_new(&[], &[], None, 1.0).is_err());
-        assert!(PointSetTarget2::try_new(&points, &normals[..3], None, 1.0).is_err());
+        assert!(CloudTarget2::try_new(&[], &[], None, 1.0).is_err());
+        assert!(CloudTarget2::try_new(&points, &normals[..3], None, 1.0).is_err());
 
         let short = vec![0.1; 3];
-        assert!(PointSetTarget2::try_new(&points, &normals, Some(&short), 1.0).is_err());
+        assert!(CloudTarget2::try_new(&points, &normals, Some(&short), 1.0).is_err());
     }
 
     #[test]
@@ -222,7 +222,7 @@ mod tests {
         // would report a match half a unit to the side; the tangent line projection puts it
         // directly below the query, which is what removes the sampling floor.
         let (points, normals) = flat_run();
-        let target = PointSetTarget2::try_new(&points, &normals, None, 1.0).unwrap();
+        let target = CloudTarget2::try_new(&points, &normals, None, 1.0).unwrap();
 
         let query = Point2::new(0.5, 2.0);
         let m = target.find_align_match(&query);
@@ -235,7 +235,7 @@ mod tests {
     #[test]
     fn the_gate_is_on_along_surface_distance_not_total_distance() {
         let (points, normals) = flat_run();
-        let target = PointSetTarget2::try_new(&points, &normals, None, 1.0).unwrap();
+        let target = CloudTarget2::try_new(&points, &normals, None, 1.0).unwrap();
 
         // Far away along the normal, but directly above a sample. This is the case a coarse
         // alignment has to be able to see, so it must not be gated out.
@@ -251,7 +251,7 @@ mod tests {
     fn the_target_reports_its_own_uncertainty() {
         let (points, normals) = flat_run();
         let stdev: Vec<f64> = (0..points.len()).map(|i| 0.01 * (i + 1) as f64).collect();
-        let target = PointSetTarget2::try_new(&points, &normals, Some(&stdev), 1.0).unwrap();
+        let target = CloudTarget2::try_new(&points, &normals, Some(&stdev), 1.0).unwrap();
 
         // Nearest to the sample at x = -5, which is index 0.
         let m = target.find_align_match(&Point2::new(-5.0, 1.0));
@@ -317,7 +317,7 @@ mod tests {
         let opts = AlignOptions2::default();
         let params = || AlignParams2::from_origin(None);
 
-        let projected = PointSetTarget2::try_new(&sampled, &normals, None, 2.0).unwrap();
+        let projected = CloudTarget2::try_new(&sampled, &normals, None, 2.0).unwrap();
         let nearest = NearestSample {
             points: &sampled,
             normals: &normals,
@@ -372,7 +372,7 @@ mod tests {
         let sampled: Vec<Point2> = stations.iter().map(|s| s.point()).collect();
         let normals: Vec<UnitVec2> = stations.iter().map(|s| s.normal()).collect();
 
-        let target = PointSetTarget2::try_new(&sampled, &normals, None, 1.0).unwrap();
+        let target = CloudTarget2::try_new(&sampled, &normals, None, 1.0).unwrap();
 
         let disturb = Iso2::new(Vector2::new(0.15, -0.1), 0.02);
         let moved: Vec<Point2> = sampled.iter().map(|p| disturb * p).collect();

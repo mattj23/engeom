@@ -574,7 +574,7 @@ pub fn points_to_point_set(
         .map(engeom::UnitVec2::new_normalize)
         .collect();
 
-    let target = engeom::geom2::align2::PointSetTarget2::try_new(
+    let target = engeom::geom2::align2::CloudTarget2::try_new(
         &target_points,
         &normals,
         target_sigma.as_deref(),
