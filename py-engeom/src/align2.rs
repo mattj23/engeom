@@ -1,11 +1,11 @@
-use crate::conversions::array_to_points2;
+use crate::conversions::{array_to_points2, array_to_unit_vectors2};
 use crate::geom2::{Curve2, CurveGroup2, Iso2, Point2};
 use crate::solve_report::{halt_str, quality_str, termination_str};
 use engeom::geom2::align2::{AlignOrigin2, Dof3 as InnerDof3};
 use numpy::ndarray::Array1;
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray2};
 use pyo3::exceptions::{PyIndexError, PyValueError};
-use pyo3::{Bound, PyRef, PyResult, Python, pyclass, pyfunction, pymethods};
+use pyo3::{Bound, PyResult, Python, pyclass, pyfunction, pymethods};
 
 // ================================================================================================
 // Dof3
@@ -422,6 +422,33 @@ fn single_opts(
     }
 }
 
+/// The shared tail of the single-body alignment functions: convert the points, build the
+/// options, run the solve, and map the error.
+#[allow(clippy::too_many_arguments)]
+fn points_to_target(
+    points: PyReadonlyArray2<'_, f64>,
+    target: &impl engeom::geom2::align2::SurfaceTarget2,
+    params: &AlignParams2,
+    ignore_off_target: bool,
+    refinement_steps: usize,
+    sigma_max: Option<f64>,
+    point_sigma: Option<Vec<f64>>,
+    patience: usize,
+) -> PyResult<AlignOutcome2> {
+    let points = array_to_points2(&points.as_array())?;
+    let opts = single_opts(
+        ignore_off_target,
+        refinement_steps,
+        sigma_max,
+        point_sigma.as_deref(),
+        patience,
+    );
+
+    engeom::geom2::align2::points_to_surface2(&points, target, params.get_inner().clone(), &opts)
+        .map(AlignOutcome2::from_inner)
+        .map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
 /// Align a set of 2-D points to a target by repeatedly projecting them onto their closest position
 /// on it as the solver moves them.
 ///
@@ -456,23 +483,16 @@ pub fn points_to_curve(
     point_sigma: Option<Vec<f64>>,
     patience: usize,
 ) -> PyResult<AlignOutcome2> {
-    let points = array_to_points2(&points.as_array())?;
-    let opts = single_opts(
+    points_to_target(
+        points,
+        curve.get_inner(),
+        &params,
         ignore_off_target,
         refinement_steps,
         sigma_max,
-        point_sigma.as_deref(),
+        point_sigma,
         patience,
-    );
-
-    engeom::geom2::align2::points_to_surface2(
-        &points,
-        curve.get_inner(),
-        params.get_inner().clone(),
-        &opts,
     )
-    .map(AlignOutcome2::from_inner)
-    .map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
 /// Align a set of 2-D points to a `CurveGroup2`, which is a collection of disjoint curves treated
@@ -504,23 +524,16 @@ pub fn points_to_group(
     point_sigma: Option<Vec<f64>>,
     patience: usize,
 ) -> PyResult<AlignOutcome2> {
-    let points = array_to_points2(&points.as_array())?;
-    let opts = single_opts(
+    points_to_target(
+        points,
+        group.get_inner(),
+        &params,
         ignore_off_target,
         refinement_steps,
         sigma_max,
-        point_sigma.as_deref(),
+        point_sigma,
         patience,
-    );
-
-    engeom::geom2::align2::points_to_surface2(
-        &points,
-        group.get_inner(),
-        params.get_inner().clone(),
-        &opts,
     )
-    .map(AlignOutcome2::from_inner)
-    .map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
 /// Align a set of 2-D points to an unordered set of measured points which carry normals.
@@ -565,14 +578,8 @@ pub fn points_to_cloud(
     point_sigma: Option<Vec<f64>>,
     patience: usize,
 ) -> PyResult<AlignOutcome2> {
-    let points = array_to_points2(&points.as_array())?;
     let target_points = array_to_points2(&target_points.as_array())?;
-
-    let normals = crate::conversions::array_to_vectors2(&target_normals.as_array())?;
-    let normals: Vec<engeom::UnitVec2> = normals
-        .into_iter()
-        .map(engeom::UnitVec2::new_normalize)
-        .collect();
+    let normals = array_to_unit_vectors2(&target_normals.as_array())?;
 
     let target = engeom::geom2::align2::CloudTarget2::try_new(
         &target_points,
@@ -582,17 +589,16 @@ pub fn points_to_cloud(
     )
     .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
-    let opts = single_opts(
+    points_to_target(
+        points,
+        &target,
+        &params,
         ignore_off_target,
         refinement_steps,
         sigma_max,
-        point_sigma.as_deref(),
+        point_sigma,
         patience,
-    );
-
-    engeom::geom2::align2::points_to_surface2(&points, &target, params.get_inner().clone(), &opts)
-        .map(AlignOutcome2::from_inner)
-        .map_err(|e| PyValueError::new_err(e.to_string()))
+    )
 }
 
 /// Simultaneously align several `CurveGroup2` bodies to each other in one combined solve.
@@ -623,7 +629,7 @@ pub fn points_to_cloud(
 /// :param sample_spacing: the arc length spacing between correspondence samples on each member.
 /// :param max_corner_angle: the largest turn, in radians, tolerated within one sample spacing of a
 ///     sample. This is what keeps samples off corners, where the closest point on another body
-///     jumps rather than slides.
+///     jumps rather than slides. Defaults to 60 degrees.
 /// :param end_margin: the distance from either end of an open member within which samples are
 ///     discarded. Defaults to twice `sample_spacing`.
 /// :param filter_distances: discard candidate correspondences further than this many standard
@@ -631,11 +637,11 @@ pub fn points_to_cloud(
 #[pyfunction]
 #[pyo3(signature = (groups, max_distance, initial=None, max_normal_angle=None,
                     refinement_steps=4, sigma_max=None, patience=100, dof=None,
-                    sample_spacing=1.0, max_corner_angle=std::f64::consts::FRAC_PI_3,
+                    sample_spacing=1.0, max_corner_angle=None,
                     end_margin=None, filter_distances=Some(3.0)))]
 #[allow(clippy::too_many_arguments)]
 pub fn multi_curve_adjustment(
-    groups: Vec<PyRef<'_, CurveGroup2>>,
+    groups: Vec<CurveGroup2>,
     max_distance: f64,
     initial: Option<Vec<Iso2>>,
     max_normal_angle: Option<f64>,
@@ -644,7 +650,7 @@ pub fn multi_curve_adjustment(
     patience: usize,
     dof: Option<Dof3>,
     sample_spacing: f64,
-    max_corner_angle: f64,
+    max_corner_angle: Option<f64>,
     end_margin: Option<f64>,
     filter_distances: Option<f64>,
 ) -> PyResult<MultiAlignOutcome2> {
@@ -661,10 +667,13 @@ pub fn multi_curve_adjustment(
         dof: dof.map(Into::into),
     };
 
+    // The defaults come from the core so the binding cannot drift from it. `filter_distances`
+    // is the exception: `None` means "disabled" here, so its default stays in the signature.
+    let defaults = engeom::geom2::align2::CAPParams::defaults(sample_spacing);
     let sample_opts = engeom::geom2::align2::CAPParams {
         sample_spacing,
-        max_corner_angle,
-        end_margin: end_margin.unwrap_or(2.0 * sample_spacing),
+        max_corner_angle: max_corner_angle.unwrap_or(defaults.max_corner_angle),
+        end_margin: end_margin.unwrap_or(defaults.end_margin),
         filter_distances,
     };
 

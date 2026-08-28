@@ -193,6 +193,14 @@ class TestPointsToPointSet:
         with pytest.raises(ValueError):
             points_to_cloud(pts, pts, normals, AlignParams2(), 1.0)
 
+    def test_a_zero_length_normal_is_rejected(self):
+        # A zero row has no direction, and silently normalizing it would feed NaN into the solve.
+        pts = numpy.array([[0.0, 0.0], [1.0, 0.0]], dtype=numpy.float64)
+        normals = numpy.array([[0.0, 1.0], [0.0, 0.0]], dtype=numpy.float64)
+
+        with pytest.raises(ValueError):
+            points_to_cloud(pts, pts, normals, AlignParams2(), 1.0)
+
 
 class TestMultiCurveAdjustment:
     def test_three_bodies_settle_together(self):

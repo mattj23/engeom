@@ -1,6 +1,6 @@
 use crate::bounding::Aabb2;
 use crate::common::vec_dot_from_str;
-use crate::conversions::{array_to_points2, points_to_array};
+use crate::conversions::{array_to_points2, dvec_from_array, dvec_to_array, points_to_array};
 use crate::geom2::{Iso2, Line2, Point2, SurfacePoint2, Vector2};
 use engeom::geom2::BoundaryEditor;
 use numpy::ndarray::{Array1, Array2};
@@ -294,17 +294,6 @@ fn make_builder(py_builder: Py<PyAny>) -> engeom::geom2::BndBuildFn {
     })
 }
 
-fn dvec_from_array(arr: &PyReadonlyArray1<f64>) -> PyResult<engeom::DVector> {
-    let s = arr
-        .as_slice()
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
-    Ok(engeom::DVector::from_column_slice(s))
-}
-
-fn dvec_to_array<'py>(py: Python<'py>, v: engeom::DVector) -> Bound<'py, PyArray1<f64>> {
-    Array1::from_iter(v.iter().copied()).into_pyarray(py)
-}
-
 #[pyfunction]
 #[pyo3(signature = (points, builder, initial, ignore_ends = false))]
 pub fn fit_boundary_to_points<'py>(
@@ -363,6 +352,8 @@ pub fn fit_boundary_to_surface_points<'py>(
     let bld = make_builder(builder);
     let weight_mode = vec_dot_from_str(weight_mode)?;
 
+    // Robust refinement stays off from Python for now: every builder call re-enters the GIL, so
+    // the extra solves are far more expensive here than they are on the Rust side.
     let result = engeom::geom2::fit_boundary_to_surface_points(
         &sps,
         &bld,

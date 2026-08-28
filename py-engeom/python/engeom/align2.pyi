@@ -325,7 +325,7 @@ def multi_curve_adjustment(
     patience: int = 100,
     dof: Dof3 | None = None,
     sample_spacing: float = 1.0,
-    max_corner_angle: float = 1.0471975511965976,
+    max_corner_angle: float | None = None,
     end_margin: float | None = None,
     filter_distances: float | None = 3.0,
 ) -> MultiAlignOutcome2:
@@ -351,7 +351,7 @@ def multi_curve_adjustment(
     :param dof: an optional `Dof3` constraint applied to every non-static body.
     :param sample_spacing: the arc length spacing between correspondence samples on each member.
     :param max_corner_angle: the largest turn, in radians, tolerated within one sample spacing of
-        a sample, which keeps samples off corners.
+        a sample, which keeps samples off corners. Defaults to 60 degrees.
     :param end_margin: the distance from either end of an open member within which samples are
         discarded. Defaults to twice `sample_spacing`.
     :param filter_distances: discard candidates further than this many standard deviations above

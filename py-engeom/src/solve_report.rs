@@ -9,8 +9,10 @@
 ///
 /// `"converged"` means a convergence criterion was met. `"unconverged"` means the solver ran out
 /// of its evaluation budget, so the parameters are the best it found but convergence was never
-/// demonstrated; the alignment is still valid geometry. A solve that broke down entirely is never
-/// reported here, because its result is discarded rather than returned.
+/// demonstrated; the alignment is still valid geometry. The outcome types do not surface a solve
+/// that broke down entirely (a failed initial solve is an error and a failed refinement round is
+/// rolled back), so the `"failed"` arm below exists for match totality rather than as a value
+/// callers should expect to see.
 pub(crate) fn quality_str(q: engeom::common::SolveQuality) -> &'static str {
     match q {
         engeom::common::SolveQuality::Converged => "converged",
