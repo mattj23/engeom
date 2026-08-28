@@ -463,7 +463,7 @@ pub fn fit_blended_round_edge(
         // -----------------------------------------------------------
         let center = Point2::new(params[0], params[1]);
         let radius = params[2];
-        let (arc0, arc1) = end_arcs(&t0, &t1, &clip, &center, radius);
+        let (arc0, arc1) = end_arcs(&t0, &t1, &clip, &center, radius)?;
 
         // Now we construct the boundary
         // -----------------------------------------------------------
@@ -832,31 +832,37 @@ fn refine_from_edge_circle(
     Ok(())
 }
 
-fn end_arcs(t0: &Line2, t1: &Line2, clip: &Line2, center: &Point2, radius: f64) -> (Arc2, Arc2) {
+fn end_arcs(
+    t0: &Line2,
+    t1: &Line2,
+    clip: &Line2,
+    center: &Point2,
+    radius: f64,
+) -> Result<(Arc2, Arc2)> {
     let t0s = t0.offset_by(t0.signed_projection_dist(&clip.origin).signum() * radius);
     let t1s = t1.offset_by(t1.signed_projection_dist(&clip.origin).signum() * radius);
 
     // We get the blend arcs. Arc0 goes from p0 to the leading edge circle, and arc1 goes from
     // p1 to the leading edge circle. We need to keep the order of endpoints right when we
     // actuallyh build the boundary
-    (
-        blend_arc(&t0s, center, radius),
-        blend_arc(&t1s, center, radius),
-    )
+    Ok((
+        blend_arc(&t0s, center, radius)?,
+        blend_arc(&t1s, center, radius)?,
+    ))
 }
 
-fn blend_arc(shifted_tangent: &Line2, le_center: &Point2, le_radius: f64) -> Arc2 {
-    let base_circle = Circle2::from_tangent_and_point(shifted_tangent, le_center);
+fn blend_arc(shifted_tangent: &Line2, le_center: &Point2, le_radius: f64) -> Result<Arc2> {
+    let base_circle = Circle2::from_tangent_and_point(shifted_tangent, le_center)?;
     let v0 = shifted_tangent.origin - base_circle.center;
     let v1 = le_center - base_circle.center;
     let theta0 = base_circle.angle_of_point(&shifted_tangent.origin);
     let theta = signed_angle(&v0, &v1);
-    Arc2::new(
+    Ok(Arc2::new(
         base_circle.center,
         le_radius + base_circle.r(),
         theta0,
         theta,
-    )
+    ))
 }
 
 struct EdgeWork {

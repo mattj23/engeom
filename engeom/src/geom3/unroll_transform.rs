@@ -61,10 +61,10 @@ impl UnrollTransform {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::random_geometry::RandomGeometry3;
     use crate::geom3::XyzWpr;
     use crate::{Iso3, Vector3};
     use approx::assert_relative_eq;
-    use rand::RngExt;
     use std::f64::consts::PI;
 
     #[test]
@@ -172,21 +172,18 @@ mod tests {
 
     #[test]
     fn stress_test_round_trip() {
-        let mut rng = rand::rng();
+        // Seeded so a failure is reproducible and so this can never join the flaky-by-RNG set.
+        let mut rg = RandomGeometry3::from_seed(0x0217_5eed);
 
         for _ in 0..1000 {
-            let radius = rng.random_range(0.5..3.0);
+            let radius = rg.f64(0.5, 3.0);
             let max_x = radius * PI * 0.99;
             let max_z = radius * 0.9;
             let std_unroll =
                 UnrollTransform::try_new(Vector3::z(), Vector3::x(), radius, None).unwrap();
 
             // Generate a random surface point
-            let surface = Point3::new(
-                rng.random_range(-max_x..max_x),
-                rng.random_range(-5.0..5.0),
-                rng.random_range(-max_z..max_z),
-            );
+            let surface = Point3::new(rg.f64_sym(max_x), rg.f64_sym(5.0), rg.f64_sym(max_z));
 
             // Figure out what it is in the standard world
             let std_world = std_unroll.to_world(&surface);
@@ -197,14 +194,14 @@ mod tests {
 
             // Now we'll create a randomly positioned unroll transform and verify the same round
             // trip. The surface points should remain the same, but the world points will change.
-            let p2 = PI / 2.0;
+            // The XyzWpr angles are in degrees.
             let values = XyzWpr::new(
-                rng.random_range(-1.0..1.0),
-                rng.random_range(-1.0..1.0),
-                rng.random_range(-1.0..1.0),
-                rng.random_range(-p2..p2),
-                rng.random_range(-p2..p2),
-                rng.random_range(-p2..p2),
+                rg.f64_sym(1.0),
+                rg.f64_sym(1.0),
+                rg.f64_sym(1.0),
+                rg.f64_sym(90.0),
+                rg.f64_sym(90.0),
+                rg.f64_sym(90.0),
             );
             let iso = Iso3::from(&values);
 

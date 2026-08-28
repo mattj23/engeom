@@ -727,11 +727,10 @@ impl Circle2 {
     }
 
     #[staticmethod]
-    fn from_tangent_and_point(tangent: &Line2, point: &Point2) -> Self {
-        Self::from_inner(engeom::Circle2::from_tangent_and_point(
-            tangent.get_inner(),
-            point.get_inner(),
-        ))
+    fn from_tangent_and_point(tangent: &Line2, point: &Point2) -> PyResult<Self> {
+        engeom::Circle2::from_tangent_and_point(tangent.get_inner(), point.get_inner())
+            .map(Self::from_inner)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     fn outer_tangents_to(&self, other: &Circle2) -> Option<(Segment2, Segment2)> {

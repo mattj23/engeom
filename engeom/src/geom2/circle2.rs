@@ -249,27 +249,36 @@ impl Circle2 {
         }
     }
 
-    /// Create a new circle at a tangent point that passes through a second point.
+    /// Create the circle which is tangent to a line at the line's origin and which passes
+    /// through a second point.
     ///
     /// # Arguments
     ///
-    /// * `tangent`:
-    /// * `point`:
+    /// * `tangent`: the tangent line; the circle touches it at the line's origin
+    /// * `point`: a second point the circle must pass through
     ///
     /// returns: Result<Circle2, Box<dyn Error, Global>>
     ///
-    /// # Examples
+    /// # Errors
     ///
-    /// ```
-    ///
-    /// ```
-    pub fn from_tangent_and_point(tangent: &impl LineOps2, point: &impl PCoords<2>) -> Self {
+    /// Returns an error if `point` lies on the tangent line (within an absolute distance of
+    /// 1e-10), where no finite tangent circle exists.
+    pub fn from_tangent_and_point(
+        tangent: &impl LineOps2,
+        point: &impl PCoords<2>,
+    ) -> Result<Self> {
         let iso = tangent.to_iso_from_y().inverse();
         let p = iso * Point2::from(point.coords());
 
+        // p.x is the point's signed perpendicular distance from the tangent line; at zero the
+        // construction is degenerate and no finite tangent circle exists.
+        if p.x.abs() < 1e-10 {
+            return Err("point lies on the tangent line; no finite tangent circle exists".into());
+        }
+
         let cx = (p.x.powi(2) + p.y.powi(2)) / (2.0 * p.x);
         let center = iso.inverse() * Point2::new(cx, 0.0);
-        Circle2::new(center.x, center.y, cx.abs())
+        Ok(Circle2::new(center.x, center.y, cx.abs()))
     }
 
     /// Compute the circles of a given radius which are tangent to both a line and another circle,
@@ -1276,27 +1285,45 @@ mod tests {
 
     #[test]
     fn stress_tangent_and_point() -> Result<()> {
-        // TODO: there may be cases where this fails, and should be fixed
-        let mut random = RandomGeometry2::new();
+        // Seeded so a failure is reproducible and so this can never join the flaky-by-RNG set.
+        let mut random = RandomGeometry2::from_seed(0xc12c_1e2d);
         for _ in 0..1000 {
             let c = random.circle2(10.0, 0.5, 5.0);
             let a0 = random.angle_sym_pi();
-            let a1 = random.angle_sym_pi();
             let m = c.at_angle(a0);
-            let p = c.point_at_angle(a1);
 
             let line = match random.bool() {
                 true => m.direction_line(),
                 false => m.direction_line().reversed(),
             };
 
-            let result = Circle2::from_tangent_and_point(&line, &p);
+            // A target point near the tangent line (angle near the tangency angle) makes the
+            // construction ill-conditioned relative to the 1e-5 round-trip tolerance, so draws
+            // whose perpendicular distance from the line is below 1e-2 are resampled.
+            let p = loop {
+                let a1 = random.angle_sym_pi();
+                let p = c.point_at_angle(a1);
+                if line.distance_to(&p) > 1e-2 {
+                    break p;
+                }
+            };
+
+            let result = Circle2::from_tangent_and_point(&line, &p)?;
 
             assert_relative_eq!(result.center, c.center, epsilon = 1.0e-5);
             assert_relative_eq!(result.r(), c.r(), epsilon = 1.0e-5);
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn tangent_and_point_on_line_is_error() {
+        let line = Line2::new(Point2::origin(), Vector2::x());
+        // A point on the tangent line away from the tangency point
+        assert!(Circle2::from_tangent_and_point(&line, &Point2::new(3.0, 0.0)).is_err());
+        // The tangency point itself
+        assert!(Circle2::from_tangent_and_point(&line, &Point2::origin()).is_err());
     }
 
     #[test]

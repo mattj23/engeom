@@ -1525,7 +1525,9 @@ class Circle2:
     @staticmethod
     def from_tangent_and_point(tangent: Line2, point: Point2) -> Circle2:
         """
-        Create a circle tangent to a line and passing through a point.
+        Create a circle tangent to a line at the line's origin and passing through a point.
+        Raises ``ValueError`` if the point lies on the tangent line, where no finite tangent
+        circle exists.
 
         :param tangent: the line the circle is tangent to.
         :param point: a point on the circle.

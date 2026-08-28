@@ -5,7 +5,7 @@ import math
 
 import pytest
 import numpy
-from engeom.geom2 import Vector2, Point2, SurfacePoint2, Segment2, Arc2, Circle2, Iso2
+from engeom.geom2 import Vector2, Point2, SurfacePoint2, Segment2, Arc2, Circle2, Iso2, Line2
 
 
 def test_vector_mul_scalar():
@@ -316,3 +316,17 @@ def test_circle2_from_min_enclosing_empty_raises():
     points = numpy.empty((0, 2))
     with pytest.raises(ValueError):
         Circle2.from_min_enclosing(points)
+
+
+def test_circle2_from_tangent_and_point():
+    line = Line2(0.0, 0.0, 1.0, 0.0)
+    circle = Circle2.from_tangent_and_point(line, Point2(0.0, 2.0))
+    assert abs(circle.x) < 1e-12
+    assert abs(circle.y - 1.0) < 1e-12
+    assert abs(circle.r - 1.0) < 1e-12
+
+
+def test_circle2_from_tangent_and_point_on_line_raises():
+    line = Line2(0.0, 0.0, 1.0, 0.0)
+    with pytest.raises(ValueError):
+        Circle2.from_tangent_and_point(line, Point2(3.0, 0.0))

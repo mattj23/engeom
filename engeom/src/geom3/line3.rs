@@ -31,10 +31,13 @@ impl Line3 {
     }
 
     /// Intersects the line with a plane, returning the parameter `t` at the intersection, or
-    /// `None` if the line is parallel to (or lies within) the plane.
+    /// `None` if the line is parallel to (or lies within) the plane. The parallelism test is
+    /// angular, so it does not depend on the magnitude of the line's direction vector.
     pub fn intersect_plane(&self, plane: &Plane3) -> Option<f64> {
         let denom = plane.normal.dot(&self.direction);
-        if denom.abs() < 1e-10 {
+        // The guard scales with the direction's magnitude so it rejects by angle alone; `<=`
+        // rather than `<` keeps a zero direction (both sides 0.0) on the `None` path.
+        if denom.abs() <= 1e-10 * self.direction.norm() {
             return None;
         }
         Some((plane.d - plane.normal.dot(&self.origin.coords)) / denom)
@@ -281,19 +284,8 @@ mod tests {
 
     #[test]
     fn stress_intersect_plane_result_on_plane() {
-        // TODO: this test fails intermittently and needs to be made deterministic.
-        //
-        // `RandomGeometry3::new()` draws from the unseeded thread RNG, so every run samples
-        // different geometry. When a sampled line comes out nearly parallel to the plane,
-        // `intersect_plane` returns a very large `t`, and evaluating `line.at(t)` amplifies
-        // floating-point error enough that the resulting point sits further than `1e-10` off the
-        // plane. The intersection math isn't wrong; the absolute tolerance just isn't reachable in
-        // the near-degenerate case.
-        //
-        // Two candidate fixes: switch to `RandomGeometry3::from_seed(...)` so failures are
-        // reproducible, and/or scale the tolerance with `t` (or reject near-parallel samples)
-        // so the assertion reflects the conditioning of the problem.
-        let mut rg = RandomGeometry3::new();
+        // Seeded so a failure is reproducible and so this can never join the flaky-by-RNG set.
+        let mut rg = RandomGeometry3::from_seed(0x11e3_5eed);
 
         for _ in 0..500 {
             let iso = rg.iso3(10.0);
@@ -303,13 +295,38 @@ mod tests {
             let plane = Plane3::new(UnitVec3::new_normalize(iso.rotation * Vector3::z()), 2.0);
 
             if let Some(t) = line.intersect_plane(&plane) {
+                // A near-grazing intersection legitimately has a huge `t`, and the absolute
+                // error of evaluating `at(t)` grows with `|t| * |direction|`, so the tolerance
+                // scales with the conditioning of the sample rather than staying fixed.
+                let scale = 1.0 + t.abs() * line.direction.norm();
                 assert_relative_eq!(
                     plane.signed_distance_to_point(&line.at(t)).abs(),
                     0.0,
-                    epsilon = 1e-10
+                    epsilon = 1e-10 * scale
                 );
             }
         }
+    }
+
+    #[test]
+    fn intersect_plane_zero_direction_returns_none() {
+        let line = Line3::new(Point3::origin(), Vector3::zeros());
+        let plane = Plane3::new(Vector3::z_axis(), 5.0);
+        assert!(line.intersect_plane(&plane).is_none());
+    }
+
+    #[test]
+    fn intersect_plane_guard_is_scale_invariant() {
+        let plane = Plane3::new(Vector3::z_axis(), 5.0);
+
+        // A tiny but well-aligned direction still intersects; t scales with 1/|direction|.
+        let tiny = Line3::new(Point3::origin(), Vector3::z() * 1e-8);
+        let t = tiny.intersect_plane(&plane).unwrap();
+        assert_relative_eq!(t, 5e8, epsilon = 1e-3);
+
+        // A large direction at a below-threshold grazing angle is still rejected.
+        let grazing = Line3::new(Point3::origin(), Vector3::new(1e3, 0.0, 1e-8));
+        assert!(grazing.intersect_plane(&plane).is_none());
     }
 
     #[test]
