@@ -227,6 +227,11 @@ impl MeshWeight for NearMeshWeight {
 // Alignment point sampling
 // ===============================================================================================
 
+/// Generate-alignment-points parameters, controlling `generate_alignment_points`: how densely a
+/// test mesh is sampled and which samples are trusted enough to become alignment correspondences.
+///
+/// Its 2D counterpart is `CAPParams` in `align2`, named differently only so that the two can be
+/// glob-imported together.
 #[derive(Debug, Clone, Copy)]
 pub struct GAPParams {
     pub sample_spacing: f64,

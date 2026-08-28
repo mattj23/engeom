@@ -1206,16 +1206,16 @@ mod tests {
     fn a_tcmesh_round_trips_and_is_solid_comes_from_the_caller() -> Result<()> {
         let mesh = Mesh3::create_sphere(1.0, 20, 20);
         let tol = 1e-5;
-        let path = std::env::temp_dir().join("engeom_mesh3_tcmesh_round_trip.tcmesh");
+        let file = TempFile::new("tcmesh-round-trip", "tcmesh");
 
-        mesh.save_tcmesh(&path, tol)?;
+        mesh.save_tcmesh(file.path(), tol)?;
 
-        let recovered = Mesh3::load_tcmesh(&path, true)?;
+        let recovered = Mesh3::load_tcmesh(file.path(), true)?;
         assert_eq!(recovered.point_count(), mesh.point_count());
         assert_eq!(recovered.face_count(), mesh.face_count());
         assert!(recovered.is_solid());
 
-        assert!(!Mesh3::load_tcmesh(&path, false)?.is_solid());
+        assert!(!Mesh3::load_tcmesh(file.path(), false)?.is_solid());
 
         Ok(())
     }
@@ -1223,9 +1223,9 @@ mod tests {
     #[test]
     fn saving_a_tcmesh_refuses_a_mesh_carrying_attributes() -> Result<()> {
         let mesh = Mesh3::from_data(attributed_data(), false)?;
-        let path = std::env::temp_dir().join("engeom_mesh3_tcmesh_refused.tcmesh");
+        let file = TempFile::new("tcmesh-refused", "tcmesh");
 
-        assert!(mesh.save_tcmesh(&path, 1e-5).is_err());
+        assert!(mesh.save_tcmesh(file.path(), 1e-5).is_err());
 
         Ok(())
     }
@@ -1727,12 +1727,10 @@ mod tests {
     // ===========================================================================================
 
     /// A file on disk, removed when the test finishes with it.
-    #[cfg(any(feature = "ply", feature = "stl"))]
     struct TempFile {
         path: std::path::PathBuf,
     }
 
-    #[cfg(any(feature = "ply", feature = "stl"))]
     impl TempFile {
         fn new(name: &str, ext: &str) -> Self {
             let path = std::env::temp_dir().join(format!(
@@ -1749,7 +1747,6 @@ mod tests {
         }
     }
 
-    #[cfg(any(feature = "ply", feature = "stl"))]
     impl Drop for TempFile {
         fn drop(&mut self) {
             let _ = std::fs::remove_file(&self.path);

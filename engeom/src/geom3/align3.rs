@@ -3,7 +3,7 @@
 //!
 //! # Structure
 //!
-//! An alignment has three pieces:
+//! A single-body alignment has three pieces:
 //!
 //! - [`AlignParams3`] holds the parameters being optimized (`tx`, `ty`, `tz`, `rx`, `ry`, `rz`)
 //!   and expresses them as a transformation about an arbitrary local origin, with an optional
@@ -15,6 +15,14 @@
 //!   query point: the closest position, its normal, whether the projection actually landed on the
 //!   target's interior, and optionally the target's own measurement uncertainty there.
 //! - [`points_to_surface3`] runs the solver, with behavior controlled by [`AlignOptions3`].
+//!
+//! Beyond the single-body path:
+//!
+//! - [`multi_mesh_adjustment`] simultaneously aligns several meshes to each other in one combined
+//!   solve, holding one static, with [`MultiAlignParams3`] carrying the concatenated per-body
+//!   parameters and [`MultiAlignOptions3`] controlling the solve.
+//! - [`AlignInformation3`] asks how well a set of points constrains an alignment, exposes its
+//!   weak directions, and chooses D-optimal correspondence subsets for pruning.
 //!
 //! # Reporting
 //!
@@ -45,9 +53,12 @@
 //!
 //! # Relationship to `align2`
 //!
-//! This module and [`crate::geom2::align2`] are deliberately structural mirrors rather than a
-//! shared generic: 3D needs three Euler angles whose partial derivatives require a gimbal
-//! correction that 2D has no analogue for, and its parameter storage is twice the size.
+//! The solver cores of this module and [`crate::geom2::align2`] are deliberately structural
+//! mirrors rather than a shared generic: 3D needs three Euler angles whose partial derivatives
+//! require a gimbal correction that 2D has no analogue for, and its parameter storage is twice
+//! the size. The parts with no dimension-specific content at all, the multi-body parameter
+//! bookkeeping, the information analysis, and the static-body selection, are shared generics in
+//! [`crate::common::align`], with thin per-dimension wrappers here.
 //!
 //! Neither module is the authority. The 2D module was written first and this one was brought
 //! into line with it, but the multi-body work happened here and went back the other way. A

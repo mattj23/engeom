@@ -90,10 +90,10 @@ impl CurveSurfPoint {
 // Alignment point sampling
 // ===============================================================================================
 
-/// Parameters controlling [`generate_alignment_points`].
+/// Curve-alignment-point parameters, controlling [`generate_alignment_points`].
 ///
-/// This is the 2D counterpart of `GAPParams` in `align3`, named differently only so that the two
-/// can be glob-imported together. The two flatness criteria that 3D applies to a sampled
+/// This is the 2D counterpart of `GAPParams` ("generate-alignment-points parameters") in
+/// `align3`, named differently only so that the two can be glob-imported together. The two flatness criteria that 3D applies to a sampled
 /// neighborhood (`out_of_plane_ratio` and `centroid_ratio`) have no 2D counterpart: a curve is
 /// already an ordered one-dimensional path, so there is no neighborhood to fit a basis to and no
 /// mesh edge to fall off. What replaces them is [`CAPParams::max_corner_angle`], which rejects

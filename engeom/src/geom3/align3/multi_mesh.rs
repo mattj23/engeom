@@ -172,6 +172,8 @@ pub struct MultiMeshAlignPoint {
 }
 
 impl MultiMeshAlignPoint {
+    /// Creates a correspondence from a sample `mp` on mesh `mesh_i`, matched against reference
+    /// mesh `ref_i` with the given weight.
     pub fn new(mesh_i: usize, mp: MeshSurfPoint, ref_i: usize, weight: f64) -> Self {
         Self {
             mesh_i,

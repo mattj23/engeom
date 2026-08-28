@@ -55,6 +55,9 @@ pub struct XyzQuat {
 }
 
 impl XyzQuat {
+    /// Creates a pose from its seven components: the translation `tx`, `ty`, `tz` and the
+    /// quaternion's imaginary parts `i`, `j`, `k` and real part `w`. No validation or
+    /// normalization is performed; see [`XyzQuat::is_valid`].
     pub fn new(tx: f64, ty: f64, tz: f64, i: f64, j: f64, k: f64, w: f64) -> Self {
         XyzQuat {
             tx,
@@ -86,6 +89,8 @@ impl XyzQuat {
         diff.amax() < epsilon
     }
 
+    /// The components as an array, in the order `[tx, ty, tz, i, j, k, w]`. This order is a
+    /// stable part of the type's contract: serialized poses depend on it.
     pub fn to_array(&self) -> [f64; 7] {
         [self.tx, self.ty, self.tz, self.i, self.j, self.k, self.w]
     }

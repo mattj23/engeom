@@ -204,6 +204,8 @@ pub struct MultiCurveAlignPoint {
 }
 
 impl MultiCurveAlignPoint {
+    /// Creates a correspondence from a sample `cp` on body `group_i`, matched against reference
+    /// body `ref_i` with the given weight.
     pub fn new(group_i: usize, cp: CurveSurfPoint, ref_i: usize, weight: f64) -> Self {
         Self {
             group_i,
