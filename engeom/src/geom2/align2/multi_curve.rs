@@ -1578,12 +1578,8 @@ mod tests {
         let initial = vec![Iso2::identity(), disturb];
 
         // Both members must actually contribute, or this is only testing the rectangle.
-        let samples = crate::geom2::align2::curve::generate_alignment_points(
-            &groups[1],
-            &groups[0],
-            &disturb,
-            &CAPParams::defaults(0.5),
-        );
+        let samples =
+            generate_alignment_points(&groups[1], &groups[0], &disturb, &CAPParams::defaults(0.5));
         assert!(samples.iter().any(|cp| cp.member == 0));
         assert!(samples.iter().any(|cp| cp.member == 1));
 

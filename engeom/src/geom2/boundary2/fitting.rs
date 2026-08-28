@@ -144,7 +144,7 @@ impl BoundaryFitResult {
         self.solves
             .iter()
             .map(SolveQuality::from_termination)
-            .fold(SolveQuality::Converged, |acc, q| acc.worse_of(q))
+            .fold(SolveQuality::Converged, SolveQuality::worse_of)
     }
 
     /// Whether every solve which contributed to this fit converged.
@@ -475,7 +475,7 @@ fn solve(
 
     let problem = BoundaryFit::try_new(fitting, builder, initial)?;
     let (mut problem, termination) = run(&lm, problem);
-    if !termination.was_successful() {
+    if !SolveQuality::from_termination(&termination).is_usable() {
         return Err(format!("Fitting failed: {termination:?}").into());
     }
 
@@ -627,6 +627,10 @@ impl<'a> BoundaryFit<'a> {
 
     /// How many samples would still carry weight after reweighting. A round which would leave
     /// fewer of them than there are parameters is rank-deficient and must not be run.
+    ///
+    /// The `.abs()` on the geometric weight is not redundant: under `VecDot::AsIs` the weight is
+    /// a raw dot product and can be negative, and a negative weight still gives its sample
+    /// influence because the sign cancels in the squared objective.
     fn count_if_reweighted(&self, weighting: &MagsacWeight) -> usize {
         let (Some(residuals), Some(weights)) = (&self.residuals, &self.weights) else {
             return 0;
@@ -638,8 +642,7 @@ impl<'a> BoundaryFit<'a> {
 
     /// Puts the parameters back to a previous state and rebuilds the fit to match.
     fn restore(&mut self, params: &DVector<f64>) {
-        let params = params.clone();
-        self.set_params(&params);
+        self.set_params(params);
     }
 }
 
@@ -908,6 +911,31 @@ mod tests {
             "unexpected halt: {:?}",
             result.halt()
         );
+    }
+
+    #[test]
+    fn a_patience_exhausted_initial_solve_is_reported_rather_than_raised() {
+        // Exhausting the evaluation budget leaves behind the best parameters the solver found,
+        // which is an answer whose convergence was not demonstrated, not the absence of an
+        // answer. The gate here has to match the alignment solvers, which classify
+        // `LostPatience` as usable (see `SolveQuality`).
+        let (mut points, builder, initial) = triangle_case();
+
+        let mut rg = RandomGeometry2::from_seed(0xb0_11d);
+        for p in points.iter_mut() {
+            *p += Vector2::new(rg.gaussian_f64(0.0, 0.01), rg.gaussian_f64(0.0, 0.01));
+        }
+
+        // A patience of one allows seven evaluations of a six-parameter problem, which cannot
+        // reach convergence from an initial guess this far off.
+        let opts = BoundaryFitOptions {
+            patience: 1,
+            ..Default::default()
+        };
+        let result = fit_boundary_to_points(&points, &builder, initial, false, &opts).unwrap();
+
+        assert_eq!(result.quality(), SolveQuality::Unconverged);
+        assert!(!result.converged());
     }
 
     #[test]

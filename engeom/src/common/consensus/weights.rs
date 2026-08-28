@@ -224,6 +224,9 @@ pub(crate) fn estimate_sigma_max(residuals: &[f64]) -> Option<f64> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use approx::assert_relative_eq;
+
     #[test]
     fn sigma_estimate_is_robust_to_outliers() {
         // Eleven values with unit spread, plus one enormous outlier. A standard deviation would
@@ -246,8 +249,6 @@ mod tests {
         assert_eq!(estimate_sigma_max(&[2.0; 10]), None);
         assert_eq!(estimate_sigma_max(&[]), None);
     }
-    use super::*;
-    use approx::assert_relative_eq;
 
     #[test]
     fn ln_gamma_known_values() {
