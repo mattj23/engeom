@@ -1,3 +1,5 @@
+pub mod multi_params;
+
 use crate::common::vec_f64::mean_and_stdev;
 use parry3d_f64::na::Isometry;
 
