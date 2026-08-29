@@ -361,7 +361,7 @@ mod tests {
         assert_eq!(mesh.face_count(), 24);
 
         // Nothing was supplied to attach, so nothing should have been invented.
-        assert!(mesh.attrs().is_empty());
+        assert!(!mesh.has_attrs());
 
         Ok(())
     }

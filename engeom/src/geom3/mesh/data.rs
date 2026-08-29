@@ -11,18 +11,17 @@
 //! There are convenience construction methods on `Mesh3` which transparently pass-through to this
 //! struct for ergonomic reasons.
 
-mod attribute_set;
 mod editing;
 mod filtering;
 mod operations;
 mod primitives;
 mod subsets;
 
-pub use attribute_set::MeshAttrSet3;
-
 pub use crate::geom3::attributes3::Attr3;
 
 use crate::geom3::Mesh3;
+use crate::geom3::attributes3::{FaceAttrSet3, PointAttrSet3};
+use crate::geom3::mesh::MeshView3;
 use crate::geom3::mesh::algorithms;
 use crate::geom3::mesh::algorithms::{
     OffsetOpts, compute_face_offset_points, compute_normal_displaced_points,
@@ -33,9 +32,9 @@ use std::fmt;
 use std::path::Path;
 
 #[cfg(feature = "ply")]
-use crate::io::{PlyWriteOpts, load_ply_mesh_data, write_ply_mesh_data};
+use crate::io::{PlyWriteOpts, load_ply_mesh_data, write_ply_mesh};
 #[cfg(feature = "stl")]
-use crate::io::{StlWriteOpts, load_stl_mesh_data, write_stl_mesh_data};
+use crate::io::{StlWriteOpts, load_stl_mesh_data, write_stl_mesh};
 
 /// A container for the raw data of a triangle mesh: a buffer of points, a buffer of faces indexing
 /// into it, and the per-element attributes attached to either domain.
@@ -72,7 +71,8 @@ use crate::io::{StlWriteOpts, load_stl_mesh_data, write_stl_mesh_data};
 pub struct MeshData3 {
     points: Vec<Point3>,
     faces: Vec<[u32; 3]>,
-    attrs: MeshAttrSet3,
+    point_attrs: PointAttrSet3,
+    face_attrs: FaceAttrSet3,
 }
 
 // ===============================================================================================
@@ -90,32 +90,36 @@ impl MeshData3 {
     ///
     /// returns: `Result<MeshData3>`, failing if any face refers to a point which does not exist
     pub fn new(points: Vec<Point3>, faces: Vec<[u32; 3]>) -> Result<Self> {
-        Self::new_with_attrs(points, faces, MeshAttrSet3::empty())
+        Self::new_with_attrs(points, faces, PointAttrSet3::empty(), FaceAttrSet3::empty())
     }
 
-    /// Create a new mesh from a buffer of points, a buffer of faces indexing into it, and a set of
-    /// per-element attributes.
+    /// Create a new mesh from a buffer of points, a buffer of faces indexing into it, and the
+    /// per-element attributes of both domains.
     ///
     /// # Arguments
     ///
     /// * `points`: the point positions
     /// * `faces`: triangles given as triples of indices into `points`
-    /// * `attrs`: the attributes to attach, whose arrays must match the point and face counts
+    /// * `point_attrs`: the per-point attributes to attach, whose arrays must match the point count
+    /// * `face_attrs`: the per-face attributes to attach, whose arrays must match the face count
     ///
     /// returns: `Result<MeshData3>`, failing if any face refers to a point which does not exist or
     /// if any attribute array is the wrong length
     pub fn new_with_attrs(
         points: Vec<Point3>,
         faces: Vec<[u32; 3]>,
-        attrs: MeshAttrSet3,
+        point_attrs: PointAttrSet3,
+        face_attrs: FaceAttrSet3,
     ) -> Result<Self> {
         check_face_indices(&faces, points.len())?;
-        attrs.validate(points.len(), faces.len())?;
+        point_attrs.validate(points.len())?;
+        face_attrs.validate(faces.len())?;
 
         Ok(Self {
             points,
             faces,
-            attrs,
+            point_attrs,
+            face_attrs,
         })
     }
 
@@ -124,7 +128,8 @@ impl MeshData3 {
         Self {
             points: Vec::new(),
             faces: Vec::new(),
-            attrs: MeshAttrSet3::empty(),
+            point_attrs: PointAttrSet3::empty(),
+            face_attrs: FaceAttrSet3::empty(),
         }
     }
 
@@ -161,7 +166,7 @@ impl MeshData3 {
     /// returns: Result<(), Box<dyn Error, Global>>
     #[cfg(feature = "ply")]
     pub fn save_ply(&self, path: &Path, opts: &PlyWriteOpts) -> Result<()> {
-        write_ply_mesh_data(path, self, opts)
+        write_ply_mesh(path, self, opts)
     }
 
     /// Load a triangle mesh from an STL file, in either the ascii or binary encoding.
@@ -194,7 +199,7 @@ impl MeshData3 {
     /// returns: `Result<()>`
     #[cfg(feature = "stl")]
     pub fn save_stl(&self, path: &Path, opts: &StlWriteOpts) -> Result<()> {
-        write_stl_mesh_data(path, self, opts)
+        write_stl_mesh(path, self, opts)
     }
 
     /// Load a triangle mesh from a GOM `.g3d` file, the format written by GOM's Atos scanner and
@@ -260,17 +265,9 @@ impl MeshData3 {
 // ===============================================================================================
 
 impl MeshData3 {
-    /// Verify that the caller has accepted the loss of this mesh's attributes, for a format which
-    /// cannot represent them.
-    ///
-    /// A writer for a geometry-only format calls this before doing any work. If the mesh carries
-    /// no attributes there is nothing to lose and this always succeeds, so the flag only ever
-    /// matters when data would actually die.
-    ///
-    /// This exists because the failure it prevents is both silent and discovered late: save a mesh
-    /// carrying measured uncertainty, close the session, and find out weeks later that the data is
-    /// gone. An error at the moment of loss cannot be ignored the way a return value or a log line
-    /// can.
+    /// Verify that the caller has accepted the loss of this mesh's attributes when using a format
+    /// that cannot represent them. This delegates the check to
+    /// [`MeshView3::check_attribute_loss`].
     ///
     /// # Arguments
     ///
@@ -280,20 +277,12 @@ impl MeshData3 {
     ///
     /// returns: `Result<()>`
     pub fn check_attribute_loss(&self, format: &str, allow_loss: bool) -> Result<()> {
-        if allow_loss || self.attrs.is_empty() {
-            return Ok(());
-        }
+        MeshView3::from(self).check_attribute_loss(format, allow_loss)
+    }
 
-        let mut lost = self.attrs.point_attr_labels();
-        lost.extend(self.attrs.face_attr_labels());
-
-        Err(format!(
-            "Writing to {} would discard the attributes on this mesh ({}), because the format \
-             cannot represent them. Set `allow_attribute_loss` to accept this.",
-            format,
-            lost.join(", ")
-        )
-        .into())
+    /// Borrow this mesh as the read-only view accepted by the file writers.
+    pub fn view(&self) -> MeshView3<'_> {
+        MeshView3::from(self)
     }
 }
 
@@ -327,9 +316,19 @@ impl MeshData3 {
         self.points.is_empty() && self.faces.is_empty()
     }
 
-    /// Get a reference to the full set of per-element attributes attached to this mesh.
-    pub fn attrs(&self) -> &MeshAttrSet3 {
-        &self.attrs
+    /// Get a reference to the per-point attributes attached to this mesh.
+    pub fn point_attrs(&self) -> &PointAttrSet3 {
+        &self.point_attrs
+    }
+
+    /// Get a reference to the per-face attributes attached to this mesh.
+    pub fn face_attrs(&self) -> &FaceAttrSet3 {
+        &self.face_attrs
+    }
+
+    /// Returns true if the mesh carries any attributes in either domain.
+    pub fn has_attrs(&self) -> bool {
+        !self.point_attrs.is_empty() || !self.face_attrs.is_empty()
     }
 }
 
@@ -418,7 +417,7 @@ impl MeshData3 {
     ///
     /// returns: Result<(), Box<dyn Error, Global>>
     pub fn offset_points_in_place(&mut self, distance: f64) -> Result<()> {
-        if let Some(normals) = self.attrs.point_normals() {
+        if let Some(normals) = self.point_attrs.normals() {
             self.points = compute_normal_displaced_points(&self.points, normals, distance)?;
         } else {
             let local_normals = self.compute_point_normals()?;
@@ -436,38 +435,38 @@ impl MeshData3 {
 impl MeshData3 {
     /// Get the per-point unit normals, if present.
     pub fn point_normals(&self) -> Option<&[UnitVec3]> {
-        self.attrs.point_normals()
+        self.point_attrs.normals()
     }
 
     /// Get the per-point RGB colors, if present.
     pub fn point_colors(&self) -> Option<&[[u8; 3]]> {
-        self.attrs.point_colors()
+        self.point_attrs.colors()
     }
 
     /// Get the per-point standard deviations, if present. These are 1-sigma values in the mesh's
     /// own length units.
     pub fn point_stdev(&self) -> Option<&[f64]> {
-        self.attrs.point_stdev()
+        self.point_attrs.stdev()
     }
 
     /// Get the per-face RGB colors, if present.
     pub fn face_colors(&self) -> Option<&[[u8; 3]]> {
-        self.attrs.face_colors()
+        self.face_attrs.colors()
     }
 
     /// Get the per-face labels, if present.
     pub fn face_labels(&self) -> Option<&[u32]> {
-        self.attrs.face_labels()
+        self.face_attrs.labels()
     }
 
     /// Get the open-map per-point attribute stored under the given name, if present.
     pub fn point_attr(&self, name: &str) -> Option<&Attr3> {
-        self.attrs.point_attr(name)
+        self.point_attrs.attr(name)
     }
 
     /// Get the open-map per-face attribute stored under the given name, if present.
     pub fn face_attr(&self, name: &str) -> Option<&Attr3> {
-        self.attrs.face_attr(name)
+        self.face_attrs.attr(name)
     }
 }
 
@@ -484,7 +483,7 @@ impl MeshData3 {
     ///
     /// returns: `Result<()>`
     pub fn set_point_normals(&mut self, values: Option<Vec<UnitVec3>>) -> Result<()> {
-        self.attrs.set_point_normals(values, self.points.len())
+        self.point_attrs.set_normals(values, self.points.len())
     }
 
     /// Set or clear the per-point RGB colors.
@@ -495,7 +494,7 @@ impl MeshData3 {
     ///
     /// returns: `Result<()>`
     pub fn set_point_colors(&mut self, values: Option<Vec<[u8; 3]>>) -> Result<()> {
-        self.attrs.set_point_colors(values, self.points.len())
+        self.point_attrs.set_colors(values, self.points.len())
     }
 
     /// Set or clear the per-point standard deviations, which must be 1-sigma values in the mesh's
@@ -508,7 +507,7 @@ impl MeshData3 {
     ///
     /// returns: `Result<()>`
     pub fn set_point_stdev(&mut self, values: Option<Vec<f64>>) -> Result<()> {
-        self.attrs.set_point_stdev(values, self.points.len())
+        self.point_attrs.set_stdev(values, self.points.len())
     }
 
     /// Set or clear the per-face RGB colors.
@@ -519,7 +518,7 @@ impl MeshData3 {
     ///
     /// returns: `Result<()>`
     pub fn set_face_colors(&mut self, values: Option<Vec<[u8; 3]>>) -> Result<()> {
-        self.attrs.set_face_colors(values, self.faces.len())
+        self.face_attrs.set_colors(values, self.faces.len())
     }
 
     /// Set or clear the per-face labels.
@@ -530,7 +529,7 @@ impl MeshData3 {
     ///
     /// returns: `Result<()>`
     pub fn set_face_labels(&mut self, values: Option<Vec<u32>>) -> Result<()> {
-        self.attrs.set_face_labels(values, self.faces.len())
+        self.face_attrs.set_labels(values, self.faces.len())
     }
 
     /// Insert an open-map per-point attribute under the given name, replacing any attribute already
@@ -543,7 +542,7 @@ impl MeshData3 {
     ///
     /// returns: `Result<()>`
     pub fn insert_point_attr(&mut self, name: &str, attr: Attr3) -> Result<()> {
-        self.attrs.insert_point_attr(name, attr, self.points.len())
+        self.point_attrs.insert_attr(name, attr, self.points.len())
     }
 
     /// Insert an open-map per-face attribute under the given name, replacing any attribute already
@@ -556,48 +555,70 @@ impl MeshData3 {
     ///
     /// returns: `Result<()>`
     pub fn insert_face_attr(&mut self, name: &str, attr: Attr3) -> Result<()> {
-        self.attrs.insert_face_attr(name, attr, self.faces.len())
+        self.face_attrs.insert_attr(name, attr, self.faces.len())
     }
 
     /// Remove and return the open-map per-point attribute stored under the given name.
     pub fn remove_point_attr(&mut self, name: &str) -> Option<Attr3> {
-        self.attrs.remove_point_attr(name)
+        self.point_attrs.remove_attr(name)
     }
 
     /// Remove and return the open-map per-face attribute stored under the given name.
     pub fn remove_face_attr(&mut self, name: &str) -> Option<Attr3> {
-        self.attrs.remove_face_attr(name)
+        self.face_attrs.remove_attr(name)
     }
 
-    /// Replace the entire set of per-element attributes.
+    /// Replace the entire set of per-point attributes without changing the face domain.
+    ///
+    /// This allows a point-domain set built elsewhere—such as by a reader that handles the two
+    /// domains separately or while converting a point cloud into a mesh—to be attached without
+    /// calling each typed setter individually.
     ///
     /// # Arguments
     ///
-    /// * `attrs`: the attribute set to attach, whose arrays must match the point and face counts
+    /// * `attrs`: the per-point attributes to attach, whose arrays must match the point count
     ///
     /// returns: `Result<()>`, leaving the existing attributes untouched on failure
-    pub fn set_attrs(&mut self, attrs: MeshAttrSet3) -> Result<()> {
-        attrs.validate(self.points.len(), self.faces.len())?;
-        self.attrs = attrs;
+    pub fn set_point_attrs(&mut self, attrs: PointAttrSet3) -> Result<()> {
+        attrs.validate(self.points.len())?;
+        self.point_attrs = attrs;
         Ok(())
     }
 
-    /// Remove and return the entire set of per-element attributes, leaving the mesh with none.
-    pub fn take_attrs(&mut self) -> MeshAttrSet3 {
-        std::mem::take(&mut self.attrs)
+    /// Replace the entire set of per-face attributes without changing the point domain.
+    ///
+    /// # Arguments
+    ///
+    /// * `attrs`: the per-face attributes to attach, whose arrays must match the face count
+    ///
+    /// returns: `Result<()>`, leaving the existing attributes untouched on failure
+    pub fn set_face_attrs(&mut self, attrs: FaceAttrSet3) -> Result<()> {
+        attrs.validate(self.faces.len())?;
+        self.face_attrs = attrs;
+        Ok(())
     }
 
-    /// Consume the mesh and return ownership of its three components: the point buffer, the face
-    /// buffer, and the attribute set.
+    /// Remove and return all per-point attributes, leaving that domain empty on the mesh.
+    pub fn take_point_attrs(&mut self) -> PointAttrSet3 {
+        std::mem::take(&mut self.point_attrs)
+    }
+
+    /// Remove and return all per-face attributes, leaving that domain empty on the mesh.
+    pub fn take_face_attrs(&mut self) -> FaceAttrSet3 {
+        std::mem::take(&mut self.face_attrs)
+    }
+
+    /// Consume the mesh and return ownership of its four components: the point buffer, the face
+    /// buffer, the per-point attributes, and the per-face attributes.
     ///
-    /// This is the counterpart to `new_with_attrs` and exists so that handing this data to another
-    /// representation does not require copying the buffers. Once the mesh is decomposed nothing
-    /// enforces the invariants between the three pieces any more, so a caller putting them back
-    /// together is responsible for keeping them consistent.
+    /// This is the counterpart to `new_with_attrs` and allows the data to be handed to another
+    /// representation without copying the buffers. Once the mesh is decomposed, nothing enforces
+    /// the invariants between its components, so callers are responsible for preserving consistency
+    /// if they reassemble them.
     ///
-    /// returns: `(Vec<Point3>, Vec<[u32; 3]>, MeshAttrSet3)`
-    pub fn into_parts(self) -> (Vec<Point3>, Vec<[u32; 3]>, MeshAttrSet3) {
-        (self.points, self.faces, self.attrs)
+    /// returns: `(Vec<Point3>, Vec<[u32; 3]>, PointAttrSet3, FaceAttrSet3)`
+    pub fn into_parts(self) -> (Vec<Point3>, Vec<[u32; 3]>, PointAttrSet3, FaceAttrSet3) {
+        (self.points, self.faces, self.point_attrs, self.face_attrs)
     }
 
     /// Consume the mesh data and return an accelerated `Mesh3` built over the same buffers.
@@ -643,13 +664,14 @@ impl fmt::Debug for MeshData3 {
         f.debug_struct("MeshData3")
             .field("points", &self.points.len())
             .field("faces", &self.faces.len())
-            .field("attrs", &self.attrs)
+            .field("point_attrs", &self.point_attrs)
+            .field("face_attrs", &self.face_attrs)
             .finish()
     }
 }
 
 /// Verify that every face refers to a point which exists.
-fn check_face_indices(faces: &[[u32; 3]], n_points: usize) -> Result<()> {
+pub(crate) fn check_face_indices(faces: &[[u32; 3]], n_points: usize) -> Result<()> {
     for (i, face) in faces.iter().enumerate() {
         for index in face {
             if *index as usize >= n_points {
@@ -739,7 +761,7 @@ mod tests {
         assert_eq!(mesh.point_count(), 4);
         assert_eq!(mesh.face_count(), 2);
         assert!(!mesh.is_empty());
-        assert!(mesh.attrs().is_empty());
+        assert!(!mesh.has_attrs());
     }
 
     #[test]
@@ -780,11 +802,17 @@ mod tests {
     #[test]
     fn new_with_attrs_rejects_a_mismatched_attribute() {
         let (points, faces) = unit_square();
-        let mut attrs = MeshAttrSet3::empty();
-        attrs.set_point_colors(Some(vec![[0, 0, 0]]), 1).unwrap();
+        let mut attrs = PointAttrSet3::empty();
+        attrs.set_colors(Some(vec![[0, 0, 0]]), 1).unwrap();
 
         // The attribute set is internally consistent for a one-point mesh, but not for this one.
-        assert!(MeshData3::new_with_attrs(points, faces, attrs).is_err());
+        assert!(MeshData3::new_with_attrs(points, faces, attrs, FaceAttrSet3::empty()).is_err());
+
+        // Check the face domain in the same way.
+        let (points, faces) = unit_square();
+        let mut attrs = FaceAttrSet3::empty();
+        attrs.set_labels(Some(vec![1, 2, 3]), 3).unwrap();
+        assert!(MeshData3::new_with_attrs(points, faces, PointAttrSet3::empty(), attrs).is_err());
     }
 
     #[test]
@@ -812,20 +840,39 @@ mod tests {
     fn set_attrs_validates_against_the_current_counts() -> Result<()> {
         let mut mesh = square_mesh();
 
-        let mut good = MeshAttrSet3::empty();
-        good.set_point_normals(
+        let mut good = PointAttrSet3::empty();
+        good.set_normals(
             Some(vec![UnitVec3::new_normalize(Vector3::z()); 4]),
             mesh.point_count(),
         )?;
-        mesh.set_attrs(good)?;
+        mesh.set_point_attrs(good)?;
         assert!(mesh.point_normals().is_some());
 
-        let mut bad = MeshAttrSet3::empty();
-        bad.set_face_labels(Some(vec![1, 2, 3]), 3)?;
-        assert!(mesh.set_attrs(bad).is_err());
+        let mut bad = FaceAttrSet3::empty();
+        bad.set_labels(Some(vec![1, 2, 3]), 3)?;
+        assert!(mesh.set_face_attrs(bad).is_err());
 
-        // The rejected set must have left the existing attributes in place.
+        let mut bad = PointAttrSet3::empty();
+        bad.set_stdev(Some(vec![0.1]), 1)?;
+        assert!(mesh.set_point_attrs(bad).is_err());
+
+        // The rejected sets must have left the existing attributes in place.
         assert!(mesh.point_normals().is_some());
+
+        Ok(())
+    }
+
+    /// A mesh carrying only a face attribute is not bare, which ensures that checking only the
+    /// point domain cannot incorrectly classify it as bare.
+    #[test]
+    fn a_face_only_attribute_counts_as_having_attrs() -> Result<()> {
+        let mut mesh = square_mesh();
+        assert!(!mesh.has_attrs());
+
+        mesh.set_face_labels(Some(vec![7, 8]))?;
+        assert!(mesh.has_attrs());
+        assert!(mesh.point_attrs().is_empty());
+        assert!(mesh.check_attribute_loss("a test", false).is_err());
 
         Ok(())
     }
@@ -835,10 +882,10 @@ mod tests {
         let mut mesh = square_mesh();
         mesh.set_face_labels(Some(vec![7, 8]))?;
 
-        let taken = mesh.take_attrs();
+        let taken = mesh.take_face_attrs();
 
-        assert_eq!(taken.face_labels().unwrap(), &[7, 8]);
-        assert!(mesh.attrs().is_empty());
+        assert_eq!(taken.labels().unwrap(), &[7, 8]);
+        assert!(!mesh.has_attrs());
         assert!(mesh.face_labels().is_none());
 
         Ok(())

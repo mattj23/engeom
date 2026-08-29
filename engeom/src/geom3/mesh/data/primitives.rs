@@ -838,32 +838,20 @@ mod tests {
     /// The primitives carry geometry and nothing else, so none of them may invent an attribute.
     #[test]
     fn no_primitive_arrives_with_attributes() {
-        assert!(MeshData3::create_box(1.0, 1.0, 1.0).attrs().is_empty());
+        assert!(!MeshData3::create_box(1.0, 1.0, 1.0).has_attrs());
+        assert!(!MeshData3::create_sphere(1.0, 1.0e-3).unwrap().has_attrs());
         assert!(
-            MeshData3::create_sphere(1.0, 1.0e-3)
+            !MeshData3::create_cylinder(1.0, 2.0, 1.0e-3)
                 .unwrap()
-                .attrs()
-                .is_empty()
+                .has_attrs()
         );
         assert!(
-            MeshData3::create_cylinder(1.0, 2.0, 1.0e-3)
+            !MeshData3::create_cone(1.0, 2.0, 1.0e-3)
                 .unwrap()
-                .attrs()
-                .is_empty()
+                .has_attrs()
         );
-        assert!(
-            MeshData3::create_cone(1.0, 2.0, 1.0e-3)
-                .unwrap()
-                .attrs()
-                .is_empty()
-        );
-        assert!(
-            MeshData3::create_circle(1.0, 1.0e-3)
-                .unwrap()
-                .attrs()
-                .is_empty()
-        );
-        assert!(MeshData3::stanford_bunny_res4().attrs().is_empty());
+        assert!(!MeshData3::create_circle(1.0, 1.0e-3).unwrap().has_attrs());
+        assert!(!MeshData3::stanford_bunny_res4().has_attrs());
     }
 
     /// No point of any facet may sit outside the true sphere, and none may sag further inside it

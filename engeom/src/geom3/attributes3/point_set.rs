@@ -21,13 +21,13 @@
 //! # Error message naming
 //!
 //! The typed fields report themselves as `point_normals`, `point_colors`, and `point_stdev` in
-//! error messages rather than by their bare field names. `MeshAttrSet3` composes this type and has
-//! a face domain to disambiguate against, and a message which names the domain is useful to a point
-//! cloud caller too.
+//! error messages rather than by their bare field names. The mesh types hold this set alongside a
+//! `FaceAttrSet3`, so naming the domain disambiguates the two. The added context is also useful to
+//! callers working with point clouds.
 
 use super::{
     Attr3, check_both_or_neither, check_keys_match, check_len, check_reserved, check_same_variant,
-    clone_masked, extend_option,
+    clone_indexed, clone_masked, extend_option,
 };
 use crate::common::IndexMask;
 use crate::{Iso3, Result, UnitVec3};
@@ -301,9 +301,9 @@ impl PointAttrSet3 {
 
     /// Run every check an append has to pass, without modifying anything.
     ///
-    /// This is separate from the append itself so that `MeshAttrSet3` can check both of its domains
-    /// before modifying either. Without it, a face-domain mismatch discovered after the point
-    /// domain had already been extended would leave the set half appended.
+    /// This is separate from the append itself so that a mesh can check both attribute domains
+    /// before modifying either one. Otherwise, discovering a face-domain mismatch after extending
+    /// the point domain would leave the mesh only partially appended.
     pub(crate) fn check_extend_from(&self, other: &Self) -> Result<()> {
         check_both_or_neither(
             self.normals.is_some(),
@@ -396,20 +396,6 @@ impl PointAttrSet3 {
             }
         }
     }
-}
-
-/// Select the elements of an optional attribute array at the given indices, in the order given.
-fn clone_indexed<T: Clone>(values: Option<&[T]>, indices: &[usize]) -> Result<Option<Vec<T>>> {
-    let Some(values) = values else {
-        return Ok(None);
-    };
-
-    let n = values.len();
-    if let Some(bad) = indices.iter().find(|&&i| i >= n) {
-        return Err(format!("Index {bad} is out of bounds for an attribute of length {n}").into());
-    }
-
-    Ok(Some(indices.iter().map(|&i| values[i].clone()).collect()))
 }
 
 #[cfg(test)]

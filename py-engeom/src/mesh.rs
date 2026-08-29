@@ -961,7 +961,7 @@ impl Mesh3 {
         let mesh_data = engeom::io::load_lptf3_mesh_data(&file_path, load, None)
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
-        let (points, faces, _) = mesh_data.into_parts();
+        let (points, faces, _, _) = mesh_data.into_parts();
         Ok(Self::from_inner(engeom::Mesh3::new(points, faces, false)))
     }
 

@@ -41,7 +41,7 @@ impl MeshData3 {
     /// returns: `Result<u32>`, failing if the mesh carries per-point attributes, since there would
     /// be no value to give them for the new point
     pub fn push_point(&mut self, point: Point3) -> Result<u32> {
-        let labels = self.attrs.point_attr_labels();
+        let labels = self.point_attrs.attr_labels();
         if !labels.is_empty() {
             return Err(format!(
                 "Cannot add a point to a mesh carrying per-point attributes ({}), because there is \
@@ -68,7 +68,7 @@ impl MeshData3 {
     /// returns: `Result<u32>`, failing if any index is out of range or if the mesh carries per-face
     /// attributes
     pub fn push_face(&mut self, face: [u32; 3]) -> Result<u32> {
-        let labels = self.attrs.face_attr_labels();
+        let labels = self.face_attrs.attr_labels();
         if !labels.is_empty() {
             return Err(format!(
                 "Cannot add a face to a mesh carrying per-face attributes ({}), because there is no \
@@ -170,8 +170,12 @@ impl MeshData3 {
             }
         }
 
-        // Subset the attributes before the buffers, so that a failure leaves the mesh untouched.
-        self.attrs = self.attrs.subset(&point_mask, &face_mask)?;
+        // Subset both attribute domains before modifying the mesh so that a failure in either
+        // domain leaves it untouched.
+        let point_attrs = self.point_attrs.subset(&point_mask)?;
+        let face_attrs = self.face_attrs.subset(&face_mask)?;
+        self.point_attrs = point_attrs;
+        self.face_attrs = face_attrs;
 
         self.points.remove(i);
         self.faces.retain(|face| !face.contains(&index));
@@ -203,11 +207,10 @@ impl MeshData3 {
     pub fn remove_face(&mut self, index: u32) -> Result<()> {
         let i = self.face_index(index)?;
 
-        let point_mask = IndexMask::new(self.points.len(), true);
         let mut face_mask = IndexMask::new(self.faces.len(), true);
         face_mask.set(i, false);
 
-        self.attrs = self.attrs.subset(&point_mask, &face_mask)?;
+        self.face_attrs = self.face_attrs.subset(&face_mask)?;
         self.faces.remove(i);
 
         Ok(())
@@ -418,8 +421,8 @@ mod tests {
         assert_eq!(mesh.face_labels().unwrap(), &[10]);
 
         // And the result is still internally coherent.
-        mesh.attrs()
-            .validate(mesh.point_count(), mesh.face_count())?;
+        mesh.point_attrs().validate(mesh.point_count())?;
+        mesh.face_attrs().validate(mesh.face_count())?;
 
         Ok(())
     }

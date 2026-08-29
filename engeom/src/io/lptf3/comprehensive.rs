@@ -34,7 +34,7 @@ pub fn load_lptf3_comprehensive(
     // This mesh is used only as a query surface, to get a normal at every point and to check
     // whether a point is occluded from the detector, so it carries no attributes of its own.
     let base_params = Lptf3Load::SmoothSample(Lptf3DsParams::new(8, 1.5, 1.0, 1.0));
-    let (base_points, base_faces, _) =
+    let (base_points, base_faces, _, _) =
         load_lptf3_mesh_data(file_path, base_params, None)?.into_parts();
     let mesh = Mesh3::new(base_points, base_faces, false);
 

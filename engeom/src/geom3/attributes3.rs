@@ -6,12 +6,16 @@
 //! attribute set types which own these arrays and know the element counts to validate against are
 //! the ones which belong to a particular container.
 //!
-//! `PointAttrSet3` also lives here. The point domain is common to every container, so it is written
-//! once here and composed by `MeshAttrSet3`, which adds the face domain on top of it. The validation
-//! helpers at the bottom of this file are shared by both for the same reason.
+//! `PointAttrSet3` and `FaceAttrSet3` also live here, one per element domain. The point domain is
+//! common to every container, so it is written once and shared; the face domain is held only by the
+//! mesh types, but is written to the same pattern so the two cannot drift apart on what counts as a
+//! valid attribute or a legal append. The validation helpers at the bottom of this file are shared
+//! by both for the same reason.
 
+mod face_set;
 mod point_set;
 
+pub use face_set::FaceAttrSet3;
 pub use point_set::PointAttrSet3;
 
 use crate::common::IndexMask;
@@ -208,7 +212,7 @@ fn take_indices<T: Clone>(items: &[T], indices: &[usize]) -> Vec<T> {
 // Shared attribute set helpers
 // ===============================================================================================
 //
-// These are used by both `PointAttrSet3` and `MeshAttrSet3`. They live here rather than in either
+// These are used by both `PointAttrSet3` and `FaceAttrSet3`. They live here rather than in either
 // one so that the two cannot drift apart on what counts as a valid attribute or a legal append.
 
 /// Verify that an optional attribute length matches the expected element count.
@@ -303,6 +307,23 @@ pub(crate) fn clone_masked<T: Clone>(
     mask: &IndexMask,
 ) -> Result<Option<Vec<T>>> {
     values.map(|v| mask.clone_indices_of(v)).transpose()
+}
+
+/// Select the elements of an optional attribute array at the given indices, in the order given.
+pub(crate) fn clone_indexed<T: Clone>(
+    values: Option<&[T]>,
+    indices: &[usize],
+) -> Result<Option<Vec<T>>> {
+    let Some(values) = values else {
+        return Ok(None);
+    };
+
+    let n = values.len();
+    if let Some(bad) = indices.iter().find(|&&i| i >= n) {
+        return Err(format!("Index {bad} is out of bounds for an attribute of length {n}").into());
+    }
+
+    Ok(Some(take_indices(values, indices)))
 }
 
 /// Append the contents of an optional attribute array onto another, where both are known to be

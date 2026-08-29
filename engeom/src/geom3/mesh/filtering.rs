@@ -590,9 +590,13 @@ impl Mesh3 {
     pub fn extract_subset_faces(&self, mask: &IndexMask) -> Result<Self> {
         let point_mask = self.compute_unique_point_mask(mask)?;
         let (points, faces) = compact_by_masks(self.points(), self.faces(), &point_mask, mask)?;
-        let attrs = self.attrs.subset(&point_mask, mask)?;
+        let point_attrs = self.point_attrs.subset(&point_mask)?;
+        let face_attrs = self.face_attrs.subset(mask)?;
 
-        let mut result = Self::from_data(MeshData3::new_with_attrs(points, faces, attrs)?, false)?;
+        let mut result = Self::from_data(
+            MeshData3::new_with_attrs(points, faces, point_attrs, face_attrs)?,
+            false,
+        )?;
         result.uv = None;
         Ok(result)
     }

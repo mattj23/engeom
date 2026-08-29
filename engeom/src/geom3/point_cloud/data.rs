@@ -4,7 +4,7 @@
 //! It is the point-cloud counterpart to `MeshData3`, and the two are deliberately shaped the same
 //! way: private buffers, a validated attribute set, and the same construction, subsetting, and
 //! serialization vocabulary. The attribute half is literally the same code, `PointAttrSet3`, which
-//! `MeshAttrSet3` also composes.
+//! the mesh types also hold for their point domain.
 //!
 //! There is no spatial acceleration here of any kind. Call `compute_index` for a `CloudIndex3`
 //! when you need nearest-neighbor queries.
