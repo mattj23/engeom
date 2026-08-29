@@ -35,7 +35,7 @@ pub use half_edge3::HalfEdgeMesh3;
 pub use iso3::IsoExtensions3;
 pub use line3::Line3;
 pub use manifold::Manifold1Pos3;
-pub use mesh::{Mesh3, MeshCollisionSet, MeshData3, MeshView3, UvMapping};
+pub use mesh::{FlatDomain, Mesh3, MeshCollisionSet, MeshData3, MeshView3};
 use parry3d_f64::query::Ray;
 pub use plane3::Plane3;
 pub use point_cloud::{

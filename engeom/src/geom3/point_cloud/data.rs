@@ -15,7 +15,7 @@ use crate::common::{VoxelGroups, compute_voxel_groups};
 use crate::geom3::Aabb3;
 use crate::geom3::attributes3::{Attr3, PointAttrSet3};
 use crate::geom3::point_cloud::CloudIndex3;
-use crate::{Iso3, KdTree3, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
+use crate::{Iso3, KdTree3, Point2, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
 use std::fmt;
 
 #[cfg(feature = "ply")]
@@ -342,6 +342,13 @@ impl PointCloud3 {
         self.attrs.stdev()
     }
 
+    /// Get the per-point flat coordinates, if present: each point's position in a flattened 2D
+    /// chart of the surface, expressed in the cloud's own length units. See
+    /// [`set_point_flat`](Self::set_point_flat).
+    pub fn point_flat(&self) -> Option<&[Point2]> {
+        self.attrs.flat()
+    }
+
     /// Get the open-map per-point attribute stored under the given name, if present.
     pub fn point_attr(&self, name: &str) -> Option<&Attr3> {
         self.attrs.attr(name)
@@ -386,6 +393,24 @@ impl PointCloud3 {
     /// returns: `Result<()>`
     pub fn set_point_stdev(&mut self, values: Option<Vec<f64>>) -> Result<()> {
         self.attrs.set_stdev(values, self.points.len())
+    }
+
+    /// Set or clear the per-point flat coordinates: the position of each point in a flattened 2D
+    /// chart of the surface, such as the output of boundary first flattening. These are not
+    /// texture coordinates; they express the cloud's own length units in a plane. They scale with
+    /// the geometry under a uniform scale while remaining fixed under a rigid transform.
+    ///
+    /// A cloud projected onto a flattened reference surface can store each point's flat position
+    /// here alongside its depth in an open scalar attribute.
+    ///
+    /// # Arguments
+    ///
+    /// * `values`: the flat coordinates to store, or `None` to clear them. Must match the point
+    ///   count.
+    ///
+    /// returns: `Result<()>`
+    pub fn set_point_flat(&mut self, values: Option<Vec<Point2>>) -> Result<()> {
+        self.attrs.set_flat(values, self.points.len())
     }
 
     /// Insert an open-map per-point attribute under the given name, replacing any attribute already

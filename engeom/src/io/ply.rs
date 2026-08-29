@@ -52,7 +52,7 @@ use crate::geom3::attributes3::FaceAttrSet3;
 use crate::geom3::attributes3::PointAttrSet3;
 use crate::geom3::mesh::MeshView3;
 use crate::geom3::mesh::data::MeshData3;
-use crate::{Point3, Result, UnitVec3, Vector3};
+use crate::{Point2, Point3, Result, UnitVec3, Vector3};
 use ply_rs_bw::parser::{Parser, Reader};
 use ply_rs_bw::ply::{
     BeginList, ElementDef, Encoding, Header, PropertyAccess, PropertyAccessResult, PropertyDef,
@@ -468,6 +468,7 @@ fn write_row<W: Write>(
 /// position or a vector attribute is split across the three PLY properties it needs.
 enum Col<'a> {
     Point(&'a [Point3], usize),
+    Flat(&'a [Point2], usize),
     Unit(&'a [UnitVec3], usize),
     Scalar(&'a [f64]),
     Label(&'a [u32]),
@@ -482,7 +483,7 @@ impl Col<'_> {
     /// are integers and have a fixed width.
     fn scalar_type(&self, precision: PlyPrecision) -> ScalarType {
         match self {
-            Col::Point(..) | Col::Unit(..) | Col::Scalar(..) | Col::Vector(..) => {
+            Col::Point(..) | Col::Flat(..) | Col::Unit(..) | Col::Scalar(..) | Col::Vector(..) => {
                 precision.scalar_type()
             }
             Col::Label(..) => ScalarType::UInt,
@@ -494,6 +495,7 @@ impl Col<'_> {
     fn double(&self, i: usize) -> Option<f64> {
         match self {
             Col::Point(v, c) => Some(v[i][*c]),
+            Col::Flat(v, c) => Some(v[i][*c]),
             Col::Unit(v, c) => Some(v[i][*c]),
             Col::Scalar(v) => Some(v[i]),
             Col::Vector(v, c) => Some(v[i][*c]),
@@ -543,6 +545,11 @@ fn point_columns<'a>(points: &'a [Point3], attrs: &'a PointAttrSet3) -> Vec<(Str
 
     if let Some(stdev) = attrs.stdev() {
         cols.push(("stdev".to_string(), Col::Scalar(stdev)));
+    }
+    if let Some(flat) = attrs.flat() {
+        for (name, c) in [("flat_x", 0), ("flat_y", 1)] {
+            cols.push((name.to_string(), Col::Flat(flat, c)));
+        }
     }
 
     let mut names: Vec<&str> = attrs.attr_names().collect();
@@ -833,6 +840,26 @@ fn read_points(
         attrs.set_stdev(Some(stdev.values.clone()), n)?;
     }
 
+    match (
+        take_column(&columns, "flat_x"),
+        take_column(&columns, "flat_y"),
+    ) {
+        (Some(fx), Some(fy)) => {
+            let flat = (0..n)
+                .map(|i| Point2::new(fx.values[i], fy.values[i]))
+                .collect();
+            attrs.set_flat(Some(flat), n)?;
+        }
+        (None, None) => {}
+        _ => {
+            return Err(
+                "PLY 'vertex' element has only one of 'flat_x' and 'flat_y', but flat \
+                        coordinates need both"
+                    .into(),
+            );
+        }
+    }
+
     let (composites, taken) = take_composites(&columns);
     for (name, attr) in composites {
         attrs.insert_attr(&name, attr, n)?;
@@ -848,7 +875,8 @@ fn read_points(
 /// Property names on the vertex element which are consumed by a typed field rather than carried
 /// into the open attribute map.
 const POINT_CONSUMED: &[&str] = &[
-    "x", "y", "z", "nx", "ny", "nz", "red", "green", "blue", "alpha", "stdev", "std_dev",
+    "x", "y", "z", "nx", "ny", "nz", "red", "green", "blue", "alpha", "stdev", "std_dev", "flat_x",
+    "flat_y",
 ];
 
 // ===============================================================================================
@@ -1231,13 +1259,15 @@ mod tests {
              property uchar green\n\
              property uchar blue\n\
              property float stdev\n\
+             property float flat_x\n\
+             property float flat_y\n\
              element face 1\n\
              property list uchar int vertex_indices\n\
              property uchar label\n\
              end_header\n\
-             0 0 0 0 0 2 255 0 0 0.01\n\
-             1 0 0 0 0 1 0 255 0 0.02\n\
-             0 1 0 0 0 1 0 0 255 0.03\n\
+             0 0 0 0 0 2 255 0 0 0.01 0 0\n\
+             1 0 0 0 0 1 0 255 0 0.02 1.5 0\n\
+             0 1 0 0 0 1 0 0 255 0.03 0 1.5\n\
              3 0 1 2 7\n",
         )?;
 
@@ -1251,6 +1281,7 @@ mod tests {
         assert_eq!(mesh.point_colors().unwrap()[0], [255, 0, 0]);
         // Declared as `float`, so the value arrives with f32 precision.
         assert_relative_eq!(mesh.point_stdev().unwrap()[0], 0.01, epsilon = 1.0e-8);
+        assert_eq!(mesh.point_flat().unwrap()[1], Point2::new(1.5, 0.0));
         assert_eq!(mesh.face_labels().unwrap(), &[7]);
 
         // Everything recognized went to a typed field, so the open maps stay empty.
@@ -1258,6 +1289,23 @@ mod tests {
         assert_eq!(mesh.face_attrs().attr_names().count(), 0);
 
         Ok(())
+    }
+
+    #[test]
+    fn a_lone_flat_column_is_an_error() {
+        let result = ascii_ply(
+            "ply\n\
+             format ascii 1.0\n\
+             element vertex 1\n\
+             property float x\n\
+             property float y\n\
+             property float z\n\
+             property float flat_x\n\
+             end_header\n\
+             0 0 0 0.5\n",
+        );
+        let message = result.expect_err("half a flat coordinate").to_string();
+        assert!(message.contains("flat_x"), "{message}");
     }
 
     #[test]
@@ -1443,6 +1491,12 @@ mod tests {
             .unwrap();
         mesh.set_point_stdev(Some(vec![0.001, 0.002, 0.003]))
             .unwrap();
+        mesh.set_point_flat(Some(vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(1.5, 0.0),
+            Point2::new(0.0, 1.5),
+        ]))
+        .unwrap();
         mesh.set_face_colors(Some(vec![[10, 20, 30]])).unwrap();
         mesh.set_face_labels(Some(vec![42])).unwrap();
 
@@ -1473,6 +1527,7 @@ mod tests {
 
         assert_eq!(a.point_colors(), b.point_colors());
         assert_eq!(a.point_stdev(), b.point_stdev());
+        assert_eq!(a.point_flat(), b.point_flat());
         assert_eq!(a.face_colors(), b.face_colors());
         assert_eq!(a.face_labels(), b.face_labels());
 
@@ -1792,6 +1847,7 @@ mod tests {
 
             assert_eq!(back_attrs.colors(), attrs.colors(), "binary = {binary}");
             assert_eq!(back_attrs.stdev(), attrs.stdev(), "binary = {binary}");
+            assert_eq!(back_attrs.flat(), attrs.flat(), "binary = {binary}");
 
             for (a, b) in back_attrs
                 .normals()

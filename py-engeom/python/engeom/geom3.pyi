@@ -2727,6 +2727,17 @@ class Mesh3:
         ...
 
     @property
+    def point_flat(self) -> NDArray[float] | None:
+        """
+        The stored per-point flat coordinates, or None if the mesh has none. Each coordinate is a point's position in
+        a flattened 2D chart of the surface, such as the output of `boundary_first_flatten`, expressed in the mesh's
+        own length units. These are not texture coordinates.
+
+        :return: a numpy array of shape (n, 2), or None.
+        """
+        ...
+
+    @property
     def face_colors(self) -> NDArray[numpy.uint8] | None:
         """
         The stored per-face RGB colors, or None if the mesh has none.
@@ -2768,6 +2779,21 @@ class Mesh3:
         Set or clear the stored per-point standard deviations.
 
         :param values: a numpy array of shape (n,), or None to clear the attribute.
+        :raises ValueError: if the array length does not match the point count.
+        """
+        ...
+
+    def set_point_flat(self, values: NDArray[float] | None = None):
+        """
+        Set or clear the stored per-point flat coordinates, which give each point's position in a flattened 2D chart
+        of the surface, such as the output of `boundary_first_flatten`. These are not texture coordinates; they use
+        the mesh's own length units laid out in a plane. They remain attached through subsets, appends, scaling
+        (where they scale with the geometry), rigid transforms (where they stay fixed), and PLY files.
+
+        Set this after finalizing the mesh because the values are validated against the point count when this method
+        is called.
+
+        :param values: a numpy array of shape (n, 2), or None to clear the attribute.
         :raises ValueError: if the array length does not match the point count.
         """
         ...
@@ -3091,7 +3117,7 @@ class Mesh3:
         dropping whole faces keeps an index mapping back to the original.
 
         If no patch fails the filter the mesh is returned unchanged, rather than rebuilt, so a filter which finds
-        nothing to do is cheap and preserves the UV mapping.
+        nothing to do is cheap.
 
         :param filter: which patches are worth keeping.
         :return: a new mesh containing only the surviving patches.
@@ -3165,8 +3191,9 @@ class Mesh3:
         """
         This method will perform a conformal mapping of the mesh to the XY plane using the boundary-first flattening
         algorithm developed by Crane et al.  This mapping attempts to preserve angles from the original mesh to the
-        flattened mesh, and is useful for applications such as texture mapping or transformation to an image/raster
-        space for analysis.
+        flattened mesh, and is useful for measurements that only make sense in a flat domain and for transformation
+        to an image/raster space for analysis. Store the result on the mesh with `set_point_flat` so that it travels
+        with the mesh's other attributes.
 
         There are a number of limitations to this method based on the implementation:
 
@@ -4776,6 +4803,15 @@ class MeshData3:
         ...
 
     @property
+    def point_flat(self) -> NDArray[float] | None:
+        """
+        The per-point flat coordinates as a numpy array of shape (n, 2) and dtype float64, or None if the mesh carries
+        none. Each coordinate is a point's position in a flattened 2D chart of the surface, expressed in the mesh's
+        own length units rather than as texture coordinates. See `Mesh3.set_point_flat`.
+        """
+        ...
+
+    @property
     def face_colors(self) -> NDArray[numpy.uint8] | None:
         """
         The per-face RGB colors as a numpy array of shape (m, 3) and dtype uint8, or None if the mesh carries none.
@@ -4812,6 +4848,15 @@ class MeshData3:
         Set or clear the per-point standard deviations, which must be finite and non-negative.
 
         :param values: an array of shape (n,) matching the point count, or None to clear.
+        """
+        ...
+
+    def set_point_flat(self, values: NDArray[float] | None = None):
+        """
+        Set or clear the per-point flat coordinates, which give each point's position in a flattened 2D chart of the
+        surface in the mesh's own length units. See `Mesh3.set_point_flat`.
+
+        :param values: an array of shape (n, 2) matching the point count, or None to clear.
         """
         ...
 
@@ -5348,6 +5393,16 @@ class PointCloud3:
         """
         ...
 
+    @property
+    def point_flat(self) -> NDArray[float] | None:
+        """
+        The per-point flat coordinates as a numpy array of shape (n, 2) and dtype float64, or None if the cloud
+        carries none. Each coordinate is a point's position in a flattened 2D chart of a surface, expressed in the
+        cloud's own length units rather than as texture coordinates. A cloud projected onto a flattened reference
+        surface can store each point's flat position here alongside its depth in a scalar attribute.
+        """
+        ...
+
     def set_point_normals(self, values: NDArray[float] | None = None):
         """
         Set or clear the per-point unit normals. Rows are normalized on the way in, and a row of zero length is an
@@ -5370,6 +5425,15 @@ class PointCloud3:
         Set or clear the per-point standard deviations, which must be finite and non-negative.
 
         :param values: an array of shape (n,) matching the point count, or None to clear.
+        """
+        ...
+
+    def set_point_flat(self, values: NDArray[float] | None = None):
+        """
+        Set or clear the per-point flat coordinates, which give each point's position in a flattened 2D chart of a
+        surface in the cloud's own length units. See `Mesh3.set_point_flat`.
+
+        :param values: an array of shape (n, 2) matching the point count, or None to clear.
         """
         ...
 
@@ -5923,8 +5987,8 @@ class HalfEdgeMesh3:
     A half-edge representation of a triangle mesh, which is what topology edits are driven through.
 
     Reach for this when an operation needs to navigate topology, such as decimation or smoothing. `Mesh3` remains the
-    right type for geometric queries, since it carries a BVH and this does not. Neither direction carries attributes,
-    `is_solid`, or the UV mapping, because this structure has nowhere to put them.
+    right type for geometric queries, since it carries a BVH and this does not. Neither direction carries attributes
+    or `is_solid`, because this structure has nowhere to put them.
 
     This object is pinned to the thread which created it, because the underlying structure cannot be shared between
     threads. Touching it from another thread raises. Convert with `to_mesh` first if the result is needed elsewhere.

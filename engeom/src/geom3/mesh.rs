@@ -13,6 +13,7 @@ pub mod data;
 pub(crate) mod edges;
 mod editor;
 pub mod filtering;
+mod flat_domain;
 pub(crate) mod measurement;
 mod nav_structure;
 mod outline;
@@ -20,7 +21,6 @@ pub mod patches;
 mod queries;
 pub mod sampling;
 mod section;
-mod uv_mapping;
 mod view;
 pub mod voxelize;
 
@@ -32,13 +32,13 @@ pub use collisions::MeshCollisionSet;
 pub use data::{Attr3, MeshData3};
 pub use edges::MeshEdges;
 pub use editor::{EditReport, MeshEditor};
+pub use flat_domain::FlatDomain;
 pub use measurement::SurfaceDeviation;
 pub use nav_structure::MeshNav;
 use parry3d_f64::bounding_volume::Aabb;
 use parry3d_f64::shape::{TriMesh, TriMeshFlags};
 use parry3d_f64::transformation;
 pub use patches::{PatchFilter, PatchLabels, PatchStats};
-pub use uv_mapping::UvMapping;
 pub use view::MeshView3;
 
 use crate::io::write_tc_mesh_file;
@@ -137,7 +137,6 @@ pub struct Mesh3 {
     point_attrs: PointAttrSet3,
     face_attrs: FaceAttrSet3,
     is_solid: bool,
-    uv: Option<UvMapping>,
 }
 
 // ===============================================================================================
@@ -223,6 +222,13 @@ impl Mesh3 {
         self.point_attrs.stdev()
     }
 
+    /// Get the per-point flat coordinates, if present: each point's position in a flattened 2D
+    /// chart of the surface, expressed in the mesh's own length units. See
+    /// [`set_point_flat`](Self::set_point_flat).
+    pub fn point_flat(&self) -> Option<&[Point2]> {
+        self.point_attrs.flat()
+    }
+
     /// Get the per-face RGB colors, if present.
     pub fn face_colors(&self) -> Option<&[[u8; 3]]> {
         self.face_attrs.colors()
@@ -282,6 +288,24 @@ impl Mesh3 {
     /// returns: `Result<()>`
     pub fn set_point_stdev(&mut self, values: Option<Vec<f64>>) -> Result<()> {
         self.point_attrs.set_stdev(values, self.point_count())
+    }
+
+    /// Set or clear the per-point flat coordinates: the position of each point in a flattened 2D
+    /// chart of the surface, such as the output of boundary first flattening. These are not
+    /// texture coordinates; they express the mesh's own length units in a plane. They scale with
+    /// the geometry under a uniform scale while remaining fixed under a rigid transform.
+    ///
+    /// Set this after finalizing the mesh because the values are validated against the point count
+    /// at the time of the call. The flat-domain queries (`compute_flat_domain`) use this attribute.
+    ///
+    /// # Arguments
+    ///
+    /// * `values`: the flat coordinates to store, or `None` to clear them. Must match the point
+    ///   count.
+    ///
+    /// returns: `Result<()>`
+    pub fn set_point_flat(&mut self, values: Option<Vec<Point2>>) -> Result<()> {
+        self.point_attrs.set_flat(values, self.point_count())
     }
 
     /// Set or clear the per-face RGB colors.
@@ -390,29 +414,27 @@ impl Mesh3 {
     /// faces, so there is no correct way to carry an attribute array through them, which is why
     /// they live here rather than on the `MeshData3` conversion path.
     ///
+    /// Set attributes, including the flat coordinates of a flattened mesh, afterward through their
+    /// own setters. The setters validate them against the point and face counts that remain after
+    /// cleanup.
+    ///
     /// # Arguments
     ///
-    /// * `vertices`:
-    /// * `triangles`:
-    /// * `is_solid`:
-    /// * `merge_duplicates`:
-    /// * `delete_degenerate`:
-    /// * `uv`:
+    /// * `vertices`: the point positions
+    /// * `triangles`: the faces, as triples of indices into `vertices`
+    /// * `is_solid`: whether distance queries should treat points inside the mesh as being at zero
+    ///   distance
+    /// * `merge_duplicates`: merge points which compare equal as `f64`, and drop the duplicate
+    ///   faces that produces
+    /// * `delete_degenerate`: drop faces with zero area or repeated indices
     ///
-    /// returns: Result<Mesh3, Box<dyn Error, Global>>
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
+    /// returns: `Result<Mesh3>`, failing if a face refers to a point which does not exist
     pub fn new_with_options(
         vertices: Vec<Point3>,
         triangles: Vec<[u32; 3]>,
         is_solid: bool,
         merge_duplicates: bool,
         delete_degenerate: bool,
-        uv: Option<Vec<Point2>>,
     ) -> Result<Self> {
         let mut flags = TriMeshFlags::empty();
         if merge_duplicates {
@@ -424,19 +446,12 @@ impl Mesh3 {
             flags |= TriMeshFlags::DELETE_DEGENERATE_TRIANGLES;
         }
 
-        let uv_mapping = if let Some(uv) = uv {
-            Some(UvMapping::new(uv, triangles.clone())?)
-        } else {
-            None
-        };
-
         let shape = TriMesh::with_flags(vertices, triangles, flags)?;
         Ok(Self {
             shape,
             point_attrs: PointAttrSet3::empty(),
             face_attrs: FaceAttrSet3::empty(),
             is_solid,
-            uv: uv_mapping,
         })
     }
 
@@ -447,16 +462,15 @@ impl Mesh3 {
             point_attrs: PointAttrSet3::empty(),
             face_attrs: FaceAttrSet3::empty(),
             is_solid,
-            uv: None,
         }
     }
+
     pub fn from_trimesh(shape: TriMesh, is_solid: bool) -> Self {
         Self {
             shape,
             point_attrs: PointAttrSet3::empty(),
             face_attrs: FaceAttrSet3::empty(),
             is_solid,
-            uv: None,
         }
     }
 }
@@ -529,14 +543,7 @@ impl Mesh3 {
         delete_degenerate: bool,
     ) -> Result<Self> {
         let (points, faces, _, _) = MeshData3::load_stl(path)?.into_parts();
-        Self::new_with_options(
-            points,
-            faces,
-            is_solid,
-            merge_duplicates,
-            delete_degenerate,
-            None,
-        )
+        Self::new_with_options(points, faces, is_solid, merge_duplicates, delete_degenerate)
     }
 
     /// Write this mesh to an STL file, which carries geometry and nothing else.
@@ -638,7 +645,6 @@ impl Mesh3 {
             point_attrs,
             face_attrs,
             is_solid,
-            uv: None,
         })
     }
 
@@ -835,11 +841,6 @@ impl Mesh3 {
     ///
     /// returns: `Result<()>`
     pub fn append_in_place(&mut self, other: &Mesh3) -> Result<()> {
-        // For now, both meshes must have an empty UV mapping
-        if self.uv.is_some() || other.uv.is_some() {
-            return Err("Cannot append meshes with UV mappings".into());
-        }
-
         // Both attribute domains are checked before anything is modified because these checks are
         // the only steps that can fail. Extending the point domain before checking the face domain
         // would leave the mesh only partially appended if a face attribute were mismatched.
@@ -885,52 +886,6 @@ impl Mesh3 {
         MeshView3::from(self)
     }
 
-    pub fn uv(&self) -> Option<&UvMapping> {
-        self.uv.as_ref()
-    }
-
-    pub fn uv_to_3d(&self, uv: &Point2) -> Option<MeshSurfPoint> {
-        let (i, bc) = self.uv()?.triangle(uv)?;
-        self.at_barycentric(i, bc).ok()
-    }
-
-    pub fn project_to_uv(&self, p: &impl PCoords<3>) -> Option<Point2> {
-        let uv_map = self.uv()?;
-        let mp = self.surface_closest_to(p);
-        Some(uv_map.point(mp.face_index, mp.bc))
-    }
-
-    pub fn uv_with_tol(
-        &self,
-        point: &Point3,
-        max_dist: f64,
-        max_angle: f64,
-        transform: Option<&Iso3>,
-    ) -> Option<(Point2, f64)> {
-        if let Some(uv_map) = self.uv() {
-            let point = if let Some(transform) = transform {
-                transform * point
-            } else {
-                *point
-            };
-
-            if let Some((prj, id, loc)) = self.project_with_tol(&point, max_dist, max_angle, None) {
-                let triangle = self.shape.triangle(id);
-                if let Some(normal) = triangle.normal() {
-                    let uv = uv_map.point(id, loc.barycentric_coordinates().unwrap());
-                    // Now find the depth
-                    let sp = SurfacePoint3::new(prj.point, normal);
-                    Some((uv, sp.scalar_projection(&point)))
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
     /// Create a new `MeshNav` structure for this mesh. This structure is used to efficiently
     /// navigate the mesh through edges and faces.  It is recommended to use this if you will be
     /// performing multiple structural queries on the mesh, so that the structure does not need to
@@ -1432,6 +1387,12 @@ mod tests {
         data.set_point_normals(Some(vec![UnitVec3::new_normalize(Vector3::z()); 3]))
             .unwrap();
         data.set_point_stdev(Some(vec![0.1, 0.2, 0.3])).unwrap();
+        data.set_point_flat(Some(vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(2.0, 0.0),
+            Point2::new(0.0, 2.0),
+        ]))
+        .unwrap();
         data.set_face_labels(Some(vec![7])).unwrap();
         data.insert_point_attr("confidence", Attr3::Scalar(vec![0.5, 0.6, 0.7]))
             .unwrap();
@@ -1562,9 +1523,15 @@ mod tests {
     }
 
     #[test]
-    fn scaling_scales_the_standard_deviations() -> Result<()> {
+    fn scaling_scales_the_standard_deviations_and_flat_coordinates() -> Result<()> {
         let mesh = Mesh3::from_data(attributed_data(), false)?;
         let scaled = mesh.scale_copy(25.4)?;
+
+        assert_relative_eq!(
+            scaled.point_flat().unwrap()[1].coords,
+            Point2::new(2.0 * 25.4, 0.0).coords,
+            epsilon = 1.0e-12
+        );
 
         for (actual, expected) in scaled
             .point_stdev()
@@ -1612,6 +1579,12 @@ mod tests {
         assert_eq!(mesh.point_stdev().unwrap(), &[0.1, 0.2, 0.3, 0.1, 0.2, 0.3]);
         assert_eq!(mesh.face_labels().unwrap(), &[7, 7]);
         assert_eq!(mesh.point_attr("confidence").unwrap().len(), 6);
+
+        // Flat coordinates concatenate like any other attribute. The two charts overlap in the
+        // plane, and the caller is responsible for resolving that overlap if necessary.
+        let flat = mesh.point_flat().unwrap();
+        assert_eq!(flat.len(), 6);
+        assert_eq!(flat[4], Point2::new(2.0, 0.0));
 
         mesh.point_attrs().validate(mesh.point_count())?;
         mesh.face_attrs().validate(mesh.face_count())?;
@@ -1681,8 +1654,14 @@ mod tests {
     fn labeled_box() -> Result<Mesh3> {
         let mut mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let stdev = (0..mesh.point_count()).map(|i| i as f64).collect();
+        let flat = mesh
+            .points()
+            .iter()
+            .map(|p| Point2::new(p.x, p.y))
+            .collect();
         let labels = (0..mesh.face_count() as u32).collect();
         mesh.set_point_stdev(Some(stdev))?;
+        mesh.set_point_flat(Some(flat))?;
         mesh.set_face_labels(Some(labels))?;
         Ok(mesh)
     }
@@ -1709,6 +1688,14 @@ mod tests {
             .map(|i| mesh.point_stdev().unwrap()[i])
             .collect();
         assert_eq!(sub.point_stdev().unwrap(), kept.as_slice());
+
+        // Flat coordinates travel with their points in the same way.
+        let kept_flat: Vec<Point2> = mesh
+            .compute_unique_point_mask(&mask)?
+            .iter_true()
+            .map(|i| mesh.point_flat().unwrap()[i])
+            .collect();
+        assert_eq!(sub.point_flat().unwrap(), kept_flat.as_slice());
 
         Ok(())
     }

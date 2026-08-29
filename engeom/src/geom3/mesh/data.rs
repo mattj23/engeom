@@ -27,7 +27,7 @@ use crate::geom3::mesh::algorithms::{
     OffsetOpts, compute_face_offset_points, compute_normal_displaced_points,
 };
 use crate::io::{load_g3d_mesh_data, read_tc_mesh_file, write_tc_mesh_file};
-use crate::{Point3, Result, UnitVec3};
+use crate::{Point2, Point3, Result, UnitVec3};
 use std::fmt;
 use std::path::Path;
 
@@ -449,6 +449,13 @@ impl MeshData3 {
         self.point_attrs.stdev()
     }
 
+    /// Get the per-point flat coordinates, if present: each point's position in a flattened 2D
+    /// chart of the surface, expressed in the mesh's own length units. See
+    /// [`set_point_flat`](Self::set_point_flat).
+    pub fn point_flat(&self) -> Option<&[Point2]> {
+        self.point_attrs.flat()
+    }
+
     /// Get the per-face RGB colors, if present.
     pub fn face_colors(&self) -> Option<&[[u8; 3]]> {
         self.face_attrs.colors()
@@ -508,6 +515,24 @@ impl MeshData3 {
     /// returns: `Result<()>`
     pub fn set_point_stdev(&mut self, values: Option<Vec<f64>>) -> Result<()> {
         self.point_attrs.set_stdev(values, self.points.len())
+    }
+
+    /// Set or clear the per-point flat coordinates: the position of each point in a flattened 2D
+    /// chart of the surface, such as the output of boundary first flattening. These are not
+    /// texture coordinates; they express the mesh's own length units in a plane. They scale with
+    /// the geometry under a uniform scale while remaining fixed under a rigid transform.
+    ///
+    /// Set this after finalizing the mesh because the values are validated against the point count
+    /// at the time of the call. Convert to a `Mesh3` to run flat-domain queries.
+    ///
+    /// # Arguments
+    ///
+    /// * `values`: the flat coordinates to store, or `None` to clear them. Must match the point
+    ///   count.
+    ///
+    /// returns: `Result<()>`
+    pub fn set_point_flat(&mut self, values: Option<Vec<Point2>>) -> Result<()> {
+        self.point_attrs.set_flat(values, self.points.len())
     }
 
     /// Set or clear the per-face RGB colors.

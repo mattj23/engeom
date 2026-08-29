@@ -519,3 +519,44 @@ def test_mesh_sample_uniform_draws_the_requested_count():
     assert len(cloud) == 250
     assert cloud.point_normals.shape == (250, 3)
     assert numpy.allclose(m.measure_deviations(cloud.points, "point"), 0.0, atol=1e-9)
+
+
+def grid_mesh(n: int = 4) -> Mesh3:
+    """An (n x n)-vertex flat grid in the xy plane: one patch, one boundary loop, no holes."""
+    xs, ys = numpy.meshgrid(numpy.arange(n, dtype=float), numpy.arange(n, dtype=float))
+    points = numpy.column_stack([xs.ravel(), ys.ravel(), numpy.zeros(n * n)])
+    faces = []
+    for r in range(n - 1):
+        for c in range(n - 1):
+            a = r * n + c
+            faces.append([a, a + 1, a + n + 1])
+            faces.append([a, a + n + 1, a + n])
+    return Mesh3(points, numpy.array(faces, dtype=numpy.uint32))
+
+
+def test_mesh_point_flat_round_trips_and_clears():
+    m = Mesh3.create_box(1.0, 1.0, 1.0)
+    assert m.point_flat is None
+
+    flat = numpy.random.default_rng(3).random((m.point_count, 2))
+    m.set_point_flat(flat)
+    assert m.point_flat.shape == (m.point_count, 2)
+    assert numpy.allclose(m.point_flat, flat)
+
+    m.set_point_flat(None)
+    assert m.point_flat is None
+
+
+def test_mesh_set_point_flat_rejects_a_length_mismatch():
+    m = Mesh3.create_box(1.0, 1.0, 1.0)
+    with pytest.raises(ValueError):
+        m.set_point_flat(numpy.zeros((m.point_count - 1, 2)))
+
+
+def test_mesh_boundary_first_flatten_output_is_accepted_as_point_flat():
+    m = grid_mesh()
+    flat = m.boundary_first_flatten()
+    assert flat.shape == (m.point_count, 2)
+
+    m.set_point_flat(flat)
+    assert numpy.allclose(m.point_flat, flat)

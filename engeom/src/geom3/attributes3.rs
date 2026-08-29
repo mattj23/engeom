@@ -25,8 +25,9 @@ use std::collections::HashMap;
 /// Attribute names which may not be used as keys in the open attribute maps, because they name a
 /// quantity that either already has a typed field or is computed on demand. As a precaution we're
 /// going to reject them to prevent any quantity from having two homes that can silently disagree.
-pub(crate) const RESERVED_ATTR_NAMES: [&str; 8] = [
-    "normal", "normals", "color", "colors", "stdev", "std_dev", "label", "labels",
+pub(crate) const RESERVED_ATTR_NAMES: [&str; 11] = [
+    "normal", "normals", "color", "colors", "stdev", "std_dev", "label", "labels", "flat",
+    "flat_x", "flat_y",
 ];
 
 /// A single per-element attribute array. The length of the underlying vector is expected to match
@@ -231,8 +232,8 @@ pub(crate) fn check_reserved(name: &str) -> Result<()> {
     if RESERVED_ATTR_NAMES.contains(&name) {
         return Err(format!(
             "'{name}' is a reserved attribute name. Quantities which have a typed field or are \
-             computed on demand (normals, colors, standard deviations, labels) must be set through \
-             their own accessor, so that they cannot have two homes which disagree."
+             computed on demand (normals, colors, standard deviations, flat coordinates, labels) \
+             must be set through their own accessor, so that they cannot have two homes which disagree."
         )
         .into());
     }

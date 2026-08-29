@@ -145,6 +145,9 @@ impl Mesh3 {
     /// will happen occasionally when the test point is near an edge with two triangles that reflex
     /// away from the point, and it will happen when the test point is beyond the edge of the mesh.
     ///
+    /// A point lying on the surface itself always passes the angle test. Its offset from the
+    /// projection is rounding noise with an arbitrary direction, so the angle is meaningless there.
+    ///
     /// # Arguments
     ///
     /// * `point`: the test point to project onto the mesh
@@ -162,7 +165,6 @@ impl Mesh3 {
         max_angle: f64,
         transform: Option<&Iso3>,
     ) -> Option<(PointProjection, u32, TrianglePointLocation)> {
-        // TODO: Needs test coverage
         let point = Point3::from(point.coords());
         let point = if let Some(transform) = transform {
             transform * point
@@ -177,8 +179,11 @@ impl Mesh3 {
             let local = point - prj.point;
             let triangle = self.shape.triangle(id);
             if let Some(normal) = triangle.normal() {
+                // At rounding level the offset has no meaningful direction, so the angle test is
+                // skipped rather than allowed to reject a point which is on the surface.
+                let on_surface = local.norm() <= 1.0e-12 * point.coords.norm().max(1.0);
                 let angle = normal.angle(&local).abs();
-                if angle < max_angle || angle > PI - max_angle {
+                if on_surface || angle < max_angle || angle > PI - max_angle {
                     Some((prj, id, loc))
                 } else {
                     None
@@ -387,6 +392,44 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn project_with_tol_accepts_the_surface_and_rejects_beyond_the_edge() {
+        let mesh = Mesh3::create_box(2.0, 2.0, 2.0, false);
+        let max_angle = std::f64::consts::PI / 4.0;
+
+        // Above a face, within distance.
+        let (prj, _, _) = mesh
+            .project_with_tol(&Point3::new(0.3, -0.2, 1.05), 0.1, max_angle, None)
+            .expect("above the +z face");
+        assert_relative_eq!(prj.point, Point3::new(0.3, -0.2, 1.0), epsilon = 1e-12);
+
+        // On the face itself, where the offset from the projection is rounding noise.
+        assert!(
+            mesh.project_with_tol(&Point3::new(0.3, -0.2, 1.0), 0.1, max_angle, None)
+                .is_some()
+        );
+
+        // Too far away.
+        assert!(
+            mesh.project_with_tol(&Point3::new(0.3, -0.2, 1.2), 0.1, max_angle, None)
+                .is_none()
+        );
+
+        // Off the edge of the box at the height of the +z face: the projection lands on the edge
+        // at a right angle to both adjacent normals.
+        assert!(
+            mesh.project_with_tol(&Point3::new(1.05, -0.2, 1.05), 0.2, max_angle, None)
+                .is_none()
+        );
+
+        // A transform moves the point before projecting.
+        let shift = Iso3::translation(0.0, 0.0, -0.5);
+        assert!(
+            mesh.project_with_tol(&Point3::new(0.3, -0.2, 1.55), 0.1, max_angle, Some(&shift))
+                .is_some()
+        );
     }
 
     #[test]

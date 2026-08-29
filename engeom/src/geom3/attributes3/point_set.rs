@@ -18,19 +18,30 @@
 //! scale the value correctly (for example, when converting from mm to inches) without knowing which
 //! is stored, so the name has to say.
 //!
+//! # The flat coordinates
+//!
+//! `flat` holds one 2D position per point: its location in a flattened chart of the associated
+//! surface, such as the output of boundary first flattening. It is not a texture coordinate. It
+//! receives a typed field under the second rule above because the container must treat it
+//! differently from a generic vector. A rigid motion of the surface leaves its chart unchanged,
+//! so `transform_in_place` does not touch it. A uniform scale changes the surface metric tracked by
+//! the chart, so `scale_in_place` applies the magnitude of the factor. Because chart orientation is
+//! arbitrary, a mirroring scale is not propagated into it. See `geom3::mesh::flat_domain` for the
+//! queries built on this attribute.
+//!
 //! # Error message naming
 //!
-//! The typed fields report themselves as `point_normals`, `point_colors`, and `point_stdev` in
-//! error messages rather than by their bare field names. The mesh types hold this set alongside a
-//! `FaceAttrSet3`, so naming the domain disambiguates the two. The added context is also useful to
-//! callers working with point clouds.
+//! The typed fields report themselves as `point_normals`, `point_colors`, `point_stdev`, and
+//! `point_flat` in error messages rather than by their bare field names. The mesh types hold this
+//! set alongside a `FaceAttrSet3`, so naming the domain disambiguates the two. The added context is
+//! also useful to callers working with point clouds.
 
 use super::{
     Attr3, check_both_or_neither, check_keys_match, check_len, check_reserved, check_same_variant,
     clone_indexed, clone_masked, extend_option,
 };
 use crate::common::IndexMask;
-use crate::{Iso3, Result, UnitVec3};
+use crate::{Iso3, Point2, Result, UnitVec3};
 use std::collections::HashMap;
 
 /// The set of per-point attributes attached to a container, holding both the first-class typed
@@ -45,6 +56,7 @@ pub struct PointAttrSet3 {
     normals: Option<Vec<UnitVec3>>,
     colors: Option<Vec<[u8; 3]>>,
     stdev: Option<Vec<f64>>,
+    flat: Option<Vec<Point2>>,
     open: HashMap<String, Attr3>,
 }
 
@@ -63,6 +75,7 @@ impl PointAttrSet3 {
         self.normals.is_none()
             && self.colors.is_none()
             && self.stdev.is_none()
+            && self.flat.is_none()
             && self.open.is_empty()
     }
 
@@ -80,6 +93,9 @@ impl PointAttrSet3 {
         }
         if self.stdev.is_some() {
             names.push("point_stdev");
+        }
+        if self.flat.is_some() {
+            names.push("point_flat");
         }
         names.extend(self.open.keys().map(|k| k.as_str()));
         names
@@ -102,6 +118,14 @@ impl PointAttrSet3 {
     /// with the geometry under a uniform scale.
     pub fn stdev(&self) -> Option<&[f64]> {
         self.stdev.as_deref()
+    }
+
+    /// Get the per-point flat coordinates, if present.
+    ///
+    /// These are the positions of the points in a flattened 2D chart of their associated surface,
+    /// expressed in the container's own length units. They are not texture coordinates.
+    pub fn flat(&self) -> Option<&[Point2]> {
+        self.flat.as_deref()
     }
 
     /// Get the open-map attribute stored under the given name, if present.
@@ -178,6 +202,21 @@ impl PointAttrSet3 {
         Ok(())
     }
 
+    /// Set or clear the per-point flat coordinates: the position of each point in a flattened 2D
+    /// chart of the surface, such as the output of boundary first flattening.
+    ///
+    /// # Arguments
+    ///
+    /// * `values`: the flat coordinates to store, or `None` to clear them
+    /// * `n_points`: the point count of the owning container, which `values` must match
+    ///
+    /// returns: `Result<()>`
+    pub fn set_flat(&mut self, values: Option<Vec<Point2>>, n_points: usize) -> Result<()> {
+        check_len(values.as_deref().map(|v| v.len()), n_points, "point_flat")?;
+        self.flat = values;
+        Ok(())
+    }
+
     /// Insert an open-map attribute under the given name, replacing any attribute already stored
     /// there.
     ///
@@ -229,6 +268,7 @@ impl PointAttrSet3 {
             n_points,
             "point_stdev",
         )?;
+        check_len(self.flat.as_ref().map(|v| v.len()), n_points, "point_flat")?;
 
         for (name, attr) in self.open.iter() {
             check_len(Some(attr.len()), n_points, name)?;
@@ -255,6 +295,7 @@ impl PointAttrSet3 {
             normals: clone_masked(self.normals.as_deref(), mask)?,
             colors: clone_masked(self.colors.as_deref(), mask)?,
             stdev: clone_masked(self.stdev.as_deref(), mask)?,
+            flat: clone_masked(self.flat.as_deref(), mask)?,
             open,
         })
     }
@@ -278,6 +319,7 @@ impl PointAttrSet3 {
             normals: clone_indexed(self.normals.as_deref(), indices)?,
             colors: clone_indexed(self.colors.as_deref(), indices)?,
             stdev: clone_indexed(self.stdev.as_deref(), indices)?,
+            flat: clone_indexed(self.flat.as_deref(), indices)?,
             open,
         })
     }
@@ -316,6 +358,7 @@ impl PointAttrSet3 {
             "point_colors",
         )?;
         check_both_or_neither(self.stdev.is_some(), other.stdev.is_some(), "point_stdev")?;
+        check_both_or_neither(self.flat.is_some(), other.flat.is_some(), "point_flat")?;
 
         check_keys_match(&self.open, &other.open, "point")?;
 
@@ -333,6 +376,7 @@ impl PointAttrSet3 {
         extend_option(&mut self.normals, other.normals.as_deref());
         extend_option(&mut self.colors, other.colors.as_deref());
         extend_option(&mut self.stdev, other.stdev.as_deref());
+        extend_option(&mut self.flat, other.flat.as_deref());
 
         for (name, attr) in self.open.iter_mut() {
             attr.extend_from(&other.open[name])?;
@@ -351,7 +395,8 @@ impl PointAttrSet3 {
     ///
     /// This rotates the normals and every `Attr3::Vector` attribute. Because all of these hold
     /// directions rather than positions, only the rotation component of the isometry has any
-    /// effect.
+    /// effect. The flat coordinates remain unchanged because rigidly moving a surface does not
+    /// change its chart.
     ///
     /// # Arguments
     ///
@@ -370,19 +415,26 @@ impl PointAttrSet3 {
 
     /// Scale the length-dimensioned attributes in place by the given uniform scale factor.
     ///
-    /// Only `stdev` is affected, and it is scaled by the absolute value of the factor, since a
-    /// standard deviation is a magnitude and must stay non-negative even under a mirroring scale.
-    /// Nothing else is touched: normals are directions and are unchanged by a uniform scale, and
-    /// the container has no way to know whether an open-map scalar carries length units.
+    /// `stdev` and `flat` are affected, both by the absolute value of the factor. A standard
+    /// deviation is a magnitude and must remain non-negative even under a mirroring scale. Flat
+    /// coordinates track the surface metric, so a change of units applies to them as well. However,
+    /// chart orientation is arbitrary, so mirroring the surface is not propagated to the chart.
+    /// Nothing else is changed: normals are directions and are unaffected by a uniform scale, and
+    /// the container cannot know whether an open-map scalar carries length units.
     ///
     /// # Arguments
     ///
     /// * `scale`: the uniform scale factor which was applied to the points
     pub fn scale_in_place(&mut self, scale: f64) {
+        let k = scale.abs();
         if let Some(stdev) = &mut self.stdev {
-            let k = scale.abs();
             for s in stdev.iter_mut() {
                 *s *= k;
+            }
+        }
+        if let Some(flat) = &mut self.flat {
+            for f in flat.iter_mut() {
+                *f = Point2::from(f.coords * k);
             }
         }
     }
@@ -431,6 +483,18 @@ mod tests {
         attrs.set_stdev(Some(vec![0.1, 0.2, 0.3, 0.4]), N).unwrap();
 
         attrs
+            .set_flat(
+                Some(vec![
+                    Point2::new(0.0, 0.0),
+                    Point2::new(1.0, 0.0),
+                    Point2::new(1.0, 1.0),
+                    Point2::new(0.0, 1.0),
+                ]),
+                N,
+            )
+            .unwrap();
+
+        attrs
             .insert_attr("confidence", Attr3::Scalar(vec![0.5, 0.6, 0.7, 0.8]), N)
             .unwrap();
 
@@ -444,6 +508,7 @@ mod tests {
         assert!(attrs.normals().is_none());
         assert!(attrs.colors().is_none());
         assert!(attrs.stdev().is_none());
+        assert!(attrs.flat().is_none());
         assert_eq!(attrs.attr_names().count(), 0);
 
         assert!(!full_attrs().is_empty());
@@ -454,7 +519,13 @@ mod tests {
         let attrs = full_attrs();
         let labels = attrs.attr_labels();
 
-        for expected in ["point_normals", "point_colors", "point_stdev", "confidence"] {
+        for expected in [
+            "point_normals",
+            "point_colors",
+            "point_stdev",
+            "point_flat",
+            "confidence",
+        ] {
             assert!(
                 labels.contains(&expected),
                 "missing '{expected}' in {labels:?}"
@@ -554,6 +625,10 @@ mod tests {
         assert_eq!(sub.colors().unwrap(), &[[1, 1, 1], [3, 3, 3]]);
         assert_eq!(sub.stdev().unwrap(), &[0.2, 0.4]);
         assert_eq!(
+            sub.flat().unwrap(),
+            &[Point2::new(1.0, 0.0), Point2::new(0.0, 1.0)]
+        );
+        assert_eq!(
             sub.attr("confidence").unwrap().as_scalar().unwrap(),
             &[0.6, 0.8]
         );
@@ -637,8 +712,9 @@ mod tests {
             epsilon = 1.0e-12
         );
 
-        // Scalars are untouched by a transform.
+        // Scalars and the flat coordinates are untouched by a transform.
         assert_eq!(attrs.stdev().unwrap(), &[0.1, 0.2, 0.3, 0.4]);
+        assert_eq!(attrs.flat(), full_attrs().flat());
         assert_eq!(
             attrs.attr("confidence").unwrap().as_scalar().unwrap(),
             &[0.5, 0.6, 0.7, 0.8]
@@ -648,9 +724,18 @@ mod tests {
     }
 
     #[test]
-    fn scale_affects_only_the_standard_deviations() {
+    fn scale_affects_the_standard_deviations_and_flat_coordinates() {
         let mut attrs = full_attrs();
         attrs.scale_in_place(25.4);
+
+        for (actual, expected) in attrs
+            .flat()
+            .unwrap()
+            .iter()
+            .zip(full_attrs().flat().unwrap().iter())
+        {
+            assert_relative_eq!(actual.coords, expected.coords * 25.4, epsilon = 1.0e-12);
+        }
 
         for (actual, expected) in attrs
             .stdev()
@@ -677,6 +762,13 @@ mod tests {
             assert!(*s >= 0.0, "a standard deviation must not go negative");
         }
         assert_relative_eq!(attrs.stdev().unwrap()[1], 0.4, epsilon = 1.0e-12);
+
+        // The chart is scaled by the magnitude but not mirrored.
+        assert_relative_eq!(
+            attrs.flat().unwrap()[1].coords,
+            Point2::new(2.0, 0.0).coords,
+            epsilon = 1.0e-12
+        );
     }
 
     #[test]
@@ -701,5 +793,6 @@ mod tests {
         // Nothing else changes.
         assert_eq!(attrs.colors(), original.colors());
         assert_eq!(attrs.stdev(), original.stdev());
+        assert_eq!(attrs.flat(), original.flat());
     }
 }

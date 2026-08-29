@@ -867,3 +867,18 @@ def test_mesh_data_bunnies_match_the_accelerated_type(name):
 
     assert numpy.allclose(data.points, mesh.points)
     assert numpy.array_equal(data.faces, mesh.faces)
+
+
+def test_mesh_data_point_flat_round_trips_and_clears():
+    data = MeshData3(triangle_points(), triangle_faces())
+    assert data.point_flat is None
+
+    data.set_point_flat(numpy.array([[0.0, 0.0], [1.5, 0.0], [0.0, 1.5]]))
+    assert data.point_flat.shape == (3, 2)
+    assert data.point_flat[1] == pytest.approx([1.5, 0.0])
+
+    with pytest.raises(ValueError):
+        data.set_point_flat(numpy.zeros((2, 2)))
+
+    data.set_point_flat(None)
+    assert data.point_flat is None

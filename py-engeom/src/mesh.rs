@@ -1,9 +1,9 @@
 use crate::bounding::Aabb3;
 use crate::common::{IndexMask, deviation_mode_from_str, select_op_from_str};
 use crate::conversions::{
-    array_to_colors, array_to_faces, array_to_points3, array_to_unit_vectors3, array_to_vec,
-    colors_to_array, faces_to_array, labels_to_array, points_to_array, scalars_to_array,
-    unit_vectors_to_array,
+    array_to_colors, array_to_faces, array_to_points2, array_to_points3, array_to_unit_vectors3,
+    array_to_vec, colors_to_array, faces_to_array, labels_to_array, points_to_array,
+    scalars_to_array, unit_vectors_to_array,
 };
 use crate::geom3::{Curve3, CurveGroup3, Iso3, Plane3, Point3, SurfacePoint3, Vector3};
 use crate::metrology::Distance3;
@@ -126,6 +126,7 @@ pub struct Mesh3 {
     point_normals: Option<Py<PyArray2<f64>>>,
     point_colors: Option<Py<PyArray2<u8>>>,
     point_stdev: Option<Py<PyArray1<f64>>>,
+    point_flat: Option<Py<PyArray2<f64>>>,
     face_colors: Option<Py<PyArray2<u8>>>,
     face_labels: Option<Py<PyArray1<u32>>>,
 }
@@ -139,6 +140,7 @@ impl Mesh3 {
         self.point_normals = None;
         self.point_colors = None;
         self.point_stdev = None;
+        self.point_flat = None;
         self.face_colors = None;
         self.face_labels = None;
     }
@@ -157,6 +159,7 @@ impl Mesh3 {
             point_normals: None,
             point_colors: None,
             point_stdev: None,
+            point_flat: None,
             face_colors: None,
             face_labels: None,
         }
@@ -188,7 +191,6 @@ impl Mesh3 {
             is_solid,
             merge_duplicates,
             delete_degenerate,
-            None,
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
@@ -378,6 +380,16 @@ impl Mesh3 {
     }
 
     #[getter]
+    fn point_flat<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray2<f64>>> {
+        let values = self.inner.point_flat()?;
+        if self.point_flat.is_none() {
+            let array = points_to_array(values);
+            self.point_flat = Some(array.into_pyarray(py).unbind());
+        }
+        Some(self.point_flat.as_ref().unwrap().bind(py))
+    }
+
+    #[getter]
     fn face_colors<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray2<u8>>> {
         let values = self.inner.face_colors()?;
         if self.face_colors.is_none() {
@@ -426,6 +438,17 @@ impl Mesh3 {
         self.clear_cached();
         self.inner
             .set_point_stdev(values)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[pyo3(signature = (values=None))]
+    fn set_point_flat<'py>(&mut self, values: Option<PyReadonlyArray2<'py, f64>>) -> PyResult<()> {
+        let values = values
+            .map(|v| array_to_points2(&v.as_array()))
+            .transpose()?;
+        self.clear_cached();
+        self.inner
+            .set_point_flat(values)
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
@@ -1286,6 +1309,7 @@ pub struct MeshData3 {
     point_normals: Option<Py<PyArray2<f64>>>,
     point_colors: Option<Py<PyArray2<u8>>>,
     point_stdev: Option<Py<PyArray1<f64>>>,
+    point_flat: Option<Py<PyArray2<f64>>>,
     face_colors: Option<Py<PyArray2<u8>>>,
     face_labels: Option<Py<PyArray1<u32>>>,
 }
@@ -1297,6 +1321,7 @@ impl MeshData3 {
         self.point_normals = None;
         self.point_colors = None;
         self.point_stdev = None;
+        self.point_flat = None;
         self.face_colors = None;
         self.face_labels = None;
     }
@@ -1313,6 +1338,7 @@ impl MeshData3 {
             point_normals: None,
             point_colors: None,
             point_stdev: None,
+            point_flat: None,
             face_colors: None,
             face_labels: None,
         }
@@ -1471,6 +1497,16 @@ impl MeshData3 {
     }
 
     #[getter]
+    fn point_flat<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray2<f64>>> {
+        let values = self.inner.point_flat()?;
+        if self.point_flat.is_none() {
+            let array = points_to_array(values);
+            self.point_flat = Some(array.into_pyarray(py).unbind());
+        }
+        Some(self.point_flat.as_ref().unwrap().bind(py))
+    }
+
+    #[getter]
     fn face_colors<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray2<u8>>> {
         let values = self.inner.face_colors()?;
         if self.face_colors.is_none() {
@@ -1519,6 +1555,17 @@ impl MeshData3 {
         self.clear_cached();
         self.inner
             .set_point_stdev(values)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[pyo3(signature = (values=None))]
+    fn set_point_flat<'py>(&mut self, values: Option<PyReadonlyArray2<'py, f64>>) -> PyResult<()> {
+        let values = values
+            .map(|v| array_to_points2(&v.as_array()))
+            .transpose()?;
+        self.clear_cached();
+        self.inner
+            .set_point_flat(values)
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
