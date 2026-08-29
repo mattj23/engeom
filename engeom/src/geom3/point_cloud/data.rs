@@ -1307,9 +1307,7 @@ mod tests {
     #[test]
     fn a_mesh_reduces_through_a_sample_without_mesh_specific_code() -> Result<()> {
         let mesh = crate::Mesh3::create_sphere(50.0, 0.077)?;
-        let sampled = mesh.sample_dense(1.0, None);
-
-        let cloud = PointCloud3::from_surface_points(&sampled);
+        let cloud = mesh.sample_dense(1.0, None);
         assert!(
             cloud.point_normals().is_some(),
             "the sample carried normals"
@@ -1339,8 +1337,7 @@ mod tests {
     #[test]
     fn reduce_by_voxel_coherence_finds_the_edges_of_a_box() -> Result<()> {
         let mesh = crate::Mesh3::create_box(40.0, 40.0, 40.0, false);
-        let sampled = mesh.sample_dense(0.5, None);
-        let cloud = PointCloud3::from_surface_points(&sampled);
+        let cloud = mesh.sample_dense(0.5, None);
 
         let out = cloud.reduce_by_voxel(4.0)?;
         let coherence = out

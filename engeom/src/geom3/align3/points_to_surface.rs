@@ -409,7 +409,7 @@ impl<T: SurfaceTarget3> LeastSquaresProblem<f64, Dyn, U6> for PointsToSurface3<'
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::points::{clone_points, mean_point, transform_points};
+    use crate::common::points::{mean_point, transform_points};
     use crate::na::{Translation3, UnitQuaternion};
     use crate::tests::engine_blade;
     use crate::{Iso3, Mesh3, SelectOp, Selection, Vector3};
@@ -421,7 +421,7 @@ mod tests {
     }
 
     fn box_points(mesh: &Mesh3) -> Vec<Point3> {
-        clone_points(&mesh.sample_poisson(0.5, None))
+        mesh.sample_poisson(0.5, None).points().to_vec()
     }
 
     fn small_disturbance() -> Iso3 {
@@ -440,7 +440,7 @@ mod tests {
         // This test is to verify that a simple test against a box that doesn't have large rotations
         // produces a result that is roughly the inverse of the disturbance
         let mesh = box_mesh();
-        let points = clone_points(&mesh.sample_poisson(0.1, None));
+        let points = mesh.sample_poisson(0.1, None).points().to_vec();
         let disturb = Iso3::from_parts(
             Translation3::new(3.0, 2.0, 1.0),
             UnitQuaternion::from_euler_angles(PI / 8.0, PI / 12.0, PI / 16.0),
@@ -465,7 +465,7 @@ mod tests {
             .face_select(Selection::None)
             .facing(&Vector3::y(), PI / 4.0, SelectOp::Add)
             .take_mask();
-        let expected_points = clone_points(&mesh.sample_poisson(2.0, Some(&mask)));
+        let expected_points = mesh.sample_poisson(2.0, Some(&mask)).points().to_vec();
 
         let disturb = Iso3::from_parts(
             Translation3::new(-100.0, 150.0, 0.0),

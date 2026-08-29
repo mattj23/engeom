@@ -7,11 +7,11 @@ use crate::conversions::{
 };
 use crate::geom3::{Curve3, CurveGroup3, Iso3, Plane3, Point3, SurfacePoint3, Vector3};
 use crate::metrology::Distance3;
-use crate::point_cloud::lptf3_load_from_args;
+use crate::point_cloud::{PointCloud3, lptf3_load_from_args};
 use engeom::Selection;
 use engeom::common::SplitResult;
 use engeom::geom3::align3::{GAPParams, generate_alignment_points};
-use numpy::ndarray::{Array1, Array2, ArrayD};
+use numpy::ndarray::{Array1, ArrayD};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
@@ -659,18 +659,16 @@ impl Mesh3 {
         Ok(result.into_pyarray(py))
     }
 
-    fn sample_poisson<'py>(&self, py: Python<'py>, radius: f64) -> Bound<'py, PyArray2<f64>> {
-        let mps = self.inner.sample_poisson(radius, None);
-        let mut result = Array2::zeros((mps.len(), 6));
-        for (i, mp) in mps.iter().enumerate() {
-            result[[i, 0]] = mp.sp.point.x;
-            result[[i, 1]] = mp.sp.point.y;
-            result[[i, 2]] = mp.sp.point.z;
-            result[[i, 3]] = mp.sp.normal.x;
-            result[[i, 4]] = mp.sp.normal.y;
-            result[[i, 5]] = mp.sp.normal.z;
-        }
-        result.into_pyarray(py)
+    fn sample_poisson(&self, radius: f64) -> PointCloud3 {
+        PointCloud3::from_inner(self.inner.sample_poisson(radius, None))
+    }
+
+    fn sample_dense(&self, max_spacing: f64) -> PointCloud3 {
+        PointCloud3::from_inner(self.inner.sample_dense(max_spacing, None))
+    }
+
+    fn sample_uniform(&self, n: usize) -> PointCloud3 {
+        PointCloud3::from_inner(self.inner.sample_uniform(n))
     }
 
     #[allow(clippy::too_many_arguments)]

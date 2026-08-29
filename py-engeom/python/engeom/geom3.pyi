@@ -2865,19 +2865,41 @@ class Mesh3:
         """
         ...
 
-    def sample_poisson(self, radius: float) -> NDArray[float]:
+    def sample_poisson(self, radius: float) -> PointCloud3:
         """
-        Sample the surface of the mesh using a Poisson disk sampling algorithm. This will return a numpy array of points
-        and their normals that are approximately evenly distributed across the surface of the mesh. The radius parameter
-        controls the minimum distance between points.
+        Sample the mesh surface using a Poisson disk sampling algorithm. The returned point cloud is approximately
+        evenly distributed across the surface, with each point carrying the normal of the face on which it lies. The
+        radius controls the minimum distance between points.
 
-        Internally, this algorithm will first re-sample each triangle of the mesh with a dense array of points at a
-        maximum distance of radius/2, before applying a random poisson disk sampling algorithm to thin the resampled
-        points. This means that the output points are not based on the mesh vertices, so large triangles will not be
-        under-represented and small triangles will not be over-represented.
+        Internally, the algorithm first resamples each triangle with a dense array of points spaced by at most
+        radius/2, then applies Poisson disk sampling to thin them. Because the output is not based on the mesh
+        vertices, large triangles are not under-represented and small triangles are not over-represented. The thinning
+        is deterministic for a given mesh, so repeated calls produce the same result.
 
         :param radius: the minimum distance between points.
-        :return: a numpy array of shape (n, 6) containing the sampled points.
+        :return: a `PointCloud3` with positions and normals.
+        """
+        ...
+
+    def sample_dense(self, max_spacing: float) -> PointCloud3:
+        """
+        Densely sample the mesh so that no point on its surface is farther than `max_spacing` from a sample. A
+        barycentric grid covers every triangle, while a triangle whose edges are all shorter than `max_spacing`
+        contributes only its centroid. There is no lower bound on the distance between samples, so density varies with
+        triangle size; use `sample_poisson` when even spacing matters.
+
+        :param max_spacing: the maximum distance from any point on the surface to a sample.
+        :return: a `PointCloud3` with positions and normals.
+        """
+        ...
+
+    def sample_uniform(self, n: int) -> PointCloud3:
+        """
+        Draw `n` random samples from the mesh surface, with sampling probability proportional to area. This method is
+        not deterministic, so repeated calls produce different points.
+
+        :param n: the number of samples to draw.
+        :return: a `PointCloud3` with positions and normals.
         """
         ...
 

@@ -141,10 +141,7 @@ mod tests {
     }
 
     fn box_points(mesh: &Mesh3) -> Vec<Point3> {
-        mesh.sample_poisson(0.5, None)
-            .iter()
-            .map(|p| p.point())
-            .collect()
+        mesh.sample_poisson(0.5, None).points().to_vec()
     }
 
     // ============================================================================================

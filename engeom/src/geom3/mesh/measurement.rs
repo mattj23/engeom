@@ -103,11 +103,12 @@ fn one_sided(from: &Mesh3, to: &Mesh3, spacing: f64, label: &str) -> Result<(f64
 
     let samples = from.sample_dense(spacing, None);
     let worst = samples
+        .points()
         .par_iter()
-        .map(|sp| to.distance_closest_to(&sp.point))
+        .map(|p| to.distance_closest_to(p))
         .reduce(|| 0.0f64, f64::max);
 
-    Ok((worst, samples.len()))
+    Ok((worst, samples.point_count()))
 }
 
 /// Every distance from a dense sample of `from` to the surface of `to`, rather than only the worst.
@@ -133,8 +134,9 @@ pub(crate) fn sample_distances(
 
     Ok(from
         .sample_dense(spacing, None)
+        .points()
         .par_iter()
-        .map(|sp| to.distance_closest_to(&sp.point))
+        .map(|p| to.distance_closest_to(p))
         .collect())
 }
 
