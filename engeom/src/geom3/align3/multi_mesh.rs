@@ -694,7 +694,7 @@ mod tests {
     fn chain_points(meshes: &[Mesh3], spacing: f64) -> Vec<MeshAlignPoint> {
         let mut points = Vec::new();
         for (i, mesh) in meshes.iter().enumerate().skip(1) {
-            for mp in mesh.sample_poisson(spacing, None) {
+            for mp in mesh.sample_surface_poisson(spacing, None) {
                 points.push(MeshAlignPoint::new(i, mp, i - 1, 1.0));
             }
         }

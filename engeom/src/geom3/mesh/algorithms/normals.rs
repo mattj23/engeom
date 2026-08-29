@@ -272,7 +272,7 @@ mod tests {
     #[test]
     fn a_smooth_surface_lands_close_to_the_analytic_normal() -> Result<()> {
         // A unit sphere, whose true normal at any point is the radial direction.
-        let sphere = crate::Mesh3::create_sphere(1.0, 64, 64);
+        let sphere = crate::Mesh3::create_sphere(1.0, 2.4e-3)?;
         let normals = compute_point_normals(sphere.points(), sphere.faces())?;
 
         let mut worst: f64 = 0.0;

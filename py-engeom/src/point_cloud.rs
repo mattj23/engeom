@@ -1,8 +1,9 @@
 use crate::bounding::Aabb3;
 use crate::common::IndexMask;
 use crate::conversions::{
-    array_to_colors, array_to_points3, array_to_unit_vectors3, array_to_vec, array_to_vectors3,
-    colors_to_array, labels_to_array, points_to_array, scalars_to_array, unit_vectors_to_array,
+    array_to_colors, array_to_points2, array_to_points3, array_to_unit_vectors3, array_to_vec,
+    array_to_vectors3, colors_to_array, labels_to_array, points_to_array, scalars_to_array,
+    unit_vectors_to_array,
 };
 use crate::geom3::Iso3;
 use crate::mesh::Mesh3;
@@ -75,6 +76,7 @@ pub struct PointCloud3 {
     point_normals: Option<Py<PyArray2<f64>>>,
     point_colors: Option<Py<PyArray2<u8>>>,
     point_stdev: Option<Py<PyArray1<f64>>>,
+    point_flat: Option<Py<PyArray2<f64>>>,
     voxel_coherence: Option<Py<PyArray1<f64>>>,
     voxel_count: Option<Py<PyArray1<u32>>>,
 }
@@ -92,6 +94,7 @@ impl PointCloud3 {
         self.point_normals = None;
         self.point_colors = None;
         self.point_stdev = None;
+        self.point_flat = None;
         self.voxel_coherence = None;
         self.voxel_count = None;
     }
@@ -130,6 +133,7 @@ impl PointCloud3 {
             point_normals: None,
             point_colors: None,
             point_stdev: None,
+            point_flat: None,
             voxel_coherence: None,
             voxel_count: None,
         }
@@ -230,6 +234,16 @@ impl PointCloud3 {
         Some(self.point_stdev.as_ref().unwrap().bind(py))
     }
 
+    #[getter]
+    fn point_flat<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray2<f64>>> {
+        let values = self.inner.point_flat()?;
+        if self.point_flat.is_none() {
+            let array = points_to_array(values);
+            self.point_flat = Some(array.into_pyarray(py).unbind());
+        }
+        Some(self.point_flat.as_ref().unwrap().bind(py))
+    }
+
     #[pyo3(signature = (values=None))]
     fn set_point_normals<'py>(
         &mut self,
@@ -259,6 +273,17 @@ impl PointCloud3 {
         self.clear_cached();
         self.inner
             .set_point_stdev(values)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[pyo3(signature = (values=None))]
+    fn set_point_flat<'py>(&mut self, values: Option<PyReadonlyArray2<'py, f64>>) -> PyResult<()> {
+        let values = values
+            .map(|v| array_to_points2(&v.as_array()))
+            .transpose()?;
+        self.clear_cached();
+        self.inner
+            .set_point_flat(values)
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 

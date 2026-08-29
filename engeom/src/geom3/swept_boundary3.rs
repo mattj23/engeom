@@ -1,5 +1,6 @@
 use std::f64::consts::TAU;
 
+use crate::common::arc_segments_for_tol;
 use crate::common::transform_points;
 use crate::common::triangulation::ParallelBuilder;
 use crate::geom2::Boundary2;
@@ -142,6 +143,19 @@ impl RevolvedBoundary3 {
         }
     }
 
+    /// Tessellate the revolved surface into a mesh.
+    ///
+    /// The profile and sweep are each discretized to a chordal tolerance of `tol`. The sweep's
+    /// division count is calculated at the profile's largest radius, where a given angular step
+    /// deviates most from the true surface. Every other point on the profile is therefore resolved
+    /// at least as finely.
+    ///
+    /// # Arguments
+    ///
+    /// * `tol`: the maximum allowed chordal deviation, which must be positive and finite
+    ///
+    /// returns: `Result<Mesh3>`, failing if the boundary produced no points, if the profile lies
+    /// entirely on the axis of revolution, or if `tol` is invalid
     pub fn to_mesh(&self, tol: f64) -> Result<Mesh3> {
         let points = self.shape.to_points(tol)?.to_3d();
 
@@ -152,8 +166,9 @@ impl RevolvedBoundary3 {
             .max_by(|a, b| a.partial_cmp(b).unwrap())
             .ok_or("Boundary has no points".to_string())?;
 
-        let max_theta = 2.0 * (1.0 - tol / r_max).acos();
-        let n_segments = (self.theta / max_theta).ceil().max(1.0) as usize;
+        // The sign of `theta` determines the sweep direction, while its magnitude determines the
+        // number of steps.
+        let n_segments = arc_segments_for_tol(r_max, self.theta, tol)?;
         let angle_step = self.theta / n_segments as f64;
 
         let mut builder = ParallelBuilder::new(points.len(), false);
@@ -228,6 +243,73 @@ mod tests {
 
     fn p(x: f64, y: f64, z: f64) -> Point3 {
         Point3::new(x, y, z)
+    }
+
+    /// A straight profile at a constant distance of two units from the axis, so revolving it
+    /// produces a cylinder with radius 2.
+    fn straight_profile() -> Boundary2 {
+        let mut data = BoundaryData2::new_open_xy(2.0, -1.0);
+        data.add_seg_xy(2.0, 1.0);
+        data.try_to_boundary().unwrap()
+    }
+
+    /// The sweep angle at which a mesh point was generated. `from_ry` sends `+z` toward `+x`, so
+    /// the angle can be recovered from those two coordinates.
+    fn sweep_angle(point: &Point3) -> f64 {
+        (-point.z).atan2(point.x)
+    }
+
+    /// Every chord of the revolved surface must sag inward from the true cylinder by no more than
+    /// the requested tolerance.
+    #[test]
+    fn a_revolve_holds_the_chordal_tolerance() -> Result<()> {
+        let tol = 0.01;
+        let radius = 2.0;
+        let mesh =
+            RevolvedBoundary3::new(straight_profile(), Iso3::identity(), TAU).to_mesh(tol)?;
+
+        for f in mesh.faces() {
+            let a = mesh.points()[f[0] as usize];
+            let b = mesh.points()[f[1] as usize];
+            let c = mesh.points()[f[2] as usize];
+
+            for (u, v) in [(a, b), (b, c), (c, a)] {
+                let mid = crate::na::center(&u, &v);
+                let sag = radius - mid.x.hypot(mid.z);
+                assert!(sag >= -1.0e-12, "a chord midpoint sits outside the surface");
+                assert!(sag <= tol + 1.0e-12, "sag {sag} exceeds tol {tol}");
+            }
+        }
+
+        Ok(())
+    }
+
+    /// A tolerance too loose to constrain the tessellation previously left the revolved surface
+    /// with a single step, producing a wedge instead of a surface. The shared helper ensures that a
+    /// full turn has at least eight steps, regardless of how loose the requested tolerance is.
+    #[test]
+    fn a_revolve_never_gets_fewer_than_eight_steps() -> Result<()> {
+        let mesh =
+            RevolvedBoundary3::new(straight_profile(), Iso3::identity(), TAU).to_mesh(10.0)?;
+
+        let mut angles = mesh.points().iter().map(sweep_angle).collect::<Vec<_>>();
+        angles.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        angles.dedup_by(|a, b| (*a - *b).abs() < 1.0e-9);
+
+        // Eight steps around. The ring that closes the full turn contains a separate set of points
+        // from the starting ring, but it lands at the same angle, leaving eight distinct angles.
+        assert_eq!(angles.len(), 8);
+
+        Ok(())
+    }
+
+    /// A tolerance that cannot be converted into a step count previously produced a NaN angle and
+    /// then a silently malformed mesh.
+    #[test]
+    fn a_revolve_rejects_an_invalid_tolerance() {
+        let target = RevolvedBoundary3::new(straight_profile(), Iso3::identity(), TAU);
+        assert!(target.to_mesh(0.0).is_err());
+        assert!(target.to_mesh(-1.0).is_err());
     }
 
     #[test]

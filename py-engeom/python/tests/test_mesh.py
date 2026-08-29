@@ -1,12 +1,12 @@
 import numpy
 import pytest
 from numpy import linalg
-from engeom.geom3 import Mesh3, Iso3, Plane3, PatchFilter
+from engeom.geom3 import Mesh3, Iso3, Plane3, PatchFilter, PointCloud3
 from engeom.common import IndexMask
 
 
 def test_mesh_offset_points_copy():
-    m = Mesh3.create_sphere(1.0, 100, 100)
+    m = Mesh3.create_sphere(1.0, 1.0e-3)
     n = m.offset_points_copy(0.1)
 
     for v in n.points:
@@ -29,7 +29,7 @@ def test_mesh_compute_point_normals_of_a_box_point_along_the_diagonals():
 
 
 def test_mesh_compute_point_normals_is_cached():
-    m = Mesh3.create_sphere(1.0, 20, 20)
+    m = Mesh3.create_sphere(1.0, 0.025)
     assert m.compute_point_normals() is m.compute_point_normals()
 
 
@@ -347,7 +347,7 @@ def test_filter_vertices_near_point():
 
 
 def test_filter_expand_dilates_and_erodes():
-    m = Mesh3.create_sphere(1.0, 20, 20)
+    m = Mesh3.create_sphere(1.0, 0.025)
     seed = IndexMask.from_indices([0], m.face_count)
 
     grown = m.face_select().by_mask(seed, "add").expand("add").to_mask()
@@ -362,7 +362,7 @@ def test_filter_expand_dilates_and_erodes():
 
 def test_filter_expand_remove_on_a_closed_mesh_selection_is_a_no_op():
     """Erosion works from the unselected side, so a fully selected closed mesh has nothing to erode."""
-    m = Mesh3.create_sphere(1.0, 20, 20)
+    m = Mesh3.create_sphere(1.0, 0.025)
 
     eroded = m.face_select("all").expand("remove").collect_indices()
 
@@ -370,7 +370,7 @@ def test_filter_expand_remove_on_a_closed_mesh_selection_is_a_no_op():
 
 
 def test_filter_expand_n_matches_repeated_expand():
-    m = Mesh3.create_sphere(1.0, 20, 20)
+    m = Mesh3.create_sphere(1.0, 0.025)
     seed = IndexMask.from_indices([0], m.face_count)
 
     once_twice = (m.face_select().by_mask(seed, "add")
@@ -382,7 +382,7 @@ def test_filter_expand_n_matches_repeated_expand():
 
 
 def test_filter_expand_respects_the_exclude_mask():
-    m = Mesh3.create_sphere(1.0, 20, 20)
+    m = Mesh3.create_sphere(1.0, 0.025)
     seed = IndexMask.from_indices([0], m.face_count)
 
     free = m.face_select().by_mask(seed, "add").expand("add").to_mask()
@@ -481,3 +481,82 @@ def test_mesh_distance_and_face_closest_to():
     assert 0 <= face < m.face_count
     # That face has to be one of the two on the +Z side.
     assert numpy.allclose(m.compute_face_normals()[face], [0.0, 0.0, 1.0])
+
+
+def test_mesh_sample_poisson_returns_a_cloud_with_normals_on_the_surface():
+    m = Mesh3.create_box(10.0, 6.0, 4.0, is_solid=False)
+    cloud = m.sample_poisson(1.0)
+
+    assert isinstance(cloud, PointCloud3)
+    assert cloud.points.shape == (len(cloud), 3)
+    assert cloud.point_normals.shape == (len(cloud), 3)
+    assert len(cloud) > 100
+
+    # Every sample lies on the box surface, and its normal is that of the face it lies on.
+    assert numpy.allclose(m.measure_deviations(cloud.points, "point"), 0.0, atol=1e-9)
+    assert numpy.allclose(linalg.norm(cloud.point_normals, axis=1), 1.0)
+
+    # The thinning is deterministic.
+    assert numpy.array_equal(cloud.points, m.sample_poisson(1.0).points)
+
+
+def test_mesh_sample_dense_is_finer_than_poisson():
+    m = Mesh3.create_box(10.0, 6.0, 4.0, is_solid=False)
+    dense = m.sample_dense(0.5)
+    poisson = m.sample_poisson(1.0)
+
+    assert isinstance(dense, PointCloud3)
+    assert dense.point_normals is not None
+    assert len(dense) > len(poisson)
+    assert numpy.allclose(m.measure_deviations(dense.points, "point"), 0.0, atol=1e-9)
+
+
+def test_mesh_sample_uniform_draws_the_requested_count():
+    m = Mesh3.create_box(10.0, 6.0, 4.0, is_solid=False)
+    cloud = m.sample_uniform(250)
+
+    assert isinstance(cloud, PointCloud3)
+    assert len(cloud) == 250
+    assert cloud.point_normals.shape == (250, 3)
+    assert numpy.allclose(m.measure_deviations(cloud.points, "point"), 0.0, atol=1e-9)
+
+
+def grid_mesh(n: int = 4) -> Mesh3:
+    """An (n x n)-vertex flat grid in the xy plane: one patch, one boundary loop, no holes."""
+    xs, ys = numpy.meshgrid(numpy.arange(n, dtype=float), numpy.arange(n, dtype=float))
+    points = numpy.column_stack([xs.ravel(), ys.ravel(), numpy.zeros(n * n)])
+    faces = []
+    for r in range(n - 1):
+        for c in range(n - 1):
+            a = r * n + c
+            faces.append([a, a + 1, a + n + 1])
+            faces.append([a, a + n + 1, a + n])
+    return Mesh3(points, numpy.array(faces, dtype=numpy.uint32))
+
+
+def test_mesh_point_flat_round_trips_and_clears():
+    m = Mesh3.create_box(1.0, 1.0, 1.0)
+    assert m.point_flat is None
+
+    flat = numpy.random.default_rng(3).random((m.point_count, 2))
+    m.set_point_flat(flat)
+    assert m.point_flat.shape == (m.point_count, 2)
+    assert numpy.allclose(m.point_flat, flat)
+
+    m.set_point_flat(None)
+    assert m.point_flat is None
+
+
+def test_mesh_set_point_flat_rejects_a_length_mismatch():
+    m = Mesh3.create_box(1.0, 1.0, 1.0)
+    with pytest.raises(ValueError):
+        m.set_point_flat(numpy.zeros((m.point_count - 1, 2)))
+
+
+def test_mesh_boundary_first_flatten_output_is_accepted_as_point_flat():
+    m = grid_mesh()
+    flat = m.boundary_first_flatten()
+    assert flat.shape == (m.point_count, 2)
+
+    m.set_point_flat(flat)
+    assert numpy.allclose(m.point_flat, flat)

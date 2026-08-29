@@ -27,6 +27,24 @@ from ._common import LabelPlace, check_label_place, plane_basis
 
 __all__ = ["PlotterHelper"]
 
+# When a draw method's chordal tolerance is left as `None`, it defaults to this fraction of the
+# entity's radius. Perceived smoothness in a plot scales with the entity's size on screen, so this
+# radius-relative default keeps entities equally smooth without requiring the caller to calculate
+# it.
+_DEFAULT_REL_TOL = 1.0e-3
+
+
+def _segments_for_tol(radius: float, tol: float) -> int:
+    """
+    Return the number of segments needed so that a chord inscribed on a full circle of `radius`
+    deviates by no more than `tol`, with a minimum of 8 segments. This is a small counterpart to
+    the Rust `arc_segments_for_tol` function for polylines built directly in NumPy.
+    """
+    half_angle = numpy.arcsin(min(1.0, numpy.sqrt(tol / (2.0 * radius))))
+    if half_angle <= 0.0:
+        raise ValueError(f"Tolerance {tol} is not usable with radius {radius}")
+    return max(8, int(numpy.ceil(numpy.pi / (2.0 * half_angle))))
+
 
 class PlotterHelper:
     """
@@ -72,8 +90,7 @@ class PlotterHelper:
     def draw_sphere(
             self,
             sphere: Sphere3,
-            n_theta: int = 360,
-            n_phi: int = 180,
+            tol: float | None = None,
             color: ColorLike | None = "green",
             opacity: float | None = None,
     ) -> pyvista.vtkActor:
@@ -81,20 +98,23 @@ class PlotterHelper:
         Add a `Sphere3` to the plotter
 
         :param sphere: The sphere to plot.
-        :param n_theta: The number of segments used to approximate the sphere in the theta direction. Higher values produce a smoother result.
-        :param n_phi: The number of segments used to approximate the sphere in the phi direction. Higher values produce a smoother result.
+        :param tol: The maximum deviation of the tessellation from the true sphere. Smaller values produce a smoother
+        result. If `None`, a thousandth of the sphere's radius is used.
         :param color: The color of the sphere. Set to `None` to use the default PyVista color.
         :param opacity: Opacity of the sphere (0.0–1.0). If `None`, the default PyVista opacity is used.
         :return: The PyVista `vtkActor` representing the sphere.
         """
-        mesh = Mesh3.create_sphere(sphere.r, n_theta, n_phi)
+        if tol is None:
+            tol = sphere.r * _DEFAULT_REL_TOL
+
+        mesh = Mesh3.create_sphere(sphere.r, tol)
         mesh.transform_in_place(Iso3.from_translation(*sphere.center))
         return self.draw_mesh(mesh, color=color, opacity=opacity)
 
     def draw_circle(
             self,
             circle: Circle3,
-            n: int = 360,
+            tol: float | None = None,
             edge_color: ColorLike | None = "black",
             face_color: ColorLike | None = "green",
             edge_width: float = 4.0,
@@ -105,7 +125,8 @@ class PlotterHelper:
         Add a `Circle3` to the plotter, optionally rendering a filled face, an outline edge, or both.
 
         :param circle: The circle to plot.
-        :param n: The number of segments used to approximate the circle. Higher values produce a smoother result.
+        :param tol: The maximum chordal deviation of the segments approximating the circle. If `None`,
+            one-thousandth of the circle's radius is used.
         :param edge_color: The color of the outline edge. Set to `None` to suppress the edge entirely.
         :param face_color: The color of the filled face. Set to `None` to suppress the face entirely.
         :param edge_width: The pixel width of the outline edge.
@@ -117,6 +138,9 @@ class PlotterHelper:
         # A `Circle3` carries only a center, a normal, and a radius, so an in-plane orientation has to
         # be chosen before it can be turned into vertices. Which one does not matter, as the result is
         # rotationally symmetric about the normal either way.
+        if tol is None:
+            tol = circle.r * _DEFAULT_REL_TOL
+
         u, v = plane_basis(circle.normal)
         center = numpy.array(to_tuple3(circle.center), dtype=numpy.float64)
         u_r = numpy.array(to_tuple3(u), dtype=numpy.float64) * circle.r
@@ -124,6 +148,7 @@ class PlotterHelper:
 
         actors = []
         if edge_color is not None:
+            n = _segments_for_tol(circle.r, tol)
             theta = numpy.linspace(0.0, 2.0 * numpy.pi, n + 1)
             points = center + numpy.outer(numpy.cos(theta), u_r) + numpy.outer(numpy.sin(theta), v_r)
 
@@ -140,7 +165,7 @@ class PlotterHelper:
             matrix[:3, 1] = to_tuple3(v)
             matrix[:3, 2] = to_tuple3(circle.normal)
             matrix[:3, 3] = center
-            mesh = Mesh3.create_circle(circle.r, n)
+            mesh = Mesh3.create_circle(circle.r, tol)
             mesh.transform_in_place(Iso3(matrix))
 
             kwargs = {"color": face_color}

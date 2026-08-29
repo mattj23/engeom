@@ -427,7 +427,7 @@ mod tests {
     #[test]
     fn surface_sampling_lands_on_the_mesh() {
         for (name, mesh, voxel_size) in [
-            ("sphere", Mesh3::create_sphere(10.0, 60, 60), 1.0),
+            ("sphere", Mesh3::create_sphere(10.0, 0.027).unwrap(), 1.0),
             ("bunny", Mesh3::stanford_bunny_res2(), 0.01),
             ("blade", engine_blade(), 2.0),
         ] {
@@ -454,7 +454,7 @@ mod tests {
     /// a caller reason about the output size from the grid alone.
     #[test]
     fn one_point_comes_out_per_occupied_cell() {
-        let mesh = Mesh3::create_sphere(10.0, 60, 60);
+        let mesh = Mesh3::create_sphere(10.0, 0.027).unwrap();
         let voxel_size = 1.0;
 
         let cloud = mesh.sample_voxel_surface(voxel_size, None).unwrap();
@@ -757,7 +757,7 @@ mod tests {
     }
 
     /// The measurement that decides whether this module earns its place, since the route
-    /// `sample_dense(v/2)` -> `from_surface_points` -> `reduce_by_voxel(v)` already produced a
+    /// `sample_dense(v/2)` -> `reduce_by_voxel(v)` already produced a
     /// comparable cloud before it existed. Run with:
     ///
     /// ```text
@@ -778,11 +778,8 @@ mod tests {
         );
 
         for v in [4.0, 2.0, 1.0, 0.5] {
-            let (dense, dense_ms) = time_best(|| {
-                PointCloud3::from_surface_points(&mesh.sample_dense(v / 2.0, None))
-                    .reduce_by_voxel(v)
-                    .unwrap()
-            });
+            let (dense, dense_ms) =
+                time_best(|| mesh.sample_dense(v / 2.0, None).reduce_by_voxel(v).unwrap());
             let (surface, surface_ms) = time_best(|| mesh.sample_voxel_surface(v, None).unwrap());
 
             for (name, cloud, ms) in [

@@ -27,11 +27,8 @@ def box_mesh() -> Mesh3:
 def box_points(mesh: Mesh3, radius: float = 0.5) -> numpy.ndarray:
     """
     Poisson samples on the surface as an ``(n, 3)`` array.
-
-    ``sample_poisson`` returns points and normals interleaved as ``(n, 6)``, so the positions have
-    to be sliced out and made contiguous before they cross back over the boundary.
     """
-    return numpy.ascontiguousarray(mesh.sample_poisson(radius)[:, :3])
+    return mesh.sample_poisson(radius).points
 
 
 def small_disturbance() -> Iso3:

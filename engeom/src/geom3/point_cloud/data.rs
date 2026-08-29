@@ -4,7 +4,7 @@
 //! It is the point-cloud counterpart to `MeshData3`, and the two are deliberately shaped the same
 //! way: private buffers, a validated attribute set, and the same construction, subsetting, and
 //! serialization vocabulary. The attribute half is literally the same code, `PointAttrSet3`, which
-//! `MeshAttrSet3` also composes.
+//! the mesh types also hold for their point domain.
 //!
 //! There is no spatial acceleration here of any kind. Call `compute_index` for a `CloudIndex3`
 //! when you need nearest-neighbor queries.
@@ -15,7 +15,7 @@ use crate::common::{VoxelGroups, compute_voxel_groups};
 use crate::geom3::Aabb3;
 use crate::geom3::attributes3::{Attr3, PointAttrSet3};
 use crate::geom3::point_cloud::CloudIndex3;
-use crate::{Iso3, KdTree3, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
+use crate::{Iso3, KdTree3, Point2, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
 use std::fmt;
 
 #[cfg(feature = "ply")]
@@ -342,6 +342,13 @@ impl PointCloud3 {
         self.attrs.stdev()
     }
 
+    /// Get the per-point flat coordinates, if present: each point's position in a flattened 2D
+    /// chart of the surface, expressed in the cloud's own length units. See
+    /// [`set_point_flat`](Self::set_point_flat).
+    pub fn point_flat(&self) -> Option<&[Point2]> {
+        self.attrs.flat()
+    }
+
     /// Get the open-map per-point attribute stored under the given name, if present.
     pub fn point_attr(&self, name: &str) -> Option<&Attr3> {
         self.attrs.attr(name)
@@ -386,6 +393,24 @@ impl PointCloud3 {
     /// returns: `Result<()>`
     pub fn set_point_stdev(&mut self, values: Option<Vec<f64>>) -> Result<()> {
         self.attrs.set_stdev(values, self.points.len())
+    }
+
+    /// Set or clear the per-point flat coordinates: the position of each point in a flattened 2D
+    /// chart of the surface, such as the output of boundary first flattening. These are not
+    /// texture coordinates; they express the cloud's own length units in a plane. They scale with
+    /// the geometry under a uniform scale while remaining fixed under a rigid transform.
+    ///
+    /// A cloud projected onto a flattened reference surface can store each point's flat position
+    /// here alongside its depth in an open scalar attribute.
+    ///
+    /// # Arguments
+    ///
+    /// * `values`: the flat coordinates to store, or `None` to clear them. Must match the point
+    ///   count.
+    ///
+    /// returns: `Result<()>`
+    pub fn set_point_flat(&mut self, values: Option<Vec<Point2>>) -> Result<()> {
+        self.attrs.set_flat(values, self.points.len())
     }
 
     /// Insert an open-map per-point attribute under the given name, replacing any attribute already
@@ -1306,10 +1331,8 @@ mod tests {
     /// for meshes. This is the check that the route actually composes.
     #[test]
     fn a_mesh_reduces_through_a_sample_without_mesh_specific_code() -> Result<()> {
-        let mesh = crate::Mesh3::create_sphere(50.0, 80, 80);
-        let sampled = mesh.sample_dense(1.0, None);
-
-        let cloud = PointCloud3::from_surface_points(&sampled);
+        let mesh = crate::Mesh3::create_sphere(50.0, 0.077)?;
+        let cloud = mesh.sample_dense(1.0, None);
         assert!(
             cloud.point_normals().is_some(),
             "the sample carried normals"
@@ -1339,8 +1362,7 @@ mod tests {
     #[test]
     fn reduce_by_voxel_coherence_finds_the_edges_of_a_box() -> Result<()> {
         let mesh = crate::Mesh3::create_box(40.0, 40.0, 40.0, false);
-        let sampled = mesh.sample_dense(0.5, None);
-        let cloud = PointCloud3::from_surface_points(&sampled);
+        let cloud = mesh.sample_dense(0.5, None);
 
         let out = cloud.reduce_by_voxel(4.0)?;
         let coherence = out

@@ -23,7 +23,7 @@
 //! them, rather than a silent drop or an opt-in discard, because the format will grow attribute
 //! support later and a file written today should not have quietly lost data by then.
 
-use crate::{MeshData3, Point3, Result};
+use crate::{MeshData3, MeshView3, Point3, Result};
 use std::io::{Read, Write};
 use std::path::Path;
 use tol_compress::{Mesh3 as TcMesh, mesh as tc};
@@ -32,24 +32,21 @@ use tol_compress::{Mesh3 as TcMesh, mesh as tc};
 ///
 /// Unlike the other geometry-only formats in this module there is no `allow_attribute_loss` escape
 /// hatch, so the message does not offer one.
-fn refuse_attributes(mesh: &MeshData3) -> Result<()> {
-    if mesh.attrs().is_empty() {
+fn refuse_attributes(mesh: MeshView3<'_>) -> Result<()> {
+    if !mesh.has_attrs() {
         return Ok(());
     }
-
-    let mut lost = mesh.attrs().point_attr_labels();
-    lost.extend(mesh.attrs().face_attr_labels());
 
     Err(format!(
         "The tcmesh format cannot yet represent the attributes on this mesh ({}), so writing it \
          would discard them. Remove them from the mesh explicitly if that is what you want.",
-        lost.join(", ")
+        mesh.attr_labels().join(", ")
     )
     .into())
 }
 
 /// A mesh as the storable container, refusing anything the format cannot represent.
-fn to_container(mesh: &MeshData3) -> Result<TcMesh> {
+fn to_container(mesh: MeshView3<'_>) -> Result<TcMesh> {
     refuse_attributes(mesh)?;
     let points = mesh.points().iter().map(|p| [p.x, p.y, p.z]).collect();
     Ok(TcMesh::new(points, mesh.faces().to_vec()))
@@ -79,8 +76,12 @@ fn from_container(item: TcMesh) -> Result<MeshData3> {
 /// only.
 ///
 /// Use [`write_tc_mesh_file`] for the common case of writing directly to a file path.
-pub fn write_tc_mesh_to<W: Write>(writer: &mut W, mesh: &MeshData3, tol: f64) -> Result<()> {
-    tc::write_one_to(writer, &to_container(mesh)?, tol)?;
+pub fn write_tc_mesh_to<'a, W: Write>(
+    writer: &mut W,
+    mesh: impl Into<MeshView3<'a>>,
+    tol: f64,
+) -> Result<()> {
+    tc::write_one_to(writer, &to_container(mesh.into())?, tol)?;
     Ok(())
 }
 
@@ -95,8 +96,8 @@ pub fn read_tc_mesh_from<R: Read>(reader: &mut R) -> Result<MeshData3> {
 }
 
 /// Write a mesh to a tcmesh file at the given path. See [`write_tc_mesh_to`] for format details.
-pub fn write_tc_mesh_file(path: &Path, mesh: &MeshData3, tol: f64) -> Result<()> {
-    tc::write_one_file(path, &to_container(mesh)?, tol)?;
+pub fn write_tc_mesh_file<'a>(path: &Path, mesh: impl Into<MeshView3<'a>>, tol: f64) -> Result<()> {
+    tc::write_one_file(path, &to_container(mesh.into())?, tol)?;
     Ok(())
 }
 
@@ -263,5 +264,30 @@ mod tests {
             matches!(closed, Some(r) if r <= 4),
             "rewriting must close its orbit, got {closed:?}"
         );
+    }
+
+    /// Because the writer uses a borrowed view, the accelerated mesh must produce the same bytes as
+    /// the plain container without first copying it.
+    #[test]
+    fn either_container_writes_identical_bytes() -> Result<()> {
+        let mesh = stanford_bun_2();
+        let data = mesh.to_data();
+
+        let mut from_data = Vec::new();
+        write_tc_mesh_to(&mut from_data, &data, 1e-3)?;
+
+        let mut from_mesh = Vec::new();
+        write_tc_mesh_to(&mut from_mesh, &mesh, 1e-3)?;
+
+        assert_eq!(from_data, from_mesh);
+
+        // Attribute refusal must also apply to both representations.
+        let mut attributed = data.clone();
+        attributed.set_face_labels(Some(vec![0; attributed.face_count()]))?;
+        assert!(write_tc_mesh_to(&mut Vec::new(), &attributed, 1e-3).is_err());
+        let attributed = crate::Mesh3::from_data(attributed, false)?;
+        assert!(write_tc_mesh_to(&mut Vec::new(), &attributed, 1e-3).is_err());
+
+        Ok(())
     }
 }

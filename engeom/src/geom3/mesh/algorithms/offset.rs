@@ -529,7 +529,7 @@ mod tests {
     /// grow the radius by `d` everywhere.
     #[test]
     fn a_sphere_grows_by_the_offset_distance() -> Result<()> {
-        let sphere = crate::Mesh3::create_sphere(10.0, 64, 64);
+        let sphere = crate::Mesh3::create_sphere(10.0, 0.024)?;
         let d = 1.5;
         let moved =
             compute_face_offset_points(sphere.points(), sphere.faces(), d, &OffsetOpts::default())?;

@@ -1338,7 +1338,7 @@ mod tests {
     /// to choose it.
     #[test]
     fn endpoint_placement_keeps_the_points_a_subset() {
-        let original = Mesh3::create_sphere(10.0, 40, 40);
+        let original = Mesh3::create_sphere(10.0, 0.06).unwrap();
         let mut he = HalfEdgeMesh3::try_from(&original).unwrap();
 
         he.decimate_guaranteed(

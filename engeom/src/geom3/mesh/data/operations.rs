@@ -39,7 +39,8 @@ impl MeshData3 {
             *p = iso * *p;
         }
 
-        self.attrs.transform_in_place(iso);
+        self.point_attrs.transform_in_place(iso);
+        self.face_attrs.transform_in_place(iso);
     }
 
     /// Return a copy of the mesh transformed by a rigid isometry, leaving this one unchanged.
@@ -83,7 +84,7 @@ impl MeshData3 {
             *p = Point3::from(p.coords * scale);
         }
 
-        self.attrs.scale_in_place(scale);
+        self.point_attrs.scale_in_place(scale);
 
         if scale < 0.0 {
             self.reverse_orientation();
@@ -123,7 +124,7 @@ impl MeshData3 {
             face.swap(0, 1);
         }
 
-        self.attrs.flip_in_place();
+        self.point_attrs.flip_in_place();
     }
 }
 
@@ -156,9 +157,14 @@ impl MeshData3 {
         u32::try_from(self.points.len() + other.points.len())
             .map_err(|_| "Appending would produce more points than a u32 can index".to_string())?;
 
-        // Attributes are checked and merged first, because that is the step which can fail. Once it
-        // succeeds, extending the buffers cannot.
-        self.attrs.extend_from(&other.attrs)?;
+        // Both attribute domains are checked before anything is modified because these checks are
+        // the only steps that can fail. Extending the point domain before checking the face domain
+        // would leave the mesh only partially appended if a face attribute were mismatched.
+        self.point_attrs.check_extend_from(&other.point_attrs)?;
+        self.face_attrs.check_extend_from(&other.face_attrs)?;
+
+        self.point_attrs.apply_extend_from(&other.point_attrs)?;
+        self.face_attrs.apply_extend_from(&other.face_attrs)?;
 
         self.points.extend_from_slice(&other.points);
         self.faces.extend(
@@ -217,6 +223,8 @@ mod tests {
     #[test]
     fn transform_moves_points_and_rotates_directions() {
         let mut mesh = triangle();
+        mesh.insert_face_attr("face_dir", Attr3::Vector(vec![Vector3::x()]))
+            .unwrap();
 
         // A quarter turn about +z, which maps +x onto +y, plus a translation.
         let iso = Iso3::new(Vector3::new(10.0, 0.0, 0.0), Vector3::z() * FRAC_PI_2);
@@ -242,6 +250,13 @@ mod tests {
                 .unwrap()
                 .as_vector()
                 .unwrap()[0],
+            Vector3::y(),
+            epsilon = 1.0e-12
+        );
+
+        // The face domain is a separate set and must be rotated as well.
+        assert_relative_eq!(
+            mesh.face_attr("face_dir").unwrap().as_vector().unwrap()[0],
             Vector3::y(),
             epsilon = 1.0e-12
         );
@@ -403,8 +418,8 @@ mod tests {
         assert_eq!(mesh.face_labels().unwrap(), &[7, 7]);
         assert_eq!(mesh.point_attr("confidence").unwrap().len(), 6);
 
-        mesh.attrs()
-            .validate(mesh.point_count(), mesh.face_count())?;
+        mesh.point_attrs().validate(mesh.point_count())?;
+        mesh.face_attrs().validate(mesh.face_count())?;
 
         Ok(())
     }
@@ -420,6 +435,27 @@ mod tests {
         assert_eq!(mesh.point_count(), 3);
         assert_eq!(mesh.face_count(), 1);
         assert_eq!(mesh.point_stdev().unwrap(), &[0.1, 0.2, 0.3]);
+
+        Ok(())
+    }
+
+    /// The two domains are separate sets, so a face-domain mismatch must be caught before the point
+    /// domain is modified. Otherwise, the mesh would be left with extended point attributes but
+    /// unchanged buffers and face attributes.
+    #[test]
+    fn a_face_domain_rejection_leaves_the_point_domain_untouched() -> Result<()> {
+        let mut mesh = triangle();
+        let mut other = triangle();
+        other.set_face_labels(None)?;
+
+        assert!(mesh.append_in_place(&other).is_err());
+
+        assert_eq!(mesh.point_count(), 3);
+        assert_eq!(mesh.face_count(), 1);
+        assert_eq!(mesh.point_stdev().unwrap(), &[0.1, 0.2, 0.3]);
+        assert_eq!(mesh.face_labels().unwrap(), &[7]);
+        mesh.point_attrs().validate(mesh.point_count())?;
+        mesh.face_attrs().validate(mesh.face_count())?;
 
         Ok(())
     }

@@ -732,7 +732,7 @@ fn build_benchmark(case: &SampleCase) -> Result<Benchmark> {
 
     let samples = meshes
         .par_iter()
-        .map(|mesh| mesh.sample_poisson(SAMPLE_SPACING, None))
+        .map(|mesh| mesh.sample_surface_poisson(SAMPLE_SPACING, None))
         .collect::<Vec<_>>();
 
     let mut scans = Vec::with_capacity(meshes.len());

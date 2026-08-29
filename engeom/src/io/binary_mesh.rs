@@ -11,7 +11,7 @@
 //! - 1 × `u32`: face count
 //! - face count × 3 × `u32`: vertex indices per face
 
-use crate::{MeshData3, Point3, Result};
+use crate::{MeshData3, MeshView3, Point3, Result};
 use std::fs::File;
 use std::io::{BufWriter, Cursor, Read, Write};
 use std::path::Path;
@@ -29,9 +29,9 @@ const MAGIC: &[u8; 4] = b"BMSH";
 /// # Errors
 ///
 /// Returns an error if the file cannot be created or written.
-pub fn write_mesh_binary_file(
+pub fn write_mesh_binary_file<'a>(
     path: &Path,
-    mesh: &MeshData3,
+    mesh: impl Into<MeshView3<'a>>,
     allow_attribute_loss: bool,
 ) -> Result<()> {
     let file = File::create(path)?;
@@ -65,7 +65,10 @@ pub fn read_mesh_binary_file(path: &Path) -> Result<MeshData3> {
 ///
 /// Returns an error if serialization fails (in practice this should never happen for in-memory
 /// writes).
-pub fn mesh_to_binary_bytes(mesh: &MeshData3, allow_attribute_loss: bool) -> Result<Vec<u8>> {
+pub fn mesh_to_binary_bytes<'a>(
+    mesh: impl Into<MeshView3<'a>>,
+    allow_attribute_loss: bool,
+) -> Result<Vec<u8>> {
     let mut buf = Vec::new();
     write_mesh_binary(&mut buf, mesh, allow_attribute_loss)?;
     Ok(buf)
@@ -94,11 +97,12 @@ pub fn mesh_from_binary_bytes(bytes: &[u8]) -> Result<MeshData3> {
 /// # Errors
 ///
 /// Returns an error if any write fails.
-pub fn write_mesh_binary<W: Write>(
+pub fn write_mesh_binary<'a, W: Write>(
     writer: &mut W,
-    mesh: &MeshData3,
+    mesh: impl Into<MeshView3<'a>>,
     allow_attribute_loss: bool,
 ) -> Result<()> {
+    let mesh = mesh.into();
     mesh.check_attribute_loss("the binary mesh format", allow_attribute_loss)?;
 
     writer.write_all(MAGIC)?;
@@ -239,5 +243,19 @@ mod tests {
     fn invalid_magic_rejected() {
         let bad = b"NOPE\x01\x00\x00\x00";
         assert!(mesh_from_binary_bytes(bad).is_err());
+    }
+
+    /// Because the writer uses a borrowed view, the accelerated mesh must produce the same bytes as
+    /// the plain container without first copying it.
+    #[test]
+    fn either_container_writes_identical_bytes() -> Result<()> {
+        let mesh = stanford_bun_2();
+        let data = mesh.to_data();
+
+        let from_data = mesh_to_binary_bytes(&data, false)?;
+        let from_mesh = mesh_to_binary_bytes(&mesh, false)?;
+        assert_eq!(from_data, from_mesh);
+
+        Ok(())
     }
 }

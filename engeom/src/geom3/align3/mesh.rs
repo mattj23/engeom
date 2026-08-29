@@ -317,7 +317,7 @@ pub fn simple_alignment_points(
     if overlap.count_true() == 0 {
         Vec::new()
     } else {
-        test_mesh.sample_poisson(spacing, Some(&overlap))
+        test_mesh.sample_surface_poisson(spacing, Some(&overlap))
     }
 }
 
@@ -368,7 +368,7 @@ pub fn generate_alignment_points(
 ) -> Vec<MeshSurfPoint> {
     // We start with a Poisson disk sampling of the test mesh to get a set of points that are
     // well distributed across the surface and spaced at a roughly known distance.
-    let all_points = test_mesh.sample_poisson(params.sample_spacing, None);
+    let all_points = test_mesh.sample_surface_poisson(params.sample_spacing, None);
     let tree = KdTree3::try_new(&all_points).expect("KD tree build failed");
 
     // Now we're going to iterate through the points and find ones which meet the criteria for

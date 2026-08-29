@@ -1,17 +1,17 @@
 use crate::bounding::Aabb3;
 use crate::common::{IndexMask, deviation_mode_from_str, select_op_from_str};
 use crate::conversions::{
-    array_to_colors, array_to_faces, array_to_points3, array_to_unit_vectors3, array_to_vec,
-    colors_to_array, faces_to_array, labels_to_array, points_to_array, scalars_to_array,
-    unit_vectors_to_array,
+    array_to_colors, array_to_faces, array_to_points2, array_to_points3, array_to_unit_vectors3,
+    array_to_vec, colors_to_array, faces_to_array, labels_to_array, points_to_array,
+    scalars_to_array, unit_vectors_to_array,
 };
 use crate::geom3::{Curve3, CurveGroup3, Iso3, Plane3, Point3, SurfacePoint3, Vector3};
 use crate::metrology::Distance3;
-use crate::point_cloud::lptf3_load_from_args;
+use crate::point_cloud::{PointCloud3, lptf3_load_from_args};
 use engeom::Selection;
 use engeom::common::SplitResult;
 use engeom::geom3::align3::{GAPParams, generate_alignment_points};
-use numpy::ndarray::{Array1, Array2, ArrayD};
+use numpy::ndarray::{Array1, ArrayD};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
@@ -126,6 +126,7 @@ pub struct Mesh3 {
     point_normals: Option<Py<PyArray2<f64>>>,
     point_colors: Option<Py<PyArray2<u8>>>,
     point_stdev: Option<Py<PyArray1<f64>>>,
+    point_flat: Option<Py<PyArray2<f64>>>,
     face_colors: Option<Py<PyArray2<u8>>>,
     face_labels: Option<Py<PyArray1<u32>>>,
 }
@@ -139,6 +140,7 @@ impl Mesh3 {
         self.point_normals = None;
         self.point_colors = None;
         self.point_stdev = None;
+        self.point_flat = None;
         self.face_colors = None;
         self.face_labels = None;
     }
@@ -157,6 +159,7 @@ impl Mesh3 {
             point_normals: None,
             point_colors: None,
             point_stdev: None,
+            point_flat: None,
             face_colors: None,
             face_labels: None,
         }
@@ -188,7 +191,6 @@ impl Mesh3 {
             is_solid,
             merge_duplicates,
             delete_degenerate,
-            None,
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
@@ -378,6 +380,16 @@ impl Mesh3 {
     }
 
     #[getter]
+    fn point_flat<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray2<f64>>> {
+        let values = self.inner.point_flat()?;
+        if self.point_flat.is_none() {
+            let array = points_to_array(values);
+            self.point_flat = Some(array.into_pyarray(py).unbind());
+        }
+        Some(self.point_flat.as_ref().unwrap().bind(py))
+    }
+
+    #[getter]
     fn face_colors<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray2<u8>>> {
         let values = self.inner.face_colors()?;
         if self.face_colors.is_none() {
@@ -426,6 +438,17 @@ impl Mesh3 {
         self.clear_cached();
         self.inner
             .set_point_stdev(values)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[pyo3(signature = (values=None))]
+    fn set_point_flat<'py>(&mut self, values: Option<PyReadonlyArray2<'py, f64>>) -> PyResult<()> {
+        let values = values
+            .map(|v| array_to_points2(&v.as_array()))
+            .transpose()?;
+        self.clear_cached();
+        self.inner
+            .set_point_flat(values)
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
@@ -659,18 +682,16 @@ impl Mesh3 {
         Ok(result.into_pyarray(py))
     }
 
-    fn sample_poisson<'py>(&self, py: Python<'py>, radius: f64) -> Bound<'py, PyArray2<f64>> {
-        let mps = self.inner.sample_poisson(radius, None);
-        let mut result = Array2::zeros((mps.len(), 6));
-        for (i, mp) in mps.iter().enumerate() {
-            result[[i, 0]] = mp.sp.point.x;
-            result[[i, 1]] = mp.sp.point.y;
-            result[[i, 2]] = mp.sp.point.z;
-            result[[i, 3]] = mp.sp.normal.x;
-            result[[i, 4]] = mp.sp.normal.y;
-            result[[i, 5]] = mp.sp.normal.z;
-        }
-        result.into_pyarray(py)
+    fn sample_poisson(&self, radius: f64) -> PointCloud3 {
+        PointCloud3::from_inner(self.inner.sample_poisson(radius, None))
+    }
+
+    fn sample_dense(&self, max_spacing: f64) -> PointCloud3 {
+        PointCloud3::from_inner(self.inner.sample_dense(max_spacing, None))
+    }
+
+    fn sample_uniform(&self, n: usize) -> PointCloud3 {
+        PointCloud3::from_inner(self.inner.sample_uniform(n))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -885,34 +906,38 @@ impl Mesh3 {
     }
 
     #[staticmethod]
-    fn create_cylinder(radius: f64, height: f64, steps: usize) -> Self {
-        let mesh = engeom::Mesh3::create_cylinder(radius, height, steps);
-        Self::from_inner(mesh)
+    fn create_cylinder(radius: f64, height: f64, tol: f64) -> PyResult<Self> {
+        let mesh = engeom::Mesh3::create_cylinder(radius, height, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(mesh))
     }
 
     #[staticmethod]
-    fn create_sphere(radius: f64, n_theta: usize, n_phi: usize) -> Self {
-        let mesh = engeom::Mesh3::create_sphere(radius, n_theta, n_phi);
-        Self::from_inner(mesh)
+    fn create_sphere(radius: f64, tol: f64) -> PyResult<Self> {
+        let mesh = engeom::Mesh3::create_sphere(radius, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(mesh))
     }
 
     #[staticmethod]
-    fn create_cone(radius: f64, height: f64, steps: usize) -> Self {
-        let mesh = engeom::Mesh3::create_cone(radius, height, steps);
-        Self::from_inner(mesh)
+    fn create_cone(radius: f64, height: f64, tol: f64) -> PyResult<Self> {
+        let mesh = engeom::Mesh3::create_cone(radius, height, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(mesh))
     }
 
     #[staticmethod]
-    fn create_circle(radius: f64, segments: usize) -> Self {
-        let mesh = engeom::Mesh3::create_circle(radius, segments);
-        Self::from_inner(mesh)
+    fn create_circle(radius: f64, tol: f64) -> PyResult<Self> {
+        let mesh = engeom::Mesh3::create_circle(radius, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(mesh))
     }
 
     #[staticmethod]
-    fn create_capsule(p0: Point3, p1: Point3, radius: f64, n_theta: usize, n_phi: usize) -> Self {
-        let mesh =
-            engeom::Mesh3::create_capsule(p0.get_inner(), p1.get_inner(), radius, n_theta, n_phi);
-        Self::from_inner(mesh)
+    fn create_capsule(p0: Point3, p1: Point3, radius: f64, tol: f64) -> PyResult<Self> {
+        let mesh = engeom::Mesh3::create_capsule(p0.get_inner(), p1.get_inner(), radius, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(mesh))
     }
 
     #[staticmethod]
@@ -937,14 +962,10 @@ impl Mesh3 {
     }
 
     #[staticmethod]
-    fn create_cylinder_between(
-        p0: Point3,
-        p1: Point3,
-        radius: f64,
-        steps: usize,
-    ) -> PyResult<Self> {
+    fn create_cylinder_between(p0: Point3, p1: Point3, radius: f64, tol: f64) -> PyResult<Self> {
         let mesh =
-            engeom::Mesh3::create_cylinder_between(p0.get_inner(), p1.get_inner(), radius, steps);
+            engeom::Mesh3::create_cylinder_between(p0.get_inner(), p1.get_inner(), radius, tol)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(mesh))
     }
 
@@ -961,7 +982,7 @@ impl Mesh3 {
         let mesh_data = engeom::io::load_lptf3_mesh_data(&file_path, load, None)
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
-        let (points, faces, _) = mesh_data.into_parts();
+        let (points, faces, _, _) = mesh_data.into_parts();
         Ok(Self::from_inner(engeom::Mesh3::new(points, faces, false)))
     }
 
@@ -1288,6 +1309,7 @@ pub struct MeshData3 {
     point_normals: Option<Py<PyArray2<f64>>>,
     point_colors: Option<Py<PyArray2<u8>>>,
     point_stdev: Option<Py<PyArray1<f64>>>,
+    point_flat: Option<Py<PyArray2<f64>>>,
     face_colors: Option<Py<PyArray2<u8>>>,
     face_labels: Option<Py<PyArray1<u32>>>,
 }
@@ -1299,6 +1321,7 @@ impl MeshData3 {
         self.point_normals = None;
         self.point_colors = None;
         self.point_stdev = None;
+        self.point_flat = None;
         self.face_colors = None;
         self.face_labels = None;
     }
@@ -1315,6 +1338,7 @@ impl MeshData3 {
             point_normals: None,
             point_colors: None,
             point_stdev: None,
+            point_flat: None,
             face_colors: None,
             face_labels: None,
         }
@@ -1473,6 +1497,16 @@ impl MeshData3 {
     }
 
     #[getter]
+    fn point_flat<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray2<f64>>> {
+        let values = self.inner.point_flat()?;
+        if self.point_flat.is_none() {
+            let array = points_to_array(values);
+            self.point_flat = Some(array.into_pyarray(py).unbind());
+        }
+        Some(self.point_flat.as_ref().unwrap().bind(py))
+    }
+
+    #[getter]
     fn face_colors<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray2<u8>>> {
         let values = self.inner.face_colors()?;
         if self.face_colors.is_none() {
@@ -1521,6 +1555,17 @@ impl MeshData3 {
         self.clear_cached();
         self.inner
             .set_point_stdev(values)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[pyo3(signature = (values=None))]
+    fn set_point_flat<'py>(&mut self, values: Option<PyReadonlyArray2<'py, f64>>) -> PyResult<()> {
+        let values = values
+            .map(|v| array_to_points2(&v.as_array()))
+            .transpose()?;
+        self.clear_cached();
+        self.inner
+            .set_point_flat(values)
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
@@ -1721,44 +1766,46 @@ impl MeshData3 {
     }
 
     #[staticmethod]
-    fn create_sphere(radius: f64, n_theta: usize, n_phi: usize) -> Self {
-        Self::from_inner(engeom::MeshData3::create_sphere(radius, n_theta, n_phi))
+    fn create_sphere(radius: f64, tol: f64) -> PyResult<Self> {
+        let data = engeom::MeshData3::create_sphere(radius, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(data))
     }
 
     #[staticmethod]
-    fn create_cylinder(radius: f64, height: f64, steps: usize) -> Self {
-        Self::from_inner(engeom::MeshData3::create_cylinder(radius, height, steps))
+    fn create_cylinder(radius: f64, height: f64, tol: f64) -> PyResult<Self> {
+        let data = engeom::MeshData3::create_cylinder(radius, height, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(data))
     }
 
     #[staticmethod]
-    fn create_cone(radius: f64, height: f64, steps: usize) -> Self {
-        Self::from_inner(engeom::MeshData3::create_cone(radius, height, steps))
+    fn create_cone(radius: f64, height: f64, tol: f64) -> PyResult<Self> {
+        let data = engeom::MeshData3::create_cone(radius, height, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(data))
     }
 
     #[staticmethod]
-    fn create_circle(radius: f64, segments: usize) -> Self {
-        Self::from_inner(engeom::MeshData3::create_circle(radius, segments))
+    fn create_circle(radius: f64, tol: f64) -> PyResult<Self> {
+        let data = engeom::MeshData3::create_circle(radius, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(data))
     }
 
     #[staticmethod]
-    fn create_capsule(p0: Point3, p1: Point3, radius: f64, n_theta: usize, n_phi: usize) -> Self {
-        Self::from_inner(engeom::MeshData3::create_capsule(
-            p0.get_inner(),
-            p1.get_inner(),
-            radius,
-            n_theta,
-            n_phi,
-        ))
+    fn create_capsule(p0: Point3, p1: Point3, radius: f64, tol: f64) -> PyResult<Self> {
+        let data = engeom::MeshData3::create_capsule(p0.get_inner(), p1.get_inner(), radius, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(data))
     }
 
     #[staticmethod]
-    fn create_cylinder_between(p0: Point3, p1: Point3, radius: f64, steps: usize) -> Self {
-        Self::from_inner(engeom::MeshData3::create_cylinder_between(
-            p0.get_inner(),
-            p1.get_inner(),
-            radius,
-            steps,
-        ))
+    fn create_cylinder_between(p0: Point3, p1: Point3, radius: f64, tol: f64) -> PyResult<Self> {
+        let data =
+            engeom::MeshData3::create_cylinder_between(p0.get_inner(), p1.get_inner(), radius, tol)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(data))
     }
 
     #[staticmethod]

@@ -95,9 +95,10 @@ impl MeshData3 {
     /// every point referenced by a selected face is itself selected.
     fn compact(&self, point_mask: &IndexMask, face_mask: &IndexMask) -> Result<Self> {
         let (points, faces) = compact_by_masks(&self.points, &self.faces, point_mask, face_mask)?;
-        let attrs = self.attrs.subset(point_mask, face_mask)?;
+        let point_attrs = self.point_attrs.subset(point_mask)?;
+        let face_attrs = self.face_attrs.subset(face_mask)?;
 
-        Self::new_with_attrs(points, faces, attrs)
+        Self::new_with_attrs(points, faces, point_attrs, face_attrs)
     }
 }
 
@@ -253,7 +254,8 @@ mod tests {
         assert_eq!(sub.face_count(), 0);
         assert!(sub.face_labels().unwrap().is_empty());
 
-        sub.attrs().validate(sub.point_count(), sub.face_count())?;
+        sub.point_attrs().validate(sub.point_count())?;
+        sub.face_attrs().validate(sub.face_count())?;
 
         Ok(())
     }
@@ -282,7 +284,8 @@ mod tests {
 
         let sub = mesh.extract_subset_faces(&mask(2, &[]))?;
         assert!(sub.is_empty());
-        sub.attrs().validate(0, 0)?;
+        sub.point_attrs().validate(0)?;
+        sub.face_attrs().validate(0)?;
 
         let sub = mesh.extract_subset_points(&mask(5, &[]))?;
         assert!(sub.is_empty());
@@ -309,7 +312,8 @@ mod tests {
         // Every face index must be in range for the compacted point buffer, which is exactly what
         // the constructor checks, so rebuilding from the parts must succeed.
         MeshData3::new(sub.points().to_vec(), sub.faces().to_vec())?;
-        sub.attrs().validate(sub.point_count(), sub.face_count())?;
+        sub.point_attrs().validate(sub.point_count())?;
+        sub.face_attrs().validate(sub.face_count())?;
 
         Ok(())
     }

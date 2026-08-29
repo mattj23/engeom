@@ -103,11 +103,12 @@ fn one_sided(from: &Mesh3, to: &Mesh3, spacing: f64, label: &str) -> Result<(f64
 
     let samples = from.sample_dense(spacing, None);
     let worst = samples
+        .points()
         .par_iter()
-        .map(|sp| to.distance_closest_to(&sp.point))
+        .map(|p| to.distance_closest_to(p))
         .reduce(|| 0.0f64, f64::max);
 
-    Ok((worst, samples.len()))
+    Ok((worst, samples.point_count()))
 }
 
 /// Every distance from a dense sample of `from` to the surface of `to`, rather than only the worst.
@@ -133,8 +134,9 @@ pub(crate) fn sample_distances(
 
     Ok(from
         .sample_dense(spacing, None)
+        .points()
         .par_iter()
-        .map(|sp| to.distance_closest_to(&sp.point))
+        .map(|p| to.distance_closest_to(p))
         .collect())
 }
 
@@ -335,7 +337,7 @@ mod tests {
 
     #[test]
     fn a_mesh_does_not_deviate_from_itself() {
-        let mesh = Mesh3::create_sphere(10.0, 40, 40);
+        let mesh = Mesh3::create_sphere(10.0, 0.06).unwrap();
         let d = mesh.measure_surface_deviation(&mesh, None).unwrap();
 
         assert!(d.hausdorff() < 1.0e-9, "got {}", d);
@@ -433,7 +435,7 @@ mod tests {
 
     #[test]
     fn an_absurd_spacing_is_refused_rather_than_attempted() {
-        let mesh = Mesh3::create_sphere(100.0, 100, 100);
+        let mesh = Mesh3::create_sphere(100.0, 0.1).unwrap();
         let err = mesh
             .measure_surface_deviation(&mesh, Some(1.0e-4))
             .unwrap_err();

@@ -272,3 +272,18 @@ def test_cloned_is_independent():
 
     assert original.point_stdev == pytest.approx([0.001, 0.002, 0.003])
     assert copy.point_stdev == pytest.approx([9.0, 9.0, 9.0])
+
+
+def test_cloud_point_flat_round_trips_and_clears():
+    cloud = PointCloud3(triangle_points())
+    assert cloud.point_flat is None
+
+    cloud.set_point_flat(numpy.array([[0.0, 0.0], [1.5, 0.0], [0.0, 1.5]]))
+    assert cloud.point_flat.shape == (3, 2)
+    assert cloud.point_flat[2] == pytest.approx([0.0, 1.5])
+
+    with pytest.raises(ValueError):
+        cloud.set_point_flat(numpy.zeros((4, 2)))
+
+    cloud.set_point_flat(None)
+    assert cloud.point_flat is None

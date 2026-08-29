@@ -1,9 +1,82 @@
 //! This module contains common constructs for working with angles
 
+use crate::Result;
 use serde::{Deserialize, Serialize};
-use std::f64::consts::PI;
+use std::f64::consts::{PI, TAU};
 
 pub const ANGLE_TOL: f64 = 1.0e-12;
+
+/// The minimum number of segments used to approximate a full circle when working with chordal
+/// tolerances.
+pub const MIN_FULL_CIRCLE_SEGMENTS: usize = 8;
+
+/// Calculate the number of equal segments needed so that a chord inscribed on an arc of `radius`,
+/// swept through `sweep` radians, deviates from the true arc by no more than `tol` (the maximum
+/// sagitta). The segment endpoints lie on the arc, so the chords sag inward.
+///
+/// A full circle always uses at least [`MIN_FULL_CIRCLE_SEGMENTS`] segments. Partial sweeps receive
+/// a proportional share of that minimum, so even a tolerance loose enough to permit a single
+/// chord still produces a recognizable arc.
+///
+/// # Arguments
+///
+/// * `radius`: radius of the arc, which must be positive and finite
+/// * `sweep`: the swept angle in radians. The sign is ignored and the magnitude is clamped to a
+///   full circle.
+/// * `tol`: the maximum allowed chordal deviation, which must be positive and finite. A tolerance
+///   so tight that the count would exceed a `u32` index range is an error.
+///
+/// returns: `Result<usize>`
+///
+/// # Examples
+///
+/// ```
+/// use engeom::common::arc_segments_for_tol;
+/// use std::f64::consts::TAU;
+///
+/// // A chord across 1/16th of a unit circle sags by 1 - cos(pi/16), so using that
+/// // tolerance produces 16 segments.
+/// let tol = 1.0 - (TAU / 32.0).cos();
+/// assert_eq!(arc_segments_for_tol(1.0, TAU, tol).unwrap(), 16);
+///
+/// // A tolerance looser than the radius falls back to the minimum guard.
+/// assert_eq!(arc_segments_for_tol(1.0, TAU, 10.0).unwrap(), 8);
+/// ```
+pub fn arc_segments_for_tol(radius: f64, sweep: f64, tol: f64) -> Result<usize> {
+    if !(radius > 0.0 && radius.is_finite()) {
+        return Err(format!("Arc radius must be positive and finite, got {radius}").into());
+    }
+    if !(tol > 0.0 && tol.is_finite()) {
+        return Err(format!("Chordal tolerance must be positive and finite, got {tol}").into());
+    }
+
+    let sweep = sweep.abs().min(TAU);
+
+    // The largest arc a single chord can span while its sagitta stays within tol. This is
+    // 2 * acos(1 - tol / radius) (the form in `Arc2::to_points`) rewritten through the half-angle
+    // identity 1 - cos(a) = 2 * sin^2(a / 2), which stays well conditioned when the tolerance is
+    // many orders of magnitude below the radius. The min handles tol >= 2 * radius, where a
+    // single chord satisfies the tolerance and the minimum guard decides the count.
+    let max_theta = 4.0 * (tol / (2.0 * radius)).sqrt().min(1.0).asin();
+
+    // Segment counts beyond a u32 index range have no physical meaning and exceed what the
+    // u32-indexed meshes downstream could hold, so treat them as an unresolvable tolerance. The
+    // finiteness check catches a ratio that overflowed to infinity or became NaN.
+    let ratio = sweep / max_theta;
+    if !ratio.is_finite() || ratio > u32::MAX as f64 {
+        return Err(format!(
+            "Tolerance {tol} is too small relative to radius {radius} to tessellate"
+        )
+        .into());
+    }
+
+    // The slack prevents a ratio within floating error of an integer, such as a tolerance computed
+    // from an exact segment count, from being increased by a whole segment by the ceil. It is orders
+    // of magnitude below the significance of any chordal tolerance.
+    let n = (ratio * (1.0 - 1.0e-12)).ceil() as usize;
+    let floor = ((MIN_FULL_CIRCLE_SEGMENTS as f64) * sweep / TAU).ceil() as usize;
+    Ok(n.max(floor).max(1))
+}
 
 /// Lists the two possible directions of rotation, clockwise and counter-clockwise.
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -244,6 +317,72 @@ mod tests {
     use approx::assert_relative_eq;
     use rand::RngExt;
     use test_case::test_case;
+
+    /// When the tolerance corresponds to the sagitta of a chord spanning exactly 1/n of the
+    /// circle, the answer must be n.
+    #[test_case(8)]
+    #[test_case(16)]
+    #[test_case(100)]
+    fn arc_segments_exact_division(n: usize) {
+        let tol = 1.0 - (PI / n as f64).cos();
+        assert_eq!(arc_segments_for_tol(1.0, TAU, tol).unwrap(), n);
+    }
+
+    /// At the returned value of n, the sagitta of a chord spanning 1/n of the circle must be within
+    /// tol. At n-1 it must exceed tol; otherwise, the count is either insufficient or wasteful.
+    #[test]
+    fn arc_segments_are_sufficient_and_not_excessive() {
+        let radius = 2.5;
+        for &tol in &[0.5, 0.1, 0.01, 1.0e-4, 1.0e-8] {
+            let n = arc_segments_for_tol(radius, TAU, tol).unwrap();
+            let sag = |k: usize| radius * (1.0 - (PI / k as f64).cos());
+            assert!(sag(n) <= tol, "n={n} insufficient for tol={tol}");
+            if n > MIN_FULL_CIRCLE_SEGMENTS {
+                assert!(sag(n - 1) > tol, "n={n} excessive for tol={tol}");
+            }
+        }
+    }
+
+    #[test]
+    fn arc_segments_minimum_guard() {
+        // Loose tolerances fall back to the floor, proportional to the sweep
+        assert_eq!(arc_segments_for_tol(1.0, TAU, 10.0).unwrap(), 8);
+        assert_eq!(arc_segments_for_tol(1.0, PI, 10.0).unwrap(), 4);
+        assert_eq!(arc_segments_for_tol(1.0, PI / 2.0, 10.0).unwrap(), 2);
+        // Even a tiny sweep still gets one segment
+        assert_eq!(arc_segments_for_tol(1.0, 1.0e-6, 10.0).unwrap(), 1);
+    }
+
+    #[test]
+    fn arc_segments_sweep_is_unsigned_and_clamped() {
+        let tol = 1.0 - (PI / 16.0).cos();
+        assert_eq!(
+            arc_segments_for_tol(1.0, -TAU, tol).unwrap(),
+            arc_segments_for_tol(1.0, TAU, tol).unwrap()
+        );
+        assert_eq!(
+            arc_segments_for_tol(1.0, 5.0 * TAU, tol).unwrap(),
+            arc_segments_for_tol(1.0, TAU, tol).unwrap()
+        );
+    }
+
+    #[test]
+    fn arc_segments_invalid_arguments() {
+        assert!(arc_segments_for_tol(1.0, TAU, 0.0).is_err());
+        assert!(arc_segments_for_tol(1.0, TAU, -1.0).is_err());
+        assert!(arc_segments_for_tol(1.0, TAU, f64::NAN).is_err());
+        assert!(arc_segments_for_tol(1.0, TAU, f64::INFINITY).is_err());
+        assert!(arc_segments_for_tol(0.0, TAU, 0.1).is_err());
+        assert!(arc_segments_for_tol(-1.0, TAU, 0.1).is_err());
+        assert!(arc_segments_for_tol(f64::NAN, TAU, 0.1).is_err());
+    }
+
+    /// A tolerance so tight that the segment count would exceed a u32 index range must be an
+    /// error rather than an absurd allocation request downstream.
+    #[test]
+    fn arc_segments_unresolvable_tolerance() {
+        assert!(arc_segments_for_tol(1.0, TAU, 1.0e-20).is_err());
+    }
 
     #[test]
     fn angle_dir_to_sign() {
