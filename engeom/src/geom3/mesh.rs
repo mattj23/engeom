@@ -639,7 +639,8 @@ impl Mesh3 {
 impl TryFrom<MeshData3> for Mesh3 {
     type Error = Box<dyn std::error::Error>;
 
-    /// Build an accelerated mesh which is **not** solid. Use `Mesh3::from_data` to choose.
+    /// Build an accelerated mesh which is **not** solid. Use `Mesh3::from_data` or
+    /// `MeshData3::into_mesh` to specify whether the mesh is solid.
     fn try_from(value: MeshData3) -> Result<Self> {
         Mesh3::from_data(value, false)
     }

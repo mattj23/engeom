@@ -364,6 +364,8 @@ impl BoundaryElement2 for Arc2 {
     }
 
     fn to_points(&self, tol: f64) -> Vec<Point2> {
+        // This uses the same chordal-tolerance calculation as `common::arc_segments_for_tol`. It
+        // remains local because this trait method is infallible and cannot report an invalid `tol`.
         let theta = 2.0 * ((self.radius - tol) / self.radius).acos();
         let n = (self.angle.abs() / theta).ceil() as usize + 1;
         let mut points = Vec::with_capacity(n);

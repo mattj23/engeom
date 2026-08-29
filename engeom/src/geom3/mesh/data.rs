@@ -22,6 +22,7 @@ pub use attribute_set::MeshAttrSet3;
 
 pub use crate::geom3::attributes3::Attr3;
 
+use crate::geom3::Mesh3;
 use crate::geom3::mesh::algorithms;
 use crate::geom3::mesh::algorithms::{
     OffsetOpts, compute_face_offset_points, compute_normal_displaced_points,
@@ -598,6 +599,37 @@ impl MeshData3 {
     pub fn into_parts(self) -> (Vec<Point3>, Vec<[u32; 3]>, MeshAttrSet3) {
         (self.points, self.faces, self.attrs)
     }
+
+    /// Consume the mesh data and return an accelerated `Mesh3` built over the same buffers.
+    ///
+    /// This is the consuming conversion into the accelerated type: the point and face buffers are
+    /// moved rather than copied, while the bounding volume hierarchy must still be built. The
+    /// opposite conversion is `Mesh3::into_data`, which cannot avoid a copy because `parry3d`
+    /// provides no way to move the buffers back out of a `TriMesh`.
+    ///
+    /// # Arguments
+    ///
+    /// * `is_solid`: whether distance queries should treat points inside the mesh as having zero
+    ///   distance. The plain container has no such concept, so the caller must supply it.
+    ///
+    /// returns: `Result<Mesh3>`, failing if the mesh has no faces, since there is nothing to build
+    /// an acceleration structure over
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::{MeshData3, Point3};
+    ///
+    /// let data = MeshData3::create_box(2.0, 2.0, 2.0);
+    /// let counts = (data.point_count(), data.face_count());
+    ///
+    /// let mesh = data.into_mesh(true).unwrap();
+    /// assert!(mesh.is_solid());
+    /// assert_eq!((mesh.point_count(), mesh.face_count()), counts);
+    /// ```
+    pub fn into_mesh(self, is_solid: bool) -> Result<Mesh3> {
+        Mesh3::from_data(self, is_solid)
+    }
 }
 
 // ===============================================================================================
@@ -845,6 +877,38 @@ mod tests {
         assert_eq!(moved.face_labels(), Some([7, 9].as_slice()));
 
         Ok(())
+    }
+
+    /// The two consuming conversions are inverses: the buffers and attributes moved into `Mesh3`
+    /// are the same ones returned from it.
+    #[test]
+    fn the_consuming_conversions_round_trip() -> Result<()> {
+        let mut data = square_mesh();
+        let computed = data.compute_point_normals()?;
+        data.set_point_normals(Some(computed))?;
+
+        let points = data.points().to_vec();
+        let faces = data.faces().to_vec();
+        let normals = data.point_normals().map(|n| n.to_vec());
+        assert!(normals.is_some(), "the fixture must carry an attribute");
+
+        let mesh = data.into_mesh(true)?;
+        assert!(mesh.is_solid());
+
+        let back = mesh.into_data();
+        assert_eq!(back.points(), points.as_slice());
+        assert_eq!(back.faces(), faces.as_slice());
+        assert_eq!(back.point_normals().map(|n| n.to_vec()), normals);
+
+        Ok(())
+    }
+
+    /// The plain container may hold points without faces, but an acceleration structure has nothing
+    /// to build over in that case, so the conversion must report an error.
+    #[test]
+    fn a_mesh_without_faces_cannot_become_an_accelerated_mesh() {
+        let data = MeshData3::new(vec![Point3::origin()], vec![]).unwrap();
+        assert!(data.into_mesh(false).is_err());
     }
 
     /// A failed offset must leave the mesh exactly as it was, not half moved.
