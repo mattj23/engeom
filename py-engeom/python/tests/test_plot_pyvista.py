@@ -221,7 +221,7 @@ def test_draw_circle_puts_its_vertices_on_the_circle():
     circle = Circle3(*center, *normal, 2.0)
 
     helper = new_helper()
-    edge, _ = helper.draw_circle(circle, n=64)
+    edge, _ = helper.draw_circle(circle, tol=1.0e-3)
     points = numpy.asarray(edge.mapper.dataset.points)
 
     radii = numpy.linalg.norm(points - center, axis=1)
@@ -236,7 +236,7 @@ def test_draw_circle_puts_its_face_where_the_circle_is():
     """
     circle = Circle3(1.0, 2.0, 3.0, 0.0, 1.0, 0.0, 2.0)
     helper = new_helper()
-    _, face = helper.draw_circle(circle, n=64)
+    _, face = helper.draw_circle(circle, tol=1.0e-3)
     points = numpy.asarray(face.mapper.dataset.points)
 
     assert points.mean(axis=0) == pytest.approx([1.0, 2.0, 3.0], abs=1e-9)

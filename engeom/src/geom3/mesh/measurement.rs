@@ -335,7 +335,7 @@ mod tests {
 
     #[test]
     fn a_mesh_does_not_deviate_from_itself() {
-        let mesh = Mesh3::create_sphere(10.0, 40, 40);
+        let mesh = Mesh3::create_sphere(10.0, 0.06).unwrap();
         let d = mesh.measure_surface_deviation(&mesh, None).unwrap();
 
         assert!(d.hausdorff() < 1.0e-9, "got {}", d);
@@ -433,7 +433,7 @@ mod tests {
 
     #[test]
     fn an_absurd_spacing_is_refused_rather_than_attempted() {
-        let mesh = Mesh3::create_sphere(100.0, 100, 100);
+        let mesh = Mesh3::create_sphere(100.0, 0.1).unwrap();
         let err = mesh
             .measure_surface_deviation(&mesh, Some(1.0e-4))
             .unwrap_err();

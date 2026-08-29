@@ -3297,91 +3297,97 @@ class Mesh3:
         ...
 
     @staticmethod
-    def create_cylinder(radius: float, height: float, steps: int) -> Mesh3:
+    def create_cylinder(radius: float, height: float, tol: float) -> Mesh3:
         """
-        Creates a cylinder with a radius and height. The cylinder will be centered at the origin and oriented along the
-        Y-axis.
+        Creates a closed cylinder with the given radius and height, centered at the origin and oriented along the
+        Z-axis. The wall vertices lie on the true cylinder, so the flat chords between them sag inward by at most
+        `tol`.
 
-        :param radius: the radius of the cylinder
-        :param height: the size of the cylinder along the Y-axis
-        :param steps: the number of subdivisions to create vertices around the cylinder. The more steps the smoother the
-        cylinder will be.
+        :param radius: the radius of the cylinder, which must be positive and finite
+        :param height: the size of the cylinder along the Z-axis
+        :param tol: the maximum chordal deviation of the wall, which must be positive and finite. The circumference
+        never gets fewer than 8 segments, no matter how loose this is.
         :return: a new `Mesh3` object representing the cylinder
         """
         ...
 
     @staticmethod
-    def create_sphere(radius: float, n_theta: int, n_phi: int) -> Mesh3:
+    def create_sphere(radius: float, tol: float) -> Mesh3:
         """
-        Creates a sphere with a radius. The sphere will be centered at the origin. The step counts `n_theta` and `n_phi`
-        will determine the smoothness of the sphere in the radial (n_theta) and polar (n_phi) directions. The poles
-        will be located at Y=+radius and Y=-radius, and the equator will lie in the XZ plane.
+        Creates a closed sphere with the given radius, centered at the origin. This is a UV sphere whose poles lie at
+        Z=+radius and Z=-radius, with the equator lying in the XY plane. Every vertex lies on the true sphere, so the
+        facets sag inward by at most `tol`.
 
-        :param radius: the radius of the sphere
-        :param n_theta: the number of subdivisions to create vertices around the sphere in the theta direction
-        :param n_phi: the number of subdivisions to create vertices around the sphere in the phi direction
+        :param radius: the radius of the sphere, which must be positive and finite
+        :param tol: the maximum deviation of a facet from the true sphere, which must be positive and finite. No
+        matter how loose this is, a full turn around the equator never gets fewer than 8 segments and a pole-to-pole
+        sweep never gets fewer than 4.
         :return: a new `Mesh3` object representing the sphere
         """
         ...
 
     @staticmethod
-    def create_cone(radius: float, height: float, steps: int) -> Mesh3:
+    def create_cone(radius: float, height: float, tol: float) -> Mesh3:
         """
-        Creates a cone with a radius and height. The cone will be centered at the origin and oriented so that the
-        point of the cone is located at Y=height/2 and the base is located at Y=-height/2.
+        Creates a closed cone with the given radius and height, centered at the origin. The apex lies at Z=height/2,
+        and the base lies at Z=-height/2. The lateral surface is ruled, so only the base circle carries curvature;
+        `tol` is the chordal deviation of that circle.
 
         !!! note
             Before version 0.4.2 the radius and height arguments were swapped on the way into the library, and the
             height was consumed as a half-height. A cone built with `radius=2, height=10` came out with a radius of
             10 and a total height of 4.
 
-        :param radius: the radius of the base of the cone
-        :param height: the size of the cone along the Y-axis
-        :param steps: the number of subdivisions to create vertices around the cone. The more steps the smoother the
-        cone will be.
+        :param radius: the radius of the base of the cone, which must be positive and finite
+        :param height: the size of the cone along the Z-axis
+        :param tol: the maximum chordal deviation of the base circle, which must be positive and finite. The base
+        never gets fewer than 8 segments, no matter how loose this is.
         :return: a new `Mesh3` object representing the cone
         """
         ...
 
     @staticmethod
-    def create_circle(radius: float, segments: int) -> Mesh3:
+    def create_circle(radius: float, tol: float) -> Mesh3:
         """
         Creates a flat, filled circle mesh lying in the XY plane, centered at the origin, with the normal pointing
-        along +Z. The mesh is a triangle fan from the center to `segments` evenly spaced perimeter vertices.
+        along +Z. The mesh is a triangle fan from the center to evenly spaced perimeter vertices, which lie on the
+        true circle so the chords sag inward by at most `tol`.
 
-        :param radius: the radius of the circle
-        :param segments: the number of perimeter vertices (and triangles). Higher values produce a smoother circle.
+        :param radius: the radius of the circle, which must be positive and finite
+        :param tol: the maximum allowed chordal deviation of the perimeter, which must be positive and finite. A
+            full circle never gets fewer than 8 segments, no matter how loose this is.
         :return: a new `Mesh3` object representing the circle
         """
         ...
 
     @staticmethod
-    def create_capsule(p0: Point3, p1: Point3, radius: float, n_theta: int, n_phi: int) -> Mesh3:
+    def create_capsule(p0: Point3, p1: Point3, radius: float, tol: float) -> Mesh3:
         """
-        Creates a capsule shape between two points with a specified radius. The capsule will be centered between the two
-        points and oriented along the line connecting them. The step counts `n_theta` and `n_phi` will determine the
-        smoothness of the sphere in the radial (n_theta) and polar (n_phi) directions.
+        Creates a capsule with the specified radius between two points. The capsule is centered between the points and
+        oriented along the line connecting them. The points are the centers of the caps, so the capsule extends by
+        `radius` beyond each of them. Every vertex lies on the true surface, so the facets sag inward by at most `tol`.
 
         :param p0: the first point of the capsule
         :param p1: the second point of the capsule
-        :param radius: the radius of the capsule
-        :param n_theta: the number of subdivisions to create vertices around the sphere in the theta direction
-        :param n_phi: the number of subdivisions to create vertices around the sphere in the phi direction
+        :param radius: the radius of the capsule, which must be positive and finite
+        :param tol: the maximum deviation of a facet from the true surface, which must be positive and finite. No
+        matter how loose this is, a full turn around the tube never gets fewer than 8 segments and each cap never gets
+        fewer than 2 rows.
         :return: a new `Mesh3` object representing the capsule
         """
         ...
 
     @staticmethod
-    def create_cylinder_between(p0: Point3, p1: Point3, radius: float, steps: int) -> Mesh3:
+    def create_cylinder_between(p0: Point3, p1: Point3, radius: float, tol: float) -> Mesh3:
         """
-        Creates a cylinder between two points with a specified radius. The cylinder will be centered between the two
+        Creates a cylinder between two points with a specified radius. The cylinder is centered between the two
         points and oriented along the line connecting them.
 
         :param p0: the first point of the cylinder
         :param p1: the second point of the cylinder
-        :param radius: the radius of the cylinder
-        :param steps: the number of subdivisions to create vertices around the cylinder. The more steps the smoother the
-        cylinder will be.
+        :param radius: the radius of the cylinder, which must be positive and finite
+        :param tol: the maximum chordal deviation of the wall, which must be positive and finite. The circumference
+        never gets fewer than 8 segments, no matter how loose this is.
         :return: a new `Mesh3` object representing the cylinder
         """
         ...
@@ -4894,78 +4900,88 @@ class MeshData3:
         ...
 
     @staticmethod
-    def create_sphere(radius: float, n_theta: int, n_phi: int) -> MeshData3:
+    def create_sphere(radius: float, tol: float) -> MeshData3:
         """
-        Create a spherical mesh centered at the origin.
+        Create a closed spherical mesh centered at the origin, with its poles on the local z-axis. Every vertex lies
+        on the true sphere, so the facets sag inward by at most `tol`.
 
-        :param radius: the radius of the sphere.
-        :param n_theta: the number of subdivisions around the polar direction.
-        :param n_phi: the number of subdivisions around the azimuthal direction.
+        :param radius: the radius of the sphere, which must be positive and finite.
+        :param tol: the maximum deviation of a facet from the true sphere, which must be positive and finite. No
+        matter how loose this is, a full turn around the equator never gets fewer than 8 segments and a pole-to-pole
+        sweep never gets fewer than 4.
         :return: the mesh data.
         """
         ...
 
     @staticmethod
-    def create_cylinder(radius: float, height: float, steps: int) -> MeshData3:
+    def create_cylinder(radius: float, height: float, tol: float) -> MeshData3:
         """
-        Create a cylindrical mesh centered at the origin and aligned with the local y axis.
+        Create a closed cylindrical mesh centered at the origin and aligned with the local z-axis. The wall vertices
+        lie on the true cylinder, so the flat chords between them sag inward by at most `tol`.
 
-        :param radius: the radius of the cylinder.
-        :param height: the full height of the cylinder, along the y axis.
-        :param steps: the number of subdivisions around the circumference.
+        :param radius: the radius of the cylinder, which must be positive and finite.
+        :param height: the full height of the cylinder, along the z-axis.
+        :param tol: the maximum chordal deviation of the wall, which must be positive and finite. The circumference
+        never gets fewer than 8 segments, no matter how loose this is.
         :return: the mesh data.
         """
         ...
 
     @staticmethod
-    def create_cone(radius: float, height: float, steps: int) -> MeshData3:
+    def create_cone(radius: float, height: float, tol: float) -> MeshData3:
         """
-        Create a conical mesh centered at the origin and aligned with the local y axis, with its apex at +height/2
-        and its base at -height/2.
+        Create a closed conical mesh centered at the origin and aligned with the local z-axis, with its apex at
+        +height/2 and its base at -height/2. The lateral surface is ruled, so only the base circle carries curvature
+        and `tol` is the chordal deviation of that circle.
 
-        :param radius: the radius of the base of the cone.
-        :param height: the full height of the cone, along the y axis.
-        :param steps: the number of subdivisions around the circumference.
+        :param radius: the radius of the base of the cone, which must be positive and finite.
+        :param height: the full height of the cone, along the z-axis.
+        :param tol: the maximum chordal deviation of the base circle, which must be positive and finite. The base
+        never gets fewer than 8 segments, no matter how loose this is.
         :return: the mesh data.
         """
         ...
 
     @staticmethod
-    def create_circle(radius: float, segments: int) -> MeshData3:
+    def create_circle(radius: float, tol: float) -> MeshData3:
         """
         Create a flat, filled circle mesh lying in the XY plane, centered at the origin, with the normal pointing
-        along +Z.
+        along +Z. The perimeter points lie on the true circle so the chords sag inward by at most `tol`.
 
-        :param radius: the radius of the circle.
-        :param segments: the number of perimeter points, and of triangles. Must be at least 3.
+        :param radius: the radius of the circle, which must be positive and finite.
+        :param tol: the maximum allowed chordal deviation of the perimeter, which must be positive and finite. A
+            full circle never gets fewer than 8 segments, no matter how loose this is.
         :return: the mesh data.
         """
         ...
 
     @staticmethod
-    def create_capsule(p0: Point3, p1: Point3, radius: float, n_theta: int, n_phi: int) -> MeshData3:
+    def create_capsule(p0: Point3, p1: Point3, radius: float, tol: float) -> MeshData3:
         """
         Create a capsule mesh, a cylinder with a hemispherical cap on each end, spanning the segment between two
-        points.
+        points. The two points are the centers of the caps, so the capsule extends by `radius` beyond each of them.
+        Every vertex lies on the true surface, so the facets sag inward by at most `tol`.
 
         :param p0: one end of the segment.
         :param p1: the other end of the segment.
-        :param radius: the radius of the cylinder and of the caps.
-        :param n_theta: the number of subdivisions around the circumference.
-        :param n_phi: the number of subdivisions over each cap.
+        :param radius: the radius of the cylinder and of the caps, which must be positive and finite.
+        :param tol: the maximum deviation of a facet from the true surface, which must be positive and finite. No
+        matter how loose this is, a full turn around the tube never gets fewer than 8 segments and each cap never gets
+        fewer than 2 rows.
         :return: the mesh data.
         """
         ...
 
     @staticmethod
-    def create_cylinder_between(p0: Point3, p1: Point3, radius: float, steps: int) -> MeshData3:
+    def create_cylinder_between(p0: Point3, p1: Point3, radius: float, tol: float) -> MeshData3:
         """
         Create a cylindrical mesh spanning the segment between two points.
 
         :param p0: one end of the segment.
         :param p1: the other end of the segment.
-        :param radius: the radius of the cylinder.
-        :param steps: the number of subdivisions around the circumference.
+        :param radius: the radius of the cylinder, which must be positive and finite.
+        :param tol: the maximum chordal deviation of the wall, which must be positive and finite. The circumference
+        never gets fewer than 8 segments, no matter how loose this is.
         :return: the mesh data.
         """
         ...

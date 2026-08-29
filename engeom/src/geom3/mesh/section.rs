@@ -349,9 +349,9 @@ mod tests {
     }
 
     #[test]
-    fn unit_cylinder_in_xz_plane_creates_one_circle_curve() {
-        let mesh = Mesh3::create_cylinder(1.0, 2.0, 256);
-        let plane = Plane3::xz();
+    fn unit_cylinder_in_xy_plane_creates_one_circle_curve() {
+        let mesh = Mesh3::create_cylinder(1.0, 2.0, 1.0e-5).unwrap();
+        let plane = Plane3::xy();
 
         let curves = mesh
             .section_with_plane(&plane, Some(1.0e-10), None)
@@ -362,11 +362,11 @@ mod tests {
         assert!(curve.count() >= 3);
 
         for vertex in curve.vertices() {
-            assert_relative_eq!(vertex.y, 0.0, epsilon = 1.0e-12);
+            assert_relative_eq!(vertex.z, 0.0, epsilon = 1.0e-12);
 
-            let radius = (vertex.x * vertex.x + vertex.z * vertex.z).sqrt();
+            let radius = (vertex.x * vertex.x + vertex.y * vertex.y).sqrt();
             // The tolerance has to be high enough to account for the fact that the cylinder
-            // faces have a diagonal in them and where they pass through y=0 is halfway between
+            // faces have a diagonal in them and where they pass through z=0 is halfway between
             // the arc endpoints formed by the vertices that were deliberately placed at the radius
             assert_relative_eq!(radius, 1.0, epsilon = 1.0e-4);
         }
@@ -375,15 +375,15 @@ mod tests {
     }
 
     #[test]
-    fn two_unit_cylinders_in_xz_plane_create_two_circle_curves() {
-        let mut mesh = Mesh3::create_cylinder(1.0, 2.0, 256);
-        mesh.transform_in_place(&Iso3::translation(0.0, 0.0, -2.0));
-        let mut m1 = Mesh3::create_cylinder(1.0, 2.0, 256);
-        m1.transform_in_place(&Iso3::translation(0.0, 0.0, 2.0));
+    fn two_unit_cylinders_in_xy_plane_create_two_circle_curves() {
+        let mut mesh = Mesh3::create_cylinder(1.0, 2.0, 1.0e-5).unwrap();
+        mesh.transform_in_place(&Iso3::translation(-2.0, 0.0, 0.0));
+        let mut m1 = Mesh3::create_cylinder(1.0, 2.0, 1.0e-5).unwrap();
+        m1.transform_in_place(&Iso3::translation(2.0, 0.0, 0.0));
 
         mesh.append_in_place(&m1).unwrap();
 
-        let plane = Plane3::xz();
+        let plane = Plane3::xy();
 
         let curves = mesh
             .section_with_plane(&plane, Some(1.0e-10), None)
@@ -394,10 +394,10 @@ mod tests {
             assert!(curve.count() >= 3);
             assert_relative_eq!(curve.length(), TAU, epsilon = 1.0e-2);
 
-            let expected_center = if curve.vertices()[0].z > 0.0 {
-                Point3::new(0.0, 0.0, 2.0)
+            let expected_center = if curve.vertices()[0].x > 0.0 {
+                Point3::new(2.0, 0.0, 0.0)
             } else {
-                Point3::new(0.0, 0.0, -2.0)
+                Point3::new(-2.0, 0.0, 0.0)
             };
             for vertex in curve.vertices() {
                 assert_relative_eq!(dist(&expected_center, vertex), 1.0, epsilon = 1.0e-4);

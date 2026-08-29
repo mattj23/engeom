@@ -427,7 +427,7 @@ mod tests {
     #[test]
     fn surface_sampling_lands_on_the_mesh() {
         for (name, mesh, voxel_size) in [
-            ("sphere", Mesh3::create_sphere(10.0, 60, 60), 1.0),
+            ("sphere", Mesh3::create_sphere(10.0, 0.027).unwrap(), 1.0),
             ("bunny", Mesh3::stanford_bunny_res2(), 0.01),
             ("blade", engine_blade(), 2.0),
         ] {
@@ -454,7 +454,7 @@ mod tests {
     /// a caller reason about the output size from the grid alone.
     #[test]
     fn one_point_comes_out_per_occupied_cell() {
-        let mesh = Mesh3::create_sphere(10.0, 60, 60);
+        let mesh = Mesh3::create_sphere(10.0, 0.027).unwrap();
         let voxel_size = 1.0;
 
         let cloud = mesh.sample_voxel_surface(voxel_size, None).unwrap();

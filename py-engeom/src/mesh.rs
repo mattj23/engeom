@@ -885,34 +885,38 @@ impl Mesh3 {
     }
 
     #[staticmethod]
-    fn create_cylinder(radius: f64, height: f64, steps: usize) -> Self {
-        let mesh = engeom::Mesh3::create_cylinder(radius, height, steps);
-        Self::from_inner(mesh)
+    fn create_cylinder(radius: f64, height: f64, tol: f64) -> PyResult<Self> {
+        let mesh = engeom::Mesh3::create_cylinder(radius, height, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(mesh))
     }
 
     #[staticmethod]
-    fn create_sphere(radius: f64, n_theta: usize, n_phi: usize) -> Self {
-        let mesh = engeom::Mesh3::create_sphere(radius, n_theta, n_phi);
-        Self::from_inner(mesh)
+    fn create_sphere(radius: f64, tol: f64) -> PyResult<Self> {
+        let mesh = engeom::Mesh3::create_sphere(radius, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(mesh))
     }
 
     #[staticmethod]
-    fn create_cone(radius: f64, height: f64, steps: usize) -> Self {
-        let mesh = engeom::Mesh3::create_cone(radius, height, steps);
-        Self::from_inner(mesh)
+    fn create_cone(radius: f64, height: f64, tol: f64) -> PyResult<Self> {
+        let mesh = engeom::Mesh3::create_cone(radius, height, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(mesh))
     }
 
     #[staticmethod]
-    fn create_circle(radius: f64, segments: usize) -> Self {
-        let mesh = engeom::Mesh3::create_circle(radius, segments);
-        Self::from_inner(mesh)
+    fn create_circle(radius: f64, tol: f64) -> PyResult<Self> {
+        let mesh = engeom::Mesh3::create_circle(radius, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(mesh))
     }
 
     #[staticmethod]
-    fn create_capsule(p0: Point3, p1: Point3, radius: f64, n_theta: usize, n_phi: usize) -> Self {
-        let mesh =
-            engeom::Mesh3::create_capsule(p0.get_inner(), p1.get_inner(), radius, n_theta, n_phi);
-        Self::from_inner(mesh)
+    fn create_capsule(p0: Point3, p1: Point3, radius: f64, tol: f64) -> PyResult<Self> {
+        let mesh = engeom::Mesh3::create_capsule(p0.get_inner(), p1.get_inner(), radius, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(mesh))
     }
 
     #[staticmethod]
@@ -937,14 +941,10 @@ impl Mesh3 {
     }
 
     #[staticmethod]
-    fn create_cylinder_between(
-        p0: Point3,
-        p1: Point3,
-        radius: f64,
-        steps: usize,
-    ) -> PyResult<Self> {
+    fn create_cylinder_between(p0: Point3, p1: Point3, radius: f64, tol: f64) -> PyResult<Self> {
         let mesh =
-            engeom::Mesh3::create_cylinder_between(p0.get_inner(), p1.get_inner(), radius, steps);
+            engeom::Mesh3::create_cylinder_between(p0.get_inner(), p1.get_inner(), radius, tol)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(mesh))
     }
 
@@ -1721,44 +1721,46 @@ impl MeshData3 {
     }
 
     #[staticmethod]
-    fn create_sphere(radius: f64, n_theta: usize, n_phi: usize) -> Self {
-        Self::from_inner(engeom::MeshData3::create_sphere(radius, n_theta, n_phi))
+    fn create_sphere(radius: f64, tol: f64) -> PyResult<Self> {
+        let data = engeom::MeshData3::create_sphere(radius, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(data))
     }
 
     #[staticmethod]
-    fn create_cylinder(radius: f64, height: f64, steps: usize) -> Self {
-        Self::from_inner(engeom::MeshData3::create_cylinder(radius, height, steps))
+    fn create_cylinder(radius: f64, height: f64, tol: f64) -> PyResult<Self> {
+        let data = engeom::MeshData3::create_cylinder(radius, height, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(data))
     }
 
     #[staticmethod]
-    fn create_cone(radius: f64, height: f64, steps: usize) -> Self {
-        Self::from_inner(engeom::MeshData3::create_cone(radius, height, steps))
+    fn create_cone(radius: f64, height: f64, tol: f64) -> PyResult<Self> {
+        let data = engeom::MeshData3::create_cone(radius, height, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(data))
     }
 
     #[staticmethod]
-    fn create_circle(radius: f64, segments: usize) -> Self {
-        Self::from_inner(engeom::MeshData3::create_circle(radius, segments))
+    fn create_circle(radius: f64, tol: f64) -> PyResult<Self> {
+        let data = engeom::MeshData3::create_circle(radius, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(data))
     }
 
     #[staticmethod]
-    fn create_capsule(p0: Point3, p1: Point3, radius: f64, n_theta: usize, n_phi: usize) -> Self {
-        Self::from_inner(engeom::MeshData3::create_capsule(
-            p0.get_inner(),
-            p1.get_inner(),
-            radius,
-            n_theta,
-            n_phi,
-        ))
+    fn create_capsule(p0: Point3, p1: Point3, radius: f64, tol: f64) -> PyResult<Self> {
+        let data = engeom::MeshData3::create_capsule(p0.get_inner(), p1.get_inner(), radius, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(data))
     }
 
     #[staticmethod]
-    fn create_cylinder_between(p0: Point3, p1: Point3, radius: f64, steps: usize) -> Self {
-        Self::from_inner(engeom::MeshData3::create_cylinder_between(
-            p0.get_inner(),
-            p1.get_inner(),
-            radius,
-            steps,
-        ))
+    fn create_cylinder_between(p0: Point3, p1: Point3, radius: f64, tol: f64) -> PyResult<Self> {
+        let data =
+            engeom::MeshData3::create_cylinder_between(p0.get_inner(), p1.get_inner(), radius, tol)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(data))
     }
 
     #[staticmethod]

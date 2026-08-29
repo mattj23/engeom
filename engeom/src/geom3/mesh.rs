@@ -1057,50 +1057,64 @@ impl Mesh3 {
         Self::from_primitive(MeshData3::create_box(length, width, height), is_solid)
     }
 
-    /// Create a spherical mesh centered at the origin.
+    /// Create a closed spherical mesh centered at the origin, with its poles on the local `z`
+    /// axis.
     ///
     /// See `MeshData3::create_sphere`.
     ///
     /// # Arguments
     ///
-    /// * `radius`: radius of the sphere
-    /// * `n_theta`: number of subdivisions around the polar direction
-    /// * `n_phi`: number of subdivisions around the azimuthal direction
+    /// * `radius`: radius of the sphere, which must be positive and finite
+    /// * `tol`: the maximum allowed deviation of a facet from the true sphere, which must be
+    ///   positive and finite. No matter how loose this is, a full turn around the equator never
+    ///   gets fewer than 8 segments and a pole-to-pole sweep never gets fewer than 4.
     ///
-    /// returns: `Mesh3`
-    pub fn create_sphere(radius: f64, n_theta: usize, n_phi: usize) -> Self {
-        Self::from_primitive(MeshData3::create_sphere(radius, n_theta, n_phi), true)
+    /// returns: `Result<Mesh3>`, failing if `radius` or `tol` is invalid
+    pub fn create_sphere(radius: f64, tol: f64) -> Result<Self> {
+        Ok(Self::from_primitive(
+            MeshData3::create_sphere(radius, tol)?,
+            true,
+        ))
     }
 
-    /// Create a cylindrical mesh centered at the origin and aligned with the local `y` axis.
+    /// Create a closed cylindrical mesh centered at the origin and aligned with the local `z`
+    /// axis.
     ///
     /// See `MeshData3::create_cylinder`.
     ///
     /// # Arguments
     ///
-    /// * `radius`: radius of the cylinder
-    /// * `height`: full height of the cylinder, along the y axis
-    /// * `steps`: number of subdivisions around the circumference
+    /// * `radius`: radius of the cylinder, which must be positive and finite
+    /// * `height`: full height of the cylinder, along the z-axis
+    /// * `tol`: the maximum allowed chordal deviation of the wall, which must be positive and
+    ///   finite. The circumference never gets fewer than 8 segments, no matter how loose this is.
     ///
-    /// returns: `Mesh3`
-    pub fn create_cylinder(radius: f64, height: f64, steps: usize) -> Self {
-        Self::from_primitive(MeshData3::create_cylinder(radius, height, steps), true)
+    /// returns: `Result<Mesh3>`, failing if `radius` or `tol` is invalid
+    pub fn create_cylinder(radius: f64, height: f64, tol: f64) -> Result<Self> {
+        Ok(Self::from_primitive(
+            MeshData3::create_cylinder(radius, height, tol)?,
+            true,
+        ))
     }
 
-    /// Create a conical mesh centered at the origin and aligned with the local `y` axis, with its
-    /// apex at `+height/2` and its base at `-height/2`.
+    /// Create a closed conical mesh centered at the origin and aligned with the local `z` axis,
+    /// with its apex at `+height/2` and its base at `-height/2`.
     ///
     /// See `MeshData3::create_cone`.
     ///
     /// # Arguments
     ///
-    /// * `radius`: radius of the base of the cone
-    /// * `height`: full height of the cone, along the y axis
-    /// * `steps`: number of subdivisions around the circumference
+    /// * `radius`: radius of the base of the cone, which must be positive and finite
+    /// * `height`: full height of the cone, along the z-axis
+    /// * `tol`: the maximum allowed chordal deviation of the base circle, which must be positive
+    ///   and finite. The base never gets fewer than 8 segments, no matter how loose this is.
     ///
-    /// returns: `Mesh3`
-    pub fn create_cone(radius: f64, height: f64, steps: usize) -> Self {
-        Self::from_primitive(MeshData3::create_cone(radius, height, steps), true)
+    /// returns: `Result<Mesh3>`, failing if `radius` or `tol` is invalid
+    pub fn create_cone(radius: f64, height: f64, tol: f64) -> Result<Self> {
+        Ok(Self::from_primitive(
+            MeshData3::create_cone(radius, height, tol)?,
+            true,
+        ))
     }
 
     /// Create a flat, filled circle mesh lying in the XY plane, centered at the origin, with the
@@ -1110,38 +1124,47 @@ impl Mesh3 {
     ///
     /// # Arguments
     ///
-    /// * `radius`: radius of the circle
-    /// * `segments`: number of perimeter points, and of triangles. Must be at least 3.
+    /// * `radius`: radius of the circle, which must be positive and finite
+    /// * `tol`: the maximum allowed chordal deviation of the perimeter, which must be positive
+    ///   and finite
     ///
-    /// returns: `Mesh3`
-    pub fn create_circle(radius: f64, segments: usize) -> Self {
-        Self::from_primitive(MeshData3::create_circle(radius, segments), false)
+    /// returns: `Result<Mesh3>`, failing if `radius` or `tol` is invalid
+    pub fn create_circle(radius: f64, tol: f64) -> Result<Self> {
+        Ok(Self::from_primitive(
+            MeshData3::create_circle(radius, tol)?,
+            false,
+        ))
     }
 
     /// Create a capsule mesh spanning the segment between two points.
     ///
     /// See `MeshData3::create_capsule`.
-    pub fn create_capsule(
-        p0: &Point3,
-        p1: &Point3,
-        radius: f64,
-        n_theta: usize,
-        n_phi: usize,
-    ) -> Self {
-        Self::from_primitive(
-            MeshData3::create_capsule(p0, p1, radius, n_theta, n_phi),
+    ///
+    /// returns: `Result<Mesh3>`, failing if `radius` or `tol` is invalid, or if the two points are
+    /// coincident
+    pub fn create_capsule(p0: &Point3, p1: &Point3, radius: f64, tol: f64) -> Result<Self> {
+        Ok(Self::from_primitive(
+            MeshData3::create_capsule(p0, p1, radius, tol)?,
             true,
-        )
+        ))
     }
 
     /// Create a cylindrical mesh spanning the segment between two points.
     ///
     /// See `MeshData3::create_cylinder_between`.
-    pub fn create_cylinder_between(p0: &Point3, p1: &Point3, radius: f64, steps: usize) -> Self {
-        Self::from_primitive(
-            MeshData3::create_cylinder_between(p0, p1, radius, steps),
+    ///
+    /// returns: `Result<Mesh3>`, failing if `radius` or `tol` is invalid, or if the two points are
+    /// coincident
+    pub fn create_cylinder_between(
+        p0: &Point3,
+        p1: &Point3,
+        radius: f64,
+        tol: f64,
+    ) -> Result<Self> {
+        Ok(Self::from_primitive(
+            MeshData3::create_cylinder_between(p0, p1, radius, tol)?,
             true,
-        )
+        ))
     }
 
     /// Create a rectangular beam spanning the segment between two points.
@@ -1204,7 +1227,7 @@ mod tests {
     /// flag, which the file does not carry and the caller therefore has to supply on load.
     #[test]
     fn a_tcmesh_round_trips_and_is_solid_comes_from_the_caller() -> Result<()> {
-        let mesh = Mesh3::create_sphere(1.0, 20, 20);
+        let mesh = Mesh3::create_sphere(1.0, 0.025)?;
         let tol = 1e-5;
         let file = TempFile::new("tcmesh-round-trip", "tcmesh");
 
@@ -1232,7 +1255,7 @@ mod tests {
 
     #[test]
     fn point_normals_match_point_count() -> Result<()> {
-        let mesh = Mesh3::create_sphere(1.0, 40, 40);
+        let mesh = Mesh3::create_sphere(1.0, 6.0e-3)?;
         let normals = mesh.compute_point_normals()?;
 
         assert_eq!(normals.len(), mesh.points().len());
@@ -1277,7 +1300,7 @@ mod tests {
     /// the normals they compute have to agree exactly rather than merely being close.
     #[test]
     fn point_normals_agree_with_mesh_data() -> Result<()> {
-        let mesh = Mesh3::create_sphere(1.0, 40, 40);
+        let mesh = Mesh3::create_sphere(1.0, 6.0e-3)?;
         let from_mesh = mesh.compute_point_normals()?;
         let from_data = mesh.to_data().compute_point_normals()?;
 
@@ -1314,7 +1337,7 @@ mod tests {
     fn scale_copy_scales_spherical_radius() -> Result<()> {
         let radius = 1.0;
         let scale = 2.5;
-        let mesh = Mesh3::create_sphere(radius, 100, 100);
+        let mesh = Mesh3::create_sphere(radius, radius * 1.0e-3)?;
         let scaled = mesh.scale_copy(scale)?;
 
         assert_eq!(mesh.points().len(), scaled.points().len());
@@ -1330,7 +1353,7 @@ mod tests {
     fn offset_points_copy_preserves_spherical_radius() -> Result<()> {
         let radius = 1.0;
         let offset = 0.1;
-        let mesh = Mesh3::create_sphere(radius, 100, 100);
+        let mesh = Mesh3::create_sphere(radius, radius * 1.0e-3)?;
         let offset_mesh = mesh.offset_points_copy(offset)?;
 
         assert_eq!(mesh.points().len(), offset_mesh.points().len());

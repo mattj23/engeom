@@ -1306,7 +1306,7 @@ mod tests {
     /// for meshes. This is the check that the route actually composes.
     #[test]
     fn a_mesh_reduces_through_a_sample_without_mesh_specific_code() -> Result<()> {
-        let mesh = crate::Mesh3::create_sphere(50.0, 80, 80);
+        let mesh = crate::Mesh3::create_sphere(50.0, 0.077)?;
         let sampled = mesh.sample_dense(1.0, None);
 
         let cloud = PointCloud3::from_surface_points(&sampled);

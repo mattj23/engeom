@@ -213,7 +213,7 @@ mod tests {
 
     #[test]
     fn check_kiddo_bug() {
-        let mesh = Mesh3::create_sphere(100.0, 300, 300);
+        let mesh = Mesh3::create_sphere(100.0, 0.011).unwrap();
         let r = 5.0;
         let sampled = mesh.sample_poisson(r, None);
 
@@ -228,7 +228,7 @@ mod tests {
 
     #[test]
     fn sample_poisson_index_mask_restricts_to_masked_faces() {
-        let mesh = Mesh3::create_sphere(100.0, 30, 30);
+        let mesh = Mesh3::create_sphere(100.0, 1.1).unwrap();
         let n_faces = mesh.faces().len();
 
         // Mask only the first half of the faces

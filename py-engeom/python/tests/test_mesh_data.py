@@ -410,35 +410,153 @@ def test_mesh_save_stl_refuses_to_drop_attributes_silently(tmp_path):
 
 def test_create_cone_uses_the_radius_and_full_height_it_was_given():
     """The two arguments used to reach parry swapped, so a cone came out with them exchanged."""
-    cone = Mesh3.create_cone(radius=2.0, height=10.0, steps=32)
+    cone = Mesh3.create_cone(radius=2.0, height=10.0, tol=1.0e-4)
     aabb = cone.aabb
 
-    assert aabb.min.x == pytest.approx(-2.0)
+    # A vertex always lands on +x, but the segment count need not put one on -x, so that extent
+    # can fall short by up to the chordal tolerance.
     assert aabb.max.x == pytest.approx(2.0)
-    assert aabb.min.y == pytest.approx(-5.0)
-    assert aabb.max.y == pytest.approx(5.0)
+    assert -2.0 <= aabb.min.x <= -2.0 + 1.0e-4
+    assert aabb.min.z == pytest.approx(-5.0)
+    assert aabb.max.z == pytest.approx(5.0)
 
 
 def test_cone_and_cylinder_agree_on_what_height_means():
-    cone = Mesh3.create_cone(radius=1.0, height=6.0, steps=16)
-    cyl = Mesh3.create_cylinder(radius=1.0, height=6.0, steps=16)
+    cone = Mesh3.create_cone(radius=1.0, height=6.0, tol=1.0e-3)
+    cyl = Mesh3.create_cylinder(radius=1.0, height=6.0, tol=1.0e-3)
 
-    assert cone.aabb.max.y == pytest.approx(cyl.aabb.max.y)
-    assert cone.aabb.min.y == pytest.approx(cyl.aabb.min.y)
+    assert cone.aabb.max.z == pytest.approx(cyl.aabb.max.z)
+    assert cone.aabb.min.z == pytest.approx(cyl.aabb.min.z)
 
 
 def test_primitives_carry_no_attributes():
     for mesh in [
         Mesh3.create_box(1.0, 2.0, 3.0),
-        Mesh3.create_sphere(1.0, 8, 8),
-        Mesh3.create_cylinder(1.0, 2.0, 8),
-        Mesh3.create_cone(1.0, 2.0, 8),
-        Mesh3.create_circle(1.0, 8),
+        Mesh3.create_sphere(1.0, 1.0e-3),
+        Mesh3.create_cylinder(1.0, 2.0, 1.0e-3),
+        Mesh3.create_cone(1.0, 2.0, 1.0e-3),
+        Mesh3.create_circle(1.0, 1.0e-3),
     ]:
         data = MeshData3.from_mesh(mesh)
         assert data.point_normals is None
         assert data.point_stdev is None
         assert data.face_labels is None
+
+
+def test_create_circle_uses_the_tolerance():
+    fine = Mesh3.create_circle(1.0, 1.0e-4)
+    coarse = Mesh3.create_circle(1.0, 1.0e-2)
+    assert fine.faces.shape[0] > coarse.faces.shape[0]
+
+    # A loose tolerance still produces at least 8 segments
+    floor = Mesh3.create_circle(1.0, 10.0)
+    assert floor.faces.shape[0] == 8
+
+
+def test_create_circle_rejects_a_bad_tolerance():
+    with pytest.raises(ValueError):
+        Mesh3.create_circle(1.0, 0.0)
+    with pytest.raises(ValueError):
+        MeshData3.create_circle(1.0, -1.0)
+
+
+def test_create_cylinder_is_z_native_and_uses_the_tolerance():
+    cyl = Mesh3.create_cylinder(radius=2.0, height=10.0, tol=1.0e-4)
+    aabb = cyl.aabb
+
+    assert aabb.min.z == pytest.approx(-5.0)
+    assert aabb.max.z == pytest.approx(5.0)
+    # A vertex always lands on +x, but the segment count need not put one on +y, so that extent
+    # can fall short by up to the chordal tolerance.
+    assert aabb.max.x == pytest.approx(2.0)
+    assert 2.0 - 1.0e-4 <= aabb.max.y <= 2.0
+
+    coarse = Mesh3.create_cylinder(radius=2.0, height=10.0, tol=1.0e-2)
+    assert cyl.faces.shape[0] > coarse.faces.shape[0]
+
+    # A loose tolerance still produces at least 8 segments: a wall band plus two cap fans.
+    floor = MeshData3.create_cylinder(2.0, 10.0, 100.0)
+    assert floor.faces.shape[0] == 8 * 4
+
+
+def test_create_cylinder_rejects_bad_arguments():
+    with pytest.raises(ValueError):
+        Mesh3.create_cylinder(1.0, 2.0, 0.0)
+    with pytest.raises(ValueError):
+        MeshData3.create_cylinder(0.0, 2.0, 1.0e-3)
+
+
+def test_create_cone_is_z_native_and_uses_the_tolerance():
+    fine = MeshData3.create_cone(2.0, 10.0, 1.0e-4)
+    coarse = MeshData3.create_cone(2.0, 10.0, 1.0e-2)
+    assert fine.faces.shape[0] > coarse.faces.shape[0]
+
+    # A loose tolerance still produces at least 8 base segments: a lateral fan plus a base fan.
+    floor = MeshData3.create_cone(2.0, 10.0, 100.0)
+    assert floor.faces.shape[0] == 8 * 2
+
+    # The apex sits alone at +height/2
+    apex = fine.points[fine.points[:, 2] > 0.0]
+    assert apex.shape[0] == 1
+    assert apex[0, 2] == pytest.approx(5.0)
+
+
+def test_create_cone_rejects_bad_arguments():
+    with pytest.raises(ValueError):
+        Mesh3.create_cone(1.0, 2.0, 0.0)
+    with pytest.raises(ValueError):
+        MeshData3.create_cone(0.0, 2.0, 1.0e-3)
+
+
+def test_create_sphere_is_z_native_and_uses_the_tolerance():
+    fine = MeshData3.create_sphere(2.0, 1.0e-4)
+    coarse = MeshData3.create_sphere(2.0, 1.0e-2)
+    assert fine.faces.shape[0] > coarse.faces.shape[0]
+
+    # Every vertex is on the true sphere
+    assert numpy.allclose(numpy.linalg.norm(fine.points, axis=1), 2.0)
+
+    # The poles sit on z, one point each
+    assert fine.points[:, 2].max() == pytest.approx(2.0)
+    assert fine.points[:, 2].min() == pytest.approx(-2.0)
+    on_axis = numpy.hypot(fine.points[:, 0], fine.points[:, 1]) < 1.0e-12
+    assert on_axis.sum() == 2
+
+    # A loose tolerance still gets 8 segments around and 4 from pole to pole
+    floor = MeshData3.create_sphere(2.0, 100.0)
+    assert floor.points.shape[0] == 8 * 3 + 2
+
+
+def test_create_sphere_rejects_bad_arguments():
+    with pytest.raises(ValueError):
+        Mesh3.create_sphere(1.0, 0.0)
+    with pytest.raises(ValueError):
+        MeshData3.create_sphere(0.0, 1.0e-3)
+
+
+def test_create_capsule_runs_past_the_two_points_by_a_radius():
+    p0, p1 = Point3(1.0, 2.0, 3.0), Point3(1.0, 2.0, 9.0)
+    capsule = Mesh3.create_capsule(p0, p1, 0.5, 1.0e-3)
+
+    assert capsule.aabb.min.z == pytest.approx(2.5)
+    assert capsule.aabb.max.z == pytest.approx(9.5)
+
+    coarse = MeshData3.create_capsule(p0, p1, 0.5, 1.0e-1)
+    assert MeshData3.from_mesh(capsule).faces.shape[0] > coarse.faces.shape[0]
+
+
+def test_create_capsule_rejects_bad_arguments():
+    p0, p1 = Point3(0.0, 0.0, 0.0), Point3(0.0, 0.0, 4.0)
+    with pytest.raises(ValueError):
+        Mesh3.create_capsule(p0, p1, 1.0, 0.0)
+    with pytest.raises(ValueError):
+        MeshData3.create_capsule(p0, p0, 1.0, 1.0e-3)
+
+
+def test_create_cylinder_between_rejects_coincident_points():
+    p = Point3(1.0, 2.0, 3.0)
+    with pytest.raises(ValueError):
+        Mesh3.create_cylinder_between(p, p, 1.0, 1.0e-3)
 
 
 def test_mesh_data_has_the_primitives_too():
@@ -715,8 +833,8 @@ def test_mesh_data_compute_point_normals_reports_a_point_with_no_normal():
 def test_mesh_data_capsule_and_cylinder_between():
     p0, p1 = Point3(0.0, 0.0, 0.0), Point3(0.0, 0.0, 10.0)
 
-    capsule = MeshData3.create_capsule(p0, p1, 1.0, 16, 8)
-    cylinder = MeshData3.create_cylinder_between(p0, p1, 1.0, 16)
+    capsule = MeshData3.create_capsule(p0, p1, 1.0, 1.0e-2)
+    cylinder = MeshData3.create_cylinder_between(p0, p1, 1.0, 1.0e-2)
 
     assert capsule.face_count > 0
     assert cylinder.face_count > 0

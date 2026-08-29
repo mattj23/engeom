@@ -6,7 +6,7 @@ from engeom.common import IndexMask
 
 
 def test_mesh_offset_points_copy():
-    m = Mesh3.create_sphere(1.0, 100, 100)
+    m = Mesh3.create_sphere(1.0, 1.0e-3)
     n = m.offset_points_copy(0.1)
 
     for v in n.points:
@@ -29,7 +29,7 @@ def test_mesh_compute_point_normals_of_a_box_point_along_the_diagonals():
 
 
 def test_mesh_compute_point_normals_is_cached():
-    m = Mesh3.create_sphere(1.0, 20, 20)
+    m = Mesh3.create_sphere(1.0, 0.025)
     assert m.compute_point_normals() is m.compute_point_normals()
 
 
@@ -347,7 +347,7 @@ def test_filter_vertices_near_point():
 
 
 def test_filter_expand_dilates_and_erodes():
-    m = Mesh3.create_sphere(1.0, 20, 20)
+    m = Mesh3.create_sphere(1.0, 0.025)
     seed = IndexMask.from_indices([0], m.face_count)
 
     grown = m.face_select().by_mask(seed, "add").expand("add").to_mask()
@@ -362,7 +362,7 @@ def test_filter_expand_dilates_and_erodes():
 
 def test_filter_expand_remove_on_a_closed_mesh_selection_is_a_no_op():
     """Erosion works from the unselected side, so a fully selected closed mesh has nothing to erode."""
-    m = Mesh3.create_sphere(1.0, 20, 20)
+    m = Mesh3.create_sphere(1.0, 0.025)
 
     eroded = m.face_select("all").expand("remove").collect_indices()
 
@@ -370,7 +370,7 @@ def test_filter_expand_remove_on_a_closed_mesh_selection_is_a_no_op():
 
 
 def test_filter_expand_n_matches_repeated_expand():
-    m = Mesh3.create_sphere(1.0, 20, 20)
+    m = Mesh3.create_sphere(1.0, 0.025)
     seed = IndexMask.from_indices([0], m.face_count)
 
     once_twice = (m.face_select().by_mask(seed, "add")
@@ -382,7 +382,7 @@ def test_filter_expand_n_matches_repeated_expand():
 
 
 def test_filter_expand_respects_the_exclude_mask():
-    m = Mesh3.create_sphere(1.0, 20, 20)
+    m = Mesh3.create_sphere(1.0, 0.025)
     seed = IndexMask.from_indices([0], m.face_count)
 
     free = m.face_select().by_mask(seed, "add").expand("add").to_mask()
