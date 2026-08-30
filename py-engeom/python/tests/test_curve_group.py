@@ -216,6 +216,59 @@ def test_a_member_collapsing_under_projection_raises():
 
 
 # =================================================================================================
+# Chain merging
+# =================================================================================================
+
+
+def square_sides(gap: float = 0.0) -> list[Curve2]:
+    """
+    The four sides of a unit square, listed out of order as separate open curves. Each side is
+    shortened by `gap` at its end so that consecutive sides do not quite touch.
+    """
+    corners = numpy.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]])
+    sides = []
+    for i in range(4):
+        a = corners[i]
+        b = corners[(i + 1) % 4]
+        sides.append(Curve2(numpy.array([a, a + (b - a) * (1.0 - gap)]), tol=1e-8))
+    return [sides[2], sides[3], sides[0], sides[1]]
+
+
+def test_touching_sides_merge_into_one_closed_loop():
+    merged = CurveGroup2(square_sides()).chain_merged(1e-6)
+    assert len(merged) == 1
+    assert merged[0].is_closed
+    assert merged[0].area == pytest.approx(1.0)
+
+
+def test_gapped_sides_merge_into_an_open_chain_that_closes_within_the_gap():
+    merged = CurveGroup2(square_sides(0.05)).chain_merged(0.1)
+    assert len(merged) == 1
+    assert not merged[0].is_closed
+
+    loop = merged[0].closed_within(0.1)
+    assert loop.is_closed
+    assert loop.area == pytest.approx(1.0, abs=0.1)
+
+
+def test_a_gap_beyond_the_limit_is_not_bridged():
+    merged = CurveGroup2(square_sides(0.05)).chain_merged(0.01)
+    assert len(merged) == 4
+
+
+def test_merging_without_a_limit_joins_everything_open():
+    merged = CurveGroup2(square_sides(0.05)).chain_merged()
+    assert len(merged) == 1
+
+
+def test_closed_members_pass_through_a_merge():
+    merged = CurveGroup2(square_sides() + [square2(10.0)]).chain_merged()
+    assert len(merged) == 2
+    assert all(c.is_closed for c in merged)
+    assert merged.length == pytest.approx(8.0)
+
+
+# =================================================================================================
 # Files
 # =================================================================================================
 

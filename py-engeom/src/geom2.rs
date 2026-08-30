@@ -2107,6 +2107,13 @@ impl Curve2 {
             .ok_or_else(|| PyValueError::new_err("Length out of bounds"))
     }
 
+    fn closed_within(&self, max_gap: f64) -> PyResult<Self> {
+        self.inner
+            .closed_within(max_gap)
+            .map(Self::from_inner)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
     fn reversed(&self) -> Self {
         Self::from_inner(self.inner.reversed())
     }
@@ -2300,6 +2307,14 @@ impl CurveGroup2 {
     fn at_closest_to_point(&self, point: Point2) -> (usize, CurveStation2) {
         let (member, station) = self.inner.at_closest_to_point(point.get_inner());
         (member, station.into())
+    }
+
+    #[pyo3(signature=(max_dist=None))]
+    fn chain_merged(&self, max_dist: Option<f64>) -> PyResult<Self> {
+        self.inner
+            .chain_merged(max_dist)
+            .map(Self::from_inner)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     fn new_transformed_by(&self, iso: &Iso2) -> Self {

@@ -132,6 +132,32 @@ impl CurveGroup2 {
             .expect("a curve group is never empty")
     }
 
+    /// Returns a new group in which open members whose ends meet have been joined into single
+    /// curves. This reassembles a section through separately meshed but touching patches into the
+    /// loops and strands it describes.
+    ///
+    /// This is [`Curve2::chain_merge`] applied to the members: repeatedly, the pair of open
+    /// members with the smallest distance from the end of one to the start of the other is
+    /// joined end-to-start, until no pair is within `max_dist`. Only end-to-start joins are made,
+    /// so every member keeps its direction and no member is reversed. Closed members take no
+    /// part and pass through unchanged. A chain whose last vertex comes within the first member's
+    /// tolerance of its first vertex becomes a closed curve; a chain that stops
+    /// short of that stays open, and [`Curve2::closed_within`] is the way to close it across a
+    /// larger gap.
+    ///
+    /// The result has one member for each remaining chain, so a section through a part with a
+    /// hole reduces to two loops, not one. A result containing a single curve has `len() == 1`.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_dist`: the largest end-to-start distance that may be bridged by a join, or `None`
+    ///   to keep joining the closest pair until nothing open is left to join
+    ///
+    /// returns: `Result<CurveGroup2>`
+    pub fn chain_merged(&self, max_dist: Option<f64>) -> Result<Self> {
+        Self::new(Curve2::chain_merge(self.curves.clone(), max_dist)?)
+    }
+
     /// Returns a new group with every member transformed by the isometry. Member order is
     /// preserved.
     pub fn new_transformed_by(&self, iso: &Iso2) -> Self {
@@ -181,6 +207,81 @@ mod tests {
     /// A path in the temp directory, tagged so concurrent tests cannot collide on it.
     fn temp_path(tag: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!("engeom_curve_group2_{tag}.tccurve2"))
+    }
+
+    /// The four sides of a unit square, listed out of order as separate open members. Each side is
+    /// shortened by `gap` at its end so that consecutive sides do not quite touch.
+    fn square_sides_with_gap(gap: f64) -> Vec<Curve2> {
+        let corners = [
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(1.0, 1.0),
+            Point2::new(0.0, 1.0),
+        ];
+        let mut sides = (0..4)
+            .map(|i| {
+                let a = corners[i];
+                let b = corners[(i + 1) % 4];
+                let end = a + (b - a) * (1.0 - gap);
+                Curve2::from_points(&[a, end], 1e-8, false).unwrap()
+            })
+            .collect::<Vec<_>>();
+        sides.swap(0, 2);
+        sides.swap(1, 3);
+        sides
+    }
+
+    /// Sides that meet exactly form one chain. Because the chain returns to its own start, the
+    /// result is closed without any further step.
+    #[test]
+    fn touching_sides_merge_into_one_closed_loop() -> Result<()> {
+        let group = CurveGroup2::new(square_sides_with_gap(0.0))?;
+        let merged = group.chain_merged(Some(1e-6))?;
+
+        assert_eq!(merged.len(), 1);
+        let loop_ = &merged.curves()[0];
+        assert!(loop_.is_closed());
+        assert_relative_eq!(loop_.area().unwrap(), 1.0, epsilon = 1e-12);
+        Ok(())
+    }
+
+    /// Sides that stop short of each other form one open curve when the gap is within the limit.
+    /// Calling `closed_within` on that curve then turns it into a loop.
+    #[test]
+    fn gapped_sides_merge_into_one_open_chain() -> Result<()> {
+        let group = CurveGroup2::new(square_sides_with_gap(0.05))?;
+        let merged = group.chain_merged(Some(0.1))?;
+
+        assert_eq!(merged.len(), 1);
+        let chain = &merged.curves()[0];
+        assert!(!chain.is_closed());
+        assert_eq!(chain.count(), 8);
+
+        let closed = chain.closed_within(0.1)?;
+        assert!(closed.is_closed());
+        assert_relative_eq!(closed.area().unwrap(), 1.0, epsilon = 0.1);
+        Ok(())
+    }
+
+    #[test]
+    fn a_gap_beyond_the_limit_is_not_bridged() -> Result<()> {
+        let group = CurveGroup2::new(square_sides_with_gap(0.05))?;
+        let merged = group.chain_merged(Some(0.01))?;
+        assert_eq!(merged.len(), 4);
+        Ok(())
+    }
+
+    /// Closed members take no part in merging and come through unchanged alongside the chains.
+    #[test]
+    fn closed_members_pass_through_a_merge() -> Result<()> {
+        let mut members = square_sides_with_gap(0.0);
+        members.push(square_at(10.0, 0.0));
+        let merged = CurveGroup2::new(members)?.chain_merged(None)?;
+
+        assert_eq!(merged.len(), 2);
+        assert!(merged.curves().iter().all(|c| c.is_closed()));
+        assert_eq!(merged.length(), 8.0);
+        Ok(())
     }
 
     /// The whole point of putting a group in one file: order, count, closedness and each member's

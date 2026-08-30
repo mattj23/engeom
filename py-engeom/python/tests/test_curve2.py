@@ -95,3 +95,35 @@ def test_area_centroid_of_a_zero_area_loop_raises():
     assert doubled_back.area == pytest.approx(0.0)
     with pytest.raises(ValueError):
         doubled_back.area_centroid
+
+
+# =================================================================================================
+# Closing within a gap
+# =================================================================================================
+
+
+def open_square_sides() -> Curve2:
+    """Three sides of a unit square forming an open curve whose ends are one unit apart."""
+    return Curve2(numpy.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]), tol=1e-9)
+
+
+def test_closed_within_bridges_a_gap_inside_the_limit():
+    c = open_square_sides()
+    assert not c.is_closed
+
+    closed = c.closed_within(1.0)
+    assert closed.is_closed
+    assert closed.points.shape[0] == c.points.shape[0] + 1
+    assert closed.area == pytest.approx(1.0)
+
+
+def test_closed_within_refuses_a_gap_beyond_the_limit():
+    with pytest.raises(ValueError, match="gap"):
+        open_square_sides().closed_within(0.5)
+
+
+def test_closed_within_leaves_a_closed_curve_alone():
+    c = square()
+    again = c.closed_within(0.0)
+    assert again.is_closed
+    assert numpy.array_equal(again.points, c.points)

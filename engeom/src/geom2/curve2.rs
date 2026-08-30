@@ -586,6 +586,37 @@ impl Curve2 {
         Some(origin + Vector2::new(cx, cy) / (3.0 * area2))
     }
 
+    /// Returns a closed copy of this curve, bridging the gap between its last and first vertices
+    /// when that gap is no larger than `max_gap`.
+    ///
+    /// Use this to close a curve whose ends nearly meet but are farther apart than the chord
+    /// tolerance that closes a curve automatically during construction, such as a section through
+    /// touching but separately meshed patches. Closure is represented by repeating the first
+    /// vertex at the end, so the result has one more vertex than the input. An already closed curve
+    /// is returned unchanged, regardless of `max_gap`.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_gap`: the largest end-to-start distance which may be bridged
+    ///
+    /// returns: `Result<Curve2>`, which is an error reporting the actual gap if it exceeds
+    /// `max_gap`
+    pub fn closed_within(&self, max_gap: f64) -> Result<Self> {
+        if self.is_closed {
+            return Ok(self.clone());
+        }
+
+        let gap = dist(&self.vtx(0), &self.vtx(self.count() - 1));
+        if gap > max_gap {
+            return Err(format!(
+                "the curve's end gap of {gap} exceeds the maximum allowed gap of {max_gap}"
+            )
+            .into());
+        }
+
+        Curve2::from_points(self.points(), self.tol, true)
+    }
+
     /// Clones and reverses the curve, such that the first point becomes the last point, and the
     /// last point becomes the first. The original curve is unmodified.
     pub fn reversed(&self) -> Self {
@@ -1130,6 +1161,46 @@ pub mod tests {
 
     pub fn sample_points_scaled(p: &[(f64, f64)], f: f64) -> Vec<Point2> {
         p.iter().map(|(a, b)| Point2::new(*a * f, *b * f)).collect()
+    }
+
+    #[test]
+    fn closed_within_bridges_a_gap_inside_the_limit() {
+        // An open square missing its last side has ends one unit apart.
+        let c = curve2!((0, 0), (1, 0), (1, 1), (0, 1)).unwrap();
+        assert!(!c.is_closed());
+
+        let closed = c.closed_within(1.0).unwrap();
+        assert!(closed.is_closed());
+        assert_eq!(closed.count(), c.count() + 1);
+        assert_relative_eq!(closed.vtx(closed.count() - 1), closed.vtx(0));
+        assert_relative_eq!(closed.area().unwrap(), 1.0, epsilon = 1e-12);
+        assert_relative_eq!(closed.tol(), c.tol());
+    }
+
+    #[test]
+    fn closed_within_refuses_a_gap_beyond_the_limit() {
+        let c = curve2!((0, 0), (1, 0), (1, 1), (0, 1)).unwrap();
+        let err = match c.closed_within(0.5) {
+            Ok(_) => panic!("a gap of 1 must not close within 0.5"),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            err.contains("gap of 1"),
+            "message should report the gap: {err}"
+        );
+        assert!(
+            err.contains("0.5"),
+            "message should report the limit: {err}"
+        );
+    }
+
+    #[test]
+    fn closed_within_leaves_a_closed_curve_alone() {
+        let c = curve2!(tol: 1e-6, closed: true; (0, 0), (1, 0), (1, 1), (0, 1)).unwrap();
+        let again = c.closed_within(0.0).unwrap();
+        assert!(again.is_closed());
+        assert_eq!(again.count(), c.count());
+        assert_eq!(again.points(), c.points());
     }
 
     #[test]

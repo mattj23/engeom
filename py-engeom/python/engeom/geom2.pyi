@@ -1078,6 +1078,23 @@ class Curve2:
         """
         ...
 
+    def closed_within(self, max_gap: float) -> Curve2:
+        """
+        Return a closed copy of this curve, bridging the gap between its last and first vertices when
+        that gap is no larger than `max_gap`.
+
+        Use this to close a curve whose ends nearly meet but are farther apart than the tolerance
+        that closes a curve automatically during construction, such as a section through touching
+        but separately meshed patches. Closure is represented by repeating the first vertex at the
+        end, so the result has one more vertex than the input. An already closed curve is returned
+        unchanged, regardless of `max_gap`.
+
+        :param max_gap: the largest end-to-start distance which may be bridged.
+        :return: a new, closed curve.
+        :raises ValueError: if the end gap exceeds `max_gap`; the message reports the actual gap.
+        """
+        ...
+
     def make_hull(self) -> NDArray[int]:
         """
         Get the vertices of a convex hull of the curve, in counter-clockwise order.
@@ -1329,6 +1346,29 @@ class CurveGroup2:
 
         :param iso: the isometry to transform the group by.
         :return: a new, transformed curve group.
+        """
+        ...
+
+    def chain_merged(self, max_dist: float | None = None) -> CurveGroup2:
+        """
+        Return a new group in which open members whose ends meet have been joined into single curves.
+        This reassembles a section through separately meshed but touching patches into the loops and
+        strands it describes.
+
+        Repeatedly, the pair of open members with the smallest distance from the end of one to the
+        start of the other is joined end-to-start, until no pair is within `max_dist`. Only
+        end-to-start joins are made, so every member keeps its direction and none is reversed.
+        Closed members take no part and pass through unchanged. A chain whose last vertex comes back
+        around to its first vertex within the first member's tolerance becomes a closed curve; a
+        chain that stops short of that stays open, and `Curve2.closed_within` closes it
+        across a larger gap.
+
+        The result has one member for each remaining chain, so a section through a part with a hole
+        reduces to two loops, not one. A result containing a single curve has `len(merged) == 1`.
+
+        :param max_dist: the largest end-to-start distance that may be bridged by a join, or `None`
+            to keep joining the closest pair until nothing open is left to join.
+        :return: a new curve group of the merged members.
         """
         ...
 
