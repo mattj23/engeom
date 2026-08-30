@@ -916,8 +916,8 @@ mod tests {
         // At 35.26 degrees, the normal tensor of a cone is isotropic, so a plain eigenvector
         // approach has nothing to select. Past 45 degrees, a naive fixed-point iteration on the
         // translation diverges. Neither poses a difficulty for the root solve.
-        for deg in [10.0, 30.0, 35.264, 45.0, 60.0] {
-            let case = cone((deg as f64).to_radians());
+        for deg in [10.0_f64, 30.0, 35.264, 45.0, 60.0] {
+            let case = cone(deg.to_radians());
             check(case, 1e-7);
         }
     }
@@ -1150,13 +1150,13 @@ mod tests {
     #[test]
     fn basin_of_the_across_plane_reaches_at_least_45_degrees() {
         let mut rng = RandomGeometry3::from_seed(99);
-        for deg in [35.0, 45.0] {
+        for deg in [35.0_f64, 45.0] {
             let case = cylinder_wall(Point3::new(1.0, 0.0, 0.0));
-            let err = case.error_from((deg as f64).to_radians(), &mut rng);
+            let err = case.error_from(deg.to_radians(), &mut rng);
             assert!(err < 1e-6, "cylinder, guess {deg} deg off: error {err:.3e}");
 
             let case = cone(20.0_f64.to_radians());
-            let err = case.error_from((deg as f64).to_radians(), &mut rng);
+            let err = case.error_from(deg.to_radians(), &mut rng);
             assert!(err < 1e-6, "cone, guess {deg} deg off: error {err:.3e}");
         }
     }
