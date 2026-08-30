@@ -132,6 +132,49 @@ def test_fit_spline3_recovers_control_points():
     assert numpy.allclose(result, [1, 2, 1, 2, 2, -1], atol=1e-5)
 
 
+def test_from_fit_with_ends_2d_recovers_control_points():
+    truth = CubicSpline2(0, 0, 1, 2, 2, 2, 3, 0)
+    points = _samples_2d(truth)
+    rng = numpy.random.default_rng(1)
+    rng.shuffle(points, axis=0)
+
+    fitted = CubicSpline2.from_fit_with_ends(points, truth.p0, truth.p3)
+    assert numpy.allclose([fitted.p1.x, fitted.p1.y], [1.0, 2.0], atol=1e-5)
+    assert numpy.allclose([fitted.p2.x, fitted.p2.y], [2.0, 2.0], atol=1e-5)
+
+
+def test_from_fit_with_ends_3d_recovers_control_points():
+    truth = CubicSpline3(0, 0, 0, 1, 2, 1, 2, 2, -1, 3, 0, 0)
+    points = _samples_3d(truth)
+
+    fitted = CubicSpline3.from_fit_with_ends(points, truth.p0, truth.p3)
+    assert numpy.allclose([fitted.p1.x, fitted.p1.y, fitted.p1.z], [1, 2, 1], atol=1e-5)
+    assert numpy.allclose([fitted.p2.x, fitted.p2.y, fitted.p2.z], [2, 2, -1], atol=1e-5)
+
+
+def test_from_fit_with_ends_zero_weight_outlier_ignored():
+    truth = CubicSpline2(0, 0, 1, 2, 2, 2, 3, 0)
+    points = numpy.vstack([_samples_2d(truth), [[1.5, 5.0]]])
+    weights = numpy.ones(len(points))
+    weights[-1] = 0.0
+
+    fitted = CubicSpline2.from_fit_with_ends(points, truth.p0, truth.p3, weights)
+    assert numpy.allclose([fitted.p1.x, fitted.p1.y], [1.0, 2.0], atol=1e-5)
+
+
+def test_from_fit_with_ends_errors():
+    p0 = Point2(0, 0)
+    p3 = Point2(3, 0)
+    with pytest.raises(ValueError):
+        CubicSpline2.from_fit_with_ends(numpy.array([[1.0, 1.0]]), p0, p3)
+    with pytest.raises(ValueError):
+        CubicSpline2.from_fit_with_ends(numpy.array([[1.0, 1.0], [2.0, 1.0]]), p0, p0)
+    with pytest.raises(ValueError):
+        CubicSpline2.from_fit_with_ends(
+            numpy.array([[1.0, 1.0], [2.0, 1.0]]), p0, p3, numpy.array([1.0])
+        )
+
+
 def test_fit_spline2_bad_builder_raises():
     points = numpy.array([[0.0, 0.0], [1.0, 0.0]])
 

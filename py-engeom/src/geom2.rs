@@ -1265,6 +1265,26 @@ impl CubicSpline2 {
         }
     }
 
+    #[staticmethod]
+    #[pyo3(signature=(points, p0, p3, weights=None))]
+    fn from_fit_with_ends<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        p0: &Point2,
+        p3: &Point2,
+        weights: Option<PyReadonlyArray1<'py, f64>>,
+    ) -> PyResult<Self> {
+        let points = array_to_points2(&points.as_array())?;
+        let weights = weights.as_ref().map(|w| w.as_array().to_vec());
+        let spline = engeom::geom2::CubicSpline2::from_fit_with_ends(
+            &points,
+            p0.get_inner(),
+            p3.get_inner(),
+            weights.as_deref(),
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(spline))
+    }
+
     fn __getstate__(&self) -> CubicSpline2State {
         (
             self.inner.p0.x,

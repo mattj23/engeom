@@ -4560,6 +4560,37 @@ class CubicSpline3:
         """
         ...
 
+    @staticmethod
+    def from_fit_with_ends(points: NDArray[float], p0: Point3, p3: Point3,
+                           weights: NDArray[float] | None = None) -> CubicSpline3:
+        """
+        Fit a cubic Bézier curve to a set of points, holding the two endpoints fixed and solving
+        for the two interior control points. Fixing the endpoints is what makes the problem
+        well-posed: the residuals are closest-point distances to the curve, which do not change when
+        the curve extends beyond the points, so with free endpoints nothing stops the ends from
+        sliding.
+
+        The fit starts from the best of three closed-form seeds: the straight chord and two linear
+        least-squares solutions using a chord-length parameterization. One solution orders the
+        points by projection onto the chord, while the other uses the input order. It then refines
+        the selected seed against the true closest-point distances with a weighted
+        Levenberg-Marquardt minimization. The points may be in any order; ordered input helps only
+        for curves that double back along their chord.
+
+        :param points: the points to fit the curve to, as an (n, 3) array, in any order. At least
+            two are required.
+        :param p0: the start point of the curve, held fixed.
+        :param p3: the end point of the curve, held fixed. Must be distinct from `p0`.
+        :param weights: if provided, a length-`n` array of non-negative weights that scale each
+            point's residual. Points with zero weight have no effect. If `None`, all points are
+            weighted equally.
+        :return: a new `CubicSpline3` with the given endpoints and the fitted interior control
+            points.
+        :raises ValueError: if there are fewer than two points, the endpoints coincide, the weight
+            count does not match the point count, or the minimization fails.
+        """
+        ...
+
     @property
     def p0(self) -> Point3:
         """ The first control point (curve start). """

@@ -25,7 +25,9 @@
 
 use super::{CubicSpline, SplineValue, bernstein_basis};
 use crate::Result;
-use crate::na::{DMatrix, DVector, Dyn, Matrix, Owned, Point, U1, Vector};
+use crate::common::PCoords;
+use crate::common::points::dist;
+use crate::na::{DMatrix, DVector, Dyn, Matrix, Owned, Point, SVector, U1, Vector};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 
 /// A builder closure that turns a parameter vector into a [`CubicSpline`] of dimension `D`. The
@@ -362,6 +364,224 @@ impl<const D: usize> LeastSquaresProblem<f64, Dyn, Dyn> for SplineFit<'_, D> {
     }
 }
 
+// ================================================================================================
+// Named fitting constructors
+// ================================================================================================
+
+impl<const D: usize> CubicSpline<D> {
+    /// Fit a cubic Bézier curve to a set of points, holding the two endpoints fixed and solving for
+    /// the two interior control points.
+    ///
+    /// Fixing the endpoints is what makes this problem well-posed: the residuals are closest-point
+    /// distances to the curve, which do not change when the curve extends beyond the points, so a
+    /// fit with free endpoints has nothing to stop the ends from sliding. With the endpoints given,
+    /// the interior control points of the best-fitting curve are unique.
+    ///
+    /// The fit starts from the best of three closed-form seeds and then refines against the true
+    /// closest-point distances with a weighted Levenberg-Marquardt minimization
+    /// ([`fit_spline_to_points_weighted`]). The seeds are the straight chord between the endpoints,
+    /// and two linear least-squares solutions using a chord-length parameterization of the points.
+    /// One solution orders the points by their projection onto the chord, while the other uses the
+    /// input order. Projection ordering handles unordered input for any curve that does not double
+    /// back along its chord. Input ordering handles ordered points from curves that do double back,
+    /// while the chord provides a fallback for all other cases. The seed with the lowest weighted
+    /// RMS closest-point distance is refined, so the caller does not need to determine which case
+    /// applies.
+    ///
+    /// # Arguments
+    ///
+    /// * `points`: The points to fit the curve to, in any order. At least two are required.
+    /// * `p0`: The start point of the curve, held fixed.
+    /// * `p3`: The end point of the curve, held fixed. Must be distinct from `p0`.
+    /// * `weights`: If `Some`, a slice the same length as `points` of non-negative weights that
+    ///   scale each point's residual. Points with zero weight have no effect on the fit. `None`
+    ///   weights all points equally.
+    ///
+    /// returns: A `Result` containing the fitted curve.
+    ///
+    /// # Failure
+    ///
+    /// Returns an error if there are fewer than two points, the endpoints coincide, the weight
+    /// count does not match the point count, or the minimization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::Point2;
+    /// use engeom::common::cubic_spline::CubicSpline;
+    /// use approx::assert_relative_eq;
+    ///
+    /// let truth = CubicSpline::new(
+    ///     Point2::new(0.0, 0.0),
+    ///     Point2::new(1.0, 2.0),
+    ///     Point2::new(2.0, 2.0),
+    ///     Point2::new(3.0, 0.0),
+    /// );
+    /// let points: Vec<Point2> = (0..=20).map(|i| truth.position(i as f64 / 20.0)).collect();
+    ///
+    /// let fitted = CubicSpline::from_fit_with_ends(&points, &truth.p0, &truth.p3, None).unwrap();
+    /// assert_relative_eq!(fitted.p1, truth.p1, epsilon = 1e-6);
+    /// assert_relative_eq!(fitted.p2, truth.p2, epsilon = 1e-6);
+    /// ```
+    pub fn from_fit_with_ends(
+        points: &[impl PCoords<D>],
+        p0: &Point<f64, D>,
+        p3: &Point<f64, D>,
+        weights: Option<&[f64]>,
+    ) -> Result<Self> {
+        if points.len() < 2 {
+            return Err("at least two points are required to fit a cubic spline".into());
+        }
+        if let Some(w) = weights
+            && w.len() != points.len()
+        {
+            return Err(format!(
+                "expected {} weights for {} points, got {}",
+                points.len(),
+                points.len(),
+                w.len()
+            )
+            .into());
+        }
+        let chord = p3 - p0;
+        if chord.norm() <= f64::EPSILON {
+            return Err("the endpoints of the spline must be distinct".into());
+        }
+
+        let points: Vec<Point<f64, D>> = points.iter().map(|p| Point::from(p.coords())).collect();
+        let ones = vec![1.0; points.len()];
+        let w = weights.unwrap_or(&ones);
+
+        // List candidate seeds from cheapest to most expensive so ties favor the simplest one.
+        let mut seeds = vec![CubicSpline::new(
+            *p0,
+            p0 + chord / 3.0,
+            p3 - chord / 3.0,
+            *p3,
+        )];
+
+        let mut by_projection: Vec<usize> = (0..points.len()).collect();
+        by_projection.sort_by(|&a, &b| {
+            let pa = (points[a] - p0).dot(&chord);
+            let pb = (points[b] - p0).dot(&chord);
+            pa.total_cmp(&pb)
+        });
+        let as_given: Vec<usize> = (0..points.len()).collect();
+
+        for order in [&by_projection, &as_given] {
+            if let Some(seed) = seed_chord_length(&points, order, w, p0, p3) {
+                seeds.push(seed);
+            }
+        }
+
+        let initial = seeds
+            .into_iter()
+            .map(|s| (weighted_rms(&s, &points, w), s))
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, s)| s)
+            .expect("at least the chord seed exists");
+
+        let (p0, p3) = (*p0, *p3);
+        let builder: SplineBuildFn<D> = Box::new(move |x: &DVector<f64>| {
+            let p1 = Point::from(SVector::<f64, D>::from_iterator(x.iter().take(D).copied()));
+            let p2 = Point::from(SVector::<f64, D>::from_iterator(
+                x.iter().skip(D).take(D).copied(),
+            ));
+            Ok(CubicSpline::new(p0, p1, p2, p3))
+        });
+        let x0 = DVector::from_iterator(
+            2 * D,
+            initial
+                .p1
+                .coords
+                .iter()
+                .chain(initial.p2.coords.iter())
+                .copied(),
+        );
+
+        Ok(fit_spline_to_points_weighted(&points, weights, &builder, x0)?.spline)
+    }
+}
+
+/// The weighted root-mean-square closest-point distance from `points` to `spline`.
+fn weighted_rms<const D: usize>(
+    spline: &CubicSpline<D>,
+    points: &[Point<f64, D>],
+    weights: &[f64],
+) -> f64 {
+    let queries = spline.clone().into_query();
+    let (sum, wsum) = points
+        .iter()
+        .zip(weights)
+        .fold((0.0, 0.0), |(sum, wsum), (p, w)| {
+            let d = queries.project_point(p).value;
+            (sum + w * d * d, wsum + w)
+        });
+    if wsum > 0.0 { (sum / wsum).sqrt() } else { 0.0 }
+}
+
+/// The linear least-squares seed for the interior control points of a curve with fixed endpoints,
+/// using a chord-length parameterization of the points in the given `order`. Each point's parameter
+/// is its cumulative distance along the polyline from `p0`, through the ordered points, to `p3`,
+/// expressed as a fraction of the total length. With these parameters fixed, the interior control
+/// points are the solution to a weighted 2 × 2 normal system in the Bernstein basis, shared across
+/// all coordinates.
+///
+/// Points with zero weight are left out of the polyline as well as the system, so they have no
+/// effect on the seed at all.
+///
+/// Returns `None` if the polyline has zero length or the system is singular (fewer than two
+/// distinct interior parameters carrying weight).
+fn seed_chord_length<const D: usize>(
+    points: &[Point<f64, D>],
+    order: &[usize],
+    weights: &[f64],
+    p0: &Point<f64, D>,
+    p3: &Point<f64, D>,
+) -> Option<CubicSpline<D>> {
+    let order: Vec<usize> = order
+        .iter()
+        .copied()
+        .filter(|&i| weights[i] > 0.0)
+        .collect();
+
+    // Cumulative distances along the ordered polyline.
+    let mut cumulative = Vec::with_capacity(order.len());
+    let mut prev = *p0;
+    let mut total = 0.0;
+    for &i in &order {
+        total += dist(&prev, &points[i]);
+        cumulative.push(total);
+        prev = points[i];
+    }
+    total += dist(&prev, p3);
+    if total <= f64::EPSILON {
+        return None;
+    }
+
+    let (mut a11, mut a12, mut a22) = (0.0, 0.0, 0.0);
+    let mut r1 = SVector::<f64, D>::zeros();
+    let mut r2 = SVector::<f64, D>::zeros();
+    for (&i, s) in order.iter().zip(cumulative) {
+        let [b0, b1, b2, b3] = bernstein_basis(s / total);
+        let w = weights[i];
+        let rhs = points[i].coords - p0.coords * b0 - p3.coords * b3;
+        a11 += w * b1 * b1;
+        a12 += w * b1 * b2;
+        a22 += w * b2 * b2;
+        r1 += rhs * (w * b1);
+        r2 += rhs * (w * b2);
+    }
+
+    let det = a11 * a22 - a12 * a12;
+    if det <= 1e-12 * a11 * a22 {
+        return None;
+    }
+    let p1 = (r1 * a22 - r2 * a12) / det;
+    let p2 = (r2 * a11 - r1 * a12) / det;
+    Some(CubicSpline::new(*p0, Point::from(p1), Point::from(p2), *p3))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -556,6 +776,117 @@ mod tests {
         let result = fit_spline_to_points(&points, &inner_builder(), initial).unwrap();
         assert_relative_eq!(result.spline.p1, curve.p1, epsilon = 1e-6);
         assert_relative_eq!(result.spline.p2, curve.p2, epsilon = 1e-6);
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // from_fit_with_ends
+    // --------------------------------------------------------------------------------------------
+
+    /// The maximum distance from samples along `truth` to the `fitted` curve.
+    fn max_curve_deviation<const D: usize>(truth: &CubicSpline<D>, fitted: &CubicSpline<D>) -> f64 {
+        let queries = fitted.clone().into_query();
+        (0..=200)
+            .map(|i| {
+                queries
+                    .project_point(&truth.position(i as f64 / 200.0))
+                    .value
+            })
+            .fold(0.0, f64::max)
+    }
+
+    fn shuffled<T: Clone>(items: &[T], rg: &mut RandomGeometry2) -> Vec<T> {
+        let mut out = items.to_vec();
+        for i in (1..out.len()).rev() {
+            let j = rg.f64(0.0, (i + 1) as f64).floor() as usize;
+            out.swap(i, j.min(i));
+        }
+        out
+    }
+
+    #[test]
+    fn with_ends_recovers_exact_curve_2d() {
+        let curve = truth();
+        let points: Vec<Point2> = (0..=20).map(|i| curve.position(i as f64 / 20.0)).collect();
+        let fitted = CubicSpline::from_fit_with_ends(&points, &curve.p0, &curve.p3, None).unwrap();
+        assert_relative_eq!(fitted.p1, curve.p1, epsilon = 1e-6);
+        assert_relative_eq!(fitted.p2, curve.p2, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn with_ends_recovers_exact_curve_3d() {
+        let curve = CubicSpline::new(
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 2.0, 1.0),
+            Point3::new(2.0, 2.0, -1.0),
+            Point3::new(3.0, 0.0, 0.0),
+        );
+        let points: Vec<Point3> = (0..=20).map(|i| curve.position(i as f64 / 20.0)).collect();
+        let fitted = CubicSpline::from_fit_with_ends(&points, &curve.p0, &curve.p3, None).unwrap();
+        assert_relative_eq!(fitted.p1, curve.p1, epsilon = 1e-6);
+        assert_relative_eq!(fitted.p2, curve.p2, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn with_ends_noisy_unordered_points() {
+        let mut rg = RandomGeometry2::from_seed(3);
+        let curve = truth();
+        let sigma = 0.01;
+        for _ in 0..10 {
+            let points: Vec<Point2> = (0..=40)
+                .map(|i| curve.position(i as f64 / 40.0) + rg.gaussian_vector::<2>(sigma))
+                .collect();
+            let points = shuffled(&points, &mut rg);
+            let fitted =
+                CubicSpline::from_fit_with_ends(&points, &curve.p0, &curve.p3, None).unwrap();
+            let dev = max_curve_deviation(&curve, &fitted);
+            assert!(dev < 2.0 * sigma, "deviation {} too large", dev);
+        }
+    }
+
+    #[test]
+    fn with_ends_hook_curve_ordered_and_shuffled() {
+        // A hook that doubles back along its own chord, so ordering by chord projection is wrong.
+        let curve = CubicSpline::new(
+            Point2::new(0.0, 0.0),
+            Point2::new(4.0, -1.0),
+            Point2::new(4.0, 4.0),
+            Point2::new(0.0, 1.0),
+        );
+        let points: Vec<Point2> = (0..=40).map(|i| curve.position(i as f64 / 40.0)).collect();
+        let fitted = CubicSpline::from_fit_with_ends(&points, &curve.p0, &curve.p3, None).unwrap();
+        assert_relative_eq!(fitted.p1, curve.p1, epsilon = 1e-5);
+        assert_relative_eq!(fitted.p2, curve.p2, epsilon = 1e-5);
+
+        let mut rg = RandomGeometry2::from_seed(5);
+        let points = shuffled(&points, &mut rg);
+        let fitted = CubicSpline::from_fit_with_ends(&points, &curve.p0, &curve.p3, None).unwrap();
+        assert_relative_eq!(fitted.p1, curve.p1, epsilon = 1e-5);
+        assert_relative_eq!(fitted.p2, curve.p2, epsilon = 1e-5);
+    }
+
+    #[test]
+    fn with_ends_zero_weight_outlier_ignored() {
+        let curve = truth();
+        let mut points: Vec<Point2> = (0..=20).map(|i| curve.position(i as f64 / 20.0)).collect();
+        let mut weights = vec![1.0; points.len()];
+        points.push(Point2::new(1.5, 5.0));
+        weights.push(0.0);
+        let fitted =
+            CubicSpline::from_fit_with_ends(&points, &curve.p0, &curve.p3, Some(&weights)).unwrap();
+        assert_relative_eq!(fitted.p1, curve.p1, epsilon = 1e-6);
+        assert_relative_eq!(fitted.p2, curve.p2, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn with_ends_input_errors() {
+        let p0 = Point2::new(0.0, 0.0);
+        let p3 = Point2::new(3.0, 0.0);
+        let one = vec![Point2::new(1.0, 1.0)];
+        assert!(CubicSpline::from_fit_with_ends(&one, &p0, &p3, None).is_err());
+
+        let two = vec![Point2::new(1.0, 1.0), Point2::new(2.0, 1.0)];
+        assert!(CubicSpline::from_fit_with_ends(&two, &p0, &p0, None).is_err());
+        assert!(CubicSpline::from_fit_with_ends(&two, &p0, &p3, Some(&[1.0])).is_err());
     }
 
     #[test]
