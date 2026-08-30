@@ -2053,6 +2053,32 @@ impl Curve2 {
         self.inner.is_closed()
     }
 
+    #[getter]
+    fn signed_area(&self) -> PyResult<f64> {
+        self.inner
+            .signed_area()
+            .ok_or_else(|| PyValueError::new_err("An open curve encloses no area"))
+    }
+
+    #[getter]
+    fn area(&self) -> PyResult<f64> {
+        self.inner
+            .area()
+            .ok_or_else(|| PyValueError::new_err("An open curve encloses no area"))
+    }
+
+    #[getter]
+    fn area_centroid(&self) -> PyResult<Point2> {
+        self.inner
+            .area_centroid()
+            .map(Point2::from_inner)
+            .ok_or_else(|| {
+                PyValueError::new_err(
+                    "The area centroid is only defined for a closed curve with nonzero area",
+                )
+            })
+    }
+
     fn trim_front(&self, length: f64) -> PyResult<Self> {
         self.inner
             .trim_front(length)

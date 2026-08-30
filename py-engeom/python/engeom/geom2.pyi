@@ -989,6 +989,44 @@ class Curve2:
         """
         ...
 
+    @property
+    def signed_area(self) -> float:
+        """
+        The signed area enclosed by a closed curve, computed with the shoelace formula. The sign
+        carries the winding direction: positive for a counter-clockwise loop and negative for a
+        clockwise one, so a curve built with `hull_ccw=True` never reports a negative value. A
+        self-intersecting loop is not rejected; its lobes add or cancel according to their own winding.
+
+        :return: the signed enclosed area.
+        :raises ValueError: if the curve is open, since it then encloses nothing.
+        """
+        ...
+
+    @property
+    def area(self) -> float:
+        """
+        The area enclosed by a closed curve, regardless of its winding direction. This is the
+        magnitude of `signed_area`.
+
+        :return: the enclosed area.
+        :raises ValueError: if the curve is open, since it then encloses nothing.
+        """
+        ...
+
+    @property
+    def area_centroid(self) -> Point2:
+        """
+        The area centroid of the region enclosed by a closed curve: the center of mass of the
+        enclosed region taken as a uniform lamina. It is not the mean of the vertices, and it does
+        not depend on how densely the loop is sampled. The result is the same for either winding
+        direction.
+
+        :return: the centroid of the enclosed region.
+        :raises ValueError: if the curve is open or if it is closed but encloses zero area (a loop
+            that doubles back over itself), since there is then no region whose centroid can be found.
+        """
+        ...
+
     def trim_front(self, length: float) -> Curve2:
         """
         Remove the front of the curve by a given length and return a new curve.
