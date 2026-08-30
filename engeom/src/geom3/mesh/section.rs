@@ -1,6 +1,6 @@
-//! This module has tools for computing a planar section with a mesh. I don't use the built-in
-//! parry3d implementation because I've found it to get stuck in infinite loops under certain
-//! conditions.
+//! Tools for computing a planar section through a mesh. This module does not use the built-in
+//! parry3d implementation because that implementation can become stuck in an infinite loop under
+//! certain conditions.
 //!
 //! The work is split into two crate-visible stages so that other mesh algorithms can use the raw
 //! cut without paying for the curves: [`Mesh3::section_segments`] produces one [`TriIntr`] per
@@ -8,50 +8,139 @@
 //! connected runs. [`Mesh3::section_with_plane`] is the public composition of the two.
 
 use super::Mesh3;
+use crate::geom2::CurveGroup2;
 use crate::geom3::Aabb3;
 use crate::geom3::mesh::edges::edge_key;
-use crate::{Curve3, CurveGroup3, IndexMask, Line3, Plane3, Point3, Result, Vector3};
+use crate::geom3::planar_map::vertex_length_weights;
+use crate::{
+    Curve3, CurveGroup3, IndexMask, Line3, PlanarMap, Plane3, PlaneFrame, Point3, Result, Vector3,
+};
 use parry3d_f64::partitioning::TraversalAction;
 use parry3d_f64::shape::TriMesh;
 use std::collections::{HashMap, HashSet};
 
-impl Mesh3 {
-    /// Computes the intersection between this mesh and a plane, returning the resulting curves as
-    /// a single [`CurveGroup3`].
+/// The result of cutting a mesh with a plane: the section curves in world coordinates, together
+/// with the [`PlanarMap`] that brings them into the plane's two-dimensional coordinates and maps
+/// 2D results back into the world.
+///
+/// The map is chosen when the section is taken according to the requested [`PlaneFrame`], so
+/// everything derived from the section in 2D shares one frame. Retaining the curves in 3D also
+/// lets the caller query the section where it lies on the part.
+#[derive(Clone)]
+pub struct PlanarSection {
+    /// The section curves in world coordinates, one member per loop or open strand.
+    pub curves: CurveGroup3,
+
+    /// The mapping between the world and the plane's 2D coordinate system.
+    pub map: PlanarMap,
+}
+
+impl PlanarSection {
+    /// Brings the section curves into the plane's two-dimensional coordinates. This convenience
+    /// method calls `self.map.curve_group_to_2d(&self.curves)`, which is typically the next step
+    /// after taking a section.
     ///
-    /// A planar section of a mesh is naturally several curves rather than one: a part with a hole
-    /// through it sections into an outer loop and an inner one, and an open mesh sections into
-    /// unclosed strands. They move together as one rigid body, which is what the group represents.
+    /// returns: `Result<CurveGroup2, Box<dyn Error, Global>>`
+    ///
+    /// # Failure
+    ///
+    /// Fails if a member collapses under the projection. This cannot happen to curves produced by
+    /// the cut itself, but may occur if the group is later modified or transformed.
+    pub fn to_2d(&self) -> Result<CurveGroup2> {
+        self.map.curve_group_to_2d(&self.curves)
+    }
+
+    /// Splits the section into its curves and its map.
+    pub fn into_parts(self) -> (CurveGroup3, PlanarMap) {
+        (self.curves, self.map)
+    }
+}
+
+/// Builds the map carried by a section according to the requested frame.
+fn frame_map(plane: &Plane3, frame: PlaneFrame, curves: &CurveGroup3) -> Result<PlanarMap> {
+    match frame {
+        PlaneFrame::Auto => Ok(PlanarMap::from_plane(plane)),
+        PlaneFrame::Oriented { origin, x } => PlanarMap::from_plane_oriented(plane, &origin, &x),
+        PlaneFrame::Svd => {
+            let mut points = Vec::new();
+            let mut weights = Vec::new();
+            for curve in curves.curves() {
+                points.extend_from_slice(curve.vertices());
+                weights.extend(vertex_length_weights(curve));
+            }
+            PlanarMap::from_plane_svd(plane, &points, Some(&weights))
+        }
+    }
+}
+
+impl Mesh3 {
+    /// Computes the intersection between this mesh and a plane, returning the resulting curves
+    /// as a single [`CurveGroup3`] together with the [`PlanarMap`] that brings them into two
+    /// dimensions.
+    ///
+    /// A planar section of a mesh naturally consists of several curves rather than one. A part with
+    /// a hole produces an outer and an inner loop, while an open mesh produces unclosed strands.
+    /// These curves move together as one rigid body, which is what the group represents.
     ///
     /// Closed loops come back with their first vertex repeated as the last, since a `Curve3` has
-    /// no closed flag of its own. That is what lets [`CurveGroup3::to_2d_in_plane`] and
+    /// no closed flag of its own. That is what lets [`PlanarMap::curve_group_to_2d`] and
     /// [`crate::common::To2D`] recover the closure, so do not strip it.
     ///
-    /// Each curve is wound so that, brought into the plane, its 2D normal points the same way the
-    /// original triangle normals did, preserving the inside/outside sense of the surface.
+    /// Each curve is wound so that its 2D normal, after mapping into the plane, points in the same
+    /// direction as the original triangle normals. This preserves the surface's inside/outside
+    /// orientation.
+    ///
+    /// The plane fixes only the z axis of the 2D coordinate system; `frame` chooses where its
+    /// origin sits and which way x points. See [`PlaneFrame`] for the choices. The map that
+    /// results is returned with the curves so that everything derived from the section shares it.
     ///
     /// # Arguments
     ///
     /// * `plane`: the plane to cut with
+    /// * `frame`: how the plane's 2D coordinate system is laid out
     /// * `curve_tol`: the chordal tolerance given to the resulting curves, which is also the
     ///   distance within which their vertices are de-duplicated. Defaults to `1e-6`.
     /// * `faces`: an optional mask limiting the cut to a subset of the faces. Must be the same
     ///   length as the mesh has faces.
     ///
-    /// returns: Result<CurveGroup3, Box<dyn Error, Global>>
+    /// returns: `Result<PlanarSection, Box<dyn Error, Global>>`
     ///
     /// # Failure
     ///
-    /// A plane which does not intersect the mesh, or which misses every selected face, is an
+    /// A plane that does not intersect the mesh, or that misses every selected face, is an
     /// error rather than an empty group. A group with no members has no bounding box and no
     /// closest point, so there is nothing meaningful to hand back; a caller who expects to miss
     /// should match on the error rather than counting members.
+    ///
+    /// A frame that cannot be built is also an error: an `Oriented` x direction along the plane
+    /// normal, or an `Svd` whose direction of greatest extent is not in the plane.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use approx::assert_relative_eq;
+    /// use engeom::{Mesh3, Plane3, PlaneFrame, Point2};
+    ///
+    /// let mesh = Mesh3::create_box(2.0, 4.0, 6.0, false);
+    /// let section = mesh.section_with_plane(&Plane3::xy(), PlaneFrame::Auto, None, None).unwrap();
+    ///
+    /// // The 2 by 4 box sections into one closed loop, centered on the plane's origin.
+    /// let flat = section.to_2d().unwrap();
+    /// assert_eq!(flat.len(), 1);
+    /// assert!(flat.curves()[0].is_closed());
+    /// assert_relative_eq!(flat.curves()[0].length(), 12.0, epsilon = 1e-9);
+    ///
+    /// // The map takes 2D results back to where they lie on the part.
+    /// let corner = section.map.point_to_3d(&Point2::new(1.0, 2.0));
+    /// assert_relative_eq!(corner.z, 0.0, epsilon = 1e-12);
+    /// ```
     pub fn section_with_plane(
         &self,
         plane: &Plane3,
+        frame: PlaneFrame,
         curve_tol: Option<f64>,
         faces: Option<&IndexMask>,
-    ) -> Result<CurveGroup3> {
+    ) -> Result<PlanarSection> {
         let curve_tol = curve_tol.unwrap_or(1e-6);
         let segments = self.section_segments(plane, faces)?;
 
@@ -72,7 +161,9 @@ impl Mesh3 {
             });
         }
 
-        CurveGroup3::new(results)
+        let curves = CurveGroup3::new(results)?;
+        let map = frame_map(plane, frame, &curves)?;
+        Ok(PlanarSection { curves, map })
     }
 
     /// Cuts the mesh with a plane and returns one segment per intersected triangle, in no
@@ -88,7 +179,7 @@ impl Mesh3 {
     /// * `faces`: an optional mask limiting the cut to a subset of the faces. Must be the same
     ///   length as the mesh has faces.
     ///
-    /// returns: Result<Vec<TriIntr, Global>, Box<dyn Error, Global>>
+    /// returns: `Result<Vec<TriIntr, Global>, Box<dyn Error, Global>>`
     ///
     /// # Failure
     ///
@@ -372,23 +463,23 @@ mod tests {
     fn single_loop() -> Result<()> {
         let mesh = Mesh3::create_box(2.0, 2.0, 2.0, false);
 
-        let curves = mesh.section_with_plane(&Plane3::xy(), None, None)?;
+        let section = mesh.section_with_plane(&Plane3::xy(), PlaneFrame::Auto, None, None)?;
 
-        assert_eq!(curves.len(), 1);
+        assert_eq!(section.curves.len(), 1);
 
         Ok(())
     }
 
-    /// A plane which misses is an error rather than an empty group, so that a caller cannot mistake
+    /// A plane that misses is an error rather than an empty group, so a caller cannot mistake
     /// "no intersection" for a group it can query.
     #[test]
     fn a_plane_which_misses_the_mesh_is_an_error() {
         let mesh = Mesh3::create_box(2.0, 2.0, 2.0, false);
         let plane = Plane3::new(Vector3::z_axis(), 50.0);
 
-        let err = match mesh.section_with_plane(&plane, None, None) {
+        let err = match mesh.section_with_plane(&plane, PlaneFrame::Auto, None, None) {
             Err(e) => e.to_string(),
-            Ok(g) => panic!("a plane 50 units away cut {} curves", g.len()),
+            Ok(s) => panic!("a plane 50 units away cut {} curves", s.curves.len()),
         };
         assert!(
             err.contains("does not intersect"),
@@ -396,15 +487,17 @@ mod tests {
         );
     }
 
-    /// The same, but where the mesh is in the way and the face selection is what excludes it.
+    /// A cut that would otherwise intersect the mesh is also an error when the face selection
+    /// excludes every intersection.
     #[test]
     fn a_face_mask_which_selects_nothing_is_an_error() {
         let mesh = Mesh3::create_box(2.0, 2.0, 2.0, false);
         let mask = IndexMask::new(mesh.face_count(), false);
 
-        let err = match mesh.section_with_plane(&Plane3::xy(), None, Some(&mask)) {
+        let err = match mesh.section_with_plane(&Plane3::xy(), PlaneFrame::Auto, None, Some(&mask))
+        {
             Err(e) => e.to_string(),
-            Ok(g) => panic!("an empty face mask cut {} curves", g.len()),
+            Ok(s) => panic!("an empty face mask cut {} curves", s.curves.len()),
         };
         assert!(err.contains("selected faces"), "unexpected message: {err}");
     }
@@ -415,8 +508,9 @@ mod tests {
         let plane = Plane3::xy();
 
         let curves = mesh
-            .section_with_plane(&plane, Some(1.0e-10), None)
-            .unwrap();
+            .section_with_plane(&plane, PlaneFrame::Auto, Some(1.0e-10), None)
+            .unwrap()
+            .curves;
         assert_eq!(curves.len(), 1);
 
         let curve = &curves.curves()[0];
@@ -426,9 +520,8 @@ mod tests {
             assert_relative_eq!(vertex.z, 0.0, epsilon = 1.0e-12);
 
             let radius = (vertex.x * vertex.x + vertex.y * vertex.y).sqrt();
-            // The tolerance has to be high enough to account for the fact that the cylinder
-            // faces have a diagonal in them and where they pass through z=0 is halfway between
-            // the arc endpoints formed by the vertices that were deliberately placed at the radius
+            // The tolerance must account for each cylinder face's diagonal. Its intersection with
+            // z=0 lies halfway between the arc endpoints formed by vertices placed on the radius.
             assert_relative_eq!(radius, 1.0, epsilon = 1.0e-4);
         }
 
@@ -447,8 +540,9 @@ mod tests {
         let plane = Plane3::xy();
 
         let curves = mesh
-            .section_with_plane(&plane, Some(1.0e-10), None)
-            .unwrap();
+            .section_with_plane(&plane, PlaneFrame::Auto, Some(1.0e-10), None)
+            .unwrap()
+            .curves;
         assert_eq!(curves.len(), 2);
 
         for curve in curves.curves().iter() {
@@ -464,5 +558,146 @@ mod tests {
                 assert_relative_eq!(dist(&expected_center, vertex), 1.0, epsilon = 1.0e-4);
             }
         }
+    }
+
+    // ============================================================================================
+    // Bringing the section into the plane
+    // ============================================================================================
+
+    /// Exercises the complete workflow: cut a mesh, bring the section into its plane, and recover
+    /// a faithful 2D copy.
+    #[test]
+    fn a_mesh_section_projects_back_into_its_own_plane() {
+        let mesh = Mesh3::create_box(2.0, 4.0, 6.0, false);
+
+        let section = mesh
+            .section_with_plane(&Plane3::xy(), PlaneFrame::Auto, Some(1e-9), None)
+            .unwrap();
+        let flat = section.to_2d().unwrap();
+
+        assert_eq!(flat.len(), 1);
+
+        let loop_2d = &flat.curves()[0];
+        assert!(loop_2d.is_closed(), "a box sections into a closed loop");
+
+        // The box is 2 by 4 in the cutting plane, so the loop is its perimeter.
+        assert_relative_eq!(loop_2d.length(), 12.0, epsilon = 1e-6);
+
+        let aabb = loop_2d.aabb();
+        assert_relative_eq!(aabb.mins.x, -1.0, epsilon = 1e-9);
+        assert_relative_eq!(aabb.maxs.x, 1.0, epsilon = 1e-9);
+        assert_relative_eq!(aabb.mins.y, -2.0, epsilon = 1e-9);
+        assert_relative_eq!(aabb.maxs.y, 2.0, epsilon = 1e-9);
+    }
+
+    /// The same cut on a tilted plane must produce the same 2D shape because the frame
+    /// follows the plane. This is what makes the projection independent of how the part is posed.
+    #[test]
+    fn a_tilted_section_has_the_same_shape_as_an_upright_one() {
+        let mesh = Mesh3::create_box(2.0, 4.0, 6.0, false);
+        let upright = mesh
+            .section_with_plane(&Plane3::xy(), PlaneFrame::Auto, Some(1e-9), None)
+            .unwrap()
+            .to_2d()
+            .unwrap();
+
+        // Rotate the part, and cut with the correspondingly rotated plane.
+        let iso = Iso3::new(Vector3::new(10.0, -5.0, 2.0), Vector3::new(0.3, -0.5, 0.2));
+        let moved = mesh.transform_copy(&iso);
+        let plane = Plane3::xy().transformed_by(&iso);
+
+        let tilted = moved
+            .section_with_plane(&plane, PlaneFrame::Auto, Some(1e-9), None)
+            .unwrap()
+            .to_2d()
+            .unwrap();
+
+        assert_eq!(tilted.len(), upright.len());
+        assert_relative_eq!(tilted.length(), upright.length(), epsilon = 1e-6);
+    }
+
+    /// The map goes both ways: a 2D result lifted back through it lands on the part.
+    #[test]
+    fn a_2d_result_lifts_back_onto_the_section() {
+        let mesh = Mesh3::create_box(2.0, 4.0, 6.0, false);
+        let iso = Iso3::new(Vector3::new(1.0, 2.0, 3.0), Vector3::new(0.3, -0.5, 0.2));
+        let moved = mesh.transform_copy(&iso);
+        let plane = Plane3::xy().transformed_by(&iso);
+
+        let section = moved
+            .section_with_plane(&plane, PlaneFrame::Auto, Some(1e-9), None)
+            .unwrap();
+        let flat = section.to_2d().unwrap();
+        let back = section.map.curve_group_to_3d(&flat).unwrap();
+
+        assert_relative_eq!(back.length(), section.curves.length(), epsilon = 1e-9);
+        let (_, station) = section
+            .curves
+            .at_closest_to_point(&back.curves()[0].vertices()[1]);
+        assert_relative_eq!(
+            dist(&station.point(), &back.curves()[0].vertices()[1]),
+            0.0,
+            epsilon = 1e-9
+        );
+    }
+
+    /// An off-center box cut with the `Svd` frame returns centered with its long side along x,
+    /// whichever way the part is posed.
+    #[test]
+    fn an_svd_frame_centers_the_section_on_its_long_axis() {
+        let mesh = Mesh3::create_box(4.0, 2.0, 6.0, false);
+        let iso = Iso3::new(Vector3::new(10.0, -5.0, 2.0), Vector3::new(0.3, -0.5, 0.2));
+        let moved = mesh.transform_copy(&iso);
+        // The plane is rotated with the part but its origin is not moved with it, so the Auto
+        // frame would put the loop well off-center.
+        let plane = Plane3::xy().transformed_by(&iso);
+
+        let flat = moved
+            .section_with_plane(&plane, PlaneFrame::Svd, Some(1e-9), None)
+            .unwrap()
+            .to_2d()
+            .unwrap();
+
+        let aabb = flat.curves()[0].aabb();
+        assert_relative_eq!(aabb.center(), crate::Point2::origin(), epsilon = 1e-9);
+        assert_relative_eq!(aabb.maxs.x - aabb.mins.x, 4.0, epsilon = 1e-9);
+        assert_relative_eq!(aabb.maxs.y - aabb.mins.y, 2.0, epsilon = 1e-9);
+    }
+
+    /// An `Oriented` frame places the origin and x axis at their requested locations after
+    /// projection.
+    #[test]
+    fn an_oriented_frame_places_the_origin_and_x_axis() {
+        let mesh = Mesh3::create_box(2.0, 4.0, 6.0, false);
+        let frame = PlaneFrame::Oriented {
+            origin: Point3::new(-1.0, -2.0, 5.0),
+            x: Vector3::new(0.0, 1.0, 0.5),
+        };
+
+        let flat = mesh
+            .section_with_plane(&Plane3::xy(), frame, Some(1e-9), None)
+            .unwrap()
+            .to_2d()
+            .unwrap();
+
+        // The loop's corner at (-1, -2) is the origin, and the box's y extent is now along x.
+        let aabb = flat.curves()[0].aabb();
+        assert_relative_eq!(aabb.mins.x, 0.0, epsilon = 1e-9);
+        assert_relative_eq!(aabb.maxs.x, 4.0, epsilon = 1e-9);
+        assert_relative_eq!(aabb.mins.y, -2.0, epsilon = 1e-9);
+        assert_relative_eq!(aabb.maxs.y, 0.0, epsilon = 1e-9);
+    }
+
+    #[test]
+    fn a_frame_which_cannot_be_built_is_an_error() {
+        let mesh = Mesh3::create_box(2.0, 4.0, 6.0, false);
+        let frame = PlaneFrame::Oriented {
+            origin: Point3::origin(),
+            x: Vector3::z(),
+        };
+        assert!(
+            mesh.section_with_plane(&Plane3::xy(), frame, None, None)
+                .is_err()
+        );
     }
 }

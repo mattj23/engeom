@@ -11,10 +11,11 @@ def main():
     mesh = Mesh3.load_tcmesh(DATA_DIR / "engine-blade.tcmesh")
 
     # We'll create a plane that is parallel to the XY plane and passes through the Z coordinate of the mesh's AABB
-    # center. We'll then use the `section_with_plane` method to extract the curves that intersect the plane. They
-    # come back as a `CurveGroup3`, which unpacks like a sequence.
+    # center. We'll then use `section_with_plane` to extract the curves that intersect it. The result
+    # is a `PlanarSection`: its `curves` value is a `CurveGroup3`, which unpacks like a sequence, and
+    # its `map` takes geometry into the plane's 2D coordinates and back.
     plane = Plane3.xy().offset_by(mesh.aabb.center.z)
-    curves = mesh.section_with_plane(plane)
+    curves = mesh.section_with_plane(plane).curves
 
     # Finally, we'll plot the mesh, the plane we cut it with, and the curves that came back. A
     # `Plane3` has no origin or size of its own, so `draw_plane` needs to be told how much of it to

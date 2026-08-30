@@ -5,7 +5,8 @@ use crate::conversions::{
     array_to_vec, colors_to_array, faces_to_array, labels_to_array, points_to_array,
     scalars_to_array, unit_vectors_to_array,
 };
-use crate::geom3::{Curve3, CurveGroup3, Iso3, Plane3, Point3, SurfacePoint3, Vector3};
+use crate::geom2::CurveGroup2;
+use crate::geom3::{Curve3, CurveGroup3, Iso3, PlanarMap, Plane3, Point3, SurfacePoint3, Vector3};
 use crate::metrology::Distance3;
 use crate::point_cloud::{PointCloud3, lptf3_load_from_args};
 use engeom::Selection;
@@ -750,19 +751,23 @@ impl Mesh3 {
         Ok(result.into_pyarray(py))
     }
 
-    #[pyo3(signature=(plane, tol = None, faces = None))]
+    #[pyo3(signature=(plane, tol = None, faces = None, frame = "auto", origin = None, x = None))]
     fn section_with_plane(
         &self,
         plane: Plane3,
         tol: Option<f64>,
         faces: Option<&IndexMask>,
-    ) -> PyResult<CurveGroup3> {
+        frame: &str,
+        origin: Option<Point3>,
+        x: Option<Vector3>,
+    ) -> PyResult<PlanarSection> {
+        let frame = plane_frame_from_args(frame, origin, x)?;
         let results = self
             .inner
-            .section_with_plane(plane.get_inner(), tol, faces.map(|m| m.get_inner()))
+            .section_with_plane(plane.get_inner(), frame, tol, faces.map(|m| m.get_inner()))
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
-        Ok(CurveGroup3::from_inner(results))
+        Ok(PlanarSection::from_inner(results))
     }
 
     /// Find the plane through a point whose section cuts across the swept feature the point
@@ -1928,8 +1933,81 @@ impl MeshData3 {
 }
 
 // ================================================================================================
-// Transverse plane result
+// Planar section result
 // ================================================================================================
+
+/// Resolves the `frame`, `origin`, and `x` arguments of `Mesh3.section_with_plane` into a
+/// `PlaneFrame`. The `origin`/`x` pair is all-or-nothing and selects the oriented frame, which is
+/// incompatible with asking for the SVD frame by name.
+fn plane_frame_from_args(
+    frame: &str,
+    origin: Option<Point3>,
+    x: Option<Vector3>,
+) -> PyResult<engeom::PlaneFrame> {
+    match (frame, origin, x) {
+        ("auto", None, None) => Ok(engeom::PlaneFrame::Auto),
+        ("svd", None, None) => Ok(engeom::PlaneFrame::Svd),
+        ("auto", Some(origin), Some(x)) => Ok(engeom::PlaneFrame::Oriented {
+            origin: *origin.get_inner(),
+            x: *x.get_inner(),
+        }),
+        ("svd", Some(_), Some(_)) => Err(PyValueError::new_err(
+            "frame='svd' cannot be combined with origin and x; supply exactly one of the two",
+        )),
+        ("auto" | "svd", _, _) => Err(PyValueError::new_err(
+            "if either of origin or x is given, both must be given",
+        )),
+        (other, _, _) => Err(PyValueError::new_err(format!(
+            "unknown frame '{other}'; expected one of 'auto', 'svd'"
+        ))),
+    }
+}
+
+/// The result of `Mesh3.section_with_plane`: the section curves in the world together with the
+/// `PlanarMap` that brings them into the plane's 2D coordinates and back.
+#[pyclass(from_py_object, module = "engeom.geom3")]
+#[derive(Clone)]
+pub struct PlanarSection {
+    inner: engeom::PlanarSection,
+}
+
+impl PlanarSection {
+    pub fn from_inner(inner: engeom::PlanarSection) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl PlanarSection {
+    /// The section curves in world coordinates, one member per loop or open strand.
+    #[getter]
+    fn curves(&self) -> CurveGroup3 {
+        CurveGroup3::from_inner(self.inner.curves.clone())
+    }
+
+    /// The mapping between the world and the plane's 2D coordinate system.
+    #[getter]
+    fn map(&self) -> PlanarMap {
+        PlanarMap::from_inner(self.inner.map.clone())
+    }
+
+    /// The section curves brought into the plane's 2D coordinates.
+    fn to_2d(&self) -> PyResult<CurveGroup2> {
+        let flat = self
+            .inner
+            .to_2d()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(CurveGroup2::from_inner(flat))
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "<PlanarSection n={}, l={}>",
+            self.inner.curves.len(),
+            self.inner.curves.length()
+        )
+    }
+}
 
 /// The result of `Mesh3.transverse_plane`: the plane found, along with diagnostics showing how
 /// well the balance condition was met and how well the plane was determined.

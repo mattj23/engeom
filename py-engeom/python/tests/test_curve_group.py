@@ -12,7 +12,7 @@ import numpy
 import pytest
 
 from engeom.geom2 import Curve2, CurveGroup2, Iso2, Point2
-from engeom.geom3 import Curve3, CurveGroup3, Mesh3, Plane3, Point3
+from engeom.geom3 import Curve3, CurveGroup3, Mesh3, PlanarMap, PlanarSection, Plane3, Point3
 
 
 def square2(x0: float = 0.0, y0: float = 0.0) -> Curve2:
@@ -163,15 +163,17 @@ def test_transforming_a_group_moves_every_member():
 # =================================================================================================
 
 
-def test_mesh_section_returns_a_curve_group():
+def test_mesh_section_returns_curves_and_a_map():
     mesh = Mesh3.create_box(2.0, 4.0, 6.0)
     section = mesh.section_with_plane(Plane3(0.0, 0.0, 1.0, 0.0), tol=1e-9)
 
-    assert isinstance(section, CurveGroup3)
-    assert len(section) == 1
+    assert isinstance(section, PlanarSection)
+    assert isinstance(section.curves, CurveGroup3)
+    assert isinstance(section.map, PlanarMap)
+    assert len(section.curves) == 1
 
-    # The old list-shaped call sites still read the same way.
-    assert section[0].length == pytest.approx(12.0, abs=1e-5)
+    # The group still unpacks and indexes like a sequence.
+    assert section.curves[0].length == pytest.approx(12.0, abs=1e-5)
 
 
 def test_a_section_that_misses_the_mesh_raises():
@@ -188,7 +190,7 @@ def test_projecting_onto_the_xy_plane_matches_dropping_z():
     to agree exactly rather than merely closely.
     """
     group = CurveGroup3([square3(3.0)])
-    projected = group.to_2d_in_plane(Plane3(0.0, 0.0, 1.0, 0.0))
+    projected = PlanarMap.from_plane(Plane3(0.0, 0.0, 1.0, 0.0)).curve_group_to_2d(group)
     dropped = group[0].to_2d()
 
     assert len(projected) == 1
@@ -199,7 +201,7 @@ def test_a_section_loop_projects_to_a_closed_curve():
     mesh = Mesh3.create_box(2.0, 4.0, 6.0)
     plane = Plane3(0.0, 0.0, 1.0, 0.0)
 
-    flat = mesh.section_with_plane(plane, tol=1e-9).to_2d_in_plane(plane)
+    flat = mesh.section_with_plane(plane, tol=1e-9).to_2d()
 
     assert len(flat) == 1
     assert flat[0].is_closed
@@ -212,7 +214,7 @@ def test_a_member_collapsing_under_projection_raises():
     group = CurveGroup3([square3(), along_normal])
 
     with pytest.raises(ValueError):
-        group.to_2d_in_plane(Plane3(0.0, 0.0, 1.0, 0.0))
+        PlanarMap.from_plane(Plane3(0.0, 0.0, 1.0, 0.0)).curve_group_to_2d(group)
 
 
 # =================================================================================================
@@ -331,7 +333,7 @@ def test_a_saved_section_still_projects_to_a_closed_curve(tmp_path):
     plane = Plane3(0.0, 0.0, 1.0, 0.0)
     path = tmp_path / "section.tccurve3"
 
-    mesh.section_with_plane(plane, tol=1e-9).save_tccurve3(path, 1e-9)
+    mesh.section_with_plane(plane, tol=1e-9).curves.save_tccurve3(path, 1e-9)
     restored = CurveGroup3.load_tccurve3(path)
 
-    assert restored.to_2d_in_plane(plane)[0].is_closed
+    assert PlanarMap.from_plane(plane).curve_group_to_2d(restored)[0].is_closed

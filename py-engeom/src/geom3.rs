@@ -1,10 +1,12 @@
 use crate::bounding::Aabb3;
 use crate::common::Resample;
 use crate::conversions::{
-    array_to_points3, array_to_surface_points3, array_to_vectors3, dvec_from_array, dvec_to_array,
-    points_to_array, vectors_to_array,
+    array_to_points2, array_to_points3, array_to_surface_points3, array_to_vec, array_to_vectors3,
+    dvec_from_array, dvec_to_array, points_to_array, vectors_to_array,
 };
-use crate::geom2::{Point2, SplineProjection, SurfacePoint2, Vector2};
+use crate::geom2::{
+    Curve2, CurveGroup2, Line2, Point2, Segment2, SplineProjection, SurfacePoint2, Vector2,
+};
 use engeom::common::To2D;
 use engeom::geom3::IsoExtensions3;
 use numpy::ndarray::{Array1, Array2};
@@ -2288,14 +2290,6 @@ impl CurveGroup3 {
         Self::from_inner(self.inner.new_transformed_by(iso.get_inner()))
     }
 
-    fn to_2d_in_plane(&self, plane: Plane3) -> PyResult<crate::geom2::CurveGroup2> {
-        let flat = self
-            .inner
-            .to_2d_in_plane(plane.get_inner())
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok(crate::geom2::CurveGroup2::from_inner(flat))
-    }
-
     #[staticmethod]
     fn load_tccurve3(path: PathBuf) -> PyResult<Self> {
         let group = engeom::CurveGroup3::load_tccurve3(&path)
@@ -2314,6 +2308,208 @@ impl CurveGroup3 {
             "<CurveGroup3 n={}, l={}>",
             self.inner.len(),
             self.inner.length()
+        )
+    }
+}
+
+// ================================================================================================
+// Planar mapping
+// ================================================================================================
+
+/// Maps geometry between the world and the two-dimensional coordinate system of a plane. A map is
+/// built for a section by `Mesh3.section_with_plane`, or directly from a plane by the `from_plane*`
+/// constructors.
+#[pyclass(from_py_object, module = "engeom.geom3")]
+#[derive(Clone, Debug)]
+pub struct PlanarMap {
+    inner: engeom::PlanarMap,
+}
+
+impl PlanarMap {
+    pub fn get_inner(&self) -> &engeom::PlanarMap {
+        &self.inner
+    }
+
+    pub fn from_inner(inner: engeom::PlanarMap) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl PlanarMap {
+    #[staticmethod]
+    fn from_plane(plane: Plane3) -> Self {
+        Self::from_inner(engeom::PlanarMap::from_plane(plane.get_inner()))
+    }
+
+    #[staticmethod]
+    fn from_plane_oriented(plane: Plane3, origin: Point3, x: Vector3) -> PyResult<Self> {
+        let inner = engeom::PlanarMap::from_plane_oriented(
+            plane.get_inner(),
+            origin.get_inner(),
+            x.get_inner(),
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(inner))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(plane, points, weights = None))]
+    fn from_plane_svd(
+        plane: Plane3,
+        points: PyReadonlyArray2<'_, f64>,
+        weights: Option<PyReadonlyArray1<'_, f64>>,
+    ) -> PyResult<Self> {
+        let points = array_to_points3(&points.as_array())?;
+        let weights = weights.map(|w| array_to_vec(&w)).transpose()?;
+        let inner =
+            engeom::PlanarMap::from_plane_svd(plane.get_inner(), &points, weights.as_deref())
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(inner))
+    }
+
+    #[getter]
+    fn frame(&self) -> Iso3 {
+        Iso3::from_inner(*self.inner.frame())
+    }
+
+    fn inverse(&self) -> Iso3 {
+        Iso3::from_inner(*self.inner.inverse())
+    }
+
+    #[getter]
+    fn plane(&self) -> Plane3 {
+        Plane3::from_inner(self.inner.plane())
+    }
+
+    fn point_to_2d(&self, point: Point3) -> Point2 {
+        Point2::from_inner(self.inner.point_to_2d(point.get_inner()))
+    }
+
+    fn point_to_3d(&self, point: Point2) -> Point3 {
+        Point3::from_inner(self.inner.point_to_3d(point.get_inner()))
+    }
+
+    fn points_to_2d<'py>(
+        &self,
+        py: Python<'py>,
+        points: PyReadonlyArray2<'py, f64>,
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let points = array_to_points3(&points.as_array())?;
+        let flat = self.inner.points_to_2d(&points);
+        Ok(points_to_array(&flat).into_pyarray(py))
+    }
+
+    fn points_to_3d<'py>(
+        &self,
+        py: Python<'py>,
+        points: PyReadonlyArray2<'py, f64>,
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let points = array_to_points2(&points.as_array())?;
+        let lifted = self.inner.points_to_3d(&points);
+        Ok(points_to_array(&lifted).into_pyarray(py))
+    }
+
+    fn vector_to_2d(&self, vector: Vector3) -> Vector2 {
+        Vector2::from_inner(self.inner.vector_to_2d(vector.get_inner()))
+    }
+
+    fn vector_to_3d(&self, vector: Vector2) -> Vector3 {
+        Vector3::from_inner(self.inner.vector_to_3d(vector.get_inner()))
+    }
+
+    fn unit_vector_to_2d(&self, vector: Vector3) -> PyResult<Vector2> {
+        let unit = engeom::UnitVec3::try_new(*vector.get_inner(), 1e-12)
+            .ok_or_else(|| PyValueError::new_err("the vector must not be zero"))?;
+        let flat = self
+            .inner
+            .unit_vector_to_2d(&unit)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Vector2::from_inner(flat.into_inner()))
+    }
+
+    fn unit_vector_to_3d(&self, vector: Vector2) -> PyResult<Vector3> {
+        let unit = engeom::UnitVec2::try_new(*vector.get_inner(), 1e-12)
+            .ok_or_else(|| PyValueError::new_err("the vector must not be zero"))?;
+        Ok(Vector3::from_inner(
+            self.inner.unit_vector_to_3d(&unit).into_inner(),
+        ))
+    }
+
+    fn surface_point_to_2d(&self, sp: SurfacePoint3) -> PyResult<SurfacePoint2> {
+        let flat = self
+            .inner
+            .surface_point_to_2d(sp.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(SurfacePoint2::from_inner(flat))
+    }
+
+    fn surface_point_to_3d(&self, sp: SurfacePoint2) -> SurfacePoint3 {
+        SurfacePoint3::from_inner(self.inner.surface_point_to_3d(sp.get_inner()))
+    }
+
+    fn line_to_2d(&self, line: Line3) -> PyResult<Line2> {
+        let flat = self
+            .inner
+            .line_to_2d(line.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Line2::from_inner(flat))
+    }
+
+    fn line_to_3d(&self, line: Line2) -> Line3 {
+        Line3::from_inner(self.inner.line_to_3d(line.get_inner()))
+    }
+
+    fn segment_to_2d(&self, segment: Segment3) -> PyResult<Segment2> {
+        let flat = self
+            .inner
+            .segment_to_2d(segment.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Segment2::from_inner(flat))
+    }
+
+    fn segment_to_3d(&self, segment: Segment2) -> Segment3 {
+        Segment3::from_inner(self.inner.segment_to_3d(segment.get_inner()))
+    }
+
+    fn curve_to_2d(&self, curve: Curve3) -> PyResult<Curve2> {
+        let flat = self
+            .inner
+            .curve_to_2d(curve.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Curve2::from_inner(flat))
+    }
+
+    fn curve_to_3d(&self, curve: Curve2) -> PyResult<Curve3> {
+        let lifted = self
+            .inner
+            .curve_to_3d(curve.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Curve3::from_inner(lifted))
+    }
+
+    fn curve_group_to_2d(&self, group: CurveGroup3) -> PyResult<CurveGroup2> {
+        let flat = self
+            .inner
+            .curve_group_to_2d(group.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(CurveGroup2::from_inner(flat))
+    }
+
+    fn curve_group_to_3d(&self, group: CurveGroup2) -> PyResult<CurveGroup3> {
+        let lifted = self
+            .inner
+            .curve_group_to_3d(group.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(CurveGroup3::from_inner(lifted))
+    }
+
+    fn __repr__(&self) -> String {
+        let o = self.inner.frame().origin();
+        let z = self.inner.frame().z();
+        format!(
+            "<PlanarMap origin=[{}, {}, {}] normal=[{}, {}, {}]>",
+            o.x, o.y, o.z, z.x, z.y, z.z
         )
     }
 }

@@ -245,7 +245,7 @@ class PlotterHelper:
 
         ```python
         def show_section(plane):
-            plotter.engeom.draw_curve(*mesh.section_with_plane(plane), name="section")
+            plotter.engeom.draw_curve(*mesh.section_with_plane(plane).curves, name="section")
 
         plotter.engeom.draw_mesh(mesh, opacity=0.5)
         plotter.engeom.plane_widget(show_section)

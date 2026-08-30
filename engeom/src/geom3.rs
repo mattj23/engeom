@@ -11,6 +11,7 @@ mod iso3;
 mod line3;
 mod manifold;
 pub mod mesh;
+mod planar_map;
 mod plane3;
 pub mod point_cloud;
 mod segment3;
@@ -35,8 +36,9 @@ pub use half_edge3::HalfEdgeMesh3;
 pub use iso3::IsoExtensions3;
 pub use line3::Line3;
 pub use manifold::Manifold1Pos3;
-pub use mesh::{FlatDomain, Mesh3, MeshCollisionSet, MeshData3, MeshView3};
+pub use mesh::{FlatDomain, Mesh3, MeshCollisionSet, MeshData3, MeshView3, PlanarSection};
 use parry3d_f64::query::Ray;
+pub use planar_map::{PlanarMap, PlaneFrame};
 pub use plane3::Plane3;
 pub use point_cloud::{
     CloudIndex3, PointCloud3, PointCloudOverlap, VOXEL_COHERENCE_ATTR, VOXEL_COUNT_ATTR,

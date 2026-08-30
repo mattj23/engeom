@@ -145,6 +145,9 @@ DELIBERATE_METHODS = {
     # A derived transform rather than state the isometry holds, and the two dimensions agree.
     "Iso2.inverse",
     "Iso3.inverse",
+    # Stored rather than derived here, but `inverse` has to be reached the same way as on the
+    # isometries.
+    "PlanarMap.inverse",
     # `norm()` is the spelling in numpy, nalgebra, and essentially every linear algebra library,
     # and `Vector3` wraps nalgebra's. Following the surrounding ecosystem wins here.
     "Vector2.norm",

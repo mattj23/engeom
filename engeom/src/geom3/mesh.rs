@@ -40,6 +40,7 @@ use parry3d_f64::bounding_volume::Aabb;
 use parry3d_f64::shape::{TriMesh, TriMeshFlags};
 use parry3d_f64::transformation;
 pub use patches::{PatchFilter, PatchLabels, PatchStats};
+pub use section::PlanarSection;
 pub use transverse::{TransverseOptions, TransversePlane};
 pub use view::MeshView3;
 

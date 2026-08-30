@@ -1070,7 +1070,7 @@ def test_the_plane_widget_sections_a_mesh_live():
     helper.draw_mesh(mesh, opacity=0.5, name="part")
 
     def show_section(plane):
-        helper.draw_curve(*mesh.section_with_plane(plane), color="black", name="section")
+        helper.draw_curve(*mesh.section_with_plane(plane).curves, color="black", name="section")
 
     helper.plane_widget(show_section)
     assert "section" in helper.pv.renderer.actors

@@ -55,9 +55,9 @@ pub use geom2::{
 // Extremely common 3D types
 pub use geom3::{
     Aabb3, CloudIndex3, Curve3, CurveGroup3, CurveStation3, FaceAttrSet3, FlatDomain,
-    HalfEdgeMesh3, Iso3, KdTree3, Line3, Manifold1Pos3, Mesh3, MeshData3, MeshView3, Plane3,
-    Point3, PointAttrSet3, PointCloud3, PointCloudOverlap, Sphere3, SurfacePoint3, SvdBasis3,
-    UnitVec3, VOXEL_COHERENCE_ATTR, VOXEL_COUNT_ATTR, Vector3,
+    HalfEdgeMesh3, Iso3, KdTree3, Line3, Manifold1Pos3, Mesh3, MeshData3, MeshView3, PlanarMap,
+    PlanarSection, Plane3, PlaneFrame, Point3, PointAttrSet3, PointCloud3, PointCloudOverlap,
+    Sphere3, SurfacePoint3, SvdBasis3, UnitVec3, VOXEL_COHERENCE_ATTR, VOXEL_COUNT_ATTR, Vector3,
 };
 
 // Extremely common conversion tools

@@ -42,7 +42,7 @@ def main():
     def recut(plane):
         """Recut the mesh wherever the widget has been dragged to."""
         try:
-            curves = mesh.section_with_plane(plane)
+            curves = mesh.section_with_plane(plane).curves
         except Exception:
             # The plane can be dragged clear of the part, where there is nothing to cut. Leaving
             # the last section on screen would be a lie, so it is removed instead.

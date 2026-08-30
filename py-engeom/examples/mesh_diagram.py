@@ -113,12 +113,12 @@ def main():
     # ---------------------------------------------------------------------------------------------
 
     # A round cross-section, taken just inside the flat cut end where the shank is unthreaded and the
-    # scan is clean. `section_with_plane` returns a `CurveGroup3` because one plane can cut a mesh in
-    # several places at once, and those curves are one rigid body. A group indexes and iterates like
-    # a sequence; here it holds a single closed loop.
+    # scan is clean. `section_with_plane` returns a `PlanarSection` whose `curves` value is a
+    # `CurveGroup3`, since one plane can cut a mesh in several places at once and those curves form
+    # one rigid body. A group indexes and iterates like a sequence; here it holds one closed loop.
     cut_x = low.x + CROSS_SECTION_INSET
     cross_section = mesh.section_with_plane(Plane3.from_point_normal(cut_x, 0, 0, 1, 0, 0),
-                                            tol=1e-3)[0]
+                                            tol=1e-3).curves[0]
 
     # Fit a circle to that loop with the MAGSAC++ consensus algorithm rather than a plain
     # least-squares fit. `sigma_max` is an upper bound on the expected noise rather than a hard
@@ -142,7 +142,7 @@ def main():
     # back as a group of two curves, one for each side of the part. You wouldn't inherently know that
     # ahead of time, because how many members come back depends on the connectivity of the triangles
     # that the section plane passes through.
-    axial_sections = mesh.section_with_plane(Plane3.from_point_normal(0, 0, 0, 0, 1, 0), tol=1e-3)
+    axial_sections = mesh.section_with_plane(Plane3.from_point_normal(0, 0, 0, 0, 1, 0), tol=1e-3).curves
     print(f"Axial section: {len(axial_sections)} curves")
 
     # ---------------------------------------------------------------------------------------------

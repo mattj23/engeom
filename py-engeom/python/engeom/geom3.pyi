@@ -2488,6 +2488,40 @@ class TransversePlane:
         ...
 
 
+class PlanarSection:
+    """
+    The result of `Mesh3.section_with_plane`: the section curves in world coordinates, together
+    with the `PlanarMap` that brings them into the plane's two-dimensional coordinates and maps 2D
+    results back into the world.
+
+    The map is chosen when the section is taken according to the frame arguments passed to
+    `section_with_plane`, so everything derived from the section in 2D shares one frame. Retaining
+    the curves in 3D also lets the section be queried where it lies on the part.
+    """
+
+    @property
+    def curves(self) -> CurveGroup3:
+        """The section curves in world coordinates, one member per loop or open strand."""
+        ...
+
+    @property
+    def map(self) -> PlanarMap:
+        """The mapping between the world and the plane's 2D coordinate system."""
+        ...
+
+    def to_2d(self) -> CurveGroup2:
+        """
+        Bring the section curves into the plane's two-dimensional coordinates. This is
+        `section.map.curve_group_to_2d(section.curves)`, provided because it is what nearly every
+        caller needs next.
+
+        :return: the section as a `CurveGroup2`, with loops closed.
+        :raises ValueError: if a member collapses under the projection. This cannot happen to curves
+            produced by the cut itself, but may occur if the group is later modified or transformed.
+        """
+        ...
+
+
 class Mesh3:
     """
     A class holding an unstructured, 3-dimensional mesh of triangles.
@@ -3079,19 +3113,38 @@ class Mesh3:
             self,
             plane: Plane3,
             tol: float | None = None,
-            faces: IndexMask | None = None
-    ) -> CurveGroup3:
+            faces: IndexMask | None = None,
+            frame: Literal["auto", "svd"] = "auto",
+            origin: Point3 | None = None,
+            x: Vector3 | None = None,
+    ) -> PlanarSection:
         """
-        Calculate and return the intersection curves between the mesh and a plane, as a single
-        `CurveGroup3`.
+        Calculate the intersection curves between the mesh and a plane, returning them as a
+        `PlanarSection`: the curves themselves as a `CurveGroup3`, together with the `PlanarMap`
+        that brings them into the plane's two-dimensional coordinates and maps 2D results back into
+        the world.
 
-        A planar section is naturally several curves rather than one: a part with a hole through it
-        sections into an outer loop and an inner one. They move together as one rigid body, which is
-        what the group represents. The group is a sequence, so `len(...)`, indexing and iteration
-        all work on the result.
+        A planar section naturally consists of several curves rather than one: a section through a
+        part with a hole produces an outer loop and an inner loop. They move together as one rigid
+        body, which is what the group represents. The group is a sequence, so `len(...)`, indexing,
+        and iteration all work on `section.curves`.
 
-        Closed loops come back with their first vertex repeated as the last, since a `Curve3` has no
-        closed flag of its own. That is what lets `CurveGroup3.to_2d_in_plane` recover the closure.
+        Closed loops return with their first vertex repeated as the last, since a `Curve3` has no
+        closed flag of its own. That is what lets `PlanarMap.curve_group_to_2d` recover the closure.
+
+        The plane fixes only the z axis of the 2D coordinate system; the remaining arguments choose
+        where its origin sits and which way x points:
+
+        - `frame="auto"` (the default) uses the plane's own deterministic frame, whose origin is the
+          point of the plane nearest the world origin and whose x axis is the world x axis projected
+          into the plane. Use it when the layout does not matter.
+        - `frame="svd"` uses the principal axes of the section itself: the origin at its centroid and
+          x along its direction of greatest extent, from a length-weighted SVD of the vertices so that
+          the result does not depend on tessellation density. The x direction is ill-conditioned for a
+          section with no dominant direction, such as a circle.
+        - `origin` and `x` together place the origin and x axis where requested. The origin is
+          projected onto the plane and `x` into it, so neither needs to lie there already. Both must
+          be given, and they cannot be combined with `frame="svd"`.
 
         :param plane: The plane to intersect the mesh with.
         :param tol: The curve tolerance to use when constructing the intersection curves. See the `Curve3` class
@@ -3099,9 +3152,14 @@ class Mesh3:
         :param faces: an optional `IndexMask` over the mesh's faces which limits the section to the selected faces.
         Faces which are not selected are ignored entirely, so a section which crosses the boundary of the selection
         will produce open curves rather than closed loops. If `None` (the default) all faces are considered.
-        :return: a `CurveGroup3` holding the intersection curves.
-        :raises ValueError: if `faces` is not a mask of the mesh's face count, or if the plane
-            does not intersect the mesh at all, since a `CurveGroup3` cannot be empty.
+        :param frame: `"auto"` or `"svd"`, as described above.
+        :param origin: with `x`, the point that becomes `(0, 0)` in the plane.
+        :param x: with `origin`, the direction that becomes the plane's x axis.
+        :return: a `PlanarSection` holding the intersection curves and the map into the plane.
+        :raises ValueError: if `faces` is not a mask of the mesh's face count, if the plane does
+            not intersect the mesh at all (since a `CurveGroup3` cannot be empty), if only one of
+            `origin` and `x` is given or they are combined with `frame="svd"`, or if the frame
+            cannot be built because `x` is parallel to the plane normal.
         """
         ...
 
@@ -4232,7 +4290,8 @@ class CurveGroup3:
     and yield the member curves in order.
 
     Unlike `CurveGroup2`, a `Curve3` carries no notion of being closed, so a loop is represented by
-    its first and last vertices coinciding. `to_2d_in_plane` relies on that to recover the closure.
+    its first and last vertices coinciding. `PlanarMap.curve_group_to_2d` relies on that to recover
+    the closure.
     """
 
     def __init__(self, curves: List[Curve3]) -> None:
@@ -4319,26 +4378,6 @@ class CurveGroup3:
         """
         ...
 
-    def to_2d_in_plane(self, plane: Plane3) -> CurveGroup2:
-        """
-        Project every member onto a plane and return the result as a two-dimensional group,
-        expressed in that plane's own coordinate frame. Member order is preserved.
-
-        This is the ordinary way to bring a planar section of a mesh into two dimensions. Passing
-        the same plane that produced the section recovers a faithful 2D copy of it.
-
-        The plane's frame is built so that projecting onto the x-y plane is exactly the same
-        operation as dropping the z coordinate. A member which was a closed loop comes back as a
-        closed `Curve2`.
-
-        :param plane: the plane to project onto, whose frame gives the result its coordinates.
-        :return: a new `CurveGroup2` containing the projected members.
-        :raises ValueError: if any member collapses under the projection, for instance a curve
-            running along the plane normal. A collapsing member fails the whole group rather than
-            being dropped from it, which would renumber the remaining members.
-        """
-        ...
-
     @staticmethod
     def load_tccurve3(path: str | Path) -> CurveGroup3:
         """
@@ -4365,6 +4404,229 @@ class CurveGroup3:
         """
         ...
 
+
+
+class PlanarMap:
+    """
+    Maps geometry between the world and the two-dimensional coordinate system of a plane.
+
+    A planar section of a mesh is nearly always followed by the same three steps: bring the section
+    into the x-y plane, work on it with the tools in `engeom.geom2`, and bring the 2D results back
+    into the original 3D space. This object carries both directions of that trip, so the frame is
+    chosen once and every conversion uses it consistently. It is returned by
+    `Mesh3.section_with_plane` and can also be built directly from a plane.
+
+    The map stores the plane's frame—the isometry that takes a point expressed in the plane's
+    coordinates to its position in the world—together with its inverse. Mapping to 2D applies the
+    inverse and then drops z; mapping to 3D adds a zero z and then applies the frame.
+
+    Going to 3D never fails. Going to 2D loses the component along the plane normal, so any entity
+    with a direction can collapse. Examples include a unit vector or normal parallel to the plane
+    normal, a segment running along it, or a curve whose vertices fall together. Those conversions
+    raise `ValueError` rather than returning a degenerate result. A point off the plane is projected
+    onto it when mapped to 2D.
+    """
+
+    @staticmethod
+    def from_plane(plane: Plane3) -> PlanarMap:
+        """
+        Create the map for a plane's own deterministic frame. The origin is the point of the plane
+        nearest the world origin and x is the world x axis projected into the plane (falling back to
+        the world y axis when the normal is too close to x). For the x-y plane this is the identity,
+        so going to 2D is the same as dropping z.
+
+        :param plane: the plane whose frame the map uses.
+        """
+        ...
+
+    @staticmethod
+    def from_plane_oriented(plane: Plane3, origin: Point3, x: Vector3) -> PlanarMap:
+        """
+        Create a map whose origin and x direction are chosen by the caller. The origin is projected
+        onto the plane and `x` is projected into it, so neither needs to lie there already. The
+        frame's z axis is the plane normal and y completes a right-handed set.
+
+        :param plane: the plane the map lies in.
+        :param origin: the point that becomes `(0, 0)` in the plane after projection onto it.
+        :param x: the direction that becomes the plane's x axis after projection into it.
+        :raises ValueError: if `x` is zero or parallel to the plane normal.
+        """
+        ...
+
+    @staticmethod
+    def from_plane_svd(
+            plane: Plane3,
+            points: NDArray[float],
+            weights: NDArray[float] | None = None,
+    ) -> PlanarMap:
+        """
+        Create a map from the principal axes of a set of points lying in (or near) the plane. The
+        origin is the (weighted) centroid of the points projected onto the plane, and x is the
+        direction of greatest extent projected into it, with its sign chosen to agree with the x
+        axis `from_plane` would give, so that the result is deterministic for a given plane and set
+        of points. The z axis is the plane normal.
+
+        The x direction is ill-conditioned when the two largest singular values are close, as they
+        are for a circle. The result is deterministic, but a small change in the data can alter the
+        direction substantially. A caller who needs a stable direction in that case should use
+        `from_plane_oriented`.
+
+        :param plane: the plane the map lies in.
+        :param points: an `(n, 3)` array of the points whose principal axes decide the frame.
+        :param weights: an optional `(n,)` array of per-point weights. `Mesh3.section_with_plane`
+            assigns each vertex half the length of every segment it touches so that the frame
+            does not depend on tessellation density.
+        :raises ValueError: if there are no points, the number of weights does not match the number
+            of points, or the direction of greatest extent is parallel to the plane normal.
+        """
+        ...
+
+    @property
+    def frame(self) -> Iso3:
+        """
+        The frame isometry, which takes a point expressed in the plane's coordinates (with z zero
+        for a point on the plane) to where it lies in the world.
+        """
+        ...
+
+    def inverse(self) -> Iso3:
+        """
+        The inverse frame, which takes a world point into the plane's coordinates. A point on the
+        plane has a zero z coordinate, while the z coordinate of any other point is its signed
+        distance from the plane.
+        """
+        ...
+
+    @property
+    def plane(self) -> Plane3:
+        """The plane this map lies in, whose normal is the frame's z axis."""
+        ...
+
+    def point_to_2d(self, point: Point3) -> Point2:
+        """Map a point into the plane's coordinates, dropping its distance from the plane."""
+        ...
+
+    def point_to_3d(self, point: Point2) -> Point3:
+        """Map a point in the plane's coordinates to where it lies on the plane in the world."""
+        ...
+
+    def points_to_2d(self, points: NDArray[float]) -> NDArray[float]:
+        """
+        Map an `(n, 3)` array of points into the plane's coordinates, returning an `(n, 2)` array.
+        See `point_to_2d`.
+        """
+        ...
+
+    def points_to_3d(self, points: NDArray[float]) -> NDArray[float]:
+        """
+        Map an `(n, 2)` array of points in the plane's coordinates onto the plane in the world,
+        returning an `(n, 3)` array. See `point_to_3d`.
+        """
+        ...
+
+    def vector_to_2d(self, vector: Vector3) -> Vector2:
+        """Map a vector into the plane's coordinates, dropping its component along the normal."""
+        ...
+
+    def vector_to_3d(self, vector: Vector2) -> Vector3:
+        """Map a vector in the plane's coordinates to the world."""
+        ...
+
+    def unit_vector_to_2d(self, vector: Vector3) -> Vector2:
+        """
+        Map a direction into the plane's coordinates, dropping its component along the normal and
+        renormalizing what remains so the result has unit length.
+
+        :param vector: the direction; it is normalized before use.
+        :raises ValueError: if the vector is zero or parallel to the plane normal.
+        """
+        ...
+
+    def unit_vector_to_3d(self, vector: Vector2) -> Vector3:
+        """
+        Map a direction in the plane's coordinates to the world, returning a unit vector.
+
+        :param vector: the direction; it is normalized before use.
+        :raises ValueError: if the vector is zero.
+        """
+        ...
+
+    def surface_point_to_2d(self, sp: SurfacePoint3) -> SurfacePoint2:
+        """
+        Map a surface point into the plane's coordinates. The point is projected onto the plane
+        and the normal into it.
+
+        :raises ValueError: if the normal is parallel to the plane normal.
+        """
+        ...
+
+    def surface_point_to_3d(self, sp: SurfacePoint2) -> SurfacePoint3:
+        """Map a surface point in the plane's coordinates to the world."""
+        ...
+
+    def line_to_2d(self, line: Line3) -> Line2:
+        """
+        Map a line into the plane's coordinates. The origin is projected onto the plane and the
+        direction into it. The direction's length is whatever survives the projection.
+
+        :raises ValueError: if the direction is parallel to the plane normal.
+        """
+        ...
+
+    def line_to_3d(self, line: Line2) -> Line3:
+        """Map a line in the plane's coordinates to the world."""
+        ...
+
+    def segment_to_2d(self, segment: Segment3) -> Segment2:
+        """
+        Map a segment into the plane's coordinates by projecting both endpoints.
+
+        :raises ValueError: if the endpoints fall together, which happens when the segment runs
+            along the plane normal.
+        """
+        ...
+
+    def segment_to_3d(self, segment: Segment2) -> Segment3:
+        """Map a segment in the plane's coordinates to the world."""
+        ...
+
+    def curve_to_2d(self, curve: Curve3) -> Curve2:
+        """
+        Project a curve onto the plane and return it as a two-dimensional curve in the plane's
+        coordinates. The curve's tolerance carries over, and the result is closed when the projected
+        first and last vertices are within that tolerance of each other. A section loop therefore
+        remains closed after projection.
+
+        :raises ValueError: if the projection leaves fewer than two distinct vertices, as it does
+            for a curve running along the plane normal.
+        """
+        ...
+
+    def curve_to_3d(self, curve: Curve2) -> Curve3:
+        """
+        Lift a two-dimensional curve in the plane's coordinates onto the plane in the world. The
+        tolerance carries over, and a closed curve keeps its first vertex repeated as its last so
+        that `curve_to_2d` recovers the closure on the way back.
+        """
+        ...
+
+    def curve_group_to_2d(self, group: CurveGroup3) -> CurveGroup2:
+        """
+        Project every member of a group onto the plane and return the result as a two-dimensional
+        group in the plane's coordinates. Member order is preserved.
+
+        :raises ValueError: if any member collapses under the projection. A collapsing member fails
+            the whole group rather than being dropped from it, which would renumber the remaining
+            members.
+        """
+        ...
+
+    def curve_group_to_3d(self, group: CurveGroup2) -> CurveGroup3:
+        """
+        Lift every member of a two-dimensional group onto the plane in the world. Member order is
+        preserved.
+        """
+        ...
 
 class Aabb3:
     """

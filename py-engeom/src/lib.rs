@@ -102,6 +102,7 @@ fn register_geom3(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_class::<mesh::FaceFilterHandle>()?;
     child.add_class::<mesh::PatchFilter>()?;
     child.add_class::<mesh::TransversePlane>()?;
+    child.add_class::<mesh::PlanarSection>()?;
 
     // Half-edge mesh editing: repair, decimation, smoothing
     child.add_class::<half_edge3::HalfEdgeMesh3>()?;
@@ -114,6 +115,7 @@ fn register_geom3(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_class::<geom3::Curve3>()?;
     child.add_class::<geom3::CurveStation3>()?;
     child.add_class::<geom3::CurveGroup3>()?;
+    child.add_class::<geom3::PlanarMap>()?;
     child.add_class::<geom3::CubicSpline3>()?;
     child.add_class::<geom3::CubicSplineQueries3>()?;
     child.add_class::<geom2::SplineProjection>()?;
