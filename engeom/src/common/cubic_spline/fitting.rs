@@ -27,6 +27,7 @@ use super::{CubicSpline, SplineValue, bernstein_basis};
 use crate::Result;
 use crate::common::PCoords;
 use crate::common::points::dist;
+use crate::common::svd_basis::SvdBasis;
 use crate::na::{DMatrix, DVector, Dyn, Matrix, Owned, Point, SVector, U1, Unit, Vector};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 
@@ -445,44 +446,235 @@ impl<const D: usize> CubicSpline<D> {
         }
 
         let points: Vec<Point<f64, D>> = points.iter().map(|p| Point::from(p.coords())).collect();
+        fit_with_ends(&points, p0, p3, weights)
+    }
+
+    /// Fit a cubic Bézier curve to a set of points whose endpoints are unknown, assuming that the
+    /// curve runs from one end of the points' principal axis to the other.
+    ///
+    /// The principal axis is the direction of greatest variance of the points (the first vector of
+    /// an [`SvdBasis`]). The points are ordered by their projection onto it and the two extreme
+    /// points anchor the curve's ends: each endpoint is free to slide in the plane through its
+    /// extreme point perpendicular to the axis, which absorbs the perpendicular noise of a single
+    /// sample while still pinning the ends along the axis (the direction in which a closest-point
+    /// fit could otherwise slide freely). The interior control points are seeded and refined as
+    /// in [`Self::from_fit_with_ends`]. This approach covers lines, arcs of up to about a half turn,
+    /// S-curves, and any other shape that is single-valued along its own principal axis, without
+    /// requiring input from the caller beyond the points.
+    ///
+    /// The assumption is checked before fitting. When the curve doubles back along the axis (a
+    /// hairpin, a loop, an arc well past a half turn) the ordering by projection interleaves the
+    /// two branches, which shows up as perpendicular jumps between consecutive points that are
+    /// comparable to the perpendicular extent of the whole set. The fit is refused with an error
+    /// when the upper quartile of that jump ratio exceeds [`MAX_JUMP_RATIO`]. The check is
+    /// scale-free and needs no noise estimate. On synthetic sweeps, it rejects hairpins, hooks,
+    /// loops, and arcs of about 250 degrees or more while accepting every single-valued shape
+    /// tested. Two limitations are worth knowing:
+    ///
+    /// * It is a check for gross violations. A curve that only slightly overhangs the ends of its
+    ///   axis, such as an arc between about 190 and 240 degrees, passes and is fitted between its
+    ///   extreme points rather than its true ends.
+    /// * Noise-dominated straight data with only a couple of dozen points can be falsely rejected,
+    ///   since the jumps between neighbouring noisy samples are then a large fraction of the
+    ///   (purely noise) perpendicular extent. Fifty or more points are enough in practice.
+    ///
+    /// Use [`Self::from_fit_with_ends`] when the endpoints are known.
+    ///
+    /// # Arguments
+    ///
+    /// * `points`: The points to fit the curve to, in any order. At least two with positive
+    ///   weight are required.
+    /// * `weights`: If `Some`, a slice the same length as `points` of non-negative weights that
+    ///   scale each point's residual. Points with zero weight take no part in the fit, the
+    ///   principal axis, or the choice of endpoints. `None` weights all points equally.
+    ///
+    /// returns: A `Result` containing the fitted curve.
+    ///
+    /// # Failure
+    ///
+    /// Returns an error if there are too few points, the weight count does not match the point
+    /// count, the points double back along their principal axis, or the minimization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::Point2;
+    /// use engeom::common::cubic_spline::CubicSpline;
+    ///
+    /// // Points along an S-curve, in scrambled order and with no endpoints given.
+    /// let truth = CubicSpline::new(
+    ///     Point2::new(0.0, 0.0),
+    ///     Point2::new(1.5, 0.0),
+    ///     Point2::new(1.5, 2.0),
+    ///     Point2::new(3.0, 2.0),
+    /// );
+    /// let points: Vec<Point2> = (0..=40)
+    ///     .map(|i| truth.position(((i * 17) % 41) as f64 / 40.0))
+    ///     .collect();
+    ///
+    /// let fitted = CubicSpline::from_fit_principal_axis(&points, None).unwrap();
+    /// let queries = fitted.into_query();
+    /// for p in &points {
+    ///     assert!(queries.project_point(p).value < 1e-6);
+    /// }
+    /// ```
+    pub fn from_fit_principal_axis(
+        points: &[impl PCoords<D>],
+        weights: Option<&[f64]>,
+    ) -> Result<Self> {
+        check_fit_inputs(points.len(), weights)?;
+        let points: Vec<Point<f64, D>> = points.iter().map(|p| Point::from(p.coords())).collect();
         let ones = vec![1.0; points.len()];
         let w = weights.unwrap_or(&ones);
 
-        // List candidate seeds from cheapest to most expensive so ties favor the simplest one.
-        let mut seeds = vec![CubicSpline::new(
-            *p0,
-            p0 + chord / 3.0,
-            p3 - chord / 3.0,
-            *p3,
-        )];
-        for order in candidate_orders(&points, p0, p3) {
-            if let Some(params) = chord_length_params(&points, &order, w, p0, p3) {
-                seeds.extend(seed_interior_points(&points, &params, w, p0, p3));
-            }
+        let basis = SvdBasis::from_points(&points, weights)
+            .ok_or("could not compute a principal axis for the points")?;
+        let local: Vec<Point<f64, D>> = points.iter().map(|p| basis.point_to_basis(p)).collect();
+        let mut order: Vec<usize> = (0..points.len()).filter(|&i| w[i] > 0.0).collect();
+        if order.len() < 2 {
+            return Err("at least two points with positive weight are required".into());
         }
-        let initial = best_seed(seeds, &points, w);
+        order.sort_by(|&a, &b| local[a][0].total_cmp(&local[b][0]));
 
-        let (p0, p3) = (*p0, *p3);
+        if let Some(ratio) = jump_ratio(&local, &order)
+            && ratio > MAX_JUMP_RATIO
+        {
+            return Err(format!(
+                "the points do not run monotonically along their principal axis (jump ratio {:.2} \
+                 exceeds {}); supply the endpoints with from_fit_with_ends instead",
+                ratio, MAX_JUMP_RATIO
+            )
+            .into());
+        }
+
+        let first = points[order[0]];
+        let last = points[*order.last().unwrap()];
+        let initial = seed_with_ends(&points, w, &first, &last);
+
+        // Parameters: p1 (D), p2 (D), then the perpendicular offsets of each end (D - 1 each).
+        let perp: Vec<SVector<f64, D>> = basis.basis[1..].to_vec();
         let builder: SplineBuildFn<D> = Box::new(move |x: &DVector<f64>| {
             let p1 = Point::from(SVector::<f64, D>::from_iterator(x.iter().take(D).copied()));
             let p2 = Point::from(SVector::<f64, D>::from_iterator(
                 x.iter().skip(D).take(D).copied(),
             ));
+            let mut p0 = first;
+            let mut p3 = last;
+            for (k, v) in perp.iter().enumerate() {
+                p0 += v * x[2 * D + k];
+                p3 += v * x[3 * D - 1 + k];
+            }
             Ok(CubicSpline::new(p0, p1, p2, p3))
         });
-        let x0 = DVector::from_iterator(
-            2 * D,
-            initial
-                .p1
-                .coords
-                .iter()
-                .chain(initial.p2.coords.iter())
-                .copied(),
-        );
-
+        let mut x0 = DVector::zeros(4 * D - 2);
+        for k in 0..D {
+            x0[k] = initial.p1[k];
+            x0[D + k] = initial.p2[k];
+        }
         Ok(fit_spline_to_points_weighted(&points, weights, &builder, x0)?.spline)
     }
+}
 
+/// The largest upper-quartile jump ratio (see [`jump_ratio`]) for which the points are taken to
+/// run monotonically along their principal axis in [`CubicSpline::from_fit_principal_axis`]. On
+/// synthetic sweeps, hairpins, hooks, loops, and arcs of 270 degrees or more score 0.66 and above,
+/// single-valued shapes score 0.37 and below, and noise-dominated straight lines of fifty or more
+/// points score 0.38 and below.
+pub const MAX_JUMP_RATIO: f64 = 0.5;
+
+/// The upper quartile of the perpendicular jumps between consecutive points in `order`, divided
+/// by the perpendicular extent of the whole set. `local` holds the points in a frame whose first
+/// coordinate is the principal axis. A single-valued curve produces small jumps (noise plus slope
+/// times spacing), while interleaved branches produce jumps comparable to the extent. The upper
+/// quartile is used instead of the median because the branches of a smooth hairpin converge toward
+/// its turn, making many of its jumps small. Returns `None` when the perpendicular extent is
+/// negligible, as it is for a straight line.
+fn jump_ratio<const D: usize>(local: &[Point<f64, D>], order: &[usize]) -> Option<f64> {
+    let mut lo = [f64::INFINITY; D];
+    let mut hi = [f64::NEG_INFINITY; D];
+    for &i in order {
+        for k in 0..D {
+            lo[k] = lo[k].min(local[i][k]);
+            hi[k] = hi[k].max(local[i][k]);
+        }
+    }
+    let extent: f64 = (1..D).map(|k| (hi[k] - lo[k]).powi(2)).sum::<f64>().sqrt();
+    if extent <= 1e-12 * (hi[0] - lo[0]).max(f64::MIN_POSITIVE) {
+        return None;
+    }
+    let mut jumps: Vec<f64> = order
+        .windows(2)
+        .map(|pair| {
+            (1..D)
+                .map(|k| (local[pair[1]][k] - local[pair[0]][k]).powi(2))
+                .sum::<f64>()
+                .sqrt()
+                / extent
+        })
+        .collect();
+    jumps.sort_by(f64::total_cmp);
+    Some(jumps[3 * jumps.len() / 4])
+}
+
+/// The implementation behind [`CubicSpline::from_fit_with_ends`] for points already converted to
+/// the spline's dimension.
+fn fit_with_ends<const D: usize>(
+    points: &[Point<f64, D>],
+    p0: &Point<f64, D>,
+    p3: &Point<f64, D>,
+    weights: Option<&[f64]>,
+) -> Result<CubicSpline<D>> {
+    let ones = vec![1.0; points.len()];
+    let w = weights.unwrap_or(&ones);
+    let initial = seed_with_ends(points, w, p0, p3);
+
+    let (p0, p3) = (*p0, *p3);
+    let builder: SplineBuildFn<D> = Box::new(move |x: &DVector<f64>| {
+        let p1 = Point::from(SVector::<f64, D>::from_iterator(x.iter().take(D).copied()));
+        let p2 = Point::from(SVector::<f64, D>::from_iterator(
+            x.iter().skip(D).take(D).copied(),
+        ));
+        Ok(CubicSpline::new(p0, p1, p2, p3))
+    });
+    let x0 = DVector::from_iterator(
+        2 * D,
+        initial
+            .p1
+            .coords
+            .iter()
+            .chain(initial.p2.coords.iter())
+            .copied(),
+    );
+
+    Ok(fit_spline_to_points_weighted(points, weights, &builder, x0)?.spline)
+}
+
+/// The best closed-form seed for a fit with fixed endpoints. Candidates include the straight chord
+/// and the linear least-squares interior points under a chord-length parameterization for each
+/// candidate ordering.
+fn seed_with_ends<const D: usize>(
+    points: &[Point<f64, D>],
+    w: &[f64],
+    p0: &Point<f64, D>,
+    p3: &Point<f64, D>,
+) -> CubicSpline<D> {
+    let chord = p3 - p0;
+    // List candidate seeds from cheapest to most expensive so ties favor the simplest one.
+    let mut seeds = vec![CubicSpline::new(
+        *p0,
+        p0 + chord / 3.0,
+        p3 - chord / 3.0,
+        *p3,
+    )];
+    for order in candidate_orders(points, p0, p3) {
+        if let Some(params) = chord_length_params(points, &order, w, p0, p3) {
+            seeds.extend(seed_interior_points(points, &params, w, p0, p3));
+        }
+    }
+    best_seed(seeds, points, w)
+}
+
+impl<const D: usize> CubicSpline<D> {
     /// Fit a cubic Bézier curve to a set of points, holding the two endpoints and the tangent
     /// directions at each end fixed and solving only for the lengths of the two tangent arms (the
     /// distances from `p0` to `p1` and from `p3` to `p2`).
@@ -1239,6 +1431,173 @@ mod tests {
         assert!(CubicSpline::from_fit_hermite(&one, &p0, &t, &p3, &t, None).is_err());
         let two = vec![Point2::new(1.0, 1.0), Point2::new(2.0, 1.0)];
         assert!(CubicSpline::from_fit_hermite(&two, &p0, &t, &p3, &t, Some(&[1.0])).is_err());
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // from_fit_principal_axis
+    // --------------------------------------------------------------------------------------------
+
+    fn samples<const D: usize>(c: &CubicSpline<D>, n: usize) -> Vec<Point<f64, D>> {
+        (0..n)
+            .map(|i| c.position(i as f64 / (n - 1) as f64))
+            .collect()
+    }
+
+    fn gentle_s() -> CubicSpline<2> {
+        CubicSpline::new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.5, 0.0),
+            Point2::new(1.5, 2.0),
+            Point2::new(3.0, 2.0),
+        )
+    }
+
+    #[test]
+    fn principal_axis_exact_shapes() {
+        let mut rg = RandomGeometry2::from_seed(21);
+        let shapes = [
+            truth(),
+            gentle_s(),
+            // Steep S-curve.
+            CubicSpline::new(
+                Point2::new(0.0, 0.0),
+                Point2::new(2.0, 0.0),
+                Point2::new(1.0, 3.0),
+                Point2::new(3.0, 3.0),
+            ),
+            // Wide U, single-valued along its principal axis.
+            CubicSpline::new(
+                Point2::new(0.0, 0.0),
+                Point2::new(4.0, 0.0),
+                Point2::new(4.0, 3.0),
+                Point2::new(0.0, 3.0),
+            ),
+            // Straight line.
+            CubicSpline::new(
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 0.5),
+                Point2::new(2.0, 1.0),
+                Point2::new(3.0, 1.5),
+            ),
+        ];
+        for curve in shapes {
+            let points = shuffled(&samples(&curve, 41), &mut rg);
+            let fitted = CubicSpline::from_fit_principal_axis(&points, None).unwrap();
+            assert_same_curve(&curve, &fitted);
+        }
+    }
+
+    #[test]
+    fn principal_axis_noisy_shapes() {
+        let mut rg = RandomGeometry2::from_seed(22);
+        let sigma = 0.01;
+        for curve in [truth(), gentle_s()] {
+            for _ in 0..5 {
+                let points: Vec<Point2> = samples(&curve, 60)
+                    .iter()
+                    .map(|p| p + rg.gaussian_vector::<2>(sigma))
+                    .collect();
+                let points = shuffled(&points, &mut rg);
+                let fitted = CubicSpline::from_fit_principal_axis(&points, None).unwrap();
+                let dev = max_curve_deviation(&curve, &fitted);
+                assert!(dev < 4.0 * sigma, "deviation {} too large", dev);
+            }
+        }
+    }
+
+    #[test]
+    fn principal_axis_noisy_line_accepted() {
+        let mut rg = RandomGeometry2::from_seed(23);
+        let points: Vec<Point2> = (0..100)
+            .map(|i| Point2::new(3.0 * i as f64 / 99.0, 0.0) + rg.gaussian_vector::<2>(0.3))
+            .collect();
+        assert!(CubicSpline::from_fit_principal_axis(&points, None).is_ok());
+    }
+
+    #[test]
+    fn principal_axis_rejects_doubling_back() {
+        let mut rg = RandomGeometry2::from_seed(24);
+        let shapes = [
+            // hairpin
+            CubicSpline::new(
+                Point2::new(0.0, 0.0),
+                Point2::new(4.0, 0.0),
+                Point2::new(4.0, 1.0),
+                Point2::new(0.0, 1.0),
+            ),
+            // hook
+            CubicSpline::new(
+                Point2::new(0.0, 0.0),
+                Point2::new(4.0, -1.0),
+                Point2::new(4.0, 4.0),
+                Point2::new(0.0, 1.0),
+            ),
+            // loop
+            CubicSpline::new(
+                Point2::new(0.0, 0.0),
+                Point2::new(3.0, 2.0),
+                Point2::new(3.0, -2.0),
+                Point2::new(0.0, 0.0),
+            ),
+        ];
+        for curve in shapes {
+            let points = shuffled(&samples(&curve, 60), &mut rg);
+            assert!(CubicSpline::from_fit_principal_axis(&points, None).is_err());
+        }
+
+        // A 300 degree arc
+        let half = 150.0f64.to_radians();
+        let arc: Vec<Point2> = (0..60)
+            .map(|i| {
+                let a = -half + 2.0 * half * i as f64 / 59.0;
+                Point2::new(a.cos(), a.sin())
+            })
+            .collect();
+        assert!(CubicSpline::from_fit_principal_axis(&arc, None).is_err());
+    }
+
+    #[test]
+    fn principal_axis_zero_weight_points_excluded() {
+        // A distant zero-weight point must not become an endpoint or tilt the axis.
+        let curve = truth();
+        let mut points = samples(&curve, 41);
+        let mut weights = vec![1.0; points.len()];
+        points.push(Point2::new(20.0, 20.0));
+        weights.push(0.0);
+        let fitted = CubicSpline::from_fit_principal_axis(&points, Some(&weights)).unwrap();
+        assert_same_curve(&curve, &fitted);
+    }
+
+    #[test]
+    fn principal_axis_3d() {
+        let mut rg = RandomGeometry2::from_seed(25);
+        let curve = CubicSpline::new(
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 2.0, 1.0),
+            Point3::new(2.0, 2.0, -1.0),
+            Point3::new(3.0, 0.0, 0.0),
+        );
+        let points = shuffled(&samples(&curve, 41), &mut rg);
+        let fitted = CubicSpline::from_fit_principal_axis(&points, None).unwrap();
+        assert_same_curve(&curve, &fitted);
+
+        let hairpin = CubicSpline::new(
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(4.0, 0.0, 1.0),
+            Point3::new(4.0, 1.0, 1.0),
+            Point3::new(0.0, 1.0, 0.0),
+        );
+        let points = shuffled(&samples(&hairpin, 60), &mut rg);
+        assert!(CubicSpline::from_fit_principal_axis(&points, None).is_err());
+    }
+
+    #[test]
+    fn principal_axis_input_errors() {
+        let one = vec![Point2::new(1.0, 1.0)];
+        assert!(CubicSpline::from_fit_principal_axis(&one, None).is_err());
+        let two = vec![Point2::new(1.0, 1.0), Point2::new(2.0, 1.0)];
+        assert!(CubicSpline::from_fit_principal_axis(&two, Some(&[1.0])).is_err());
+        assert!(CubicSpline::from_fit_principal_axis(&two, Some(&[1.0, 0.0])).is_err());
     }
 
     #[test]

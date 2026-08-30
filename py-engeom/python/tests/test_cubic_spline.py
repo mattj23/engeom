@@ -213,6 +213,31 @@ def test_from_fit_hermite_zero_tangent_raises():
         CubicSpline2.from_fit_hermite(points, truth.p0, Vector2(0, 0), truth.p3, Vector2(1, -2))
 
 
+def test_from_fit_principal_axis_2d_recovers_curve():
+    truth = CubicSpline2(0, 0, 1.5, 0, 1.5, 2, 3, 2)
+    points = _samples_2d(truth)
+    rng = numpy.random.default_rng(3)
+    rng.shuffle(points, axis=0)
+
+    fitted = CubicSpline2.from_fit_principal_axis(points)
+    assert _max_deviation(points, fitted) < 1e-6
+
+
+def test_from_fit_principal_axis_3d_recovers_curve():
+    truth = CubicSpline3(0, 0, 0, 1, 2, 1, 2, 2, -1, 3, 0, 0)
+    points = _samples_3d(truth)
+
+    fitted = CubicSpline3.from_fit_principal_axis(points)
+    assert _max_deviation(points, fitted) < 1e-6
+
+
+def test_from_fit_principal_axis_rejects_hairpin():
+    hairpin = CubicSpline2(0, 0, 4, 0, 4, 1, 0, 1)
+    points = _samples_2d(hairpin, n=60)
+    with pytest.raises(ValueError):
+        CubicSpline2.from_fit_principal_axis(points)
+
+
 def test_fit_spline2_bad_builder_raises():
     points = numpy.array([[0.0, 0.0], [1.0, 0.0]])
 

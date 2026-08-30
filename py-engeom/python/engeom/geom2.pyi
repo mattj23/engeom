@@ -2160,6 +2160,37 @@ class CubicSpline2:
         """
         ...
 
+    @staticmethod
+    def from_fit_principal_axis(points: NDArray[float],
+                                weights: NDArray[float] | None = None) -> CubicSpline2:
+        """
+        Fit a cubic Bézier curve to a set of points whose endpoints are unknown, assuming that the
+        curve runs from one end of the points' principal axis (their direction of greatest
+        variance) to the other. The points are ordered by projection onto that axis, and the two
+        extreme points anchor the ends. Each end may slide perpendicular to the axis to absorb the
+        noise of a single sample, while the interior control points are fitted as in
+        `from_fit_with_ends`. This approach covers lines, arcs of up to about a half turn, S-curves,
+        and any other shape that is single-valued along its own principal axis.
+
+        The assumption is checked first. When the points double back along the axis (a hairpin, a
+        loop, or an arc well past a half turn), the fit is refused with a `ValueError`. The check
+        catches gross violations: an arc that only slightly overhangs its ends (roughly 190 to 240
+        degrees) passes and is fitted between its extreme points, while noise-dominated straight
+        data with only a couple of dozen points can be falsely rejected. Use `from_fit_with_ends`
+        when the endpoints are known.
+
+        :param points: the points to fit the curve to, as an (n, 2) array, in any order. At least
+            two with positive weight are required.
+        :param weights: if provided, a length-`n` array of non-negative weights that scale each
+            point's residual. Points with zero weight take no part in the fit, the principal axis,
+            or the choice of endpoints. If `None`, all points are weighted equally.
+        :return: a new `CubicSpline2` fitted to the points.
+        :raises ValueError: if there are too few points, the weight count does not match the
+            point count, the points double back along their principal axis, or the minimization
+            fails.
+        """
+        ...
+
     @property
     def p0(self) -> Point2:
         """ The first control point (curve start). """

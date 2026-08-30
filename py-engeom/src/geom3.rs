@@ -2830,6 +2830,20 @@ impl CubicSpline3 {
         Ok(Self::from_inner(spline))
     }
 
+    #[staticmethod]
+    #[pyo3(signature=(points, weights=None))]
+    fn from_fit_principal_axis<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        weights: Option<PyReadonlyArray1<'py, f64>>,
+    ) -> PyResult<Self> {
+        let points = array_to_points3(&points.as_array())?;
+        let weights = weights.as_ref().map(|w| w.as_array().to_vec());
+        let spline =
+            engeom::geom3::CubicSpline3::from_fit_principal_axis(&points, weights.as_deref())
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(spline))
+    }
+
     fn __getstate__(&self) -> CubicSpline3State {
         (
             self.inner.p0.x,
