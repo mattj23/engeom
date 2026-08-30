@@ -101,6 +101,7 @@ fn register_geom3(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_class::<mesh::MeshCollisionSet>()?;
     child.add_class::<mesh::FaceFilterHandle>()?;
     child.add_class::<mesh::PatchFilter>()?;
+    child.add_class::<mesh::TransversePlane>()?;
 
     // Half-edge mesh editing: repair, decimation, smoothing
     child.add_class::<half_edge3::HalfEdgeMesh3>()?;

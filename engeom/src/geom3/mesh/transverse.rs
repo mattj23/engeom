@@ -204,8 +204,8 @@ pub struct TransversePlane {
 
     /// The smaller singular value of the residual's Jacobian with respect to the plane's tilt at
     /// the solution: how much the normalized residual changes per radian of the tilt it is least
-    /// sensitive to. For a constant-section sweep it equals the coverage; a changing section
-    /// moves it away from that.
+    /// sensitive to. For a constant-section sweep with the point at the center of the section,
+    /// it equals the coverage; an off-center point or a changing section moves it away from that.
     pub sensitivity: f64,
 
     /// The number of band faces that took part in the final evaluation.

@@ -736,6 +736,47 @@ impl Mesh3 {
         Ok(CurveGroup3::from_inner(results))
     }
 
+    /// Find the plane through a point whose section cuts across the swept feature the point
+    /// lies on. See `TransversePlane` and the Python stub documentation for the criterion.
+    #[pyo3(signature=(x, y, z, guess, faces = None, taper_tilt = None, band = None, max_evaluations = None, tol = None))]
+    #[allow(clippy::too_many_arguments)]
+    fn transverse_plane(
+        &self,
+        x: f64,
+        y: f64,
+        z: f64,
+        guess: Vector3,
+        faces: Option<&IndexMask>,
+        taper_tilt: Option<f64>,
+        band: Option<f64>,
+        max_evaluations: Option<usize>,
+        tol: Option<f64>,
+    ) -> PyResult<TransversePlane> {
+        let point = engeom::Point3::new(x, y, z);
+        let guess = engeom::UnitVec3::try_new(*guess.get_inner(), 1e-12)
+            .ok_or_else(|| PyValueError::new_err("the guess direction must not be zero"))?;
+
+        let mut options = engeom::geom3::mesh::TransverseOptions::default();
+        if let Some(v) = taper_tilt {
+            options.taper_tilt = v;
+        }
+        if band.is_some() {
+            options.band = band;
+        }
+        if let Some(v) = max_evaluations {
+            options.max_evaluations = v;
+        }
+        if let Some(v) = tol {
+            options.tol = v;
+        }
+
+        let result = self
+            .inner
+            .transverse_plane(&point, &guess, faces.map(|m| m.get_inner()), Some(options))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(TransversePlane::from_inner(result))
+    }
+
     /// Start a face filter. `start` is either the token `"none"` or `"all"`, or an `IndexMask` over
     /// the faces, covering the three ways the core `Selection` enum can seed a filter.
     #[pyo3(signature = (start = None))]
@@ -1853,6 +1894,84 @@ impl MeshData3 {
             "<MeshData3 {} points, {} faces>",
             self.inner.point_count(),
             self.inner.face_count()
+        )
+    }
+}
+
+// ================================================================================================
+// Transverse plane result
+// ================================================================================================
+
+/// The result of `Mesh3.transverse_plane`: the plane found, along with diagnostics showing how
+/// well the balance condition was met and how well the plane was determined.
+#[pyclass(from_py_object, module = "engeom.geom3")]
+#[derive(Debug, Clone)]
+pub struct TransversePlane {
+    inner: engeom::geom3::mesh::TransversePlane,
+}
+
+impl TransversePlane {
+    pub fn from_inner(inner: engeom::geom3::mesh::TransversePlane) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl TransversePlane {
+    /// The plane through the query point whose section goes across the feature, with its normal
+    /// oriented the same way as the guess.
+    #[getter]
+    fn plane(&self) -> Plane3 {
+        Plane3::from_inner(self.inner.plane.clone())
+    }
+
+    /// The number of times the band was evaluated, including the evaluations that measure the
+    /// sensitivity at the solution.
+    #[getter]
+    fn evaluations(&self) -> usize {
+        self.inner.evaluations
+    }
+
+    /// The magnitude of the balance residual at the solution divided by the section's length.
+    /// Dimensionless; a well-converged solve on a clean sweep sits near zero.
+    #[getter]
+    fn residual(&self) -> f64 {
+        self.inner.residual
+    }
+
+    /// The smaller eigenvalue of the coverage matrix divided by the section's length, from `0`
+    /// (the outward normals are all parallel) to `0.5` (a full closed loop).
+    #[getter]
+    fn coverage(&self) -> f64 {
+        self.inner.coverage
+    }
+
+    /// The smaller singular value of the residual's Jacobian with respect to the plane's tilt at
+    /// the solution: how much the normalized residual changes per radian of the tilt it is least
+    /// sensitive to. Equals the coverage on a constant-section sweep when the point is at the
+    /// center of the section; an off-center point or a changing section moves it away from that.
+    #[getter]
+    fn sensitivity(&self) -> f64 {
+        self.inner.sensitivity
+    }
+
+    /// The number of band faces that took part in the final evaluation.
+    #[getter]
+    fn face_count(&self) -> usize {
+        self.inner.face_count
+    }
+
+    /// The band half-width that was used, in the mesh's units.
+    #[getter]
+    fn band(&self) -> f64 {
+        self.inner.band
+    }
+
+    fn __repr__(&self) -> String {
+        let n = self.inner.plane.normal;
+        format!(
+            "TransversePlane(normal=({}, {}, {}), residual={:.3e}, coverage={:.3}, sensitivity={:.3})",
+            n.x, n.y, n.z, self.inner.residual, self.inner.coverage, self.inner.sensitivity
         )
     }
 }

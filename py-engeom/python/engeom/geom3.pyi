@@ -2428,6 +2428,66 @@ class Cone3:
         ...
 
 
+class TransversePlane:
+    """
+    The result of `Mesh3.transverse_plane`: the plane found, along with diagnostics showing how well
+    the balance condition was met and how well the plane was determined.
+    """
+
+    @property
+    def plane(self) -> Plane3:
+        """
+        The plane through the query point whose section goes across the feature, with its normal
+        oriented the same way as the guess.
+        """
+        ...
+
+    @property
+    def evaluations(self) -> int:
+        """
+        The number of times the band was evaluated, including the evaluations that measure the
+        sensitivity at the solution.
+        """
+        ...
+
+    @property
+    def residual(self) -> float:
+        """
+        The magnitude of the balance residual at the solution divided by the section's length.
+        Dimensionless; a well-converged solve on a clean sweep sits near zero.
+        """
+        ...
+
+    @property
+    def coverage(self) -> float:
+        """
+        The smaller eigenvalue of the coverage matrix divided by the section's length, from ``0`` (the
+        outward normals are all parallel, so the direction is undetermined) to ``0.5`` (a full closed
+        loop). A half loop or a U-shaped groove profile sits between.
+        """
+        ...
+
+    @property
+    def sensitivity(self) -> float:
+        """
+        The smaller singular value of the residual's Jacobian with respect to the plane's tilt at the
+        solution: how much the normalized residual changes per radian of the tilt it is least
+        sensitive to. It equals the coverage on a constant-section sweep when the point is at the
+        center of the section; an off-center point or a changing section moves it away from that.
+        """
+        ...
+
+    @property
+    def face_count(self) -> int:
+        """The number of band faces that took part in the final evaluation."""
+        ...
+
+    @property
+    def band(self) -> float:
+        """The band half-width that was used, in the mesh's units."""
+        ...
+
+
 class Mesh3:
     """
     A class holding an unstructured, 3-dimensional mesh of triangles.
@@ -3005,6 +3065,67 @@ class Mesh3:
         :return: a `CurveGroup3` holding the intersection curves.
         :raises ValueError: if `faces` is not a mask of the mesh's face count, or if the plane
             does not intersect the mesh at all, since a `CurveGroup3` cannot be empty.
+        """
+        ...
+
+    def transverse_plane(
+            self,
+            x: float,
+            y: float,
+            z: float,
+            guess: Vector3,
+            faces: IndexMask | None = None,
+            taper_tilt: float | None = None,
+            band: float | None = None,
+            max_evaluations: int | None = None,
+            tol: float | None = None,
+    ) -> TransversePlane:
+        """
+        Find the plane through a point whose section cuts across the swept feature the point lies on:
+        the plane that gives a circle on a cylinder or cone, follows the cutter profile on a groove,
+        and makes equal angles with the two faces of a wedge. It is the 3D counterpart of the airfoil
+        thickness line drawn normal to the medial axis.
+
+        The criterion is a balance: cut with a trial plane, and every cut face contributes its segment
+        length, its tilt out of the plane, and its in-plane outward normal. Sliding the plane along its
+        normal moves each segment outward at a rate set by that tilt, and the plane is across the
+        feature when those motions have no net sideways translation. On a one-sided taper (one face
+        flat, one sloped) this puts the plane normal to the bisector of the two faces, the medial-axis
+        direction, which is intended.
+
+        Only the connected run of the section nearest the point takes part, so other features the
+        plane happens to cut (the far side of a pipe elbow) do not influence the result. The balance
+        is evaluated over a thin band of surface around the plane rather than the section curve
+        itself, which keeps the solve smooth on a rough scanned mesh.
+
+        The solve converges to the nearest balanced plane, and a sweep has more than one (a plane
+        containing a cylinder's axis is also balanced), so the guess must be closer to the across plane
+        than to any other, and the plane it defines must still go across the feature: on a cylinder
+        anything within 45 degrees of the axis converges, but a plane more than ``90 - a`` degrees
+        from the axis of a cone of half-angle ``a`` no longer cuts a closed section.
+
+        :param x: the x coordinate of the point the plane passes through, on the surface or inside the
+        feature (on a pipe's axis, say).
+        :param y: the y coordinate of the point.
+        :param z: the z coordinate of the point.
+        :param guess: an initial direction for the plane normal, roughly along the sweep. Need not be
+        a unit vector.
+        :param faces: an optional `IndexMask` over the mesh's faces limiting the cut to the feature.
+        Use it to isolate a groove from the part around it.
+        :param taper_tilt: the face tilt out of the plane, in radians, beyond which a face's weight is
+        tapered to zero at a right angle. Defaults to 70 degrees. Must lie strictly between zero and
+        a right angle.
+        :param band: the half-width of the surface band over which the balance is evaluated, in the
+        mesh's units. Defaults to a hundredth of the section's length at the guess.
+        :param max_evaluations: the maximum number of band evaluations before the solve gives up.
+        Defaults to 100.
+        :param tol: the change in the plane normal, in radians, below which the solve is considered
+        converged. Defaults to ``1e-9``.
+        :return: a `TransversePlane` with the plane and the solve's diagnostics.
+        :raises ValueError: if the options are invalid, if the plane through the guess misses the
+        selected faces, if the section's outward normals do not span the plane (a single flat face),
+        if the solve does not converge, or if the residual at the solution is insensitive to some tilt
+        of the plane.
         """
         ...
 

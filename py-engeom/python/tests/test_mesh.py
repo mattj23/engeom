@@ -1,7 +1,7 @@
 import numpy
 import pytest
 from numpy import linalg
-from engeom.geom3 import Mesh3, Iso3, Plane3, PatchFilter, PointCloud3
+from engeom.geom3 import Mesh3, Iso3, Plane3, PatchFilter, PointCloud3, Vector3, TransversePlane
 from engeom.common import IndexMask
 
 
@@ -560,3 +560,62 @@ def test_mesh_boundary_first_flatten_output_is_accepted_as_point_flat():
 
     m.set_point_flat(flat)
     assert numpy.allclose(m.point_flat, flat)
+
+
+def _walls_only(mesh: Mesh3) -> IndexMask:
+    """A face mask for a z-axis cylinder or cone that keeps the wall and drops the caps."""
+    normals = mesh.compute_face_normals()
+    keep = [i for i, n in enumerate(normals) if n[2] > -0.5 and abs(n[2]) < 0.99]
+    return IndexMask.from_indices(keep, mesh.face_count)
+
+
+def test_transverse_plane_of_a_cylinder_is_normal_to_its_axis():
+    m = Mesh3.create_cylinder(1.0, 4.0, 1e-3)
+    # A guess 20 degrees off the axis, from a point on the wall.
+    result = m.transverse_plane(1.0, 0.0, 0.3, Vector3(0.36, 0.0, 1.0), faces=_walls_only(m))
+
+    assert isinstance(result, TransversePlane)
+    assert abs(result.plane.normal.z) > 1.0 - 1e-9
+    assert result.residual < 1e-9
+    assert abs(result.coverage - 0.5) < 1e-3
+    # Close to the coverage; equal only when the point is at the center of the section.
+    assert 0.4 < result.sensitivity < 0.5
+    assert result.face_count > 0
+    assert result.band > 0.0
+    assert result.evaluations > 0
+    assert "TransversePlane(" in repr(result)
+
+
+def test_transverse_plane_of_a_cone_from_the_axis():
+    m = Mesh3.create_cone(1.0, 2.0, 1e-3)
+    result = m.transverse_plane(0.0, 0.0, 0.0, Vector3(0.0, 0.3, 1.0), faces=_walls_only(m))
+
+    assert abs(result.plane.normal.z) > 1.0 - 1e-9
+    assert result.residual < 1e-9
+    # The normal follows the guess's orientation.
+    assert result.plane.normal.z > 0.0
+
+
+def test_transverse_plane_accepts_options():
+    m = Mesh3.create_cylinder(1.0, 4.0, 1e-3)
+    result = m.transverse_plane(
+        1.0, 0.0, 0.0, Vector3(0.0, 0.0, 1.0), faces=_walls_only(m), band=0.05, max_evaluations=50, tol=1e-8
+    )
+    assert result.band == 0.05
+    assert abs(result.plane.normal.z) > 1.0 - 1e-9
+
+
+def test_transverse_plane_rejects_a_single_flat_face():
+    m = Mesh3.create_box(2.0, 2.0, 2.0, False)
+    normals = m.compute_face_normals()
+    top = IndexMask.from_indices([i for i, n in enumerate(normals) if n[2] > 0.5], m.face_count)
+    with pytest.raises(ValueError, match="undetermined"):
+        m.transverse_plane(0.0, 0.0, 1.0, Vector3(1.0, 0.0, 0.0), faces=top)
+
+
+def test_transverse_plane_rejects_bad_options():
+    m = Mesh3.create_cylinder(1.0, 4.0, 1e-3)
+    with pytest.raises(ValueError):
+        m.transverse_plane(1.0, 0.0, 0.0, Vector3(0.0, 0.0, 1.0), taper_tilt=3.2)
+    with pytest.raises(ValueError):
+        m.transverse_plane(1.0, 0.0, 0.0, Vector3(0.0, 0.0, 0.0))
