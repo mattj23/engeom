@@ -1285,6 +1285,34 @@ impl CubicSpline2 {
         Ok(Self::from_inner(spline))
     }
 
+    #[staticmethod]
+    #[pyo3(signature=(points, p0, tangent0, p3, tangent3, weights=None))]
+    fn from_fit_hermite<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        p0: &Point2,
+        tangent0: &Vector2,
+        p3: &Point2,
+        tangent3: &Vector2,
+        weights: Option<PyReadonlyArray1<'py, f64>>,
+    ) -> PyResult<Self> {
+        let points = array_to_points2(&points.as_array())?;
+        let weights = weights.as_ref().map(|w| w.as_array().to_vec());
+        let unit = |v: &Vector2, name: &str| {
+            engeom::na::Unit::try_new(*v.get_inner(), 1e-12)
+                .ok_or_else(|| PyValueError::new_err(format!("{} must be a non-zero vector", name)))
+        };
+        let spline = engeom::geom2::CubicSpline2::from_fit_hermite(
+            &points,
+            p0.get_inner(),
+            &unit(tangent0, "tangent0")?,
+            p3.get_inner(),
+            &unit(tangent3, "tangent3")?,
+            weights.as_deref(),
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(spline))
+    }
+
     fn __getstate__(&self) -> CubicSpline2State {
         (
             self.inner.p0.x,

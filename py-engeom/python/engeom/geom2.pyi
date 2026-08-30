@@ -2100,6 +2100,9 @@ class CubicSpline2:
         Levenberg-Marquardt minimization. The points may be in any order; ordered input helps only
         for curves that double back along their chord.
 
+        The fit determines the curve shape more strongly than the exact control-point locations.
+        Compare curves, rather than their control points, when checking a fit.
+
         :param points: the points to fit the curve to, as an (n, 2) array, in any order. At least
             two are required.
         :param p0: the start point of the curve, held fixed.
@@ -2110,6 +2113,49 @@ class CubicSpline2:
         :return: a new `CubicSpline2` with the given endpoints and the fitted interior control
             points.
         :raises ValueError: if there are fewer than two points, the endpoints coincide, the weight
+            count does not match the point count, or the minimization fails.
+        """
+        ...
+
+    @staticmethod
+    def from_fit_hermite(points: NDArray[float], p0: Point2, tangent0: Vector2, p3: Point2,
+                         tangent3: Vector2, weights: NDArray[float] | None = None) -> CubicSpline2:
+        """
+        Fit a cubic Bézier curve to a set of points, holding the two endpoints and the tangent
+        directions at each end fixed and solving only for the lengths of the two tangent arms
+        (the distances from `p0` to `p1` and from `p3` to `p2`). This is the most constrained and
+        best-conditioned of the fits. It is a natural choice for a curve that must leave one known
+        feature tangentially and arrive at another feature in the same way.
+
+        Both tangents point in the direction of travel along the curve, from `p0` toward `p3`:
+        `tangent0` is the direction the curve leaves `p0` (`p1 = p0 + a0 * tangent0`) and
+        `tangent3` is the direction the curve is traveling as it arrives at `p3`
+        (`p2 = p3 - a1 * tangent3`). The arm lengths are held positive during the fit.
+
+        The fit starts from the best of several closed-form seeds. Schneider's linear least-squares
+        arm lengths under a chord-length parameterization are computed with the points ordered both
+        by projection onto the chord and in their given order. One-third of the chord length for
+        each arm provides a fallback seed; when the endpoints coincide, the fallback uses the reach
+        of the points from `p0` instead. The selected seed is refined against the true closest-point
+        distances with a weighted Levenberg-Marquardt minimization. The endpoints may coincide.
+
+        The fit determines the curve shape more strongly than the exact control-point locations.
+        Compare curves, rather than their control points, when checking a fit.
+
+        :param points: the points to fit the curve to, as an (n, 2) array, in any order. At least
+            two are required.
+        :param p0: the start point of the curve, held fixed.
+        :param tangent0: the direction the curve leaves `p0` in; normalized internally, must be
+            non-zero.
+        :param p3: the end point of the curve, held fixed.
+        :param tangent3: the direction the curve is traveling in as it arrives at `p3`;
+            normalized internally, must be non-zero.
+        :param weights: if provided, a length-`n` array of non-negative weights that scale each
+            point's residual. Points with zero weight have no effect. If `None`, all points are
+            weighted equally.
+        :return: a new `CubicSpline2` with the given endpoints and tangents and the fitted arm
+            lengths.
+        :raises ValueError: if there are fewer than two points, a tangent is zero, the weight
             count does not match the point count, or the minimization fails.
         """
         ...

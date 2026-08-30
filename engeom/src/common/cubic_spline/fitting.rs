@@ -27,7 +27,7 @@ use super::{CubicSpline, SplineValue, bernstein_basis};
 use crate::Result;
 use crate::common::PCoords;
 use crate::common::points::dist;
-use crate::na::{DMatrix, DVector, Dyn, Matrix, Owned, Point, SVector, U1, Vector};
+use crate::na::{DMatrix, DVector, Dyn, Matrix, Owned, Point, SVector, U1, Unit, Vector};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 
 /// A builder closure that turns a parameter vector into a [`CubicSpline`] of dimension `D`. The
@@ -194,7 +194,6 @@ pub fn fit_spline_to_points_weighted<const D: usize>(
 
     let problem = SplineFit::try_new(points, weights, builder, initial)?;
     let (result, report) = LevenbergMarquardt::new().minimize(problem);
-
     if report.termination.was_successful() {
         let state = result.state.unwrap();
         let residuals = DVector::from_iterator(points.len(), state.feet.iter().map(|f| f.value));
@@ -374,8 +373,8 @@ impl<const D: usize> CubicSpline<D> {
     ///
     /// Fixing the endpoints is what makes this problem well-posed: the residuals are closest-point
     /// distances to the curve, which do not change when the curve extends beyond the points, so a
-    /// fit with free endpoints has nothing to stop the ends from sliding. With the endpoints given,
-    /// the interior control points of the best-fitting curve are unique.
+    /// fit with free endpoints has nothing to stop the ends from sliding. Fixing the endpoints
+    /// leaves the two interior control points as the parameters to solve for.
     ///
     /// The fit starts from the best of three closed-form seeds and then refines against the true
     /// closest-point distances with a weighted Levenberg-Marquardt minimization
@@ -387,6 +386,13 @@ impl<const D: usize> CubicSpline<D> {
     /// while the chord provides a fallback for all other cases. The seed with the lowest weighted
     /// RMS closest-point distance is refined, so the caller does not need to determine which case
     /// applies.
+    ///
+    /// The fit determines the *curve* accurately, but its control points are only as well determined
+    /// as the shape allows. To first order, shifting both interior control points along the curve
+    /// reparameterizes it without changing its shape. The objective is therefore very flat in that
+    /// direction, and control points fitted to exact data can differ from the generating control
+    /// points by a fraction of a percent even when the curves agree much more closely. Compare the
+    /// curves, rather than their control points, when checking a fit.
     ///
     /// # Arguments
     ///
@@ -409,7 +415,6 @@ impl<const D: usize> CubicSpline<D> {
     /// ```
     /// use engeom::Point2;
     /// use engeom::common::cubic_spline::CubicSpline;
-    /// use approx::assert_relative_eq;
     ///
     /// let truth = CubicSpline::new(
     ///     Point2::new(0.0, 0.0),
@@ -420,8 +425,12 @@ impl<const D: usize> CubicSpline<D> {
     /// let points: Vec<Point2> = (0..=20).map(|i| truth.position(i as f64 / 20.0)).collect();
     ///
     /// let fitted = CubicSpline::from_fit_with_ends(&points, &truth.p0, &truth.p3, None).unwrap();
-    /// assert_relative_eq!(fitted.p1, truth.p1, epsilon = 1e-6);
-    /// assert_relative_eq!(fitted.p2, truth.p2, epsilon = 1e-6);
+    ///
+    /// // The fitted curve passes through the sampled points.
+    /// let queries = fitted.into_query();
+    /// for p in &points {
+    ///     assert!(queries.project_point(p).value < 1e-6);
+    /// }
     /// ```
     pub fn from_fit_with_ends(
         points: &[impl PCoords<D>],
@@ -429,20 +438,7 @@ impl<const D: usize> CubicSpline<D> {
         p3: &Point<f64, D>,
         weights: Option<&[f64]>,
     ) -> Result<Self> {
-        if points.len() < 2 {
-            return Err("at least two points are required to fit a cubic spline".into());
-        }
-        if let Some(w) = weights
-            && w.len() != points.len()
-        {
-            return Err(format!(
-                "expected {} weights for {} points, got {}",
-                points.len(),
-                points.len(),
-                w.len()
-            )
-            .into());
-        }
+        check_fit_inputs(points.len(), weights)?;
         let chord = p3 - p0;
         if chord.norm() <= f64::EPSILON {
             return Err("the endpoints of the spline must be distinct".into());
@@ -459,27 +455,12 @@ impl<const D: usize> CubicSpline<D> {
             p3 - chord / 3.0,
             *p3,
         )];
-
-        let mut by_projection: Vec<usize> = (0..points.len()).collect();
-        by_projection.sort_by(|&a, &b| {
-            let pa = (points[a] - p0).dot(&chord);
-            let pb = (points[b] - p0).dot(&chord);
-            pa.total_cmp(&pb)
-        });
-        let as_given: Vec<usize> = (0..points.len()).collect();
-
-        for order in [&by_projection, &as_given] {
-            if let Some(seed) = seed_chord_length(&points, order, w, p0, p3) {
-                seeds.push(seed);
+        for order in candidate_orders(&points, p0, p3) {
+            if let Some(params) = chord_length_params(&points, &order, w, p0, p3) {
+                seeds.extend(seed_interior_points(&points, &params, w, p0, p3));
             }
         }
-
-        let initial = seeds
-            .into_iter()
-            .map(|s| (weighted_rms(&s, &points, w), s))
-            .min_by(|a, b| a.0.total_cmp(&b.0))
-            .map(|(_, s)| s)
-            .expect("at least the chord seed exists");
+        let initial = best_seed(seeds, &points, w);
 
         let (p0, p3) = (*p0, *p3);
         let builder: SplineBuildFn<D> = Box::new(move |x: &DVector<f64>| {
@@ -501,6 +482,221 @@ impl<const D: usize> CubicSpline<D> {
 
         Ok(fit_spline_to_points_weighted(&points, weights, &builder, x0)?.spline)
     }
+
+    /// Fit a cubic Bézier curve to a set of points, holding the two endpoints and the tangent
+    /// directions at each end fixed and solving only for the lengths of the two tangent arms (the
+    /// distances from `p0` to `p1` and from `p3` to `p2`).
+    ///
+    /// This is the most constrained and best-conditioned named fit. It has two scalar unknowns,
+    /// both of which must be positive, and its geometry is a Hermite-style blend between two known
+    /// end conditions. It is a natural choice for a curve that must leave one known feature (a
+    /// line, an arc, or another curve) tangentially and arrive at another feature in the same way.
+    /// It is also the single-segment core of Schneider's curve-fitting algorithm (Graphics Gems,
+    /// 1990).
+    ///
+    /// Both tangents point in the direction of travel along the curve, from `p0` toward `p3`:
+    /// `tangent0` is the direction the curve leaves `p0` (so `p1 = p0 + a0 * tangent0`), and
+    /// `tangent3` is the direction the curve is traveling as it arrives at `p3` (so
+    /// `p2 = p3 - a1 * tangent3`). The arm lengths `a0` and `a1` are held positive during the fit;
+    /// a curve that would need to leave an endpoint against its given tangent cannot be produced.
+    ///
+    /// The fit starts from the best of several closed-form seeds and then refines against the true
+    /// closest-point distances with a weighted Levenberg-Marquardt minimization
+    /// ([`fit_spline_to_points_weighted`]). The seeds are Schneider's linear least-squares
+    /// solution for the arm lengths under a chord-length parameterization of the points. It is
+    /// computed once with the points ordered by projection onto the chord and once in the input
+    /// order. A third seed uses one-third of the chord length for each arm as a fallback. See
+    /// [`Self::from_fit_with_ends`] for why both point orderings are tried. The seed with the lowest
+    /// weighted RMS closest-point distance is refined.
+    ///
+    /// Unlike [`Self::from_fit_with_ends`], the endpoints may coincide: a closed loop leaving and
+    /// returning to the same point with different tangents is a valid curve.
+    ///
+    /// The fit determines the *curve* accurately, but its control points are only as well determined
+    /// as the shape allows. To first order, shifting both interior control points along the curve
+    /// reparameterizes it without changing its shape. The objective is therefore very flat in that
+    /// direction, and control points fitted to exact data can differ from the generating control
+    /// points by a fraction of a percent even when the curves agree much more closely. Compare the
+    /// curves, rather than their control points, when checking a fit.
+    ///
+    /// # Arguments
+    ///
+    /// * `points`: The points to fit the curve to, in any order. At least two are required.
+    /// * `p0`: The start point of the curve, held fixed.
+    /// * `tangent0`: The unit direction the curve leaves `p0` in, held fixed.
+    /// * `p3`: The end point of the curve, held fixed.
+    /// * `tangent3`: The unit direction the curve is traveling in as it arrives at `p3`, held
+    ///   fixed.
+    /// * `weights`: If `Some`, a slice the same length as `points` of non-negative weights that
+    ///   scale each point's residual. Points with zero weight have no effect on the fit. `None`
+    ///   weights all points equally.
+    ///
+    /// returns: A `Result` containing the fitted curve.
+    ///
+    /// # Failure
+    ///
+    /// Returns an error if there are fewer than two points, the weight count does not match the
+    /// point count, or the minimization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::{Point2, Vector2, UnitVec2};
+    /// use engeom::common::cubic_spline::CubicSpline;
+    ///
+    /// let truth = CubicSpline::new(
+    ///     Point2::new(0.0, 0.0),
+    ///     Point2::new(1.0, 2.0),
+    ///     Point2::new(2.0, 2.0),
+    ///     Point2::new(3.0, 0.0),
+    /// );
+    /// let points: Vec<Point2> = (0..=20).map(|i| truth.position(i as f64 / 20.0)).collect();
+    ///
+    /// // Both tangents point in the direction of travel: out of p0 and into p3.
+    /// let t0 = UnitVec2::new_normalize(Vector2::new(1.0, 2.0));
+    /// let t3 = UnitVec2::new_normalize(Vector2::new(1.0, -2.0));
+    /// let fitted =
+    ///     CubicSpline::from_fit_hermite(&points, &truth.p0, &t0, &truth.p3, &t3, None).unwrap();
+    ///
+    /// // The fitted curve passes through the sampled points.
+    /// let queries = fitted.into_query();
+    /// for p in &points {
+    ///     assert!(queries.project_point(p).value < 1e-6);
+    /// }
+    /// ```
+    pub fn from_fit_hermite(
+        points: &[impl PCoords<D>],
+        p0: &Point<f64, D>,
+        tangent0: &Unit<SVector<f64, D>>,
+        p3: &Point<f64, D>,
+        tangent3: &Unit<SVector<f64, D>>,
+        weights: Option<&[f64]>,
+    ) -> Result<Self> {
+        check_fit_inputs(points.len(), weights)?;
+
+        let points: Vec<Point<f64, D>> = points.iter().map(|p| Point::from(p.coords())).collect();
+        let ones = vec![1.0; points.len()];
+        let w = weights.unwrap_or(&ones);
+
+        let t0 = tangent0.into_inner();
+        let t3 = tangent3.into_inner();
+        let (q0, q3) = (*p0, *p3);
+        let hermite = move |a0: f64, a1: f64| CubicSpline::new(q0, q0 + t0 * a0, q3 - t3 * a1, q3);
+
+        // Use one-third of the chord as the fallback arm length. When the endpoints coincide, use
+        // one-third of the farthest point's distance from p0 instead.
+        let reach = points
+            .iter()
+            .map(|p| dist(p, p0))
+            .fold(dist(p0, p3), f64::max);
+        let mut seeds = vec![hermite(reach / 3.0, reach / 3.0)];
+        for order in candidate_orders(&points, p0, p3) {
+            if let Some(params) = chord_length_params(&points, &order, w, p0, p3)
+                && let Some((a0, a1)) = seed_arm_lengths(&points, &params, w, p0, &t0, p3, &t3)
+            {
+                seeds.push(hermite(a0, a1));
+            }
+        }
+        let initial = best_seed(seeds, &points, w);
+
+        let builder: SplineBuildFn<D> = Box::new(move |x: &DVector<f64>| {
+            if x[0] <= 0.0 || x[1] <= 0.0 {
+                return Err("tangent arm lengths must be positive".into());
+            }
+            Ok(hermite(x[0], x[1]))
+        });
+        let x0 = DVector::from(vec![
+            dist(&initial.p1, &initial.p0),
+            dist(&initial.p2, &initial.p3),
+        ]);
+
+        Ok(fit_spline_to_points_weighted(&points, weights, &builder, x0)?.spline)
+    }
+}
+
+/// Input validation shared by the named fitting constructors.
+fn check_fit_inputs(n_points: usize, weights: Option<&[f64]>) -> Result<()> {
+    if n_points < 2 {
+        return Err("at least two points are required to fit a cubic spline".into());
+    }
+    if let Some(w) = weights
+        && w.len() != n_points
+    {
+        return Err(format!(
+            "expected {} weights for {} points, got {}",
+            n_points,
+            n_points,
+            w.len()
+        )
+        .into());
+    }
+    Ok(())
+}
+
+/// The two candidate orderings of the points used to seed a fit: sorted by scalar projection onto
+/// the chord from `p0` to `p3`, and in their given order. If the chord has zero length, projection
+/// ordering degenerates to the given order.
+fn candidate_orders<const D: usize>(
+    points: &[Point<f64, D>],
+    p0: &Point<f64, D>,
+    p3: &Point<f64, D>,
+) -> [Vec<usize>; 2] {
+    let chord = p3 - p0;
+    let mut by_projection: Vec<usize> = (0..points.len()).collect();
+    by_projection.sort_by(|&a, &b| {
+        let pa = (points[a] - p0).dot(&chord);
+        let pb = (points[b] - p0).dot(&chord);
+        pa.total_cmp(&pb)
+    });
+    let as_given: Vec<usize> = (0..points.len()).collect();
+    [by_projection, as_given]
+}
+
+/// Chord-length parameters for the points with positive weight, taken in the given `order`. Each
+/// point's parameter is its cumulative distance along the polyline from `p0`, through the ordered
+/// points, to `p3`, expressed as a fraction of the total length. Returns `(index, t)` pairs, or
+/// `None` if the polyline has zero length. Points with zero weight are omitted from both the
+/// polyline and the result, so they have no effect on any seed built from these parameters.
+fn chord_length_params<const D: usize>(
+    points: &[Point<f64, D>],
+    order: &[usize],
+    weights: &[f64],
+    p0: &Point<f64, D>,
+    p3: &Point<f64, D>,
+) -> Option<Vec<(usize, f64)>> {
+    let mut cumulative = Vec::with_capacity(order.len());
+    let mut prev = *p0;
+    let mut total = 0.0;
+    for &i in order.iter().filter(|&&i| weights[i] > 0.0) {
+        total += dist(&prev, &points[i]);
+        cumulative.push((i, total));
+        prev = points[i];
+    }
+    total += dist(&prev, p3);
+    if total <= f64::EPSILON {
+        return None;
+    }
+    Some(
+        cumulative
+            .into_iter()
+            .map(|(i, s)| (i, s / total))
+            .collect(),
+    )
+}
+
+/// Picks the seed with the lowest weighted RMS closest-point distance. Ties favor the earliest
+/// seed.
+fn best_seed<const D: usize>(
+    seeds: Vec<CubicSpline<D>>,
+    points: &[Point<f64, D>],
+    weights: &[f64],
+) -> CubicSpline<D> {
+    seeds
+        .into_iter()
+        .map(|s| (weighted_rms(&s, points, weights), s))
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(_, s)| s)
+        .expect("at least one seed is always supplied")
 }
 
 /// The weighted root-mean-square closest-point distance from `points` to `spline`.
@@ -521,49 +717,23 @@ fn weighted_rms<const D: usize>(
 }
 
 /// The linear least-squares seed for the interior control points of a curve with fixed endpoints,
-/// using a chord-length parameterization of the points in the given `order`. Each point's parameter
-/// is its cumulative distance along the polyline from `p0`, through the ordered points, to `p3`,
-/// expressed as a fraction of the total length. With these parameters fixed, the interior control
-/// points are the solution to a weighted 2 × 2 normal system in the Bernstein basis, shared across
-/// all coordinates.
+/// given chord-length parameters for the points (see [`chord_length_params`]). With the parameters
+/// fixed, the interior control points are the solution to a weighted 2 × 2 normal system in the
+/// Bernstein basis, shared across all coordinates.
 ///
-/// Points with zero weight are left out of the polyline as well as the system, so they have no
-/// effect on the seed at all.
-///
-/// Returns `None` if the polyline has zero length or the system is singular (fewer than two
-/// distinct interior parameters carrying weight).
-fn seed_chord_length<const D: usize>(
+/// Returns `None` if the system is singular (fewer than two distinct parameters carrying weight).
+fn seed_interior_points<const D: usize>(
     points: &[Point<f64, D>],
-    order: &[usize],
+    params: &[(usize, f64)],
     weights: &[f64],
     p0: &Point<f64, D>,
     p3: &Point<f64, D>,
 ) -> Option<CubicSpline<D>> {
-    let order: Vec<usize> = order
-        .iter()
-        .copied()
-        .filter(|&i| weights[i] > 0.0)
-        .collect();
-
-    // Cumulative distances along the ordered polyline.
-    let mut cumulative = Vec::with_capacity(order.len());
-    let mut prev = *p0;
-    let mut total = 0.0;
-    for &i in &order {
-        total += dist(&prev, &points[i]);
-        cumulative.push(total);
-        prev = points[i];
-    }
-    total += dist(&prev, p3);
-    if total <= f64::EPSILON {
-        return None;
-    }
-
     let (mut a11, mut a12, mut a22) = (0.0, 0.0, 0.0);
     let mut r1 = SVector::<f64, D>::zeros();
     let mut r2 = SVector::<f64, D>::zeros();
-    for (&i, s) in order.iter().zip(cumulative) {
-        let [b0, b1, b2, b3] = bernstein_basis(s / total);
+    for &(i, t) in params {
+        let [b0, b1, b2, b3] = bernstein_basis(t);
         let w = weights[i];
         let rhs = points[i].coords - p0.coords * b0 - p3.coords * b3;
         a11 += w * b1 * b1;
@@ -580,6 +750,46 @@ fn seed_chord_length<const D: usize>(
     let p1 = (r1 * a22 - r2 * a12) / det;
     let p2 = (r2 * a11 - r1 * a12) / det;
     Some(CubicSpline::new(*p0, Point::from(p1), Point::from(p2), *p3))
+}
+
+/// Schneider's linear least-squares seed for the two tangent arm lengths of a curve with fixed
+/// endpoints and end tangents, given chord-length parameters for the points. With the parameters
+/// fixed, the curve is linear in the arm lengths: `B(t) = (b0 + b1) p0 + (b2 + b3) p3 + a0 b1 t0 -
+/// a1 b2 t3`, so the arm lengths solve a weighted 2 × 2 normal system.
+///
+/// Returns `None` if the system is singular or either arm length is non-positive, since
+/// the fit requires the curve to leave each endpoint along its given tangent.
+fn seed_arm_lengths<const D: usize>(
+    points: &[Point<f64, D>],
+    params: &[(usize, f64)],
+    weights: &[f64],
+    p0: &Point<f64, D>,
+    t0: &SVector<f64, D>,
+    p3: &Point<f64, D>,
+    t3: &SVector<f64, D>,
+) -> Option<(f64, f64)> {
+    let (mut a11, mut a12, mut a22) = (0.0, 0.0, 0.0);
+    let (mut r1, mut r2) = (0.0, 0.0);
+    for &(i, t) in params {
+        let [b0, b1, b2, b3] = bernstein_basis(t);
+        let w = weights[i];
+        let va = t0 * b1;
+        let vb = -t3 * b2;
+        let rhs = points[i].coords - p0.coords * (b0 + b1) - p3.coords * (b2 + b3);
+        a11 += w * va.dot(&va);
+        a12 += w * va.dot(&vb);
+        a22 += w * vb.dot(&vb);
+        r1 += w * va.dot(&rhs);
+        r2 += w * vb.dot(&rhs);
+    }
+
+    let det = a11 * a22 - a12 * a12;
+    if det <= 1e-12 * a11 * a22 {
+        return None;
+    }
+    let a0 = (r1 * a22 - r2 * a12) / det;
+    let a1 = (r2 * a11 - r1 * a12) / det;
+    (a0 > 0.0 && a1 > 0.0).then_some((a0, a1))
 }
 
 #[cfg(test)]
@@ -794,6 +1004,14 @@ mod tests {
             .fold(0.0, f64::max)
     }
 
+    /// Asserts that `fitted` reproduces the shape of `truth` to within 1e-6. Control points are
+    /// deliberately not compared: shifting both interior control points along the curve is a
+    /// near-reparameterization that barely changes the shape, so they are only weakly determined.
+    fn assert_same_curve<const D: usize>(truth: &CubicSpline<D>, fitted: &CubicSpline<D>) {
+        let dev = max_curve_deviation(truth, fitted);
+        assert!(dev < 1e-6, "curve deviation {} too large", dev);
+    }
+
     fn shuffled<T: Clone>(items: &[T], rg: &mut RandomGeometry2) -> Vec<T> {
         let mut out = items.to_vec();
         for i in (1..out.len()).rev() {
@@ -808,8 +1026,7 @@ mod tests {
         let curve = truth();
         let points: Vec<Point2> = (0..=20).map(|i| curve.position(i as f64 / 20.0)).collect();
         let fitted = CubicSpline::from_fit_with_ends(&points, &curve.p0, &curve.p3, None).unwrap();
-        assert_relative_eq!(fitted.p1, curve.p1, epsilon = 1e-6);
-        assert_relative_eq!(fitted.p2, curve.p2, epsilon = 1e-6);
+        assert_same_curve(&curve, &fitted);
     }
 
     #[test]
@@ -822,8 +1039,7 @@ mod tests {
         );
         let points: Vec<Point3> = (0..=20).map(|i| curve.position(i as f64 / 20.0)).collect();
         let fitted = CubicSpline::from_fit_with_ends(&points, &curve.p0, &curve.p3, None).unwrap();
-        assert_relative_eq!(fitted.p1, curve.p1, epsilon = 1e-6);
-        assert_relative_eq!(fitted.p2, curve.p2, epsilon = 1e-6);
+        assert_same_curve(&curve, &fitted);
     }
 
     #[test]
@@ -854,14 +1070,12 @@ mod tests {
         );
         let points: Vec<Point2> = (0..=40).map(|i| curve.position(i as f64 / 40.0)).collect();
         let fitted = CubicSpline::from_fit_with_ends(&points, &curve.p0, &curve.p3, None).unwrap();
-        assert_relative_eq!(fitted.p1, curve.p1, epsilon = 1e-5);
-        assert_relative_eq!(fitted.p2, curve.p2, epsilon = 1e-5);
+        assert_same_curve(&curve, &fitted);
 
         let mut rg = RandomGeometry2::from_seed(5);
         let points = shuffled(&points, &mut rg);
         let fitted = CubicSpline::from_fit_with_ends(&points, &curve.p0, &curve.p3, None).unwrap();
-        assert_relative_eq!(fitted.p1, curve.p1, epsilon = 1e-5);
-        assert_relative_eq!(fitted.p2, curve.p2, epsilon = 1e-5);
+        assert_same_curve(&curve, &fitted);
     }
 
     #[test]
@@ -873,8 +1087,7 @@ mod tests {
         weights.push(0.0);
         let fitted =
             CubicSpline::from_fit_with_ends(&points, &curve.p0, &curve.p3, Some(&weights)).unwrap();
-        assert_relative_eq!(fitted.p1, curve.p1, epsilon = 1e-6);
-        assert_relative_eq!(fitted.p2, curve.p2, epsilon = 1e-6);
+        assert_same_curve(&curve, &fitted);
     }
 
     #[test]
@@ -887,6 +1100,145 @@ mod tests {
         let two = vec![Point2::new(1.0, 1.0), Point2::new(2.0, 1.0)];
         assert!(CubicSpline::from_fit_with_ends(&two, &p0, &p0, None).is_err());
         assert!(CubicSpline::from_fit_with_ends(&two, &p0, &p3, Some(&[1.0])).is_err());
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // from_fit_hermite
+    // --------------------------------------------------------------------------------------------
+
+    /// The end tangents of a curve in the direction of travel, as `from_fit_hermite` expects them.
+    fn end_tangents<const D: usize>(
+        c: &CubicSpline<D>,
+    ) -> (Unit<SVector<f64, D>>, Unit<SVector<f64, D>>) {
+        (
+            Unit::new_normalize(c.p1 - c.p0),
+            Unit::new_normalize(c.p3 - c.p2),
+        )
+    }
+
+    #[test]
+    fn hermite_recovers_exact_curve_2d() {
+        let curve = truth();
+        let (t0, t3) = end_tangents(&curve);
+        let points: Vec<Point2> = (0..=20).map(|i| curve.position(i as f64 / 20.0)).collect();
+        let fitted =
+            CubicSpline::from_fit_hermite(&points, &curve.p0, &t0, &curve.p3, &t3, None).unwrap();
+        assert_same_curve(&curve, &fitted);
+    }
+
+    #[test]
+    fn hermite_recovers_exact_curve_3d() {
+        let curve = CubicSpline::new(
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 2.0, 1.0),
+            Point3::new(2.0, 2.0, -1.0),
+            Point3::new(3.0, 0.0, 0.0),
+        );
+        let (t0, t3) = end_tangents(&curve);
+        let points: Vec<Point3> = (0..=20).map(|i| curve.position(i as f64 / 20.0)).collect();
+        let fitted =
+            CubicSpline::from_fit_hermite(&points, &curve.p0, &t0, &curve.p3, &t3, None).unwrap();
+        assert_same_curve(&curve, &fitted);
+    }
+
+    #[test]
+    fn hermite_noisy_unordered_points() {
+        let mut rg = RandomGeometry2::from_seed(13);
+        let curve = truth();
+        let (t0, t3) = end_tangents(&curve);
+        let sigma = 0.01;
+        for _ in 0..10 {
+            let points: Vec<Point2> = (0..=40)
+                .map(|i| curve.position(i as f64 / 40.0) + rg.gaussian_vector::<2>(sigma))
+                .collect();
+            let points = shuffled(&points, &mut rg);
+            let fitted =
+                CubicSpline::from_fit_hermite(&points, &curve.p0, &t0, &curve.p3, &t3, None)
+                    .unwrap();
+            let dev = max_curve_deviation(&curve, &fitted);
+            assert!(dev < 2.0 * sigma, "deviation {} too large", dev);
+        }
+    }
+
+    #[test]
+    fn hermite_hook_curve_ordered_and_shuffled() {
+        let curve = CubicSpline::new(
+            Point2::new(0.0, 0.0),
+            Point2::new(4.0, -1.0),
+            Point2::new(4.0, 4.0),
+            Point2::new(0.0, 1.0),
+        );
+        let (t0, t3) = end_tangents(&curve);
+        let points: Vec<Point2> = (0..=40).map(|i| curve.position(i as f64 / 40.0)).collect();
+        let fitted =
+            CubicSpline::from_fit_hermite(&points, &curve.p0, &t0, &curve.p3, &t3, None).unwrap();
+        assert_same_curve(&curve, &fitted);
+
+        let mut rg = RandomGeometry2::from_seed(5);
+        let points = shuffled(&points, &mut rg);
+        let fitted =
+            CubicSpline::from_fit_hermite(&points, &curve.p0, &t0, &curve.p3, &t3, None).unwrap();
+        assert_same_curve(&curve, &fitted);
+    }
+
+    #[test]
+    fn hermite_closed_loop_with_coincident_endpoints() {
+        // A teardrop that leaves and returns to the same point with different tangents.
+        let curve = CubicSpline::new(
+            Point2::new(0.0, 0.0),
+            Point2::new(3.0, 2.0),
+            Point2::new(3.0, -2.0),
+            Point2::new(0.0, 0.0),
+        );
+        let (t0, t3) = end_tangents(&curve);
+        let points: Vec<Point2> = (0..=40).map(|i| curve.position(i as f64 / 40.0)).collect();
+        let fitted =
+            CubicSpline::from_fit_hermite(&points, &curve.p0, &t0, &curve.p3, &t3, None).unwrap();
+        assert_same_curve(&curve, &fitted);
+    }
+
+    #[test]
+    fn hermite_collinear_degenerate_case() {
+        // Points on a straight line with tangents along it: every arm length fits perfectly, so
+        // the fit must succeed and stay on the line.
+        let p0 = Point2::new(0.0, 0.0);
+        let p3 = Point2::new(3.0, 0.0);
+        let t = Unit::new_normalize(Vector2::new(1.0, 0.0));
+        let points: Vec<Point2> = (0..=20)
+            .map(|i| Point2::new(3.0 * i as f64 / 20.0, 0.0))
+            .collect();
+        let fitted = CubicSpline::from_fit_hermite(&points, &p0, &t, &p3, &t, None).unwrap();
+        assert!(fitted.p1.y.abs() < 1e-12 && fitted.p2.y.abs() < 1e-12);
+        assert!(fitted.p1.x > 0.0 && fitted.p2.x < 3.0);
+        let queries = fitted.into_query();
+        for p in &points {
+            assert!(queries.project_point(p).value < 1e-9);
+        }
+    }
+
+    #[test]
+    fn hermite_zero_weight_outlier_ignored() {
+        let curve = truth();
+        let (t0, t3) = end_tangents(&curve);
+        let mut points: Vec<Point2> = (0..=20).map(|i| curve.position(i as f64 / 20.0)).collect();
+        let mut weights = vec![1.0; points.len()];
+        points.push(Point2::new(1.5, 5.0));
+        weights.push(0.0);
+        let fitted =
+            CubicSpline::from_fit_hermite(&points, &curve.p0, &t0, &curve.p3, &t3, Some(&weights))
+                .unwrap();
+        assert_same_curve(&curve, &fitted);
+    }
+
+    #[test]
+    fn hermite_input_errors() {
+        let p0 = Point2::new(0.0, 0.0);
+        let p3 = Point2::new(3.0, 0.0);
+        let t = Unit::new_normalize(Vector2::new(1.0, 1.0));
+        let one = vec![Point2::new(1.0, 1.0)];
+        assert!(CubicSpline::from_fit_hermite(&one, &p0, &t, &p3, &t, None).is_err());
+        let two = vec![Point2::new(1.0, 1.0), Point2::new(2.0, 1.0)];
+        assert!(CubicSpline::from_fit_hermite(&two, &p0, &t, &p3, &t, Some(&[1.0])).is_err());
     }
 
     #[test]
