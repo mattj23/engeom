@@ -23,7 +23,9 @@ mod fitting;
 mod queries;
 
 use crate::common::{Line, solve_quadratic_real_roots};
-pub use fitting::{SplineBuildFn, SplineFitResult, fit_spline_to_points};
+pub use fitting::{
+    SplineBuildFn, SplineFitResult, fit_spline_to_points, fit_spline_to_points_weighted,
+};
 use parry3d_f64::na::{AbstractRotation, Isometry, Point, SVector, Unit};
 pub use queries::CubicSplineQueries;
 use serde::{Deserialize, Serialize};
@@ -70,6 +72,14 @@ pub struct CubicSpline<const D: usize> {
     pub p3: Point<f64, D>,
 }
 
+/// The four cubic Bernstein basis weights at parameter `t`, in control point order. A point on a
+/// cubic Bézier curve is the sum of its control points scaled by these weights, which always sum
+/// to one.
+pub fn bernstein_basis(t: f64) -> [f64; 4] {
+    let u = 1.0 - t;
+    [u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t]
+}
+
 impl<const D: usize> CubicSpline<D> {
     /// Creates a new cubic Bézier curve from its four control points, in order from the start of
     /// the curve to the end.
@@ -101,11 +111,7 @@ impl<const D: usize> CubicSpline<D> {
     /// assert_relative_eq!(curve.position(0.5), Point2::new(1.5, 0.75));
     /// ```
     pub fn position(&self, t: f64) -> Point<f64, D> {
-        let u = 1.0 - t;
-        let b0 = u * u * u;
-        let b1 = 3.0 * u * u * t;
-        let b2 = 3.0 * u * t * t;
-        let b3 = t * t * t;
+        let [b0, b1, b2, b3] = bernstein_basis(t);
         Point::from(
             self.p0.coords * b0 + self.p1.coords * b1 + self.p2.coords * b2 + self.p3.coords * b3,
         )

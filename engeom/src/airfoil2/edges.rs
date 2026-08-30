@@ -674,9 +674,7 @@ fn spline_fit(
     let initial1 = DVector::from(vec![
         result0[0], result0[1], result0[2], result0[3], 0.0, 0.0,
     ]);
-    let result1 = fit_spline_to_points(&fit_points, &build1, initial1)?;
-
-    let spline = build1(&result1.params)?;
+    let spline = fit_spline_to_points(&fit_points, &build1, initial1)?.spline;
 
     // We need to find the curvature local maximum closest to the center
     let local_maxima = spline
