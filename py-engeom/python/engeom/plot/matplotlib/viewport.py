@@ -18,7 +18,7 @@ from engeom.metrology import Distance2, Distance3
 
 from .._common import LabelPlace, plane_basis
 from .._coerce import PointLike, to_point2, to_point3
-from ._style import merge_style
+from .._style import merge_style
 from .trace import TraceBuilder
 
 if TYPE_CHECKING:
@@ -47,7 +47,12 @@ class ViewPort3:
     def __init__(self, view: Iso3, helper: AxesHelper):
         """
         :param view: the isometry transforming 3D space into the 2D image plane, where +X is to the
-            right, +Y is up, and +Z points into the image plane.
+            right, +Y is up, and +Z points out of the image towards the viewer. The three are not
+            free to choose: with +X right and +Y up, a rigid transform has to have +Z coming
+            towards the viewer, since the other choice makes the frame left-handed and no longer a
+            rotation. This is the same convention as VTK's camera, so
+            `PlotterHelper.camera_pose` returns a view that can be handed straight to
+            `AxesHelper.viewport` and draws the same picture the render window shows.
         :param helper: the helper whose axes to draw onto.
         """
         self.view = view

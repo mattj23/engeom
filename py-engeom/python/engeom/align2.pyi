@@ -117,6 +117,7 @@ class Align2:
         """The working offset transformation $O$ that was used during alignment."""
         ...
 
+    @property
     def residuals(self) -> numpy.ndarray[tuple[int], numpy.dtype[numpy.float64]]:
         """
         The per-sample residuals, as a 1-D array of `float64`. These are signed distances between
@@ -124,10 +125,12 @@ class Align2:
         """
         ...
 
+    @property
     def residual_mean(self) -> float:
         """The mean of the residuals."""
         ...
 
+    @property
     def residual_mean_std_dev(self) -> tuple[float, float]:
         """The mean and standard deviation of the residuals."""
         ...

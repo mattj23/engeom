@@ -216,16 +216,23 @@ impl Align2 {
     /// The per-sample residuals from the alignment, as a 1-D numpy array of `float64` values.
     /// Residuals are signed distances between each sampled point and the target after the
     /// alignment transformation is applied.
+    // Not cached the way `Mesh3` caches its buffers: holding a `Py<PyArray1>` would cost this
+    // type its `Clone`, which it needs to be extractable from a Python object. The copy here is
+    // in any case the smaller of the two, since `AlignOutcome.alignment` clones the whole
+    // alignment, residuals included, every time it is read.
+    #[getter]
     pub fn residuals<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
         Array1::from_vec(self.inner.residuals().to_vec()).into_pyarray(py)
     }
 
     /// The mean of the residuals.
+    #[getter]
     pub fn residual_mean(&self) -> f64 {
         self.inner.residual_mean()
     }
 
     /// The mean and standard deviation of the residuals as a `(mean, std_dev)` tuple.
+    #[getter]
     pub fn residual_mean_std_dev(&self) -> (f64, f64) {
         self.inner.residual_mean_std_dev()
     }

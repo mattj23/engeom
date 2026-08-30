@@ -139,6 +139,7 @@ impl BoundaryData2 {
         self.inner.transform_by(iso.get_inner());
     }
 
+    #[getter]
     fn is_closed(&self) -> bool {
         self.inner.is_closed()
     }
@@ -184,10 +185,12 @@ impl Boundary2 {
 
 #[pymethods]
 impl Boundary2 {
+    #[getter]
     fn is_closed(&self) -> bool {
         self.inner.is_closed()
     }
 
+    #[getter]
     fn length(&self) -> f64 {
         self.inner.length()
     }

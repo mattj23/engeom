@@ -38,7 +38,7 @@ from engeom.plot._coerce import to_point2, to_point3, to_tuple2, to_tuple3
 from engeom.plot._common import LABEL_PLACES, plane_basis
 from engeom.plot.matplotlib import (GOM_CMAP, AxesHelper, GomColorMap, TraceBuilder, ViewPort3,
                                     deviation_limit, deviation_norm, extend_for, has_extremes)
-from engeom.plot.matplotlib._style import element_style, merge_style
+from engeom.plot._style import element_style, merge_style
 
 TOL = 1e-12
 
@@ -601,7 +601,7 @@ def test_draw_normals_points_along_the_surface_normal():
     source = sample_boundary()
     arrows = helper.draw_normals(source, count=3, length=0.5)
 
-    for arrow, t in zip(arrows, numpy.linspace(0, source.length(), 3)):
+    for arrow, t in zip(arrows, numpy.linspace(0, source.length, 3)):
         station = source.at_length(t)
         expected_tail = (station.point.x, station.point.y)
         expected_tip = tuple(station.surface_point.at_distance(0.5))

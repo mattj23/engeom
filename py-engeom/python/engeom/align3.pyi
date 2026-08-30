@@ -153,6 +153,7 @@ class Align3:
         """The working offset transformation $O$ that was active during alignment."""
         ...
 
+    @property
     def residuals(self) -> numpy.ndarray:
         """
         Per-sample residuals from the alignment as a 1-D ``float64`` numpy array.
@@ -162,10 +163,12 @@ class Align3:
         """
         ...
 
+    @property
     def residual_mean(self) -> float:
         """The mean of the alignment residuals."""
         ...
 
+    @property
     def residual_mean_std_dev(self) -> tuple[float, float]:
         """The mean and standard deviation of the alignment residuals as a ``(mean, std_dev)`` tuple."""
         ...

@@ -16,7 +16,8 @@ use pyo3::exceptions::PyIOError;
 use pyo3::exceptions::PyIndexError;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::PyAnyMethods;
-use pyo3::types::PyIterator;
+use pyo3::types::PySliceMethods;
+use pyo3::types::{PyIterator, PySlice};
 use pyo3::{
     Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyRef, PyResult, Python,
     pyclass, pyfunction, pymethods,
@@ -1718,30 +1719,37 @@ impl Cylinder3 {
         self.inner.length
     }
 
+    #[getter]
     fn a(&self) -> Point3 {
         Point3::from_inner(self.inner.a())
     }
 
+    #[getter]
     fn b(&self) -> Point3 {
         Point3::from_inner(self.inner.b())
     }
 
+    #[getter]
     fn axis(&self) -> Line3 {
         Line3::from_inner(self.inner.axis())
     }
 
+    #[getter]
     fn start_cap(&self) -> Circle3 {
         Circle3::from_inner(self.inner.start_cap())
     }
 
+    #[getter]
     fn end_cap(&self) -> Circle3 {
         Circle3::from_inner(self.inner.end_cap())
     }
 
+    #[getter]
     fn volume(&self) -> f64 {
         self.inner.volume()
     }
 
+    #[getter]
     fn lateral_area(&self) -> f64 {
         self.inner.lateral_area()
     }
@@ -1929,30 +1937,37 @@ impl Cone3 {
         self.inner.r()
     }
 
+    #[getter]
     fn base_center(&self) -> Point3 {
         Point3::from_inner(self.inner.base_center())
     }
 
+    #[getter]
     fn axis(&self) -> Line3 {
         Line3::from_inner(self.inner.axis())
     }
 
+    #[getter]
     fn base(&self) -> Circle3 {
         Circle3::from_inner(self.inner.base())
     }
 
+    #[getter]
     fn half_angle(&self) -> f64 {
         self.inner.half_angle()
     }
 
+    #[getter]
     fn slant_height(&self) -> f64 {
         self.inner.slant_height()
     }
 
+    #[getter]
     fn volume(&self) -> f64 {
         self.inner.volume()
     }
 
+    #[getter]
     fn lateral_area(&self) -> f64 {
         self.inner.lateral_area()
     }
@@ -2100,6 +2115,7 @@ impl Curve3 {
         Self::from_inner(self.inner.clone())
     }
 
+    #[getter]
     fn length(&self) -> f64 {
         self.inner.length()
     }
@@ -2218,14 +2234,34 @@ impl CurveGroup3 {
         self.inner.len()
     }
 
-    fn __getitem__(&self, index: isize) -> PyResult<Curve3> {
+    fn __getitem__<'py>(
+        &self,
+        py: Python<'py>,
+        index: &Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let n = self.inner.len() as isize;
+
+        if let Ok(slice) = index.cast::<PySlice>() {
+            // A slice returns a plain list rather than another group. Like any Python sequence, a
+            // slice may select nothing, but a `CurveGroup3` must have at least one member curve and
+            // therefore cannot represent an empty result.
+            let indices = slice.indices(n)?;
+            let mut picked = Vec::with_capacity(indices.slicelength);
+            let mut i = indices.start;
+            for _ in 0..indices.slicelength {
+                picked.push(Curve3::from_inner(self.inner.curves()[i as usize].clone()));
+                i += indices.step;
+            }
+            return picked.into_bound_py_any(py);
+        }
+
+        let index: isize = index.extract()?;
         // Negative indices count from the end, as they do for any Python sequence.
         let i = if index < 0 { index + n } else { index };
         if i < 0 || i >= n {
             return Err(PyIndexError::new_err("curve group index out of range"));
         }
-        Ok(Curve3::from_inner(self.inner.curves()[i as usize].clone()))
+        Curve3::from_inner(self.inner.curves()[i as usize].clone()).into_bound_py_any(py)
     }
 
     fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyIterator>> {
@@ -2238,6 +2274,7 @@ impl CurveGroup3 {
         Aabb3::from_inner(self.inner.aabb())
     }
 
+    #[getter]
     fn length(&self) -> f64 {
         self.inner.length()
     }
@@ -2554,12 +2591,14 @@ impl Iso3 {
         }
     }
 
+    #[getter]
     fn translation(&self) -> Iso3 {
         Self {
             inner: engeom::Iso3::from_parts(self.inner.translation, UnitQuaternion::identity()),
         }
     }
 
+    #[getter]
     fn rotation(&self) -> Iso3 {
         Self {
             inner: engeom::Iso3::from_parts(Translation3::identity(), self.inner.rotation),

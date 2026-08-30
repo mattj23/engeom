@@ -167,12 +167,12 @@ def test_shortest_angle_between_antisymmetric():
 def test_index_mask_starts_uniform_and_reports_length():
     mask = IndexMask(10)
     assert len(mask) == 10
-    assert mask.count_true() == 0
+    assert mask.count_true == 0
     assert not mask.any()
     assert not mask.all()
 
     filled = IndexMask(10, True)
-    assert filled.count_true() == 10
+    assert filled.count_true == 10
     assert filled.any()
     assert filled.all()
 

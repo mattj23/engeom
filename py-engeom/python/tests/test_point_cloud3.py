@@ -230,16 +230,16 @@ def test_subset_indices_carries_the_attributes():
 def test_reports_its_size_and_bounds():
     cloud = PointCloud3(numpy.array([[0.0, 0.0, 0.0], [1.0, 2.0, 3.0]]))
 
-    assert cloud.point_count() == 2
+    assert cloud.point_count == 2
     assert len(cloud) == 2
-    assert not cloud.is_empty()
+    assert not cloud.is_empty
 
     aabb = cloud.compute_aabb()
     assert aabb.min.x == pytest.approx(0.0)
     assert aabb.max.z == pytest.approx(3.0)
 
     blank = PointCloud3.empty()
-    assert blank.is_empty()
+    assert blank.is_empty
     assert len(blank) == 0
 
 

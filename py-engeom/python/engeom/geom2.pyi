@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Iterable, Tuple, TypeVar, Iterator, Any, List
+from typing import Callable, Iterable, Tuple, TypeVar, Iterator, Any, List, overload
 
 from numpy.typing import NDArray
 from engeom.engeom import ResampleEnum, VecDot
@@ -594,15 +594,17 @@ class Iso2:
         """
         ...
 
+    @property
     def translation(self) -> Iso2:
         """
-        Return the translation component of the isometry as a separate isometry.
+        The translation component of the isometry, expressed as a separate isometry.
         """
         ...
 
+    @property
     def rotation(self) -> Iso2:
         """
-        Return the rotation component of the isometry as a separate isometry.
+        The rotation component of the isometry, expressed as a separate isometry.
         """
         ...
 
@@ -754,30 +756,34 @@ class SvdBasis2:
         """
         ...
 
+    @property
     def largest(self) -> Vector2:
         """
-        Get the largest singular vector of the basis.
+        The largest singular vector of the basis.
         :return: the largest singular vector.
         """
         ...
 
+    @property
     def smallest(self) -> Vector2:
         """
-        Get the smallest singular vector of the basis.
+        The smallest singular vector of the basis.
         :return: the smallest singular vector.
         """
         ...
 
+    @property
     def basis_variances(self) -> NDArray[float]:
         """
-        Get the variance of the points along the singular vectors.
+        The variance of the points along the singular vectors.
         :return: a numpy array of the variance of the points along the singular vectors.
         """
         ...
 
+    @property
     def basis_stdevs(self) -> NDArray[float]:
         """
-        Get the standard deviation of the points along the singular vectors.
+        The standard deviation of the points along the singular vectors.
         :return: a numpy array of the standard deviation of the points along the singular vectors.
         """
         ...
@@ -927,9 +933,10 @@ class Curve2:
         """
         ...
 
+    @property
     def length(self) -> float:
         """
-        Get the total length of the curve as a scalar value.
+        The total length of the curve as a scalar value.
         :return: the length of the curve.
         """
         ...
@@ -977,7 +984,7 @@ class Curve2:
     @property
     def is_closed(self) -> bool:
         """
-        Check if the curve is closed.
+        Whether the curve is closed.
         :return: True if the curve is closed, False otherwise.
         """
         ...
@@ -1219,13 +1226,25 @@ class CurveGroup2:
         """
         ...
 
+    @overload
     def __getitem__(self, index: int) -> Curve2:
-        """
-        Get a member curve by index. Negative indices count from the end.
+        ...
 
-        :param index: the member index.
-        :return: the member curve at that index.
-        :raises IndexError: if the index is out of range.
+    @overload
+    def __getitem__(self, index: slice) -> List[Curve2]:
+        ...
+
+    def __getitem__(self, index):
+        """
+        Return a member curve by index or a list of member curves by slice.
+
+        Negative indices count from the end, and a slice behaves as it does on any Python
+        sequence. A slice returns a plain list rather than another `CurveGroup2`, because a slice is
+        allowed to select nothing while a `CurveGroup2` must have at least one member curve.
+
+        :param index: the member index, or a slice of member indices.
+        :return: the member curve at that index or the list of member curves selected by the slice.
+        :raises IndexError: if an integer index is out of range.
         """
         ...
 
@@ -1249,6 +1268,7 @@ class CurveGroup2:
         """
         ...
 
+    @property
     def length(self) -> float:
         """
         The total arc length of all member curves.
@@ -1883,9 +1903,10 @@ class Line2:
         """
         ...
 
+    @property
     def orthogonal(self) -> Vector2:
         """
-        Return the direction vector rotated -90 degrees, typically used as a normal.
+        The direction vector rotated -90 degrees, typically used as a normal.
         """
         ...
 
@@ -2478,9 +2499,10 @@ class Segment2:
         """
         ...
 
+    @property
     def normal(self) -> Vector2:
         """
-        Return the unit normal of the segment: the direction vector rotated 90 degrees clockwise.
+        The unit normal of the segment: the direction vector rotated 90 degrees clockwise.
         :return: the unit normal vector.
         """
         ...
@@ -2690,9 +2712,10 @@ class Arc2:
         """
         ...
 
+    @property
     def length(self) -> float:
         """
-        Return the arc length: the radius times the absolute value of the sweep angle.
+        The arc length: the radius times the absolute value of the sweep angle.
         """
         ...
 
@@ -2724,13 +2747,15 @@ class Arc2:
         """
         ...
 
+    @property
     def is_ccw(self) -> bool:
-        """Return whether the arc sweeps counter-clockwise (a positive sweep angle)."""
+        """Whether the arc sweeps counter-clockwise, meaning it has a positive sweep angle."""
         ...
 
+    @property
     def angle_interval(self) -> AngleInterval:
         """
-        Return the angular interval spanned by the arc, starting at ``angle0`` and extending for
+        The angular interval spanned by the arc, starting at ``angle0`` and extending for
         ``angle`` radians.
         """
         ...
@@ -3062,9 +3087,10 @@ class BoundaryData2:
         """
         ...
 
+    @property
     def is_closed(self) -> bool:
         """
-        Return ``True`` if this is a closed boundary.
+        Whether this is a closed boundary.
         :return: ``True`` for closed, ``False`` for open.
         """
         ...
@@ -3094,16 +3120,18 @@ class Boundary2:
     and surface normal) at the queried location.
     """
 
+    @property
     def is_closed(self) -> bool:
         """
-        Return ``True`` if this boundary forms a closed loop.
+        Whether this boundary forms a closed loop.
         :return: ``True`` for closed, ``False`` for open.
         """
         ...
 
+    @property
     def length(self) -> float:
         """
-        Return the total arc length of the boundary.
+        The total arc length of the boundary.
         :return: the total length.
         """
         ...

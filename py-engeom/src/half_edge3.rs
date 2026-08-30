@@ -474,6 +474,7 @@ impl RepairReport {
     }
 
     /// Whether the repair had to change anything at all.
+    #[getter]
     fn is_clean(&self) -> bool {
         self.inner.is_clean()
     }
@@ -527,6 +528,7 @@ impl DecimateStats {
     }
 
     /// Every veto, however it fired.
+    #[getter]
     fn vetoes(&self) -> usize {
         self.inner.vetoes()
     }
@@ -567,6 +569,7 @@ impl DecimateReport {
     }
 
     /// The fraction of the starting face count which survived.
+    #[getter]
     fn ratio(&self) -> f64 {
         self.inner.ratio()
     }

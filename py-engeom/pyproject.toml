@@ -50,6 +50,13 @@ tests = [
     "pyvista",
 ]
 
+# Declaring the helper as a PyVista plugin means `plotter.engeom` resolves in a session that never
+# imported `engeom.plot.pyvista`: PyVista reads this metadata lazily and imports the module the
+# first time the attribute is looked up on any plotter. Nothing is imported at `import pyvista`
+# time, and a session that never touches `.engeom` never pays for it.
+[project.entry-points."pyvista.plotter_components"]
+engeom = "engeom.plot.pyvista"
+
 [tool.maturin]
 python-source = "python"
 features = ["pyo3/extension-module"]

@@ -80,7 +80,7 @@ def test_residuals_are_one_dimensional_float64():
     points = box_points(mesh)
     moved = small_disturbance().transform_points(points)
 
-    residuals = points_to_mesh(moved, mesh, centered_params(moved)).alignment.residuals()
+    residuals = points_to_mesh(moved, mesh, centered_params(moved)).alignment.residuals
 
     assert residuals.dtype == numpy.float64
     assert residuals.shape == (len(points),)
@@ -346,7 +346,7 @@ def test_points_to_cloud_recovers_a_known_offset():
     outcome = points_to_cloud(moved, cloud, AlignParams3(), max_extrapolation=1.0)
 
     recovered = outcome.alignment.full_transform
-    residuals = outcome.alignment.residuals()
+    residuals = outcome.alignment.residuals
     assert residuals.shape == (len(points),)
     assert numpy.abs(residuals).max() < 1e-3
 

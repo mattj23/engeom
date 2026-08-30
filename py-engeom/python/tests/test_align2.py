@@ -31,7 +31,7 @@ def rect_curve() -> Curve2:
 
 def sampled(curve: Curve2, spacing: float = 0.25) -> numpy.ndarray:
     """Points walked around a curve at a uniform arc length spacing."""
-    n = int(curve.length() / spacing)
+    n = int(curve.length / spacing)
     return numpy.array(
         [[s.point.x, s.point.y] for s in (curve.at_length((k + 0.5) * spacing) for k in range(n))],
         dtype=numpy.float64,
@@ -101,11 +101,11 @@ class TestPointsToCurve:
             moved(pts, Iso2(0.05, 0.0, 0.0)), curve, AlignParams2()
         )
 
-        residuals = outcome.alignment.residuals()
+        residuals = outcome.alignment.residuals
         assert residuals.dtype == numpy.float64
         assert residuals.shape == (len(pts),)
 
-        mean, std = outcome.alignment.residual_mean_std_dev()
+        mean, std = outcome.alignment.residual_mean_std_dev
         assert math.isfinite(mean)
         assert std >= 0.0
 
@@ -155,7 +155,7 @@ class TestPointsToPointSet:
     def test_a_disturbed_point_set_is_recovered(self):
         curve = rect_curve()
         spacing = 0.25
-        n = int(curve.length() / spacing)
+        n = int(curve.length / spacing)
         stations = [curve.at_length((k + 0.5) * spacing) for k in range(n)]
 
         target_points = numpy.array(

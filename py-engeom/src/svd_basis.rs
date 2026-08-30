@@ -49,16 +49,19 @@ impl SvdBasis2 {
         self.inner.rank(tol)
     }
 
+    #[getter]
     fn largest(&self) -> Vector2 {
         let largest = self.inner.largest();
         Vector2::from_inner(engeom::Vector2::new(largest[0], largest[1]))
     }
 
+    #[getter]
     fn smallest(&self) -> Vector2 {
         let smallest = self.inner.smallest();
         Vector2::from_inner(engeom::Vector2::new(smallest[0], smallest[1]))
     }
 
+    #[getter]
     fn basis_variances<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
         let mut result = Array1::zeros(2);
         let variances = self.inner.basis_variances();
@@ -67,6 +70,7 @@ impl SvdBasis2 {
         result.into_pyarray(py)
     }
 
+    #[getter]
     fn basis_stdevs<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
         let mut result = Array1::zeros(2);
         let stdevs = self.inner.basis_stdevs();
@@ -125,16 +129,19 @@ impl SvdBasis3 {
         self.inner.rank(tol)
     }
 
+    #[getter]
     fn largest(&self) -> Vector3 {
         let largest = self.inner.largest();
         Vector3::from_inner(engeom::Vector3::new(largest[0], largest[1], largest[2]))
     }
 
+    #[getter]
     fn smallest(&self) -> Vector3 {
         let smallest = self.inner.smallest();
         Vector3::from_inner(engeom::Vector3::new(smallest[0], smallest[1], smallest[2]))
     }
 
+    #[getter]
     fn basis_variances<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
         let mut result = Array1::zeros(3);
         let variances = self.inner.basis_variances();
@@ -146,6 +153,7 @@ impl SvdBasis3 {
         result.into_pyarray(py)
     }
 
+    #[getter]
     fn basis_stdevs<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
         let mut result = Array1::zeros(3);
         let stdevs = self.inner.basis_stdevs();

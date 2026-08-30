@@ -173,9 +173,9 @@ def test_iso2_from_rotation():
 def test_iso2_translation_rotation_decomposition():
     iso = Iso2(3.0, -4.0, 0.7)
 
-    assert iso.translation() == Iso2.from_translation(3.0, -4.0)
-    assert iso.rotation() == Iso2.from_rotation(0.7)
-    assert iso.translation() @ iso.rotation() == iso
+    assert iso.translation == Iso2.from_translation(3.0, -4.0)
+    assert iso.rotation == Iso2.from_rotation(0.7)
+    assert iso.translation @ iso.rotation == iso
 
 
 def test_segment2_transformed_by():

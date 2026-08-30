@@ -56,18 +56,65 @@ def test_group_behaves_as_a_sequence():
     assert len(group.curves) == 3
 
     # Indexing, including from the end.
-    assert group[0].length() == pytest.approx(4.0)
-    assert group[1].length() == pytest.approx(1.0)
-    assert group[-1].length() == pytest.approx(4.0)
-    assert group[-2].length() == pytest.approx(1.0)
+    assert group[0].length == pytest.approx(4.0)
+    assert group[1].length == pytest.approx(1.0)
+    assert group[-1].length == pytest.approx(4.0)
+    assert group[-2].length == pytest.approx(1.0)
 
     # Iteration, in member order.
-    lengths = [c.length() for c in group]
+    lengths = [c.length for c in group]
     assert lengths == pytest.approx([4.0, 1.0, 4.0])
 
     # And unpacking, which is how the plotting helpers take a section.
     unpacked = [*group]
     assert len(unpacked) == 3
+
+
+def test_a_group_slices_like_any_other_sequence():
+    """
+    A type with a length, indexing, and iteration is expected to support slicing too. `axial[1:]` is a
+    natural thing to write when peeling the first member off a section for separate treatment.
+    """
+    group = CurveGroup2([square2(), segment2(), square2(10.0)])
+    lengths = [4.0, 1.0, 4.0]
+
+    for key in (slice(1, None), slice(None, 2), slice(None, None, 2), slice(None, None, -1),
+                slice(-2, None), slice(1, 2), slice(2, 1), slice(10, None), slice(None, None),
+                slice(-100, 2), slice(None, None, -2)):
+        assert [c.length for c in group[key]] == pytest.approx(lengths[key]), key
+
+
+def test_slicing_a_group_gives_a_list_of_curves():
+    """
+    A slice returns a plain list rather than another group. A slice may legitimately select
+    nothing, and a group with no members is refused, so it could not represent the empty case.
+    """
+    group = CurveGroup3([square3(), square3(1.0)])
+
+    selected = group[1:]
+    assert isinstance(selected, list)
+    assert all(isinstance(c, Curve3) for c in selected)
+    assert len(selected) == 1
+
+    assert group[5:] == []
+    assert CurveGroup3([square3()])[1:] == []
+
+
+def test_slicing_a_group_unpacks_into_a_call():
+    """A slice can separate the first member of a section when drawing it."""
+    group = CurveGroup2([square2(), segment2(), square2(10.0)])
+
+    def draw(*curves):
+        return len(curves)
+
+    assert draw(group[0]) == 1
+    assert draw(*group[1:]) == 2
+
+
+def test_indexing_a_group_with_something_that_is_not_an_index_raises():
+    group = CurveGroup2([square2()])
+    with pytest.raises(TypeError):
+        _ = group["first"]
 
 
 def test_group_index_out_of_range_raises():
@@ -82,7 +129,7 @@ def test_group_index_out_of_range_raises():
 def test_group_reports_whole_body_geometry():
     group = CurveGroup2([square2(), square2(10.0)])
 
-    assert group.length() == pytest.approx(8.0)
+    assert group.length == pytest.approx(8.0)
 
     aabb = group.aabb
     assert aabb.min.x == pytest.approx(0.0)
@@ -107,7 +154,7 @@ def test_transforming_a_group_moves_every_member():
     moved = group.new_transformed_by(Iso2(100.0, -50.0, 0.0))
 
     assert len(moved) == 2
-    assert moved.length() == pytest.approx(group.length())
+    assert moved.length == pytest.approx(group.length)
     assert moved.aabb.min.x == pytest.approx(group.aabb.min.x + 100.0)
 
 
@@ -124,7 +171,7 @@ def test_mesh_section_returns_a_curve_group():
     assert len(section) == 1
 
     # The old list-shaped call sites still read the same way.
-    assert section[0].length() == pytest.approx(12.0, abs=1e-5)
+    assert section[0].length == pytest.approx(12.0, abs=1e-5)
 
 
 def test_a_section_that_misses_the_mesh_raises():
@@ -156,7 +203,7 @@ def test_a_section_loop_projects_to_a_closed_curve():
 
     assert len(flat) == 1
     assert flat[0].is_closed
-    assert flat[0].length() == pytest.approx(12.0, abs=1e-5)
+    assert flat[0].length == pytest.approx(12.0, abs=1e-5)
 
 
 def test_a_member_collapsing_under_projection_raises():
@@ -184,7 +231,7 @@ def test_group2_round_trips_through_a_file(tmp_path):
     # Order, closedness and shape all survive.
     assert [c.is_closed for c in back] == [True, False, True]
     for a, b in zip(group, back):
-        assert a.length() == pytest.approx(b.length(), abs=1e-6)
+        assert a.length == pytest.approx(b.length, abs=1e-6)
 
 
 def test_group3_round_trips_through_a_file(tmp_path):

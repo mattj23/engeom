@@ -14,7 +14,8 @@ use numpy::{
 use parry2d_f64::na::{Translation2, UnitComplex};
 use pyo3::exceptions::{PyIOError, PyIndexError, PyValueError};
 use pyo3::prelude::PyAnyMethods;
-use pyo3::types::PyIterator;
+use pyo3::types::PySliceMethods;
+use pyo3::types::{PyIterator, PySlice};
 use pyo3::{
     Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyRef, PyResult, Python,
     pyclass, pyfunction, pymethods,
@@ -1008,6 +1009,7 @@ impl Line2 {
         Point2::from_inner(self.inner.projected_point(p.get_inner()))
     }
 
+    #[getter]
     fn orthogonal(&self) -> Vector2 {
         use engeom::geom2::LineOps2;
         Vector2::from_inner(self.inner.orthogonal())
@@ -1205,6 +1207,7 @@ impl Segment2 {
         Self::from_inner(self.inner.offset_by(d))
     }
 
+    #[getter]
     fn normal(&self) -> Vector2 {
         Vector2::from_inner(self.inner.normal().into_inner())
     }
@@ -1796,6 +1799,7 @@ impl Arc2 {
         Ok(Self::from_inner(result))
     }
 
+    #[getter]
     fn length(&self) -> f64 {
         self.inner.length()
     }
@@ -1812,10 +1816,12 @@ impl Arc2 {
         Point2::from_inner(self.inner.point_at_length(length))
     }
 
+    #[getter]
     fn is_ccw(&self) -> bool {
         self.inner.is_ccw()
     }
 
+    #[getter]
     fn angle_interval(&self) -> AngleInterval {
         AngleInterval::from_inner(self.inner.angle_interval())
     }
@@ -2006,6 +2012,7 @@ impl Curve2 {
         Ok(Self::from_inner(curve))
     }
 
+    #[getter]
     fn length(&self) -> f64 {
         self.inner.length()
     }
@@ -2219,14 +2226,34 @@ impl CurveGroup2 {
         self.inner.len()
     }
 
-    fn __getitem__(&self, index: isize) -> PyResult<Curve2> {
+    fn __getitem__<'py>(
+        &self,
+        py: Python<'py>,
+        index: &Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let n = self.inner.len() as isize;
+
+        if let Ok(slice) = index.cast::<PySlice>() {
+            // A slice returns a plain list rather than another group. Like any Python sequence, a
+            // slice may select nothing, but a `CurveGroup2` must have at least one member curve and
+            // therefore cannot represent an empty result.
+            let indices = slice.indices(n)?;
+            let mut picked = Vec::with_capacity(indices.slicelength);
+            let mut i = indices.start;
+            for _ in 0..indices.slicelength {
+                picked.push(Curve2::from_inner(self.inner.curves()[i as usize].clone()));
+                i += indices.step;
+            }
+            return picked.into_bound_py_any(py);
+        }
+
+        let index: isize = index.extract()?;
         // Negative indices count from the end, as they do for any Python sequence.
         let i = if index < 0 { index + n } else { index };
         if i < 0 || i >= n {
             return Err(PyIndexError::new_err("curve group index out of range"));
         }
-        Ok(Curve2::from_inner(self.inner.curves()[i as usize].clone()))
+        Curve2::from_inner(self.inner.curves()[i as usize].clone()).into_bound_py_any(py)
     }
 
     fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyIterator>> {
@@ -2239,6 +2266,7 @@ impl CurveGroup2 {
         Aabb2::from_inner(self.inner.aabb())
     }
 
+    #[getter]
     fn length(&self) -> f64 {
         self.inner.length()
     }
@@ -2401,12 +2429,14 @@ impl Iso2 {
         }
     }
 
+    #[getter]
     fn translation(&self) -> Self {
         Self {
             inner: engeom::Iso2::from_parts(self.inner.translation, UnitComplex::identity()),
         }
     }
 
+    #[getter]
     fn rotation(&self) -> Self {
         Self {
             inner: engeom::Iso2::from_parts(Translation2::identity(), self.inner.rotation),

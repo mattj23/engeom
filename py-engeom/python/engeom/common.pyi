@@ -42,8 +42,9 @@ class AngleInterval:
         """The angle at the midpoint of the interval, in radians."""
         ...
 
+    @property
     def is_empty(self) -> bool:
-        """Return whether the interval contains zero angular extent."""
+        """Whether the interval has zero angular extent."""
         ...
 
     def contains_value(self, x: float) -> bool:
@@ -120,9 +121,10 @@ class IndexMask:
         """
         ...
 
+    @property
     def count_true(self) -> int:
         """
-        Return the number of indices which are ``True``.
+        The number of indices that are ``True``.
         """
         ...
 

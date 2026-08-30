@@ -1,12 +1,13 @@
 """
-Handling of the common Matplotlib styling arguments that the draw methods name explicitly.
+Handling of the common styling arguments that the draw methods name explicitly.
 
-The draw methods spell out the handful of styling arguments that get used constantly (color, line
-width, and so on) as real keyword parameters, so that editors and type checkers can complete them,
-while still forwarding an open ``**kwargs`` for everything else Matplotlib accepts. Naming them has
-one consequence: an argument the caller did not supply arrives as `None`, and passing that straight
-through would override Matplotlib's own default rather than defer to it. `merge_style` is where that
-distinction is enforced.
+Shared by every backend under `engeom.plot`, because the pattern is the same whichever library is
+doing the drawing. The draw methods spell out the handful of styling arguments that get used
+constantly (color, line width, and so on) as real keyword parameters, so that editors and type
+checkers can complete them, while still forwarding an open ``**kwargs`` for everything else the
+host library accepts. Naming them has one consequence: an argument the caller did not supply
+arrives as `None`, and passing that straight through can override the host library's own default
+rather than defer to it. `merge_style` is where that distinction is enforced.
 """
 
 from __future__ import annotations
@@ -14,8 +15,8 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, Union
 
 # How a single element of a composite drawing is styled or suppressed. `False` hides the element,
-# `True` or `None` draws it with the method's own defaults, and a dict of Matplotlib keyword
-# arguments draws it with those merged over the defaults.
+# `True` or `None` draws it with the method's own defaults, and a dict of the host library's
+# keyword arguments draws it with those merged over the defaults.
 #
 # This is a module-level alias, so it is evaluated eagerly and has to spell out `Union` and
 # `Optional` rather than using `X | Y`, which the package's Python 3.8 floor does not accept at
@@ -31,8 +32,8 @@ def element_style(value: ElementStyle, defaults: Dict[str, Any]) -> Optional[Dic
 
     A supplied dict is merged *over* the defaults rather than replacing them, so that restyling one
     thing about an element does not silently discard the rest of its designed appearance. Pass the
-    key explicitly to override a default; there is no way to unset one, since Matplotlib's own
-    default is what a `None` value would mean and that is a different thing again.
+    key explicitly to override a default; there is no way to unset one, since the host library's
+    own default is what a `None` value would mean and that is a different thing again.
 
     :param value: the caller's argument. `False` suppresses the element, `True` or `None` accepts
         the defaults, and a dict is merged over them.
@@ -51,9 +52,9 @@ def merge_style(kwargs: Dict[str, Any], **named: Any) -> Dict[str, Any]:
     Merge explicitly named styling arguments into a keyword argument dict, dropping any that were
     left as `None`.
 
-    Dropping them matters because Matplotlib's defaults are not all fixed values. Passing
-    ``color=None`` to ``Axes.plot`` is not the same as omitting it, since omitting it draws the next
-    color from the axes' color cycle.
+    Dropping them matters because a host library's defaults are not all fixed values. Passing
+    ``color=None`` to Matplotlib's ``Axes.plot``, for one, is not the same as omitting it, since
+    omitting it draws the next color from the axes' color cycle.
 
     There is no risk of a collision between the two sources: an argument named in the signature is
     bound to that parameter and never reaches ``**kwargs``, so Python rejects a duplicate before

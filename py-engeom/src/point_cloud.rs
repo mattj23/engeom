@@ -399,10 +399,12 @@ impl PointCloud3 {
         Aabb3::from_inner(self.inner.compute_aabb())
     }
 
+    #[getter]
     fn point_count(&self) -> usize {
         self.inner.point_count()
     }
 
+    #[getter]
     fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }

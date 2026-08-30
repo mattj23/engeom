@@ -252,7 +252,7 @@ def test_mesh_patch_mask_reports_what_would_be_kept():
     mask = m.patch_mask(PatchFilter.keep_largest())
 
     assert len(mask) == m.face_count
-    assert mask.count_true() == 12
+    assert mask.count_true == 12
     kept = mask.to_indices()
     assert list(kept) == list(range(12))
 
@@ -351,13 +351,13 @@ def test_filter_expand_dilates_and_erodes():
     seed = IndexMask.from_indices([0], m.face_count)
 
     grown = m.face_select().by_mask(seed, "add").expand("add").to_mask()
-    assert grown.count_true() > 1
+    assert grown.count_true > 1
     assert (grown & seed) == seed  # dilation keeps what it started with
 
     # Erosion needs a border to eat into. A closed sphere has none when everything is selected, so
     # erode the dilated patch instead, which does.
     eroded = m.face_select().by_mask(grown, "add").expand("remove").to_mask()
-    assert eroded.count_true() < grown.count_true()
+    assert eroded.count_true < grown.count_true
 
 
 def test_filter_expand_remove_on_a_closed_mesh_selection_is_a_no_op():

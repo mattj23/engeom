@@ -43,16 +43,18 @@ class Inscribed:
         """The radius of the inscribed circle."""
         ...
 
+    @property
     def camber_point(self) -> SurfacePoint2:
         """
-        Return a ``SurfacePoint2`` at the circle center whose normal direction estimates the
+        A ``SurfacePoint2`` at the circle center whose normal direction estimates the
         local camber line tangent. The direction is the unit vector from ``p0`` to ``p1``
         rotated 90 degrees clockwise.
         """
         ...
 
+    @property
     def contact_dir(self) -> Vector2:
-        """Return the vector from ``p0`` to ``p1``."""
+        """The vector from ``p0`` to ``p1``."""
         ...
 
 

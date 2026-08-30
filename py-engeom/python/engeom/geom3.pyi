@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Tuple, Iterable, List, Literal, TypeVar, Iterator, Any
+from typing import Tuple, Iterable, List, Literal, TypeVar, Iterator, Any, overload
 
 import numpy
 from numpy.typing import NDArray
@@ -770,15 +770,17 @@ class Iso3:
         """
         ...
 
+    @property
     def translation(self) -> Iso3:
         """
-        Return the translation component of the isometry as a separate isometry.
+        The translation component of the isometry, expressed as a separate isometry.
         """
         ...
 
+    @property
     def rotation(self) -> Iso3:
         """
-        Return the rotation component of the isometry as a separate isometry.
+        The rotation component of the isometry, expressed as a separate isometry.
         """
         ...
 
@@ -963,30 +965,34 @@ class SvdBasis3:
         """
         ...
 
+    @property
     def largest(self) -> Vector3:
         """
-        Return the largest normalized basis vector.
+        The largest normalized basis vector.
         :return: a Vector3 object containing the largest basis vector.
         """
         ...
 
+    @property
     def smallest(self) -> Vector3:
         """
-        Return the smallest normalized basis vector.
+        The smallest normalized basis vector.
         :return: a Vector3 object containing the smallest basis vector.
         """
         ...
 
+    @property
     def basis_variances(self) -> NDArray[float]:
         """
-        Return the variances of the basis vectors.
+        The variances of the basis vectors.
         :return: a numpy array of shape (3, ) containing the variances of the basis vectors.
         """
         ...
 
+    @property
     def basis_stdevs(self) -> NDArray[float]:
         """
-        Return the standard deviations of the basis vectors.
+        The standard deviations of the basis vectors.
         :return: a numpy array of shape (3, ) containing the standard deviations of the basis vectors.
         """
         ...
@@ -2123,6 +2129,7 @@ class Cylinder3:
         """
         ...
 
+    @property
     def a(self) -> Point3:
         """
         The point at the center of the cylinder's starting cap. Identical to `center`; provided
@@ -2131,6 +2138,7 @@ class Cylinder3:
         """
         ...
 
+    @property
     def b(self) -> Point3:
         """
         The point at the center of the cylinder's ending cap, at `center + direction * length`.
@@ -2138,6 +2146,7 @@ class Cylinder3:
         """
         ...
 
+    @property
     def axis(self) -> Line3:
         """
         The infinite line running through the cylinder's axis, in the direction of `direction`.
@@ -2145,6 +2154,7 @@ class Cylinder3:
         """
         ...
 
+    @property
     def start_cap(self) -> Circle3:
         """
         The circle bounding the starting cap of the cylinder, with its normal pointing outward
@@ -2153,6 +2163,7 @@ class Cylinder3:
         """
         ...
 
+    @property
     def end_cap(self) -> Circle3:
         """
         The circle bounding the ending cap of the cylinder, with its normal pointing outward
@@ -2161,6 +2172,7 @@ class Cylinder3:
         """
         ...
 
+    @property
     def volume(self) -> float:
         """
         The volume of the (solid) cylinder.
@@ -2168,6 +2180,7 @@ class Cylinder3:
         """
         ...
 
+    @property
     def lateral_area(self) -> float:
         """
         The area of the cylinder's lateral (side) surface, excluding the end caps.
@@ -2324,6 +2337,7 @@ class Cone3:
         """
         ...
 
+    @property
     def base_center(self) -> Point3:
         """
         The center point of the cone's base, at `tip + direction * height`.
@@ -2331,6 +2345,7 @@ class Cone3:
         """
         ...
 
+    @property
     def axis(self) -> Line3:
         """
         The infinite line running through the cone's axis, from the tip in the direction of
@@ -2339,6 +2354,7 @@ class Cone3:
         """
         ...
 
+    @property
     def base(self) -> Circle3:
         """
         The circle bounding the base of the cone, with its normal pointing outward (the same
@@ -2347,6 +2363,7 @@ class Cone3:
         """
         ...
 
+    @property
     def half_angle(self) -> float:
         """
         The half-angle of the cone: the angle between the axis and the lateral surface, in
@@ -2355,6 +2372,7 @@ class Cone3:
         """
         ...
 
+    @property
     def slant_height(self) -> float:
         """
         The slant height of the cone: the distance from the tip to a point on the rim of the
@@ -2363,6 +2381,7 @@ class Cone3:
         """
         ...
 
+    @property
     def volume(self) -> float:
         """
         The volume of the (solid) cone.
@@ -2370,6 +2389,7 @@ class Cone3:
         """
         ...
 
+    @property
     def lateral_area(self) -> float:
         """
         The area of the cone's lateral surface, excluding the base.
@@ -3900,9 +3920,10 @@ class Curve3:
         """
         ...
 
+    @property
     def length(self) -> float:
         """
-        Return the total length of the curve in the units of the vertices.
+        The total length of the curve in the units of its vertices.
 
         :return: the length of the curve.
         """
@@ -4072,13 +4093,25 @@ class CurveGroup3:
         """
         ...
 
+    @overload
     def __getitem__(self, index: int) -> Curve3:
-        """
-        Get a member curve by index. Negative indices count from the end.
+        ...
 
-        :param index: the member index.
-        :return: the member curve at that index.
-        :raises IndexError: if the index is out of range.
+    @overload
+    def __getitem__(self, index: slice) -> List[Curve3]:
+        ...
+
+    def __getitem__(self, index):
+        """
+        Return a member curve by index or a list of member curves by slice.
+
+        Negative indices count from the end, and a slice behaves as it does on any Python
+        sequence. A slice returns a plain list rather than another `CurveGroup3`, because a slice is
+        allowed to select nothing while a `CurveGroup3` must have at least one member curve.
+
+        :param index: the member index, or a slice of member indices.
+        :return: the member curve at that index or the list of member curves selected by the slice.
+        :raises IndexError: if an integer index is out of range.
         """
         ...
 
@@ -4102,6 +4135,7 @@ class CurveGroup3:
         """
         ...
 
+    @property
     def length(self) -> float:
         """
         The total arc length of all member curves.
@@ -5560,12 +5594,14 @@ class PointCloud3:
         """
         ...
 
+    @property
     def point_count(self) -> int:
         """
         The number of points in the cloud. Same as `len(cloud)`.
         """
         ...
 
+    @property
     def is_empty(self) -> bool:
         """
         Whether the cloud has no points.
@@ -5753,6 +5789,7 @@ class RepairReport:
     @property
     def faces_rejected_by_ingest(self) -> int: ...
 
+    @property
     def is_clean(self) -> bool:
         """
         Whether the repair had to change anything at all.
@@ -5941,6 +5978,7 @@ class DecimateStats:
     @property
     def method_not_applicable(self) -> int: ...
 
+    @property
     def vetoes(self) -> int:
         """
         Every veto, however it fired.
@@ -5970,6 +6008,7 @@ class DecimateReport:
     @property
     def stats(self) -> DecimateStats: ...
 
+    @property
     def ratio(self) -> float:
         """
         The fraction of the starting face count which survived.

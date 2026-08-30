@@ -33,7 +33,7 @@ def test_repairing_constructor_reports_what_it_changed(bunny):
     assert he.face_count > 0
     assert he.vertex_count > 0
     assert he.edge_count > 0
-    assert not he.repair_report.is_clean()
+    assert not he.repair_report.is_clean
     assert he.repair_report.faces_rejected_by_ingest == 0
 
 
@@ -47,7 +47,7 @@ def test_strict_constructor_accepts_a_clean_mesh():
     he = HalfEdgeMesh3(mesh)
 
     assert he.face_count == len(mesh.faces)
-    assert he.repair_report.is_clean()
+    assert he.repair_report.is_clean
 
 
 def test_repair_opts_none_disables_every_pass():
@@ -70,12 +70,12 @@ def test_guaranteed_decimation_reduces_and_reports(bunny):
     assert report.collapses > 0
     assert report.faces_before == before
     assert report.faces_after < before
-    assert report.ratio() == pytest.approx(report.faces_after / report.faces_before)
+    assert report.ratio == pytest.approx(report.faces_after / report.faces_before)
     assert he.face_count == report.faces_after
 
     stats = report.stats
     assert stats.evaluations > 0
-    assert stats.vetoes() > 0
+    assert stats.vetoes > 0
     assert repr(report)
 
 
