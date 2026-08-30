@@ -1,6 +1,11 @@
 //! This module has tools for computing a planar section with a mesh. I don't use the built-in
 //! parry3d implementation because I've found it to get stuck in infinite loops under certain
 //! conditions.
+//!
+//! The work is split into two crate-visible stages so that other mesh algorithms can use the raw
+//! cut without paying for the curves: [`Mesh3::section_segments`] produces one [`TriIntr`] per
+//! cut triangle, still tagged with the face it came from, and [`chain_segments`] joins those into
+//! connected runs. [`Mesh3::section_with_plane`] is the public composition of the two.
 
 use super::Mesh3;
 use crate::geom3::Aabb3;
@@ -48,7 +53,52 @@ impl Mesh3 {
         faces: Option<&IndexMask>,
     ) -> Result<CurveGroup3> {
         let curve_tol = curve_tol.unwrap_or(1e-6);
+        let segments = self.section_segments(plane, faces)?;
 
+        let mut results = Vec::new();
+        for group in chain_segments(&segments) {
+            let mut curve_points = group.iter().map(|&i| segments[i].a).collect::<Vec<_>>();
+            curve_points.push(segments[group[group.len() - 1]].b);
+            results.push(Curve3::from_points(&curve_points, curve_tol)?);
+        }
+
+        // Report this here instead of leaving it to `CurveGroup3::new`, whose general message
+        // about groups would not tell the caller that the plane missed the mesh.
+        if results.is_empty() {
+            return Err(if faces.is_some() {
+                "the plane does not intersect any of the selected faces".into()
+            } else {
+                Box::<dyn std::error::Error>::from("the plane does not intersect the mesh")
+            });
+        }
+
+        CurveGroup3::new(results)
+    }
+
+    /// Cuts the mesh with a plane and returns one segment per intersected triangle, in no
+    /// particular order and without joining them into curves.
+    ///
+    /// Each segment is oriented so that, when transformed into the plane, its 2D normal points
+    /// in the same direction as the triangle's normal. It also carries the index of the face it
+    /// was cut from. Triangles lying in the plane produce nothing.
+    ///
+    /// # Arguments
+    ///
+    /// * `plane`: the plane to cut with
+    /// * `faces`: an optional mask limiting the cut to a subset of the faces. Must be the same
+    ///   length as the mesh has faces.
+    ///
+    /// returns: Result<Vec<TriIntr, Global>, Box<dyn Error, Global>>
+    ///
+    /// # Failure
+    ///
+    /// A mask whose length does not match the face count is an error. A plane that misses is
+    /// not: the result is simply empty, and it is the caller's business whether that matters.
+    pub(crate) fn section_segments(
+        &self,
+        plane: &Plane3,
+        faces: Option<&IndexMask>,
+    ) -> Result<Vec<TriIntr>> {
         if let Some(mask) = faces
             && mask.len() != self.face_count()
         {
@@ -60,11 +110,6 @@ impl Mesh3 {
             .into());
         }
 
-        // First, we'll find all triangles that intersect the plane and produce segments from them.
-        // Each segment will have two endpoints. The order of the points will be such that when
-        // transformed into the plane, the 2D segment normal will point in the same direction as
-        // the triangle's original normal, preserving the inside/outside relationship from the
-        // mesh.
         let mut segments = Vec::new();
         for face_i in candidate_faces(&self.shape, plane, faces) {
             let Some(tri_n) = self.shape.triangle(face_i).normal() else {
@@ -84,13 +129,13 @@ impl Mesh3 {
 
             let data = match (ab, bc, ca) {
                 (Some(ab), Some(bc), None) => {
-                    TriIntr::new(ab, bc, edge_key(&[ai, bi]), edge_key(&[bi, ci]))
+                    TriIntr::new(ab, bc, edge_key(&[ai, bi]), edge_key(&[bi, ci]), face_i)
                 }
                 (None, Some(bc), Some(ca)) => {
-                    TriIntr::new(bc, ca, edge_key(&[bi, ci]), edge_key(&[ci, ai]))
+                    TriIntr::new(bc, ca, edge_key(&[bi, ci]), edge_key(&[ci, ai]), face_i)
                 }
                 (Some(ab), None, Some(ca)) => {
-                    TriIntr::new(ab, ca, edge_key(&[ai, bi]), edge_key(&[ci, ai]))
+                    TriIntr::new(ab, ca, edge_key(&[ai, bi]), edge_key(&[ci, ai]), face_i)
                 }
                 _ => Err("Something went wrong with the intersection calculation")?,
             };
@@ -102,92 +147,93 @@ impl Mesh3 {
             }
         }
 
-        // We're going to find the count of the different edge keys.
-        let mut edge_count = HashMap::<[u32; 2], usize>::new();
-        for segment in segments.iter() {
-            *edge_count.entry(segment.key_a).or_insert(0) += 1;
-            *edge_count.entry(segment.key_b).or_insert(0) += 1;
-        }
-
-        // Terminations occur at keys that have a count of 1 or >2.
-        let terminations = edge_count
-            .iter()
-            .filter(|(_, count)| **count == 1 || **count > 2)
-            .map(|(&key, _)| key)
-            .collect::<HashSet<[u32; 2]>>();
-
-        // Now we'll start bunching the segments into groups of connected curves. We'll work until
-        // every segment is accounted for, even if it's only a single segment long. Endpoints can
-        // be connected if they have the same edge key, but point b can only be connected to point
-        // a. Connections continue forward until `key_b` is in the terminations, and then reverse
-        // until `key_a` is in the terminations.
-        let mut connected = Vec::new();
-        let mut work_bag = (0..segments.len()).collect::<Vec<_>>();
-
-        while !work_bag.is_empty() {
-            let mut current = vec![work_bag.pop().unwrap()];
-
-            // Backward search
-            while !terminations.contains(&segments[current[0]].key_a) {
-                // Find the segment which has a key_b equal to the current key_a.
-                let key_a = segments[current[0]].key_a;
-                let mut did_something = false;
-                for i in 0..work_bag.len() {
-                    if segments[work_bag[i]].key_b == key_a {
-                        current.insert(0, work_bag.remove(i));
-                        did_something = true;
-                        break;
-                    }
-                }
-
-                if !did_something {
-                    break;
-                }
-            }
-
-            // Forward search
-            while !terminations.contains(&segments[*current.last().unwrap()].key_b)
-                && !is_loop(&segments, &current)
-                && !work_bag.is_empty()
-            {
-                // Find the segment which has a key_a equal to the current key_b.
-                let key_b = segments[*current.last().unwrap()].key_b;
-                let mut did_something = false;
-                for i in 0..work_bag.len() {
-                    if segments[work_bag[i]].key_a == key_b {
-                        current.push(work_bag.remove(i));
-                        did_something = true;
-                        break;
-                    }
-                }
-
-                if !did_something {
-                    break;
-                }
-            }
-
-            connected.push(current);
-        }
-
-        let mut results = Vec::new();
-        for group in connected.iter() {
-            let mut curve_points = group.iter().map(|&i| segments[i].a).collect::<Vec<_>>();
-            curve_points.push(segments[group[group.len() - 1]].b);
-            results.push(Curve3::from_points(&curve_points, curve_tol)?);
-        }
-
-        // Reported here rather than left to `CurveGroup3::new`, whose message is about groups in
-        // general and would not tell the caller that it was the plane which missed.
-        if results.is_empty() {
-            return Err(if faces.is_some() {
-                "the plane does not intersect any of the selected faces".into()
-            } else {
-                Box::<dyn std::error::Error>::from("the plane does not intersect the mesh")
-            });
-        }
-
-        CurveGroup3::new(results)
+        Ok(segments)
     }
+}
+
+/// Joins section segments into connected runs by matching the mesh edges they cross, returning
+/// the segment indices of each run in order from its start to its end.
+///
+/// Endpoints connect when they share an edge key, and only the `b` end of one segment may lead
+/// into the `a` end of the next, which is what keeps a run consistently wound. A run ends at an
+/// edge crossed by exactly one segment (an open boundary) or by more than two (a non-manifold
+/// junction), or when it closes on itself. Every segment lands in exactly one run, even one that
+/// connects to nothing.
+///
+/// # Arguments
+///
+/// * `segments`: the segments to chain, as produced by [`Mesh3::section_segments`]
+///
+/// returns: Vec<Vec<usize, Global>, Global>
+pub(crate) fn chain_segments(segments: &[TriIntr]) -> Vec<Vec<usize>> {
+    // We're going to find the count of the different edge keys.
+    let mut edge_count = HashMap::<[u32; 2], usize>::new();
+    for segment in segments.iter() {
+        *edge_count.entry(segment.key_a).or_insert(0) += 1;
+        *edge_count.entry(segment.key_b).or_insert(0) += 1;
+    }
+
+    // Terminations occur at keys that have a count of 1 or >2.
+    let terminations = edge_count
+        .iter()
+        .filter(|(_, count)| **count == 1 || **count > 2)
+        .map(|(&key, _)| key)
+        .collect::<HashSet<[u32; 2]>>();
+
+    // Now we'll group the segments into connected curves. We'll work until
+    // every segment is accounted for, even if it's only a single segment long. Endpoints can
+    // be connected if they have the same edge key, but point b can only be connected to point
+    // a. Connections continue forward until `key_b` is in the terminations, and then reverse
+    // until `key_a` is in the terminations.
+    let mut connected = Vec::new();
+    let mut work_bag = (0..segments.len()).collect::<Vec<_>>();
+
+    while !work_bag.is_empty() {
+        let mut current = vec![work_bag.pop().unwrap()];
+
+        // Backward search
+        while !terminations.contains(&segments[current[0]].key_a) {
+            // Find the segment which has a key_b equal to the current key_a.
+            let key_a = segments[current[0]].key_a;
+            let mut did_something = false;
+            for i in 0..work_bag.len() {
+                if segments[work_bag[i]].key_b == key_a {
+                    current.insert(0, work_bag.remove(i));
+                    did_something = true;
+                    break;
+                }
+            }
+
+            if !did_something {
+                break;
+            }
+        }
+
+        // Forward search
+        while !terminations.contains(&segments[*current.last().unwrap()].key_b)
+            && !is_loop(segments, &current)
+            && !work_bag.is_empty()
+        {
+            // Find the segment which has a key_a equal to the current key_b.
+            let key_b = segments[*current.last().unwrap()].key_b;
+            let mut did_something = false;
+            for i in 0..work_bag.len() {
+                if segments[work_bag[i]].key_a == key_b {
+                    current.push(work_bag.remove(i));
+                    did_something = true;
+                    break;
+                }
+            }
+
+            if !did_something {
+                break;
+            }
+        }
+
+        connected.push(current);
+    }
+
+    connected
 }
 
 fn is_loop(segments: &[TriIntr], working: &[usize]) -> bool {
@@ -197,24 +243,39 @@ fn is_loop(segments: &[TriIntr], working: &[usize]) -> bool {
     start == end
 }
 
-struct TriIntr {
-    a: Point3,
-    b: Point3,
-    key_a: [u32; 2],
-    key_b: [u32; 2],
+/// The intersection of a plane with one triangle: a segment from `a` to `b`, the keys of the
+/// two mesh edges it crosses at each end, and the index of the triangle it came from.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct TriIntr {
+    pub(crate) a: Point3,
+    pub(crate) b: Point3,
+    pub(crate) key_a: [u32; 2],
+    pub(crate) key_b: [u32; 2],
+    pub(crate) face: u32,
 }
 
 impl TriIntr {
-    fn new(a: Point3, b: Point3, key_a: [u32; 2], key_b: [u32; 2]) -> Self {
-        Self { a, b, key_a, key_b }
+    fn new(a: Point3, b: Point3, key_a: [u32; 2], key_b: [u32; 2], face: u32) -> Self {
+        Self {
+            a,
+            b,
+            key_a,
+            key_b,
+            face,
+        }
     }
 
     fn reversed(&self) -> Self {
-        Self::new(self.b, self.a, self.key_b, self.key_a)
+        Self::new(self.b, self.a, self.key_b, self.key_a, self.face)
     }
 
     fn direction(&self) -> Vector3 {
         (self.b - self.a).normalize()
+    }
+
+    /// The length of the segment.
+    pub(crate) fn length(&self) -> f64 {
+        (self.b - self.a).norm()
     }
 }
 

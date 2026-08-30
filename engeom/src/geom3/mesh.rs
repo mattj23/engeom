@@ -21,6 +21,7 @@ pub mod patches;
 mod queries;
 pub mod sampling;
 mod section;
+mod transverse;
 mod view;
 pub mod voxelize;
 
@@ -39,6 +40,7 @@ use parry3d_f64::bounding_volume::Aabb;
 use parry3d_f64::shape::{TriMesh, TriMeshFlags};
 use parry3d_f64::transformation;
 pub use patches::{PatchFilter, PatchLabels, PatchStats};
+pub use transverse::{TransverseOptions, TransversePlane};
 pub use view::MeshView3;
 
 use crate::io::write_tc_mesh_file;
