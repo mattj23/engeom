@@ -14,9 +14,16 @@ use rayon::prelude::*;
 /// Each `i, j` entry is `pair_count(i, j)`: the number of sample points in body `j` which are a
 /// good match for body `i`. Only the upper triangle is evaluated (in parallel), and the count is
 /// mirrored, so `pair_count` must be symmetric in meaning even though it is called with `i < j`.
-pub(crate) fn correspondence_matrix<F>(count: usize, pair_count: F) -> DMatrix<f64>
+///
+/// Counting can fail because it samples a body, and the sampler rejects invalid arguments. The
+/// error is a `String` rather than the crate's boxed error because it must cross a Rayon thread
+/// boundary, which requires `Send`; the caller converts it back.
+pub(crate) fn correspondence_matrix<F>(
+    count: usize,
+    pair_count: F,
+) -> std::result::Result<DMatrix<f64>, String>
 where
-    F: Fn(usize, usize) -> f64 + Sync,
+    F: Fn(usize, usize) -> std::result::Result<f64, String> + Sync,
 {
     let mut matrix = DMatrix::<f64>::zeros(count, count);
 
@@ -29,15 +36,15 @@ where
 
     let collected = work_list
         .par_iter()
-        .map(|&(i, j)| (i, j, pair_count(i, j)))
-        .collect::<Vec<_>>();
+        .map(|&(i, j)| pair_count(i, j).map(|c| (i, j, c)))
+        .collect::<std::result::Result<Vec<_>, String>>()?;
 
     for (i, j, count) in collected {
         matrix[(i, j)] = count;
         matrix[(j, i)] = count;
     }
 
-    matrix
+    Ok(matrix)
 }
 
 /// Orders the bodies of a correspondence matrix by how broadly the others reference them,

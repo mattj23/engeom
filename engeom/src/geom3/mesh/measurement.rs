@@ -101,7 +101,7 @@ fn check_sample_budget(from: &Mesh3, spacing: f64, label: &str) -> Result<()> {
 fn one_sided(from: &Mesh3, to: &Mesh3, spacing: f64, label: &str) -> Result<(f64, usize)> {
     check_sample_budget(from, spacing, label)?;
 
-    let samples = from.sample_dense(spacing, None);
+    let samples = from.sample_dense(spacing, None)?;
     let worst = samples
         .points()
         .par_iter()
@@ -133,7 +133,7 @@ pub(crate) fn sample_distances(
     check_sample_budget(from, spacing, label)?;
 
     Ok(from
-        .sample_dense(spacing, None)
+        .sample_dense(spacing, None)?
         .points()
         .par_iter()
         .map(|p| to.distance_closest_to(p))

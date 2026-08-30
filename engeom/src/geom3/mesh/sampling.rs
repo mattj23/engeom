@@ -30,7 +30,7 @@ use crate::common::barycentric::{barycentric_grid, barycentric_point};
 use crate::common::points::dist;
 use crate::common::poisson_disk::sample_poisson_disk_all;
 use crate::geom3::point_cloud::PointCloud3;
-use crate::{Point3, SurfacePoint3};
+use crate::{Point3, Result, SurfacePoint3};
 use parry3d_f64::shape::Triangle;
 
 // ===============================================================================================
@@ -51,15 +51,17 @@ impl MeshData3 {
     ///
     /// # Arguments
     ///
-    /// * `max_spacing`: the maximum distance from any point on the surface to a sample
-    /// * `face_mask`: optional mask over the faces, restricting the sampling to those set true
+    /// * `max_spacing`: the maximum distance from any point on the surface to a sample, which
+    ///   must be finite and positive
+    /// * `face_mask`: optional mask whose length must match the face count. When provided, sampling
+    ///   is restricted to faces set to true.
     ///
-    /// returns: `Vec<MeshSurfPoint>`
+    /// returns: `Result<Vec<MeshSurfPoint>>`
     pub fn sample_surface_dense(
         &self,
         max_spacing: f64,
         face_mask: Option<&IndexMask>,
-    ) -> Vec<MeshSurfPoint> {
+    ) -> Result<Vec<MeshSurfPoint>> {
         compute_dense_surface_points(self.points(), self.faces(), max_spacing, face_mask)
     }
 
@@ -72,15 +74,17 @@ impl MeshData3 {
     ///
     /// # Arguments
     ///
-    /// * `radius`: the minimum distance between any two samples
-    /// * `face_mask`: optional mask over the faces, restricting the sampling to those set true
+    /// * `radius`: the minimum distance between any two samples, which must be finite and
+    ///   positive
+    /// * `face_mask`: optional mask whose length must match the face count. When provided, sampling
+    ///   is restricted to faces set to true.
     ///
-    /// returns: `Vec<MeshSurfPoint>`
+    /// returns: `Result<Vec<MeshSurfPoint>>`
     pub fn sample_surface_poisson(
         &self,
         radius: f64,
         face_mask: Option<&IndexMask>,
-    ) -> Vec<MeshSurfPoint> {
+    ) -> Result<Vec<MeshSurfPoint>> {
         compute_poisson_surface_points(self.points(), self.faces(), radius, face_mask)
     }
 
@@ -91,12 +95,20 @@ impl MeshData3 {
     ///
     /// # Arguments
     ///
-    /// * `max_spacing`: the maximum distance from any point on the surface to a sample
-    /// * `face_mask`: optional mask over the faces, restricting the sampling to those set true
+    /// * `max_spacing`: the maximum distance from any point on the surface to a sample, which
+    ///   must be finite and positive
+    /// * `face_mask`: optional mask whose length must match the face count. When provided, sampling
+    ///   is restricted to faces set to true.
     ///
-    /// returns: `PointCloud3`
-    pub fn sample_dense(&self, max_spacing: f64, face_mask: Option<&IndexMask>) -> PointCloud3 {
-        to_cloud(&self.sample_surface_dense(max_spacing, face_mask))
+    /// returns: `Result<PointCloud3>`
+    pub fn sample_dense(
+        &self,
+        max_spacing: f64,
+        face_mask: Option<&IndexMask>,
+    ) -> Result<PointCloud3> {
+        Ok(to_cloud(
+            &self.sample_surface_dense(max_spacing, face_mask)?,
+        ))
     }
 
     /// Sample the surface with a Poisson disk spacing, returning a cloud of positions and normals.
@@ -106,12 +118,18 @@ impl MeshData3 {
     ///
     /// # Arguments
     ///
-    /// * `radius`: the minimum distance between any two samples
-    /// * `face_mask`: optional mask over the faces, restricting the sampling to those set true
+    /// * `radius`: the minimum distance between any two samples, which must be finite and
+    ///   positive
+    /// * `face_mask`: optional mask whose length must match the face count. When provided, sampling
+    ///   is restricted to faces set to true.
     ///
-    /// returns: `PointCloud3`
-    pub fn sample_poisson(&self, radius: f64, face_mask: Option<&IndexMask>) -> PointCloud3 {
-        to_cloud(&self.sample_surface_poisson(radius, face_mask))
+    /// returns: `Result<PointCloud3>`
+    pub fn sample_poisson(
+        &self,
+        radius: f64,
+        face_mask: Option<&IndexMask>,
+    ) -> Result<PointCloud3> {
+        Ok(to_cloud(&self.sample_surface_poisson(radius, face_mask)?))
     }
 
     /// Draw `n` random samples from the surface with sampling probability proportional to area,
@@ -143,7 +161,7 @@ impl Mesh3 {
         &self,
         max_spacing: f64,
         face_mask: Option<&IndexMask>,
-    ) -> Vec<MeshSurfPoint> {
+    ) -> Result<Vec<MeshSurfPoint>> {
         compute_dense_surface_points(self.points(), self.faces(), max_spacing, face_mask)
     }
 
@@ -155,22 +173,32 @@ impl Mesh3 {
         &self,
         radius: f64,
         face_mask: Option<&IndexMask>,
-    ) -> Vec<MeshSurfPoint> {
+    ) -> Result<Vec<MeshSurfPoint>> {
         compute_poisson_surface_points(self.points(), self.faces(), radius, face_mask)
     }
 
     /// Sample the surface densely, returning a cloud of positions and normals.
     ///
     /// This delegates to [`MeshData3::sample_dense`].
-    pub fn sample_dense(&self, max_spacing: f64, face_mask: Option<&IndexMask>) -> PointCloud3 {
-        to_cloud(&self.sample_surface_dense(max_spacing, face_mask))
+    pub fn sample_dense(
+        &self,
+        max_spacing: f64,
+        face_mask: Option<&IndexMask>,
+    ) -> Result<PointCloud3> {
+        Ok(to_cloud(
+            &self.sample_surface_dense(max_spacing, face_mask)?,
+        ))
     }
 
     /// Sample the surface with a Poisson disk spacing, returning a cloud of positions and normals.
     ///
     /// This delegates to [`MeshData3::sample_poisson`].
-    pub fn sample_poisson(&self, radius: f64, face_mask: Option<&IndexMask>) -> PointCloud3 {
-        to_cloud(&self.sample_surface_poisson(radius, face_mask))
+    pub fn sample_poisson(
+        &self,
+        radius: f64,
+        face_mask: Option<&IndexMask>,
+    ) -> Result<PointCloud3> {
+        Ok(to_cloud(&self.sample_surface_poisson(radius, face_mask)?))
     }
 
     /// Draw `n` random samples from the surface with sampling probability proportional to area,
@@ -199,16 +227,20 @@ impl Mesh3 {
 ///
 /// * `points`: the vertex buffer
 /// * `faces`: triangles as indices into `points`
-/// * `max_spacing`: the maximum distance from any point on the surface to a sample
-/// * `face_mask`: optional mask over `faces`, restricting the sampling to those set true
+/// * `max_spacing`: the maximum distance from any point on the surface to a sample, which must be
+///   finite and positive
+/// * `face_mask`: optional mask whose length must match `faces`. When provided, sampling is
+///   restricted to faces set to true.
 ///
-/// returns: `Vec<MeshSurfPoint>`
+/// returns: `Result<Vec<MeshSurfPoint>>`
 pub fn compute_dense_surface_points(
     points: &[Point3],
     faces: &[[u32; 3]],
     max_spacing: f64,
     face_mask: Option<&IndexMask>,
-) -> Vec<MeshSurfPoint> {
+) -> Result<Vec<MeshSurfPoint>> {
+    validate(faces, max_spacing, "Maximum spacing", face_mask)?;
+
     let mut sampled = Vec::with_capacity(faces.len());
 
     for (face_i, vert) in faces.iter().enumerate() {
@@ -245,7 +277,7 @@ pub fn compute_dense_surface_points(
         }
     }
 
-    sampled
+    Ok(sampled)
 }
 
 /// Sample the given triangles with a Poisson disk spacing by thinning a dense sampling at half the
@@ -257,19 +289,22 @@ pub fn compute_dense_surface_points(
 ///
 /// * `points`: the vertex buffer
 /// * `faces`: triangles as indices into `points`
-/// * `radius`: the minimum distance between any two samples
-/// * `face_mask`: optional mask over `faces`, restricting the sampling to those set true
+/// * `radius`: the minimum distance between any two samples, which must be finite and positive
+/// * `face_mask`: optional mask whose length must match `faces`. When provided, sampling is
+///   restricted to faces set to true.
 ///
-/// returns: `Vec<MeshSurfPoint>`
+/// returns: `Result<Vec<MeshSurfPoint>>`
 pub fn compute_poisson_surface_points(
     points: &[Point3],
     faces: &[[u32; 3]],
     radius: f64,
     face_mask: Option<&IndexMask>,
-) -> Vec<MeshSurfPoint> {
-    let starting = compute_dense_surface_points(points, faces, radius * 0.5, face_mask);
+) -> Result<Vec<MeshSurfPoint>> {
+    validate(faces, radius, "Radius", face_mask)?;
+
+    let starting = compute_dense_surface_points(points, faces, radius * 0.5, face_mask)?;
     let mask = sample_poisson_disk_all(&starting, radius);
-    mask.iter_true().map(|i| starting[i]).collect()
+    Ok(mask.iter_true().map(|i| starting[i]).collect())
 }
 
 /// Draw `n` random samples from the given triangles with sampling probability proportional to area.
@@ -338,6 +373,44 @@ pub fn compute_uniform_surface_points(
 // Helpers
 // ===============================================================================================
 
+/// Validate the arguments shared by the dense and Poisson samplers.
+///
+/// A non-positive spacing would reach `barycentric_grid` as a divisor and request a grid of
+/// unbounded size. A mask shorter than the face buffer would be indexed out of bounds. Both are
+/// therefore rejected before sampling starts.
+///
+/// # Arguments
+///
+/// * `faces`: the face buffer the mask is checked against
+/// * `spacing`: the sampler's spacing argument, which must be finite and positive
+/// * `label`: how to name that argument in the error message
+/// * `face_mask`: the optional mask to check
+///
+/// returns: `Result<()>`
+fn validate(
+    faces: &[[u32; 3]],
+    spacing: f64,
+    label: &str,
+    face_mask: Option<&IndexMask>,
+) -> Result<()> {
+    if !spacing.is_finite() || spacing <= 0.0 {
+        return Err(format!("{label} must be finite and positive, got {spacing}").into());
+    }
+
+    if let Some(mask) = face_mask
+        && mask.len() != faces.len()
+    {
+        return Err(format!(
+            "A face mask of length {} does not match a mesh with {} faces",
+            mask.len(),
+            faces.len()
+        )
+        .into());
+    }
+
+    Ok(())
+}
+
 fn triangle(points: &[Point3], vert: &[u32; 3]) -> Triangle {
     Triangle::new(
         points[vert[0] as usize],
@@ -362,12 +435,38 @@ mod tests {
     fn check_kiddo_bug() {
         let mesh = Mesh3::create_sphere(100.0, 0.011).unwrap();
         let r = 5.0;
-        let sampled = mesh.sample_poisson(r, None);
+        let sampled = mesh.sample_poisson(r, None).unwrap();
 
         let tree = KdTree3::try_new(sampled.points()).expect("Tree construction failed");
         for p in sampled.points() {
             let neighbors = tree.within(p, r);
             assert_eq!(neighbors.len(), 1, "Missed duplicate");
+        }
+    }
+
+    /// A non-positive spacing reaches `barycentric_grid` as a divisor, where it would request a
+    /// grid of unbounded size rather than simply producing a wrong answer.
+    #[test]
+    fn a_nonsense_spacing_is_rejected() {
+        let mesh = Mesh3::create_box(1.0, 1.0, 1.0, true);
+        for bad in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            assert!(mesh.sample_dense(bad, None).is_err(), "{bad} was accepted");
+            assert!(
+                mesh.sample_poisson(bad, None).is_err(),
+                "{bad} was accepted"
+            );
+        }
+    }
+
+    /// A mask shorter than the face buffer used to be indexed out of bounds, panicking partway
+    /// through the sampling rather than reporting a bad argument.
+    #[test]
+    fn a_mask_of_the_wrong_length_is_rejected() {
+        let mesh = Mesh3::create_box(1.0, 1.0, 1.0, true);
+        for len in [mesh.faces().len() - 1, mesh.faces().len() + 1] {
+            let wrong = IndexMask::new(len, true);
+            assert!(mesh.sample_dense(0.25, Some(&wrong)).is_err());
+            assert!(mesh.sample_poisson(0.25, Some(&wrong)).is_err());
         }
     }
 
@@ -380,7 +479,7 @@ mod tests {
         let masked_indices: Vec<usize> = (0..n_faces / 2).collect();
         let mask = IndexMask::try_from_indices(&masked_indices, n_faces).unwrap();
 
-        let sampled = mesh.sample_surface_poisson(5.0, Some(&mask));
+        let sampled = mesh.sample_surface_poisson(5.0, Some(&mask)).unwrap();
 
         assert!(!sampled.is_empty(), "Expected at least one sample");
         for mp in &sampled {
@@ -397,8 +496,8 @@ mod tests {
         let data = MeshData3::create_sphere(20.0, 0.5).unwrap();
         let mesh = Mesh3::from_data(data.clone(), false).unwrap();
 
-        let from_data = data.sample_surface_dense(2.0, None);
-        let from_mesh = mesh.sample_surface_dense(2.0, None);
+        let from_data = data.sample_surface_dense(2.0, None).unwrap();
+        let from_mesh = mesh.sample_surface_dense(2.0, None).unwrap();
         assert_eq!(from_data.len(), from_mesh.len());
         for (a, b) in from_data.iter().zip(&from_mesh) {
             assert_eq!(a.face_index, b.face_index);
@@ -407,8 +506,8 @@ mod tests {
             assert_eq!(a.sp.normal, b.sp.normal);
         }
 
-        let from_data = data.sample_poisson(3.0, None);
-        let from_mesh = mesh.sample_poisson(3.0, None);
+        let from_data = data.sample_poisson(3.0, None).unwrap();
+        let from_mesh = mesh.sample_poisson(3.0, None).unwrap();
         assert_eq!(from_data.points(), from_mesh.points());
         assert_eq!(from_data.point_normals(), from_mesh.point_normals());
     }
@@ -417,8 +516,8 @@ mod tests {
     fn the_cloud_tier_carries_the_surface_tier_positions_and_normals() {
         let mesh = Mesh3::create_box(10.0, 6.0, 4.0, false);
 
-        let surface = mesh.sample_surface_dense(1.0, None);
-        let cloud = mesh.sample_dense(1.0, None);
+        let surface = mesh.sample_surface_dense(1.0, None).unwrap();
+        let cloud = mesh.sample_dense(1.0, None).unwrap();
 
         assert_eq!(cloud.point_count(), surface.len());
         let normals = cloud.point_normals().expect("the sample carries normals");
@@ -441,7 +540,7 @@ mod tests {
         ];
         let faces = vec![[0, 1, 2], [0, 1, 3]];
 
-        let sampled = compute_dense_surface_points(&points, &faces, 0.25, None);
+        let sampled = compute_dense_surface_points(&points, &faces, 0.25, None).unwrap();
         assert!(!sampled.is_empty());
         assert!(sampled.iter().all(|mp| mp.face_index == 0));
 

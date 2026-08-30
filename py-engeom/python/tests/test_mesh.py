@@ -619,3 +619,91 @@ def test_transverse_plane_rejects_bad_options():
         m.transverse_plane(1.0, 0.0, 0.0, Vector3(0.0, 0.0, 1.0), taper_tilt=3.2)
     with pytest.raises(ValueError):
         m.transverse_plane(1.0, 0.0, 0.0, Vector3(0.0, 0.0, 0.0))
+
+
+def _box_top_faces(m: Mesh3) -> IndexMask:
+    """The upward-facing box faces, whose samples all lie on one known plane."""
+    normals = m.compute_face_normals()
+    return IndexMask.from_indices([i for i, n in enumerate(normals) if n[2] > 0.5], m.face_count)
+
+
+def test_sample_voxel_surface_puts_points_on_the_surface():
+    m = Mesh3.create_box(4.0, 4.0, 4.0, False)
+    cloud = m.sample_voxel_surface(0.5)
+
+    assert len(cloud) > 0
+    assert cloud.point_normals is not None
+
+    # Every sample lies on the mesh, distinguishing this from a point-cloud voxel reduction.
+    assert numpy.max(numpy.abs(m.measure_deviations(cloud.points, "point"))) < 1e-9
+
+
+def test_sample_voxel_surface_density_follows_the_voxel_size():
+    m = Mesh3.create_box(4.0, 4.0, 4.0, False)
+    coarse = m.sample_voxel_surface(1.0)
+    fine = m.sample_voxel_surface(0.5)
+    assert len(fine) > len(coarse)
+
+
+def test_sample_voxel_surface_is_deterministic():
+    m = Mesh3.create_box(4.0, 4.0, 4.0, False)
+    first = m.sample_voxel_surface(0.5)
+    second = m.sample_voxel_surface(0.5)
+    assert numpy.array_equal(first.points, second.points)
+
+
+def test_sample_voxel_surface_honors_the_face_mask():
+    m = Mesh3.create_box(4.0, 4.0, 4.0, False)
+
+    masked = m.sample_voxel_surface(0.5, faces=_box_top_faces(m))
+    full = m.sample_voxel_surface(0.5)
+
+    assert 0 < len(masked) < len(full)
+    # Only the top face was sampled, so every point sits on the top plane of the box.
+    assert numpy.allclose(masked.points[:, 2], 2.0)
+
+
+def test_sample_voxel_surface_rejects_bad_arguments():
+    m = Mesh3.create_box(4.0, 4.0, 4.0, False)
+    with pytest.raises(ValueError):
+        m.sample_voxel_surface(0.0)
+    with pytest.raises(ValueError):
+        m.sample_voxel_surface(-1.0)
+    with pytest.raises(ValueError):
+        m.sample_voxel_surface(0.5, faces=IndexMask.from_indices([0], m.face_count + 1))
+
+
+def test_sample_poisson_honors_the_face_mask():
+    m = Mesh3.create_box(4.0, 4.0, 4.0, False)
+    masked = m.sample_poisson(0.5, faces=_box_top_faces(m))
+
+    assert 0 < len(masked) < len(m.sample_poisson(0.5))
+    assert numpy.allclose(masked.points[:, 2], 2.0)
+
+
+def test_sample_dense_honors_the_face_mask():
+    m = Mesh3.create_box(4.0, 4.0, 4.0, False)
+    masked = m.sample_dense(0.5, faces=_box_top_faces(m))
+
+    assert 0 < len(masked) < len(m.sample_dense(0.5))
+    assert numpy.allclose(masked.points[:, 2], 2.0)
+
+
+def test_sample_poisson_and_dense_reject_a_mask_of_the_wrong_length():
+    m = Mesh3.create_box(4.0, 4.0, 4.0, False)
+    wrong = IndexMask.from_indices([0], m.face_count + 1)
+
+    with pytest.raises(ValueError, match="does not match"):
+        m.sample_poisson(0.5, faces=wrong)
+    with pytest.raises(ValueError, match="does not match"):
+        m.sample_dense(0.5, faces=wrong)
+
+
+@pytest.mark.parametrize("bad", [0.0, -1.0, float("nan"), float("inf")])
+def test_sample_poisson_and_dense_reject_a_nonsense_spacing(bad):
+    m = Mesh3.create_box(4.0, 4.0, 4.0, False)
+
+    with pytest.raises(ValueError):
+        m.sample_poisson(bad)
+    with pytest.raises(ValueError):
+        m.sample_dense(bad)

@@ -218,7 +218,7 @@ pub fn multi_mesh_adjustment(
     opts: &MultiOptions3,
     sample_opts: &GAPParams,
 ) -> Result<MultiOutcome3> {
-    let reference_order = reference_priority(meshes, sample_opts);
+    let reference_order = reference_priority(meshes, sample_opts)?;
     let static_i = reference_order[0];
 
     // Build the work list so that each unordered pair of meshes produces correspondences in one
@@ -232,6 +232,9 @@ pub fn multi_mesh_adjustment(
         }
     }
 
+    // Rayon requires the closure's result to implement `Send`, which `Box<dyn Error>` does not.
+    // A sampling failure therefore crosses the thread boundary as a message and is then rebuilt
+    // as an error.
     let points = work_list
         .par_iter()
         .map(|&(mesh_i, ref_i)| {
@@ -239,9 +242,10 @@ pub fn multi_mesh_adjustment(
                 .transform()
                 .inv_mul(&meshes[mesh_i].transform());
             let samples =
-                generate_alignment_points(meshes[mesh_i].mesh, meshes[ref_i].mesh, &t, sample_opts);
+                generate_alignment_points(meshes[mesh_i].mesh, meshes[ref_i].mesh, &t, sample_opts)
+                    .map_err(|e| e.to_string())?;
 
-            samples
+            Ok(samples
                 .into_iter()
                 .map(|mp| {
                     let weight = meshes[mesh_i].weights.map_or(1.0, |providers| {
@@ -249,8 +253,10 @@ pub fn multi_mesh_adjustment(
                     });
                     MeshAlignPoint::new(mesh_i, mp, ref_i, weight)
                 })
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>())
         })
+        .collect::<std::result::Result<Vec<_>, String>>()?
+        .into_iter()
         .flatten()
         .collect::<Vec<_>>();
 
@@ -655,17 +661,22 @@ impl LeastSquaresProblem<f64, Dyn, Dyn> for MultiMeshProblem<'_> {
 /// Orders the meshes by how broadly the others reference them, most-referenced first. The head of
 /// the returned order is the best candidate for the static mesh. The scoring lives in
 /// [`crate::common::align::reference`].
-fn reference_priority(meshes: &[AlignMesh], params: &GAPParams) -> Vec<usize> {
-    crate::common::align::reference::reference_priority(correspondence_matrix(meshes, params))
+fn reference_priority(meshes: &[AlignMesh], params: &GAPParams) -> Result<Vec<usize>> {
+    Ok(crate::common::align::reference::reference_priority(
+        correspondence_matrix(meshes, params)?,
+    ))
 }
 
 /// The pairwise correspondence counts of the meshes: each `i, j` entry is the number of sample
 /// points in mesh `j` which are a good match for mesh `i`.
-fn correspondence_matrix(meshes: &[AlignMesh], params: &GAPParams) -> DMatrix<f64> {
+fn correspondence_matrix(meshes: &[AlignMesh], params: &GAPParams) -> Result<DMatrix<f64>> {
     crate::common::align::reference::correspondence_matrix(meshes.len(), |i, j| {
         let t = meshes[i].transform().inv_mul(&meshes[j].transform());
-        generate_alignment_points(meshes[j].mesh, meshes[i].mesh, &t, params).len() as f64
+        let points = generate_alignment_points(meshes[j].mesh, meshes[i].mesh, &t, params)
+            .map_err(|e| e.to_string())?;
+        Ok(points.len() as f64)
     })
+    .map_err(|e| e.into())
 }
 
 #[cfg(test)]
@@ -694,7 +705,7 @@ mod tests {
     fn chain_points(meshes: &[Mesh3], spacing: f64) -> Vec<MeshAlignPoint> {
         let mut points = Vec::new();
         for (i, mesh) in meshes.iter().enumerate().skip(1) {
-            for mp in mesh.sample_surface_poisson(spacing, None) {
+            for mp in mesh.sample_surface_poisson(spacing, None).unwrap() {
                 points.push(MeshAlignPoint::new(i, mp, i - 1, 1.0));
             }
         }

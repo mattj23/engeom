@@ -36,7 +36,7 @@ use crate::common::points::{dist, mean_point};
 use crate::common::vec_f64::mean_and_stdev;
 use crate::geom3::align3::{AlignSurfMatch3, SurfaceTarget3};
 use crate::geom3::mesh::MeshSurfPoint;
-use crate::{Iso3, KdTree3, Mesh3, Point3, SelectOp, Selection, SvdBasis3, To2D};
+use crate::{Iso3, KdTree3, Mesh3, Point3, Result, SelectOp, Selection, SvdBasis3, To2D};
 use parry2d_f64::transformation::convex_hull;
 use std::f64::consts::PI;
 
@@ -308,14 +308,14 @@ pub fn simple_alignment_points(
     test_mesh: &Mesh3,
     ref_mesh: &Mesh3,
     spacing: f64,
-) -> Vec<MeshSurfPoint> {
+) -> Result<Vec<MeshSurfPoint>> {
     let overlap = test_mesh
         .face_select(Selection::None)
         .faces_overlap(ref_mesh, PI / 4.0, 2.0, SelectOp::Add)
         .take_mask();
 
     if overlap.count_true() == 0 {
-        Vec::new()
+        Ok(Vec::new())
     } else {
         test_mesh.sample_surface_poisson(spacing, Some(&overlap))
     }
@@ -359,16 +359,16 @@ pub fn simple_alignment_points(
 ///   alignment that is to follow.
 /// * `params`: The parameters for the sampling algorithm: see the `MshSmParams` struct for details.
 ///
-/// returns: Vec<MeshSurfPoint, Global>
+/// returns: `Result<Vec<MeshSurfPoint>>`; an invalid sample spacing produces an error.
 pub fn generate_alignment_points(
     test_mesh: &Mesh3,
     ref_mesh: &Mesh3,
     iso: &Iso3,
     params: &GAPParams,
-) -> Vec<MeshSurfPoint> {
+) -> Result<Vec<MeshSurfPoint>> {
     // We start with a Poisson disk sampling of the test mesh to get a set of points that are
     // well distributed across the surface and spaced at a roughly known distance.
-    let all_points = test_mesh.sample_surface_poisson(params.sample_spacing, None);
+    let all_points = test_mesh.sample_surface_poisson(params.sample_spacing, None)?;
     let tree = KdTree3::try_new(&all_points).expect("KD tree build failed");
 
     // Now we're going to iterate through the points and find ones which meet the criteria for
@@ -406,7 +406,7 @@ pub fn generate_alignment_points(
         }
     }
 
-    candidates.into_iter().map(|(_, p)| *p).collect()
+    Ok(candidates.into_iter().map(|(_, p)| *p).collect())
 }
 
 /// Sample validity check, which looks at the conditions around the sample check point based on

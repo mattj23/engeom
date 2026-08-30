@@ -778,8 +778,12 @@ mod tests {
         );
 
         for v in [4.0, 2.0, 1.0, 0.5] {
-            let (dense, dense_ms) =
-                time_best(|| mesh.sample_dense(v / 2.0, None).reduce_by_voxel(v).unwrap());
+            let (dense, dense_ms) = time_best(|| {
+                mesh.sample_dense(v / 2.0, None)
+                    .unwrap()
+                    .reduce_by_voxel(v)
+                    .unwrap()
+            });
             let (surface, surface_ms) = time_best(|| mesh.sample_voxel_surface(v, None).unwrap());
 
             for (name, cloud, ms) in [

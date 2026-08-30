@@ -301,7 +301,7 @@ pub fn multi_curve_adjustment(
     }
     let poses = resolve_poses(groups, initial)?;
 
-    let reference_order = reference_priority(groups, &poses, sample_opts);
+    let reference_order = reference_priority(groups, &poses, sample_opts)?;
     let static_i = reference_order[0];
 
     // Build the work list so that each unordered pair of bodies produces correspondences in one
@@ -671,9 +671,13 @@ impl LeastSquaresProblem<f64, Dyn, Dyn> for MultiCurveProblem<'_> {
 /// Orders the bodies by how broadly the others reference them, most-referenced first. The head
 /// of the returned order is the best candidate for the static body. The scoring lives in
 /// [`crate::common::align::reference`].
-fn reference_priority(groups: &[CurveGroup2], poses: &[Iso2], params: &CAPParams) -> Vec<usize> {
-    crate::common::align::reference::reference_priority(correspondence_matrix(
-        groups, poses, params,
+fn reference_priority(
+    groups: &[CurveGroup2],
+    poses: &[Iso2],
+    params: &CAPParams,
+) -> Result<Vec<usize>> {
+    Ok(crate::common::align::reference::reference_priority(
+        correspondence_matrix(groups, poses, params)?,
     ))
 }
 
@@ -683,11 +687,14 @@ fn correspondence_matrix(
     groups: &[CurveGroup2],
     poses: &[Iso2],
     params: &CAPParams,
-) -> DMatrix<f64> {
+) -> Result<DMatrix<f64>> {
+    // The 2D sampler cannot currently fail. The shared helper accepts a fallible closure only to
+    // match its 3D counterpart, whose sampler rejects invalid spacing.
     crate::common::align::reference::correspondence_matrix(groups.len(), |i, j| {
         let t = poses[i].inv_mul(&poses[j]);
-        generate_alignment_points(&groups[j], &groups[i], &t, params).len() as f64
+        Ok(generate_alignment_points(&groups[j], &groups[i], &t, params).len() as f64)
     })
+    .map_err(|e| e.into())
 }
 
 #[cfg(test)]
@@ -1404,7 +1411,8 @@ mod tests {
             &groups,
             &initial,
             &CAPParams::new(0.25, PI / 3.0, 0.25, None),
-        );
+        )
+        .unwrap();
 
         assert_eq!(order[0], 1, "the middle curve should be the static one");
     }
@@ -1423,7 +1431,8 @@ mod tests {
             &groups,
             &initial,
             &CAPParams::new(0.25, PI / 3.0, 0.25, None),
-        );
+        )
+        .unwrap();
 
         for i in 0..3 {
             assert_eq!(m[(i, i)], 0.0);
@@ -1636,7 +1645,8 @@ mod tests {
         let poses = [Iso2::identity(); 3];
 
         let order =
-            reference_priority(&groups, &poses, &CAPParams::new(0.25, PI / 3.0, 0.25, None));
+            reference_priority(&groups, &poses, &CAPParams::new(0.25, PI / 3.0, 0.25, None))
+                .unwrap();
 
         assert_eq!(order[0], 2, "the two member body should be the static one");
     }

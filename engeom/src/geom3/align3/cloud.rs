@@ -187,7 +187,7 @@ mod tests {
 
     #[test]
     fn cloud_target_rejects_a_nonsense_extrapolation() {
-        let cloud = engine_blade().sample_dense(1.0, None);
+        let cloud = engine_blade().sample_dense(1.0, None).unwrap();
         assert!(CloudTarget3::try_new(&cloud, 0.0).is_err());
         assert!(CloudTarget3::try_new(&cloud, f64::NAN).is_err());
     }
@@ -246,7 +246,11 @@ mod tests {
     #[test]
     fn cloud_target_takes_its_weight_from_voxel_coherence() {
         let mesh = Mesh3::create_box(20.0, 20.0, 20.0, false);
-        let cloud = mesh.sample_dense(0.5, None).reduce_by_voxel(2.0).unwrap();
+        let cloud = mesh
+            .sample_dense(0.5, None)
+            .unwrap()
+            .reduce_by_voxel(2.0)
+            .unwrap();
 
         let target = CloudTarget3::try_new(&cloud, 4.0).unwrap();
 
@@ -291,14 +295,14 @@ mod tests {
     #[test]
     fn the_tangent_plane_projection_is_what_removes_the_sampling_floor() {
         let mesh = engine_blade();
-        let test_points = mesh.sample_poisson(1.0, None).points().to_vec();
+        let test_points = mesh.sample_poisson(1.0, None).unwrap().points().to_vec();
 
         let center = mesh.aabb().center();
         let delta = Iso3::new(Vector3::new(1.5, -0.8, 0.6), Vector3::new(0.0, 0.0, 0.04));
         let moved: Vec<Point3> = test_points.iter().map(|p| delta * p).collect();
 
         let spacing = 2.0;
-        let cloud = mesh.sample_dense(spacing, None);
+        let cloud = mesh.sample_dense(spacing, None).unwrap();
         let normals = cloud.point_normals().unwrap();
 
         let opts = AlignOptions3::default();
@@ -359,7 +363,7 @@ mod tests {
     fn cloud_target_recovers_a_pose_and_reports_its_cost_against_a_mesh() {
         let mesh = engine_blade();
 
-        let test_points = mesh.sample_poisson(1.0, None).points().to_vec();
+        let test_points = mesh.sample_poisson(1.0, None).unwrap().points().to_vec();
         assert!(test_points.len() > 200);
 
         let center = mesh.aabb().center();
@@ -392,7 +396,7 @@ mod tests {
 
         let mut previous = 0.0;
         for spacing in [0.25, 1.0, 2.0] {
-            let cloud = mesh.sample_dense(spacing, None);
+            let cloud = mesh.sample_dense(spacing, None).unwrap();
             let target = CloudTarget3::try_new(&cloud, spacing * 3.0).unwrap();
 
             let out = points_to_surface3(

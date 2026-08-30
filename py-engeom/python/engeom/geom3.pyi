@@ -2971,7 +2971,7 @@ class Mesh3:
         """
         ...
 
-    def sample_poisson(self, radius: float) -> PointCloud3:
+    def sample_poisson(self, radius: float, faces: IndexMask | None = None) -> PointCloud3:
         """
         Sample the mesh surface using a Poisson disk sampling algorithm. The returned point cloud is approximately
         evenly distributed across the surface, with each point carrying the normal of the face on which it lies. The
@@ -2982,20 +2982,27 @@ class Mesh3:
         vertices, large triangles are not under-represented and small triangles are not over-represented. The thinning
         is deterministic for a given mesh, so repeated calls produce the same result.
 
-        :param radius: the minimum distance between points.
+        :param radius: the minimum distance between points, which must be finite and positive.
+        :param faces: an optional mask restricting sampling to mesh faces set to true.
         :return: a `PointCloud3` with positions and normals.
+        :raises ValueError: if `radius` is not finite and positive or the face mask length does not
+        match the mesh's face count.
         """
         ...
 
-    def sample_dense(self, max_spacing: float) -> PointCloud3:
+    def sample_dense(self, max_spacing: float, faces: IndexMask | None = None) -> PointCloud3:
         """
         Densely sample the mesh so that no point on its surface is farther than `max_spacing` from a sample. A
         barycentric grid covers every triangle, while a triangle whose edges are all shorter than `max_spacing`
         contributes only its centroid. There is no lower bound on the distance between samples, so density varies with
         triangle size; use `sample_poisson` when even spacing matters.
 
-        :param max_spacing: the maximum distance from any point on the surface to a sample.
+        :param max_spacing: the maximum distance from any point on the surface to a sample, which
+        must be finite and positive.
+        :param faces: an optional mask restricting sampling to mesh faces set to true.
         :return: a `PointCloud3` with positions and normals.
+        :raises ValueError: if `max_spacing` is not finite and positive or the face mask length does
+        not match the mesh's face count.
         """
         ...
 
@@ -3006,6 +3013,35 @@ class Mesh3:
 
         :param n: the number of samples to draw.
         :return: a `PointCloud3` with positions and normals.
+        """
+        ...
+
+    def sample_voxel_surface(self, voxel_size: float, faces: IndexMask | None = None) -> PointCloud3:
+        """
+        Reduce the surface to one point per occupied cell of a regular voxel grid, placing each point on the surface
+        itself rather than at the cell center.
+
+        Each face is rasterized onto the grid with a separating axis test, so a triangle that only clips the corner
+        of a cell still occupies it. For each occupied cell, the cell center is projected onto every triangle passing
+        through that cell. The nearest projection is kept along with that triangle's normal, with
+        ties resolved in favor of the lower face index. The points therefore lie on the mesh to
+        within floating-point precision, unlike
+        `PointCloud3.reduce_by_voxel`, whose output points are centroids that can sit off the surface.
+
+        Faces with no computable normal are degenerate, have zero area, and are skipped. A cell
+        touched by nothing else is simply not occupied. The output is ordered by ascending cell key
+        and is deterministic for a given mesh and voxel size.
+
+        Work scales with the number of (face, cell) pairs, so a voxel size far below the mesh
+        resolution is expensive without producing more information than the mesh contains.
+
+        :param voxel_size: the edge length of the grid cells, which must be finite and positive.
+        :param faces: an optional mask restricting sampling to mesh faces set to true.
+        :return: a `PointCloud3` with positions and normals.
+        :raises ValueError: if the voxel size is not finite and positive, if the face mask length
+        does not match the mesh's face count, or if a vertex is too many cells from the origin for
+        the grid to index. Use a larger voxel size or move the mesh nearer the origin to resolve the
+        last case.
         """
         ...
 
@@ -3035,6 +3071,7 @@ class Mesh3:
         points will be used to perform an alignment, this mesh should be the one that is being aligned to.
         :param iso: an isometry to apply to the sampled points before checking against the reference mesh.
         :return: a numpy array of shape (n, 3) containing the sampled points.
+        :raises ValueError: if `max_spacing` is not finite and positive.
         """
         ...
 

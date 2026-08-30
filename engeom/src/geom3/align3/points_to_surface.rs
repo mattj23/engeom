@@ -421,7 +421,7 @@ mod tests {
     }
 
     fn box_points(mesh: &Mesh3) -> Vec<Point3> {
-        mesh.sample_poisson(0.5, None).points().to_vec()
+        mesh.sample_poisson(0.5, None).unwrap().points().to_vec()
     }
 
     fn small_disturbance() -> Iso3 {
@@ -440,7 +440,7 @@ mod tests {
         // This test is to verify that a simple test against a box that doesn't have large rotations
         // produces a result that is roughly the inverse of the disturbance
         let mesh = box_mesh();
-        let points = mesh.sample_poisson(0.1, None).points().to_vec();
+        let points = mesh.sample_poisson(0.1, None).unwrap().points().to_vec();
         let disturb = Iso3::from_parts(
             Translation3::new(3.0, 2.0, 1.0),
             UnitQuaternion::from_euler_angles(PI / 8.0, PI / 12.0, PI / 16.0),
@@ -465,7 +465,11 @@ mod tests {
             .face_select(Selection::None)
             .facing(&Vector3::y(), PI / 4.0, SelectOp::Add)
             .take_mask();
-        let expected_points = mesh.sample_poisson(2.0, Some(&mask)).points().to_vec();
+        let expected_points = mesh
+            .sample_poisson(2.0, Some(&mask))
+            .unwrap()
+            .points()
+            .to_vec();
 
         let disturb = Iso3::from_parts(
             Translation3::new(-100.0, 150.0, 0.0),

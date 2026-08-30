@@ -682,16 +682,44 @@ impl Mesh3 {
         Ok(result.into_pyarray(py))
     }
 
-    fn sample_poisson(&self, radius: f64) -> PointCloud3 {
-        PointCloud3::from_inner(self.inner.sample_poisson(radius, None))
+    #[pyo3(signature=(radius, faces = None))]
+    fn sample_poisson(&self, radius: f64, faces: Option<&IndexMask>) -> PyResult<PointCloud3> {
+        let cloud = self
+            .inner
+            .sample_poisson(radius, faces.map(|m| m.get_inner()))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        Ok(PointCloud3::from_inner(cloud))
     }
 
-    fn sample_dense(&self, max_spacing: f64) -> PointCloud3 {
-        PointCloud3::from_inner(self.inner.sample_dense(max_spacing, None))
+    #[pyo3(signature=(max_spacing, faces = None))]
+    fn sample_dense(&self, max_spacing: f64, faces: Option<&IndexMask>) -> PyResult<PointCloud3> {
+        let cloud = self
+            .inner
+            .sample_dense(max_spacing, faces.map(|m| m.get_inner()))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        Ok(PointCloud3::from_inner(cloud))
     }
 
     fn sample_uniform(&self, n: usize) -> PointCloud3 {
         PointCloud3::from_inner(self.inner.sample_uniform(n))
+    }
+
+    /// Reduce the surface to one point per occupied cell of a regular voxel grid, placing each
+    /// point on the surface itself. See the Python stub documentation for the details.
+    #[pyo3(signature=(voxel_size, faces = None))]
+    fn sample_voxel_surface(
+        &self,
+        voxel_size: f64,
+        faces: Option<&IndexMask>,
+    ) -> PyResult<PointCloud3> {
+        let cloud = self
+            .inner
+            .sample_voxel_surface(voxel_size, faces.map(|m| m.get_inner()))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        Ok(PointCloud3::from_inner(cloud))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -705,7 +733,7 @@ impl Mesh3 {
         out_of_plane_ratio: f64,       // 1 /20.0
         centroid_ratio: f64,           // 1.0
         filter_distances: Option<f64>, // Some(3.0)
-    ) -> Bound<'py, PyArray2<f64>> {
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
         let params = GAPParams::new(
             max_spacing,
             max_neighbor_angle,
@@ -714,11 +742,12 @@ impl Mesh3 {
             filter_distances,
         );
         let mps =
-            generate_alignment_points(&self.inner, &reference.inner, iso.get_inner(), &params);
+            generate_alignment_points(&self.inner, &reference.inner, iso.get_inner(), &params)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let points = mps.into_iter().map(|mp| mp.sp.point).collect::<Vec<_>>();
 
         let result = points_to_array(&points);
-        result.into_pyarray(py)
+        Ok(result.into_pyarray(py))
     }
 
     #[pyo3(signature=(plane, tol = None, faces = None))]
