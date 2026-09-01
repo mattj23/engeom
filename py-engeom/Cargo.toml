@@ -16,7 +16,11 @@ name = "engeom"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.28.1", features = ["abi3-py38", "extension-module"] }
+# `generate-import-lib` synthesizes the Python import library for the target architecture via
+# `python3-dll-a`, so a Windows wheel can be cross-compiled without an interpreter of that
+# architecture on the runner. The windows-aarch64 wheel is built that way; see the comment on
+# that matrix entry in .github/workflows/wheels.yml for why it is not built natively.
+pyo3 = { version = "0.28.1", features = ["abi3-py38", "extension-module", "generate-import-lib"] }
 numpy = "0.28.0"
 engeom = { path = "../engeom", features = ["stl", "ply"] }
 parry3d-f64 = { workspace = true, features = ["serde-serialize"] }
