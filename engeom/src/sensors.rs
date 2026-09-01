@@ -3,7 +3,7 @@
 pub mod camera;
 mod laser_profile;
 
-use crate::{Iso3, Mesh3, PointCloud};
+use crate::{Iso3, Mesh3, PointCloud3};
 
 pub use laser_profile::{LaserProfile, LaserProfileGeom, PanningLaserProfile};
 
@@ -47,11 +47,11 @@ pub trait SimulatedPointSensor {
     ///   sensor will vary by the type of sensor and how it captures data.
     /// * `iso`: an isometry which defines the position and orientation of the sensor in the world.
     ///
-    /// returns: (PointCloud, Option<Vec<f64, Global>>)
+    /// returns: (PointCloud3, Option<Vec<f64, Global>>)
     fn get_points(
         &self,
         target: &Mesh3,
         obstruction: Option<&Mesh3>,
         iso: &Iso3,
-    ) -> (PointCloud, Option<Vec<f64>>);
+    ) -> (PointCloud3, Option<Vec<f64>>);
 }

@@ -3,8 +3,9 @@ use crate::common::{Intersection, PCoords, dist, ramer_douglas_peucker, transfor
 use crate::errors::InvalidGeometry;
 use crate::geom2::hull::convex_hull_2d;
 use crate::geom2::{
-    Iso2, Point2, Segment2, SurfacePoint2, UnitVec2, intersection_param, signed_angle,
+    Iso2, Point2, Segment2, SurfacePoint2, UnitVec2, Vector2, intersection_param, signed_angle,
 };
+use crate::io::{read_tc_curve2_file, write_tc_curve2_file};
 use crate::na::SVector;
 use crate::{Arc2, Circle2, Line2, Resample, Result, Series1};
 use parry2d_f64::bounding_volume::Aabb;
@@ -12,6 +13,7 @@ use parry2d_f64::na::Unit;
 use parry2d_f64::query::Ray;
 use parry2d_f64::shape::{ConvexPolygon, Polyline};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 mod densities;
 mod partitioning;
@@ -375,6 +377,42 @@ impl Curve2 {
         if votes < 0.0 { Ok(c.reversed()) } else { Ok(c) }
     }
 
+    /// Read a curve from a tolerance-compressed `.tccurve2` file.
+    ///
+    /// The vertex positions are recovered within the tolerance the file was written at, and the
+    /// curve's own chord tolerance and closed state are restored from it.
+    ///
+    /// # Failure
+    ///
+    /// A file holding more than one curve is refused rather than yielding its first, since
+    /// returning part of a collection would silently discard the rest. Use
+    /// [`crate::geom2::CurveGroup2::load_tccurve2`] for those.
+    ///
+    /// A file which engeom did not write has no chord tolerance recorded in it and is also
+    /// refused, because guessing one would change how the curve resamples with nothing to show it
+    /// happened.
+    pub fn load_tccurve2(path: &Path) -> Result<Self> {
+        read_tc_curve2_file(path)
+    }
+
+    /// Write this curve to a tolerance-compressed `.tccurve2` file.
+    ///
+    /// Vertex positions are quantized to the narrowest bit width per axis which keeps every one of
+    /// them within `tol` of where it started. A smaller tolerance costs more bytes per vertex. The
+    /// curve's chord tolerance and closed state travel alongside the points and are unaffected by
+    /// this one, which is purely about storage.
+    ///
+    /// # Arguments
+    ///
+    /// * `path`: the path to write to, which is overwritten if it already exists
+    /// * `tol`: the largest acceptable round-trip position error for any vertex, in the same units
+    ///   as the coordinates
+    ///
+    /// returns: `Result<()>`
+    pub fn save_tccurve2(&self, path: &Path, tol: f64) -> Result<()> {
+        write_tc_curve2_file(path, self, tol)
+    }
+
     /// Returns the number of vertices in the curve.
     pub fn count(&self) -> usize {
         self.shape.vertices().len()
@@ -493,6 +531,90 @@ impl Curve2 {
     /// Returns the total arc length of the curve.
     pub fn length(&self) -> f64 {
         *self.lengths.last().unwrap_or(&0.0)
+    }
+
+    /// The signed area enclosed by a closed curve, computed with the shoelace formula.
+    ///
+    /// The sign carries the winding: positive for a counter-clockwise loop and negative for a
+    /// clockwise one, so a curve built with [`Curve2::from_points_ccw`] always reports a value
+    /// that is not negative. A self-intersecting loop is not rejected; its lobes add or cancel
+    /// according to their own winding, as the formula dictates.
+    ///
+    /// The sum is taken relative to the first vertex, so a small loop far from the origin does
+    /// not lose precision to cancellation between large coordinates.
+    ///
+    /// returns: `Some(area)` for a closed curve or `None` for an open curve, which encloses
+    /// nothing
+    pub fn signed_area(&self) -> Option<f64> {
+        if !self.is_closed {
+            return None;
+        }
+        Some(shoelace_sums(self.points()).0 / 2.0)
+    }
+
+    /// The area enclosed by a closed curve, regardless of its winding direction. This is the
+    /// magnitude of [`Curve2::signed_area`].
+    ///
+    /// returns: `Some(area)` for a closed curve or `None` for an open curve, which encloses
+    /// nothing
+    pub fn area(&self) -> Option<f64> {
+        self.signed_area().map(f64::abs)
+    }
+
+    /// The area centroid of the region enclosed by a closed curve, which is the center of mass
+    /// of the enclosed region taken as a uniform lamina. It is not the mean of the vertices, and
+    /// it does not depend on how densely the loop is sampled.
+    ///
+    /// The result is the same for either winding direction. Like [`Curve2::signed_area`], the
+    /// sum is taken relative to the first vertex to keep its precision far from the origin.
+    ///
+    /// returns: `Some(centroid)` for a closed curve with nonzero area. An open curve encloses
+    /// nothing, and a closed loop with zero area (one that doubles back over itself) has no
+    /// region to take the centroid of, so both yield `None`.
+    pub fn area_centroid(&self) -> Option<Point2> {
+        if !self.is_closed {
+            return None;
+        }
+
+        let (area2, cx, cy) = shoelace_sums(self.points());
+        if area2 == 0.0 {
+            return None;
+        }
+
+        // With A = area2 / 2 the usual 1 / (6 A) factor becomes 1 / (3 area2).
+        let origin = self.vtx(0);
+        Some(origin + Vector2::new(cx, cy) / (3.0 * area2))
+    }
+
+    /// Returns a closed copy of this curve, bridging the gap between its last and first vertices
+    /// when that gap is no larger than `max_gap`.
+    ///
+    /// Use this to close a curve whose ends nearly meet but are farther apart than the chord
+    /// tolerance that closes a curve automatically during construction, such as a section through
+    /// touching but separately meshed patches. Closure is represented by repeating the first
+    /// vertex at the end, so the result has one more vertex than the input. An already closed curve
+    /// is returned unchanged, regardless of `max_gap`.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_gap`: the largest end-to-start distance which may be bridged
+    ///
+    /// returns: `Result<Curve2>`, which is an error reporting the actual gap if it exceeds
+    /// `max_gap`
+    pub fn closed_within(&self, max_gap: f64) -> Result<Self> {
+        if self.is_closed {
+            return Ok(self.clone());
+        }
+
+        let gap = dist(&self.vtx(0), &self.vtx(self.count() - 1));
+        if gap > max_gap {
+            return Err(format!(
+                "the curve's end gap of {gap} exceeds the maximum allowed gap of {max_gap}"
+            )
+            .into());
+        }
+
+        Curve2::from_points(self.points(), self.tol, true)
     }
 
     /// Clones and reverses the curve, such that the first point becomes the last point, and the
@@ -989,10 +1111,38 @@ fn vertex_between_segs(a: &Segment2, b: &Segment2) -> Result<Point2> {
     }
 }
 
+/// The shoelace sums of a closed polygon, taken relative to its first vertex.
+///
+/// Returns `(2A, Sx, Sy)` where `A` is the signed area and `(Sx, Sy) / (3 * 2A)` is the offset
+/// of the area centroid from the first vertex. The polygon is the ring `points[0] -> ... ->
+/// points[n-1] -> points[0]`, so a ring whose last vertex repeats its first is handled the same
+/// as one that does not, since the repeated edge has zero length.
+///
+/// Measuring from the first vertex instead of the origin keeps the cross products small, which
+/// preserves precision for a small loop at large coordinates.
+fn shoelace_sums(points: &[Point2]) -> (f64, f64, f64) {
+    let origin = points[0];
+    let mut area2 = 0.0;
+    let mut cx = 0.0;
+    let mut cy = 0.0;
+
+    for w in points.windows(2) {
+        let a = w[0] - origin;
+        let b = w[1] - origin;
+        let cross = a.x * b.y - b.x * a.y;
+        area2 += cross;
+        cx += (a.x + b.x) * cross;
+        cy += (a.y + b.y) * cross;
+    }
+
+    // The closing edge from the last vertex back to the first has b == 0 relative to the origin
+    // and so contributes nothing to any of the sums.
+    (area2, cx, cy)
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::geom2::Vector2;
     use approx::assert_relative_eq;
     use std::f64::consts::PI;
     use test_case::test_case;
@@ -1011,6 +1161,163 @@ pub mod tests {
 
     pub fn sample_points_scaled(p: &[(f64, f64)], f: f64) -> Vec<Point2> {
         p.iter().map(|(a, b)| Point2::new(*a * f, *b * f)).collect()
+    }
+
+    #[test]
+    fn closed_within_bridges_a_gap_inside_the_limit() {
+        // An open square missing its last side has ends one unit apart.
+        let c = curve2!((0, 0), (1, 0), (1, 1), (0, 1)).unwrap();
+        assert!(!c.is_closed());
+
+        let closed = c.closed_within(1.0).unwrap();
+        assert!(closed.is_closed());
+        assert_eq!(closed.count(), c.count() + 1);
+        assert_relative_eq!(closed.vtx(closed.count() - 1), closed.vtx(0));
+        assert_relative_eq!(closed.area().unwrap(), 1.0, epsilon = 1e-12);
+        assert_relative_eq!(closed.tol(), c.tol());
+    }
+
+    #[test]
+    fn closed_within_refuses_a_gap_beyond_the_limit() {
+        let c = curve2!((0, 0), (1, 0), (1, 1), (0, 1)).unwrap();
+        let err = match c.closed_within(0.5) {
+            Ok(_) => panic!("a gap of 1 must not close within 0.5"),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            err.contains("gap of 1"),
+            "message should report the gap: {err}"
+        );
+        assert!(
+            err.contains("0.5"),
+            "message should report the limit: {err}"
+        );
+    }
+
+    #[test]
+    fn closed_within_leaves_a_closed_curve_alone() {
+        let c = curve2!(tol: 1e-6, closed: true; (0, 0), (1, 0), (1, 1), (0, 1)).unwrap();
+        let again = c.closed_within(0.0).unwrap();
+        assert!(again.is_closed());
+        assert_eq!(again.count(), c.count());
+        assert_eq!(again.points(), c.points());
+    }
+
+    #[test]
+    fn area_of_ccw_square_is_positive() {
+        let c = curve2!(tol: 1e-6, closed: true; (0, 0), (1, 0), (1, 1), (0, 1)).unwrap();
+        assert_relative_eq!(c.signed_area().unwrap(), 1.0, epsilon = 1e-12);
+        assert_relative_eq!(c.area().unwrap(), 1.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn area_of_cw_square_is_negative_but_area_is_not() {
+        let c = curve2!(tol: 1e-6, closed: true; (0, 0), (0, 1), (1, 1), (1, 0)).unwrap();
+        assert_relative_eq!(c.signed_area().unwrap(), -1.0, epsilon = 1e-12);
+        assert_relative_eq!(c.area().unwrap(), 1.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn open_curve_has_no_area_or_centroid() {
+        let c = curve2!((0, 0), (1, 0), (1, 1), (0, 1)).unwrap();
+        assert!(c.signed_area().is_none());
+        assert!(c.area().is_none());
+        assert!(c.area_centroid().is_none());
+    }
+
+    /// A closed ring whose last vertex explicitly repeats its first must agree with one that
+    /// relies on `force_closed`, since both describe the same polygon.
+    #[test]
+    fn explicit_and_forced_closure_agree() {
+        let forced = Curve2::from_points(&sample_points(&sample1()), 1e-6, true).unwrap();
+        let explicit = Curve2::from_points(&sample_points(&sample2()), 1e-6, false).unwrap();
+        assert!(explicit.is_closed());
+        assert_relative_eq!(
+            forced.signed_area().unwrap(),
+            explicit.signed_area().unwrap()
+        );
+        assert_relative_eq!(
+            forced.area_centroid().unwrap(),
+            explicit.area_centroid().unwrap()
+        );
+    }
+
+    /// The area centroid is the center of mass of the region, not the mean of its vertices. An
+    /// L-shaped region distinguishes the two: its vertex mean is (1, 1), but its area centroid is
+    /// not.
+    #[test]
+    fn area_centroid_of_l_shape() {
+        let c = curve2!(tol: 1e-6, closed: true; (0, 0), (2, 0), (2, 1), (1, 1), (1, 2), (0, 2))
+            .unwrap();
+        assert_relative_eq!(c.area().unwrap(), 3.0, epsilon = 1e-12);
+
+        // Two rectangles: [0,2]x[0,1] (area 2, centroid (1, 0.5)) and [0,1]x[1,2] (area 1,
+        // centroid (0.5, 1.5)).
+        let expected = Point2::new(2.5 / 3.0, 2.5 / 3.0);
+        assert_relative_eq!(c.area_centroid().unwrap(), expected, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn area_centroid_ignores_winding() {
+        let ccw = curve2!(tol: 1e-6, closed: true; (0, 0), (2, 0), (2, 1), (1, 1), (1, 2), (0, 2))
+            .unwrap();
+        let cw = ccw.reversed();
+        assert!(cw.is_closed());
+        assert_relative_eq!(
+            ccw.area_centroid().unwrap(),
+            cw.area_centroid().unwrap(),
+            epsilon = 1e-12
+        );
+    }
+
+    /// Sampling a loop more densely changes the vertex mean but not the region, so the area
+    /// centroid must remain unchanged. A circle offset from the origin makes any drift visible.
+    #[test]
+    fn area_centroid_does_not_depend_on_sampling_density() {
+        let center = Point2::new(3.0, -2.0);
+        let r = 1.5;
+        for n in [8usize, 50, 1000] {
+            let pts = (0..n)
+                .map(|i| {
+                    let t = 2.0 * PI * i as f64 / n as f64;
+                    center + Vector2::new(r * t.cos(), r * t.sin())
+                })
+                .collect::<Vec<_>>();
+            let c = Curve2::from_points(&pts, 1e-9, true).unwrap();
+            assert_relative_eq!(c.area_centroid().unwrap(), center, epsilon = 1e-9);
+
+            // The inscribed regular n-gon has a known area.
+            let expected = 0.5 * n as f64 * r * r * (2.0 * PI / n as f64).sin();
+            assert_relative_eq!(c.signed_area().unwrap(), expected, epsilon = 1e-9);
+        }
+    }
+
+    /// A small loop at large coordinates is where a naive shoelace loses digits to cancellation.
+    #[test]
+    fn area_keeps_precision_far_from_origin() {
+        let x0 = 1.0e6;
+        let y0 = -2.0e6;
+        let s = 1.0e-3;
+        let c = curve2!(tol: 1e-9, closed: true; (x0, y0), (x0 + s, y0), (x0 + s, y0 + s), (x0, y0 + s))
+            .unwrap();
+        // The vertices themselves only hold about 1e-10 absolute at this magnitude, so the side
+        // length is known to roughly 1e-7 relative before any sum is taken.
+        assert_relative_eq!(c.signed_area().unwrap(), s * s, max_relative = 1e-6);
+        assert_relative_eq!(
+            c.area_centroid().unwrap(),
+            Point2::new(x0 + s / 2.0, y0 + s / 2.0),
+            epsilon = 1e-9
+        );
+    }
+
+    /// A closed loop that doubles back over itself encloses nothing: it has an area of zero
+    /// and no centroid, rather than a division by zero.
+    #[test]
+    fn degenerate_closed_loop_has_zero_area_and_no_centroid() {
+        let c = curve2!(tol: 1e-6, closed: true; (0, 0), (1, 0), (2, 0), (1, 0)).unwrap();
+        assert!(c.is_closed());
+        assert_relative_eq!(c.area().unwrap(), 0.0);
+        assert!(c.area_centroid().is_none());
     }
 
     #[test]
@@ -1079,6 +1386,46 @@ pub mod tests {
         assert_eq!(p.index, 1);
         assert_relative_eq!(1.0, p.point.x, epsilon = 1e-8);
         assert_relative_eq!(0.5, p.point.y, epsilon = 1e-8);
+    }
+
+    /// The container methods have to be a real path to the format, not just a forwarder that
+    /// compiles. The chord tolerance and the closed flag are carried as file metadata and a flag
+    /// bit rather than as geometry, so they are the things most likely to be quietly lost.
+    #[test]
+    fn a_curve_round_trips_through_the_container_methods() {
+        let points = sample_points(&sample1());
+        let curve = Curve2::from_points(&points, 1e-4, true).unwrap();
+        assert!(curve.is_closed());
+
+        let path = std::env::temp_dir().join("engeom_curve2_container.tccurve2");
+        let tol = 1e-6;
+
+        curve.save_tccurve2(&path, tol).unwrap();
+        let back = Curve2::load_tccurve2(&path).unwrap();
+
+        assert_eq!(back.count(), curve.count());
+        assert_eq!(back.is_closed(), curve.is_closed());
+        assert_relative_eq!(back.tol(), curve.tol(), epsilon = 1e-15);
+        for (a, b) in curve.points().iter().zip(back.points().iter()) {
+            assert_relative_eq!(a, b, epsilon = tol);
+        }
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// An open curve must not come back closed, which is the failure that would follow from
+    /// dropping the flag rather than storing it.
+    #[test]
+    fn an_open_curve_stays_open_through_the_container_methods() {
+        let points = sample_points(&sample1());
+        let curve = Curve2::from_points(&points, 1e-6, false).unwrap();
+        assert!(!curve.is_closed());
+
+        let path = std::env::temp_dir().join("engeom_curve2_container_open.tccurve2");
+        curve.save_tccurve2(&path, 1e-6).unwrap();
+
+        assert!(!Curve2::load_tccurve2(&path).unwrap().is_closed());
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

@@ -9,7 +9,7 @@
 use crate::SurfacePoint3;
 use crate::na::Translation3;
 use crate::sensors::SimulatedPointSensor;
-use crate::{Iso3, Mesh3, Point3, PointCloud, PointCloudFeatures, UnitVec3, Vector3};
+use crate::{Iso3, Mesh3, Point3, PointCloud3, UnitVec3, Vector3};
 use parry3d_f64::query::{Ray, RayCast};
 use std::f64::consts::PI;
 
@@ -222,7 +222,7 @@ impl SimulatedPointSensor for LaserProfile {
         target: &Mesh3,
         obstruction: Option<&Mesh3>,
         iso: &Iso3,
-    ) -> (PointCloud, Option<Vec<f64>>) {
+    ) -> (PointCloud3, Option<Vec<f64>>) {
         let limit = self.angle_limit.unwrap_or(PI / 2.0);
 
         let mut points = Vec::new();
@@ -289,7 +289,10 @@ impl SimulatedPointSensor for LaserProfile {
         }
 
         // This should be safe because we assembled the points and normals together
-        let cloud = PointCloud::try_new(points, Some(normals), None, None).unwrap();
+        let mut cloud = PointCloud3::new(points);
+        cloud
+            .set_point_normals(Some(normals))
+            .expect("normals were built one per point");
 
         (cloud, None)
     }
@@ -340,7 +343,7 @@ impl SimulatedPointSensor for PanningLaserProfile {
         target: &Mesh3,
         obstruction: Option<&Mesh3>,
         iso: &Iso3,
-    ) -> (PointCloud, Option<Vec<f64>>) {
+    ) -> (PointCloud3, Option<Vec<f64>>) {
         let pan_vector = Vector3::new(0.0, self.y_step, 0.0);
         let mut points = Vec::new();
         let mut normals = Vec::new();
@@ -351,10 +354,17 @@ impl SimulatedPointSensor for PanningLaserProfile {
             let t = shift * iso;
             let (cloud, _) = self.laser_line.get_points(target, obstruction, &t);
             points.extend(cloud.points().iter().map(|p| inv * p));
-            normals.extend(cloud.normals().unwrap());
+            normals.extend(
+                cloud
+                    .point_normals()
+                    .expect("the laser line always attaches normals"),
+            );
         }
 
-        let cloud = PointCloud::try_new(points, Some(normals), None, None).unwrap();
+        let mut cloud = PointCloud3::new(points);
+        cloud
+            .set_point_normals(Some(normals))
+            .expect("normals were built one per point");
 
         (cloud, None)
     }

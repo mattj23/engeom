@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .geom3 import Point3, Mesh3, Iso3, Vector3, PointCloud
+from .geom3 import Point3, Mesh3, Iso3, Vector3, PointCloud3
 
 
 class LaserProfile:
@@ -60,7 +60,7 @@ class LaserProfile:
         """
         ...
 
-    def get_points(self, target: Mesh3, obstruction: Mesh3 | None, iso: Iso3) -> PointCloud:
+    def get_points(self, target: Mesh3, obstruction: Mesh3 | None, iso: Iso3) -> PointCloud3:
         """
 
         :param target:
@@ -80,7 +80,7 @@ class PanningLaserProfile:
         """
         ...
 
-    def get_points(self, target: Mesh3, obstruction: Mesh3 | None, iso: Iso3) -> PointCloud:
+    def get_points(self, target: Mesh3, obstruction: Mesh3 | None, iso: Iso3) -> PointCloud3:
         """
         :param target:
         :param obstruction:

@@ -61,10 +61,12 @@ impl Inscribed {
         self.inner.radius()
     }
 
+    #[getter]
     fn camber_point(&self) -> SurfacePoint2 {
         SurfacePoint2::from_inner(self.inner.camber_point())
     }
 
+    #[getter]
     fn contact_dir(&self) -> Vector2 {
         Vector2::from_inner(self.inner.contact_dir())
     }
@@ -265,11 +267,19 @@ impl AfEdge {
 #[pyclass(module = "engeom.airfoil2")]
 pub struct AfEdgeFit {
     inner: InnerAfEdgeFit,
+    // The residuals are handed to Python as a numpy array, which has to be built from
+    // the inner `Vec`. Building it once and holding it here keeps repeated reads of the
+    // property from copying the whole vector each time, the same way `Mesh3` caches its
+    // point and face buffers.
+    residuals: Option<Py<PyArray1<f64>>>,
 }
 
 impl AfEdgeFit {
     pub fn from_inner(inner: InnerAfEdgeFit) -> Self {
-        Self { inner }
+        Self {
+            inner,
+            residuals: None,
+        }
     }
 }
 
@@ -283,8 +293,12 @@ impl AfEdgeFit {
 
     /// The point-to-boundary residuals from the fitting optimization, as a 1-D numpy array.
     #[getter]
-    fn residuals<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
-        Array1::from_iter(self.inner.residuals.iter().copied()).into_pyarray(py)
+    fn residuals<'py>(&mut self, py: Python<'py>) -> &Bound<'py, PyArray1<f64>> {
+        if self.residuals.is_none() {
+            let array = Array1::from_iter(self.inner.residuals.iter().copied());
+            self.residuals = Some(array.into_pyarray(py).unbind());
+        }
+        self.residuals.as_ref().unwrap().bind(py)
     }
 
     /// The inscribed circle stack, potentially refined by the fitting step.

@@ -1,435 +1,185 @@
+//! This module contains the 3D point cloud types.
+//!
+//! [`PointCloud3`] is the owning container: a buffer of points plus a validated `PointAttrSet3`.
+//! It is cheap to construct, cheap to edit, and is what file I/O reads and writes.
+//!
+//! [`CloudIndex3`] is the accelerated view over one. It borrows a cloud and owns a k-d tree built
+//! from it, and every spatial query lives on it rather than on the cloud.
+//!
+//! # Why the tree is borrowed rather than owned by the point cloud
+//!
+//! `Mesh3` keeps its bounding volume hierarchy inside itself, but that's what `parry` chose and
+//! it's complexity that `parry` manages internally.  When I've built accelerators or query
+//! structures, I've done it with borrowed views that get built on demand.  That's how `MeshEdges`
+//! and `MeshNav` work, and there's a lot to recommend of that approach too.
+//!
+//! I'm not 100% sold either way, but I decided to try doing the point cloud kd tree as a borrowed
+//! view and see how it goes in use.  My main two thoughts were:
+//!
+//! - Building the view is not free compared to _not_ building it.  That's to say it's still an
+//!   operation that takes time (a test, albiet on older hardware, showed building a tree over 2M
+//!   points took 258ms), and that's a lot to accept when you aren't going to query anything.  This
+//!   is an argument against having the point cloud own its tree, but it could also be settled by
+//!   using the `MeshData3`/`Mesh3` split that the mesh features use.
+//!
+//! - A k-d tree can't be rigidly transformed; you have to rebuild it.  So if the cloud owned its
+//!   own tree it would have to be rebuilt on evey mutation, which is what happens in `Mesh3`. The
+//!   difference is that `Mesh3` is kind of just a wrapper over `parry::TriMesh`, and so the
+//!   complexity isn't managed by me, it's managed by the authors of `parry`.  Having the borrowed
+//!   view means that the borrow checker prevents mistakes from slipping through the cracks.
+//!
+//! That said, there are two reasons I don't like it.  First, it's different from how `Mesh3` and
+//! `MeshData3` work, so it's going to be confusing to any user.  Second, I'm anticipating there's
+//! going to be some friction from the borrow checker when working with it in the real world.  I'm
+//! setting things up this way now so that, if in the course of putting some city miles on the
+//! abstraction it turns out to have been a bad choice, I know to revert it and not try this again.
+
 mod data;
 mod normal_estimation;
 
-use crate::common::kd_tree::{KdTreeSearch, MatchedTree};
+use crate::common::kd_tree::KdTreeSearch;
 use crate::common::points::dist;
-use crate::{Iso3, KdTree3, Mesh3, Point3, Result, SurfacePoint3, UnitVec3};
-use uuid::Uuid;
+use crate::{KdTree3, Mesh3, Point3, Result};
 
-use crate::common::IndexMask;
-use crate::common::poisson_disk::sample_poisson_disk_all;
-use crate::geom3::Aabb3;
-pub use data::PointCloudData3;
-pub use normal_estimation::{NormalEstimates, estimate_by_neighborhood};
+pub use data::{PointCloud3, VOXEL_COHERENCE_ATTR, VOXEL_COUNT_ATTR};
+pub use normal_estimation::NormalEstimates;
 
+/// Finding which points of one entity are also covered by another, by testing whether the closest
+/// point in each direction agrees.
 pub trait PointCloudOverlap<TOther> {
     fn overlap_by_reciprocity(&self, other: &TOther, max_distance: f64) -> Vec<usize>;
 }
 
-pub trait PointCloudFeatures {
-    fn points(&self) -> &[Point3];
-    fn normals(&self) -> Option<&[UnitVec3]>;
-    fn colors(&self) -> Option<&[[u8; 3]]>;
+/// A k-d tree built over a [`PointCloud3`], borrowed from it for the index's lifetime.
+///
+/// Build one with [`PointCloud3::compute_index`]. The borrow is what makes staleness impossible:
+/// the cloud cannot be mutated while this exists, so the tree can never describe a point set that
+/// has moved out from under it.
+///
+/// Throwing one away and building another is a reasonable thing to do when ownership gets awkward.
+/// See the module documentation for the measurements which say so.
+pub struct CloudIndex3<'a> {
+    cloud: &'a PointCloud3,
+    tree: TreeRef<'a>,
+}
 
-    fn std_devs(&self) -> Option<&[f64]>;
+/// The tree an index queries, which it either owns or has been handed.
+///
+/// Owning is the normal case. Borrowing exists for a caller which keeps a tree alive across many
+/// queries and rebuilds it on its own schedule; see [`PointCloud3::index_with_tree_unchecked`].
+enum TreeRef<'a> {
+    Owned(KdTree3),
+    Borrowed(&'a KdTree3),
+}
 
-    fn is_empty(&self) -> bool {
-        self.points().is_empty()
-    }
-
-    fn len(&self) -> usize {
-        self.points().len()
-    }
-
-    fn aabb(&self) -> Aabb3 {
-        // TODO: there must be a more efficient way to do this without allocating a new Vec,
-        // I don't know why parry changed this
-        Aabb3::from_points(self.points().to_vec())
-    }
-
-    fn create_from_mask(&self, mask: &IndexMask) -> Result<PointCloud> {
-        if mask.len() != self.len() {
-            return Err("Mask length must match point cloud length".into());
+impl TreeRef<'_> {
+    fn get(&self) -> &KdTree3 {
+        match self {
+            TreeRef::Owned(tree) => tree,
+            TreeRef::Borrowed(tree) => tree,
         }
-        let points = mask.clone_indices_of(self.points())?;
-        let normals = if let Some(n) = self.normals() {
-            Some(mask.clone_indices_of(n)?)
-        } else {
-            None
-        };
-
-        let colors = if let Some(c) = self.colors() {
-            Some(mask.clone_indices_of(c)?)
-        } else {
-            None
-        };
-
-        let std_devs = if let Some(s) = self.std_devs() {
-            Some(mask.clone_indices_of(s)?)
-        } else {
-            None
-        };
-
-        PointCloud::try_new(points, normals, colors, std_devs)
-    }
-
-    fn create_from_indices(&self, indices: &[usize]) -> Result<PointCloud> {
-        // Verify that all indices are valid
-        if indices.iter().any(|&i| i >= self.len()) {
-            return Err("Index out of bounds".into());
-        }
-
-        let points = self.points();
-        let normals = self.normals();
-        let colors = self.colors();
-        let std_devs = self.std_devs();
-
-        let points = indices.iter().map(|i| points[*i]).collect();
-        let normals = normals.map(|n| indices.iter().map(|i| n[*i]).collect());
-        let colors = colors.map(|c| indices.iter().map(|i| c[*i]).collect());
-        let std_devs = std_devs.map(|s| indices.iter().map(|i| s[*i]).collect());
-
-        PointCloud::try_new(points, normals, colors, std_devs)
     }
 }
 
-/// A mutable point cloud with optional normals and colors.
-#[derive(Clone)]
-pub struct PointCloud {
-    tree_uuid: Uuid,
-    points: Vec<Point3>,
-    normals: Option<Vec<UnitVec3>>,
-    colors: Option<Vec<[u8; 3]>>,
-    std_devs: Option<Vec<f64>>,
-}
-
-impl PointCloud {
-    /// Create a new point cloud from points and, optionally, normals and colors.
-    ///
-    /// # Arguments
-    ///
-    /// * `points`: The points in the point cloud.
-    /// * `normals`: Optional normals to be associated with the points. If provided, the number of
-    ///   normals must match the number of points.
-    /// * `colors`: Optional colors to be associated with the points. If provided, the number of
-    ///   colors must match the number of points.
-    ///
-    /// returns: PointCloud
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
-    pub fn try_new(
-        points: Vec<Point3>,
-        normals: Option<Vec<UnitVec3>>,
-        colors: Option<Vec<[u8; 3]>>,
-        std_devs: Option<Vec<f64>>,
-    ) -> Result<Self> {
-        if let Some(normals) = &normals
-            && normals.len() != points.len()
-        {
-            return Err("normals must have the same length as points".into());
-        }
-
-        if let Some(colors) = &colors
-            && colors.len() != points.len()
-        {
-            return Err("colors must have the same length as points".into());
-        }
-
-        if let Some(std_devs) = &std_devs
-            && std_devs.len() != points.len()
-        {
-            return Err("std_devs must have the same length as points".into());
-        }
-
+impl<'a> CloudIndex3<'a> {
+    /// Build an index over `cloud`. Prefer [`PointCloud3::compute_index`], which calls this.
+    pub fn try_new(cloud: &'a PointCloud3) -> Result<Self> {
+        let tree = KdTree3::try_new(cloud.points())?;
         Ok(Self {
-            tree_uuid: Uuid::new_v4(),
-            points,
-            normals,
-            colors,
-            std_devs,
+            cloud,
+            tree: TreeRef::Owned(tree),
         })
     }
 
-    pub fn from_surface_points(points: &[SurfacePoint3]) -> Self {
-        let normals = points.iter().map(|p| p.normal).collect::<Vec<_>>();
-        let points = points.iter().map(|p| p.point).collect();
-        Self::try_new(points, Some(normals), None, None).unwrap()
-    }
-
-    /// Merges another point cloud into this one, modifying this point cloud in place and
-    /// consuming the other. The two point clouds must either both have normals or both not have
-    /// normals, and either both have colors or both not have colors.
-    ///
-    /// If the point clouds' normal or color data is inconsistent, an error will be returned before
-    /// any data is merged, however the other point cloud will still have been moved. Thus, it is
-    /// recommended to check the normal and color data of both point clouds before calling this
-    /// method.
-    ///
-    /// # Arguments
-    ///
-    /// * `other`:
-    ///
-    /// returns: Result<(), Box<dyn Error, Global>>
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
-    pub fn merge(&mut self, other: PointCloud) -> Result<()> {
-        // Pre-merge checks to ensure that the colors and normals are both either present or absent
-        // in both point clouds.
-        if self.normals.is_some() != other.normals.is_some() {
-            return Err("Cannot merge point clouds with inconsistent normal data".into());
-        }
-        if self.colors.is_some() != other.colors.is_some() {
-            return Err("Cannot merge point clouds with inconsistent color data".into());
-        }
-
-        // Merge the points
-        self.points.extend(other.points);
-
-        // Merge the normals if they are present
-        if let Some(normals) = other.normals {
-            self.normals.as_mut().unwrap().extend(normals);
-        }
-
-        // Merge the colors if they are present
-        if let Some(colors) = other.colors {
-            self.colors.as_mut().unwrap().extend(colors);
-        }
-
-        self.tree_uuid = Uuid::new_v4();
-
-        Ok(())
-    }
-
-    /// Add a single point to the point cloud, along with optional normal and color data. If the
-    /// point cloud already has normals the new point must have a normal, and the same goes for
-    /// colors. If this consistency check fails, an error will be returned.
-    ///
-    /// # Arguments
-    ///
-    /// * `point`: The point to add to the cloud
-    /// * `normal`: An optional normal to add to the point, this must be provided if the point
-    ///   cloud already has normals and excluded if it does not.
-    /// * `color`: An optional color to add to the point, this must be provided if the point cloud
-    ///   already has colors and excluded if it does not.
-    ///
-    /// returns: Result<(), Box<dyn Error, Global>>
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
-    pub fn append(
-        &mut self,
-        point: Point3,
-        normal: Option<UnitVec3>,
-        color: Option<[u8; 3]>,
-    ) -> Result<()> {
-        // Check that the normal and color data is consistent with the existing point cloud
-        if self.normals.is_some() != normal.is_some() {
-            return Err("Cannot append point with inconsistent normal data".into());
-        }
-
-        if self.colors.is_some() != color.is_some() {
-            return Err("Cannot append point with inconsistent color data".into());
-        }
-
-        self.points.push(point);
-        if let Some(normal) = normal {
-            self.normals.as_mut().unwrap().push(normal);
-        }
-        if let Some(color) = color {
-            self.colors.as_mut().unwrap().push(color);
-        }
-
-        self.tree_uuid = Uuid::new_v4();
-        Ok(())
-    }
-
-    /// Create an empty point cloud with the specified normal and color data. The point cloud will
-    /// initialize with an empty vector for the points. If `has_normals` is true, an empty vector
-    /// will be created for the normals, and the same goes for colors.  Any data appended or merged
-    /// into this point cloud must be consistent with the presence/absence of normal and color data.
-    ///
-    /// # Arguments
-    ///
-    /// * `has_normals`: if true, the point cloud will have normals
-    /// * `has_colors`: if true, the point cloud will have colors
-    ///
-    /// returns: PointCloud
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
-    pub fn empty(has_normals: bool, has_colors: bool, has_std_devs: bool) -> Self {
+    /// Pair a cloud with a tree the caller has already built over it, without checking that the two
+    /// match. Reached through [`PointCloud3::index_with_tree_unchecked`], which is where the
+    /// obligation is documented.
+    pub(crate) fn with_tree_unchecked(cloud: &'a PointCloud3, tree: &'a KdTree3) -> Self {
         Self {
-            tree_uuid: Uuid::new_v4(),
-            points: Vec::new(),
-            normals: if has_normals { Some(Vec::new()) } else { None },
-            colors: if has_colors { Some(Vec::new()) } else { None },
-            std_devs: if has_std_devs { Some(Vec::new()) } else { None },
+            cloud,
+            tree: TreeRef::Borrowed(tree),
         }
     }
 
-    /// Transform the point cloud by applying a transformation to all points and normals. This
-    /// modifies the point cloud in place.
-    ///
-    /// # Arguments
-    ///
-    /// * `transform`: The transformation to apply to the point cloud.
-    ///
-    /// returns: ()
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
-    pub fn transform_by(&mut self, transform: &Iso3) {
-        for p in &mut self.points {
-            *p = transform * *p;
-        }
-
-        if let Some(normals) = &mut self.normals {
-            for n in normals {
-                *n = transform * *n;
-            }
-        }
-
-        self.tree_uuid = Uuid::new_v4();
+    /// The cloud this index was built over.
+    pub fn cloud(&self) -> &'a PointCloud3 {
+        self.cloud
     }
 
-    pub fn create_matched_tree(&self) -> Result<MatchedTree<3>> {
-        if self.points.is_empty() {
-            return Err("Cannot create a KD tree from an empty point cloud".into());
-        }
-        let tree = KdTree3::try_new(&self.points)?;
-        Ok(MatchedTree::new(self.tree_uuid, tree))
-    }
-}
-
-impl TryFrom<(&[Point3], &[UnitVec3])> for PointCloud {
-    type Error = Box<dyn std::error::Error>;
-
-    fn try_from(value: (&[Point3], &[UnitVec3])) -> Result<Self> {
-        let (points, normals) = value;
-        if points.len() != normals.len() {
-            return Err("points and normals must have the same length".into());
-        }
-
-        Self::try_new(points.to_vec(), Some(normals.to_vec()), None, None)
-    }
-}
-
-impl From<&[Point3]> for PointCloud {
-    fn from(points: &[Point3]) -> Self {
-        Self::try_new(points.to_vec(), None, None, None)
-            .expect("Failed to create point cloud from points, this should not happen")
-    }
-}
-
-impl From<&[SurfacePoint3]> for PointCloud {
-    fn from(points: &[SurfacePoint3]) -> Self {
-        let normals = points.iter().map(|p| p.normal).collect::<Vec<_>>();
-        let points = points.iter().map(|p| p.point).collect();
-        Self::try_new(points, Some(normals), None, None)
-            .expect("Points and normals must have the same length, this should not have happened")
-    }
-}
-
-impl PointCloudFeatures for PointCloud {
-    fn points(&self) -> &[Point3] {
-        &self.points
-    }
-
-    fn normals(&self) -> Option<&[UnitVec3]> {
-        self.normals.as_deref()
-    }
-
-    fn colors(&self) -> Option<&[[u8; 3]]> {
-        self.colors.as_deref()
-    }
-
-    fn std_devs(&self) -> Option<&[f64]> {
-        self.std_devs.as_deref()
-    }
-}
-
-pub struct PointCloudKdTree<'a> {
-    cloud: &'a PointCloud,
-    tree: &'a MatchedTree<3>,
-}
-
-impl<'a> PointCloudKdTree<'a> {
-    pub fn try_new(cloud: &'a PointCloud, tree: &'a MatchedTree<3>) -> Result<Self> {
-        if cloud.tree_uuid != tree.tree_uuid() {
-            return Err("The point cloud and the KD tree do not match".into());
-        }
-        Ok(Self { cloud, tree })
-    }
-
+    /// The underlying k-d tree, for the query methods on [`KdTreeSearch`].
     pub fn tree(&self) -> &KdTree3 {
-        self.tree.tree()
+        self.tree.get()
     }
 
-    /// Performs a Poisson disk sampling on the point cloud, returning a vector of indices of points
-    /// which are at least `radius` distance apart from each other.
-    ///
-    /// # Arguments
-    ///
-    /// * `radius`: The minimum distance between sampled points.
-    ///
-    /// returns: Vec<usize, Global>
-    pub fn sample_poisson_disk(&self, radius: f64) -> IndexMask {
-        sample_poisson_disk_all(self.points(), radius)
+    /// The points of the underlying cloud. Query results index into this.
+    pub fn points(&self) -> &[Point3] {
+        self.cloud.points()
     }
 
-    /// Create a new point cloud from a Poisson disk sampling of the original point cloud. The new
-    /// point cloud will contain only points that are at least `radius` distance apart from each
-    /// other.
+    /// Estimate a normal at every point by fitting a plane to the neighbors within `radius`.
     ///
-    /// This is the equivalent of performing `create_from_indices` using the indices returned by
-    /// `sample_poisson_disk`.
+    /// Each estimated normal is flipped where needed to agree with the matching entry of
+    /// `must_match`, since a plane fit gives an axis rather than a direction and cannot resolve the
+    /// sign on its own. Points with fewer than three neighbors get `+Z` at zero confidence.
     ///
-    /// # Arguments
-    ///
-    /// * `radius`: The minimum distance between sampled points.
-    ///
-    /// returns: Result<PointCloud, Box<dyn Error, Global>>
-    pub fn create_from_poisson_sample(&self, radius: f64) -> Result<PointCloud> {
-        let mask = self.sample_poisson_disk(radius);
-        self.cloud.create_from_mask(&mask)
+    /// The returned confidence is a measure of how plane-like the neighborhood was, so it is low on
+    /// edges and corners and in sparse regions.
+    pub fn estimate_normals(
+        &self,
+        must_match: &[crate::Vector3],
+        radius: f64,
+    ) -> Result<NormalEstimates> {
+        if must_match.len() != self.points().len() {
+            return Err(format!(
+                "must_match has {} entries but the cloud has {} points",
+                must_match.len(),
+                self.points().len()
+            )
+            .into());
+        }
+
+        Ok(normal_estimation::estimate_by_neighborhood(
+            self.points(),
+            must_match,
+            self.tree.get(),
+            radius,
+        ))
     }
 }
 
-impl PointCloudOverlap<Mesh3> for PointCloudKdTree<'_> {
-    /// Find the indices of points in this point cloud that "overlap" with a mesh by looking for
-    /// reciprocity in the closest point in each direction.
+impl KdTreeSearch<3> for CloudIndex3<'_> {
+    fn nearest_one(&self, point: &impl crate::common::PCoords<3>) -> (usize, f64) {
+        self.tree.get().nearest_one(point)
+    }
+
+    fn nearest(&self, point: &impl crate::common::PCoords<3>, count: usize) -> Vec<(usize, f64)> {
+        self.tree.get().nearest(point, count)
+    }
+
+    fn within(&self, point: &impl crate::common::PCoords<3>, radius: f64) -> Vec<(usize, f64)> {
+        self.tree.get().within(point, radius)
+    }
+
+    fn len(&self) -> usize {
+        self.tree.get().len()
+    }
+}
+
+impl PointCloudOverlap<Mesh3> for CloudIndex3<'_> {
+    /// Find the indices of points in this cloud which overlap a mesh, by looking for reciprocity in
+    /// the closest point in each direction.
     ///
-    /// For each point in this point cloud "p_this", we will find the closest point in the mesh
-    /// "p_other".  Then we take "p_other" and find the closest point to it in this point cloud,
-    /// "p_recip".
-    ///
-    /// In an ideally overlapping point cloud, "p_recip" should be the same as "p_this".  We will
-    /// use a maximum distance tolerance to determine if "p_recip" is close enough to "p_this" that
-    /// "p_this" is considered to be overlapping with the mesh.
-    ///
-    /// # Arguments
-    ///
-    /// * `mesh`: the mesh to check for overlap with
-    /// * `max_distance`: the maximum distance between "p_this" and "p_recip" for them to be
-    ///   considered overlapping
-    ///
-    /// returns: Vec<usize, Global>
+    /// For each point `p_this` in this cloud, find the closest point on the mesh, `p_other`, then
+    /// find the closest point to `p_other` back in this cloud, `p_recip`. Where the two clouds
+    /// genuinely cover the same surface `p_recip` is `p_this`, so `p_this` counts as overlapping
+    /// when the two are within `max_distance`.
     fn overlap_by_reciprocity(&self, mesh: &Mesh3, max_distance: f64) -> Vec<usize> {
         let mut result = Vec::new();
-        for (i, p_this) in self.cloud.points.iter().enumerate() {
-            // Find the closest point in the mesh
+        for (i, p_this) in self.points().iter().enumerate() {
             let p_other = mesh.point_closest_to(p_this);
 
-            // Find the reciprocal point in this point cloud
-            let (k, _) = self.tree().nearest_one(&p_other);
-            let p_recip = self.cloud.points()[k];
+            let (k, _) = self.tree.get().nearest_one(&p_other);
+            let p_recip = self.points()[k];
 
             if dist(p_this, &p_recip) < max_distance {
                 result.push(i);
@@ -440,35 +190,20 @@ impl PointCloudOverlap<Mesh3> for PointCloudKdTree<'_> {
     }
 }
 
-impl PointCloudOverlap<PointCloudKdTree<'_>> for PointCloudKdTree<'_> {
-    /// Find the indices of points in this point cloud that "overlap" with points in another point
-    /// cloud by looking for reciprocity in the closest point in each direction.
+impl PointCloudOverlap<CloudIndex3<'_>> for CloudIndex3<'_> {
+    /// Find the indices of points in this cloud which overlap another cloud, by looking for
+    /// reciprocity in the closest point in each direction.
     ///
-    /// For each point in this point cloud "p_this", we will find the closest point in the other
-    /// point cloud "p_other".  Then we take "p_other" and find the closest point to it in this
-    /// point cloud, "p_recip".
-    ///
-    /// In an ideally overlapping point cloud, "p_recip" should be the same as "p_this".  We will
-    /// use a maximum distance tolerance to determine if "p_recip" is close enough to "p_this" that
-    /// "p_this" is considered to be overlapping with the other point cloud.
-    ///
-    /// # Arguments
-    ///
-    /// * `other`: the other point cloud to check for overlap with
-    /// * `max_distance`: the maximum distance between "p_this" and "p_recip" for them to be
-    ///   considered overlapping
-    ///
-    /// returns: Vec<usize, Global>
-    fn overlap_by_reciprocity(&self, other: &PointCloudKdTree, max_distance: f64) -> Vec<usize> {
+    /// See the mesh implementation for the reciprocity argument; the only difference is that
+    /// `p_other` comes from a nearest-neighbor query into `other` rather than a surface projection.
+    fn overlap_by_reciprocity(&self, other: &CloudIndex3, max_distance: f64) -> Vec<usize> {
         let mut result = Vec::new();
-        for (i, p_this) in self.cloud.points.iter().enumerate() {
-            // Find the closest point in the other point cloud
-            let (j, _) = other.tree().nearest_one(p_this);
-            let p_other = other.cloud.points()[j];
+        for (i, p_this) in self.points().iter().enumerate() {
+            let (j, _) = other.tree.get().nearest_one(p_this);
+            let p_other = other.points()[j];
 
-            // Find the reciprocal point in this point cloud
-            let (k, _) = self.tree().nearest_one(&p_other);
-            let p_recip = self.cloud.points()[k];
+            let (k, _) = self.tree.get().nearest_one(&p_other);
+            let p_recip = self.points()[k];
 
             if dist(p_this, &p_recip) < max_distance {
                 result.push(i);
@@ -476,23 +211,5 @@ impl PointCloudOverlap<PointCloudKdTree<'_>> for PointCloudKdTree<'_> {
         }
 
         result
-    }
-}
-
-impl PointCloudFeatures for PointCloudKdTree<'_> {
-    fn points(&self) -> &[Point3] {
-        &self.cloud.points
-    }
-
-    fn normals(&self) -> Option<&[UnitVec3]> {
-        self.cloud.normals.as_deref()
-    }
-
-    fn colors(&self) -> Option<&[[u8; 3]]> {
-        self.cloud.colors.as_deref()
-    }
-
-    fn std_devs(&self) -> Option<&[f64]> {
-        self.cloud.std_devs.as_deref()
     }
 }

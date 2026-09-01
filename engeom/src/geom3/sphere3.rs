@@ -93,6 +93,44 @@ impl Sphere3 {
         Ok(Self::new(&center, radius))
     }
 
+    /// Creates the smallest sphere containing every point in expected O(n) time.
+    ///
+    /// A single point or identical points produce a zero-radius sphere. Collinear and coplanar
+    /// points produce the smallest sphere in their affine subspace. Returns an error for an empty
+    /// point set.
+    ///
+    /// # Arguments
+    ///
+    /// * `points`: a slice of points to enclose; must not be empty
+    ///
+    /// returns: Result<Sphere3, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::{Point3, geom3::Sphere3};
+    /// use approx::assert_relative_eq;
+    ///
+    /// // The six vertices of a regular octahedron, plus an interior point
+    /// let points = [
+    ///     Point3::new(1.0, 0.0, 0.0),
+    ///     Point3::new(-1.0, 0.0, 0.0),
+    ///     Point3::new(0.0, 1.0, 0.0),
+    ///     Point3::new(0.0, -1.0, 0.0),
+    ///     Point3::new(0.0, 0.0, 1.0),
+    ///     Point3::new(0.0, 0.0, -1.0),
+    ///     Point3::new(0.1, 0.2, 0.3),
+    /// ];
+    ///
+    /// let sphere = Sphere3::from_min_enclosing(&points).unwrap();
+    /// assert_relative_eq!(sphere.center, Point3::origin(), epsilon = 1e-12);
+    /// assert_relative_eq!(sphere.radius, 1.0, epsilon = 1e-12);
+    /// ```
+    pub fn from_min_enclosing(points: &[impl PCoords<3>]) -> Result<Self> {
+        let (center, radius) = crate::common::min_ball::compute_min_ball(points)?;
+        Ok(Self { center, radius })
+    }
+
     /// Returns a new sphere transformed by the given isometry, without modifying the original.
     /// Only the translation component affects the sphere (rotation does not change a sphere).
     ///
@@ -247,6 +285,21 @@ mod tests {
 
     fn offset_sphere() -> Sphere3 {
         Sphere3::new(&Point3::new(1.0, 2.0, 3.0), 2.0)
+    }
+
+    #[test]
+    fn min_enclosing_mixed_boundary_and_interior() {
+        // Two antipodal points fix the sphere; everything else is strictly interior
+        let points = [
+            Point3::new(-2.0, 1.0, 1.0),
+            Point3::new(4.0, 1.0, 1.0),
+            Point3::new(1.0, 2.0, 1.0),
+            Point3::new(1.0, 1.0, 0.0),
+            Point3::new(2.0, 1.5, 1.5),
+        ];
+        let sphere = Sphere3::from_min_enclosing(&points).unwrap();
+        assert_relative_eq!(sphere.center, Point3::new(1.0, 1.0, 1.0), epsilon = 1e-12);
+        assert_relative_eq!(sphere.radius, 3.0, epsilon = 1e-12);
     }
 
     #[test]

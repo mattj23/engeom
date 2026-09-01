@@ -1,11 +1,13 @@
 use crate::common::domain_window::DomainWindowIter;
 use crate::common::points::{dist, ramer_douglas_peucker};
 use crate::errors::InvalidGeometry;
-use crate::geom3::{Iso3, Plane3, Point3, UnitVec3};
+use crate::geom3::{Aabb3, Iso3, Plane3, Point3, UnitVec3};
+use crate::io::{read_tc_curve3_file, write_tc_curve3_file};
 use crate::{Func1, Polynomial, Resample, Result, Smoothing, SurfacePoint3, SvdBasis3};
 use parry3d_f64::na::Unit;
 use parry3d_f64::query::PointQueryWithLocation;
 use parry3d_f64::shape::Polyline;
+use std::path::Path;
 
 #[derive(Copy, Clone)]
 pub struct CurveStation3<'a> {
@@ -101,6 +103,11 @@ impl Curve3 {
         self.line.vertices()[i]
     }
 
+    /// Returns the axis-aligned bounding box enclosing all curve vertices.
+    pub fn aabb(&self) -> Aabb3 {
+        self.line.local_aabb()
+    }
+
     pub fn new_transformed_by(&self, iso: &Iso3) -> Self {
         let points = self
             .line
@@ -128,6 +135,41 @@ impl Curve3 {
         }
 
         Ok(Self { line, lengths, tol })
+    }
+
+    /// Read a curve from a tolerance-compressed `.tccurve3` file.
+    ///
+    /// The vertex positions are recovered within the tolerance the file was written at, and the
+    /// curve's own chord tolerance is restored from it.
+    ///
+    /// # Failure
+    ///
+    /// A file holding more than one curve is refused rather than yielding its first, since
+    /// returning part of a collection would silently discard the rest. Use
+    /// [`crate::geom3::CurveGroup3::load_tccurve3`] for those.
+    ///
+    /// A `Curve3` has no notion of being closed, so a file marked closed is refused rather than
+    /// quietly flattened into an open curve.
+    pub fn load_tccurve3(path: &Path) -> Result<Self> {
+        read_tc_curve3_file(path)
+    }
+
+    /// Write this curve to a tolerance-compressed `.tccurve3` file.
+    ///
+    /// Vertex positions are quantized to the narrowest bit width per axis which keeps every one of
+    /// them within `tol` of where it started. A smaller tolerance costs more bytes per vertex. The
+    /// curve's chord tolerance travels alongside the points and is unaffected by this one, which is
+    /// purely about storage.
+    ///
+    /// # Arguments
+    ///
+    /// * `path`: the path to write to, which is overwritten if it already exists
+    /// * `tol`: the largest acceptable round-trip position error for any vertex, in the same units
+    ///   as the coordinates
+    ///
+    /// returns: `Result<()>`
+    pub fn save_tccurve3(&self, path: &Path, tol: f64) -> Result<()> {
+        write_tc_curve3_file(path, self, tol)
     }
 
     pub fn count(&self) -> usize {
@@ -366,5 +408,45 @@ impl<'a> Iterator for Curve3Iterator<'a> {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use approx::assert_relative_eq;
+
+    /// A closed unit square in the plane `z = z0`, with its first vertex repeated as its last,
+    /// which is how a section of a mesh represents a loop.
+    fn square_at(z0: f64) -> Curve3 {
+        let points = [
+            Point3::new(0.0, 0.0, z0),
+            Point3::new(1.0, 0.0, z0),
+            Point3::new(1.0, 1.0, z0),
+            Point3::new(0.0, 1.0, z0),
+            Point3::new(0.0, 0.0, z0),
+        ];
+        Curve3::from_points(&points, 1e-8).unwrap()
+    }
+
+    /// The container methods have to be a real path to the format, not just a forwarder that
+    /// compiles: the chord tolerance is carried as file metadata rather than as geometry, so it is
+    /// the thing most likely to be quietly lost.
+    #[test]
+    fn a_curve_round_trips_through_the_container_methods() {
+        let curve = square_at(2.0);
+        let path = std::env::temp_dir().join("engeom_curve3_container.tccurve3");
+        let tol = 1e-6;
+
+        curve.save_tccurve3(&path, tol).unwrap();
+        let back = Curve3::load_tccurve3(&path).unwrap();
+
+        assert_eq!(back.count(), curve.count());
+        assert_relative_eq!(back.tol(), curve.tol(), epsilon = 1e-15);
+        for (a, b) in curve.vertices().iter().zip(back.vertices().iter()) {
+            assert_relative_eq!(a, b, epsilon = tol);
+        }
+
+        let _ = std::fs::remove_file(&path);
     }
 }

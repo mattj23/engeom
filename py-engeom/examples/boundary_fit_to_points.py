@@ -64,7 +64,7 @@ def main():
     true_params = numpy.array([2.0, 1.0, 3.0, 1.5])
     true_boundary = build_slot(true_params).to_boundary()
 
-    lengths = numpy.linspace(0, true_boundary.length(), 200, endpoint=False)
+    lengths = numpy.linspace(0, true_boundary.length, 200, endpoint=False)
     clean_points = true_boundary.at_lengths(lengths)[:, :2]
 
     # Add Gaussian noise with σ = 0.05 (5 % of the slot radius).

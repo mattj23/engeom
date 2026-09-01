@@ -40,7 +40,7 @@ def geom() -> AfGeometry:
 
 
 def test_af_point_lands_on_the_requested_side(geom: AfGeometry):
-    mid = geom.camber.length() / 2.0
+    mid = geom.camber.length / 2.0
     upper = geom.af_point("upper", "on_camber", mid)
     lower = geom.af_point("lower", "on_camber", mid)
 
@@ -53,7 +53,7 @@ def test_af_point_lands_on_the_requested_side(geom: AfGeometry):
 
 
 def test_af_point_off_the_surface_is_none(geom: AfGeometry):
-    assert geom.af_point("upper", "on_camber", geom.camber.length() * 1.5) is None
+    assert geom.af_point("upper", "on_camber", geom.camber.length * 1.5) is None
 
 
 def test_af_point_rejects_bad_tokens(geom: AfGeometry):
@@ -65,7 +65,7 @@ def test_af_point_rejects_bad_tokens(geom: AfGeometry):
 
 
 def test_thickness_at_mid_chord(geom: AfGeometry):
-    mid = geom.camber.length() / 2.0
+    mid = geom.camber.length / 2.0
     d = geom.thickness_at("on_camber", mid)
 
     assert d is not None
@@ -77,7 +77,7 @@ def test_thickness_at_mid_chord(geom: AfGeometry):
 
 
 def test_thickness_at_matches_its_own_gage_points(geom: AfGeometry):
-    value = geom.camber.length() * 0.3
+    value = geom.camber.length * 0.3
     d = geom.thickness_at("on_camber", value)
     upper = geom.af_point("upper", "on_camber", value)
     lower = geom.af_point("lower", "on_camber", value)
@@ -105,7 +105,7 @@ def test_max_thickness_bounds_a_camber_sweep(geom: AfGeometry):
     find anything meaningfully thicker.
     """
     best = geom.max_thickness().value
-    length = geom.camber.length()
+    length = geom.camber.length
 
     sweep = 0.0
     for i in range(1, 400):

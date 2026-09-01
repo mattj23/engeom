@@ -3,7 +3,7 @@
 """
 import pytest
 import numpy
-from engeom.geom3 import Vector3, Point3, SurfacePoint3, Iso3
+from engeom.geom3 import Vector3, Point3, SurfacePoint3, Iso3, Sphere3
 
 
 def test_unpacking():
@@ -169,3 +169,26 @@ def test_iso3_matmul_iso3():
     iso2 = Iso3.identity()
     result = iso1 @ iso2
     assert isinstance(result, Iso3)
+
+
+def test_sphere3_from_min_enclosing():
+    points = numpy.array([
+        [1.0, 0.0, 0.0],
+        [-1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, -1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, -1.0],
+        [0.1, 0.2, 0.3],
+    ])
+    sphere = Sphere3.from_min_enclosing(points)
+    assert abs(sphere.center.x) < 1e-12
+    assert abs(sphere.center.y) < 1e-12
+    assert abs(sphere.center.z) < 1e-12
+    assert abs(sphere.r - 1.0) < 1e-12
+
+
+def test_sphere3_from_min_enclosing_empty_raises():
+    points = numpy.empty((0, 3))
+    with pytest.raises(ValueError):
+        Sphere3.from_min_enclosing(points)

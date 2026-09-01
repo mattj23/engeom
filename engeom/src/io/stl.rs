@@ -19,8 +19,8 @@
 //!
 //! Everything else...attributes, colors, etc...are lost.  Only use this format if you have to.
 
-use crate::geom3::mesh::MeshData3;
 use crate::geom3::mesh::algorithms::normals::compute_face_normal;
+use crate::geom3::mesh::{MeshData3, MeshView3};
 use crate::{Point3, Result};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Seek, Write};
@@ -157,15 +157,24 @@ const BINARY_HEADER_LEN: usize = 80;
 /// * `opts`: encoding, header, and attribute loss options
 ///
 /// returns: `Result<()>`
-pub fn write_stl_mesh_data(path: &Path, mesh: &MeshData3, opts: &StlWriteOpts) -> Result<()> {
+pub fn write_stl_mesh<'a>(
+    path: &Path,
+    mesh: impl Into<MeshView3<'a>>,
+    opts: &StlWriteOpts,
+) -> Result<()> {
     let mut file = BufWriter::new(File::create(path)?);
     write_stl_to(&mut file, mesh, opts)?;
     file.flush()?;
     Ok(())
 }
 
-/// Write a mesh in the STL format to any sink. See `write_stl_mesh_data`.
-pub fn write_stl_to<W: Write>(out: &mut W, mesh: &MeshData3, opts: &StlWriteOpts) -> Result<()> {
+/// Write a mesh in the STL format to any sink. See [`write_stl_mesh`].
+pub fn write_stl_to<'a, W: Write>(
+    out: &mut W,
+    mesh: impl Into<MeshView3<'a>>,
+    opts: &StlWriteOpts,
+) -> Result<()> {
+    let mesh = mesh.into();
     mesh.check_attribute_loss("STL", opts.allow_attribute_loss)?;
 
     if mesh.face_count() > u32::MAX as usize {
@@ -217,7 +226,7 @@ fn validated_header(header: Option<&str>) -> Result<&str> {
 }
 
 /// Look up a face's three points, which construction guarantees are in range.
-fn face_points(mesh: &MeshData3, face: &[u32; 3]) -> [Point3; 3] {
+fn face_points(mesh: MeshView3<'_>, face: &[u32; 3]) -> [Point3; 3] {
     [
         mesh.points()[face[0] as usize],
         mesh.points()[face[1] as usize],
@@ -235,7 +244,7 @@ fn facet_normal(p: &[Point3; 3]) -> [f32; 3] {
     }
 }
 
-fn write_binary<W: Write>(out: &mut W, mesh: &MeshData3, header: &str) -> Result<()> {
+fn write_binary<W: Write>(out: &mut W, mesh: MeshView3<'_>, header: &str) -> Result<()> {
     // The header is a fixed size field, so truncate on a character boundary rather than mid
     // codepoint, and zero pad the rest.
     let mut header_bytes = [0u8; BINARY_HEADER_LEN];
@@ -270,7 +279,7 @@ fn write_binary<W: Write>(out: &mut W, mesh: &MeshData3, header: &str) -> Result
     Ok(())
 }
 
-fn write_ascii<W: Write>(out: &mut W, mesh: &MeshData3, header: &str) -> Result<()> {
+fn write_ascii<W: Write>(out: &mut W, mesh: MeshView3<'_>, header: &str) -> Result<()> {
     // Values go out through `Display`, which for a float is the shortest decimal that reads back
     // as the same value. That is both compact and unambiguous, and it avoids the exponent
     // formatting that some readers of this format handle poorly.
@@ -341,7 +350,7 @@ mod tests {
             .faces()
             .iter()
             .map(|f| {
-                let mut corners = face_points(mesh, f).map(|p| {
+                let mut corners = face_points(mesh.view(), f).map(|p| {
                     [
                         (p.x as f32).to_bits(),
                         (p.y as f32).to_bits(),
@@ -440,7 +449,7 @@ mod tests {
         assert_eq!(triangle_set(&back), triangle_set(&mesh));
 
         // Nothing came back but geometry.
-        assert!(back.attrs().is_empty());
+        assert!(!back.has_attrs());
 
         Ok(())
     }
@@ -695,6 +704,31 @@ mod tests {
         let step = f32::from_bits(step) as f64 - 1000.0;
         assert!((recovered - exact).abs() > step * 0.4);
         assert!((recovered - exact).abs() <= step * 0.5);
+
+        Ok(())
+    }
+
+    /// Because the writer uses a borrowed view, the accelerated mesh must produce the same bytes as
+    /// the plain container without first copying it.
+    #[test]
+    fn either_container_writes_identical_bytes() -> Result<()> {
+        let data = simple();
+        let mesh = crate::Mesh3::from_data(data.clone(), false)?;
+
+        for binary in [true, false] {
+            let opts = StlWriteOpts {
+                binary,
+                ..Default::default()
+            };
+
+            let mut from_data = Vec::new();
+            write_stl_to(&mut from_data, &data, &opts)?;
+
+            let mut from_mesh = Vec::new();
+            write_stl_to(&mut from_mesh, &mesh, &opts)?;
+
+            assert_eq!(from_data, from_mesh, "binary = {binary}");
+        }
 
         Ok(())
     }

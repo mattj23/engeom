@@ -16,8 +16,8 @@ from __future__ import annotations
 import numpy
 import pytest
 
-from engeom.align3 import AlignParams3, Dof6, points_to_mesh
-from engeom.geom3 import Iso3, Mesh3, MeshData3, Point3
+from engeom.align3 import AlignParams3, Dof6, points_to_cloud, points_to_mesh
+from engeom.geom3 import Iso3, Mesh3, MeshData3, Point3, PointCloud3
 
 
 def box_mesh() -> Mesh3:
@@ -27,11 +27,8 @@ def box_mesh() -> Mesh3:
 def box_points(mesh: Mesh3, radius: float = 0.5) -> numpy.ndarray:
     """
     Poisson samples on the surface as an ``(n, 3)`` array.
-
-    ``sample_poisson`` returns points and normals interleaved as ``(n, 6)``, so the positions have
-    to be sliced out and made contiguous before they cross back over the boundary.
     """
-    return numpy.ascontiguousarray(mesh.sample_poisson(radius)[:, :3])
+    return mesh.sample_poisson(radius).points
 
 
 def small_disturbance() -> Iso3:
@@ -83,7 +80,7 @@ def test_residuals_are_one_dimensional_float64():
     points = box_points(mesh)
     moved = small_disturbance().transform_points(points)
 
-    residuals = points_to_mesh(moved, mesh, centered_params(moved)).alignment.residuals()
+    residuals = points_to_mesh(moved, mesh, centered_params(moved)).alignment.residuals
 
     assert residuals.dtype == numpy.float64
     assert residuals.shape == (len(points),)
@@ -308,3 +305,67 @@ def test_wrong_point_shape_is_rejected():
 
     with pytest.raises(ValueError):
         points_to_mesh(numpy.zeros((10, 2)), mesh, AlignParams3())
+
+
+# ================================================================================================
+# points_to_cloud
+# ================================================================================================
+
+
+def _outward_normals(points: numpy.ndarray) -> numpy.ndarray:
+    """
+    Outward normals for points on the box surface.
+
+    The box is axis aligned and centered, so a point's face is whichever axis it is closest to the
+    extent of, and the normal is that axis signed by which side the point is on.
+    """
+    half = numpy.array([5.0, 2.5, 1.0])
+    axes = numpy.argmax(numpy.abs(points) / half, axis=1)
+
+    normals = numpy.zeros_like(points)
+    rows = numpy.arange(len(points))
+    normals[rows, axes] = numpy.sign(points[rows, axes])
+    return normals
+
+
+def box_cloud(spacing: float = 0.25) -> PointCloud3:
+    """A sample of the box surface carrying the normals a cloud target requires."""
+    points = box_points(box_mesh(), spacing)
+    cloud = PointCloud3(points)
+    cloud.set_point_normals(_outward_normals(points))
+    return cloud
+
+
+def test_points_to_cloud_recovers_a_known_offset():
+    cloud = box_cloud()
+    points = cloud.points.copy()
+
+    shift = Iso3.from_translation(0.08, -0.05, 0.03)
+    moved = numpy.array([list(shift @ Point3(*p)) for p in points])
+
+    outcome = points_to_cloud(moved, cloud, AlignParams3(), max_extrapolation=1.0)
+
+    recovered = outcome.alignment.full_transform
+    residuals = outcome.alignment.residuals
+    assert residuals.shape == (len(points),)
+    assert numpy.abs(residuals).max() < 1e-3
+
+    # Applying the recovered transform to the moved points should put them back.
+    back = numpy.array([list(recovered @ Point3(*p)) for p in moved])
+    assert back == pytest.approx(points, abs=1e-3)
+
+
+def test_points_to_cloud_requires_normals():
+    """A cloud without normals cannot supply a tangent plane or a residual sign, so the binding
+    must refuse rather than guess."""
+    bare = PointCloud3(numpy.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]))
+    with pytest.raises(ValueError):
+        points_to_cloud(
+            numpy.array([[0.0, 0.0, 1.0]]), bare, AlignParams3(), max_extrapolation=1.0
+        )
+
+
+def test_points_to_cloud_rejects_a_nonsense_extrapolation():
+    cloud = box_cloud()
+    with pytest.raises(ValueError):
+        points_to_cloud(cloud.points, cloud, AlignParams3(), max_extrapolation=0.0)

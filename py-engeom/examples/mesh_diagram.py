@@ -64,7 +64,7 @@ def align_to_axis(mesh: Mesh3) -> Iso3:
 def build_view() -> Iso3:
     """
     Build the isometry that transforms world space into the image plane, where +X is to the right,
-    +Y is up, and +Z points into the page.
+    +Y is up, and +Z points out of the page towards the viewer.
 
     Because the part has already been aligned onto the origin, this is nothing but a pair of
     rotations. Tip the part back to show a little of the top, then spin it for a three-quarter view.
@@ -113,11 +113,12 @@ def main():
     # ---------------------------------------------------------------------------------------------
 
     # A round cross-section, taken just inside the flat cut end where the shank is unthreaded and the
-    # scan is clean. `section_with_plane` returns a list because one plane can cut a mesh in several
-    # places at once; here it is a single closed loop.
+    # scan is clean. `section_with_plane` returns a `PlanarSection` whose `curves` value is a
+    # `CurveGroup3`, since one plane can cut a mesh in several places at once and those curves form
+    # one rigid body. A group indexes and iterates like a sequence; here it holds one closed loop.
     cut_x = low.x + CROSS_SECTION_INSET
     cross_section = mesh.section_with_plane(Plane3.from_point_normal(cut_x, 0, 0, 1, 0, 0),
-                                            tol=1e-3)[0]
+                                            tol=1e-3).curves[0]
 
     # Fit a circle to that loop with the MAGSAC++ consensus algorithm rather than a plain
     # least-squares fit. `sigma_max` is an upper bound on the expected noise rather than a hard
@@ -138,10 +139,10 @@ def main():
           f"max {form_error.max():.4f}, rms {numpy.sqrt((form_error ** 2).mean()):.4f}")
 
     # A longitudinal section straight down the axis, which cuts the thread profile. This one comes
-    # back as two curves, one for each side of the part. You wouldn't inherently know that ahead
-    # of time, because how many curves come back depends on the connectivity of the triangles that
-    # the section plane passes through.
-    axial_sections = mesh.section_with_plane(Plane3.from_point_normal(0, 0, 0, 0, 1, 0), tol=1e-3)
+    # back as a group of two curves, one for each side of the part. You wouldn't inherently know that
+    # ahead of time, because how many members come back depends on the connectivity of the triangles
+    # that the section plane passes through.
+    axial_sections = mesh.section_with_plane(Plane3.from_point_normal(0, 0, 0, 0, 1, 0), tol=1e-3).curves
     print(f"Axial section: {len(axial_sections)} curves")
 
     # ---------------------------------------------------------------------------------------------
@@ -175,9 +176,9 @@ def main():
     )
 
     # The thread profile, as projected polylines. Only the first curve carries the legend label, so
-    # that the pair produces one entry rather than two identical ones.  If you didn't want any legend
-    # labels you would just make one call to `draw_curve(*axial_sections, ...)`, this just a trick to
-    # manage the legend clutter.
+    # that the pair produces one entry rather than two identical ones. If no legend labels were
+    # needed, one call to `draw_curve(*axial_sections, ...)` would suffice; the two calls simply
+    # manage legend clutter.
     view.draw_curve(axial_sections[0], color="magenta", linewidth=1.0, label="axial section")
     view.draw_curve(*axial_sections[1:], color="magenta", linewidth=1.0)
 

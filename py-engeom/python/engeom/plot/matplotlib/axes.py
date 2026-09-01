@@ -24,7 +24,7 @@ from engeom.metrology import Distance2
 
 from .._coerce import Coords2, to_tuple2
 from .._common import LabelPlace, check_label_place
-from ._style import ElementStyle, element_style, merge_style
+from .._style import ElementStyle, element_style, merge_style
 from .colors import GOM_CMAP, extend_for
 from .viewport import ViewPort3
 
@@ -357,7 +357,7 @@ class AxesHelper:
                 raise TypeError(
                     f"expected a Curve2 or Boundary2, got {type(source).__name__}"
                 )
-            for t in numpy.linspace(0, source.length(), count):
+            for t in numpy.linspace(0, source.length, count):
                 station = source.at_length(t)
                 arrows.append(
                     self.draw_arrow(station.point, station.surface_point.at_distance(length), **kwargs)

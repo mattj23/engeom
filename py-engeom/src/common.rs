@@ -167,6 +167,7 @@ impl AngleInterval {
     }
 
     /// Whether the interval contains zero angular extent.
+    #[getter]
     fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
@@ -279,6 +280,7 @@ impl IndexMask {
     }
 
     /// The number of indices which are `True`.
+    #[getter]
     fn count_true(&self) -> usize {
         self.inner.count_true()
     }

@@ -1,18 +1,18 @@
 use crate::bounding::Aabb3;
 use crate::common::{IndexMask, deviation_mode_from_str, select_op_from_str};
 use crate::conversions::{
-    array_to_colors, array_to_faces, array_to_points3, array_to_unit_vectors3, array_to_vec,
-    colors_to_array, faces_to_array, labels_to_array, points_to_array, scalars_to_array,
-    unit_vectors_to_array,
+    array_to_colors, array_to_faces, array_to_points2, array_to_points3, array_to_unit_vectors3,
+    array_to_vec, colors_to_array, faces_to_array, labels_to_array, points_to_array,
+    scalars_to_array, unit_vectors_to_array,
 };
-use crate::geom3::{Curve3, Iso3, Plane3, Point3, SurfacePoint3, Vector3};
+use crate::geom2::CurveGroup2;
+use crate::geom3::{Curve3, CurveGroup3, Iso3, PlanarMap, Plane3, Point3, SurfacePoint3, Vector3};
 use crate::metrology::Distance3;
-use crate::point_cloud::lptf3_load_from_args;
+use crate::point_cloud::{PointCloud3, lptf3_load_from_args};
 use engeom::Selection;
 use engeom::common::SplitResult;
 use engeom::geom3::align3::{GAPParams, generate_alignment_points};
-use engeom::io::{deflate_bytes, u_bytes_to_mesh_data};
-use numpy::ndarray::{Array1, Array2, ArrayD};
+use numpy::ndarray::{Array1, ArrayD};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
@@ -21,6 +21,101 @@ use std::path::PathBuf;
 /// The (n, 6) point-pair array and the (n,) per-edge type codes returned by
 /// `Mesh3.compute_visual_outline`.
 type VisualOutline<'py> = (Bound<'py, PyArrayDyn<f64>>, Bound<'py, PyArray1<u8>>);
+
+#[pyclass(from_py_object, module = "engeom.geom3")]
+#[derive(Clone)]
+pub struct PatchFilter {
+    inner: engeom::geom3::mesh::PatchFilter,
+}
+
+impl PatchFilter {
+    pub fn get_inner(&self) -> &engeom::geom3::mesh::PatchFilter {
+        &self.inner
+    }
+}
+
+#[pymethods]
+impl PatchFilter {
+    #[new]
+    #[pyo3(signature = (
+        *,
+        min_faces = None,
+        min_area = None,
+        min_aabb_diagonal = None,
+        min_area_fraction = None,
+        keep_largest_n = None,
+    ))]
+    fn new(
+        min_faces: Option<usize>,
+        min_area: Option<f64>,
+        min_aabb_diagonal: Option<f64>,
+        min_area_fraction: Option<f64>,
+        keep_largest_n: Option<usize>,
+    ) -> Self {
+        let mut inner = engeom::geom3::mesh::PatchFilter::default();
+        if let Some(v) = min_faces {
+            inner = inner.with_min_faces(v);
+        }
+        if let Some(v) = min_area {
+            inner = inner.with_min_area(v);
+        }
+        if let Some(v) = min_aabb_diagonal {
+            inner = inner.with_min_aabb_diagonal(v);
+        }
+        if let Some(v) = min_area_fraction {
+            inner = inner.with_min_area_fraction(v);
+        }
+        if let Some(v) = keep_largest_n {
+            inner = inner.with_keep_largest_n(v);
+        }
+
+        Self { inner }
+    }
+
+    #[staticmethod]
+    fn keep_largest() -> Self {
+        Self {
+            inner: engeom::geom3::mesh::PatchFilter::keep_largest(),
+        }
+    }
+
+    #[getter]
+    fn min_faces(&self) -> Option<usize> {
+        self.inner.min_faces
+    }
+
+    #[getter]
+    fn min_area(&self) -> Option<f64> {
+        self.inner.min_area
+    }
+
+    #[getter]
+    fn min_aabb_diagonal(&self) -> Option<f64> {
+        self.inner.min_aabb_diagonal
+    }
+
+    #[getter]
+    fn min_area_fraction(&self) -> Option<f64> {
+        self.inner.min_area_fraction
+    }
+
+    #[getter]
+    fn keep_largest_n(&self) -> Option<usize> {
+        self.inner.keep_largest_n
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "<PatchFilter min_faces={:?} min_area={:?} min_aabb_diagonal={:?} \
+             min_area_fraction={:?} keep_largest_n={:?}>",
+            self.inner.min_faces,
+            self.inner.min_area,
+            self.inner.min_aabb_diagonal,
+            self.inner.min_area_fraction,
+            self.inner.keep_largest_n
+        )
+    }
+}
 
 #[pyclass(from_py_object, module = "engeom.geom3")]
 pub struct Mesh3 {
@@ -32,6 +127,7 @@ pub struct Mesh3 {
     point_normals: Option<Py<PyArray2<f64>>>,
     point_colors: Option<Py<PyArray2<u8>>>,
     point_stdev: Option<Py<PyArray1<f64>>>,
+    point_flat: Option<Py<PyArray2<f64>>>,
     face_colors: Option<Py<PyArray2<u8>>>,
     face_labels: Option<Py<PyArray1<u32>>>,
 }
@@ -45,6 +141,7 @@ impl Mesh3 {
         self.point_normals = None;
         self.point_colors = None;
         self.point_stdev = None;
+        self.point_flat = None;
         self.face_colors = None;
         self.face_labels = None;
     }
@@ -63,6 +160,7 @@ impl Mesh3 {
             point_normals: None,
             point_colors: None,
             point_stdev: None,
+            point_flat: None,
             face_colors: None,
             face_labels: None,
         }
@@ -94,7 +192,6 @@ impl Mesh3 {
             is_solid,
             merge_duplicates,
             delete_degenerate,
-            None,
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
@@ -204,16 +301,17 @@ impl Mesh3 {
     #[staticmethod]
     #[pyo3(signature = (path, is_solid = false))]
     fn load_tcmesh(path: PathBuf, is_solid: bool) -> PyResult<Self> {
-        let data =
-            engeom::io::read_tc_mesh_file(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
-        let mesh = engeom::Mesh3::from_data(data, is_solid)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let mesh = engeom::Mesh3::load_tcmesh(&path, is_solid)
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
         Ok(Self::from_inner(mesh))
     }
 
-    #[pyo3(signature = (path, tol, allow_attribute_loss = false))]
-    fn save_tcmesh(&self, path: PathBuf, tol: f64, allow_attribute_loss: bool) -> PyResult<()> {
-        engeom::io::write_tc_mesh_file(&path, &self.inner.to_data(), tol, allow_attribute_loss)
+    // `allow_attribute_loss` is gone rather than kept as a parameter that only accepts one value:
+    // the tcmesh format refuses an attributed mesh outright now.
+    #[pyo3(signature = (path, tol))]
+    fn save_tcmesh(&self, path: PathBuf, tol: f64) -> PyResult<()> {
+        self.inner
+            .save_tcmesh(&path, tol)
             .map_err(|e| PyIOError::new_err(e.to_string()))
     }
 
@@ -283,6 +381,16 @@ impl Mesh3 {
     }
 
     #[getter]
+    fn point_flat<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray2<f64>>> {
+        let values = self.inner.point_flat()?;
+        if self.point_flat.is_none() {
+            let array = points_to_array(values);
+            self.point_flat = Some(array.into_pyarray(py).unbind());
+        }
+        Some(self.point_flat.as_ref().unwrap().bind(py))
+    }
+
+    #[getter]
     fn face_colors<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray2<u8>>> {
         let values = self.inner.face_colors()?;
         if self.face_colors.is_none() {
@@ -331,6 +439,17 @@ impl Mesh3 {
         self.clear_cached();
         self.inner
             .set_point_stdev(values)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[pyo3(signature = (values=None))]
+    fn set_point_flat<'py>(&mut self, values: Option<PyReadonlyArray2<'py, f64>>) -> PyResult<()> {
+        let values = values
+            .map(|v| array_to_points2(&v.as_array()))
+            .transpose()?;
+        self.clear_cached();
+        self.inner
+            .set_point_flat(values)
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
@@ -564,18 +683,44 @@ impl Mesh3 {
         Ok(result.into_pyarray(py))
     }
 
-    fn sample_poisson<'py>(&self, py: Python<'py>, radius: f64) -> Bound<'py, PyArray2<f64>> {
-        let mps = self.inner.sample_poisson(radius, None);
-        let mut result = Array2::zeros((mps.len(), 6));
-        for (i, mp) in mps.iter().enumerate() {
-            result[[i, 0]] = mp.sp.point.x;
-            result[[i, 1]] = mp.sp.point.y;
-            result[[i, 2]] = mp.sp.point.z;
-            result[[i, 3]] = mp.sp.normal.x;
-            result[[i, 4]] = mp.sp.normal.y;
-            result[[i, 5]] = mp.sp.normal.z;
-        }
-        result.into_pyarray(py)
+    #[pyo3(signature=(radius, faces = None))]
+    fn sample_poisson(&self, radius: f64, faces: Option<&IndexMask>) -> PyResult<PointCloud3> {
+        let cloud = self
+            .inner
+            .sample_poisson(radius, faces.map(|m| m.get_inner()))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        Ok(PointCloud3::from_inner(cloud))
+    }
+
+    #[pyo3(signature=(max_spacing, faces = None))]
+    fn sample_dense(&self, max_spacing: f64, faces: Option<&IndexMask>) -> PyResult<PointCloud3> {
+        let cloud = self
+            .inner
+            .sample_dense(max_spacing, faces.map(|m| m.get_inner()))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        Ok(PointCloud3::from_inner(cloud))
+    }
+
+    fn sample_uniform(&self, n: usize) -> PointCloud3 {
+        PointCloud3::from_inner(self.inner.sample_uniform(n))
+    }
+
+    /// Reduce the surface to one point per occupied cell of a regular voxel grid, placing each
+    /// point on the surface itself. See the Python stub documentation for the details.
+    #[pyo3(signature=(voxel_size, faces = None))]
+    fn sample_voxel_surface(
+        &self,
+        voxel_size: f64,
+        faces: Option<&IndexMask>,
+    ) -> PyResult<PointCloud3> {
+        let cloud = self
+            .inner
+            .sample_voxel_surface(voxel_size, faces.map(|m| m.get_inner()))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        Ok(PointCloud3::from_inner(cloud))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -589,7 +734,7 @@ impl Mesh3 {
         out_of_plane_ratio: f64,       // 1 /20.0
         centroid_ratio: f64,           // 1.0
         filter_distances: Option<f64>, // Some(3.0)
-    ) -> Bound<'py, PyArray2<f64>> {
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
         let params = GAPParams::new(
             max_spacing,
             max_neighbor_angle,
@@ -598,26 +743,72 @@ impl Mesh3 {
             filter_distances,
         );
         let mps =
-            generate_alignment_points(&self.inner, &reference.inner, iso.get_inner(), &params);
+            generate_alignment_points(&self.inner, &reference.inner, iso.get_inner(), &params)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let points = mps.into_iter().map(|mp| mp.sp.point).collect::<Vec<_>>();
 
         let result = points_to_array(&points);
-        result.into_pyarray(py)
+        Ok(result.into_pyarray(py))
     }
 
-    #[pyo3(signature=(plane, tol = None, faces = None))]
+    #[pyo3(signature=(plane, tol = None, faces = None, frame = "auto", origin = None, x = None))]
     fn section_with_plane(
         &self,
         plane: Plane3,
         tol: Option<f64>,
         faces: Option<&IndexMask>,
-    ) -> PyResult<Vec<Curve3>> {
+        frame: &str,
+        origin: Option<Point3>,
+        x: Option<Vector3>,
+    ) -> PyResult<PlanarSection> {
+        let frame = plane_frame_from_args(frame, origin, x)?;
         let results = self
             .inner
-            .section_with_plane(plane.get_inner(), tol, faces.map(|m| m.get_inner()))
+            .section_with_plane(plane.get_inner(), frame, tol, faces.map(|m| m.get_inner()))
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
-        Ok(results.into_iter().map(Curve3::from_inner).collect())
+        Ok(PlanarSection::from_inner(results))
+    }
+
+    /// Find the plane through a point whose section cuts across the swept feature the point
+    /// lies on. See `TransversePlane` and the Python stub documentation for the criterion.
+    #[pyo3(signature=(x, y, z, guess, faces = None, taper_tilt = None, band = None, max_evaluations = None, tol = None))]
+    #[allow(clippy::too_many_arguments)]
+    fn transverse_plane(
+        &self,
+        x: f64,
+        y: f64,
+        z: f64,
+        guess: Vector3,
+        faces: Option<&IndexMask>,
+        taper_tilt: Option<f64>,
+        band: Option<f64>,
+        max_evaluations: Option<usize>,
+        tol: Option<f64>,
+    ) -> PyResult<TransversePlane> {
+        let point = engeom::Point3::new(x, y, z);
+        let guess = engeom::UnitVec3::try_new(*guess.get_inner(), 1e-12)
+            .ok_or_else(|| PyValueError::new_err("the guess direction must not be zero"))?;
+
+        let mut options = engeom::geom3::mesh::TransverseOptions::default();
+        if let Some(v) = taper_tilt {
+            options.taper_tilt = v;
+        }
+        if band.is_some() {
+            options.band = band;
+        }
+        if let Some(v) = max_evaluations {
+            options.max_evaluations = v;
+        }
+        if let Some(v) = tol {
+            options.tol = v;
+        }
+
+        let result = self
+            .inner
+            .transverse_plane(&point, &guess, faces.map(|m| m.get_inner()), Some(options))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(TransversePlane::from_inner(result))
     }
 
     /// Start a face filter. `start` is either the token `"none"` or `"all"`, or an `IndexMask` over
@@ -705,12 +896,32 @@ impl Mesh3 {
     }
 
     #[pyo3(signature = (mask = None))]
-    fn compute_patches(&self, mask: Option<&IndexMask>) -> PyResult<Vec<IndexMask>> {
-        let patches = self
+    fn compute_patch_labels<'py>(
+        &self,
+        py: Python<'py>,
+        mask: Option<&IndexMask>,
+    ) -> PyResult<Bound<'py, PyArray1<u32>>> {
+        let labels = self
             .inner
-            .compute_patches(mask.map(|m| m.get_inner()))
+            .compute_patch_labels(mask.map(|m| m.get_inner()))
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok(patches.into_iter().map(IndexMask::from_inner).collect())
+        Ok(labels_to_array(labels.labels()).into_pyarray(py))
+    }
+
+    fn patch_mask(&self, filter: &PatchFilter) -> PyResult<IndexMask> {
+        let mask = self
+            .inner
+            .patch_mask(filter.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(IndexMask::from_inner(mask))
+    }
+
+    fn remove_small_patches(&self, filter: &PatchFilter) -> PyResult<Self> {
+        let inner = self
+            .inner
+            .remove_small_patches(filter.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(inner))
     }
 
     #[pyo3(signature = (points, max_dist, max_angle, transform = None))]
@@ -732,15 +943,21 @@ impl Mesh3 {
     }
 
     fn separate_patches(&self) -> PyResult<Vec<Self>> {
-        let patch_groups = self
+        let labels = self
             .inner
-            .compute_patches(None)
+            .compute_patch_labels(None)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let mut results = Vec::with_capacity(patch_groups.len());
-        for mask in patch_groups.iter() {
+
+        // One mask at a time. Building all of them up front costs `patches * faces` bits, which is
+        // exactly the wrong shape for the scan data most likely to be separated in the first place.
+        let mut results = Vec::with_capacity(labels.count());
+        for patch in 0..labels.count() {
+            let mask = labels
+                .mask_of(patch)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
             results.push(
                 self.inner
-                    .extract_subset_faces(mask)
+                    .extract_subset_faces(&mask)
                     .map_err(|e| PyValueError::new_err(e.to_string()))?,
             );
         }
@@ -764,34 +981,38 @@ impl Mesh3 {
     }
 
     #[staticmethod]
-    fn create_cylinder(radius: f64, height: f64, steps: usize) -> Self {
-        let mesh = engeom::Mesh3::create_cylinder(radius, height, steps);
-        Self::from_inner(mesh)
+    fn create_cylinder(radius: f64, height: f64, tol: f64) -> PyResult<Self> {
+        let mesh = engeom::Mesh3::create_cylinder(radius, height, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(mesh))
     }
 
     #[staticmethod]
-    fn create_sphere(radius: f64, n_theta: usize, n_phi: usize) -> Self {
-        let mesh = engeom::Mesh3::create_sphere(radius, n_theta, n_phi);
-        Self::from_inner(mesh)
+    fn create_sphere(radius: f64, tol: f64) -> PyResult<Self> {
+        let mesh = engeom::Mesh3::create_sphere(radius, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(mesh))
     }
 
     #[staticmethod]
-    fn create_cone(radius: f64, height: f64, steps: usize) -> Self {
-        let mesh = engeom::Mesh3::create_cone(radius, height, steps);
-        Self::from_inner(mesh)
+    fn create_cone(radius: f64, height: f64, tol: f64) -> PyResult<Self> {
+        let mesh = engeom::Mesh3::create_cone(radius, height, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(mesh))
     }
 
     #[staticmethod]
-    fn create_circle(radius: f64, segments: usize) -> Self {
-        let mesh = engeom::Mesh3::create_circle(radius, segments);
-        Self::from_inner(mesh)
+    fn create_circle(radius: f64, tol: f64) -> PyResult<Self> {
+        let mesh = engeom::Mesh3::create_circle(radius, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(mesh))
     }
 
     #[staticmethod]
-    fn create_capsule(p0: Point3, p1: Point3, radius: f64, n_theta: usize, n_phi: usize) -> Self {
-        let mesh =
-            engeom::Mesh3::create_capsule(p0.get_inner(), p1.get_inner(), radius, n_theta, n_phi);
-        Self::from_inner(mesh)
+    fn create_capsule(p0: Point3, p1: Point3, radius: f64, tol: f64) -> PyResult<Self> {
+        let mesh = engeom::Mesh3::create_capsule(p0.get_inner(), p1.get_inner(), radius, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(mesh))
     }
 
     #[staticmethod]
@@ -816,14 +1037,10 @@ impl Mesh3 {
     }
 
     #[staticmethod]
-    fn create_cylinder_between(
-        p0: Point3,
-        p1: Point3,
-        radius: f64,
-        steps: usize,
-    ) -> PyResult<Self> {
+    fn create_cylinder_between(p0: Point3, p1: Point3, radius: f64, tol: f64) -> PyResult<Self> {
         let mesh =
-            engeom::Mesh3::create_cylinder_between(p0.get_inner(), p1.get_inner(), radius, steps);
+            engeom::Mesh3::create_cylinder_between(p0.get_inner(), p1.get_inner(), radius, tol)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self::from_inner(mesh))
     }
 
@@ -840,27 +1057,8 @@ impl Mesh3 {
         let mesh_data = engeom::io::load_lptf3_mesh_data(&file_path, load, None)
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
-        let (points, faces, _) = mesh_data.into_parts();
+        let (points, faces, _, _) = mesh_data.into_parts();
         Ok(Self::from_inner(engeom::Mesh3::new(points, faces, false)))
-    }
-
-    #[staticmethod]
-    fn load_umesh(file_path: PathBuf) -> PyResult<Mesh3> {
-        // These files are always small, so we're going to just pull the whole thing into memory
-        let file_bytes =
-            std::fs::read(&file_path).map_err(|e| PyIOError::new_err(e.to_string()))?;
-
-        let deflated = if let Ok(b) = deflate_bytes(&file_bytes) {
-            b
-        } else {
-            file_bytes
-        };
-
-        let data =
-            u_bytes_to_mesh_data(&deflated).map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let mesh = engeom::Mesh3::from_data(data, false)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok(Self::from_inner(mesh))
     }
 
     #[staticmethod]
@@ -912,6 +1110,25 @@ impl FaceFilterHandle {
             .inner
             .face_select(Selection::Indices(i))
             .facing(&normal, angle, op)
+            .collect_indices();
+        slf.into_pyobject(py)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    fn keep_patches<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        py: Python<'py>,
+        filter: &PatchFilter,
+        mode: &str,
+    ) -> PyResult<Bound<'py, Self>> {
+        let op = select_op_from_str(mode)?;
+        let temp = slf.mesh.bind(py).borrow();
+        let i = slf.indices.clone();
+        slf.indices = temp
+            .inner
+            .face_select(Selection::Indices(i))
+            .keep_patches(filter.get_inner(), op)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?
             .collect_indices();
         slf.into_pyobject(py)
             .map_err(|e| PyValueError::new_err(e.to_string()))
@@ -1167,6 +1384,7 @@ pub struct MeshData3 {
     point_normals: Option<Py<PyArray2<f64>>>,
     point_colors: Option<Py<PyArray2<u8>>>,
     point_stdev: Option<Py<PyArray1<f64>>>,
+    point_flat: Option<Py<PyArray2<f64>>>,
     face_colors: Option<Py<PyArray2<u8>>>,
     face_labels: Option<Py<PyArray1<u32>>>,
 }
@@ -1178,6 +1396,7 @@ impl MeshData3 {
         self.point_normals = None;
         self.point_colors = None;
         self.point_stdev = None;
+        self.point_flat = None;
         self.face_colors = None;
         self.face_labels = None;
     }
@@ -1194,6 +1413,7 @@ impl MeshData3 {
             point_normals: None,
             point_colors: None,
             point_stdev: None,
+            point_flat: None,
             face_colors: None,
             face_labels: None,
         }
@@ -1352,6 +1572,16 @@ impl MeshData3 {
     }
 
     #[getter]
+    fn point_flat<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray2<f64>>> {
+        let values = self.inner.point_flat()?;
+        if self.point_flat.is_none() {
+            let array = points_to_array(values);
+            self.point_flat = Some(array.into_pyarray(py).unbind());
+        }
+        Some(self.point_flat.as_ref().unwrap().bind(py))
+    }
+
+    #[getter]
     fn face_colors<'py>(&mut self, py: Python<'py>) -> Option<&Bound<'py, PyArray2<u8>>> {
         let values = self.inner.face_colors()?;
         if self.face_colors.is_none() {
@@ -1400,6 +1630,17 @@ impl MeshData3 {
         self.clear_cached();
         self.inner
             .set_point_stdev(values)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[pyo3(signature = (values=None))]
+    fn set_point_flat<'py>(&mut self, values: Option<PyReadonlyArray2<'py, f64>>) -> PyResult<()> {
+        let values = values
+            .map(|v| array_to_points2(&v.as_array()))
+            .transpose()?;
+        self.clear_cached();
+        self.inner
+            .set_point_flat(values)
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
@@ -1600,44 +1841,46 @@ impl MeshData3 {
     }
 
     #[staticmethod]
-    fn create_sphere(radius: f64, n_theta: usize, n_phi: usize) -> Self {
-        Self::from_inner(engeom::MeshData3::create_sphere(radius, n_theta, n_phi))
+    fn create_sphere(radius: f64, tol: f64) -> PyResult<Self> {
+        let data = engeom::MeshData3::create_sphere(radius, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(data))
     }
 
     #[staticmethod]
-    fn create_cylinder(radius: f64, height: f64, steps: usize) -> Self {
-        Self::from_inner(engeom::MeshData3::create_cylinder(radius, height, steps))
+    fn create_cylinder(radius: f64, height: f64, tol: f64) -> PyResult<Self> {
+        let data = engeom::MeshData3::create_cylinder(radius, height, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(data))
     }
 
     #[staticmethod]
-    fn create_cone(radius: f64, height: f64, steps: usize) -> Self {
-        Self::from_inner(engeom::MeshData3::create_cone(radius, height, steps))
+    fn create_cone(radius: f64, height: f64, tol: f64) -> PyResult<Self> {
+        let data = engeom::MeshData3::create_cone(radius, height, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(data))
     }
 
     #[staticmethod]
-    fn create_circle(radius: f64, segments: usize) -> Self {
-        Self::from_inner(engeom::MeshData3::create_circle(radius, segments))
+    fn create_circle(radius: f64, tol: f64) -> PyResult<Self> {
+        let data = engeom::MeshData3::create_circle(radius, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(data))
     }
 
     #[staticmethod]
-    fn create_capsule(p0: Point3, p1: Point3, radius: f64, n_theta: usize, n_phi: usize) -> Self {
-        Self::from_inner(engeom::MeshData3::create_capsule(
-            p0.get_inner(),
-            p1.get_inner(),
-            radius,
-            n_theta,
-            n_phi,
-        ))
+    fn create_capsule(p0: Point3, p1: Point3, radius: f64, tol: f64) -> PyResult<Self> {
+        let data = engeom::MeshData3::create_capsule(p0.get_inner(), p1.get_inner(), radius, tol)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(data))
     }
 
     #[staticmethod]
-    fn create_cylinder_between(p0: Point3, p1: Point3, radius: f64, steps: usize) -> Self {
-        Self::from_inner(engeom::MeshData3::create_cylinder_between(
-            p0.get_inner(),
-            p1.get_inner(),
-            radius,
-            steps,
-        ))
+    fn create_cylinder_between(p0: Point3, p1: Point3, radius: f64, tol: f64) -> PyResult<Self> {
+        let data =
+            engeom::MeshData3::create_cylinder_between(p0.get_inner(), p1.get_inner(), radius, tol)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(data))
     }
 
     #[staticmethod]
@@ -1685,6 +1928,157 @@ impl MeshData3 {
             "<MeshData3 {} points, {} faces>",
             self.inner.point_count(),
             self.inner.face_count()
+        )
+    }
+}
+
+// ================================================================================================
+// Planar section result
+// ================================================================================================
+
+/// Resolves the `frame`, `origin`, and `x` arguments of `Mesh3.section_with_plane` into a
+/// `PlaneFrame`. The `origin`/`x` pair is all-or-nothing and selects the oriented frame, which is
+/// incompatible with asking for the SVD frame by name.
+fn plane_frame_from_args(
+    frame: &str,
+    origin: Option<Point3>,
+    x: Option<Vector3>,
+) -> PyResult<engeom::PlaneFrame> {
+    match (frame, origin, x) {
+        ("auto", None, None) => Ok(engeom::PlaneFrame::Auto),
+        ("svd", None, None) => Ok(engeom::PlaneFrame::Svd),
+        ("auto", Some(origin), Some(x)) => Ok(engeom::PlaneFrame::Oriented {
+            origin: *origin.get_inner(),
+            x: *x.get_inner(),
+        }),
+        ("svd", Some(_), Some(_)) => Err(PyValueError::new_err(
+            "frame='svd' cannot be combined with origin and x; supply exactly one of the two",
+        )),
+        ("auto" | "svd", _, _) => Err(PyValueError::new_err(
+            "if either of origin or x is given, both must be given",
+        )),
+        (other, _, _) => Err(PyValueError::new_err(format!(
+            "unknown frame '{other}'; expected one of 'auto', 'svd'"
+        ))),
+    }
+}
+
+/// The result of `Mesh3.section_with_plane`: the section curves in the world together with the
+/// `PlanarMap` that brings them into the plane's 2D coordinates and back.
+#[pyclass(from_py_object, module = "engeom.geom3")]
+#[derive(Clone)]
+pub struct PlanarSection {
+    inner: engeom::PlanarSection,
+}
+
+impl PlanarSection {
+    pub fn from_inner(inner: engeom::PlanarSection) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl PlanarSection {
+    /// The section curves in world coordinates, one member per loop or open strand.
+    #[getter]
+    fn curves(&self) -> CurveGroup3 {
+        CurveGroup3::from_inner(self.inner.curves.clone())
+    }
+
+    /// The mapping between the world and the plane's 2D coordinate system.
+    #[getter]
+    fn map(&self) -> PlanarMap {
+        PlanarMap::from_inner(self.inner.map.clone())
+    }
+
+    /// The section curves brought into the plane's 2D coordinates.
+    fn to_2d(&self) -> PyResult<CurveGroup2> {
+        let flat = self
+            .inner
+            .to_2d()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(CurveGroup2::from_inner(flat))
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "<PlanarSection n={}, l={}>",
+            self.inner.curves.len(),
+            self.inner.curves.length()
+        )
+    }
+}
+
+/// The result of `Mesh3.transverse_plane`: the plane found, along with diagnostics showing how
+/// well the balance condition was met and how well the plane was determined.
+#[pyclass(from_py_object, module = "engeom.geom3")]
+#[derive(Debug, Clone)]
+pub struct TransversePlane {
+    inner: engeom::geom3::mesh::TransversePlane,
+}
+
+impl TransversePlane {
+    pub fn from_inner(inner: engeom::geom3::mesh::TransversePlane) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl TransversePlane {
+    /// The plane through the query point whose section goes across the feature, with its normal
+    /// oriented the same way as the guess.
+    #[getter]
+    fn plane(&self) -> Plane3 {
+        Plane3::from_inner(self.inner.plane.clone())
+    }
+
+    /// The number of times the band was evaluated, including the evaluations that measure the
+    /// sensitivity at the solution.
+    #[getter]
+    fn evaluations(&self) -> usize {
+        self.inner.evaluations
+    }
+
+    /// The magnitude of the balance residual at the solution divided by the section's length.
+    /// Dimensionless; a well-converged solve on a clean sweep sits near zero.
+    #[getter]
+    fn residual(&self) -> f64 {
+        self.inner.residual
+    }
+
+    /// The smaller eigenvalue of the coverage matrix divided by the section's length, from `0`
+    /// (the outward normals are all parallel) to `0.5` (a full closed loop).
+    #[getter]
+    fn coverage(&self) -> f64 {
+        self.inner.coverage
+    }
+
+    /// The smaller singular value of the residual's Jacobian with respect to the plane's tilt at
+    /// the solution: how much the normalized residual changes per radian of the tilt it is least
+    /// sensitive to. Equals the coverage on a constant-section sweep when the point is at the
+    /// center of the section; an off-center point or a changing section moves it away from that.
+    #[getter]
+    fn sensitivity(&self) -> f64 {
+        self.inner.sensitivity
+    }
+
+    /// The number of band faces that took part in the final evaluation.
+    #[getter]
+    fn face_count(&self) -> usize {
+        self.inner.face_count
+    }
+
+    /// The band half-width that was used, in the mesh's units.
+    #[getter]
+    fn band(&self) -> f64 {
+        self.inner.band
+    }
+
+    fn __repr__(&self) -> String {
+        let n = self.inner.plane.normal;
+        format!(
+            "TransversePlane(normal=({}, {}, {}), residual={:.3e}, coverage={:.3}, sensitivity={:.3})",
+            n.x, n.y, n.z, self.inner.residual, self.inner.coverage, self.inner.sensitivity
         )
     }
 }

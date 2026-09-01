@@ -1,12 +1,12 @@
 use crate::common::SPCoords;
 use crate::common::align::{RefinementHalt, SolveQuality, TerminationReason};
-use crate::common::consensus::weights::MagsacWeight;
+use crate::common::consensus::weights::{MagsacWeight, estimate_sigma_max};
 use crate::common::dist;
 use crate::geom3::align3::jacobian::{copy_jacobian, point_surf_jacobian};
 use crate::geom3::align3::{
     AlignOptions3, AlignParams3, AlignSurfMatch3, AlignValues3, SurfaceTarget3,
 };
-use crate::geom3::{AlignOutcome3, Alignment3};
+use crate::geom3::{Align3, AlignOutcome3};
 use crate::na::{Dyn, Matrix, Owned, U1, U6, Vector};
 use crate::{Point3, Result};
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
@@ -16,10 +16,6 @@ use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 /// degrees of freedom. (`MagsacWeight` requires at least 2; a point-to-plane residual would be a
 /// one-dimensional projection and would need the weight function extended.)
 const RESIDUAL_DOF: usize = 3;
-
-/// The scale factor that turns a median absolute deviation into a consistent estimate of the
-/// standard deviation of normally distributed data.
-const MAD_TO_SIGMA: f64 = 1.4826;
 
 /// The number of free parameters in a 3D alignment (tx, ty, tz, rx, ry, rz).
 const N_PARAMS: usize = 6;
@@ -127,7 +123,7 @@ pub fn points_to_surface3(
     }
 
     let c = problem.params.compute_values();
-    let alignment = Alignment3::new(
+    let alignment = Align3::new(
         c.transform,
         c.align,
         problem.params.local,
@@ -200,43 +196,6 @@ fn resolve_sigma_max<T: SurfaceTarget3>(
         Some(s) => Some(s),
         None => estimate_sigma_max(&problem.normalized_residuals()),
     }
-}
-
-/// Estimates a MAGSAC++ `sigma_max` from a set of residuals via the median absolute deviation.
-///
-/// MAD is used rather than the standard deviation because it is insensitive to the gross outliers
-/// the robust weighting exists to suppress: contaminating up to half the data cannot move it
-/// arbitrarily, whereas a single distant point can dominate a standard deviation.
-///
-/// Returns `None` when the spread is zero or non-finite, which happens when the fit is already
-/// essentially exact and there is nothing to reweight.
-fn estimate_sigma_max(residuals: &[f64]) -> Option<f64> {
-    let center = median(residuals)?;
-    let deviations: Vec<f64> = residuals.iter().map(|r| (r - center).abs()).collect();
-    let sigma = MAD_TO_SIGMA * median(&deviations)?;
-
-    if sigma.is_finite() && sigma > 0.0 {
-        Some(sigma)
-    } else {
-        None
-    }
-}
-
-/// The median of a slice of finite values, or `None` if the slice is empty.
-fn median(values: &[f64]) -> Option<f64> {
-    if values.is_empty() {
-        return None;
-    }
-
-    let mut sorted = values.to_vec();
-    sorted.sort_by(|a, b| a.total_cmp(b));
-
-    let n = sorted.len();
-    Some(if n.is_multiple_of(2) {
-        0.5 * (sorted[n / 2 - 1] + sorted[n / 2])
-    } else {
-        sorted[n / 2]
-    })
 }
 
 struct PointsToSurface3<'a, T: SurfaceTarget3> {
@@ -450,7 +409,7 @@ impl<T: SurfaceTarget3> LeastSquaresProblem<f64, Dyn, U6> for PointsToSurface3<'
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::points::{clone_points, mean_point, transform_points};
+    use crate::common::points::{mean_point, transform_points};
     use crate::na::{Translation3, UnitQuaternion};
     use crate::tests::engine_blade;
     use crate::{Iso3, Mesh3, SelectOp, Selection, Vector3};
@@ -462,7 +421,7 @@ mod tests {
     }
 
     fn box_points(mesh: &Mesh3) -> Vec<Point3> {
-        clone_points(&mesh.sample_poisson(0.5, None))
+        mesh.sample_poisson(0.5, None).unwrap().points().to_vec()
     }
 
     fn small_disturbance() -> Iso3 {
@@ -481,7 +440,7 @@ mod tests {
         // This test is to verify that a simple test against a box that doesn't have large rotations
         // produces a result that is roughly the inverse of the disturbance
         let mesh = box_mesh();
-        let points = clone_points(&mesh.sample_poisson(0.1, None));
+        let points = mesh.sample_poisson(0.1, None).unwrap().points().to_vec();
         let disturb = Iso3::from_parts(
             Translation3::new(3.0, 2.0, 1.0),
             UnitQuaternion::from_euler_angles(PI / 8.0, PI / 12.0, PI / 16.0),
@@ -506,7 +465,11 @@ mod tests {
             .face_select(Selection::None)
             .facing(&Vector3::y(), PI / 4.0, SelectOp::Add)
             .take_mask();
-        let expected_points = clone_points(&mesh.sample_poisson(2.0, Some(&mask)));
+        let expected_points = mesh
+            .sample_poisson(2.0, Some(&mask))
+            .unwrap()
+            .points()
+            .to_vec();
 
         let disturb = Iso3::from_parts(
             Translation3::new(-100.0, 150.0, 0.0),
@@ -1030,22 +993,5 @@ mod tests {
                 "sigma value {bad} should have been rejected"
             );
         }
-    }
-
-    // ============================================================================================
-    // Supporting pieces
-    // ============================================================================================
-
-    #[test]
-    fn median_handles_both_parities() {
-        assert_eq!(median(&[3.0, 1.0, 2.0]), Some(2.0));
-        assert_eq!(median(&[4.0, 1.0, 3.0, 2.0]), Some(2.5));
-        assert_eq!(median(&[]), None);
-    }
-
-    #[test]
-    fn sigma_estimate_rejects_degenerate_spread() {
-        assert_eq!(estimate_sigma_max(&[2.0; 10]), None);
-        assert_eq!(estimate_sigma_max(&[]), None);
     }
 }

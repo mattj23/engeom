@@ -1,9 +1,13 @@
 """
-Tests for the unaccelerated data containers, `MeshData3` and `PointCloudData3`.
+Tests for `MeshData3`, and for the behaviour it shares with `PointCloud3`.
 
 These focus on the parts the bindings are actually responsible for: the numpy shapes and dtypes
 crossing the boundary, the attribute setters accepting and rejecting arrays, the serialization
 round trips, and the bridges to the accelerated types.
+
+The two containers share an attribute set and an `_in_place` / `_copy` vocabulary, so the tests for
+those run against both here rather than being written twice. Everything specific to point clouds,
+including the spatial operations and the voxel reduction, is in `test_point_cloud3.py`.
 """
 
 from pathlib import Path
@@ -11,7 +15,7 @@ from pathlib import Path
 import numpy
 import pytest
 
-from engeom.geom3 import Iso3, Mesh3, MeshData3, Point3, PointCloud, PointCloudData3, Vector3
+from engeom.geom3 import Iso3, Mesh3, MeshData3, Point3, PointCloud3, Vector3
 from engeom.common import IndexMask
 
 
@@ -36,8 +40,8 @@ def loaded_mesh_data() -> MeshData3:
     return data
 
 
-def loaded_cloud_data() -> PointCloudData3:
-    cloud = PointCloudData3(triangle_points())
+def loaded_cloud_data() -> PointCloud3:
+    cloud = PointCloud3(triangle_points())
     cloud.set_point_normals(numpy.tile([0.0, 0.0, 1.0], (3, 1)))
     cloud.set_point_colors(numpy.array([[255, 0, 0], [0, 255, 0], [0, 0, 255]], dtype=numpy.uint8))
     cloud.set_point_stdev(numpy.array([0.001, 0.002, 0.003]))
@@ -59,14 +63,6 @@ def test_mesh_data_buffers_have_the_documented_shapes_and_dtypes():
     assert len(data) == 3
 
 
-def test_cloud_data_buffers_have_the_documented_shapes_and_dtypes():
-    cloud = PointCloudData3(triangle_points())
-
-    assert cloud.points.shape == (3, 3)
-    assert cloud.points.dtype == numpy.float64
-    assert len(cloud) == 3
-
-
 def test_attributes_are_none_on_a_bare_container():
     data = MeshData3(triangle_points(), triangle_faces())
 
@@ -76,7 +72,7 @@ def test_attributes_are_none_on_a_bare_container():
     assert data.face_colors is None
     assert data.face_labels is None
 
-    assert PointCloudData3(triangle_points()).point_stdev is None
+    assert PointCloud3(triangle_points()).point_stdev is None
 
 
 def test_attribute_shapes_and_dtypes():
@@ -152,15 +148,6 @@ def test_transform_in_place_invalidates_the_cached_points():
     assert data.points[0] == pytest.approx([10.0, 0.0, 0.0])
 
 
-def test_transform_in_place_rotates_the_stored_normals():
-    cloud = loaded_cloud_data()
-
-    # A quarter turn about +x maps +z onto -y. The angle is in radians.
-    cloud.transform_in_place(Iso3.from_rotation(numpy.pi / 2.0, 1.0, 0.0, 0.0))
-
-    assert cloud.point_normals[0] == pytest.approx([0.0, -1.0, 0.0], abs=1e-12)
-
-
 # ================================================================================================
 # Serialization
 # ================================================================================================
@@ -183,26 +170,12 @@ def test_mesh_data_ply_round_trip(tmp_path, binary):
     assert numpy.array_equal(after.face_labels, before.face_labels)
 
 
-@pytest.mark.parametrize("binary", [True, False])
-def test_cloud_data_ply_round_trip(tmp_path, binary):
-    before = loaded_cloud_data()
-    path = tmp_path / "cloud.ply"
-
-    before.save_ply(path, binary=binary)
-    after = PointCloudData3.load_ply(path)
-
-    assert after.points == pytest.approx(before.points)
-    assert after.point_normals == pytest.approx(before.point_normals)
-    assert numpy.array_equal(after.point_colors, before.point_colors)
-    assert after.point_stdev == pytest.approx(before.point_stdev)
-
-
 def test_loading_a_mesh_as_a_point_cloud_is_refused(tmp_path):
     path = tmp_path / "actually_a_mesh.ply"
     loaded_mesh_data().save_ply(path)
 
     with pytest.raises(IOError) as info:
-        PointCloudData3.load_ply(path)
+        PointCloud3.load_ply(path)
 
     assert "MeshData3" in str(info.value)
 
@@ -275,68 +248,14 @@ def test_a_faceless_mesh_cannot_become_a_mesh():
         data.to_mesh()
 
 
-def test_cloud_data_round_trips_through_point_cloud():
-    before = loaded_cloud_data()
-    cloud = before.to_cloud()
-
-    assert isinstance(cloud, PointCloud)
-    assert cloud.points.shape == (3, 3)
-
-    after = PointCloudData3.from_cloud(cloud)
-
-    assert after.points == pytest.approx(before.points)
-    assert after.point_stdev == pytest.approx(before.point_stdev)
-    assert numpy.array_equal(after.point_colors, before.point_colors)
-
-
 # ================================================================================================
-# Cloud operations
+# Behaviour shared by both containers
 # ================================================================================================
-
-
-def test_cloud_append_in_place_unions_the_attributes():
-    cloud = loaded_cloud_data()
-    cloud.append_in_place(loaded_cloud_data())
-
-    assert len(cloud) == 6
-    assert cloud.point_stdev.shape == (6,)
-    assert cloud.point_colors.shape == (6, 3)
-
-
-def test_cloud_append_in_place_rejects_a_mismatch_without_modifying_the_target():
-    cloud = loaded_cloud_data()
-    other = loaded_cloud_data()
-    other.set_point_stdev(None)
-
-    with pytest.raises(ValueError):
-        cloud.append_in_place(other)
-
-    assert len(cloud) == 3
-    assert cloud.point_stdev == pytest.approx([0.001, 0.002, 0.003])
-
-
-def test_cloud_subset_indices_carries_the_attributes():
-    sub = loaded_cloud_data().create_subset_indices([2, 0])
-
-    assert len(sub) == 2
-    assert sub.points[0] == pytest.approx([0.0, 1.0, 0.0])
-    assert sub.point_stdev == pytest.approx([0.003, 0.001])
-    assert numpy.array_equal(sub.point_colors, [[0, 0, 255], [255, 0, 0]])
-
-
-def test_cloned_is_independent():
-    original = loaded_cloud_data()
-    copy = original.cloned()
-
-    copy.set_point_stdev(numpy.array([9.0, 9.0, 9.0]))
-
-    assert original.point_stdev == pytest.approx([0.001, 0.002, 0.003])
-    assert copy.point_stdev == pytest.approx([9.0, 9.0, 9.0])
 
 
 def test_repr_says_what_it_holds():
     assert "MeshData3" in repr(loaded_mesh_data())
-    assert "PointCloudData3" in repr(loaded_cloud_data())
+    assert "PointCloud3" in repr(loaded_cloud_data())
 
 
 # ================================================================================================
@@ -491,35 +410,153 @@ def test_mesh_save_stl_refuses_to_drop_attributes_silently(tmp_path):
 
 def test_create_cone_uses_the_radius_and_full_height_it_was_given():
     """The two arguments used to reach parry swapped, so a cone came out with them exchanged."""
-    cone = Mesh3.create_cone(radius=2.0, height=10.0, steps=32)
+    cone = Mesh3.create_cone(radius=2.0, height=10.0, tol=1.0e-4)
     aabb = cone.aabb
 
-    assert aabb.min.x == pytest.approx(-2.0)
+    # A vertex always lands on +x, but the segment count need not put one on -x, so that extent
+    # can fall short by up to the chordal tolerance.
     assert aabb.max.x == pytest.approx(2.0)
-    assert aabb.min.y == pytest.approx(-5.0)
-    assert aabb.max.y == pytest.approx(5.0)
+    assert -2.0 <= aabb.min.x <= -2.0 + 1.0e-4
+    assert aabb.min.z == pytest.approx(-5.0)
+    assert aabb.max.z == pytest.approx(5.0)
 
 
 def test_cone_and_cylinder_agree_on_what_height_means():
-    cone = Mesh3.create_cone(radius=1.0, height=6.0, steps=16)
-    cyl = Mesh3.create_cylinder(radius=1.0, height=6.0, steps=16)
+    cone = Mesh3.create_cone(radius=1.0, height=6.0, tol=1.0e-3)
+    cyl = Mesh3.create_cylinder(radius=1.0, height=6.0, tol=1.0e-3)
 
-    assert cone.aabb.max.y == pytest.approx(cyl.aabb.max.y)
-    assert cone.aabb.min.y == pytest.approx(cyl.aabb.min.y)
+    assert cone.aabb.max.z == pytest.approx(cyl.aabb.max.z)
+    assert cone.aabb.min.z == pytest.approx(cyl.aabb.min.z)
 
 
 def test_primitives_carry_no_attributes():
     for mesh in [
         Mesh3.create_box(1.0, 2.0, 3.0),
-        Mesh3.create_sphere(1.0, 8, 8),
-        Mesh3.create_cylinder(1.0, 2.0, 8),
-        Mesh3.create_cone(1.0, 2.0, 8),
-        Mesh3.create_circle(1.0, 8),
+        Mesh3.create_sphere(1.0, 1.0e-3),
+        Mesh3.create_cylinder(1.0, 2.0, 1.0e-3),
+        Mesh3.create_cone(1.0, 2.0, 1.0e-3),
+        Mesh3.create_circle(1.0, 1.0e-3),
     ]:
         data = MeshData3.from_mesh(mesh)
         assert data.point_normals is None
         assert data.point_stdev is None
         assert data.face_labels is None
+
+
+def test_create_circle_uses_the_tolerance():
+    fine = Mesh3.create_circle(1.0, 1.0e-4)
+    coarse = Mesh3.create_circle(1.0, 1.0e-2)
+    assert fine.faces.shape[0] > coarse.faces.shape[0]
+
+    # A loose tolerance still produces at least 8 segments
+    floor = Mesh3.create_circle(1.0, 10.0)
+    assert floor.faces.shape[0] == 8
+
+
+def test_create_circle_rejects_a_bad_tolerance():
+    with pytest.raises(ValueError):
+        Mesh3.create_circle(1.0, 0.0)
+    with pytest.raises(ValueError):
+        MeshData3.create_circle(1.0, -1.0)
+
+
+def test_create_cylinder_is_z_native_and_uses_the_tolerance():
+    cyl = Mesh3.create_cylinder(radius=2.0, height=10.0, tol=1.0e-4)
+    aabb = cyl.aabb
+
+    assert aabb.min.z == pytest.approx(-5.0)
+    assert aabb.max.z == pytest.approx(5.0)
+    # A vertex always lands on +x, but the segment count need not put one on +y, so that extent
+    # can fall short by up to the chordal tolerance.
+    assert aabb.max.x == pytest.approx(2.0)
+    assert 2.0 - 1.0e-4 <= aabb.max.y <= 2.0
+
+    coarse = Mesh3.create_cylinder(radius=2.0, height=10.0, tol=1.0e-2)
+    assert cyl.faces.shape[0] > coarse.faces.shape[0]
+
+    # A loose tolerance still produces at least 8 segments: a wall band plus two cap fans.
+    floor = MeshData3.create_cylinder(2.0, 10.0, 100.0)
+    assert floor.faces.shape[0] == 8 * 4
+
+
+def test_create_cylinder_rejects_bad_arguments():
+    with pytest.raises(ValueError):
+        Mesh3.create_cylinder(1.0, 2.0, 0.0)
+    with pytest.raises(ValueError):
+        MeshData3.create_cylinder(0.0, 2.0, 1.0e-3)
+
+
+def test_create_cone_is_z_native_and_uses_the_tolerance():
+    fine = MeshData3.create_cone(2.0, 10.0, 1.0e-4)
+    coarse = MeshData3.create_cone(2.0, 10.0, 1.0e-2)
+    assert fine.faces.shape[0] > coarse.faces.shape[0]
+
+    # A loose tolerance still produces at least 8 base segments: a lateral fan plus a base fan.
+    floor = MeshData3.create_cone(2.0, 10.0, 100.0)
+    assert floor.faces.shape[0] == 8 * 2
+
+    # The apex sits alone at +height/2
+    apex = fine.points[fine.points[:, 2] > 0.0]
+    assert apex.shape[0] == 1
+    assert apex[0, 2] == pytest.approx(5.0)
+
+
+def test_create_cone_rejects_bad_arguments():
+    with pytest.raises(ValueError):
+        Mesh3.create_cone(1.0, 2.0, 0.0)
+    with pytest.raises(ValueError):
+        MeshData3.create_cone(0.0, 2.0, 1.0e-3)
+
+
+def test_create_sphere_is_z_native_and_uses_the_tolerance():
+    fine = MeshData3.create_sphere(2.0, 1.0e-4)
+    coarse = MeshData3.create_sphere(2.0, 1.0e-2)
+    assert fine.faces.shape[0] > coarse.faces.shape[0]
+
+    # Every vertex is on the true sphere
+    assert numpy.allclose(numpy.linalg.norm(fine.points, axis=1), 2.0)
+
+    # The poles sit on z, one point each
+    assert fine.points[:, 2].max() == pytest.approx(2.0)
+    assert fine.points[:, 2].min() == pytest.approx(-2.0)
+    on_axis = numpy.hypot(fine.points[:, 0], fine.points[:, 1]) < 1.0e-12
+    assert on_axis.sum() == 2
+
+    # A loose tolerance still gets 8 segments around and 4 from pole to pole
+    floor = MeshData3.create_sphere(2.0, 100.0)
+    assert floor.points.shape[0] == 8 * 3 + 2
+
+
+def test_create_sphere_rejects_bad_arguments():
+    with pytest.raises(ValueError):
+        Mesh3.create_sphere(1.0, 0.0)
+    with pytest.raises(ValueError):
+        MeshData3.create_sphere(0.0, 1.0e-3)
+
+
+def test_create_capsule_runs_past_the_two_points_by_a_radius():
+    p0, p1 = Point3(1.0, 2.0, 3.0), Point3(1.0, 2.0, 9.0)
+    capsule = Mesh3.create_capsule(p0, p1, 0.5, 1.0e-3)
+
+    assert capsule.aabb.min.z == pytest.approx(2.5)
+    assert capsule.aabb.max.z == pytest.approx(9.5)
+
+    coarse = MeshData3.create_capsule(p0, p1, 0.5, 1.0e-1)
+    assert MeshData3.from_mesh(capsule).faces.shape[0] > coarse.faces.shape[0]
+
+
+def test_create_capsule_rejects_bad_arguments():
+    p0, p1 = Point3(0.0, 0.0, 0.0), Point3(0.0, 0.0, 4.0)
+    with pytest.raises(ValueError):
+        Mesh3.create_capsule(p0, p1, 1.0, 0.0)
+    with pytest.raises(ValueError):
+        MeshData3.create_capsule(p0, p0, 1.0, 1.0e-3)
+
+
+def test_create_cylinder_between_rejects_coincident_points():
+    p = Point3(1.0, 2.0, 3.0)
+    with pytest.raises(ValueError):
+        Mesh3.create_cylinder_between(p, p, 1.0, 1.0e-3)
 
 
 def test_mesh_data_has_the_primitives_too():
@@ -796,8 +833,8 @@ def test_mesh_data_compute_point_normals_reports_a_point_with_no_normal():
 def test_mesh_data_capsule_and_cylinder_between():
     p0, p1 = Point3(0.0, 0.0, 0.0), Point3(0.0, 0.0, 10.0)
 
-    capsule = MeshData3.create_capsule(p0, p1, 1.0, 16, 8)
-    cylinder = MeshData3.create_cylinder_between(p0, p1, 1.0, 16)
+    capsule = MeshData3.create_capsule(p0, p1, 1.0, 1.0e-2)
+    cylinder = MeshData3.create_cylinder_between(p0, p1, 1.0, 1.0e-2)
 
     assert capsule.face_count > 0
     assert cylinder.face_count > 0
@@ -830,3 +867,18 @@ def test_mesh_data_bunnies_match_the_accelerated_type(name):
 
     assert numpy.allclose(data.points, mesh.points)
     assert numpy.array_equal(data.faces, mesh.faces)
+
+
+def test_mesh_data_point_flat_round_trips_and_clears():
+    data = MeshData3(triangle_points(), triangle_faces())
+    assert data.point_flat is None
+
+    data.set_point_flat(numpy.array([[0.0, 0.0], [1.5, 0.0], [0.0, 1.5]]))
+    assert data.point_flat.shape == (3, 2)
+    assert data.point_flat[1] == pytest.approx([1.5, 0.0])
+
+    with pytest.raises(ValueError):
+        data.set_point_flat(numpy.zeros((2, 2)))
+
+    data.set_point_flat(None)
+    assert data.point_flat is None

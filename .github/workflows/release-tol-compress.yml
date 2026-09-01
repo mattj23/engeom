@@ -1,0 +1,203 @@
+name: Release tol-compress
+
+# The `tol-compress` crate releases on its own cadence, independent of the engeom workspace version,
+# so it gets its own tag namespace and its own workflow. release.yml triggers on 'v[0-9]+...', which
+# cannot match a tag beginning 'tol-compress-', so the two never both fire on one tag.
+#
+# As in release.yml, a tag push is the real release and `workflow_dispatch` defaults to a rehearsal
+# that validates everything and publishes nothing.
+on:
+  push:
+    tags:
+      - 'tol-compress-v[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Rehearse only. Build and validate, publish nothing.
+        type: boolean
+        required: false
+        default: true
+
+concurrency:
+  group: release-tol-compress-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # crates.io rejects API requests that do not send a descriptive User-Agent.
+  CRATES_UA: 'engeom-release-ci (https://github.com/mattj23/engeom)'
+
+jobs:
+  check-version:
+    name: Check version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      publish: ${{ steps.check.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Resolve and check the version
+        id: check
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          # Read the version through cargo rather than grepping the manifest. tol-compress states its
+          # version literally, unlike engeom, but a resolved value still cannot drift from what cargo
+          # will actually publish.
+          VERSION=$(cargo metadata --format-version 1 --no-deps | python3 -c \
+            'import json,sys; m=json.load(sys.stdin); print(next(p["version"] for p in m["packages"] if p["name"]=="tol-compress"))')
+          echo "tol-compress version: $VERSION"
+
+          IS_TAG=false
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            IS_TAG=true
+            TAG="${GITHUB_REF#refs/tags/}"
+            if [[ "$TAG" != "tol-compress-v$VERSION" ]]; then
+              echo "::error::Tag $TAG does not match the crate version $VERSION. Expected tag tol-compress-v$VERSION."
+              exit 1
+            fi
+            echo "Tag $TAG matches the crate version."
+          else
+            echo "::notice::Not a tag ref, so the tag/version equality check does not apply."
+          fi
+
+          # Publishing requires a tag as well as dry_run being off, so a branch dispatch can never
+          # reach a registry no matter how it is invoked.
+          PUBLISH=false
+          if [[ "$IS_TAG" == "true" && "$DRY_RUN" != "true" ]]; then
+            PUBLISH=true
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
+
+          CODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 \
+            -H "User-Agent: $CRATES_UA" "https://crates.io/api/v1/crates/tol-compress/$VERSION")
+          case "$CODE" in
+            200) STATE="already published" ;;
+            404) STATE="not published" ;;
+            *)   STATE="unknown (HTTP $CODE)" ;;
+          esac
+
+          {
+            echo "### tol-compress $VERSION"
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Ref | \`${GITHUB_REF#refs/*/}\` |"
+            echo "| Will publish | $PUBLISH |"
+            echo "| crates.io | $STATE |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  verify:
+    name: Verify the package
+    # engeom's release gates on the wheels job, which runs its tests as a side effect. This crate has
+    # no wheels stage, so without this job a tag push would publish without running anything.
+    needs: check-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Check formatting
+        run: cargo fmt -p tol-compress --check
+      - name: Clippy
+        run: cargo clippy -p tol-compress --all-targets --all-features -- -D warnings
+      # Per project convention the suite runs in release mode; the stress tests make a debug run
+      # needlessly slow.
+      - name: Test
+        run: cargo test -r -p tol-compress --all-features
+      # The check that matters at release time is not the source tree but the artifact a consumer
+      # downloads. `cargo package` only builds the lib at default features when it verifies, so it
+      # cannot see a test target whose data was left out of the package.
+      - name: Test the packaged crate as a consumer receives it
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.check-version.outputs.version }}"
+          cargo package -p tol-compress
+          rm -rf /tmp/pkgcheck && mkdir -p /tmp/pkgcheck
+          tar xzf "target/package/tol-compress-$VERSION.crate" -C /tmp/pkgcheck
+          cd "/tmp/pkgcheck/tol-compress-$VERSION"
+          cargo test -r --all-features
+
+  msrv:
+    name: MSRV (1.88)
+    needs: check-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Verifies the `rust-version` promised in tol-compress/Cargo.toml, which is a promise made to
+      # every consumer of the published crate.
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Check with no features
+        run: cargo check -p tol-compress
+      - name: Check with the corpus feature
+        run: cargo check -p tol-compress --features corpus
+
+  publish-crates:
+    name: Publish to crates.io
+    needs: [check-version, verify, msrv]
+    runs-on: ubuntu-latest
+    permissions:
+      # Required to mint the OIDC token for crates.io trusted publishing.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check whether this version is already on crates.io
+        id: exists
+        run: |
+          set -euo pipefail
+          CODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 \
+            -H "User-Agent: $CRATES_UA" \
+            "https://crates.io/api/v1/crates/tol-compress/${{ needs.check-version.outputs.version }}")
+          case "$CODE" in
+            200) echo "already=true"  >> "$GITHUB_OUTPUT"; echo "::notice::Already on crates.io, the publish will be skipped." ;;
+            404) echo "already=false" >> "$GITHUB_OUTPUT" ;;
+            *)   echo "::error::Unexpected HTTP $CODE from crates.io"; exit 1 ;;
+          esac
+      - name: Rehearse the publish
+        if: ${{ needs.check-version.outputs.publish != 'true' }}
+        run: cargo publish -p tol-compress --dry-run
+      # cargo has no --skip-existing, so the check above stands in for it and keeps a partial release
+      # re-runnable.
+      #
+      # This requires a Trusted Publisher entry for this workflow filename in the crate's crates.io
+      # settings. crates.io only accepts one on a crate that already exists, so 0.1.0 is published
+      # manually with a token and every release after it comes through here.
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+        if: ${{ needs.check-version.outputs.publish == 'true' && steps.exists.outputs.already == 'false' }}
+      - name: Publish
+        if: ${{ needs.check-version.outputs.publish == 'true' && steps.exists.outputs.already == 'false' }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish -p tol-compress
+
+  github-release:
+    name: GitHub release
+    needs: [check-version, verify, msrv, publish-crates]
+    if: ${{ needs.check-version.outputs.publish == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      # No artifacts are attached: the crate itself lives on crates.io, and a second copy here would
+      # be one more thing that can disagree with it.
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes \
+            --verify-tag

@@ -1,9 +1,9 @@
 [workspace]
 resolver = "3"
-members = ["engeom", "py-engeom", "utilities"]
+members = ["engeom", "py-engeom", "tol-compress", "utilities"]
 
 [workspace.package]
-version = "0.4.3"
+version = "0.5.0"
 edition = "2024"
 
 [workspace.dependencies]
@@ -12,5 +12,9 @@ parry2d-f64 = { version = "0.25.1", features = ["serde-serialize"] }
 rand = "0.10.0"
 rand_distr = "0.6.0"
 rayon = "1.11.0"
-uuid = "1.18.0"
-flate2 = "1.1.9"
+
+[profile.dev]
+opt-level = 2
+
+[profile.dev.package."*"]
+opt-level = 3

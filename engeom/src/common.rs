@@ -1,6 +1,7 @@
 pub mod align;
 mod angles;
 pub mod average;
+pub mod barycentric;
 pub mod consensus;
 mod convert_2d_3d;
 pub mod cubic_spline;
@@ -12,6 +13,7 @@ pub mod indices;
 pub mod interval;
 pub mod kd_tree;
 mod line;
+pub mod min_ball;
 pub mod points;
 pub mod poisson_disk;
 pub mod random_geometry;
@@ -21,12 +23,13 @@ pub mod surface_point;
 pub mod svd_basis;
 pub mod triangulation;
 pub mod vec_f64;
-mod voxel_downsample;
+mod voxel_grid;
 
 use crate::na::{Point, SVector, Unit};
 pub use align::{DistMode, RefinementHalt, SolveQuality, TerminationReason};
 pub use angles::*;
 pub use average::Averager;
+pub use barycentric::*;
 pub use consensus::{ConsensusFit, ConsensusModel, Magsac};
 pub use convert_2d_3d::{To2D, To3D};
 pub use discrete_domain::{DiscreteDomain, linear_space};
@@ -34,11 +37,12 @@ pub use domain_map::DomainMap;
 pub use index_mask::IndexMask;
 pub use interval::{AngleInterval, Interval, IntervalMergeDomain, IntervalOps};
 pub use line::Line;
+pub use min_ball::compute_min_ball;
 pub use parry3d_f64::query::SplitResult;
 pub use points::*;
 pub use segment::Segment;
 pub use surface_point::{SurfacePoint, SurfacePointCollection};
-pub use voxel_downsample::voxel_downsample;
+pub use voxel_grid::{VoxelGroups, compute_first_per_voxel_mask, compute_voxel_groups};
 
 /// A type alias for signed integer indices for rasters
 pub type PointNI<const D: usize> = Point<i32, D>;

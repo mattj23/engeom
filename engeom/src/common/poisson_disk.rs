@@ -1,17 +1,21 @@
 //! This module contains tools for performing Poisson disk sampling on points in 2D and 3D.
 
 use crate::common::kd_tree::{KdTreeSearch, PartialKdTree};
-use crate::common::{IndexMask, PCoords, voxel_downsample};
+use crate::common::{IndexMask, PCoords, compute_first_per_voxel_mask};
 
 /// Performs Poisson disk sampling on a set of points in D-dimensional space, returning a mask
 /// indicating which points are retained.
 ///
-/// Internally, this function first performs a voxel downsampling of the points at 1/2 the size
-/// of the Poisson disk radius. This is a quick operation that guarantees that at most there will
-/// be about 16 points within the radius of any point in the pre-sampled set. This pre-sampling
-/// reduces the size of the KD tree that needs to be built, and prevents the issue with Kiddo not
-/// returning all points within the radius when the number of points is too large from breaking
-/// the sampling process.
+/// Internally, this function first voxel-downsamples the points at 1/4 of the Poisson disk radius.
+/// That is a quick operation which bounds how many points can survive within a radius of each
+/// other, so the k-d tree built afterwards is much smaller than the input.
+///
+/// This is a performance measure and nothing more. It previously carried a second justification,
+/// that it worked around a backend which did not return every point within a radius once the point
+/// count grew large, but that backend is gone and its replacement is checked against brute force at
+/// scale in `common::kd_tree`.
+///
+/// TODO: this can probably be improved now, maybe with one of `kiddo`'s mutable trees
 ///
 /// # Arguments
 ///
@@ -23,7 +27,7 @@ pub fn sample_poisson_disk_all<const D: usize>(
     points: &[impl PCoords<D>],
     radius: f64,
 ) -> IndexMask {
-    let pre_mask = voxel_downsample(points, radius * 0.25);
+    let pre_mask = compute_first_per_voxel_mask(points, radius * 0.25);
     let partial_tree = PartialKdTree::try_new(points, &pre_mask)
         .expect("KD tree construction failed. Are there enough points?");
 

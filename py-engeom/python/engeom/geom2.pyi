@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Callable, Iterable, Tuple, TypeVar, Iterator, Any, List
+from pathlib import Path
+from typing import Callable, Iterable, Tuple, TypeVar, Iterator, Any, List, overload
 
 from numpy.typing import NDArray
 from engeom.engeom import ResampleEnum, VecDot
@@ -593,15 +594,17 @@ class Iso2:
         """
         ...
 
+    @property
     def translation(self) -> Iso2:
         """
-        Return the translation component of the isometry as a separate isometry.
+        The translation component of the isometry, expressed as a separate isometry.
         """
         ...
 
+    @property
     def rotation(self) -> Iso2:
         """
-        Return the rotation component of the isometry as a separate isometry.
+        The rotation component of the isometry, expressed as a separate isometry.
         """
         ...
 
@@ -753,30 +756,34 @@ class SvdBasis2:
         """
         ...
 
+    @property
     def largest(self) -> Vector2:
         """
-        Get the largest singular vector of the basis.
+        The largest singular vector of the basis.
         :return: the largest singular vector.
         """
         ...
 
+    @property
     def smallest(self) -> Vector2:
         """
-        Get the smallest singular vector of the basis.
+        The smallest singular vector of the basis.
         :return: the smallest singular vector.
         """
         ...
 
+    @property
     def basis_variances(self) -> NDArray[float]:
         """
-        Get the variance of the points along the singular vectors.
+        The variance of the points along the singular vectors.
         :return: a numpy array of the variance of the points along the singular vectors.
         """
         ...
 
+    @property
     def basis_stdevs(self) -> NDArray[float]:
         """
-        Get the standard deviation of the points along the singular vectors.
+        The standard deviation of the points along the singular vectors.
         :return: a numpy array of the standard deviation of the points along the singular vectors.
         """
         ...
@@ -926,9 +933,10 @@ class Curve2:
         """
         ...
 
+    @property
     def length(self) -> float:
         """
-        Get the total length of the curve as a scalar value.
+        The total length of the curve as a scalar value.
         :return: the length of the curve.
         """
         ...
@@ -976,8 +984,46 @@ class Curve2:
     @property
     def is_closed(self) -> bool:
         """
-        Check if the curve is closed.
+        Whether the curve is closed.
         :return: True if the curve is closed, False otherwise.
+        """
+        ...
+
+    @property
+    def signed_area(self) -> float:
+        """
+        The signed area enclosed by a closed curve, computed with the shoelace formula. The sign
+        carries the winding direction: positive for a counter-clockwise loop and negative for a
+        clockwise one, so a curve built with `hull_ccw=True` never reports a negative value. A
+        self-intersecting loop is not rejected; its lobes add or cancel according to their own winding.
+
+        :return: the signed enclosed area.
+        :raises ValueError: if the curve is open, since it then encloses nothing.
+        """
+        ...
+
+    @property
+    def area(self) -> float:
+        """
+        The area enclosed by a closed curve, regardless of its winding direction. This is the
+        magnitude of `signed_area`.
+
+        :return: the enclosed area.
+        :raises ValueError: if the curve is open, since it then encloses nothing.
+        """
+        ...
+
+    @property
+    def area_centroid(self) -> Point2:
+        """
+        The area centroid of the region enclosed by a closed curve: the center of mass of the
+        enclosed region taken as a uniform lamina. It is not the mean of the vertices, and it does
+        not depend on how densely the loop is sampled. The result is the same for either winding
+        direction.
+
+        :return: the centroid of the enclosed region.
+        :raises ValueError: if the curve is open or if it is closed but encloses zero area (a loop
+            that doubles back over itself), since there is then no region whose centroid can be found.
         """
         ...
 
@@ -1029,6 +1075,23 @@ class Curve2:
         """
         Reverse the curve and return a new curve.
         :return: a new curve with the vertices in reverse order.
+        """
+        ...
+
+    def closed_within(self, max_gap: float) -> Curve2:
+        """
+        Return a closed copy of this curve, bridging the gap between its last and first vertices when
+        that gap is no larger than `max_gap`.
+
+        Use this to close a curve whose ends nearly meet but are farther apart than the tolerance
+        that closes a curve automatically during construction, such as a section through touching
+        but separately meshed patches. Closure is represented by repeating the first vertex at the
+        end, so the result has one more vertex than the input. An already closed curve is returned
+        unchanged, regardless of `max_gap`.
+
+        :param max_gap: the largest end-to-start distance which may be bridged.
+        :return: a new, closed curve.
+        :raises ValueError: if the end gap exceeds `max_gap`; the message reports the actual gap.
         """
         ...
 
@@ -1159,22 +1222,176 @@ class Curve2:
     def load_tccurve2(path: str | Path) -> Curve2:
         """
         Load a curve from a tolerance-compressed 2D curve (.tccurve2) file. The tccurve2 format
-        stores vertex positions as variable-width integers scaled within the bounding box of the
-        point data, using the minimum number of bytes needed to guarantee a round-trip accuracy at
-        or below the tolerance that was specified when the file was written. The curve's closed/open
-        state and reconstruction tolerance are also stored in the file.
+        stores vertex positions as integers scaled within the bounding box of the point data, using
+        the narrowest bit width per axis needed to guarantee a round-trip accuracy at or below the
+        tolerance that was specified when the file was written. The curve's closed/open state and
+        reconstruction tolerance are also stored in the file.
+
+        These files may hold more than one curve. This raises an IOError on such a file rather
+        than returning its first curve, since that would silently discard the rest.
 
         :param path: the path to the .tccurve2 file to load.
         :return: the curve loaded from the file.
         """
         ...
 
-    def write_tccurve2(self, path: str | Path, tol: float):
+    def save_tccurve2(self, path: str | Path, tol: float):
         """
         Write the curve to a tolerance-compressed 2D curve (.tccurve2) file. The tolerance controls
         the maximum allowable round-trip position error for any vertex: a smaller tolerance produces
         a more accurate file at the cost of more bytes per vertex, while a larger tolerance allows
         greater compression.
+
+        :param path: the path to the .tccurve2 file to write.
+        :param tol: the maximum acceptable round-trip position error, in model units.
+        """
+        ...
+
+
+class CurveGroup2:
+    """
+    A collection of disjoint `Curve2` polylines treated as a single rigid entity, such as the loops
+    and open segments produced by a planar section of a `Mesh3`.
+
+    Where a `Curve2` is a single connected polyline, a group holds any number of them, closed or
+    open in any mixture, and answers the whole-entity questions that treating them one at a time
+    would get wrong: the bounding box of everything, the closest position on *any* member, and a
+    rigid transform applied to all of them together.
+
+    Members keep their identity, and queries that land on the group report which member they landed
+    on. A group is never empty; construction rejects an empty collection.
+
+    The group behaves as a sequence, so `len(group)`, `group[i]` and `for curve in group` all work
+    and yield the member curves in order.
+    """
+
+    def __init__(self, curves: List[Curve2]) -> None:
+        """
+        Create a curve group from its member curves, which are kept in the order given. That order
+        defines the member indices reported by queries.
+
+        :param curves: the member curves. At least one is required.
+        :raises ValueError: if no curves are given.
+        """
+        ...
+
+    def __len__(self) -> int:
+        """
+        The number of member curves.
+        """
+        ...
+
+    @overload
+    def __getitem__(self, index: int) -> Curve2:
+        ...
+
+    @overload
+    def __getitem__(self, index: slice) -> List[Curve2]:
+        ...
+
+    def __getitem__(self, index):
+        """
+        Return a member curve by index or a list of member curves by slice.
+
+        Negative indices count from the end, and a slice behaves as it does on any Python
+        sequence. A slice returns a plain list rather than another `CurveGroup2`, because a slice is
+        allowed to select nothing while a `CurveGroup2` must have at least one member curve.
+
+        :param index: the member index, or a slice of member indices.
+        :return: the member curve at that index or the list of member curves selected by the slice.
+        :raises IndexError: if an integer index is out of range.
+        """
+        ...
+
+    def __iter__(self) -> Iterator[Curve2]:
+        """
+        Iterate over the member curves, in member order.
+        """
+        ...
+
+    @property
+    def curves(self) -> List[Curve2]:
+        """
+        The member curves, in member order.
+        """
+        ...
+
+    @property
+    def aabb(self) -> Aabb2:
+        """
+        The axis-aligned bounding box enclosing every member curve.
+        """
+        ...
+
+    @property
+    def length(self) -> float:
+        """
+        The total arc length of all member curves.
+        """
+        ...
+
+    def at_closest_to_point(self, point: Point2) -> Tuple[int, CurveStation2]:
+        """
+        Find the closest position on any member curve to a test point. Ties between members are
+        broken in favor of the lower member index.
+
+        :param point: the test point.
+        :return: a tuple of the owning member index and the station on that member.
+        """
+        ...
+
+    def new_transformed_by(self, iso: Iso2) -> CurveGroup2:
+        """
+        Get a new group with every member transformed by the isometry. Member order is preserved.
+
+        :param iso: the isometry to transform the group by.
+        :return: a new, transformed curve group.
+        """
+        ...
+
+    def chain_merged(self, max_dist: float | None = None) -> CurveGroup2:
+        """
+        Return a new group in which open members whose ends meet have been joined into single curves.
+        This reassembles a section through separately meshed but touching patches into the loops and
+        strands it describes.
+
+        Repeatedly, the pair of open members with the smallest distance from the end of one to the
+        start of the other is joined end-to-start, until no pair is within `max_dist`. Only
+        end-to-start joins are made, so every member keeps its direction and none is reversed.
+        Closed members take no part and pass through unchanged. A chain whose last vertex comes back
+        around to its first vertex within the first member's tolerance becomes a closed curve; a
+        chain that stops short of that stays open, and `Curve2.closed_within` closes it
+        across a larger gap.
+
+        The result has one member for each remaining chain, so a section through a part with a hole
+        reduces to two loops, not one. A result containing a single curve has `len(merged) == 1`.
+
+        :param max_dist: the largest end-to-start distance that may be bridged by a join, or `None`
+            to keep joining the closest pair until nothing open is left to join.
+        :return: a new curve group of the merged members.
+        """
+        ...
+
+    @staticmethod
+    def load_tccurve2(path: str | Path) -> CurveGroup2:
+        """
+        Load a group from a tolerance-compressed 2D curve (.tccurve2) file, taking every curve in
+        the file as a member in the order the file stores them.
+
+        These files are collections, so this also reads a file written by `Curve2.save_tccurve2`,
+        which arrives as a group of one.
+
+        :param path: the path to the .tccurve2 file to load.
+        :return: the curve group loaded from the file.
+        :raises IOError: if the file holds no curves at all, since a group is never empty.
+        """
+        ...
+
+    def save_tccurve2(self, path: str | Path, tol: float):
+        """
+        Write the group to a single tolerance-compressed 2D curve (.tccurve2) file, one item per
+        member. Member order is the file order, so a group read back has the same member indices it
+        was saved with, and each member keeps its own closed state and reconstruction tolerance.
 
         :param path: the path to the .tccurve2 file to write.
         :param tol: the maximum acceptable round-trip position error, in model units.
@@ -1377,6 +1594,19 @@ class Circle2:
         ...
 
     @staticmethod
+    def from_min_enclosing(points: NDArray[float]) -> Circle2:
+        """
+        Create the smallest circle containing every point.
+
+        A single point or identical points produce a zero-radius circle. Collinear points produce
+        the circle whose diameter is the extreme pair. Raises ``ValueError`` for an empty array.
+
+        :param points: a numpy array of shape ``(n, 2)`` containing the points to enclose.
+        :return: a new ``Circle2``.
+        """
+        ...
+
+    @staticmethod
     def from_tangent_to_corner(corner: Point2, d0: Vector2, d1: Vector2, radius: float) -> Circle2:
         """
         Create a circle tangent to the corner formed by two lines. The corner is defined by a point
@@ -1393,7 +1623,9 @@ class Circle2:
     @staticmethod
     def from_tangent_and_point(tangent: Line2, point: Point2) -> Circle2:
         """
-        Create a circle tangent to a line and passing through a point.
+        Create a circle tangent to a line at the line's origin and passing through a point.
+        Raises ``ValueError`` if the point lies on the tangent line, where no finite tangent
+        circle exists.
 
         :param tangent: the line the circle is tangent to.
         :param point: a point on the circle.
@@ -1749,9 +1981,10 @@ class Line2:
         """
         ...
 
+    @property
     def orthogonal(self) -> Vector2:
         """
-        Return the direction vector rotated -90 degrees, typically used as a normal.
+        The direction vector rotated -90 degrees, typically used as a normal.
         """
         ...
 
@@ -1847,6 +2080,114 @@ class CubicSpline2:
         :param y2: y-coordinate of the third control point.
         :param x3: x-coordinate of the fourth control point (curve end).
         :param y3: y-coordinate of the fourth control point (curve end).
+        """
+        ...
+
+    @staticmethod
+    def from_fit_with_ends(points: NDArray[float], p0: Point2, p3: Point2,
+                           weights: NDArray[float] | None = None) -> CubicSpline2:
+        """
+        Fit a cubic Bézier curve to a set of points, holding the two endpoints fixed and solving
+        for the two interior control points. Fixing the endpoints is what makes the problem
+        well-posed: the residuals are closest-point distances to the curve, which do not change when
+        the curve extends beyond the points, so with free endpoints nothing stops the ends from
+        sliding.
+
+        The fit starts from the best of three closed-form seeds: the straight chord and two linear
+        least-squares solutions using a chord-length parameterization. One solution orders the
+        points by projection onto the chord, while the other uses the input order. It then refines
+        the selected seed against the true closest-point distances with a weighted
+        Levenberg-Marquardt minimization. The points may be in any order; ordered input helps only
+        for curves that double back along their chord.
+
+        The fit determines the curve shape more strongly than the exact control-point locations.
+        Compare curves, rather than their control points, when checking a fit.
+
+        :param points: the points to fit the curve to, as an (n, 2) array, in any order. At least
+            two are required.
+        :param p0: the start point of the curve, held fixed.
+        :param p3: the end point of the curve, held fixed. Must be distinct from `p0`.
+        :param weights: if provided, a length-`n` array of non-negative weights that scale each
+            point's residual. Points with zero weight have no effect. If `None`, all points are
+            weighted equally.
+        :return: a new `CubicSpline2` with the given endpoints and the fitted interior control
+            points.
+        :raises ValueError: if there are fewer than two points, the endpoints coincide, the weight
+            count does not match the point count, or the minimization fails.
+        """
+        ...
+
+    @staticmethod
+    def from_fit_hermite(points: NDArray[float], p0: Point2, tangent0: Vector2, p3: Point2,
+                         tangent3: Vector2, weights: NDArray[float] | None = None) -> CubicSpline2:
+        """
+        Fit a cubic Bézier curve to a set of points, holding the two endpoints and the tangent
+        directions at each end fixed and solving only for the lengths of the two tangent arms
+        (the distances from `p0` to `p1` and from `p3` to `p2`). This is the most constrained and
+        best-conditioned of the fits. It is a natural choice for a curve that must leave one known
+        feature tangentially and arrive at another feature in the same way.
+
+        Both tangents point in the direction of travel along the curve, from `p0` toward `p3`:
+        `tangent0` is the direction the curve leaves `p0` (`p1 = p0 + a0 * tangent0`) and
+        `tangent3` is the direction the curve is traveling as it arrives at `p3`
+        (`p2 = p3 - a1 * tangent3`). The arm lengths are held positive during the fit.
+
+        The fit starts from the best of several closed-form seeds. Schneider's linear least-squares
+        arm lengths under a chord-length parameterization are computed with the points ordered both
+        by projection onto the chord and in their given order. One-third of the chord length for
+        each arm provides a fallback seed; when the endpoints coincide, the fallback uses the reach
+        of the points from `p0` instead. The selected seed is refined against the true closest-point
+        distances with a weighted Levenberg-Marquardt minimization. The endpoints may coincide.
+
+        The fit determines the curve shape more strongly than the exact control-point locations.
+        Compare curves, rather than their control points, when checking a fit.
+
+        :param points: the points to fit the curve to, as an (n, 2) array, in any order. At least
+            two are required.
+        :param p0: the start point of the curve, held fixed.
+        :param tangent0: the direction the curve leaves `p0` in; normalized internally, must be
+            non-zero.
+        :param p3: the end point of the curve, held fixed.
+        :param tangent3: the direction the curve is traveling in as it arrives at `p3`;
+            normalized internally, must be non-zero.
+        :param weights: if provided, a length-`n` array of non-negative weights that scale each
+            point's residual. Points with zero weight have no effect. If `None`, all points are
+            weighted equally.
+        :return: a new `CubicSpline2` with the given endpoints and tangents and the fitted arm
+            lengths.
+        :raises ValueError: if there are fewer than two points, a tangent is zero, the weight
+            count does not match the point count, or the minimization fails.
+        """
+        ...
+
+    @staticmethod
+    def from_fit_principal_axis(points: NDArray[float],
+                                weights: NDArray[float] | None = None) -> CubicSpline2:
+        """
+        Fit a cubic Bézier curve to a set of points whose endpoints are unknown, assuming that the
+        curve runs from one end of the points' principal axis (their direction of greatest
+        variance) to the other. The points are ordered by projection onto that axis, and the two
+        extreme points anchor the ends. Each end may slide perpendicular to the axis to absorb the
+        noise of a single sample, while the interior control points are fitted as in
+        `from_fit_with_ends`. This approach covers lines, arcs of up to about a half turn, S-curves,
+        and any other shape that is single-valued along its own principal axis.
+
+        The assumption is checked first. When the points double back along the axis (a hairpin, a
+        loop, or an arc well past a half turn), the fit is refused with a `ValueError`. The check
+        catches gross violations: an arc that only slightly overhangs its ends (roughly 190 to 240
+        degrees) passes and is fitted between its extreme points, while noise-dominated straight
+        data with only a couple of dozen points can be falsely rejected. Use `from_fit_with_ends`
+        when the endpoints are known.
+
+        :param points: the points to fit the curve to, as an (n, 2) array, in any order. At least
+            two with positive weight are required.
+        :param weights: if provided, a length-`n` array of non-negative weights that scale each
+            point's residual. Points with zero weight take no part in the fit, the principal axis,
+            or the choice of endpoints. If `None`, all points are weighted equally.
+        :return: a new `CubicSpline2` fitted to the points.
+        :raises ValueError: if there are too few points, the weight count does not match the
+            point count, the points double back along their principal axis, or the minimization
+            fails.
         """
         ...
 
@@ -2344,9 +2685,10 @@ class Segment2:
         """
         ...
 
+    @property
     def normal(self) -> Vector2:
         """
-        Return the unit normal of the segment: the direction vector rotated 90 degrees clockwise.
+        The unit normal of the segment: the direction vector rotated 90 degrees clockwise.
         :return: the unit normal vector.
         """
         ...
@@ -2531,9 +2873,35 @@ class Arc2:
         """
         ...
 
+    @staticmethod
+    def from_consensus(points: NDArray[float], sigma_max: float, min_r: float | None = None,
+                       max_r: float | None = None, max_iterations: int | None = None,
+                       refinement_steps: int | None = None, confidence: float | None = None,
+                       seed: int | None = None) -> Arc2:
+        """
+        Fit a circular arc to a set of points robustly using the MAGSAC++ consensus algorithm. A robust circle is
+        estimated the same way as `Circle2.from_consensus`, rejecting gross outliers; the arc is then bounded to the
+        smallest angular sector (about the fitted circle's center) that contains all of the inlier points, so outliers
+        influence neither the circle nor the arc's extent. The returned arc always has a non-negative
+        (counter-clockwise) sweep.
+
+        :param points: the points to fit the arc to.
+        :param sigma_max: the upper bound on the expected inlier noise, in the same units as the points.
+        :param min_r: the minimum radius of the arc's circle. If None, no minimum will be enforced.
+        :param max_r: the maximum radius of the arc's circle. If None, no maximum will be enforced.
+        :param max_iterations: the maximum number of minimal-sample iterations. If None, a default of 500 is used.
+        :param refinement_steps: the number of iteratively reweighted refinement steps per candidate. If None, a
+            default of 4 is used.
+        :param confidence: the probability used for adaptive termination. If None, a default of 0.99 is used.
+        :param seed: an optional fixed RNG seed for reproducible sampling. If None, a random seed is used.
+        :return: a new ``Arc2`` object representing the fitted arc.
+        """
+        ...
+
+    @property
     def length(self) -> float:
         """
-        Return the arc length: the radius times the absolute value of the sweep angle.
+        The arc length: the radius times the absolute value of the sweep angle.
         """
         ...
 
@@ -2565,13 +2933,15 @@ class Arc2:
         """
         ...
 
+    @property
     def is_ccw(self) -> bool:
-        """Return whether the arc sweeps counter-clockwise (a positive sweep angle)."""
+        """Whether the arc sweeps counter-clockwise, meaning it has a positive sweep angle."""
         ...
 
+    @property
     def angle_interval(self) -> AngleInterval:
         """
-        Return the angular interval spanned by the arc, starting at ``angle0`` and extending for
+        The angular interval spanned by the arc, starting at ``angle0`` and extending for
         ``angle`` radians.
         """
         ...
@@ -2903,9 +3273,10 @@ class BoundaryData2:
         """
         ...
 
+    @property
     def is_closed(self) -> bool:
         """
-        Return ``True`` if this is a closed boundary.
+        Whether this is a closed boundary.
         :return: ``True`` for closed, ``False`` for open.
         """
         ...
@@ -2935,16 +3306,18 @@ class Boundary2:
     and surface normal) at the queried location.
     """
 
+    @property
     def is_closed(self) -> bool:
         """
-        Return ``True`` if this boundary forms a closed loop.
+        Whether this boundary forms a closed loop.
         :return: ``True`` for closed, ``False`` for open.
         """
         ...
 
+    @property
     def length(self) -> float:
         """
-        Return the total arc length of the boundary.
+        The total arc length of the boundary.
         :return: the total length.
         """
         ...

@@ -224,8 +224,7 @@ mod tests {
         Circle3::new(center, normal, 4.0)
     }
 
-    fn random_circle() -> Circle3 {
-        let mut rg = RandomGeometry3::new();
+    fn random_circle(rg: &mut RandomGeometry3) -> Circle3 {
         let r = rg.f64(0.8, 5.0);
         let center = rg.point(10.0);
         let normal = rg.unit_vec();
@@ -260,7 +259,7 @@ mod tests {
         let mut rg = RandomGeometry3::new();
 
         for _ in 0..n {
-            let circle = random_circle();
+            let circle = random_circle(&mut rg);
             let points = sample_circle_points(&circle, 1000);
             let curve = Curve3::from_points(&points, 1e-10)?;
 
@@ -294,7 +293,7 @@ mod tests {
         let mut rg = RandomGeometry3::new();
 
         for _ in 0..n {
-            let circle = random_circle();
+            let circle = random_circle(&mut rg);
             let test_pt = rg.point(10.0);
             let Some(sp) = circle.closest_point(&test_pt) else {
                 continue;
@@ -354,18 +353,20 @@ mod tests {
 
     #[test]
     fn stress_intersect_plane_points_on_circle_and_plane() {
-        // TODO: this test fails occasionally
-
         // For a random circle and a plane through two known on-circle points, verify the
         // returned points lie on both the circle and the plane.
-        let mut rg = RandomGeometry3::new();
+        //
+        // Seeded so a failure is reproducible and so this can never join the flaky-by-RNG set.
+        let mut rg = RandomGeometry3::from_seed(0xc1c3_5eed);
         for _ in 0..500 {
-            let circle = random_circle();
+            let circle = random_circle(&mut rg);
             let t = rg.angle_sym_pi();
-            // Build a plane that passes through a diameter of the circle
+            // Build a plane that passes through a diameter of the circle. The circle's normal
+            // is perpendicular to every chord in its plane, so the three points below are never
+            // near-collinear and the plane always truly contains the diameter.
             let p1 = sample_circle_point(&circle, t);
             let p2 = sample_circle_point(&circle, t + PI);
-            let some_other = p1 + Vector3::z() * 3.0;
+            let some_other = p1 + circle.normal.into_inner() * 3.0;
             let plane = Plane3::from_3_points(&p1, &p2, &some_other).unwrap();
 
             let points = circle.intersect_plane(&plane);
@@ -390,7 +391,7 @@ mod tests {
         let mut rg = RandomGeometry3::new();
 
         for _ in 0..n {
-            let circle = random_circle();
+            let circle = random_circle(&mut rg);
             let dir = rg.vector(1.0);
 
             // Skip degenerate directions (parallel to normal)
@@ -430,7 +431,7 @@ mod tests {
     fn stress_transformed_by() {
         let mut rg = RandomGeometry3::new();
         for _ in 0..1000 {
-            let original = random_circle();
+            let original = random_circle(&mut rg);
             let iso = rg.iso3(10.0);
 
             let moved = original.transformed_by(&iso);

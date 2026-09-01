@@ -4,8 +4,8 @@ use crate::airfoil2::{AfEdge, AfEdgeGeometry, SectionInput};
 use crate::common::cubic_spline::{SplineBuildFn, fit_spline_to_points};
 use crate::common::{PCoords, dist, mid_point};
 use crate::geom2::{
-    BndBuildFn, BoundaryData2, BoundaryEditor, BoundaryElement2, CubicSpline2, LineOps2, Segment2,
-    fit_boundary_to_points, signed_angle,
+    BndBuildFn, BoundaryData2, BoundaryEditor, BoundaryElement2, BoundaryFitOptions, CubicSpline2,
+    LineOps2, Segment2, fit_boundary_to_points, signed_angle,
 };
 use crate::{Arc2, Circle2, Curve2, DVector, Iso2, Line2, Point2, Result, SurfacePoint2, Vector2};
 use std::f64::consts::PI;
@@ -211,7 +211,13 @@ pub fn fit_square_edge(
         bdata.try_to_boundary()
     });
 
-    let result = fit_boundary_to_points(&working.fit_points, &builder, initial, false)?;
+    let result = fit_boundary_to_points(
+        &working.fit_points,
+        &builder,
+        initial,
+        false,
+        &BoundaryFitOptions::default(),
+    )?;
     let corner0 = Point2::new(result.params[0], result.params[1]);
     let corner1 = Point2::new(result.params[2], result.params[3]);
     let point = end_intersection(input, &working.last()?.c, &mid_point(&corner0, &corner1))?;
@@ -270,7 +276,13 @@ pub fn fit_rounded_square_edge(
         bdata.try_to_boundary()
     });
 
-    let result = fit_boundary_to_points(&working.fit_points, &builder, initial, false)?;
+    let result = fit_boundary_to_points(
+        &working.fit_points,
+        &builder,
+        initial,
+        false,
+        &BoundaryFitOptions::default(),
+    )?;
     let corner0 = Point2::new(result.params[0], result.params[1]);
     let corner1 = Point2::new(result.params[2], result.params[3]);
     let radius = result.params[4] as f32;
@@ -323,7 +335,13 @@ pub fn fit_sharp_edge(
         bdata.try_to_boundary()
     });
 
-    let result = fit_boundary_to_points(&working.fit_points, &builder, initial, false)?;
+    let result = fit_boundary_to_points(
+        &working.fit_points,
+        &builder,
+        initial,
+        false,
+        &BoundaryFitOptions::default(),
+    )?;
     let corner = Point2::new(result.params[0], result.params[1]);
     let point = end_intersection(input, &working.last()?.c, &corner)?;
 
@@ -372,7 +390,13 @@ pub fn fit_full_round_edge(
         bdata.try_to_boundary()
     });
 
-    let result = fit_boundary_to_points(&working.fit_points, &builder, initial, false)?;
+    let result = fit_boundary_to_points(
+        &working.fit_points,
+        &builder,
+        initial,
+        false,
+        &BoundaryFitOptions::default(),
+    )?;
     let circle = Circle2::new(result.params[0], result.params[1], result.params[2]);
     let point = end_intersection(input, &working.last()?.c, &circle)?;
 
@@ -439,7 +463,7 @@ pub fn fit_blended_round_edge(
         // -----------------------------------------------------------
         let center = Point2::new(params[0], params[1]);
         let radius = params[2];
-        let (arc0, arc1) = end_arcs(&t0, &t1, &clip, &center, radius);
+        let (arc0, arc1) = end_arcs(&t0, &t1, &clip, &center, radius)?;
 
         // Now we construct the boundary
         // -----------------------------------------------------------
@@ -451,7 +475,13 @@ pub fn fit_blended_round_edge(
     });
 
     // Perform the fitting and get the best fit circle
-    let result = fit_boundary_to_points(&working.fit_points, &builder, initial, false)?;
+    let result = fit_boundary_to_points(
+        &working.fit_points,
+        &builder,
+        initial,
+        false,
+        &BoundaryFitOptions::default(),
+    )?;
     let circle = Circle2::new(result.params[0], result.params[1], result.params[2]);
 
     // Now let's refine the inscribed circles to get closer to the edge circle
@@ -509,9 +539,15 @@ pub fn fit_spline_max_k(
             break;
         }
 
-        // Find the halfway point and get a new inscribed circle
+        // Find the halfway point and get a new inscribed circle. A refinement line that crosses no
+        // section geometry means this end has run out before the stack converged, which is the same
+        // situation as the failed spline fit below: stop refining and keep what we have. Unwrapping
+        // here panicked on a section whose points sat a few microns from where they had been.
         let l = half_line(last_circle, &clip.direction, fittings.last().unwrap());
-        stack.refine_and_push(input.try_inscribed(&l).unwrap(), input);
+        let Some(inscribed) = input.try_inscribed(&l) else {
+            break;
+        };
+        stack.refine_and_push(inscribed, input);
 
         let clip = stack.end_clip_line()?;
         let (t0, t1) = stack.last_tangents()?;
@@ -638,9 +674,7 @@ fn spline_fit(
     let initial1 = DVector::from(vec![
         result0[0], result0[1], result0[2], result0[3], 0.0, 0.0,
     ]);
-    let result1 = fit_spline_to_points(&fit_points, &build1, initial1)?;
-
-    let spline = build1(&result1.params)?;
+    let spline = fit_spline_to_points(&fit_points, &build1, initial1)?.spline;
 
     // We need to find the curvature local maximum closest to the center
     let local_maxima = spline
@@ -796,31 +830,37 @@ fn refine_from_edge_circle(
     Ok(())
 }
 
-fn end_arcs(t0: &Line2, t1: &Line2, clip: &Line2, center: &Point2, radius: f64) -> (Arc2, Arc2) {
+fn end_arcs(
+    t0: &Line2,
+    t1: &Line2,
+    clip: &Line2,
+    center: &Point2,
+    radius: f64,
+) -> Result<(Arc2, Arc2)> {
     let t0s = t0.offset_by(t0.signed_projection_dist(&clip.origin).signum() * radius);
     let t1s = t1.offset_by(t1.signed_projection_dist(&clip.origin).signum() * radius);
 
     // We get the blend arcs. Arc0 goes from p0 to the leading edge circle, and arc1 goes from
     // p1 to the leading edge circle. We need to keep the order of endpoints right when we
     // actuallyh build the boundary
-    (
-        blend_arc(&t0s, center, radius),
-        blend_arc(&t1s, center, radius),
-    )
+    Ok((
+        blend_arc(&t0s, center, radius)?,
+        blend_arc(&t1s, center, radius)?,
+    ))
 }
 
-fn blend_arc(shifted_tangent: &Line2, le_center: &Point2, le_radius: f64) -> Arc2 {
-    let base_circle = Circle2::from_tangent_and_point(shifted_tangent, le_center);
+fn blend_arc(shifted_tangent: &Line2, le_center: &Point2, le_radius: f64) -> Result<Arc2> {
+    let base_circle = Circle2::from_tangent_and_point(shifted_tangent, le_center)?;
     let v0 = shifted_tangent.origin - base_circle.center;
     let v1 = le_center - base_circle.center;
     let theta0 = base_circle.angle_of_point(&shifted_tangent.origin);
     let theta = signed_angle(&v0, &v1);
-    Arc2::new(
+    Ok(Arc2::new(
         base_circle.center,
         le_radius + base_circle.r(),
         theta0,
         theta,
-    )
+    ))
 }
 
 struct EdgeWork {

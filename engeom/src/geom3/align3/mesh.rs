@@ -16,7 +16,7 @@
 //!
 //! ## Alignment mesh container
 //!
-//! [`AlignmentMesh`] wraps a `&Mesh3` together with optional per-vertex uncertainty values, an
+//! [`AlignMesh`] wraps a `&Mesh3` together with optional per-vertex uncertainty values, an
 //! initial transform, and a list of [`MeshWeight`] providers.  It is used by the multi-mesh bundle
 //! adjustment solver (`multi_mesh`) where each entity needs its own configuration.
 //!
@@ -36,7 +36,7 @@ use crate::common::points::{dist, mean_point};
 use crate::common::vec_f64::mean_and_stdev;
 use crate::geom3::align3::{AlignSurfMatch3, SurfaceTarget3};
 use crate::geom3::mesh::MeshSurfPoint;
-use crate::{Iso3, KdTree3, Mesh3, Point3, SelectOp, Selection, SvdBasis3, To2D};
+use crate::{Iso3, KdTree3, Mesh3, Point3, Result, SelectOp, Selection, SvdBasis3, To2D};
 use parry2d_f64::transformation::convex_hull;
 use std::f64::consts::PI;
 
@@ -62,7 +62,7 @@ impl SurfaceTarget3 for Mesh3 {
 /// form would claim the centroid of a face is `1/sqrt(3)` times as uncertain as its corners,
 /// which is not true of a scanned surface. Linear interpolation keeps sigma continuous across
 /// faces and equal to the vertex value at each vertex, which is the behavior wanted here.
-fn interpolated_stdev(mesh: &Mesh3, m: &MeshSurfPoint, stdev: &[f64]) -> f64 {
+pub(crate) fn interpolated_stdev(mesh: &Mesh3, m: &MeshSurfPoint, stdev: &[f64]) -> f64 {
     let face = mesh.faces()[m.face_index as usize];
     m.bc.iter()
         .zip(face.iter())
@@ -78,15 +78,15 @@ fn interpolated_stdev(mesh: &Mesh3, m: &MeshSurfPoint, stdev: &[f64]) -> f64 {
 /// reference. This provides a unified interface for all additional options used to refine the
 /// alignment process, such as the uncertainty of the mesh vertex points, an initial alignment,
 /// and methods of applying weights to the sample points.
-pub struct AlignmentMesh<'a> {
+pub struct AlignMesh<'a> {
     pub mesh: &'a Mesh3,
     pub uncertainty: Option<&'a [f64]>,
     pub initial: Option<&'a Iso3>,
     pub weights: Option<&'a [Box<dyn MeshWeight + Sync>]>,
 }
 
-impl<'a> AlignmentMesh<'a> {
-    /// Creates a new `AlignmentMesh` instance.
+impl<'a> AlignMesh<'a> {
+    /// Creates a new `AlignMesh` instance.
     ///
     /// # Arguments
     ///
@@ -227,6 +227,11 @@ impl MeshWeight for NearMeshWeight {
 // Alignment point sampling
 // ===============================================================================================
 
+/// Generate-alignment-points parameters, controlling `generate_alignment_points`: how densely a
+/// test mesh is sampled and which samples are trusted enough to become alignment correspondences.
+///
+/// Its 2D counterpart is `CAPParams` in `align2`, named differently only so that the two can be
+/// glob-imported together.
 #[derive(Debug, Clone, Copy)]
 pub struct GAPParams {
     pub sample_spacing: f64,
@@ -303,16 +308,16 @@ pub fn simple_alignment_points(
     test_mesh: &Mesh3,
     ref_mesh: &Mesh3,
     spacing: f64,
-) -> Vec<MeshSurfPoint> {
+) -> Result<Vec<MeshSurfPoint>> {
     let overlap = test_mesh
         .face_select(Selection::None)
         .faces_overlap(ref_mesh, PI / 4.0, 2.0, SelectOp::Add)
         .take_mask();
 
     if overlap.count_true() == 0 {
-        Vec::new()
+        Ok(Vec::new())
     } else {
-        test_mesh.sample_poisson(spacing, Some(&overlap))
+        test_mesh.sample_surface_poisson(spacing, Some(&overlap))
     }
 }
 
@@ -354,16 +359,16 @@ pub fn simple_alignment_points(
 ///   alignment that is to follow.
 /// * `params`: The parameters for the sampling algorithm: see the `MshSmParams` struct for details.
 ///
-/// returns: Vec<MeshSurfPoint, Global>
+/// returns: `Result<Vec<MeshSurfPoint>>`; an invalid sample spacing produces an error.
 pub fn generate_alignment_points(
     test_mesh: &Mesh3,
     ref_mesh: &Mesh3,
     iso: &Iso3,
     params: &GAPParams,
-) -> Vec<MeshSurfPoint> {
+) -> Result<Vec<MeshSurfPoint>> {
     // We start with a Poisson disk sampling of the test mesh to get a set of points that are
     // well distributed across the surface and spaced at a roughly known distance.
-    let all_points = test_mesh.sample_poisson(params.sample_spacing, None);
+    let all_points = test_mesh.sample_surface_poisson(params.sample_spacing, None)?;
     let tree = KdTree3::try_new(&all_points).expect("KD tree build failed");
 
     // Now we're going to iterate through the points and find ones which meet the criteria for
@@ -401,7 +406,7 @@ pub fn generate_alignment_points(
         }
     }
 
-    candidates.into_iter().map(|(_, p)| *p).collect()
+    Ok(candidates.into_iter().map(|(_, p)| *p).collect())
 }
 
 /// Sample validity check, which looks at the conditions around the sample check point based on

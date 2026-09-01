@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Tuple, Iterable, List, Literal, TypeVar, Iterator, Any
+from typing import Tuple, Iterable, List, Literal, TypeVar, Iterator, Any, overload
 
 import numpy
 from numpy.typing import NDArray
 import engeom
 from typing import Callable
-from engeom.geom2 import Vector2, Point2, SurfacePoint2, SplineProjection, Curve2
+from engeom.geom2 import Vector2, Point2, SurfacePoint2, SplineProjection, Curve2, CurveGroup2
 from engeom.common import IndexMask
 
 import metrology
@@ -770,15 +770,17 @@ class Iso3:
         """
         ...
 
+    @property
     def translation(self) -> Iso3:
         """
-        Return the translation component of the isometry as a separate isometry.
+        The translation component of the isometry, expressed as a separate isometry.
         """
         ...
 
+    @property
     def rotation(self) -> Iso3:
         """
-        Return the rotation component of the isometry as a separate isometry.
+        The rotation component of the isometry, expressed as a separate isometry.
         """
         ...
 
@@ -963,30 +965,34 @@ class SvdBasis3:
         """
         ...
 
+    @property
     def largest(self) -> Vector3:
         """
-        Return the largest normalized basis vector.
+        The largest normalized basis vector.
         :return: a Vector3 object containing the largest basis vector.
         """
         ...
 
+    @property
     def smallest(self) -> Vector3:
         """
-        Return the smallest normalized basis vector.
+        The smallest normalized basis vector.
         :return: a Vector3 object containing the smallest basis vector.
         """
         ...
 
+    @property
     def basis_variances(self) -> NDArray[float]:
         """
-        Return the variances of the basis vectors.
+        The variances of the basis vectors.
         :return: a numpy array of shape (3, ) containing the variances of the basis vectors.
         """
         ...
 
+    @property
     def basis_stdevs(self) -> NDArray[float]:
         """
-        Return the standard deviations of the basis vectors.
+        The standard deviations of the basis vectors.
         :return: a numpy array of shape (3, ) containing the standard deviations of the basis vectors.
         """
         ...
@@ -1686,6 +1692,20 @@ class Sphere3:
         ...
 
     @staticmethod
+    def from_min_enclosing(points: NDArray[float]) -> Sphere3:
+        """
+        Create the smallest sphere containing every point.
+
+        A single point or identical points produce a zero-radius sphere. Collinear and coplanar
+        points produce the smallest sphere in their affine subspace. Raises ``ValueError`` for an
+        empty array.
+
+        :param points: a numpy array of shape ``(n, 3)`` containing the points to enclose.
+        :return: a new ``Sphere3``.
+        """
+        ...
+
+    @staticmethod
     def from_fit(points: NDArray[float], weights: NDArray[float] | None = None) -> Sphere3:
         """
         Fit a sphere to a set of points by ordinary least squares. A closed-form algebraic (Kåsa-style) estimate
@@ -2051,6 +2071,32 @@ class Cylinder3:
         """
         ...
 
+    @staticmethod
+    def from_consensus(points: NDArray[float], normals: NDArray[float], sigma_max: float,
+                       min_r: float | None = None, max_r: float | None = None,
+                       max_iterations: int | None = None, refinement_steps: int | None = None,
+                       confidence: float | None = None, seed: int | None = None) -> Cylinder3:
+        """
+        Fit a cylinder to a set of oriented surface points robustly using the MAGSAC++ consensus algorithm. Unlike a
+        fixed-threshold RANSAC, this takes an upper bound on the inlier noise (`sigma_max`) rather than a hard
+        inlier/outlier threshold, and refines each candidate with noise-marginalized iteratively reweighted least
+        squares. The point normals are used only to bootstrap the axis estimate; scoring and refinement use the point
+        positions alone. The returned cylinder is bounded to the axial extent of its inlier points.
+
+        :param points: the point positions to fit the cylinder to, as an (n, 3) array.
+        :param normals: the surface normals at each point, as a matching (n, 3) array. Each is normalized internally.
+        :param sigma_max: the upper bound on the expected inlier noise, in the same units as the points.
+        :param min_r: the minimum radius of the cylinder. If None, no minimum will be enforced.
+        :param max_r: the maximum radius of the cylinder. If None, no maximum will be enforced.
+        :param max_iterations: the maximum number of minimal-sample iterations. If None, a default of 500 is used.
+        :param refinement_steps: the number of iteratively reweighted refinement steps per candidate. If None, a
+            default of 4 is used.
+        :param confidence: the probability used for adaptive termination. If None, a default of 0.99 is used.
+        :param seed: an optional fixed RNG seed for reproducible sampling. If None, a random seed is used.
+        :return: a new ``Cylinder3`` object representing the fitted cylinder.
+        """
+        ...
+
     @property
     def center(self) -> Point3:
         """
@@ -2083,6 +2129,7 @@ class Cylinder3:
         """
         ...
 
+    @property
     def a(self) -> Point3:
         """
         The point at the center of the cylinder's starting cap. Identical to `center`; provided
@@ -2091,6 +2138,7 @@ class Cylinder3:
         """
         ...
 
+    @property
     def b(self) -> Point3:
         """
         The point at the center of the cylinder's ending cap, at `center + direction * length`.
@@ -2098,6 +2146,7 @@ class Cylinder3:
         """
         ...
 
+    @property
     def axis(self) -> Line3:
         """
         The infinite line running through the cylinder's axis, in the direction of `direction`.
@@ -2105,6 +2154,7 @@ class Cylinder3:
         """
         ...
 
+    @property
     def start_cap(self) -> Circle3:
         """
         The circle bounding the starting cap of the cylinder, with its normal pointing outward
@@ -2113,6 +2163,7 @@ class Cylinder3:
         """
         ...
 
+    @property
     def end_cap(self) -> Circle3:
         """
         The circle bounding the ending cap of the cylinder, with its normal pointing outward
@@ -2121,6 +2172,7 @@ class Cylinder3:
         """
         ...
 
+    @property
     def volume(self) -> float:
         """
         The volume of the (solid) cylinder.
@@ -2128,6 +2180,7 @@ class Cylinder3:
         """
         ...
 
+    @property
     def lateral_area(self) -> float:
         """
         The area of the cylinder's lateral (side) surface, excluding the end caps.
@@ -2226,6 +2279,32 @@ class Cone3:
         """
         ...
 
+    @staticmethod
+    def from_consensus(points: NDArray[float], normals: NDArray[float], sigma_max: float,
+                       min_half_angle: float | None = None, max_half_angle: float | None = None,
+                       max_iterations: int | None = None, refinement_steps: int | None = None,
+                       confidence: float | None = None, seed: int | None = None) -> Cone3:
+        """
+        Fit a cone to a set of oriented surface points robustly using the MAGSAC++ consensus algorithm. Unlike a
+        fixed-threshold RANSAC, this takes an upper bound on the inlier noise (`sigma_max`) rather than a hard
+        inlier/outlier threshold, and refines each candidate with noise-marginalized iteratively reweighted least
+        squares. The point normals are used only to bootstrap the apex estimate; scoring and refinement use the point
+        positions alone. The returned cone is bounded to the axial extent of its inlier points.
+
+        :param points: the point positions to fit the cone to, as an (n, 3) array.
+        :param normals: the surface normals at each point, as a matching (n, 3) array. Each is normalized internally.
+        :param sigma_max: the upper bound on the expected inlier noise, in the same units as the points.
+        :param min_half_angle: the minimum half-angle of the cone, in radians. If None, no minimum will be enforced.
+        :param max_half_angle: the maximum half-angle of the cone, in radians. If None, no maximum will be enforced.
+        :param max_iterations: the maximum number of minimal-sample iterations. If None, a default of 500 is used.
+        :param refinement_steps: the number of iteratively reweighted refinement steps per candidate. If None, a
+            default of 4 is used.
+        :param confidence: the probability used for adaptive termination. If None, a default of 0.99 is used.
+        :param seed: an optional fixed RNG seed for reproducible sampling. If None, a random seed is used.
+        :return: a new ``Cone3`` object representing the fitted cone.
+        """
+        ...
+
     @property
     def tip(self) -> Point3:
         """
@@ -2258,6 +2337,7 @@ class Cone3:
         """
         ...
 
+    @property
     def base_center(self) -> Point3:
         """
         The center point of the cone's base, at `tip + direction * height`.
@@ -2265,6 +2345,7 @@ class Cone3:
         """
         ...
 
+    @property
     def axis(self) -> Line3:
         """
         The infinite line running through the cone's axis, from the tip in the direction of
@@ -2273,6 +2354,7 @@ class Cone3:
         """
         ...
 
+    @property
     def base(self) -> Circle3:
         """
         The circle bounding the base of the cone, with its normal pointing outward (the same
@@ -2281,6 +2363,7 @@ class Cone3:
         """
         ...
 
+    @property
     def half_angle(self) -> float:
         """
         The half-angle of the cone: the angle between the axis and the lateral surface, in
@@ -2289,6 +2372,7 @@ class Cone3:
         """
         ...
 
+    @property
     def slant_height(self) -> float:
         """
         The slant height of the cone: the distance from the tip to a point on the rim of the
@@ -2297,6 +2381,7 @@ class Cone3:
         """
         ...
 
+    @property
     def volume(self) -> float:
         """
         The volume of the (solid) cone.
@@ -2304,6 +2389,7 @@ class Cone3:
         """
         ...
 
+    @property
     def lateral_area(self) -> float:
         """
         The area of the cone's lateral surface, excluding the base.
@@ -2338,6 +2424,100 @@ class Cone3:
             True, the result may extend anywhere on the hourglass shape formed by an infinite
             cone.
         :return: a SurfacePoint3 on the cone's lateral surface, or None if ambiguous.
+        """
+        ...
+
+
+class TransversePlane:
+    """
+    The result of `Mesh3.transverse_plane`: the plane found, along with diagnostics showing how well
+    the balance condition was met and how well the plane was determined.
+    """
+
+    @property
+    def plane(self) -> Plane3:
+        """
+        The plane through the query point whose section goes across the feature, with its normal
+        oriented the same way as the guess.
+        """
+        ...
+
+    @property
+    def evaluations(self) -> int:
+        """
+        The number of times the band was evaluated, including the evaluations that measure the
+        sensitivity at the solution.
+        """
+        ...
+
+    @property
+    def residual(self) -> float:
+        """
+        The magnitude of the balance residual at the solution divided by the section's length.
+        Dimensionless; a well-converged solve on a clean sweep sits near zero.
+        """
+        ...
+
+    @property
+    def coverage(self) -> float:
+        """
+        The smaller eigenvalue of the coverage matrix divided by the section's length, from ``0`` (the
+        outward normals are all parallel, so the direction is undetermined) to ``0.5`` (a full closed
+        loop). A half loop or a U-shaped groove profile sits between.
+        """
+        ...
+
+    @property
+    def sensitivity(self) -> float:
+        """
+        The smaller singular value of the residual's Jacobian with respect to the plane's tilt at the
+        solution: how much the normalized residual changes per radian of the tilt it is least
+        sensitive to. It equals the coverage on a constant-section sweep when the point is at the
+        center of the section; an off-center point or a changing section moves it away from that.
+        """
+        ...
+
+    @property
+    def face_count(self) -> int:
+        """The number of band faces that took part in the final evaluation."""
+        ...
+
+    @property
+    def band(self) -> float:
+        """The band half-width that was used, in the mesh's units."""
+        ...
+
+
+class PlanarSection:
+    """
+    The result of `Mesh3.section_with_plane`: the section curves in world coordinates, together
+    with the `PlanarMap` that brings them into the plane's two-dimensional coordinates and maps 2D
+    results back into the world.
+
+    The map is chosen when the section is taken according to the frame arguments passed to
+    `section_with_plane`, so everything derived from the section in 2D shares one frame. Retaining
+    the curves in 3D also lets the section be queried where it lies on the part.
+    """
+
+    @property
+    def curves(self) -> CurveGroup3:
+        """The section curves in world coordinates, one member per loop or open strand."""
+        ...
+
+    @property
+    def map(self) -> PlanarMap:
+        """The mapping between the world and the plane's 2D coordinate system."""
+        ...
+
+    def to_2d(self) -> CurveGroup2:
+        """
+        Bring the section curves into the plane's two-dimensional coordinates. This is
+        `section.map.curve_group_to_2d(section.curves)`, provided because it is what nearly every
+        caller needs next.
+
+        :return: the section as a `CurveGroup2`, with loops closed.
+        :raises ValueError: if a member collapses under the projection. This cannot happen to curves
+            produced by the cut itself, but may occur if the group is later modified or transformed.
         """
         ...
 
@@ -2401,29 +2581,13 @@ class Mesh3:
         ...
 
     @staticmethod
-    def load_umesh(path: str | Path) -> Mesh3:
-        """
-        Load a mesh from the micro mesh (.umesh) format. This format was made for this library as a way of doing lossy
-        compression on very small meshes which have less than 2^16 vertices. The compression works by discretizing each
-        dimension to a 16-bit integer within the bounding box of the mesh, so the quality loss varies based on the
-        physical size of the mesh. However, for meshes of most physical objects the accuracy loss is well below the
-        measurement noise floor of the sensing system.
-
-        This function will load both gzip deflated umesh files and uncompressed umesh files.
-
-        :param path: the path to the file to be loaded
-        :return: a loaded mesh
-        """
-        ...
-
-    @staticmethod
     def load_ply(path: str | Path, is_solid: bool = False) -> Mesh3:
         """
         Loads a PLY (Polygon File Format or Stanford Triangle Format) file and returns its corresponding
         mesh representation.
 
         Every attribute the file carries is preserved on the mesh. A PLY point cloud, which has no faces, is refused;
-        load those with `PointCloudData3.load_ply`.
+        load those with `PointCloud3.load_ply`.
 
         :param path: The file path to the PLY file, provided as a string or Path object.
         :param is_solid: whether distance queries should treat points inside the mesh as being at zero distance
@@ -2515,9 +2679,13 @@ class Mesh3:
     def load_tcmesh(path: str | Path, is_solid: bool = False) -> Mesh3:
         """
         Load a mesh from a tolerance-compressed mesh (.tcmesh) file. The tcmesh format stores vertex
-        positions as variable-width integers scaled within the bounding box of each partition,
-        using the minimum number of bytes needed to guarantee a round-trip accuracy at or below the
-        tolerance that was specified when the file was written.
+        positions as integers scaled within the bounding box of the point data, using the narrowest
+        bit width per axis needed to guarantee a round-trip accuracy at or below the tolerance that
+        was specified when the file was written.
+
+        Note that vertices are renumbered when a mesh is written, so the mesh loaded here describes
+        the same surface as the one that was saved but does not necessarily use the same vertex
+        indices.
 
         :param path: the path to the .tcmesh file to load.
         :param is_solid: whether distance queries should treat points inside the mesh as being at zero distance
@@ -2525,19 +2693,22 @@ class Mesh3:
         """
         ...
 
-    def save_tcmesh(self, path: str | Path, tol: float, allow_attribute_loss: bool = False):
+    def save_tcmesh(self, path: str | Path, tol: float):
         """
         Write the mesh to a tolerance-compressed mesh (.tcmesh) file. The tolerance controls the
         maximum allowable round-trip position error for any vertex: a smaller tolerance produces a
         more accurate file at the cost of more bytes per vertex, while a larger tolerance allows
         greater compression.
 
-        The format stores geometry and nothing else, so a mesh carrying any attributes at all is refused rather than
-        silently stripped, unless `allow_attribute_loss` is set.
+        Vertices and faces are reordered so that the connectivity compresses, which is where most of
+        the format's advantage comes from. The saved mesh describes the same surface but does not
+        necessarily use the same vertex indices.
+
+        The format stores geometry and nothing else, so a mesh carrying any attributes at all is
+        refused with an error naming them, rather than being silently stripped.
 
         :param path: the path to the .tcmesh file to write.
         :param tol: the maximum acceptable round-trip position error, in model units.
-        :param allow_attribute_loss: accept the loss of every attribute this mesh carries.
         """
         ...
 
@@ -2670,6 +2841,17 @@ class Mesh3:
         ...
 
     @property
+    def point_flat(self) -> NDArray[float] | None:
+        """
+        The stored per-point flat coordinates, or None if the mesh has none. Each coordinate is a point's position in
+        a flattened 2D chart of the surface, such as the output of `boundary_first_flatten`, expressed in the mesh's
+        own length units. These are not texture coordinates.
+
+        :return: a numpy array of shape (n, 2), or None.
+        """
+        ...
+
+    @property
     def face_colors(self) -> NDArray[numpy.uint8] | None:
         """
         The stored per-face RGB colors, or None if the mesh has none.
@@ -2711,6 +2893,21 @@ class Mesh3:
         Set or clear the stored per-point standard deviations.
 
         :param values: a numpy array of shape (n,), or None to clear the attribute.
+        :raises ValueError: if the array length does not match the point count.
+        """
+        ...
+
+    def set_point_flat(self, values: NDArray[float] | None = None):
+        """
+        Set or clear the stored per-point flat coordinates, which give each point's position in a flattened 2D chart
+        of the surface, such as the output of `boundary_first_flatten`. These are not texture coordinates; they use
+        the mesh's own length units laid out in a plane. They remain attached through subsets, appends, scaling
+        (where they scale with the geometry), rigid transforms (where they stay fixed), and PLY files.
+
+        Set this after finalizing the mesh because the values are validated against the point count when this method
+        is called.
+
+        :param values: a numpy array of shape (n, 2), or None to clear the attribute.
         :raises ValueError: if the array length does not match the point count.
         """
         ...
@@ -2808,19 +3005,77 @@ class Mesh3:
         """
         ...
 
-    def sample_poisson(self, radius: float) -> NDArray[float]:
+    def sample_poisson(self, radius: float, faces: IndexMask | None = None) -> PointCloud3:
         """
-        Sample the surface of the mesh using a Poisson disk sampling algorithm. This will return a numpy array of points
-        and their normals that are approximately evenly distributed across the surface of the mesh. The radius parameter
-        controls the minimum distance between points.
+        Sample the mesh surface using a Poisson disk sampling algorithm. The returned point cloud is approximately
+        evenly distributed across the surface, with each point carrying the normal of the face on which it lies. The
+        radius controls the minimum distance between points.
 
-        Internally, this algorithm will first re-sample each triangle of the mesh with a dense array of points at a
-        maximum distance of radius/2, before applying a random poisson disk sampling algorithm to thin the resampled
-        points. This means that the output points are not based on the mesh vertices, so large triangles will not be
-        under-represented and small triangles will not be over-represented.
+        Internally, the algorithm first resamples each triangle with a dense array of points spaced by at most
+        radius/2, then applies Poisson disk sampling to thin them. Because the output is not based on the mesh
+        vertices, large triangles are not under-represented and small triangles are not over-represented. The thinning
+        is deterministic for a given mesh, so repeated calls produce the same result.
 
-        :param radius: the minimum distance between points.
-        :return: a numpy array of shape (n, 6) containing the sampled points.
+        :param radius: the minimum distance between points, which must be finite and positive.
+        :param faces: an optional mask restricting sampling to mesh faces set to true.
+        :return: a `PointCloud3` with positions and normals.
+        :raises ValueError: if `radius` is not finite and positive or the face mask length does not
+        match the mesh's face count.
+        """
+        ...
+
+    def sample_dense(self, max_spacing: float, faces: IndexMask | None = None) -> PointCloud3:
+        """
+        Densely sample the mesh so that no point on its surface is farther than `max_spacing` from a sample. A
+        barycentric grid covers every triangle, while a triangle whose edges are all shorter than `max_spacing`
+        contributes only its centroid. There is no lower bound on the distance between samples, so density varies with
+        triangle size; use `sample_poisson` when even spacing matters.
+
+        :param max_spacing: the maximum distance from any point on the surface to a sample, which
+        must be finite and positive.
+        :param faces: an optional mask restricting sampling to mesh faces set to true.
+        :return: a `PointCloud3` with positions and normals.
+        :raises ValueError: if `max_spacing` is not finite and positive or the face mask length does
+        not match the mesh's face count.
+        """
+        ...
+
+    def sample_uniform(self, n: int) -> PointCloud3:
+        """
+        Draw `n` random samples from the mesh surface, with sampling probability proportional to area. This method is
+        not deterministic, so repeated calls produce different points.
+
+        :param n: the number of samples to draw.
+        :return: a `PointCloud3` with positions and normals.
+        """
+        ...
+
+    def sample_voxel_surface(self, voxel_size: float, faces: IndexMask | None = None) -> PointCloud3:
+        """
+        Reduce the surface to one point per occupied cell of a regular voxel grid, placing each point on the surface
+        itself rather than at the cell center.
+
+        Each face is rasterized onto the grid with a separating axis test, so a triangle that only clips the corner
+        of a cell still occupies it. For each occupied cell, the cell center is projected onto every triangle passing
+        through that cell. The nearest projection is kept along with that triangle's normal, with
+        ties resolved in favor of the lower face index. The points therefore lie on the mesh to
+        within floating-point precision, unlike
+        `PointCloud3.reduce_by_voxel`, whose output points are centroids that can sit off the surface.
+
+        Faces with no computable normal are degenerate, have zero area, and are skipped. A cell
+        touched by nothing else is simply not occupied. The output is ordered by ascending cell key
+        and is deterministic for a given mesh and voxel size.
+
+        Work scales with the number of (face, cell) pairs, so a voxel size far below the mesh
+        resolution is expensive without producing more information than the mesh contains.
+
+        :param voxel_size: the edge length of the grid cells, which must be finite and positive.
+        :param faces: an optional mask restricting sampling to mesh faces set to true.
+        :return: a `PointCloud3` with positions and normals.
+        :raises ValueError: if the voxel size is not finite and positive, if the face mask length
+        does not match the mesh's face count, or if a vertex is too many cells from the origin for
+        the grid to index. Use a larger voxel size or move the mesh nearer the origin to resolve the
+        last case.
         """
         ...
 
@@ -2850,6 +3105,7 @@ class Mesh3:
         points will be used to perform an alignment, this mesh should be the one that is being aligned to.
         :param iso: an isometry to apply to the sampled points before checking against the reference mesh.
         :return: a numpy array of shape (n, 3) containing the sampled points.
+        :raises ValueError: if `max_spacing` is not finite and positive.
         """
         ...
 
@@ -2857,10 +3113,38 @@ class Mesh3:
             self,
             plane: Plane3,
             tol: float | None = None,
-            faces: IndexMask | None = None
-    ) -> List[Curve3]:
+            faces: IndexMask | None = None,
+            frame: Literal["auto", "svd"] = "auto",
+            origin: Point3 | None = None,
+            x: Vector3 | None = None,
+    ) -> PlanarSection:
         """
-        Calculate and return the intersection curves between the mesh and a plane.
+        Calculate the intersection curves between the mesh and a plane, returning them as a
+        `PlanarSection`: the curves themselves as a `CurveGroup3`, together with the `PlanarMap`
+        that brings them into the plane's two-dimensional coordinates and maps 2D results back into
+        the world.
+
+        A planar section naturally consists of several curves rather than one: a section through a
+        part with a hole produces an outer loop and an inner loop. They move together as one rigid
+        body, which is what the group represents. The group is a sequence, so `len(...)`, indexing,
+        and iteration all work on `section.curves`.
+
+        Closed loops return with their first vertex repeated as the last, since a `Curve3` has no
+        closed flag of its own. That is what lets `PlanarMap.curve_group_to_2d` recover the closure.
+
+        The plane fixes only the z axis of the 2D coordinate system; the remaining arguments choose
+        where its origin sits and which way x points:
+
+        - `frame="auto"` (the default) uses the plane's own deterministic frame, whose origin is the
+          point of the plane nearest the world origin and whose x axis is the world x axis projected
+          into the plane. Use it when the layout does not matter.
+        - `frame="svd"` uses the principal axes of the section itself: the origin at its centroid and
+          x along its direction of greatest extent, from a length-weighted SVD of the vertices so that
+          the result does not depend on tessellation density. The x direction is ill-conditioned for a
+          section with no dominant direction, such as a circle.
+        - `origin` and `x` together place the origin and x axis where requested. The origin is
+          projected onto the plane and `x` into it, so neither needs to lie there already. Both must
+          be given, and they cannot be combined with `frame="svd"`.
 
         :param plane: The plane to intersect the mesh with.
         :param tol: The curve tolerance to use when constructing the intersection curves. See the `Curve3` class
@@ -2868,8 +3152,75 @@ class Mesh3:
         :param faces: an optional `IndexMask` over the mesh's faces which limits the section to the selected faces.
         Faces which are not selected are ignored entirely, so a section which crosses the boundary of the selection
         will produce open curves rather than closed loops. If `None` (the default) all faces are considered.
-        :return: a list of `Curve3` objects representing the intersection curves.
-        :raises ValueError: if `faces` is not a mask of the mesh's face count.
+        :param frame: `"auto"` or `"svd"`, as described above.
+        :param origin: with `x`, the point that becomes `(0, 0)` in the plane.
+        :param x: with `origin`, the direction that becomes the plane's x axis.
+        :return: a `PlanarSection` holding the intersection curves and the map into the plane.
+        :raises ValueError: if `faces` is not a mask of the mesh's face count, if the plane does
+            not intersect the mesh at all (since a `CurveGroup3` cannot be empty), if only one of
+            `origin` and `x` is given or they are combined with `frame="svd"`, or if the frame
+            cannot be built because `x` is parallel to the plane normal.
+        """
+        ...
+
+    def transverse_plane(
+            self,
+            x: float,
+            y: float,
+            z: float,
+            guess: Vector3,
+            faces: IndexMask | None = None,
+            taper_tilt: float | None = None,
+            band: float | None = None,
+            max_evaluations: int | None = None,
+            tol: float | None = None,
+    ) -> TransversePlane:
+        """
+        Find the plane through a point whose section cuts across the swept feature the point lies on:
+        the plane that gives a circle on a cylinder or cone, follows the cutter profile on a groove,
+        and makes equal angles with the two faces of a wedge. It is the 3D counterpart of the airfoil
+        thickness line drawn normal to the medial axis.
+
+        The criterion is a balance: cut with a trial plane, and every cut face contributes its segment
+        length, its tilt out of the plane, and its in-plane outward normal. Sliding the plane along its
+        normal moves each segment outward at a rate set by that tilt, and the plane is across the
+        feature when those motions have no net sideways translation. On a one-sided taper (one face
+        flat, one sloped) this puts the plane normal to the bisector of the two faces, the medial-axis
+        direction, which is intended.
+
+        Only the connected run of the section nearest the point takes part, so other features the
+        plane happens to cut (the far side of a pipe elbow) do not influence the result. The balance
+        is evaluated over a thin band of surface around the plane rather than the section curve
+        itself, which keeps the solve smooth on a rough scanned mesh.
+
+        The solve converges to the nearest balanced plane, and a sweep has more than one (a plane
+        containing a cylinder's axis is also balanced), so the guess must be closer to the across plane
+        than to any other, and the plane it defines must still go across the feature: on a cylinder
+        anything within 45 degrees of the axis converges, but a plane more than ``90 - a`` degrees
+        from the axis of a cone of half-angle ``a`` no longer cuts a closed section.
+
+        :param x: the x coordinate of the point the plane passes through, on the surface or inside the
+        feature (on a pipe's axis, say).
+        :param y: the y coordinate of the point.
+        :param z: the z coordinate of the point.
+        :param guess: an initial direction for the plane normal, roughly along the sweep. Need not be
+        a unit vector.
+        :param faces: an optional `IndexMask` over the mesh's faces limiting the cut to the feature.
+        Use it to isolate a groove from the part around it.
+        :param taper_tilt: the face tilt out of the plane, in radians, beyond which a face's weight is
+        tapered to zero at a right angle. Defaults to 70 degrees. Must lie strictly between zero and
+        a right angle.
+        :param band: the half-width of the surface band over which the balance is evaluated, in the
+        mesh's units. Defaults to a hundredth of the section's length at the guess.
+        :param max_evaluations: the maximum number of band evaluations before the solve gives up.
+        Defaults to 100.
+        :param tol: the change in the plane normal, in radians, below which the solve is considered
+        converged. Defaults to ``1e-9``.
+        :return: a `TransversePlane` with the plane and the solve's diagnostics.
+        :raises ValueError: if the options are invalid, if the plane through the guess misses the
+        selected faces, if the section's outward normals do not span the plane (a single flat face),
+        if the solve does not converge, or if the residual at the solution is insensitive to some tilt
+        of the plane.
         """
         ...
 
@@ -2962,13 +3313,51 @@ class Mesh3:
         """
         ...
 
-    def compute_patches(self, mask: IndexMask | None = None) -> List[IndexMask]:
+    def compute_patch_labels(self, mask: IndexMask | None = None) -> NDArray[numpy.uint32]:
         """
-        Partition the faces into connected patches, returning one face mask per patch.
+        Partition the faces into connected patches, labeling each face with the patch it belongs to.
+
+        Two faces belong to the same patch when a path of shared *edges* connects them. Faces which touch only at a
+        single vertex are therefore in different patches, which is the useful definition when discarding junk from
+        scan data. Patches are numbered in order of their lowest-indexed face, so the result is deterministic.
+
+        Faces excluded by `mask` are labeled ``2**32 - 1`` rather than being assigned to a patch.
+
+        The label array costs four bytes per face no matter how many patches the mesh splits into, unlike a list of
+        one mask per patch. Group with `numpy`, for example ``numpy.bincount(labels[labels != 2**32 - 1])`` for the
+        face count of each patch, or ``labels == i`` for a boolean selection of patch `i`.
 
         :param mask: an optional face mask limiting which faces are considered. If None, every face participates.
-        :return: a list of face masks, one per connected patch.
+        :return: an array of length `face_count` holding the patch index of each face.
         :raises ValueError: if the mask length does not match the face count.
+        """
+        ...
+
+    def patch_mask(self, filter: PatchFilter) -> IndexMask:
+        """
+        Build a face mask selecting the connected patches which pass a filter.
+
+        Use this rather than `remove_small_patches` when you want to see what would be discarded, or to combine the
+        selection with other criteria before extracting.
+
+        :param filter: which patches are worth keeping.
+        :return: a mask over the mesh's faces.
+        """
+        ...
+
+    def remove_small_patches(self, filter: PatchFilter) -> Mesh3:
+        """
+        Discard the connected patches which fail a filter, returning what is left.
+
+        This is the tool for cleaning flying patches and speckle out of scan data. Every attribute survives, because
+        dropping whole faces keeps an index mapping back to the original.
+
+        If no patch fails the filter the mesh is returned unchanged, rather than rebuilt, so a filter which finds
+        nothing to do is cheap.
+
+        :param filter: which patches are worth keeping.
+        :return: a new mesh containing only the surviving patches.
+        :raises ValueError: if the filter would discard every face, since a mesh needs at least one face.
         """
         ...
 
@@ -3038,8 +3427,9 @@ class Mesh3:
         """
         This method will perform a conformal mapping of the mesh to the XY plane using the boundary-first flattening
         algorithm developed by Crane et al.  This mapping attempts to preserve angles from the original mesh to the
-        flattened mesh, and is useful for applications such as texture mapping or transformation to an image/raster
-        space for analysis.
+        flattened mesh, and is useful for measurements that only make sense in a flat domain and for transformation
+        to an image/raster space for analysis. Store the result on the mesh with `set_point_flat` so that it travels
+        with the mesh's other attributes.
 
         There are a number of limitations to this method based on the implementation:
 
@@ -3192,91 +3582,97 @@ class Mesh3:
         ...
 
     @staticmethod
-    def create_cylinder(radius: float, height: float, steps: int) -> Mesh3:
+    def create_cylinder(radius: float, height: float, tol: float) -> Mesh3:
         """
-        Creates a cylinder with a radius and height. The cylinder will be centered at the origin and oriented along the
-        Y-axis.
+        Creates a closed cylinder with the given radius and height, centered at the origin and oriented along the
+        Z-axis. The wall vertices lie on the true cylinder, so the flat chords between them sag inward by at most
+        `tol`.
 
-        :param radius: the radius of the cylinder
-        :param height: the size of the cylinder along the Y-axis
-        :param steps: the number of subdivisions to create vertices around the cylinder. The more steps the smoother the
-        cylinder will be.
+        :param radius: the radius of the cylinder, which must be positive and finite
+        :param height: the size of the cylinder along the Z-axis
+        :param tol: the maximum chordal deviation of the wall, which must be positive and finite. The circumference
+        never gets fewer than 8 segments, no matter how loose this is.
         :return: a new `Mesh3` object representing the cylinder
         """
         ...
 
     @staticmethod
-    def create_sphere(radius: float, n_theta: int, n_phi: int) -> Mesh3:
+    def create_sphere(radius: float, tol: float) -> Mesh3:
         """
-        Creates a sphere with a radius. The sphere will be centered at the origin. The step counts `n_theta` and `n_phi`
-        will determine the smoothness of the sphere in the radial (n_theta) and polar (n_phi) directions. The poles
-        will be located at Y=+radius and Y=-radius, and the equator will lie in the XZ plane.
+        Creates a closed sphere with the given radius, centered at the origin. This is a UV sphere whose poles lie at
+        Z=+radius and Z=-radius, with the equator lying in the XY plane. Every vertex lies on the true sphere, so the
+        facets sag inward by at most `tol`.
 
-        :param radius: the radius of the sphere
-        :param n_theta: the number of subdivisions to create vertices around the sphere in the theta direction
-        :param n_phi: the number of subdivisions to create vertices around the sphere in the phi direction
+        :param radius: the radius of the sphere, which must be positive and finite
+        :param tol: the maximum deviation of a facet from the true sphere, which must be positive and finite. No
+        matter how loose this is, a full turn around the equator never gets fewer than 8 segments and a pole-to-pole
+        sweep never gets fewer than 4.
         :return: a new `Mesh3` object representing the sphere
         """
         ...
 
     @staticmethod
-    def create_cone(radius: float, height: float, steps: int) -> Mesh3:
+    def create_cone(radius: float, height: float, tol: float) -> Mesh3:
         """
-        Creates a cone with a radius and height. The cone will be centered at the origin and oriented so that the
-        point of the cone is located at Y=height/2 and the base is located at Y=-height/2.
+        Creates a closed cone with the given radius and height, centered at the origin. The apex lies at Z=height/2,
+        and the base lies at Z=-height/2. The lateral surface is ruled, so only the base circle carries curvature;
+        `tol` is the chordal deviation of that circle.
 
         !!! note
             Before version 0.4.2 the radius and height arguments were swapped on the way into the library, and the
             height was consumed as a half-height. A cone built with `radius=2, height=10` came out with a radius of
             10 and a total height of 4.
 
-        :param radius: the radius of the base of the cone
-        :param height: the size of the cone along the Y-axis
-        :param steps: the number of subdivisions to create vertices around the cone. The more steps the smoother the
-        cone will be.
+        :param radius: the radius of the base of the cone, which must be positive and finite
+        :param height: the size of the cone along the Z-axis
+        :param tol: the maximum chordal deviation of the base circle, which must be positive and finite. The base
+        never gets fewer than 8 segments, no matter how loose this is.
         :return: a new `Mesh3` object representing the cone
         """
         ...
 
     @staticmethod
-    def create_circle(radius: float, segments: int) -> Mesh3:
+    def create_circle(radius: float, tol: float) -> Mesh3:
         """
         Creates a flat, filled circle mesh lying in the XY plane, centered at the origin, with the normal pointing
-        along +Z. The mesh is a triangle fan from the center to `segments` evenly spaced perimeter vertices.
+        along +Z. The mesh is a triangle fan from the center to evenly spaced perimeter vertices, which lie on the
+        true circle so the chords sag inward by at most `tol`.
 
-        :param radius: the radius of the circle
-        :param segments: the number of perimeter vertices (and triangles). Higher values produce a smoother circle.
+        :param radius: the radius of the circle, which must be positive and finite
+        :param tol: the maximum allowed chordal deviation of the perimeter, which must be positive and finite. A
+            full circle never gets fewer than 8 segments, no matter how loose this is.
         :return: a new `Mesh3` object representing the circle
         """
         ...
 
     @staticmethod
-    def create_capsule(p0: Point3, p1: Point3, radius: float, n_theta: int, n_phi: int) -> Mesh3:
+    def create_capsule(p0: Point3, p1: Point3, radius: float, tol: float) -> Mesh3:
         """
-        Creates a capsule shape between two points with a specified radius. The capsule will be centered between the two
-        points and oriented along the line connecting them. The step counts `n_theta` and `n_phi` will determine the
-        smoothness of the sphere in the radial (n_theta) and polar (n_phi) directions.
+        Creates a capsule with the specified radius between two points. The capsule is centered between the points and
+        oriented along the line connecting them. The points are the centers of the caps, so the capsule extends by
+        `radius` beyond each of them. Every vertex lies on the true surface, so the facets sag inward by at most `tol`.
 
         :param p0: the first point of the capsule
         :param p1: the second point of the capsule
-        :param radius: the radius of the capsule
-        :param n_theta: the number of subdivisions to create vertices around the sphere in the theta direction
-        :param n_phi: the number of subdivisions to create vertices around the sphere in the phi direction
+        :param radius: the radius of the capsule, which must be positive and finite
+        :param tol: the maximum deviation of a facet from the true surface, which must be positive and finite. No
+        matter how loose this is, a full turn around the tube never gets fewer than 8 segments and each cap never gets
+        fewer than 2 rows.
         :return: a new `Mesh3` object representing the capsule
         """
         ...
 
     @staticmethod
-    def create_cylinder_between(p0: Point3, p1: Point3, radius: float, steps: int) -> Mesh3:
+    def create_cylinder_between(p0: Point3, p1: Point3, radius: float, tol: float) -> Mesh3:
         """
-        Creates a cylinder between two points with a specified radius. The cylinder will be centered between the two
+        Creates a cylinder between two points with a specified radius. The cylinder is centered between the two
         points and oriented along the line connecting them.
 
         :param p0: the first point of the cylinder
         :param p1: the second point of the cylinder
-        :param radius: the radius of the cylinder
-        :param steps: the number of subdivisions to create vertices around the cylinder. The more steps the smoother the
-        cylinder will be.
+        :param radius: the radius of the cylinder, which must be positive and finite
+        :param tol: the maximum chordal deviation of the wall, which must be positive and finite. The circumference
+        never gets fewer than 8 segments, no matter how loose this is.
         :return: a new `Mesh3` object representing the cylinder
         """
         ...
@@ -3306,8 +3702,8 @@ class Mesh3:
         """
         Returns a low-resolution version of the Stanford Bunny mesh with 453 vertices and 948 faces
         that has been embedded into the binary. The mesh structure is the same as the original
-        `bun_zipper_res4.ply` but it was compressed with the 16-bit micro mesh format and so some
-        precision has been lost in the vertex coordinates.
+        `bun_zipper_res4.ply` but it has been quantized to 16 bits per axis and so some precision has
+        been lost in the vertex coordinates. The vertex order is not the same as the original's.
 
         The mesh dimensions are in meters, and the maximum vertex deviation from the original is
         0.00000189 meters.
@@ -3321,8 +3717,8 @@ class Mesh3:
         """
         Returns a medium-resolution version of the Stanford Bunny mesh with 1889 vertices and 3851 faces
         that has been embedded into the binary. The mesh structure is the same as the original
-        `bun_zipper_res3.ply` but it was compressed with the 16-bit micro mesh format and so some
-        precision has been lost in the vertex coordinates.
+        `bun_zipper_res3.ply` but it has been quantized to 16 bits per axis and so some precision has
+        been lost in the vertex coordinates. The vertex order is not the same as the original's.
 
         The mesh dimensions are in meters, and the maximum vertex deviation from the original is
         0.00000189 meters.
@@ -3336,8 +3732,8 @@ class Mesh3:
         """
         Returns a higher-resolution version of the Stanford Bunny mesh with 8171 vertices and 16301 faces
         that has been embedded into the binary. The mesh structure is the same as the original
-        `bun_zipper_res2.ply` but it was compressed with the 16-bit micro mesh format and so some
-        precision has been lost in the vertex coordinates.
+        `bun_zipper_res2.ply` but it has been quantized to 16 bits per axis and so some precision has
+        been lost in the vertex coordinates. The vertex order is not the same as the original's.
 
         The mesh dimensions are in meters, and the maximum vertex deviation from the original is
         0.00000189 meters.
@@ -3345,6 +3741,70 @@ class Mesh3:
         :return: a new `Mesh3` object representing the Stanford Bunny
         """
         ...
+
+
+class PatchFilter:
+    """
+    Which connected patches of a mesh are worth keeping.
+
+    Every criterion is optional and they combine as an intersection: a patch survives only if it passes all of the ones
+    which are set. A filter with nothing set keeps everything.
+
+    The three threshold criteria measure genuinely different things and scan data usually wants more than one.
+    `min_faces` is cheap but tracks tessellation density rather than physical size, so it will keep a dense speckle and
+    discard a coarsely tessellated real feature. `min_area` is the honest measure of how much surface a patch
+    represents. `min_aabb_diagonal` catches the patch which covers almost no area but spans a long distance, such as the
+    sliver a bad scan line drags out. Prefer the two physical measures when the tessellation density is not uniform.
+    """
+
+    def __init__(
+            self,
+            *,
+            min_faces: int | None = None,
+            min_area: float | None = None,
+            min_aabb_diagonal: float | None = None,
+            min_area_fraction: float | None = None,
+            keep_largest_n: int | None = None,
+    ):
+        """
+        Create a patch filter. All arguments are keyword-only and optional.
+
+        :param min_faces: discard a patch with fewer than this many faces.
+        :param min_area: discard a patch whose summed face area is below this, in the mesh's own units.
+        :param min_aabb_diagonal: discard a patch whose bounding box diagonal is below this, in the mesh's own units.
+            This is the criterion to reach for when the absolute size of the junk is known but its tessellation is not,
+            which is the usual situation with a flying patch.
+        :param min_area_fraction: discard a patch whose area is below this fraction of the largest patch's area. Needs
+            no knowledge of the part's size or units, which makes it the right default when the same filter runs across
+            parts of different scales.
+        :param keep_largest_n: keep only this many of the largest patches by area. Ranked by area rather than face
+            count, so a coarsely tessellated body still outranks a finely tessellated speck.
+        """
+        ...
+
+    @staticmethod
+    def keep_largest() -> PatchFilter:
+        """
+        Create a filter which keeps only the single largest patch by area and discards everything else.
+
+        :return: the new filter.
+        """
+        ...
+
+    @property
+    def min_faces(self) -> int | None: ...
+
+    @property
+    def min_area(self) -> float | None: ...
+
+    @property
+    def min_aabb_diagonal(self) -> float | None: ...
+
+    @property
+    def min_area_fraction(self) -> float | None: ...
+
+    @property
+    def keep_largest_n(self) -> int | None: ...
 
 
 class FaceFilterHandle:
@@ -3487,6 +3947,24 @@ class FaceFilterHandle:
         :param y: the y component of the direction to check against
         :param z: the z component of the direction to check against
         :param angle: the maximum angle in radians between the face normal and the filter direction
+        :param mode: the operation to perform on the faces, one of ``"add"``, ``"remove"``, or ``"keep"``
+        :return: the altered filter handle object
+        """
+        ...
+
+    def keep_patches(self, filter: PatchFilter, mode: engeom.SelectOp) -> FaceFilterHandle:
+        """
+        Add, remove, or keep only the faces belonging to connected patches which pass a filter.
+
+        Patch structure is computed among the faces this operation would consider, not the whole mesh, which is what
+        makes the filter chain compose. Under ``"keep"`` and ``"remove"`` that is the current selection, so a preceding
+        step which carves the mesh up decides what counts as connected here; under ``"add"`` it is everything not
+        currently selected.
+
+        This method will alter the filter handle object in place and return `self` to allow for the use of a fluent-like
+        interface if desired.
+
+        :param filter: which patches are worth keeping
         :param mode: the operation to perform on the faces, one of ``"add"``, ``"remove"``, or ``"keep"``
         :return: the altered filter handle object
         """
@@ -3658,9 +4136,10 @@ class Curve3:
         """
         ...
 
+    @property
     def length(self) -> float:
         """
-        Return the total length of the curve in the units of the vertices.
+        The total length of the curve in the units of its vertices.
 
         :return: the length of the curve.
         """
@@ -3772,17 +4251,20 @@ class Curve3:
     def load_tccurve3(path: str | Path) -> Curve3:
         """
         Load a curve from a tolerance-compressed 3D curve (.tccurve3) file. The tccurve3 format
-        stores vertex positions as variable-width integers scaled within the bounding box of the
-        point data, using the minimum number of bytes needed to guarantee a round-trip accuracy at
-        or below the tolerance that was specified when the file was written. The curve's
-        reconstruction tolerance is also stored in the file.
+        stores vertex positions as integers scaled within the bounding box of the point data, using
+        the narrowest bit width per axis needed to guarantee a round-trip accuracy at or below the
+        tolerance that was specified when the file was written. The curve's reconstruction tolerance
+        is also stored in the file.
+
+        These files may hold more than one curve. This raises an IOError on such a file rather
+        than returning its first curve, since that would silently discard the rest.
 
         :param path: the path to the .tccurve3 file to load.
         :return: the curve loaded from the file.
         """
         ...
 
-    def write_tccurve3(self, path: str | Path, tol: float):
+    def save_tccurve3(self, path: str | Path, tol: float):
         """
         Write the curve to a tolerance-compressed 3D curve (.tccurve3) file. The tolerance controls
         the maximum allowable round-trip position error for any vertex: a smaller tolerance produces
@@ -3794,6 +4276,357 @@ class Curve3:
         """
         ...
 
+
+class CurveGroup3:
+    """
+    A collection of disjoint `Curve3` polylines treated as a single rigid entity, such as the loops
+    and open segments produced by a planar section of a `Mesh3` before they are brought into two
+    dimensions.
+
+    Members keep their identity, and queries that land on the group report which member they landed
+    on. A group is never empty; construction rejects an empty collection.
+
+    The group behaves as a sequence, so `len(group)`, `group[i]` and `for curve in group` all work
+    and yield the member curves in order.
+
+    Unlike `CurveGroup2`, a `Curve3` carries no notion of being closed, so a loop is represented by
+    its first and last vertices coinciding. `PlanarMap.curve_group_to_2d` relies on that to recover
+    the closure.
+    """
+
+    def __init__(self, curves: List[Curve3]) -> None:
+        """
+        Create a curve group from its member curves, which are kept in the order given. That order
+        defines the member indices reported by queries.
+
+        :param curves: the member curves. At least one is required.
+        :raises ValueError: if no curves are given.
+        """
+        ...
+
+    def __len__(self) -> int:
+        """
+        The number of member curves.
+        """
+        ...
+
+    @overload
+    def __getitem__(self, index: int) -> Curve3:
+        ...
+
+    @overload
+    def __getitem__(self, index: slice) -> List[Curve3]:
+        ...
+
+    def __getitem__(self, index):
+        """
+        Return a member curve by index or a list of member curves by slice.
+
+        Negative indices count from the end, and a slice behaves as it does on any Python
+        sequence. A slice returns a plain list rather than another `CurveGroup3`, because a slice is
+        allowed to select nothing while a `CurveGroup3` must have at least one member curve.
+
+        :param index: the member index, or a slice of member indices.
+        :return: the member curve at that index or the list of member curves selected by the slice.
+        :raises IndexError: if an integer index is out of range.
+        """
+        ...
+
+    def __iter__(self) -> Iterator[Curve3]:
+        """
+        Iterate over the member curves, in member order.
+        """
+        ...
+
+    @property
+    def curves(self) -> List[Curve3]:
+        """
+        The member curves, in member order.
+        """
+        ...
+
+    @property
+    def aabb(self) -> Aabb3:
+        """
+        The axis-aligned bounding box enclosing every member curve.
+        """
+        ...
+
+    @property
+    def length(self) -> float:
+        """
+        The total arc length of all member curves.
+        """
+        ...
+
+    def at_closest_to_point(self, point: Point3) -> Tuple[int, CurveStation3]:
+        """
+        Find the closest position on any member curve to a test point. Ties between members are
+        broken in favor of the lower member index.
+
+        :param point: the test point.
+        :return: a tuple of the owning member index and the station on that member.
+        """
+        ...
+
+    def new_transformed_by(self, iso: Iso3) -> CurveGroup3:
+        """
+        Get a new group with every member transformed by the isometry. Member order is preserved.
+
+        :param iso: the isometry to transform the group by.
+        :return: a new, transformed curve group.
+        """
+        ...
+
+    @staticmethod
+    def load_tccurve3(path: str | Path) -> CurveGroup3:
+        """
+        Load a group from a tolerance-compressed 3D curve (.tccurve3) file, taking every curve in
+        the file as a member in the order the file stores them.
+
+        These files are collections, so this also reads a file written by `Curve3.save_tccurve3`,
+        which arrives as a group of one.
+
+        :param path: the path to the .tccurve3 file to load.
+        :return: the curve group loaded from the file.
+        :raises IOError: if the file holds no curves at all, since a group is never empty.
+        """
+        ...
+
+    def save_tccurve3(self, path: str | Path, tol: float):
+        """
+        Write the group to a single tolerance-compressed 3D curve (.tccurve3) file, one item per
+        member. Member order is the file order, so a group read back has the same member indices it
+        was saved with, and each member keeps its own reconstruction tolerance.
+
+        :param path: the path to the .tccurve3 file to write.
+        :param tol: the maximum acceptable round-trip position error, in model units.
+        """
+        ...
+
+
+
+class PlanarMap:
+    """
+    Maps geometry between the world and the two-dimensional coordinate system of a plane.
+
+    A planar section of a mesh is nearly always followed by the same three steps: bring the section
+    into the x-y plane, work on it with the tools in `engeom.geom2`, and bring the 2D results back
+    into the original 3D space. This object carries both directions of that trip, so the frame is
+    chosen once and every conversion uses it consistently. It is returned by
+    `Mesh3.section_with_plane` and can also be built directly from a plane.
+
+    The map stores the plane's frame—the isometry that takes a point expressed in the plane's
+    coordinates to its position in the world—together with its inverse. Mapping to 2D applies the
+    inverse and then drops z; mapping to 3D adds a zero z and then applies the frame.
+
+    Going to 3D never fails. Going to 2D loses the component along the plane normal, so any entity
+    with a direction can collapse. Examples include a unit vector or normal parallel to the plane
+    normal, a segment running along it, or a curve whose vertices fall together. Those conversions
+    raise `ValueError` rather than returning a degenerate result. A point off the plane is projected
+    onto it when mapped to 2D.
+    """
+
+    @staticmethod
+    def from_plane(plane: Plane3) -> PlanarMap:
+        """
+        Create the map for a plane's own deterministic frame. The origin is the point of the plane
+        nearest the world origin and x is the world x axis projected into the plane (falling back to
+        the world y axis when the normal is too close to x). For the x-y plane this is the identity,
+        so going to 2D is the same as dropping z.
+
+        :param plane: the plane whose frame the map uses.
+        """
+        ...
+
+    @staticmethod
+    def from_plane_oriented(plane: Plane3, origin: Point3, x: Vector3) -> PlanarMap:
+        """
+        Create a map whose origin and x direction are chosen by the caller. The origin is projected
+        onto the plane and `x` is projected into it, so neither needs to lie there already. The
+        frame's z axis is the plane normal and y completes a right-handed set.
+
+        :param plane: the plane the map lies in.
+        :param origin: the point that becomes `(0, 0)` in the plane after projection onto it.
+        :param x: the direction that becomes the plane's x axis after projection into it.
+        :raises ValueError: if `x` is zero or parallel to the plane normal.
+        """
+        ...
+
+    @staticmethod
+    def from_plane_svd(
+            plane: Plane3,
+            points: NDArray[float],
+            weights: NDArray[float] | None = None,
+    ) -> PlanarMap:
+        """
+        Create a map from the principal axes of a set of points lying in (or near) the plane. The
+        origin is the (weighted) centroid of the points projected onto the plane, and x is the
+        direction of greatest extent projected into it, with its sign chosen to agree with the x
+        axis `from_plane` would give, so that the result is deterministic for a given plane and set
+        of points. The z axis is the plane normal.
+
+        The x direction is ill-conditioned when the two largest singular values are close, as they
+        are for a circle. The result is deterministic, but a small change in the data can alter the
+        direction substantially. A caller who needs a stable direction in that case should use
+        `from_plane_oriented`.
+
+        :param plane: the plane the map lies in.
+        :param points: an `(n, 3)` array of the points whose principal axes decide the frame.
+        :param weights: an optional `(n,)` array of per-point weights. `Mesh3.section_with_plane`
+            assigns each vertex half the length of every segment it touches so that the frame
+            does not depend on tessellation density.
+        :raises ValueError: if there are no points, the number of weights does not match the number
+            of points, or the direction of greatest extent is parallel to the plane normal.
+        """
+        ...
+
+    @property
+    def frame(self) -> Iso3:
+        """
+        The frame isometry, which takes a point expressed in the plane's coordinates (with z zero
+        for a point on the plane) to where it lies in the world.
+        """
+        ...
+
+    def inverse(self) -> Iso3:
+        """
+        The inverse frame, which takes a world point into the plane's coordinates. A point on the
+        plane has a zero z coordinate, while the z coordinate of any other point is its signed
+        distance from the plane.
+        """
+        ...
+
+    @property
+    def plane(self) -> Plane3:
+        """The plane this map lies in, whose normal is the frame's z axis."""
+        ...
+
+    def point_to_2d(self, point: Point3) -> Point2:
+        """Map a point into the plane's coordinates, dropping its distance from the plane."""
+        ...
+
+    def point_to_3d(self, point: Point2) -> Point3:
+        """Map a point in the plane's coordinates to where it lies on the plane in the world."""
+        ...
+
+    def points_to_2d(self, points: NDArray[float]) -> NDArray[float]:
+        """
+        Map an `(n, 3)` array of points into the plane's coordinates, returning an `(n, 2)` array.
+        See `point_to_2d`.
+        """
+        ...
+
+    def points_to_3d(self, points: NDArray[float]) -> NDArray[float]:
+        """
+        Map an `(n, 2)` array of points in the plane's coordinates onto the plane in the world,
+        returning an `(n, 3)` array. See `point_to_3d`.
+        """
+        ...
+
+    def vector_to_2d(self, vector: Vector3) -> Vector2:
+        """Map a vector into the plane's coordinates, dropping its component along the normal."""
+        ...
+
+    def vector_to_3d(self, vector: Vector2) -> Vector3:
+        """Map a vector in the plane's coordinates to the world."""
+        ...
+
+    def unit_vector_to_2d(self, vector: Vector3) -> Vector2:
+        """
+        Map a direction into the plane's coordinates, dropping its component along the normal and
+        renormalizing what remains so the result has unit length.
+
+        :param vector: the direction; it is normalized before use.
+        :raises ValueError: if the vector is zero or parallel to the plane normal.
+        """
+        ...
+
+    def unit_vector_to_3d(self, vector: Vector2) -> Vector3:
+        """
+        Map a direction in the plane's coordinates to the world, returning a unit vector.
+
+        :param vector: the direction; it is normalized before use.
+        :raises ValueError: if the vector is zero.
+        """
+        ...
+
+    def surface_point_to_2d(self, sp: SurfacePoint3) -> SurfacePoint2:
+        """
+        Map a surface point into the plane's coordinates. The point is projected onto the plane
+        and the normal into it.
+
+        :raises ValueError: if the normal is parallel to the plane normal.
+        """
+        ...
+
+    def surface_point_to_3d(self, sp: SurfacePoint2) -> SurfacePoint3:
+        """Map a surface point in the plane's coordinates to the world."""
+        ...
+
+    def line_to_2d(self, line: Line3) -> Line2:
+        """
+        Map a line into the plane's coordinates. The origin is projected onto the plane and the
+        direction into it. The direction's length is whatever survives the projection.
+
+        :raises ValueError: if the direction is parallel to the plane normal.
+        """
+        ...
+
+    def line_to_3d(self, line: Line2) -> Line3:
+        """Map a line in the plane's coordinates to the world."""
+        ...
+
+    def segment_to_2d(self, segment: Segment3) -> Segment2:
+        """
+        Map a segment into the plane's coordinates by projecting both endpoints.
+
+        :raises ValueError: if the endpoints fall together, which happens when the segment runs
+            along the plane normal.
+        """
+        ...
+
+    def segment_to_3d(self, segment: Segment2) -> Segment3:
+        """Map a segment in the plane's coordinates to the world."""
+        ...
+
+    def curve_to_2d(self, curve: Curve3) -> Curve2:
+        """
+        Project a curve onto the plane and return it as a two-dimensional curve in the plane's
+        coordinates. The curve's tolerance carries over, and the result is closed when the projected
+        first and last vertices are within that tolerance of each other. A section loop therefore
+        remains closed after projection.
+
+        :raises ValueError: if the projection leaves fewer than two distinct vertices, as it does
+            for a curve running along the plane normal.
+        """
+        ...
+
+    def curve_to_3d(self, curve: Curve2) -> Curve3:
+        """
+        Lift a two-dimensional curve in the plane's coordinates onto the plane in the world. The
+        tolerance carries over, and a closed curve keeps its first vertex repeated as its last so
+        that `curve_to_2d` recovers the closure on the way back.
+        """
+        ...
+
+    def curve_group_to_2d(self, group: CurveGroup3) -> CurveGroup2:
+        """
+        Project every member of a group onto the plane and return the result as a two-dimensional
+        group in the plane's coordinates. Member order is preserved.
+
+        :raises ValueError: if any member collapses under the projection. A collapsing member fails
+            the whole group rather than being dropped from it, which would renumber the remaining
+            members.
+        """
+        ...
+
+    def curve_group_to_3d(self, group: CurveGroup2) -> CurveGroup3:
+        """
+        Lift every member of a two-dimensional group onto the plane in the world. Member order is
+        preserved.
+        """
+        ...
 
 class Aabb3:
     """
@@ -3952,191 +4785,6 @@ class RayBundle3:
         ...
 
 
-class PointCloud:
-    """
-
-    """
-
-    def __init__(self, points: NDArray[float], normals: NDArray[float] | None = None,
-                 colors: NDArray[numpy.uint8] | None = None):
-        ...
-
-    @property
-    def points(self) -> NDArray[float]:
-        """
-        Get the points of the point cloud as a numpy array of shape (n, 3).
-        :return: a numpy array of shape (n, 3) containing the points of the point cloud.
-        """
-        ...
-
-    @property
-    def normals(self) -> NDArray[float] | None:
-        """
-        Get the normals of the point cloud as a numpy array of shape (n, 3). If no normals were provided, this will
-        return None.
-        :return: a numpy array of shape (n, 3) containing the normals of the point cloud, or None if no normals were
-        provided.
-        """
-        ...
-
-    @property
-    def colors(self) -> NDArray[numpy.uint8] | None:
-        """
-        Get the colors of the point cloud as a numpy array of shape (n, 3). If no colors were provided, this will
-        return None.
-        :return: a numpy array of shape (n, 3) containing the colors of the point cloud, or None if no colors were
-        provided.
-        """
-        ...
-
-    def cloned(self) -> PointCloud:
-        """
-        Create a copy of the point cloud. This will return a new `PointCloud` object with the same points, normals, and
-        colors as the original.
-
-        :return: a new `PointCloud` object with the same points, normals, and colors as the original.
-        """
-        ...
-
-    @staticmethod
-    def load_lptf3(
-        path: str | Path,
-        take_every: int = 1,
-        look_scale: float | None = None,
-        weight_scale: float | None = None,
-        max_move: float | None = None,
-    ) -> PointCloud:
-        """
-        This function reads a LPTF3 file, which is a compact file format for storing 3D point data
-        taken from a laser profile triangulation scanner. The format is simple and compact, capable
-        of practically storing about 200k points (with an 8-bit color value each) per MB when using a
-        16-bit coordinate format, or half that when using a 32-bit coordinate format.
-
-        The way the data is loaded is controlled by the keyword arguments:
-          - By default (no smoothing parameters given) the points are decimated by row: `take_every=1`
-            loads every point, while `take_every=n` loads every nth row, roughly matching the x
-            spacing of the points to the gap distance between rows for an approximately uniform,
-            grid-like spacing. This is the fastest method.
-          - If the smoothing parameters `look_scale`, `weight_scale`, and `max_move` are all given, a
-            gaussian smoothing filter is applied on top of the decimation using the full original
-            cloud. This is the slowest method but can remove a significant amount of noise. The three
-            smoothing parameters must be given together or all left unset.
-
-        :param path: the path to the LPTF3 file to load.
-        :param take_every: the interval at which to take rows from the file. `take_every=1` loads every point.
-        :param look_scale: the smoothing sampling window relative to the `take_every` spacing (1 matches the
-            `take_every` spacing, 2 uses twice that). A reasonable default for preserving detail is 0.5. Must be
-            given together with `weight_scale` and `max_move`.
-        :param weight_scale: during smoothing, neighboring points are weighted by their distance from the point
-            being smoothed; at `weight_scale` of 1 the gaussian standard deviation is slightly larger than the
-            `look_scale` distance. Must be given together with `look_scale` and `max_move`.
-        :param max_move: the maximum distance a point can move when smoothing. A point attempting to move more than
-            10x this distance is not moved at all; otherwise it is clamped to this distance. Must be given together
-            with `look_scale` and `weight_scale`.
-        :raises ValueError: if only some of the smoothing parameters are supplied.
-        """
-        ...
-
-    @staticmethod
-    def load_bxyz(path: str | Path) -> PointCloud:
-        """
-        Load a point cloud from a BXYZ file. The BXYZ format is a binary format for storing 3D point clouds with
-        optional normals and colors.
-
-        :param path: the path to the BXYZ file to load.
-        :return: a new `PointCloud` object containing the points, normals, and colors from the BXYZ file.
-        """
-        ...
-
-    def append(self, other: PointCloud) -> PointCloud:
-        """
-        Append another point cloud to this one. The points, normals, and colors from the other point cloud will be
-        added to this point cloud.
-
-        Will throw an error if the other point cloud has a different combination of normals and colors than this one.
-
-        :param other: the other point cloud to append.
-        :return: a new `PointCloud` object containing the combined points, normals, and colors.
-        """
-        ...
-
-    def sample_poisson_disk(self, radius: float) -> list[int]:
-        """
-        Sample a subset of points from the point cloud using a Poisson disk sampling algorithm. This will return a list
-        of indices of the points that were preserved. The points will be selected such that no two points are closer
-        than the given radius.
-
-        :param radius: the minimum distance between sampled points.
-        :return: a list of indices of the points that were selected.
-        """
-        ...
-
-    def create_from_indices(self, indices: list[int]) -> PointCloud:
-        """
-        Create a new point cloud from a subset of the points in this point cloud, specified by the given indices.
-        The normals and colors will also be subsetted to match the points.
-
-        :param indices: a list of indices to select from the point cloud.
-        :return: a new `PointCloud` object containing the selected points, normals, and colors.
-        """
-        ...
-
-    def create_from_poisson_sample(self, radius: float) -> PointCloud:
-        """
-        Create a new point cloud from a Poisson disk sampling of the points in this point cloud. The points will be
-        selected such that no two points are closer than the given radius.
-
-        :param radius: the minimum distance between sampled points.
-        :return: a new `PointCloud` object containing the sampled points, normals, and colors.
-        """
-        ...
-
-    def transform_by(self, iso: Iso3) -> PointCloud:
-        """
-        Transform the point cloud by an isometry. This will return a new `PointCloud` object with the transformed
-        points, normals, and colors.
-
-        :param iso: the isometry to transform the point cloud by.
-        :return: a new `PointCloud` object with the transformed points, normals, and colors.
-        """
-        ...
-
-    def overlap_points_by_reciprocity(self, other: PointCloud, max_distance: float) -> list[int]:
-        """
-        Find the indices of points in this point cloud that "overlap" with points in another point
-        cloud by looking for reciprocity in the closest point in each direction.
-
-        For each point in this point cloud "p_this", we will find the closest point in the other
-        point cloud "p_other".  Then we take "p_other" and find the closest point to it in this
-        point cloud, "p_recip".
-
-        In an ideally overlapping point cloud, "p_recip" should be the same as "p_this".  We will
-        use a maximum distance tolerance to determine if "p_recip" is close enough to "p_this" that
-        "p_this" is considered to be overlapping with the other point cloud.
-
-        :param other: the other point cloud to check for overlap.
-        :param max_distance: the maximum distance to consider a point as overlapping.
-        :return: a list of indices of points in this point cloud that overlap with points in the other point cloud.
-        """
-        ...
-
-    def overlap_mesh_by_reciprocity(self, mesh: Mesh3, max_distance: float) -> list[int]:
-        """
-        Find the indices of points in this point cloud that "overlap" with triangles in a mesh by looking for
-        reciprocity in the closest point in each direction.
-
-        For each point in this point cloud "p_this", we will find the closest point on the surface of the mesh
-        "p_other".  Then we will take "p_other" and find the closest point in the point cloud, "p_recip".
-
-        In an ideally overlapping point cloud, "p_this" should be the same as "p_recip".  We will use a maximum
-        distance tolerance instead to determine if "p_recip" is close enough to "p_this" that "p_this" is
-        considered to be overlapping with the mesh.
-
-        :param mesh: the mesh to check for overlap.
-        :param max_distance: the maximum distance to consider a point as overlapping.
-        :return: a list of indices of points in this point cloud that overlap with triangles in the mesh.
-        """
-        ...
 
 
 class CubicSpline3:
@@ -4171,6 +4819,114 @@ class CubicSpline3:
         :param x3: x-coordinate of the fourth control point (curve end).
         :param y3: y-coordinate of the fourth control point (curve end).
         :param z3: z-coordinate of the fourth control point (curve end).
+        """
+        ...
+
+    @staticmethod
+    def from_fit_with_ends(points: NDArray[float], p0: Point3, p3: Point3,
+                           weights: NDArray[float] | None = None) -> CubicSpline3:
+        """
+        Fit a cubic Bézier curve to a set of points, holding the two endpoints fixed and solving
+        for the two interior control points. Fixing the endpoints is what makes the problem
+        well-posed: the residuals are closest-point distances to the curve, which do not change when
+        the curve extends beyond the points, so with free endpoints nothing stops the ends from
+        sliding.
+
+        The fit starts from the best of three closed-form seeds: the straight chord and two linear
+        least-squares solutions using a chord-length parameterization. One solution orders the
+        points by projection onto the chord, while the other uses the input order. It then refines
+        the selected seed against the true closest-point distances with a weighted
+        Levenberg-Marquardt minimization. The points may be in any order; ordered input helps only
+        for curves that double back along their chord.
+
+        The fit determines the curve shape more strongly than the exact control-point locations.
+        Compare curves, rather than their control points, when checking a fit.
+
+        :param points: the points to fit the curve to, as an (n, 3) array, in any order. At least
+            two are required.
+        :param p0: the start point of the curve, held fixed.
+        :param p3: the end point of the curve, held fixed. Must be distinct from `p0`.
+        :param weights: if provided, a length-`n` array of non-negative weights that scale each
+            point's residual. Points with zero weight have no effect. If `None`, all points are
+            weighted equally.
+        :return: a new `CubicSpline3` with the given endpoints and the fitted interior control
+            points.
+        :raises ValueError: if there are fewer than two points, the endpoints coincide, the weight
+            count does not match the point count, or the minimization fails.
+        """
+        ...
+
+    @staticmethod
+    def from_fit_hermite(points: NDArray[float], p0: Point3, tangent0: Vector3, p3: Point3,
+                         tangent3: Vector3, weights: NDArray[float] | None = None) -> CubicSpline3:
+        """
+        Fit a cubic Bézier curve to a set of points, holding the two endpoints and the tangent
+        directions at each end fixed and solving only for the lengths of the two tangent arms
+        (the distances from `p0` to `p1` and from `p3` to `p2`). This is the most constrained and
+        best-conditioned of the fits. It is a natural choice for a curve that must leave one known
+        feature tangentially and arrive at another feature in the same way.
+
+        Both tangents point in the direction of travel along the curve, from `p0` toward `p3`:
+        `tangent0` is the direction the curve leaves `p0` (`p1 = p0 + a0 * tangent0`) and
+        `tangent3` is the direction the curve is traveling as it arrives at `p3`
+        (`p2 = p3 - a1 * tangent3`). The arm lengths are held positive during the fit.
+
+        The fit starts from the best of several closed-form seeds. Schneider's linear least-squares
+        arm lengths under a chord-length parameterization are computed with the points ordered both
+        by projection onto the chord and in their given order. One-third of the chord length for
+        each arm provides a fallback seed; when the endpoints coincide, the fallback uses the reach
+        of the points from `p0` instead. The selected seed is refined against the true closest-point
+        distances with a weighted Levenberg-Marquardt minimization. The endpoints may coincide.
+
+        The fit determines the curve shape more strongly than the exact control-point locations.
+        Compare curves, rather than their control points, when checking a fit.
+
+        :param points: the points to fit the curve to, as an (n, 3) array, in any order. At least
+            two are required.
+        :param p0: the start point of the curve, held fixed.
+        :param tangent0: the direction the curve leaves `p0` in; normalized internally, must be
+            non-zero.
+        :param p3: the end point of the curve, held fixed.
+        :param tangent3: the direction the curve is traveling in as it arrives at `p3`;
+            normalized internally, must be non-zero.
+        :param weights: if provided, a length-`n` array of non-negative weights that scale each
+            point's residual. Points with zero weight have no effect. If `None`, all points are
+            weighted equally.
+        :return: a new `CubicSpline3` with the given endpoints and tangents and the fitted arm
+            lengths.
+        :raises ValueError: if there are fewer than two points, a tangent is zero, the weight
+            count does not match the point count, or the minimization fails.
+        """
+        ...
+
+    @staticmethod
+    def from_fit_principal_axis(points: NDArray[float],
+                                weights: NDArray[float] | None = None) -> CubicSpline3:
+        """
+        Fit a cubic Bézier curve to a set of points whose endpoints are unknown, assuming that the
+        curve runs from one end of the points' principal axis (their direction of greatest
+        variance) to the other. The points are ordered by projection onto that axis, and the two
+        extreme points anchor the ends. Each end may slide perpendicular to the axis to absorb the
+        noise of a single sample, while the interior control points are fitted as in
+        `from_fit_with_ends`. This approach covers lines, arcs of up to about a half turn, S-curves,
+        and any other shape that is single-valued along its own principal axis.
+
+        The assumption is checked first. When the points double back along the axis (a hairpin, a
+        loop, or an arc well past a half turn), the fit is refused with a `ValueError`. The check
+        catches gross violations: an arc that only slightly overhangs its ends (roughly 190 to 240
+        degrees) passes and is fitted between its extreme points, while noise-dominated straight
+        data with only a couple of dozen points can be falsely rejected. Use `from_fit_with_ends`
+        when the endpoints are known.
+
+        :param points: the points to fit the curve to, as an (n, 3) array, in any order. At least
+            two with positive weight are required.
+        :param weights: if provided, a length-`n` array of non-negative weights that scale each
+            point's residual. Points with zero weight take no part in the fit, the principal axis,
+            or the choice of endpoints. If `None`, all points are weighted equally.
+        :return: a new `CubicSpline3` fitted to the points.
+        :raises ValueError: if there are too few points, the weight count does not match the
+            point count, the points double back along their principal axis, or the minimization
+            fails.
         """
         ...
 
@@ -4553,7 +5309,7 @@ class MeshData3:
         Read a LPTF3 laser profile scan and build a triangle mesh from it, connecting points in adjacent rows.
 
         Points which end up in no face are discarded, so the point buffer is a subset of what
-        `PointCloudData3.load_lptf3` returns for the same file. Use that instead when every measured point matters.
+        `PointCloud3.load_lptf3` returns for the same file. Use that instead when every measured point matters.
 
         The way the data is loaded is controlled by the keyword arguments:
 
@@ -4609,6 +5365,15 @@ class MeshData3:
         ...
 
     @property
+    def point_flat(self) -> NDArray[float] | None:
+        """
+        The per-point flat coordinates as a numpy array of shape (n, 2) and dtype float64, or None if the mesh carries
+        none. Each coordinate is a point's position in a flattened 2D chart of the surface, expressed in the mesh's
+        own length units rather than as texture coordinates. See `Mesh3.set_point_flat`.
+        """
+        ...
+
+    @property
     def face_colors(self) -> NDArray[numpy.uint8] | None:
         """
         The per-face RGB colors as a numpy array of shape (m, 3) and dtype uint8, or None if the mesh carries none.
@@ -4645,6 +5410,15 @@ class MeshData3:
         Set or clear the per-point standard deviations, which must be finite and non-negative.
 
         :param values: an array of shape (n,) matching the point count, or None to clear.
+        """
+        ...
+
+    def set_point_flat(self, values: NDArray[float] | None = None):
+        """
+        Set or clear the per-point flat coordinates, which give each point's position in a flattened 2D chart of the
+        surface in the mesh's own length units. See `Mesh3.set_point_flat`.
+
+        :param values: an array of shape (n, 2) matching the point count, or None to clear.
         """
         ...
 
@@ -4755,78 +5529,88 @@ class MeshData3:
         ...
 
     @staticmethod
-    def create_sphere(radius: float, n_theta: int, n_phi: int) -> MeshData3:
+    def create_sphere(radius: float, tol: float) -> MeshData3:
         """
-        Create a spherical mesh centered at the origin.
+        Create a closed spherical mesh centered at the origin, with its poles on the local z-axis. Every vertex lies
+        on the true sphere, so the facets sag inward by at most `tol`.
 
-        :param radius: the radius of the sphere.
-        :param n_theta: the number of subdivisions around the polar direction.
-        :param n_phi: the number of subdivisions around the azimuthal direction.
+        :param radius: the radius of the sphere, which must be positive and finite.
+        :param tol: the maximum deviation of a facet from the true sphere, which must be positive and finite. No
+        matter how loose this is, a full turn around the equator never gets fewer than 8 segments and a pole-to-pole
+        sweep never gets fewer than 4.
         :return: the mesh data.
         """
         ...
 
     @staticmethod
-    def create_cylinder(radius: float, height: float, steps: int) -> MeshData3:
+    def create_cylinder(radius: float, height: float, tol: float) -> MeshData3:
         """
-        Create a cylindrical mesh centered at the origin and aligned with the local y axis.
+        Create a closed cylindrical mesh centered at the origin and aligned with the local z-axis. The wall vertices
+        lie on the true cylinder, so the flat chords between them sag inward by at most `tol`.
 
-        :param radius: the radius of the cylinder.
-        :param height: the full height of the cylinder, along the y axis.
-        :param steps: the number of subdivisions around the circumference.
+        :param radius: the radius of the cylinder, which must be positive and finite.
+        :param height: the full height of the cylinder, along the z-axis.
+        :param tol: the maximum chordal deviation of the wall, which must be positive and finite. The circumference
+        never gets fewer than 8 segments, no matter how loose this is.
         :return: the mesh data.
         """
         ...
 
     @staticmethod
-    def create_cone(radius: float, height: float, steps: int) -> MeshData3:
+    def create_cone(radius: float, height: float, tol: float) -> MeshData3:
         """
-        Create a conical mesh centered at the origin and aligned with the local y axis, with its apex at +height/2
-        and its base at -height/2.
+        Create a closed conical mesh centered at the origin and aligned with the local z-axis, with its apex at
+        +height/2 and its base at -height/2. The lateral surface is ruled, so only the base circle carries curvature
+        and `tol` is the chordal deviation of that circle.
 
-        :param radius: the radius of the base of the cone.
-        :param height: the full height of the cone, along the y axis.
-        :param steps: the number of subdivisions around the circumference.
+        :param radius: the radius of the base of the cone, which must be positive and finite.
+        :param height: the full height of the cone, along the z-axis.
+        :param tol: the maximum chordal deviation of the base circle, which must be positive and finite. The base
+        never gets fewer than 8 segments, no matter how loose this is.
         :return: the mesh data.
         """
         ...
 
     @staticmethod
-    def create_circle(radius: float, segments: int) -> MeshData3:
+    def create_circle(radius: float, tol: float) -> MeshData3:
         """
         Create a flat, filled circle mesh lying in the XY plane, centered at the origin, with the normal pointing
-        along +Z.
+        along +Z. The perimeter points lie on the true circle so the chords sag inward by at most `tol`.
 
-        :param radius: the radius of the circle.
-        :param segments: the number of perimeter points, and of triangles. Must be at least 3.
+        :param radius: the radius of the circle, which must be positive and finite.
+        :param tol: the maximum allowed chordal deviation of the perimeter, which must be positive and finite. A
+            full circle never gets fewer than 8 segments, no matter how loose this is.
         :return: the mesh data.
         """
         ...
 
     @staticmethod
-    def create_capsule(p0: Point3, p1: Point3, radius: float, n_theta: int, n_phi: int) -> MeshData3:
+    def create_capsule(p0: Point3, p1: Point3, radius: float, tol: float) -> MeshData3:
         """
         Create a capsule mesh, a cylinder with a hemispherical cap on each end, spanning the segment between two
-        points.
+        points. The two points are the centers of the caps, so the capsule extends by `radius` beyond each of them.
+        Every vertex lies on the true surface, so the facets sag inward by at most `tol`.
 
         :param p0: one end of the segment.
         :param p1: the other end of the segment.
-        :param radius: the radius of the cylinder and of the caps.
-        :param n_theta: the number of subdivisions around the circumference.
-        :param n_phi: the number of subdivisions over each cap.
+        :param radius: the radius of the cylinder and of the caps, which must be positive and finite.
+        :param tol: the maximum deviation of a facet from the true surface, which must be positive and finite. No
+        matter how loose this is, a full turn around the tube never gets fewer than 8 segments and each cap never gets
+        fewer than 2 rows.
         :return: the mesh data.
         """
         ...
 
     @staticmethod
-    def create_cylinder_between(p0: Point3, p1: Point3, radius: float, steps: int) -> MeshData3:
+    def create_cylinder_between(p0: Point3, p1: Point3, radius: float, tol: float) -> MeshData3:
         """
         Create a cylindrical mesh spanning the segment between two points.
 
         :param p0: one end of the segment.
         :param p1: the other end of the segment.
-        :param radius: the radius of the cylinder.
-        :param steps: the number of subdivisions around the circumference.
+        :param radius: the radius of the cylinder, which must be positive and finite.
+        :param tol: the maximum chordal deviation of the wall, which must be positive and finite. The circumference
+        never gets fewer than 8 segments, no matter how loose this is.
         :return: the mesh data.
         """
         ...
@@ -5062,15 +5846,16 @@ class MeshData3:
         ...
 
 
-class PointCloudData3:
+class PointCloud3:
     """
-    The unaccelerated point cloud container: a buffer of points and the per-point attributes attached to them.
+    A 3D point cloud: a buffer of points and the per-point attributes attached to them.
 
-    This is the type to reach for when reading or writing files, or when editing point data. Call `to_cloud()` to
-    build the queryable `PointCloud` when you need nearest-neighbor queries.
+    Spatial queries (`estimate_normals`, the `overlap_*` pair) are backed by a k-d tree which is built the first
+    time one is needed and then reused. Any method which changes the points discards it, so the tree can never
+    answer from stale positions. Building it is not free on a large cloud, so a cloud you only load, filter and
+    save never pays for one.
 
-    Unlike `PointCloud`, this type carries attributes through serialization, so a PLY loaded here keeps every property
-    the file declared.
+    Attributes are carried through serialization, so a PLY loaded here keeps every property the file declared.
     """
 
     def __init__(self, points: NDArray[float]):
@@ -5082,7 +5867,14 @@ class PointCloudData3:
         ...
 
     @staticmethod
-    def load_ply(path: str | Path) -> PointCloudData3:
+    def empty() -> PointCloud3:
+        """
+        Create an empty point cloud, with no points and no attributes.
+        """
+        ...
+
+    @staticmethod
+    def load_ply(path: str | Path) -> PointCloud3:
         """
         Load a point cloud from a PLY file, preserving every property the file carries.
 
@@ -5110,7 +5902,7 @@ class PointCloudData3:
         look_scale: float | None = None,
         weight_scale: float | None = None,
         max_move: float | None = None,
-    ) -> PointCloudData3:
+    ) -> PointCloud3:
         """
         Read a LPTF3 laser profile scan as a point cloud, keeping every measured point.
 
@@ -5163,6 +5955,16 @@ class PointCloudData3:
         """
         ...
 
+    @property
+    def point_flat(self) -> NDArray[float] | None:
+        """
+        The per-point flat coordinates as a numpy array of shape (n, 2) and dtype float64, or None if the cloud
+        carries none. Each coordinate is a point's position in a flattened 2D chart of a surface, expressed in the
+        cloud's own length units rather than as texture coordinates. A cloud projected onto a flattened reference
+        surface can store each point's flat position here alongside its depth in a scalar attribute.
+        """
+        ...
+
     def set_point_normals(self, values: NDArray[float] | None = None):
         """
         Set or clear the per-point unit normals. Rows are normalized on the way in, and a row of zero length is an
@@ -5188,6 +5990,15 @@ class PointCloudData3:
         """
         ...
 
+    def set_point_flat(self, values: NDArray[float] | None = None):
+        """
+        Set or clear the per-point flat coordinates, which give each point's position in a flattened 2D chart of a
+        surface in the cloud's own length units. See `Mesh3.set_point_flat`.
+
+        :param values: an array of shape (n, 2) matching the point count, or None to clear.
+        """
+        ...
+
     def transform_in_place(self, iso: Iso3):
         """
         Transform the cloud in place by a rigid isometry. Stored normals and vector attributes are rotated with the
@@ -5197,7 +6008,7 @@ class PointCloudData3:
         """
         ...
 
-    def transform_copy(self, iso: Iso3) -> PointCloudData3:
+    def transform_copy(self, iso: Iso3) -> PointCloud3:
         """
         Return a copy of the cloud transformed by a rigid isometry, leaving this one unchanged.
 
@@ -5217,7 +6028,7 @@ class PointCloudData3:
         """
         ...
 
-    def scale_copy(self, scale: float) -> PointCloudData3:
+    def scale_copy(self, scale: float) -> PointCloud3:
         """
         Return a copy of the cloud scaled about the origin by a uniform factor, leaving this one unchanged.
 
@@ -5226,7 +6037,7 @@ class PointCloudData3:
         """
         ...
 
-    def append_in_place(self, other: PointCloudData3):
+    def append_in_place(self, other: PointCloud3):
         """
         Append another cloud onto the end of this one.
 
@@ -5237,7 +6048,7 @@ class PointCloudData3:
         """
         ...
 
-    def create_subset_indices(self, indices: List[int]) -> PointCloudData3:
+    def extract_subset_indices(self, indices: List[int]) -> PointCloud3:
         """
         Create a new cloud containing the points at the given indices, in the order given. Indices may repeat. Every
         attribute is carried through.
@@ -5247,34 +6058,614 @@ class PointCloudData3:
         """
         ...
 
-    def to_cloud(self) -> PointCloud:
+    def extract_subset_points(self, point_mask: IndexMask) -> PointCloud3:
         """
-        Build the queryable `PointCloud` from this data.
+        Create a new cloud containing the points the mask selects, in their original order. Every attribute is
+        carried through.
 
-        Only the normals, colors, and standard deviations come across; `PointCloud` has nowhere to put the open-map
-        attributes.
-
-        :return: the queryable point cloud.
-        """
-        ...
-
-    @staticmethod
-    def from_cloud(cloud: PointCloud) -> PointCloudData3:
-        """
-        Copy the buffer and attributes out of a queryable `PointCloud`.
-
-        :param cloud: the cloud to copy from.
-        :return: the point data.
+        :param point_mask: a mask whose length matches the point count.
+        :return: the new cloud.
         """
         ...
 
-    def cloned(self) -> PointCloudData3:
+    def reduce_by_voxel(self, voxel_size: float) -> PointCloud3:
+        """
+        Reduce the cloud onto a coarser grid, replacing the points in each voxel with a single averaged point.
+
+        This *creates* new points rather than selecting existing ones, which is what distinguishes it from
+        `sample_poisson_disk`. Averaging `n` measurements of a surface lowers their noise by `sqrt(n)`, so the result
+        is smoother than the input, but its points are no longer measurements that were actually taken.
+
+        Output points are voxel centroids rather than voxel centers, so two neighbouring output points can be closer
+        together than `voxel_size`. There is no minimum spacing guarantee; use `sample_poisson_disk` if you need one.
+
+        Attributes are each combined by a rule that suits them: normals are averaged and renormalized, standard
+        deviations are propagated as the standard deviation of a mean, colors and scalars are averaged, and labels
+        take the most common value in the voxel. Two attributes are added, readable through `voxel_coherence` and
+        `voxel_count`.
+
+        :param voxel_size: the edge length of the grid cells, which must be finite and positive.
+        :return: the reduced cloud.
+        :raises ValueError: if the voxel size is not positive and finite, or if the cloud already carries an
+        attribute named `voxel_coherence` or `voxel_count`, which the reduction would otherwise overwrite.
+        """
+        ...
+
+    @property
+    def voxel_coherence(self) -> NDArray[float] | None:
+        """
+        How well the normals within each voxel agreed, as an `(n,)` float64 array in `[0, 1]`, or `None` on a cloud
+        which is not the output of `reduce_by_voxel` or whose input carried no normals.
+
+        Near 1 where a voxel's normals all pointed the same way, falling toward 0 where the voxel straddled an edge
+        or a thin wall. A low value means the averaged point there is a blend of surfaces facing different
+        directions, so this is a natural weight to apply when using a reduced cloud for fitting or alignment.
+        """
+        ...
+
+    @property
+    def voxel_count(self) -> NDArray[numpy.uint32] | None:
+        """
+        How many input points went into each output point, as an `(n,)` uint32 array, or `None` on a cloud which is
+        not the output of `reduce_by_voxel`.
+
+        Averaging `n` independent measurements lowers their noise by `sqrt(n)`, so this says how much each reduced
+        point gained, and is useful as a weight in its own right.
+        """
+        ...
+
+    def compute_aabb(self) -> Aabb3:
+        """
+        Compute the axis-aligned bounding box of the points.
+
+        :return: the bounding box.
+        """
+        ...
+
+    @property
+    def point_count(self) -> int:
+        """
+        The number of points in the cloud. Same as `len(cloud)`.
+        """
+        ...
+
+    @property
+    def is_empty(self) -> bool:
+        """
+        Whether the cloud has no points.
+        """
+        ...
+
+    def estimate_normals(
+            self,
+            must_match: NDArray[float],
+            radius: float,
+    ) -> Tuple[NDArray[float], NDArray[float]]:
+        """
+        Estimate a normal at every point by fitting a plane to the neighbors within `radius`.
+
+        A plane fit recovers an axis rather than a direction and cannot resolve the sign on its own, which is why
+        `must_match` is required rather than optional: each estimated normal is flipped to agree with the
+        corresponding row. For scan data the usual choice is the vector from each point back toward the sensor.
+
+        Points with fewer than three neighbors within the radius are given `+Z` at zero confidence.
+
+        :param must_match: an `(n, 3)` array of directions, one per point, which the estimates are flipped to agree
+        with.
+        :param radius: the neighborhood radius used for the plane fit.
+        :return: a tuple of an `(n, 3)` array of unit normals and an `(n,)` array of confidences in `[0, 1]`, where
+        low confidence means the neighborhood was not plane-like, as on an edge or in a sparse region.
+        """
+        ...
+
+    def sample_poisson_disk(self, radius: float) -> List[int]:
+        """
+        Poisson disk sample the cloud, returning the indices of a subset of points no two of which are closer
+        together than `radius`.
+
+        :param radius: the minimum spacing between sampled points.
+        :return: the indices of the sampled points.
+        """
+        ...
+
+    def extract_poisson_sample(self, radius: float) -> PointCloud3:
+        """
+        Poisson disk sample the cloud and return the result as a new cloud, carrying attributes across.
+
+        :param radius: the minimum spacing between sampled points.
+        :return: the sampled cloud.
+        """
+        ...
+
+    def overlap_points_by_reciprocity(self, other: PointCloud3, max_distance: float) -> List[int]:
+        """
+        Find the indices of points in this cloud which overlap another cloud, by checking that the closest point
+        in each direction agrees.
+
+        For each point `p_this`, the closest point in `other` is found, and then the closest point back in this
+        cloud. Where the two clouds cover the same surface those agree, so `p_this` counts as overlapping when the
+        round trip lands within `max_distance`.
+
+        :param other: the cloud to check against.
+        :param max_distance: how far the round trip may land from the original point.
+        :return: the indices of the overlapping points.
+        """
+        ...
+
+    def overlap_mesh_by_reciprocity(self, mesh: Mesh3, max_distance: float) -> List[int]:
+        """
+        Find the indices of points in this cloud which overlap a mesh, by checking that the closest point in each
+        direction agrees.
+
+        :param mesh: the mesh to check against.
+        :param max_distance: how far the round trip may land from the original point.
+        :return: the indices of the overlapping points.
+        """
+        ...
+
+    def cloned(self) -> PointCloud3:
         """
         Create a copy of this point data.
         """
         ...
 
     def __len__(self) -> int:
+        ...
+
+    def __repr__(self) -> str:
+        ...
+
+
+class RepairOpts:
+    """
+    Which repair passes to attempt when building a `HalfEdgeMesh3` from measured data.
+
+    Every pass defaults to on, which is what scan data normally wants. Each one discards or alters measured geometry,
+    so what a repair actually had to do is reported back through `HalfEdgeMesh3.repair_report` rather than being
+    silently absorbed.
+    """
+
+    def __init__(
+            self,
+            *,
+            drop_degenerate: bool = True,
+            drop_duplicate_faces: bool = True,
+            resolve_nonmanifold_edges: bool = True,
+            split_bowtie_vertices: bool = True,
+            orient_consistently: bool = True,
+            drop_isolated_vertices: bool = True,
+    ):
+        """
+        Create a repair option set. All arguments are keyword-only.
+
+        :param drop_degenerate: drop faces which repeat a vertex or enclose no area.
+        :param drop_duplicate_faces: drop faces which repeat a triangle already present, in either winding.
+        :param resolve_nonmanifold_edges: drop faces until no edge is shared by more than two of them.
+        :param split_bowtie_vertices: split a vertex whose incident faces form more than one fan into one vertex per
+            fan.
+        :param orient_consistently: flip faces so that every face in a connected component agrees on which side is out.
+        :param drop_isolated_vertices: drop points which no surviving face references.
+        """
+        ...
+
+    @staticmethod
+    def none() -> RepairOpts:
+        """
+        Create an option set with every pass disabled, as a base for turning on only what you want.
+
+        :return: the new option set.
+        """
+        ...
+
+    @property
+    def drop_degenerate(self) -> bool: ...
+
+    @property
+    def drop_duplicate_faces(self) -> bool: ...
+
+    @property
+    def resolve_nonmanifold_edges(self) -> bool: ...
+
+    @property
+    def split_bowtie_vertices(self) -> bool: ...
+
+    @property
+    def orient_consistently(self) -> bool: ...
+
+    @property
+    def drop_isolated_vertices(self) -> bool: ...
+
+    def __repr__(self) -> str:
+        ...
+
+
+class RepairReport:
+    """
+    An account of everything a repair changed.
+
+    Every field counts measured data that was altered or discarded, so a caller can decide whether the result is still
+    worth trusting. `is_clean` is the quick check that nothing happened at all.
+    """
+
+    @property
+    def degenerate_removed(self) -> int: ...
+
+    @property
+    def duplicate_faces_removed(self) -> int: ...
+
+    @property
+    def nonmanifold_edges(self) -> int: ...
+
+    @property
+    def faces_dropped_at_nonmanifold(self) -> int: ...
+
+    @property
+    def faces_dropped_for_orientation(self) -> int: ...
+
+    @property
+    def bowtie_vertices_split(self) -> int: ...
+
+    @property
+    def points_added_by_splitting(self) -> int: ...
+
+    @property
+    def faces_reoriented(self) -> int: ...
+
+    @property
+    def nonorientable_components(self) -> int: ...
+
+    @property
+    def faces_rejected_by_ingest(self) -> int: ...
+
+    @property
+    def is_clean(self) -> bool:
+        """
+        Whether the repair had to change anything at all.
+
+        :return: True if every counter is zero.
+        """
+        ...
+
+    def __repr__(self) -> str:
+        ...
+
+
+class DecimateOpts:
+    """
+    How guaranteed decimation should behave.
+
+    The tolerance is a genuine two-sided bound over the surfaces, not just at sampled points or at the original
+    vertices: no part of the result strays further than `tol` from the original, and no part of the original is left
+    further than `tol` from the result. The bound holds across repeated runs on the same `HalfEdgeMesh3` rather than
+    per call.
+    """
+
+    def __init__(
+            self,
+            tol: float,
+            *,
+            face_count: int | None = None,
+            ratio: float | None = None,
+            max_normal_deviation: float | None = None,
+            min_aspect: float | None = None,
+            lock_boundary: bool | None = None,
+            boundary_tol: float | None = None,
+            placement: Literal["optimal", "midpoint", "endpoint"] | None = None,
+            quadric: Literal["triangle", "probabilistic"] | None = None,
+            error_method: Literal["contraction", "affine_face_map", "projected_overlay"] | None = None,
+    ):
+        """
+        Create a decimation option set. Everything but the tolerance is keyword-only and optional.
+
+        :param tol: the farthest the surface may move from the original, in the mesh's own units.
+        :param face_count: stop once the mesh is down to this many faces, or sooner if the tolerance refuses
+            everything. Mutually exclusive with `ratio`; supplying neither runs to the tolerance.
+        :param ratio: stop at this fraction of the starting face count, in (0, 1]. Mutually exclusive with
+            `face_count`.
+        :param max_normal_deviation: the most a face normal may rotate in a collapse, in radians.
+        :param min_aspect: the worst triangle aspect ratio a collapse may produce, where 0 is degenerate and 1 is
+            equilateral.
+        :param lock_boundary: whether the mesh outline is held fixed. Defaults to True, which preserves the outline of
+            an open mesh at the cost of some reduction near it.
+        :param boundary_tol: a separate, usually tighter tolerance budget for boundary vertices.
+        :param placement: where the surviving vertex of a collapse goes. `"optimal"` minimizes the quadric and gives
+            the most reduction; `"endpoint"` keeps every surviving point one that was actually measured.
+        :param quadric: which quadric orders the queue. `"probabilistic"` is more stable on noisy input.
+        :param error_method: how the error volume's growth is worked out. `"projected_overlay"` is the default and the
+            only one usable at a metrologist's tolerance; the other two are kept for cross-checking.
+        """
+        ...
+
+    @property
+    def tol(self) -> float: ...
+
+    @property
+    def face_count(self) -> int | None: ...
+
+    @property
+    def ratio(self) -> float | None: ...
+
+    @property
+    def max_normal_deviation(self) -> float: ...
+
+    @property
+    def min_aspect(self) -> float: ...
+
+    @property
+    def lock_boundary(self) -> bool: ...
+
+    @property
+    def boundary_tol(self) -> float | None: ...
+
+    @property
+    def placement(self) -> Literal["optimal", "midpoint", "endpoint"]: ...
+
+    @property
+    def quadric(self) -> Literal["triangle", "probabilistic"]: ...
+
+    @property
+    def error_method(self) -> Literal["contraction", "affine_face_map", "projected_overlay"]: ...
+
+    def __repr__(self) -> str:
+        ...
+
+
+class BestEffortOpts:
+    """
+    How best-effort decimation should behave.
+
+    Faster and considerably more aggressive than the guaranteed path, and `tol` is an estimate which the result
+    routinely exceeds rather than a bound. It holds every *original vertex* inside the tolerance and says nothing about
+    the surface between them. Use it for display meshes and for geometry which scaffolds a measurement rather than
+    carrying one.
+    """
+
+    def __init__(
+            self,
+            tol: float,
+            *,
+            face_count: int | None = None,
+            ratio: float | None = None,
+            max_normal_deviation: float | None = None,
+            min_aspect: float | None = None,
+            lock_boundary: bool | None = None,
+            placement: Literal["optimal", "midpoint", "endpoint"] | None = None,
+            quadric: Literal["triangle", "probabilistic"] | None = None,
+    ):
+        """
+        Create a best-effort decimation option set. Everything but the tolerance is keyword-only and optional.
+
+        :param tol: how far an original vertex may end up from the result, in the mesh's own units. Set this loose,
+            around half the mesh's edge length or more; set tight it stops meaning much.
+        :param face_count: stop once the mesh is down to this many faces. Mutually exclusive with `ratio`.
+        :param ratio: stop at this fraction of the starting face count, in (0, 1]. Mutually exclusive with
+            `face_count`.
+        :param max_normal_deviation: the most a face normal may rotate in a collapse, in radians.
+        :param min_aspect: the worst triangle aspect ratio a collapse may produce.
+        :param lock_boundary: whether the mesh outline is held fixed. Defaults to True.
+        :param placement: where the surviving vertex of a collapse goes.
+        :param quadric: which quadric orders the queue and decides the collapse.
+        """
+        ...
+
+    @property
+    def tol(self) -> float: ...
+
+    @property
+    def face_count(self) -> int | None: ...
+
+    @property
+    def ratio(self) -> float | None: ...
+
+    @property
+    def max_normal_deviation(self) -> float: ...
+
+    @property
+    def min_aspect(self) -> float: ...
+
+    @property
+    def lock_boundary(self) -> bool: ...
+
+    @property
+    def placement(self) -> Literal["optimal", "midpoint", "endpoint"]: ...
+
+    @property
+    def quadric(self) -> Literal["triangle", "probabilistic"]: ...
+
+    def __repr__(self) -> str:
+        ...
+
+
+class DecimateStats:
+    """
+    Counts of the work a decimation run did and why it refused what it refused.
+
+    These exist to make optimization decisions from measurement rather than from argument. The veto counters say which
+    test is actually binding. A veto is counted at the point it fires and testing stops there, so these are counts of
+    decisions rather than of how many tests each candidate would have failed.
+    """
+
+    @property
+    def evaluations(self) -> int: ...
+
+    @property
+    def acceptance_tests(self) -> int: ...
+
+    @property
+    def veto_normal(self) -> int: ...
+
+    @property
+    def veto_aspect(self) -> int: ...
+
+    @property
+    def veto_degenerate(self) -> int: ...
+
+    @property
+    def veto_error(self) -> int: ...
+
+    @property
+    def method_not_applicable(self) -> int: ...
+
+    @property
+    def vetoes(self) -> int:
+        """
+        Every veto, however it fired.
+
+        :return: the summed veto counters.
+        """
+        ...
+
+    def __repr__(self) -> str:
+        ...
+
+
+class DecimateReport:
+    """
+    What a decimation run did.
+    """
+
+    @property
+    def collapses(self) -> int: ...
+
+    @property
+    def faces_before(self) -> int: ...
+
+    @property
+    def faces_after(self) -> int: ...
+
+    @property
+    def stats(self) -> DecimateStats: ...
+
+    @property
+    def ratio(self) -> float:
+        """
+        The fraction of the starting face count which survived.
+
+        :return: `faces_after / faces_before`.
+        """
+        ...
+
+    def __repr__(self) -> str:
+        ...
+
+
+class HalfEdgeMesh3:
+    """
+    A half-edge representation of a triangle mesh, which is what topology edits are driven through.
+
+    Reach for this when an operation needs to navigate topology, such as decimation or smoothing. `Mesh3` remains the
+    right type for geometric queries, since it carries a BVH and this does not. Neither direction carries attributes
+    or `is_solid`, because this structure has nowhere to put them.
+
+    This object is pinned to the thread which created it, because the underlying structure cannot be shared between
+    threads. Touching it from another thread raises. Convert with `to_mesh` first if the result is needed elsewhere.
+    """
+
+    def __init__(self, mesh: Mesh3, *, repair: RepairOpts | None = None):
+        """
+        Build a half-edge structure from a mesh.
+
+        :param mesh: the mesh to build from.
+        :param repair: if given, repair whatever topology the structure will not accept, recording what had to change
+            in `repair_report`. If omitted, the build is strict and fails on the first element it will not accept, which
+            is appropriate only when the mesh is known to be clean. Measured data is routinely non-manifold and should
+            supply this.
+        """
+        ...
+
+    @property
+    def repair_report(self) -> RepairReport:
+        """
+        What the repairing constructor had to change, or an empty report if none was requested.
+        """
+        ...
+
+    @property
+    def vertex_count(self) -> int:
+        """
+        The number of vertices, including any which are deleted but not yet collected.
+        """
+        ...
+
+    @property
+    def face_count(self) -> int:
+        """
+        The number of faces, including any which are deleted but not yet collected.
+        """
+        ...
+
+    @property
+    def edge_count(self) -> int:
+        """
+        The number of edges, including any which are deleted but not yet collected.
+        """
+        ...
+
+    @property
+    def error_volume_is_current(self) -> bool:
+        """
+        Whether the decimation error volume still accounts for everything done to this mesh.
+
+        False once `decimate_best_effort` has run, after which `decimate_guaranteed` refuses.
+        """
+        ...
+
+    def decimate_guaranteed(self, opts: DecimateOpts) -> DecimateReport:
+        """
+        Decimate the mesh, keeping both surfaces within the tolerance of each other.
+
+        The bound holds across repeated calls rather than per call: the error volume accumulates on this object, so
+        several runs at a given tolerance land inside that tolerance rather than inside the sum of them.
+
+        :param opts: how decimation should behave.
+        :return: what the run did.
+        :raises ValueError: if the options are invalid, or if `decimate_best_effort` has already run on this mesh. That
+            path leaves the error volume describing less than what has happened to the surface, so a bound computed
+            from it afterwards would not be one.
+        """
+        ...
+
+    def decimate_best_effort(self, opts: BestEffortOpts) -> DecimateReport:
+        """
+        Decimate the mesh by estimated deviation rather than by a guaranteed bound.
+
+        This invalidates the error volume, so `decimate_guaranteed` refuses afterwards on this object.
+
+        :param opts: how decimation should behave.
+        :return: what the run did.
+        :raises ValueError: if the options are invalid.
+        """
+        ...
+
+    def smooth(self, iterations: int = 1) -> None:
+        """
+        Smooth the mesh, fitting a plane to each vertex's one-ring and moving the vertex onto the average height of
+        that ring.
+
+        This moves measured points and is not bounded by any tolerance, so it changes the geometry rather than only the
+        topology.
+
+        :param iterations: how many passes to apply. Zero is a no-op.
+        """
+        ...
+
+    def garbage_collect(self) -> None:
+        """
+        Discard elements marked deleted, compacting the structure.
+        """
+        ...
+
+    def to_mesh(self, is_solid: bool = False) -> Mesh3:
+        """
+        Build a `Mesh3` from the current state.
+
+        This compacts the structure first, so any index taken from it beforehand is invalid afterwards. Nothing is
+        carried but geometry.
+
+        :param is_solid: whether the result should answer distance queries as a solid.
+        :return: the new mesh.
+        :raises ValueError: if the structure has no faces left.
+        """
         ...
 
     def __repr__(self) -> str:

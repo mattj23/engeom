@@ -30,16 +30,15 @@ from matplotlib.text import Annotation
 from engeom.airfoil2 import AfGeometry, OrientFwdAft, OrientUpperLower
 from engeom.geom2 import (Aabb2, Arc2, BoundaryData2, Circle2, CubicSpline2, Curve2, Line2, Point2,
                           Segment2, SurfacePoint2, Vector2)
-from engeom.geom3 import (Aabb3, Circle3, Curve3, Iso3, Line3, Mesh3, Plane3, Point3, PointCloud,
+from engeom.geom3 import (Aabb3, Circle3, Curve3, Iso3, Line3, Mesh3, Plane3, Point3, PointCloud3,
                           Vector3)
 from engeom.metrology import Distance2, Distance3
 from engeom.plot import LabelPlace
 from engeom.plot._coerce import to_point2, to_point3, to_tuple2, to_tuple3
-from engeom.plot._common import LABEL_PLACES
+from engeom.plot._common import LABEL_PLACES, plane_basis
 from engeom.plot.matplotlib import (GOM_CMAP, AxesHelper, GomColorMap, TraceBuilder, ViewPort3,
                                     deviation_limit, deviation_norm, extend_for, has_extremes)
-from engeom.plot.matplotlib._style import element_style, merge_style
-from engeom.plot.matplotlib.viewport import _plane_basis
+from engeom.plot._style import element_style, merge_style
 
 TOL = 1e-12
 
@@ -602,7 +601,7 @@ def test_draw_normals_points_along_the_surface_normal():
     source = sample_boundary()
     arrows = helper.draw_normals(source, count=3, length=0.5)
 
-    for arrow, t in zip(arrows, numpy.linspace(0, source.length(), 3)):
+    for arrow, t in zip(arrows, numpy.linspace(0, source.length, 3)):
         station = source.at_length(t)
         expected_tail = (station.point.x, station.point.y)
         expected_tip = tuple(station.surface_point.at_distance(0.5))
@@ -793,7 +792,7 @@ def test_viewport_draw_curve_projects_the_curve_vertices():
 
 def test_viewport_draw_point_cloud_draws_markers_without_connecting_them():
     view = new_viewport()
-    line = view.draw_point_cloud(PointCloud(numpy.array([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]])))[0]
+    line = view.draw_point_cloud(PointCloud3(numpy.array([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]])))[0]
     assert line.get_linestyle() == "None"
     assert len(line.get_xdata()) == 2
 
@@ -902,7 +901,7 @@ def test_viewport_draw_distance_passes_a_bad_label_place_through_to_validation()
 def test_plane_basis_returns_an_orthonormal_pair_for_any_normal():
     for normal in [Vector3(0.0, 0.0, 1.0), Vector3(1.0, 0.0, 0.0), Vector3(0.0, 1.0, 0.0),
                    Vector3(1.0, 1.0, 1.0), Vector3(-3.0, 0.2, 0.0)]:
-        u, v = _plane_basis(normal)
+        u, v = plane_basis(normal)
         n = normal.normalized()
         assert u.norm() == pytest.approx(1.0, abs=1.0e-12)
         assert v.norm() == pytest.approx(1.0, abs=1.0e-12)

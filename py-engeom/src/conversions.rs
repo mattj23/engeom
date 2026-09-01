@@ -1,7 +1,7 @@
 //! This module has conversion helpers for numpy arrays and other engeom types
 
 use engeom::na::{Point, SVector};
-use engeom::{Point2, Point3, Vector2, Vector3};
+use engeom::{Point2, Point3, SurfacePoint3, Vector2, Vector3};
 use numpy::ndarray::{Array1, Array2, ArrayView2};
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};
 use pyo3::exceptions::PyValueError;
@@ -55,6 +55,40 @@ pub fn array_to_points3(array: &ArrayView2<'_, f64>) -> PyResult<Vec<Point3>> {
         .map(|row| Point3::new(row[0], row[1], row[2]))
         .collect())
 }
+/// Build a vector of oriented `SurfacePoint3` samples from a pair of Nx3 numpy arrays of point
+/// positions and their corresponding normals. The two arrays must have the same number of rows;
+/// each normal is normalized when its surface point is constructed.
+pub fn array_to_surface_points3(
+    points: &ArrayView2<'_, f64>,
+    normals: &ArrayView2<'_, f64>,
+) -> PyResult<Vec<SurfacePoint3>> {
+    let ps = points.shape();
+    let ns = normals.shape();
+    if ps.len() != 2 || ps[1] != 3 {
+        return Err(PyValueError::new_err("Expected Nx3 array of points"));
+    }
+    if ns.len() != 2 || ns[1] != 3 {
+        return Err(PyValueError::new_err("Expected Nx3 array of normals"));
+    }
+    if ps[0] != ns[0] {
+        return Err(PyValueError::new_err(
+            "points and normals must have the same number of rows",
+        ));
+    }
+
+    Ok(points
+        .rows()
+        .into_iter()
+        .zip(normals.rows())
+        .map(|(p, n)| {
+            SurfacePoint3::new_normalize(
+                Point3::new(p[0], p[1], p[2]),
+                Vector3::new(n[0], n[1], n[2]),
+            )
+        })
+        .collect())
+}
+
 pub fn array_to_vectors3(array: &ArrayView2<'_, f64>) -> PyResult<Vec<Vector3>> {
     let shape = array.shape();
     if shape.len() != 2 || shape[1] != 3 {
@@ -144,6 +178,31 @@ pub fn array_to_colors(array: &ArrayView2<'_, u8>) -> PyResult<Vec<[u8; 3]>> {
         .into_iter()
         .map(|row| [row[0], row[1], row[2]])
         .collect())
+}
+
+/// Convert an Nx2 numpy array into unit vectors, normalizing each row.
+///
+/// A row of zero length has no direction and is rejected rather than being silently turned into an
+/// arbitrary one.
+pub fn array_to_unit_vectors2(array: &ArrayView2<'_, f64>) -> PyResult<Vec<engeom::UnitVec2>> {
+    let shape = array.shape();
+    if shape.len() != 2 || shape[1] != 2 {
+        return Err(PyValueError::new_err("Expected Nx2 array of directions"));
+    }
+
+    array
+        .rows()
+        .into_iter()
+        .enumerate()
+        .map(|(i, row)| {
+            let v = Vector2::new(row[0], row[1]);
+            engeom::UnitVec2::try_new(v, 1.0e-12).ok_or_else(|| {
+                PyValueError::new_err(format!(
+                    "Row {i} has zero length, which cannot be a direction"
+                ))
+            })
+        })
+        .collect()
 }
 
 /// Convert an Nx3 numpy array into unit vectors, normalizing each row.

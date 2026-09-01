@@ -9,12 +9,14 @@ from engeom.geom2 import (
     CubicSplineQueries2,
     SplineProjection,
     Point2,
+    Vector2,
     fit_spline_to_points as fit_spline_to_points_2,
 )
 from engeom.geom3 import (
     CubicSpline3,
     CubicSplineQueries3,
     Point3,
+    Vector3,
     fit_spline_to_points as fit_spline_to_points_3,
 )
 
@@ -130,6 +132,110 @@ def test_fit_spline3_recovers_control_points():
         points, builder, numpy.array([1.0, 1.5, 0.5, 2.0, 1.5, -0.5])
     )
     assert numpy.allclose(result, [1, 2, 1, 2, 2, -1], atol=1e-5)
+
+
+def _max_deviation(samples, fitted):
+    """Return the maximum distance from reference samples to the fitted curve.
+
+    Control points are not compared directly: shifting both interior control points along the
+    curve barely changes its shape, so a fit determines them only weakly.
+    """
+    return fitted.query().project_points(samples)[:, 1].max()
+
+
+def test_from_fit_with_ends_2d_recovers_curve():
+    truth = CubicSpline2(0, 0, 1, 2, 2, 2, 3, 0)
+    points = _samples_2d(truth)
+    rng = numpy.random.default_rng(1)
+    rng.shuffle(points, axis=0)
+
+    fitted = CubicSpline2.from_fit_with_ends(points, truth.p0, truth.p3)
+    assert _max_deviation(points, fitted) < 1e-6
+
+
+def test_from_fit_with_ends_3d_recovers_curve():
+    truth = CubicSpline3(0, 0, 0, 1, 2, 1, 2, 2, -1, 3, 0, 0)
+    points = _samples_3d(truth)
+
+    fitted = CubicSpline3.from_fit_with_ends(points, truth.p0, truth.p3)
+    assert _max_deviation(points, fitted) < 1e-6
+
+
+def test_from_fit_with_ends_zero_weight_outlier_ignored():
+    truth = CubicSpline2(0, 0, 1, 2, 2, 2, 3, 0)
+    points = numpy.vstack([_samples_2d(truth), [[1.5, 5.0]]])
+    weights = numpy.ones(len(points))
+    weights[-1] = 0.0
+
+    fitted = CubicSpline2.from_fit_with_ends(points, truth.p0, truth.p3, weights)
+    assert _max_deviation(points[:-1], fitted) < 1e-6
+
+
+def test_from_fit_with_ends_errors():
+    p0 = Point2(0, 0)
+    p3 = Point2(3, 0)
+    with pytest.raises(ValueError):
+        CubicSpline2.from_fit_with_ends(numpy.array([[1.0, 1.0]]), p0, p3)
+    with pytest.raises(ValueError):
+        CubicSpline2.from_fit_with_ends(numpy.array([[1.0, 1.0], [2.0, 1.0]]), p0, p0)
+    with pytest.raises(ValueError):
+        CubicSpline2.from_fit_with_ends(
+            numpy.array([[1.0, 1.0], [2.0, 1.0]]), p0, p3, numpy.array([1.0])
+        )
+
+
+def test_from_fit_hermite_2d_recovers_curve():
+    truth = CubicSpline2(0, 0, 1, 2, 2, 2, 3, 0)
+    points = _samples_2d(truth)
+    rng = numpy.random.default_rng(2)
+    rng.shuffle(points, axis=0)
+
+    fitted = CubicSpline2.from_fit_hermite(
+        points, truth.p0, Vector2(1, 2), truth.p3, Vector2(1, -2)
+    )
+    assert _max_deviation(points, fitted) < 1e-6
+
+
+def test_from_fit_hermite_3d_recovers_curve():
+    truth = CubicSpline3(0, 0, 0, 1, 2, 1, 2, 2, -1, 3, 0, 0)
+    points = _samples_3d(truth)
+
+    fitted = CubicSpline3.from_fit_hermite(
+        points, truth.p0, Vector3(1, 2, 1), truth.p3, Vector3(1, -2, 1)
+    )
+    assert _max_deviation(points, fitted) < 1e-6
+
+
+def test_from_fit_hermite_zero_tangent_raises():
+    truth = CubicSpline2(0, 0, 1, 2, 2, 2, 3, 0)
+    points = _samples_2d(truth)
+    with pytest.raises(ValueError):
+        CubicSpline2.from_fit_hermite(points, truth.p0, Vector2(0, 0), truth.p3, Vector2(1, -2))
+
+
+def test_from_fit_principal_axis_2d_recovers_curve():
+    truth = CubicSpline2(0, 0, 1.5, 0, 1.5, 2, 3, 2)
+    points = _samples_2d(truth)
+    rng = numpy.random.default_rng(3)
+    rng.shuffle(points, axis=0)
+
+    fitted = CubicSpline2.from_fit_principal_axis(points)
+    assert _max_deviation(points, fitted) < 1e-6
+
+
+def test_from_fit_principal_axis_3d_recovers_curve():
+    truth = CubicSpline3(0, 0, 0, 1, 2, 1, 2, 2, -1, 3, 0, 0)
+    points = _samples_3d(truth)
+
+    fitted = CubicSpline3.from_fit_principal_axis(points)
+    assert _max_deviation(points, fitted) < 1e-6
+
+
+def test_from_fit_principal_axis_rejects_hairpin():
+    hairpin = CubicSpline2(0, 0, 4, 0, 4, 1, 0, 1)
+    points = _samples_2d(hairpin, n=60)
+    with pytest.raises(ValueError):
+        CubicSpline2.from_fit_principal_axis(points)
 
 
 def test_fit_spline2_bad_builder_raises():

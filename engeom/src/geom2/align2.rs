@@ -3,17 +3,27 @@
 //!
 //! # Structure
 //!
-//! An alignment has three pieces:
+//! A single-body alignment has three pieces:
 //!
 //! - [`AlignParams2`] holds the parameters being optimized (`tx`, `ty`, `rz`) and expresses them
 //!   as a transformation about an arbitrary local origin, with an optional working offset. This
 //!   is what gives the caller control over the center of rotation, the directions the translation
 //!   parameters act along, and which degrees of freedom ([`Dof3`]) are free to move at all.
-//! - [`SurfaceTarget2`] is the stationary entity being aligned to. It is implemented for `Curve2`
-//!   and `Boundary2`, and reports an [`AlignSurfMatch2`] for any query point: the closest
-//!   position, its normal, whether the projection actually landed on the target's interior, and
-//!   optionally the target's own measurement uncertainty there.
+//! - [`SurfaceTarget2`] is the stationary entity being aligned to. It is implemented for
+//!   `Curve2`, `Boundary2`, `CurveGroup2`, and (as [`CloudTarget2`]) unordered measured points,
+//!   and reports an [`AlignSurfMatch2`] for any query point: the closest position, its normal,
+//!   whether the projection actually landed on the target's interior, and optionally the
+//!   target's own measurement uncertainty there.
 //! - [`points_to_surface2`] runs the solver, with behavior controlled by [`AlignOptions2`].
+//!
+//! Beyond the single-body path:
+//!
+//! - [`multi_curve_adjustment`] simultaneously aligns several [`crate::geom2::CurveGroup2`]
+//!   bodies to each other in one combined solve, holding one static, with [`MultiParams2`]
+//!   carrying the concatenated per-body parameters and [`MultiOptions2`] controlling the
+//!   solve.
+//! - [`AlignInfo2`] asks how well a set of points constrains an alignment, exposes its
+//!   weak directions, and chooses D-optimal correspondence subsets for pruning.
 //!
 //! # Reporting
 //!
@@ -37,18 +47,34 @@
 //! of iteratively reweighted least-squares using MAGSAC++ noise-marginalized weights, with the
 //! weights held fixed inside each solve so the analytic jacobian stays consistent with the
 //! residual it differentiates. The noise bound can be supplied explicitly or estimated from the
-//! data via the median absolute deviation. Measurement uncertainty on either the test points or
-//! the target combines in quadrature and normalizes the residuals into units of sigma.
+//! data via the median absolute deviation.
+//!
+//! On the single-body path, measurement uncertainty on either the test points or the target
+//! combines in quadrature and normalizes the residuals into units of sigma. The multi-curve
+//! path carries no uncertainty at all, because nothing in 2D produces it: its residuals stay in
+//! the units of the geometry, and so does its noise bound.
 //!
 //! # Relationship to `align3`
 //!
-//! This module is the reference implementation for `engeom`'s alignment design, and the 3D
-//! machinery in [`crate::geom3::align3`] is being brought into line with it. The two are
+//! The solver cores of this module and the 3D machinery in [`crate::geom3::align3`] are
 //! deliberately structural mirrors rather than a shared generic: 2D needs only a single rotation
 //! angle, whose partial derivative is a plain 90-degree turn with none of the Euler-angle gimbal
-//! correction that 3D requires, and its parameter storage is half the size.
+//! correction that 3D requires, and its parameter storage is half the size. The parts with no
+//! dimension-specific content at all, the multi-body parameter bookkeeping, the information
+//! analysis, and the static-body selection, are shared generics in [`crate::common::align`],
+//! with thin per-dimension wrappers here.
+//!
+//! Neither module is the authority. This one was written first and the 3D module was brought
+//! into line with it, but the multi-body work happened in 3D and came back the other way. A
+//! change to either should be considered for the other, and the file layout is kept parallel so
+//! that comparison is easy to make.
 
-mod jacobian;
+mod cloud;
+mod curve;
+mod information;
+pub mod jacobian;
+mod multi_curve;
+mod multi_params;
 mod options;
 mod params;
 mod points_to_surface;
@@ -59,6 +85,13 @@ use parry2d_f64::na::Vector3;
 /// The storage for the three parameters of a 2D alignment problem, in the order tx, ty, rz.
 pub type AlignStorage2 = Vector3<f64>;
 
+pub use self::cloud::CloudTarget2;
+pub use self::curve::*;
+pub use self::information::*;
+pub use self::multi_curve::{
+    CurveAlignPoint, MultiOptions2, multi_curve_adjustment, multi_curve_adjustment_with_points,
+};
+pub use self::multi_params::MultiParams2;
 pub use self::options::*;
 pub use self::params::*;
 pub use self::points_to_surface::points_to_surface2;

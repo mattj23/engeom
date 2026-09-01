@@ -87,7 +87,7 @@ def main():
 
     print(f"Leading edge: kind={geom.leading.geometry.kind}, point=({le.x:.4f}, {le.y:.4f})")
     print(f"Trailing edge: kind={geom.trailing.geometry.kind}, point=({te.x:.4f}, {te.y:.4f})")
-    print(f"Camber length: {geom.camber.length():.4f}, max thickness: {geom.max_thickness().value:.4f}")
+    print(f"Camber length: {geom.camber.length:.4f}, max thickness: {geom.max_thickness().value:.4f}")
     if le_gage is not None:
         print(f"Thickness 3.0 aft of the LE: {le_gage.value:.4f}")
     if te_gage is not None:

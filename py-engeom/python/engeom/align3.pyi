@@ -1,6 +1,6 @@
 from __future__ import annotations
 import numpy
-from .geom3 import Mesh3, Iso3, Point3
+from .geom3 import Mesh3, Iso3, Point3, PointCloud3
 
 
 class Dof6:
@@ -113,7 +113,7 @@ class AlignParams3:
         ...
 
 
-class Alignment3:
+class Align3:
     """
     The result of a completed 3-D alignment operation.
 
@@ -153,6 +153,7 @@ class Alignment3:
         """The working offset transformation $O$ that was active during alignment."""
         ...
 
+    @property
     def residuals(self) -> numpy.ndarray:
         """
         Per-sample residuals from the alignment as a 1-D ``float64`` numpy array.
@@ -162,10 +163,12 @@ class Alignment3:
         """
         ...
 
+    @property
     def residual_mean(self) -> float:
         """The mean of the alignment residuals."""
         ...
 
+    @property
     def residual_mean_std_dev(self) -> tuple[float, float]:
         """The mean and standard deviation of the alignment residuals as a ``(mean, std_dev)`` tuple."""
         ...
@@ -173,7 +176,7 @@ class Alignment3:
 
 class AlignOutcome3:
     """
-    The full outcome of a 3-D alignment: the `Alignment3` itself, plus a record of how the solves
+    The full outcome of a 3-D alignment: the `Align3` itself, plus a record of how the solves
     which produced it terminated.
 
     An alignment is only ever returned when it is usable, so receiving one of these already means
@@ -182,7 +185,7 @@ class AlignOutcome3:
     """
 
     @property
-    def alignment(self) -> Alignment3:
+    def alignment(self) -> Align3:
         """The alignment which was produced."""
         ...
 
@@ -276,5 +279,64 @@ def points_to_mesh(
     :raises ValueError: only when there is no answer at all, meaning the arguments were rejected
         or the initial solve broke down. A solve that merely exhausts its evaluation budget
         returns normally with ``quality == "unconverged"``.
+    """
+    ...
+
+
+def points_to_cloud(
+    points: numpy.ndarray,
+    cloud: PointCloud3,
+    params: AlignParams3,
+    max_extrapolation: float,
+    ignore_off_target: bool = False,
+    refinement_steps: int = 4,
+    sigma_max: float | None = None,
+    point_sigma: numpy.ndarray | list[float] | None = None,
+    patience: int = 100,
+) -> AlignOutcome3:
+    """
+    Align a set of 3-D points to a point cloud, projecting them onto the tangent plane at their
+    nearest neighbour as the solver moves them.
+
+    This is the point-cloud counterpart of `points_to_mesh` and takes the same options, but a cloud
+    is only samples of a surface rather than a surface itself, which brings two differences.
+
+    The match is the query projected onto the tangent plane at the nearest cloud point, not that
+    point itself. Matching to the nearest point would leave a residual floor of roughly half the
+    sample spacing even at a perfect pose, since a test point between samples can get no closer
+    than the gap between them. On an engine blade sampled at 2 mm, that is the difference between
+    recovering a pose to 4.7e-6 mm and to 2.1e-2 mm.
+
+    Because of that, the cloud **must carry per-point normals**: a normal supplies both the tangent
+    plane and the sign of the residual, and neither can be recovered from positions alone. Use
+    `PointCloud3.estimate_normals` if the cloud does not already have them.
+
+    :param points: an ``(N, 3)`` ``float64`` numpy array of test points.
+    :param cloud: the stationary `PointCloud3` to align to, which must carry normals. If it carries
+        ``point_stdev`` that uncertainty is used automatically, and if it carries
+        ``voxel_coherence`` from `reduce_by_voxel` that becomes the per-match weight, so voxels
+        which straddled an edge count for less.
+    :param params: an `AlignParams3` that controls the local origin, working offset, and DOF
+        constraints for the alignment.
+    :param max_extrapolation: how far *laterally* a point may sit from the nearest cloud point and
+        still count as on-surface. This bounds the in-plane distance only, never the distance along
+        the normal, because that component is the misalignment being solved for. It exists to catch
+        points which have wandered past the edge of the cloud, where the tangent plane is an
+        extrapolation into space nothing was measured in. Set it at a small multiple of the sample
+        spacing. Points beyond it are still matched, and are only discarded if
+        ``ignore_off_target`` is set.
+    :param ignore_off_target: weight points at 0.0 when they fall beyond ``max_extrapolation``.
+    :param refinement_steps: rounds of robust reweighting after the initial solve. Zero disables
+        robust weighting entirely.
+    :param sigma_max: the MAGSAC++ upper noise bound. When ``None`` it is estimated from the
+        residuals of the initial solve via the median absolute deviation.
+    :param point_sigma: optional per-point standard deviations, one per input point. Combines in
+        quadrature with any uncertainty the cloud reports.
+    :param patience: the Levenberg-Marquardt evaluation budget, as a multiplier on the parameter
+        count. Must be greater than zero.
+    :returns: an `AlignOutcome3` carrying the alignment and how the solves terminated.
+    :raises ValueError: only when there is no answer at all, meaning the arguments were rejected,
+        the cloud has no normals, or the initial solve broke down. A solve that merely exhausts its
+        evaluation budget returns normally with ``quality == "unconverged"``.
     """
     ...

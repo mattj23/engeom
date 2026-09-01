@@ -5,7 +5,7 @@ import math
 
 import pytest
 import numpy
-from engeom.geom2 import Vector2, Point2, SurfacePoint2, Segment2, Arc2, Circle2, Iso2
+from engeom.geom2 import Vector2, Point2, SurfacePoint2, Segment2, Arc2, Circle2, Iso2, Line2
 
 
 def test_vector_mul_scalar():
@@ -173,9 +173,9 @@ def test_iso2_from_rotation():
 def test_iso2_translation_rotation_decomposition():
     iso = Iso2(3.0, -4.0, 0.7)
 
-    assert iso.translation() == Iso2.from_translation(3.0, -4.0)
-    assert iso.rotation() == Iso2.from_rotation(0.7)
-    assert iso.translation() @ iso.rotation() == iso
+    assert iso.translation == Iso2.from_translation(3.0, -4.0)
+    assert iso.rotation == Iso2.from_rotation(0.7)
+    assert iso.translation @ iso.rotation == iso
 
 
 def test_segment2_transformed_by():
@@ -219,6 +219,37 @@ def test_arc2_to_points_includes_endpoints():
     assert points[0, 1] == pytest.approx(a.a.y)
     assert points[-1, 0] == pytest.approx(a.b.x)
     assert points[-1, 1] == pytest.approx(a.b.y)
+
+
+def test_arc2_from_consensus_bounds_inlier_sector():
+    rng = numpy.random.default_rng(0)
+    cx, cy, r = 2.0, -1.0, 1.3
+
+    # Inliers over the counter-clockwise sector [0, pi] (an upper half), small radial noise.
+    n = 120
+    t = numpy.linspace(0.0, math.pi, n)
+    rr = r + rng.normal(0.0, 0.004, n)
+    inliers = numpy.column_stack([cx + rr * numpy.cos(t), cy + rr * numpy.sin(t)])
+
+    # A cluster of gross outliers near the empty lower sector.
+    m = 40
+    ot = rng.uniform(0.0, 2.0 * math.pi, m)
+    outliers = numpy.column_stack([cx + 0.4 * numpy.cos(ot), cy - 4.0 + 0.4 * numpy.sin(ot)])
+
+    points = numpy.vstack([inliers, outliers])
+    arc = Arc2.from_consensus(points, 0.02, seed=42)
+
+    assert arc.center.x == pytest.approx(cx, abs=5e-3)
+    assert arc.center.y == pytest.approx(cy, abs=5e-3)
+    assert arc.r == pytest.approx(r, abs=5e-3)
+
+    # The arc spans only the inlier sector [0, pi], not the outlier-adjacent lower half. The start
+    # angle is normalized to (-pi, pi] because a noisy endpoint near t=0 can dip just below zero and
+    # wrap to just under 2*pi.
+    assert arc.angle > 0.0
+    start = ((arc.angle0 + math.pi) % (2.0 * math.pi)) - math.pi
+    assert start == pytest.approx(0.0, abs=2e-2)
+    assert arc.angle == pytest.approx(math.pi, abs=3e-2)
 
 
 def test_circle2_transformed_by():
@@ -271,3 +302,31 @@ def test_circle2_contained_points_none_inside():
     points = numpy.array([[5.0, 5.0], [-3.0, 0.0]])
     result = c.contained_points(points)
     assert result.shape == (0, 2)
+
+
+def test_circle2_from_min_enclosing():
+    points = numpy.array([[0.0, 0.0], [2.0, 0.0], [2.0, 2.0], [0.0, 2.0], [1.0, 1.5]])
+    circle = Circle2.from_min_enclosing(points)
+    assert abs(circle.x - 1.0) < 1e-12
+    assert abs(circle.y - 1.0) < 1e-12
+    assert abs(circle.r - math.sqrt(2.0)) < 1e-12
+
+
+def test_circle2_from_min_enclosing_empty_raises():
+    points = numpy.empty((0, 2))
+    with pytest.raises(ValueError):
+        Circle2.from_min_enclosing(points)
+
+
+def test_circle2_from_tangent_and_point():
+    line = Line2(0.0, 0.0, 1.0, 0.0)
+    circle = Circle2.from_tangent_and_point(line, Point2(0.0, 2.0))
+    assert abs(circle.x) < 1e-12
+    assert abs(circle.y - 1.0) < 1e-12
+    assert abs(circle.r - 1.0) < 1e-12
+
+
+def test_circle2_from_tangent_and_point_on_line_raises():
+    line = Line2(0.0, 0.0, 1.0, 0.0)
+    with pytest.raises(ValueError):
+        Circle2.from_tangent_and_point(line, Point2(3.0, 0.0))

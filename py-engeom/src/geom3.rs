@@ -1,10 +1,12 @@
 use crate::bounding::Aabb3;
 use crate::common::Resample;
 use crate::conversions::{
-    array_to_points3, array_to_vectors3, dvec_from_array, dvec_to_array, points_to_array,
-    vectors_to_array,
+    array_to_points2, array_to_points3, array_to_surface_points3, array_to_vec, array_to_vectors3,
+    dvec_from_array, dvec_to_array, points_to_array, vectors_to_array,
 };
-use crate::geom2::{Point2, SplineProjection, SurfacePoint2, Vector2};
+use crate::geom2::{
+    Curve2, CurveGroup2, Line2, Point2, Segment2, SplineProjection, SurfacePoint2, Vector2,
+};
 use engeom::common::To2D;
 use engeom::geom3::IsoExtensions3;
 use numpy::ndarray::{Array1, Array2};
@@ -13,9 +15,11 @@ use numpy::{
 };
 use parry3d_f64::na::{Quaternion, Translation3, UnitQuaternion};
 use pyo3::exceptions::PyIOError;
+use pyo3::exceptions::PyIndexError;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::PyAnyMethods;
-use pyo3::types::PyIterator;
+use pyo3::types::PySliceMethods;
+use pyo3::types::{PyIterator, PySlice};
 use pyo3::{
     Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyRef, PyResult, Python,
     pyclass, pyfunction, pymethods,
@@ -1155,6 +1159,14 @@ impl Sphere3 {
     }
 
     #[staticmethod]
+    fn from_min_enclosing<'py>(points: PyReadonlyArray2<'py, f64>) -> PyResult<Self> {
+        let points = array_to_points3(&points.as_array())?;
+        engeom::Sphere3::from_min_enclosing(&points)
+            .map(Self::from_inner)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[staticmethod]
     #[pyo3(signature=(points, weights=None))]
     fn from_fit<'py>(
         points: PyReadonlyArray2<'py, f64>,
@@ -1594,6 +1606,39 @@ impl Cylinder3 {
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
+    #[staticmethod]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature=(points, normals, sigma_max, min_r=None, max_r=None, max_iterations=None, refinement_steps=None, confidence=None, seed=None))]
+    fn from_consensus<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        normals: PyReadonlyArray2<'py, f64>,
+        sigma_max: f64,
+        min_r: Option<f64>,
+        max_r: Option<f64>,
+        max_iterations: Option<usize>,
+        refinement_steps: Option<usize>,
+        confidence: Option<f64>,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        let points = array_to_surface_points3(&points.as_array(), &normals.as_array())?;
+        let options = magsac_options(
+            sigma_max,
+            max_iterations,
+            refinement_steps,
+            confidence,
+            seed,
+        );
+        let result = engeom::geom3::Cylinder3::from_consensus(
+            &points,
+            sigma_max,
+            min_r,
+            max_r,
+            Some(options),
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(result))
+    }
+
     fn __repr__(&self) -> String {
         let c = self.inner.center;
         let d = self.inner.direction;
@@ -1676,30 +1721,37 @@ impl Cylinder3 {
         self.inner.length
     }
 
+    #[getter]
     fn a(&self) -> Point3 {
         Point3::from_inner(self.inner.a())
     }
 
+    #[getter]
     fn b(&self) -> Point3 {
         Point3::from_inner(self.inner.b())
     }
 
+    #[getter]
     fn axis(&self) -> Line3 {
         Line3::from_inner(self.inner.axis())
     }
 
+    #[getter]
     fn start_cap(&self) -> Circle3 {
         Circle3::from_inner(self.inner.start_cap())
     }
 
+    #[getter]
     fn end_cap(&self) -> Circle3 {
         Circle3::from_inner(self.inner.end_cap())
     }
 
+    #[getter]
     fn volume(&self) -> f64 {
         self.inner.volume()
     }
 
+    #[getter]
     fn lateral_area(&self) -> f64 {
         self.inner.lateral_area()
     }
@@ -1770,6 +1822,39 @@ impl Cone3 {
         engeom::geom3::Cone3::from_points(tip.get_inner(), base_center.get_inner(), radius)
             .map(Self::from_inner)
             .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[staticmethod]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature=(points, normals, sigma_max, min_half_angle=None, max_half_angle=None, max_iterations=None, refinement_steps=None, confidence=None, seed=None))]
+    fn from_consensus<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        normals: PyReadonlyArray2<'py, f64>,
+        sigma_max: f64,
+        min_half_angle: Option<f64>,
+        max_half_angle: Option<f64>,
+        max_iterations: Option<usize>,
+        refinement_steps: Option<usize>,
+        confidence: Option<f64>,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        let points = array_to_surface_points3(&points.as_array(), &normals.as_array())?;
+        let options = magsac_options(
+            sigma_max,
+            max_iterations,
+            refinement_steps,
+            confidence,
+            seed,
+        );
+        let result = engeom::geom3::Cone3::from_consensus(
+            &points,
+            sigma_max,
+            min_half_angle,
+            max_half_angle,
+            Some(options),
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(result))
     }
 
     fn __repr__(&self) -> String {
@@ -1854,30 +1939,37 @@ impl Cone3 {
         self.inner.r()
     }
 
+    #[getter]
     fn base_center(&self) -> Point3 {
         Point3::from_inner(self.inner.base_center())
     }
 
+    #[getter]
     fn axis(&self) -> Line3 {
         Line3::from_inner(self.inner.axis())
     }
 
+    #[getter]
     fn base(&self) -> Circle3 {
         Circle3::from_inner(self.inner.base())
     }
 
+    #[getter]
     fn half_angle(&self) -> f64 {
         self.inner.half_angle()
     }
 
+    #[getter]
     fn slant_height(&self) -> f64 {
         self.inner.slant_height()
     }
 
+    #[getter]
     fn volume(&self) -> f64 {
         self.inner.volume()
     }
 
+    #[getter]
     fn lateral_area(&self) -> f64 {
         self.inner.lateral_area()
     }
@@ -2025,6 +2117,7 @@ impl Curve3 {
         Self::from_inner(self.inner.clone())
     }
 
+    #[getter]
     fn length(&self) -> f64 {
         self.inner.length()
     }
@@ -2076,13 +2169,14 @@ impl Curve3 {
 
     #[staticmethod]
     fn load_tccurve3(path: PathBuf) -> PyResult<Self> {
-        let curve = engeom::io::read_tc_curve3_file(&path)
-            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        let curve =
+            engeom::Curve3::load_tccurve3(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
         Ok(Self::from_inner(curve))
     }
 
-    fn write_tccurve3(&self, path: PathBuf, tol: f64) -> PyResult<()> {
-        engeom::io::write_tc_curve3_file(&path, &self.inner, tol)
+    fn save_tccurve3(&self, path: PathBuf, tol: f64) -> PyResult<()> {
+        self.inner
+            .save_tccurve3(&path, tol)
             .map_err(|e| PyIOError::new_err(e.to_string()))
     }
 }
@@ -2095,6 +2189,327 @@ impl From<engeom::CurveStation3<'_>> for CurveStation3 {
             station.index(),
             station.fraction(),
             station.length_along(),
+        )
+    }
+}
+
+// ================================================================================================
+// Curve groups
+// ================================================================================================
+
+#[pyclass(from_py_object, module = "engeom.geom3")]
+#[derive(Clone)]
+pub struct CurveGroup3 {
+    inner: engeom::CurveGroup3,
+}
+
+impl CurveGroup3 {
+    pub fn get_inner(&self) -> &engeom::CurveGroup3 {
+        &self.inner
+    }
+
+    pub fn from_inner(inner: engeom::CurveGroup3) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl CurveGroup3 {
+    #[new]
+    fn new(curves: Vec<Curve3>) -> PyResult<Self> {
+        let inner =
+            engeom::CurveGroup3::new(curves.iter().map(|c| c.get_inner().clone()).collect())
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self { inner })
+    }
+
+    #[getter]
+    fn curves(&self) -> Vec<Curve3> {
+        self.inner
+            .curves()
+            .iter()
+            .map(|c| Curve3::from_inner(c.clone()))
+            .collect()
+    }
+
+    fn __len__(&self) -> usize {
+        self.inner.len()
+    }
+
+    fn __getitem__<'py>(
+        &self,
+        py: Python<'py>,
+        index: &Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let n = self.inner.len() as isize;
+
+        if let Ok(slice) = index.cast::<PySlice>() {
+            // A slice returns a plain list rather than another group. Like any Python sequence, a
+            // slice may select nothing, but a `CurveGroup3` must have at least one member curve and
+            // therefore cannot represent an empty result.
+            let indices = slice.indices(n)?;
+            let mut picked = Vec::with_capacity(indices.slicelength);
+            let mut i = indices.start;
+            for _ in 0..indices.slicelength {
+                picked.push(Curve3::from_inner(self.inner.curves()[i as usize].clone()));
+                i += indices.step;
+            }
+            return picked.into_bound_py_any(py);
+        }
+
+        let index: isize = index.extract()?;
+        // Negative indices count from the end, as they do for any Python sequence.
+        let i = if index < 0 { index + n } else { index };
+        if i < 0 || i >= n {
+            return Err(PyIndexError::new_err("curve group index out of range"));
+        }
+        Curve3::from_inner(self.inner.curves()[i as usize].clone()).into_bound_py_any(py)
+    }
+
+    fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyIterator>> {
+        let items = self.curves();
+        PyIterator::from_object(&items.into_pyobject(py)?)
+    }
+
+    #[getter]
+    fn aabb(&self) -> Aabb3 {
+        Aabb3::from_inner(self.inner.aabb())
+    }
+
+    #[getter]
+    fn length(&self) -> f64 {
+        self.inner.length()
+    }
+
+    fn at_closest_to_point(&self, point: Point3) -> (usize, CurveStation3) {
+        let (member, station) = self.inner.at_closest_to_point(point.get_inner());
+        (member, station.into())
+    }
+
+    fn new_transformed_by(&self, iso: Iso3) -> Self {
+        Self::from_inner(self.inner.new_transformed_by(iso.get_inner()))
+    }
+
+    #[staticmethod]
+    fn load_tccurve3(path: PathBuf) -> PyResult<Self> {
+        let group = engeom::CurveGroup3::load_tccurve3(&path)
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(group))
+    }
+
+    fn save_tccurve3(&self, path: PathBuf, tol: f64) -> PyResult<()> {
+        self.inner
+            .save_tccurve3(&path, tol)
+            .map_err(|e| PyIOError::new_err(e.to_string()))
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "<CurveGroup3 n={}, l={}>",
+            self.inner.len(),
+            self.inner.length()
+        )
+    }
+}
+
+// ================================================================================================
+// Planar mapping
+// ================================================================================================
+
+/// Maps geometry between the world and the two-dimensional coordinate system of a plane. A map is
+/// built for a section by `Mesh3.section_with_plane`, or directly from a plane by the `from_plane*`
+/// constructors.
+#[pyclass(from_py_object, module = "engeom.geom3")]
+#[derive(Clone, Debug)]
+pub struct PlanarMap {
+    inner: engeom::PlanarMap,
+}
+
+impl PlanarMap {
+    pub fn get_inner(&self) -> &engeom::PlanarMap {
+        &self.inner
+    }
+
+    pub fn from_inner(inner: engeom::PlanarMap) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl PlanarMap {
+    #[staticmethod]
+    fn from_plane(plane: Plane3) -> Self {
+        Self::from_inner(engeom::PlanarMap::from_plane(plane.get_inner()))
+    }
+
+    #[staticmethod]
+    fn from_plane_oriented(plane: Plane3, origin: Point3, x: Vector3) -> PyResult<Self> {
+        let inner = engeom::PlanarMap::from_plane_oriented(
+            plane.get_inner(),
+            origin.get_inner(),
+            x.get_inner(),
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(inner))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(plane, points, weights = None))]
+    fn from_plane_svd(
+        plane: Plane3,
+        points: PyReadonlyArray2<'_, f64>,
+        weights: Option<PyReadonlyArray1<'_, f64>>,
+    ) -> PyResult<Self> {
+        let points = array_to_points3(&points.as_array())?;
+        let weights = weights.map(|w| array_to_vec(&w)).transpose()?;
+        let inner =
+            engeom::PlanarMap::from_plane_svd(plane.get_inner(), &points, weights.as_deref())
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(inner))
+    }
+
+    #[getter]
+    fn frame(&self) -> Iso3 {
+        Iso3::from_inner(*self.inner.frame())
+    }
+
+    fn inverse(&self) -> Iso3 {
+        Iso3::from_inner(*self.inner.inverse())
+    }
+
+    #[getter]
+    fn plane(&self) -> Plane3 {
+        Plane3::from_inner(self.inner.plane())
+    }
+
+    fn point_to_2d(&self, point: Point3) -> Point2 {
+        Point2::from_inner(self.inner.point_to_2d(point.get_inner()))
+    }
+
+    fn point_to_3d(&self, point: Point2) -> Point3 {
+        Point3::from_inner(self.inner.point_to_3d(point.get_inner()))
+    }
+
+    fn points_to_2d<'py>(
+        &self,
+        py: Python<'py>,
+        points: PyReadonlyArray2<'py, f64>,
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let points = array_to_points3(&points.as_array())?;
+        let flat = self.inner.points_to_2d(&points);
+        Ok(points_to_array(&flat).into_pyarray(py))
+    }
+
+    fn points_to_3d<'py>(
+        &self,
+        py: Python<'py>,
+        points: PyReadonlyArray2<'py, f64>,
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let points = array_to_points2(&points.as_array())?;
+        let lifted = self.inner.points_to_3d(&points);
+        Ok(points_to_array(&lifted).into_pyarray(py))
+    }
+
+    fn vector_to_2d(&self, vector: Vector3) -> Vector2 {
+        Vector2::from_inner(self.inner.vector_to_2d(vector.get_inner()))
+    }
+
+    fn vector_to_3d(&self, vector: Vector2) -> Vector3 {
+        Vector3::from_inner(self.inner.vector_to_3d(vector.get_inner()))
+    }
+
+    fn unit_vector_to_2d(&self, vector: Vector3) -> PyResult<Vector2> {
+        let unit = engeom::UnitVec3::try_new(*vector.get_inner(), 1e-12)
+            .ok_or_else(|| PyValueError::new_err("the vector must not be zero"))?;
+        let flat = self
+            .inner
+            .unit_vector_to_2d(&unit)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Vector2::from_inner(flat.into_inner()))
+    }
+
+    fn unit_vector_to_3d(&self, vector: Vector2) -> PyResult<Vector3> {
+        let unit = engeom::UnitVec2::try_new(*vector.get_inner(), 1e-12)
+            .ok_or_else(|| PyValueError::new_err("the vector must not be zero"))?;
+        Ok(Vector3::from_inner(
+            self.inner.unit_vector_to_3d(&unit).into_inner(),
+        ))
+    }
+
+    fn surface_point_to_2d(&self, sp: SurfacePoint3) -> PyResult<SurfacePoint2> {
+        let flat = self
+            .inner
+            .surface_point_to_2d(sp.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(SurfacePoint2::from_inner(flat))
+    }
+
+    fn surface_point_to_3d(&self, sp: SurfacePoint2) -> SurfacePoint3 {
+        SurfacePoint3::from_inner(self.inner.surface_point_to_3d(sp.get_inner()))
+    }
+
+    fn line_to_2d(&self, line: Line3) -> PyResult<Line2> {
+        let flat = self
+            .inner
+            .line_to_2d(line.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Line2::from_inner(flat))
+    }
+
+    fn line_to_3d(&self, line: Line2) -> Line3 {
+        Line3::from_inner(self.inner.line_to_3d(line.get_inner()))
+    }
+
+    fn segment_to_2d(&self, segment: Segment3) -> PyResult<Segment2> {
+        let flat = self
+            .inner
+            .segment_to_2d(segment.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Segment2::from_inner(flat))
+    }
+
+    fn segment_to_3d(&self, segment: Segment2) -> Segment3 {
+        Segment3::from_inner(self.inner.segment_to_3d(segment.get_inner()))
+    }
+
+    fn curve_to_2d(&self, curve: Curve3) -> PyResult<Curve2> {
+        let flat = self
+            .inner
+            .curve_to_2d(curve.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Curve2::from_inner(flat))
+    }
+
+    fn curve_to_3d(&self, curve: Curve2) -> PyResult<Curve3> {
+        let lifted = self
+            .inner
+            .curve_to_3d(curve.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Curve3::from_inner(lifted))
+    }
+
+    fn curve_group_to_2d(&self, group: CurveGroup3) -> PyResult<CurveGroup2> {
+        let flat = self
+            .inner
+            .curve_group_to_2d(group.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(CurveGroup2::from_inner(flat))
+    }
+
+    fn curve_group_to_3d(&self, group: CurveGroup2) -> PyResult<CurveGroup3> {
+        let lifted = self
+            .inner
+            .curve_group_to_3d(group.get_inner())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(CurveGroup3::from_inner(lifted))
+    }
+
+    fn __repr__(&self) -> String {
+        let o = self.inner.frame().origin();
+        let z = self.inner.frame().z();
+        format!(
+            "<PlanarMap origin=[{}, {}, {}] normal=[{}, {}, {}]>",
+            o.x, o.y, o.z, z.x, z.y, z.z
         )
     }
 }
@@ -2372,12 +2787,14 @@ impl Iso3 {
         }
     }
 
+    #[getter]
     fn translation(&self) -> Iso3 {
         Self {
             inner: engeom::Iso3::from_parts(self.inner.translation, UnitQuaternion::identity()),
         }
     }
 
+    #[getter]
     fn rotation(&self) -> Iso3 {
         Self {
             inner: engeom::Iso3::from_parts(Translation3::identity(), self.inner.rotation),
@@ -2559,6 +2976,68 @@ impl CubicSpline3 {
                 engeom::Point3::new(x3, y3, z3),
             ),
         }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(points, p0, p3, weights=None))]
+    fn from_fit_with_ends<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        p0: &Point3,
+        p3: &Point3,
+        weights: Option<PyReadonlyArray1<'py, f64>>,
+    ) -> PyResult<Self> {
+        let points = array_to_points3(&points.as_array())?;
+        let weights = weights.as_ref().map(|w| w.as_array().to_vec());
+        let spline = engeom::geom3::CubicSpline3::from_fit_with_ends(
+            &points,
+            p0.get_inner(),
+            p3.get_inner(),
+            weights.as_deref(),
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(spline))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(points, p0, tangent0, p3, tangent3, weights=None))]
+    fn from_fit_hermite<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        p0: &Point3,
+        tangent0: &Vector3,
+        p3: &Point3,
+        tangent3: &Vector3,
+        weights: Option<PyReadonlyArray1<'py, f64>>,
+    ) -> PyResult<Self> {
+        let points = array_to_points3(&points.as_array())?;
+        let weights = weights.as_ref().map(|w| w.as_array().to_vec());
+        let unit = |v: &Vector3, name: &str| {
+            engeom::na::Unit::try_new(*v.get_inner(), 1e-12)
+                .ok_or_else(|| PyValueError::new_err(format!("{} must be a non-zero vector", name)))
+        };
+        let spline = engeom::geom3::CubicSpline3::from_fit_hermite(
+            &points,
+            p0.get_inner(),
+            &unit(tangent0, "tangent0")?,
+            p3.get_inner(),
+            &unit(tangent3, "tangent3")?,
+            weights.as_deref(),
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(spline))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(points, weights=None))]
+    fn from_fit_principal_axis<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        weights: Option<PyReadonlyArray1<'py, f64>>,
+    ) -> PyResult<Self> {
+        let points = array_to_points3(&points.as_array())?;
+        let weights = weights.as_ref().map(|w| w.as_array().to_vec());
+        let spline =
+            engeom::geom3::CubicSpline3::from_fit_principal_axis(&points, weights.as_deref())
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(spline))
     }
 
     fn __getstate__(&self) -> CubicSpline3State {

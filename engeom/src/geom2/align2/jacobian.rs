@@ -19,7 +19,7 @@ use parry2d_f64::na::{Dim, Matrix, RawStorageMut, Storage, U3};
 ///   associated with the different partial differentials.
 ///
 /// returns: Matrix<f64, Const<3>, Const<1>, ArrayStorage<f64, 3, 1>>
-pub fn point_surf_jacobian2(
+pub fn point_surf_jacobian(
     p: &impl PCoords<2>,
     c: &impl SPCoords<2>,
     align: &AlignValues2,
@@ -69,6 +69,65 @@ pub fn point_surf_jacobian2(
     result
 }
 
+/// The counterpart to [`point_surf_jacobian`] for the case where it is the *target* entity whose
+/// transform is being optimized, rather than the test point's.
+///
+/// This is what a multi-body adjustment needs. When two measured curves are aligned to each other,
+/// a correspondence between them constrains both bodies: moving the test curve slides `p`, and
+/// moving the reference curve slides `c`. Each contributes a block to the same jacobian row, and
+/// this function supplies the second one.
+///
+/// The residual is the same signed point-to-point distance that [`point_surf_jacobian`]
+/// differentiates, so the two differ only in which point the parameters move and therefore in
+/// sign: displacing the target by `v` changes the distance by `-dir . v` where `dir` is the unit
+/// deviation direction.
+///
+/// The rotation partial is evaluated at `c`, which is the point this function's parameters
+/// actually move. As in the forward case, the choice turns out not to matter: the skew-symmetry
+/// argument in [`point_surf_jacobian`] applies unchanged here, since the difference between
+/// evaluating at `p` and at `c` is still orthogonal to a `dir` that is still parallel to `p - c`.
+/// `stress_surf_rev_against_numeric` passes either way. `c` is used because it is the point the
+/// derivative is actually taken with respect to, not because the other form is wrong.
+///
+/// This is the 2D counterpart of `geom3::align3::jacobian::point_surf_jacobian_rev`, and is
+/// deliberately structured identically to it.
+///
+/// # Arguments
+///
+/// * `p`: the test point, in the common coordinate system the residual is measured in
+/// * `c`: the closest point on the target surface, in that same coordinate system, meaning it has
+///   already been moved by the target's current transform
+/// * `align`: the current alignment values of the **target** entity
+///
+/// returns: Matrix<f64, Const<3>, Const<1>, ArrayStorage<f64, 3, 1>>
+pub fn point_surf_jacobian_rev(
+    p: &impl PCoords<2>,
+    c: &impl SPCoords<2>,
+    align: &AlignValues2,
+) -> AlignStorage2 {
+    let mut result = AlignStorage2::zeros();
+
+    let sign = c.scalar_projection(p).signum();
+
+    let dev = p.coords() - c.coords();
+    let dir = if dev.norm_squared() < 1e-16 {
+        c.normal().into_inner()
+    } else {
+        dev.normalize() * sign
+    };
+
+    // The target moving away from the test point closes the same distance that the test point
+    // moving toward the target would, hence the negation.
+    let dir = -dir;
+
+    result[0] = val_or_zero(align.dtx.dot(&dir), align.dof.tx);
+    result[1] = val_or_zero(align.dty.dot(&dir), align.dof.ty);
+
+    result[2] = val_or_zero(align.drz(c).dot(&dir), align.dof.rz);
+
+    result
+}
+
 fn val_or_zero(value: f64, condition: bool) -> f64 {
     if condition { value } else { 0.0 }
 }
@@ -97,13 +156,13 @@ mod tests {
     use crate::common::dist;
     use crate::common::random_geometry::RandomGeometry2;
     use crate::geom2::align2::{AlignOrigin2, AlignParams2, AlignSurfMatch2};
-    use crate::geom2::{Point2, UnitVec2, Vector2};
+    use crate::geom2::{Point2, SurfacePoint2, UnitVec2, Vector2};
     use approx::assert_relative_eq;
     use std::f64::consts::PI;
 
     const NUMERIC_EPS: f64 = 1e-7;
 
-    /// The residual that `point_surf_jacobian2` differentiates: the signed distance from the test
+    /// The residual that `point_surf_jacobian` differentiates: the signed distance from the test
     /// point to its match, with the sign taken from which side of the target's normal it lies on.
     ///
     /// This must stay in step with the residual computed in `points_to_surface.rs`; the jacobian
@@ -149,7 +208,7 @@ mod tests {
         let p = Point2::new(1.0, 0.0);
         let c = make_match(&p, Vector2::new(-1.0, 0.0), false);
 
-        let j = point_surf_jacobian2(&p, &c, &params.compute_values());
+        let j = point_surf_jacobian(&p, &c, &params.compute_values());
 
         assert_relative_eq!(j.x, 1.0, epsilon = 1e-10);
         assert_relative_eq!(j.y, 0.0, epsilon = 1e-10);
@@ -164,7 +223,7 @@ mod tests {
         let p = Point2::new(1.0, 0.0);
         let c = make_match(&p, Vector2::new(-1.0, 0.0), true);
 
-        let j = point_surf_jacobian2(&p, &c, &params.compute_values());
+        let j = point_surf_jacobian(&p, &c, &params.compute_values());
 
         assert_relative_eq!(j.x, -1.0, epsilon = 1e-10);
     }
@@ -176,7 +235,7 @@ mod tests {
         let p = Point2::new(1.0, 2.0);
         let c = make_match(&p, Vector2::new(-0.5, -0.3), false);
 
-        let j = point_surf_jacobian2(&p, &c, &params.compute_values());
+        let j = point_surf_jacobian(&p, &c, &params.compute_values());
 
         assert_eq!(j.x, 0.0);
         assert_eq!(j.z, 0.0);
@@ -214,11 +273,128 @@ mod tests {
                 numeric(&params, &p_local, &c, 2),
             ];
 
-            let j = point_surf_jacobian2(&p, &c, &params.compute_values());
+            let j = point_surf_jacobian(&p, &c, &params.compute_values());
 
             assert_relative_eq!(j.x, expected[0], epsilon = 1e-5);
             assert_relative_eq!(j.y, expected[1], epsilon = 1e-5);
             assert_relative_eq!(j.z, expected[2], epsilon = 1e-5);
         }
+    }
+
+    // ============================================================================================
+    // The reverse point-to-surface jacobian, checked against finite differences
+    // ============================================================================================
+
+    /// The residual `point_surf_jacobian_rev` differentiates: the signed point-to-point distance
+    /// from a fixed test point to a target point which the target's own transform moves.
+    ///
+    /// `c_local` and `n_local` describe the match in the target's own coordinates, so that
+    /// perturbing the target's parameters moves it as it would during a real solve.
+    fn surf_rev_residual(
+        params: &AlignParams2,
+        p: &Point2,
+        c_local: &Point2,
+        n_local: &UnitVec2,
+    ) -> f64 {
+        let sp = SurfacePoint2::new(*c_local, *n_local).transformed_by(&params.compute_transform());
+        dist(p, &sp.point) * sp.scalar_projection(p).signum()
+    }
+
+    /// A finite-difference estimate of the partial derivative of that residual with respect to one
+    /// of the target's three parameters.
+    fn surf_rev_numeric(
+        params: &AlignParams2,
+        p: &Point2,
+        c_local: &Point2,
+        n_local: &UnitVec2,
+        index: usize,
+    ) -> f64 {
+        let mut lo = params.clone();
+        lo.set_index(index, params.storage()[index] - NUMERIC_EPS);
+        let mut hi = params.clone();
+        hi.set_index(index, params.storage()[index] + NUMERIC_EPS);
+
+        let r_lo = surf_rev_residual(&lo, p, c_local, n_local);
+        let r_hi = surf_rev_residual(&hi, p, c_local, n_local);
+        (r_hi - r_lo) / (2.0 * NUMERIC_EPS)
+    }
+
+    #[test]
+    fn stress_surf_rev_against_numeric() {
+        // The analytic reverse jacobian against a central finite difference, over random local
+        // origins, working offsets, parameter vectors, and geometry. This is the gate on the
+        // reverse form: the sign convention and the requirement that the rotation partial be
+        // evaluated at `c` are both easy to get wrong by inspection and obvious here.
+        //
+        // Seeded so a failure is reproducible and so this can never join the flaky-by-RNG set.
+        let mut rg = RandomGeometry2::from_seed(0x5eed_a11c);
+
+        for _ in 0..2000 {
+            let params =
+                AlignParams2::new(AlignOrigin2::Local(rg.iso2(5.0)), Some(rg.iso2(5.0)), None)
+                    .with_storage(AlignStorage2::new(
+                        rg.f64_sym(3.0),
+                        rg.f64_sym(3.0),
+                        rg.f64_sym(0.8),
+                    ));
+
+            let c_local = rg.point(5.0);
+            let n_local = rg.unit_vec();
+
+            // Keep the test point well away from the match, so the deviation direction is well
+            // conditioned and the residual is differentiable.
+            let sp =
+                SurfacePoint2::new(c_local, n_local).transformed_by(&params.compute_transform());
+            let p = sp.point + sp.normal.into_inner() * rg.f64_sym(4.0).abs().max(0.5);
+
+            let analytic = point_surf_jacobian_rev(&p, &sp, &params.compute_values());
+
+            for i in 0..3 {
+                let numeric = surf_rev_numeric(&params, &p, &c_local, &n_local, i);
+                assert_relative_eq!(analytic[i], numeric, epsilon = 1e-6);
+            }
+        }
+    }
+
+    #[test]
+    fn surf_rev_is_the_negative_of_the_forward_form_for_translations() {
+        // Sliding the target by `v` and sliding the test point by `-v` change the distance
+        // identically, so the translation partials of the two forms must be exact negatives. The
+        // rotation partials are not related this way, because they pivot about different points.
+        let params = AlignParams2::from_origin(None);
+        let values = params.compute_values();
+
+        let c = Point2::new(1.0, 2.0);
+        let n = UnitVec2::new_normalize(Vector2::new(0.0, 1.0));
+        let p = Point2::new(1.0, 3.5);
+        let sp = SurfacePoint2::new(c, n);
+
+        let fwd = point_surf_jacobian(&p, &sp, &values);
+        let rev = point_surf_jacobian_rev(&p, &sp, &values);
+
+        for i in 0..2 {
+            assert_relative_eq!(fwd[i], -rev[i], epsilon = 1e-12);
+        }
+    }
+
+    #[test]
+    fn surf_rev_respects_locked_dof() {
+        let dof = crate::geom2::align2::Dof3::new(true, false, false);
+        let params = AlignParams2::from_origin(Some(dof));
+        let values = params.compute_values();
+
+        let c = Point2::new(1.0, 2.0);
+        let n = UnitVec2::new_normalize(Vector2::new(0.0, 1.0));
+        let p = Point2::new(2.0, 3.0);
+
+        let rev = point_surf_jacobian_rev(&p, &SurfacePoint2::new(c, n), &values);
+
+        for i in [1usize, 2] {
+            assert_eq!(
+                rev[i], 0.0,
+                "locked parameter {i} should have a zero column"
+            );
+        }
+        assert_ne!(rev[0], 0.0);
     }
 }

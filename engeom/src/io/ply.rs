@@ -11,9 +11,9 @@
 //! `confidence` and `intensity` per vertex, and MeshLab reads and writes `quality`.
 //!
 //! This reader preserves all of it. Properties with a recognized meaning are routed to the typed
-//! fields on `MeshAttrSet3`, and everything else is carried through into the open attribute maps
-//! under its own name, so that data which the library has no opinion about still survives a round
-//! trip.
+//! fields on `PointAttrSet3` and `FaceAttrSet3`. Everything else is preserved under its original
+//! name in the open attribute maps, so data that the library does not interpret still survives a
+//! round trip.
 //!
 //! # Mapping
 //!
@@ -41,16 +41,18 @@
 //!
 //! # Known limitations
 //!
-//! - An `alpha` channel is discarded, because `MeshAttrSet3` stores colors as RGB.
+//! - An `alpha` channel is discarded, because the attribute sets store colors as RGB.
 //! - Polygons with more than three indices are fan-triangulated, and any per-face attribute is
 //!   replicated across the triangles a polygon expands into.
-//! - Per-corner properties (PLY's face `texcoord`, for instance) are not supported, since
-//!   `MeshAttrSet3` has no per-corner domain yet.
+//! - Per-corner properties (PLY's face `texcoord`, for instance) are not supported because the mesh
+//!   types do not yet have a per-corner attribute domain.
 
 use crate::geom3::attributes3::Attr3;
+use crate::geom3::attributes3::FaceAttrSet3;
 use crate::geom3::attributes3::PointAttrSet3;
-use crate::geom3::mesh::data::{MeshAttrSet3, MeshData3};
-use crate::{Point3, Result, UnitVec3, Vector3};
+use crate::geom3::mesh::MeshView3;
+use crate::geom3::mesh::data::MeshData3;
+use crate::{Point2, Point3, Result, UnitVec3, Vector3};
 use ply_rs_bw::parser::{Parser, Reader};
 use ply_rs_bw::ply::{
     BeginList, ElementDef, Encoding, Header, PropertyAccess, PropertyAccessResult, PropertyDef,
@@ -93,7 +95,7 @@ pub fn read_ply_mesh_data<R: BufRead>(source: R) -> Result<MeshData3> {
 
     let mut points: Option<Vec<Point3>> = None;
     let mut point_attrs = PointAttrSet3::empty();
-    let mut attrs = MeshAttrSet3::empty();
+    let mut face_attrs = FaceAttrSet3::empty();
     let mut faces: Vec<[u32; 3]> = Vec::new();
 
     // The payload sections appear in header declaration order, so every element has to be consumed
@@ -107,7 +109,7 @@ pub fn read_ply_mesh_data<R: BufRead>(source: R) -> Result<MeshData3> {
             "face" => {
                 let face_parser = Parser::<FaceRow>::new();
                 let rows = face_parser.read_payload_for_element(&mut reader, def, &header)?;
-                faces = read_faces(def, &rows, &mut attrs)?;
+                faces = read_faces(def, &rows, &mut face_attrs)?;
             }
             _ => {
                 let skip_parser = Parser::<SkipRow>::new();
@@ -117,14 +119,13 @@ pub fn read_ply_mesh_data<R: BufRead>(source: R) -> Result<MeshData3> {
     }
 
     let points = points.ok_or("PLY file has no 'vertex' element")?;
-    attrs.set_points(point_attrs, points.len())?;
-    MeshData3::new_with_attrs(points, faces, attrs)
+    MeshData3::new_with_attrs(points, faces, point_attrs, face_attrs)
 }
 
 /// Read the point data of a PLY file, ignoring any connectivity it declares.
 ///
 /// This is the point-domain half of [`read_ply_mesh_data`], and routes the `vertex` element's
-/// properties exactly the same way. It is the reader behind `PointCloudData3::load_ply`.
+/// properties exactly the same way. It is the reader behind `PointCloud3::load_ply`.
 ///
 /// A `face` element is **not** an error here, but it is reported through the returned flag so that
 /// a caller loading what it believes to be a point cloud can refuse a file which is really a mesh
@@ -258,7 +259,11 @@ impl PlyPrecision {
 /// * `opts`: encoding and header options
 ///
 /// returns: `Result<()>`
-pub fn write_ply_mesh_data(path: &Path, mesh: &MeshData3, opts: &PlyWriteOpts) -> Result<()> {
+pub fn write_ply_mesh<'a>(
+    path: &Path,
+    mesh: impl Into<MeshView3<'a>>,
+    opts: &PlyWriteOpts,
+) -> Result<()> {
     let file = File::create(path)?;
     let mut out = BufWriter::new(file);
     write_ply_to(&mut out, mesh, opts)?;
@@ -278,9 +283,14 @@ pub fn write_ply_mesh_data(path: &Path, mesh: &MeshData3, opts: &PlyWriteOpts) -
 /// * `opts`: encoding and header options
 ///
 /// returns: `Result<()>`
-pub fn write_ply_to<W: Write>(out: &mut W, mesh: &MeshData3, opts: &PlyWriteOpts) -> Result<()> {
-    let point_cols = point_columns(mesh.points(), mesh.attrs().points());
-    let face_cols = face_columns(mesh);
+pub fn write_ply_to<'a, W: Write>(
+    out: &mut W,
+    mesh: impl Into<MeshView3<'a>>,
+    opts: &PlyWriteOpts,
+) -> Result<()> {
+    let mesh = mesh.into();
+    let point_cols = point_columns(mesh.points(), mesh.point_attrs());
+    let face_cols = face_columns(mesh.face_attrs());
 
     let mut header = new_header(opts);
     header.elements.insert(
@@ -332,9 +342,9 @@ pub fn write_ply_to<W: Write>(out: &mut W, mesh: &MeshData3, opts: &PlyWriteOpts
 
 /// Write points and their attributes to a PLY file, as a `vertex` element with no connectivity.
 ///
-/// The vertex section is byte-identical to what [`write_ply_mesh_data`] produces for the same
+/// The vertex section is byte-identical to what [`write_ply_mesh`] produces for the same
 /// points and attributes; the file simply has no `face` element. This is the writer behind
-/// `PointCloudData3::save_ply`.
+/// `PointCloud3::save_ply`.
 ///
 /// # Arguments
 ///
@@ -458,6 +468,7 @@ fn write_row<W: Write>(
 /// position or a vector attribute is split across the three PLY properties it needs.
 enum Col<'a> {
     Point(&'a [Point3], usize),
+    Flat(&'a [Point2], usize),
     Unit(&'a [UnitVec3], usize),
     Scalar(&'a [f64]),
     Label(&'a [u32]),
@@ -472,7 +483,7 @@ impl Col<'_> {
     /// are integers and have a fixed width.
     fn scalar_type(&self, precision: PlyPrecision) -> ScalarType {
         match self {
-            Col::Point(..) | Col::Unit(..) | Col::Scalar(..) | Col::Vector(..) => {
+            Col::Point(..) | Col::Flat(..) | Col::Unit(..) | Col::Scalar(..) | Col::Vector(..) => {
                 precision.scalar_type()
             }
             Col::Label(..) => ScalarType::UInt,
@@ -484,6 +495,7 @@ impl Col<'_> {
     fn double(&self, i: usize) -> Option<f64> {
         match self {
             Col::Point(v, c) => Some(v[i][*c]),
+            Col::Flat(v, c) => Some(v[i][*c]),
             Col::Unit(v, c) => Some(v[i][*c]),
             Col::Scalar(v) => Some(v[i]),
             Col::Vector(v, c) => Some(v[i][*c]),
@@ -534,6 +546,11 @@ fn point_columns<'a>(points: &'a [Point3], attrs: &'a PointAttrSet3) -> Vec<(Str
     if let Some(stdev) = attrs.stdev() {
         cols.push(("stdev".to_string(), Col::Scalar(stdev)));
     }
+    if let Some(flat) = attrs.flat() {
+        for (name, c) in [("flat_x", 0), ("flat_y", 1)] {
+            cols.push((name.to_string(), Col::Flat(flat, c)));
+        }
+    }
 
     let mut names: Vec<&str> = attrs.attr_names().collect();
     names.sort_unstable();
@@ -545,23 +562,23 @@ fn point_columns<'a>(points: &'a [Point3], attrs: &'a PointAttrSet3) -> Vec<(Str
 }
 
 /// Build the columns for the `face` element, excluding the index list which is always present.
-fn face_columns(mesh: &MeshData3) -> Vec<(String, Col<'_>)> {
+fn face_columns(attrs: &FaceAttrSet3) -> Vec<(String, Col<'_>)> {
     let mut cols = Vec::new();
 
-    if let Some(colors) = mesh.face_colors() {
+    if let Some(colors) = attrs.colors() {
         for (name, c) in [("red", 0), ("green", 1), ("blue", 2)] {
             cols.push((name.to_string(), Col::Color(colors, c)));
         }
     }
 
-    if let Some(labels) = mesh.face_labels() {
+    if let Some(labels) = attrs.labels() {
         cols.push(("label".to_string(), Col::Label(labels)));
     }
 
-    let mut names: Vec<&str> = mesh.attrs().face_attr_names().collect();
+    let mut names: Vec<&str> = attrs.attr_names().collect();
     names.sort_unstable();
     for name in names {
-        push_open_attr(&mut cols, name, mesh.face_attr(name).unwrap());
+        push_open_attr(&mut cols, name, attrs.attr(name).unwrap());
     }
 
     cols
@@ -823,6 +840,26 @@ fn read_points(
         attrs.set_stdev(Some(stdev.values.clone()), n)?;
     }
 
+    match (
+        take_column(&columns, "flat_x"),
+        take_column(&columns, "flat_y"),
+    ) {
+        (Some(fx), Some(fy)) => {
+            let flat = (0..n)
+                .map(|i| Point2::new(fx.values[i], fy.values[i]))
+                .collect();
+            attrs.set_flat(Some(flat), n)?;
+        }
+        (None, None) => {}
+        _ => {
+            return Err(
+                "PLY 'vertex' element has only one of 'flat_x' and 'flat_y', but flat \
+                        coordinates need both"
+                    .into(),
+            );
+        }
+    }
+
     let (composites, taken) = take_composites(&columns);
     for (name, attr) in composites {
         attrs.insert_attr(&name, attr, n)?;
@@ -838,7 +875,8 @@ fn read_points(
 /// Property names on the vertex element which are consumed by a typed field rather than carried
 /// into the open attribute map.
 const POINT_CONSUMED: &[&str] = &[
-    "x", "y", "z", "nx", "ny", "nz", "red", "green", "blue", "alpha", "stdev", "std_dev",
+    "x", "y", "z", "nx", "ny", "nz", "red", "green", "blue", "alpha", "stdev", "std_dev", "flat_x",
+    "flat_y",
 ];
 
 // ===============================================================================================
@@ -850,7 +888,7 @@ const POINT_CONSUMED: &[&str] = &[
 fn read_faces(
     def: &ElementDef,
     rows: &[FaceRow],
-    attrs: &mut MeshAttrSet3,
+    attrs: &mut FaceAttrSet3,
 ) -> Result<Vec<[u32; 3]>> {
     let mut faces = Vec::with_capacity(rows.len());
 
@@ -889,21 +927,21 @@ fn read_faces(
     let n = faces.len();
 
     if let Some(colors) = take_colors(&columns, n) {
-        attrs.set_face_colors(Some(colors), n)?;
+        attrs.set_colors(Some(colors), n)?;
     }
 
     if let Some(labels) = take_column(&columns, "label").or_else(|| take_column(&columns, "labels"))
     {
-        attrs.set_face_labels(Some(labels.as_labels()?), n)?;
+        attrs.set_labels(Some(labels.as_labels()?), n)?;
     }
 
     let (composites, taken) = take_composites(&columns);
     for (name, attr) in composites {
-        attrs.insert_face_attr(&name, attr, n)?;
+        attrs.insert_attr(&name, attr, n)?;
     }
 
     for column in remaining(&columns, FACE_CONSUMED, &taken) {
-        attrs.insert_face_attr(&column.name, column.to_attr(), n)?;
+        attrs.insert_attr(&column.name, column.to_attr(), n)?;
     }
 
     Ok(faces)
@@ -1120,7 +1158,7 @@ mod tests {
         assert_eq!(mesh.face_count(), 82275);
 
         // Nothing beyond positions and faces was declared, so nothing should have been invented.
-        assert!(mesh.attrs().is_empty());
+        assert!(!mesh.has_attrs());
 
         Ok(())
     }
@@ -1156,8 +1194,22 @@ mod tests {
         Ok(())
     }
 
+    /// How far a vertex may sit from the embedded fixture's idea of it.
+    ///
+    /// The fixture is a quantized file, so it never held the PLY's coordinates to better than its
+    /// own tolerance, which is about 1.9 um. It was re-encoded once when the point block format
+    /// changed, and re-encoding a quantized file necessarily moves its points by up to that same
+    /// tolerance again. This is the sum of the two, rounded up, and it is still four orders of
+    /// magnitude below anything a genuine reader fault would produce on a 150 mm part.
+    const REFERENCE_EPS: f64 = 4e-6;
+
     /// The positions and faces must match what the old reader produced, so that swapping the
     /// implementation cannot have moved any geometry.
+    ///
+    /// The embedded fixture is a tcmesh, which renumbers vertices on write, so the two cannot be
+    /// compared index for index. The renumbering is derived from connectivity alone, so recomputing
+    /// the same plan from the freshly parsed faces says where each one went. A reader that changed
+    /// either the geometry or the vertex order still fails this.
     #[test]
     fn agrees_with_the_embedded_reference_mesh() -> Result<()> {
         let mesh = load_ply_mesh_data(&get_test_file_path("bun_zipper_res4.ply"))?;
@@ -1166,11 +1218,22 @@ mod tests {
         assert_eq!(mesh.point_count(), expected.points().len());
         assert_eq!(mesh.face_count(), expected.faces().len());
 
-        for (a, b) in mesh.faces().iter().zip(expected.faces().iter()) {
-            assert_eq!(a, b);
+        let plan = tol_compress::reorder::optimize(mesh.faces(), mesh.point_count())?;
+
+        for (new, &old) in plan.face_order.iter().enumerate() {
+            for corner in 0..3 {
+                let a = mesh.points()[mesh.faces()[old as usize][corner] as usize];
+                let b = expected.points()[expected.faces()[new][corner] as usize];
+                assert_relative_eq!(a, b, epsilon = REFERENCE_EPS);
+            }
         }
-        for (a, b) in mesh.points().iter().zip(expected.points().iter()) {
-            assert_relative_eq!(a, b, epsilon = 0.000002);
+
+        for (new, &old) in plan.vertex_order.iter().enumerate() {
+            assert_relative_eq!(
+                mesh.points()[old as usize],
+                expected.points()[new],
+                epsilon = REFERENCE_EPS
+            );
         }
 
         Ok(())
@@ -1196,13 +1259,15 @@ mod tests {
              property uchar green\n\
              property uchar blue\n\
              property float stdev\n\
+             property float flat_x\n\
+             property float flat_y\n\
              element face 1\n\
              property list uchar int vertex_indices\n\
              property uchar label\n\
              end_header\n\
-             0 0 0 0 0 2 255 0 0 0.01\n\
-             1 0 0 0 0 1 0 255 0 0.02\n\
-             0 1 0 0 0 1 0 0 255 0.03\n\
+             0 0 0 0 0 2 255 0 0 0.01 0 0\n\
+             1 0 0 0 0 1 0 255 0 0.02 1.5 0\n\
+             0 1 0 0 0 1 0 0 255 0.03 0 1.5\n\
              3 0 1 2 7\n",
         )?;
 
@@ -1216,13 +1281,31 @@ mod tests {
         assert_eq!(mesh.point_colors().unwrap()[0], [255, 0, 0]);
         // Declared as `float`, so the value arrives with f32 precision.
         assert_relative_eq!(mesh.point_stdev().unwrap()[0], 0.01, epsilon = 1.0e-8);
+        assert_eq!(mesh.point_flat().unwrap()[1], Point2::new(1.5, 0.0));
         assert_eq!(mesh.face_labels().unwrap(), &[7]);
 
         // Everything recognized went to a typed field, so the open maps stay empty.
-        assert_eq!(mesh.attrs().point_attr_names().count(), 0);
-        assert_eq!(mesh.attrs().face_attr_names().count(), 0);
+        assert_eq!(mesh.point_attrs().attr_names().count(), 0);
+        assert_eq!(mesh.face_attrs().attr_names().count(), 0);
 
         Ok(())
+    }
+
+    #[test]
+    fn a_lone_flat_column_is_an_error() {
+        let result = ascii_ply(
+            "ply\n\
+             format ascii 1.0\n\
+             element vertex 1\n\
+             property float x\n\
+             property float y\n\
+             property float z\n\
+             property float flat_x\n\
+             end_header\n\
+             0 0 0 0.5\n",
+        );
+        let message = result.expect_err("half a flat coordinate").to_string();
+        assert!(message.contains("flat_x"), "{message}");
     }
 
     #[test]
@@ -1408,6 +1491,12 @@ mod tests {
             .unwrap();
         mesh.set_point_stdev(Some(vec![0.001, 0.002, 0.003]))
             .unwrap();
+        mesh.set_point_flat(Some(vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(1.5, 0.0),
+            Point2::new(0.0, 1.5),
+        ]))
+        .unwrap();
         mesh.set_face_colors(Some(vec![[10, 20, 30]])).unwrap();
         mesh.set_face_labels(Some(vec![42])).unwrap();
 
@@ -1438,6 +1527,7 @@ mod tests {
 
         assert_eq!(a.point_colors(), b.point_colors());
         assert_eq!(a.point_stdev(), b.point_stdev());
+        assert_eq!(a.point_flat(), b.point_flat());
         assert_eq!(a.face_colors(), b.face_colors());
         assert_eq!(a.face_labels(), b.face_labels());
 
@@ -1451,8 +1541,8 @@ mod tests {
             _ => panic!("normals present on only one side"),
         }
 
-        let mut a_names: Vec<&str> = a.attrs().point_attr_names().collect();
-        let mut b_names: Vec<&str> = b.attrs().point_attr_names().collect();
+        let mut a_names: Vec<&str> = a.point_attrs().attr_names().collect();
+        let mut b_names: Vec<&str> = b.point_attrs().attr_names().collect();
         a_names.sort_unstable();
         b_names.sort_unstable();
         assert_eq!(a_names, b_names, "point attribute names differ");
@@ -1465,8 +1555,8 @@ mod tests {
             );
         }
 
-        let mut a_names: Vec<&str> = a.attrs().face_attr_names().collect();
-        let mut b_names: Vec<&str> = b.attrs().face_attr_names().collect();
+        let mut a_names: Vec<&str> = a.face_attrs().attr_names().collect();
+        let mut b_names: Vec<&str> = b.face_attrs().attr_names().collect();
         a_names.sort_unstable();
         b_names.sort_unstable();
         assert_eq!(a_names, b_names, "face attribute names differ");
@@ -1526,7 +1616,7 @@ mod tests {
         )?;
 
         let back = round_trip(&mesh, true)?;
-        assert!(back.attrs().is_empty());
+        assert!(!back.has_attrs());
         assert_same(&mesh, &back);
 
         Ok(())
@@ -1724,7 +1814,7 @@ mod tests {
     /// The points and attributes of `loaded_mesh`, without its connectivity.
     fn loaded_points() -> (Vec<Point3>, PointAttrSet3) {
         let mesh = loaded_mesh();
-        (mesh.points().to_vec(), mesh.attrs().points().clone())
+        (mesh.points().to_vec(), mesh.point_attrs().clone())
     }
 
     /// Round trip points and their attributes through an in-memory PLY.
@@ -1757,6 +1847,7 @@ mod tests {
 
             assert_eq!(back_attrs.colors(), attrs.colors(), "binary = {binary}");
             assert_eq!(back_attrs.stdev(), attrs.stdev(), "binary = {binary}");
+            assert_eq!(back_attrs.flat(), attrs.flat(), "binary = {binary}");
 
             for (a, b) in back_attrs
                 .normals()
@@ -1865,5 +1956,30 @@ mod tests {
         assert!(
             write_ply_points_to(&mut buffer, &points, &attrs, &PlyWriteOpts::default()).is_err()
         );
+    }
+
+    /// Because the writer uses a borrowed view, the accelerated mesh must produce the same bytes as
+    /// the plain container, including attributes, without first copying it.
+    #[test]
+    fn either_container_writes_identical_bytes() -> Result<()> {
+        let data = loaded_mesh();
+        let mesh = crate::Mesh3::from_data(data.clone(), false)?;
+
+        for binary in [true, false] {
+            let opts = PlyWriteOpts {
+                binary,
+                ..Default::default()
+            };
+
+            let mut from_data = Vec::new();
+            write_ply_to(&mut from_data, &data, &opts)?;
+
+            let mut from_mesh = Vec::new();
+            write_ply_to(&mut from_mesh, &mesh, &opts)?;
+
+            assert_eq!(from_data, from_mesh, "binary = {binary}");
+        }
+
+        Ok(())
     }
 }

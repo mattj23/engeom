@@ -12,9 +12,10 @@ use numpy::{
     IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods,
 };
 use parry2d_f64::na::{Translation2, UnitComplex};
-use pyo3::exceptions::{PyIOError, PyValueError};
+use pyo3::exceptions::{PyIOError, PyIndexError, PyValueError};
 use pyo3::prelude::PyAnyMethods;
-use pyo3::types::PyIterator;
+use pyo3::types::PySliceMethods;
+use pyo3::types::{PyIterator, PySlice};
 use pyo3::{
     Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyRef, PyResult, Python,
     pyclass, pyfunction, pymethods,
@@ -702,6 +703,14 @@ impl Circle2 {
     }
 
     #[staticmethod]
+    fn from_min_enclosing<'py>(points: PyReadonlyArray2<'py, f64>) -> PyResult<Self> {
+        let points = array_to_points2(&points.as_array())?;
+        engeom::Circle2::from_min_enclosing(&points)
+            .map(Self::from_inner)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    #[staticmethod]
     fn from_tangent_to_corner(
         corner: &Point2,
         d0: &Vector2,
@@ -719,11 +728,10 @@ impl Circle2 {
     }
 
     #[staticmethod]
-    fn from_tangent_and_point(tangent: &Line2, point: &Point2) -> Self {
-        Self::from_inner(engeom::Circle2::from_tangent_and_point(
-            tangent.get_inner(),
-            point.get_inner(),
-        ))
+    fn from_tangent_and_point(tangent: &Line2, point: &Point2) -> PyResult<Self> {
+        engeom::Circle2::from_tangent_and_point(tangent.get_inner(), point.get_inner())
+            .map(Self::from_inner)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     fn outer_tangents_to(&self, other: &Circle2) -> Option<(Segment2, Segment2)> {
@@ -1001,6 +1009,7 @@ impl Line2 {
         Point2::from_inner(self.inner.projected_point(p.get_inner()))
     }
 
+    #[getter]
     fn orthogonal(&self) -> Vector2 {
         use engeom::geom2::LineOps2;
         Vector2::from_inner(self.inner.orthogonal())
@@ -1198,6 +1207,7 @@ impl Segment2 {
         Self::from_inner(self.inner.offset_by(d))
     }
 
+    #[getter]
     fn normal(&self) -> Vector2 {
         Vector2::from_inner(self.inner.normal().into_inner())
     }
@@ -1253,6 +1263,68 @@ impl CubicSpline2 {
                 engeom::Point2::new(x3, y3),
             ),
         }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(points, p0, p3, weights=None))]
+    fn from_fit_with_ends<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        p0: &Point2,
+        p3: &Point2,
+        weights: Option<PyReadonlyArray1<'py, f64>>,
+    ) -> PyResult<Self> {
+        let points = array_to_points2(&points.as_array())?;
+        let weights = weights.as_ref().map(|w| w.as_array().to_vec());
+        let spline = engeom::geom2::CubicSpline2::from_fit_with_ends(
+            &points,
+            p0.get_inner(),
+            p3.get_inner(),
+            weights.as_deref(),
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(spline))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(points, p0, tangent0, p3, tangent3, weights=None))]
+    fn from_fit_hermite<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        p0: &Point2,
+        tangent0: &Vector2,
+        p3: &Point2,
+        tangent3: &Vector2,
+        weights: Option<PyReadonlyArray1<'py, f64>>,
+    ) -> PyResult<Self> {
+        let points = array_to_points2(&points.as_array())?;
+        let weights = weights.as_ref().map(|w| w.as_array().to_vec());
+        let unit = |v: &Vector2, name: &str| {
+            engeom::na::Unit::try_new(*v.get_inner(), 1e-12)
+                .ok_or_else(|| PyValueError::new_err(format!("{} must be a non-zero vector", name)))
+        };
+        let spline = engeom::geom2::CubicSpline2::from_fit_hermite(
+            &points,
+            p0.get_inner(),
+            &unit(tangent0, "tangent0")?,
+            p3.get_inner(),
+            &unit(tangent3, "tangent3")?,
+            weights.as_deref(),
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(spline))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature=(points, weights=None))]
+    fn from_fit_principal_axis<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        weights: Option<PyReadonlyArray1<'py, f64>>,
+    ) -> PyResult<Self> {
+        let points = array_to_points2(&points.as_array())?;
+        let weights = weights.as_ref().map(|w| w.as_array().to_vec());
+        let spline =
+            engeom::geom2::CubicSpline2::from_fit_principal_axis(&points, weights.as_deref())
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(spline))
     }
 
     fn __getstate__(&self) -> CubicSpline2State {
@@ -1763,6 +1835,33 @@ impl Arc2 {
         ))
     }
 
+    #[staticmethod]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature=(points, sigma_max, min_r=None, max_r=None, max_iterations=None, refinement_steps=None, confidence=None, seed=None))]
+    fn from_consensus<'py>(
+        points: PyReadonlyArray2<'py, f64>,
+        sigma_max: f64,
+        min_r: Option<f64>,
+        max_r: Option<f64>,
+        max_iterations: Option<usize>,
+        refinement_steps: Option<usize>,
+        confidence: Option<f64>,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        let points = array_to_points2(&points.as_array())?;
+        let options = magsac_options(
+            sigma_max,
+            max_iterations,
+            refinement_steps,
+            confidence,
+            seed,
+        );
+        let result = engeom::Arc2::from_consensus(&points, sigma_max, min_r, max_r, Some(options))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(result))
+    }
+
+    #[getter]
     fn length(&self) -> f64 {
         self.inner.length()
     }
@@ -1779,10 +1878,12 @@ impl Arc2 {
         Point2::from_inner(self.inner.point_at_length(length))
     }
 
+    #[getter]
     fn is_ccw(&self) -> bool {
         self.inner.is_ccw()
     }
 
+    #[getter]
     fn angle_interval(&self) -> AngleInterval {
         AngleInterval::from_inner(self.inner.angle_interval())
     }
@@ -1973,6 +2074,7 @@ impl Curve2 {
         Ok(Self::from_inner(curve))
     }
 
+    #[getter]
     fn length(&self) -> f64 {
         self.inner.length()
     }
@@ -2013,6 +2115,32 @@ impl Curve2 {
         self.inner.is_closed()
     }
 
+    #[getter]
+    fn signed_area(&self) -> PyResult<f64> {
+        self.inner
+            .signed_area()
+            .ok_or_else(|| PyValueError::new_err("An open curve encloses no area"))
+    }
+
+    #[getter]
+    fn area(&self) -> PyResult<f64> {
+        self.inner
+            .area()
+            .ok_or_else(|| PyValueError::new_err("An open curve encloses no area"))
+    }
+
+    #[getter]
+    fn area_centroid(&self) -> PyResult<Point2> {
+        self.inner
+            .area_centroid()
+            .map(Point2::from_inner)
+            .ok_or_else(|| {
+                PyValueError::new_err(
+                    "The area centroid is only defined for a closed curve with nonzero area",
+                )
+            })
+    }
+
     fn trim_front(&self, length: f64) -> PyResult<Self> {
         self.inner
             .trim_front(length)
@@ -2039,6 +2167,13 @@ impl Curve2 {
             .between_lengths(l0, l1)
             .map(Self::from_inner)
             .ok_or_else(|| PyValueError::new_err("Length out of bounds"))
+    }
+
+    fn closed_within(&self, max_gap: f64) -> PyResult<Self> {
+        self.inner
+            .closed_within(max_gap)
+            .map(Self::from_inner)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     fn reversed(&self) -> Self {
@@ -2118,13 +2253,14 @@ impl Curve2 {
 
     #[staticmethod]
     fn load_tccurve2(path: PathBuf) -> PyResult<Self> {
-        let curve = engeom::io::read_tc_curve2_file(&path)
-            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        let curve =
+            engeom::Curve2::load_tccurve2(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
         Ok(Self::from_inner(curve))
     }
 
-    fn write_tccurve2(&self, path: PathBuf, tol: f64) -> PyResult<()> {
-        engeom::io::write_tc_curve2_file(&path, &self.inner, tol)
+    fn save_tccurve2(&self, path: PathBuf, tol: f64) -> PyResult<()> {
+        self.inner
+            .save_tccurve2(&path, tol)
             .map_err(|e| PyIOError::new_err(e.to_string()))
     }
 
@@ -2138,6 +2274,133 @@ impl Curve2 {
             } else {
                 "open"
             }
+        )
+    }
+}
+
+// ================================================================================================
+// Curve groups
+// ================================================================================================
+
+#[pyclass(from_py_object, module = "engeom.geom2")]
+#[derive(Clone)]
+pub struct CurveGroup2 {
+    inner: engeom::CurveGroup2,
+}
+
+impl CurveGroup2 {
+    pub fn get_inner(&self) -> &engeom::CurveGroup2 {
+        &self.inner
+    }
+
+    pub fn from_inner(inner: engeom::CurveGroup2) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl CurveGroup2 {
+    #[new]
+    fn new(curves: Vec<Curve2>) -> PyResult<Self> {
+        let inner =
+            engeom::CurveGroup2::new(curves.iter().map(|c| c.get_inner().clone()).collect())
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self { inner })
+    }
+
+    #[getter]
+    fn curves(&self) -> Vec<Curve2> {
+        self.inner
+            .curves()
+            .iter()
+            .map(|c| Curve2::from_inner(c.clone()))
+            .collect()
+    }
+
+    fn __len__(&self) -> usize {
+        self.inner.len()
+    }
+
+    fn __getitem__<'py>(
+        &self,
+        py: Python<'py>,
+        index: &Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let n = self.inner.len() as isize;
+
+        if let Ok(slice) = index.cast::<PySlice>() {
+            // A slice returns a plain list rather than another group. Like any Python sequence, a
+            // slice may select nothing, but a `CurveGroup2` must have at least one member curve and
+            // therefore cannot represent an empty result.
+            let indices = slice.indices(n)?;
+            let mut picked = Vec::with_capacity(indices.slicelength);
+            let mut i = indices.start;
+            for _ in 0..indices.slicelength {
+                picked.push(Curve2::from_inner(self.inner.curves()[i as usize].clone()));
+                i += indices.step;
+            }
+            return picked.into_bound_py_any(py);
+        }
+
+        let index: isize = index.extract()?;
+        // Negative indices count from the end, as they do for any Python sequence.
+        let i = if index < 0 { index + n } else { index };
+        if i < 0 || i >= n {
+            return Err(PyIndexError::new_err("curve group index out of range"));
+        }
+        Curve2::from_inner(self.inner.curves()[i as usize].clone()).into_bound_py_any(py)
+    }
+
+    fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyIterator>> {
+        let items = self.curves();
+        PyIterator::from_object(&items.into_pyobject(py)?)
+    }
+
+    #[getter]
+    fn aabb(&self) -> Aabb2 {
+        Aabb2::from_inner(self.inner.aabb())
+    }
+
+    #[getter]
+    fn length(&self) -> f64 {
+        self.inner.length()
+    }
+
+    fn at_closest_to_point(&self, point: Point2) -> (usize, CurveStation2) {
+        let (member, station) = self.inner.at_closest_to_point(point.get_inner());
+        (member, station.into())
+    }
+
+    #[pyo3(signature=(max_dist=None))]
+    fn chain_merged(&self, max_dist: Option<f64>) -> PyResult<Self> {
+        self.inner
+            .chain_merged(max_dist)
+            .map(Self::from_inner)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    fn new_transformed_by(&self, iso: &Iso2) -> Self {
+        Self::from_inner(self.inner.new_transformed_by(iso.get_inner()))
+    }
+
+    #[staticmethod]
+    fn load_tccurve2(path: PathBuf) -> PyResult<Self> {
+        let group = engeom::CurveGroup2::load_tccurve2(&path)
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(group))
+    }
+
+    fn save_tccurve2(&self, path: PathBuf, tol: f64) -> PyResult<()> {
+        self.inner
+            .save_tccurve2(&path, tol)
+            .map_err(|e| PyIOError::new_err(e.to_string()))
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "<CurveGroup2 n={}, l={}>",
+            self.inner.len(),
+            self.inner.length()
         )
     }
 }
@@ -2269,12 +2532,14 @@ impl Iso2 {
         }
     }
 
+    #[getter]
     fn translation(&self) -> Self {
         Self {
             inner: engeom::Iso2::from_parts(self.inner.translation, UnitComplex::identity()),
         }
     }
 
+    #[getter]
     fn rotation(&self) -> Self {
         Self {
             inner: engeom::Iso2::from_parts(Translation2::identity(), self.inner.rotation),

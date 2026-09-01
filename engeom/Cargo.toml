@@ -4,16 +4,25 @@ description = "Library for working with geometry with a focus on engineering met
 license = "MIT OR Apache-2.0"
 version.workspace = true
 edition.workspace = true
-rust-version = "1.88"
+rust-version = "1.89"
 readme = "README.md"
 repository = "https://github.com/mattj23/engeom"
 documentation = "https://docs.rs/engeom"
 keywords = ["geometry", "metrology", "mesh", "engineering", "cad"]
 categories = ["science", "mathematics", "graphics"]
 
+# Reads PLY, so it is only built where that reader exists. It measures files too large to keep in
+# the repository, so it is an example rather than a test: there is nothing for CI to point it at.
+[[example]]
+name = "tc_size_row"
+required-features = ["ply"]
+
+[[example]]
+name = "tc_obb_probe"
+required-features = ["ply"]
+
 [features]
 stl = ["dep:stl_io"]
-three_d = ["dep:three-d"]
 ply = ["dep:ply-rs-bw"]
 private_tests = []
 
@@ -23,11 +32,12 @@ parry2d-f64 = { workspace = true, features = ["serde-serialize"] }
 rayon = { workspace = true }
 rand = { workspace = true }
 rand_distr = {workspace = true }
-uuid = { workspace = true, features = ["v4"] }
-flate2 = { workspace = true }
 
-alum = { version = "0.6.1", default-features = false, features = ["decimate", "subdiv"] }
-three-d = { version = "0.18.2", optional = true }
+# Both halves are needed: `path` so workspace changes are picked up without a release, `version` so
+# engeom can be published against the crates.io release.
+tol-compress = { version = "0.2", path = "../tol-compress" }
+
+alum = { version = "0.7.1", default-features = false, features = ["decimate", "subdiv"] }
 serde = { version = "1.0.219", features = ["derive"] }
 bitvec = {version = "1.0.1", features = ["serde"]}
 
@@ -37,7 +47,14 @@ levenberg-marquardt = "0.15.0"
 stl_io = { version = "0.8.5", optional = true }
 num-traits = "0.2.19"
 faer = "0.24"
-kdtree = "0.7.0"
+
+# Going back to the `kiddo` library because it's wildly faster than `kd-tree`; see
+# tests/kd_tree_backends.md for the measurements. `multi-threaded` turns on kiddo's parallel bulk
+# construction when there's over 262k points; `fixed` (fixed-point coordinate types we never use)
+# stays off. The packaging issues found in 6.0.1 (`fixed` not actually optional, `test-log` as a
+# normal dependency) were fixed upstream by 6.1.0, which also drives our `rust-version`: every
+# kiddo 6.x declares an MSRV of 1.89.
+kiddo = { version = "6.1.0", default-features = false, features = ["multi-threaded"] }
 
 imageproc = "0.25.0"
 colorgrad = "0.7.2"
@@ -67,4 +84,12 @@ harness = false
 
 [[bench]]
 name = "raster_ball_rolling"
+harness = false
+
+[[bench]]
+name = "mesh_decimate"
+harness = false
+
+[[bench]]
+name = "kd_tree"
 harness = false

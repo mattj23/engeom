@@ -49,7 +49,6 @@ fn run_test_case(manifest: &Manifest, dir: &PathPair) -> Result<()> {
         &dir.result().join("reference.tcmesh"),
         &mesh.to_data(),
         1e-5,
-        false,
     )?;
 
     for item in manifest.items.iter() {
@@ -67,11 +66,11 @@ fn run_test_case(manifest: &Manifest, dir: &PathPair) -> Result<()> {
             .ok_or("Loaded mesh is missing its point standard deviations")?;
         assert_eq!(stdev.len(), mesh_data.point_count());
 
-        let (points, faces, _) = mesh_data.into_parts();
+        let (points, faces, _, _) = mesh_data.into_parts();
         let mesh = Mesh3::new(points, faces, false);
 
         let output_path = dir.result().join(&item.file_name).with_extension("tcmesh");
-        write_tc_mesh_file(&output_path, &mesh.to_data(), 1e-5, false)?;
+        write_tc_mesh_file(&output_path, &mesh.to_data(), 1e-5)?;
         break;
     }
 

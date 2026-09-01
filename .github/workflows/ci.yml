@@ -53,19 +53,24 @@ jobs:
         run: cargo test --workspace
 
   msrv:
-    name: MSRV (1.88)
+    name: MSRV (engeom 1.89, tol-compress 1.88)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # Verifies the `rust-version` promised in engeom/Cargo.toml. Only the engeom crate is checked,
-      # because it is the only one published to crates.io and so the only one making the promise.
-      # 1.88 is required by the stable let-chains used in the source; nalgebra only needs 1.87.
+      # Verifies the `rust-version` promised by the two crates that are published to crates.io and so
+      # are the only ones making the promise. The two deliberately diverge: engeom declares 1.89
+      # because every kiddo 6.x does (its own source only needs the 1.88 let-chains), while
+      # tol-compress does not depend on kiddo and keeps its true 1.88 promise. Both toolchains are
+      # installed and each check pins the one it is verifying.
       - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: dtolnay/rust-toolchain@1.89.0
       - uses: Swatinem/rust-cache@v2
       - name: Check with no features
-        run: cargo check -p engeom
+        run: cargo +1.89.0 check -p engeom
       - name: Check with the published feature set
-        run: cargo check -p engeom --features stl,ply
+        run: cargo +1.89.0 check -p engeom --features stl,ply
+      - name: Check tol-compress
+        run: cargo +1.88.0 check -p tol-compress
 
   features:
     name: Feature combinations
@@ -80,11 +85,6 @@ jobs:
       - run: cargo check -p engeom --features stl
       - run: cargo check -p engeom --features ply
       - run: cargo check -p engeom --features stl,ply
-      - name: Check the three_d viewer feature
-        # The viewer is a debugging aid, not part of the shipped surface, and it drags in a large
-        # graphics stack. Surface its bit-rot without letting it block a merge.
-        continue-on-error: true
-        run: cargo check -p engeom --features three_d
 
   python:
     name: Python bindings
@@ -102,17 +102,18 @@ jobs:
       # packaging fault (a missing .pyi stub, a bad python-source layout) fails here.
       - name: Build wheel
         run: maturin build --out dist -m py-engeom/Cargo.toml
-      # Installed through the `tests` extra, which carries pytest and matplotlib. That keeps the
-      # test dependencies declared once in pyproject.toml instead of duplicated here, and means a
-      # broken extras declaration fails this step. Without matplotlib the plotting tests would
-      # silently skip rather than run.
+      # Installed through the `tests` extra, which carries pytest and both plotting backends. That
+      # keeps the test dependencies declared once in pyproject.toml instead of duplicated here, and
+      # means a broken extras declaration fails this step. Without a backend installed, that
+      # backend's plotting tests would silently skip rather than run.
       - name: Install wheel with test dependencies
         run: pip install "$(ls dist/*.whl)[tests]"
-      # pip only warns when an extra does not exist, so a typo in the extras table would leave
-      # matplotlib uninstalled and the plotting tests would skip themselves rather than fail.
-      # Assert the dependency is really here.
+      # pip only warns when an extra does not exist, so a typo in the extras table would leave a
+      # backend uninstalled and its plotting tests would skip themselves rather than fail. Assert
+      # the dependencies are really here. PyVista needs no display for these tests: they build
+      # actors without ever rasterizing, so no OpenGL context is required.
       - name: Verify optional test dependencies are present
-        run: python -c "import matplotlib"
+        run: python -c "import matplotlib, pyvista"
       # Run from the repository root. pytest puts the tests directory on sys.path but not
       # py-engeom/python, so `import engeom` resolves to the installed wheel while
       # test_stub_drift.py still finds the .pyi files next to the source package.
@@ -129,8 +130,25 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # Catches broken or missing publish metadata now, on a branch, instead of at tag time. This is
       # the class of failure that let the published versions drift.
-      - name: Dry-run the publish
+      - name: Dry-run the engeom publish
         run: cargo publish -p engeom --dry-run
+      - name: Dry-run the tol-compress publish
+        run: cargo publish -p tol-compress --dry-run
+      # A dry run only builds the lib at default features, so it cannot see a test target whose data
+      # was left out of the package. That is not hypothetical: `exclude = ["tests/data/*"]` shipped
+      # tests/real_fixtures.rs without the PLY files it reads, and every test in it failed for a
+      # consumer while every check here passed. Build and test the artifact as one is received.
+      # `cargo package` is run explicitly rather than reusing the dry run above: a dry run leaves
+      # only its extracted verify directory behind, not the .crate tarball, and the tarball is the
+      # artifact a consumer actually receives.
+      - name: Test the packaged tol-compress as a consumer receives it
+        run: |
+          set -euo pipefail
+          cargo package -p tol-compress
+          rm -rf /tmp/pkgcheck && mkdir -p /tmp/pkgcheck
+          tar xzf target/package/tol-compress-*.crate -C /tmp/pkgcheck
+          cd /tmp/pkgcheck/tol-compress-*
+          cargo test --all-features
 
   book:
     name: Book

@@ -138,6 +138,41 @@ impl Circle2 {
         }
     }
 
+    /// Creates the smallest circle containing every point in expected O(n) time.
+    ///
+    /// A single point or identical points produce a zero-radius circle. Collinear points produce
+    /// the circle whose diameter is the extreme pair. Returns an error for an empty point set.
+    ///
+    /// # Arguments
+    ///
+    /// * `points`: a slice of points to enclose; must not be empty
+    ///
+    /// returns: Result<Circle2, Box<dyn Error, Global>>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::{Circle2, Point2};
+    /// use approx::assert_relative_eq;
+    ///
+    /// let points = [
+    ///     Point2::new(0.0, 0.0),
+    ///     Point2::new(2.0, 0.0),
+    ///     Point2::new(2.0, 2.0),
+    ///     Point2::new(0.0, 2.0),
+    ///     Point2::new(1.0, 1.5),
+    /// ];
+    ///
+    /// let circle = Circle2::from_min_enclosing(&points).unwrap();
+    /// assert_relative_eq!(circle.x(), 1.0, epsilon = 1e-12);
+    /// assert_relative_eq!(circle.y(), 1.0, epsilon = 1e-12);
+    /// assert_relative_eq!(circle.r(), 2.0_f64.sqrt(), epsilon = 1e-12);
+    /// ```
+    pub fn from_min_enclosing(points: &[impl PCoords<2>]) -> Result<Self> {
+        let (center, radius) = crate::common::min_ball::compute_min_ball(points)?;
+        Ok(Self { center, radius })
+    }
+
     /// Creates a circle at the tangent of a corner.  The corner is defined by a corner point and
     /// two direction vectors which define the directions of the two lines which meet at the corner.
     /// The radius argument specifies the radius of the tangent circle.  The circle is created by
@@ -214,27 +249,36 @@ impl Circle2 {
         }
     }
 
-    /// Create a new circle at a tangent point that passes through a second point.
+    /// Create the circle which is tangent to a line at the line's origin and which passes
+    /// through a second point.
     ///
     /// # Arguments
     ///
-    /// * `tangent`:
-    /// * `point`:
+    /// * `tangent`: the tangent line; the circle touches it at the line's origin
+    /// * `point`: a second point the circle must pass through
     ///
     /// returns: Result<Circle2, Box<dyn Error, Global>>
     ///
-    /// # Examples
+    /// # Errors
     ///
-    /// ```
-    ///
-    /// ```
-    pub fn from_tangent_and_point(tangent: &impl LineOps2, point: &impl PCoords<2>) -> Self {
+    /// Returns an error if `point` lies on the tangent line (within an absolute distance of
+    /// 1e-10), where no finite tangent circle exists.
+    pub fn from_tangent_and_point(
+        tangent: &impl LineOps2,
+        point: &impl PCoords<2>,
+    ) -> Result<Self> {
         let iso = tangent.to_iso_from_y().inverse();
         let p = iso * Point2::from(point.coords());
 
+        // p.x is the point's signed perpendicular distance from the tangent line; at zero the
+        // construction is degenerate and no finite tangent circle exists.
+        if p.x.abs() < 1e-10 {
+            return Err("point lies on the tangent line; no finite tangent circle exists".into());
+        }
+
         let cx = (p.x.powi(2) + p.y.powi(2)) / (2.0 * p.x);
         let center = iso.inverse() * Point2::new(cx, 0.0);
-        Circle2::new(center.x, center.y, cx.abs())
+        Ok(Circle2::new(center.x, center.y, cx.abs()))
     }
 
     /// Compute the circles of a given radius which are tangent to both a line and another circle,
@@ -919,6 +963,21 @@ mod tests {
     use test_case::test_case;
 
     #[test]
+    fn min_enclosing_mixed_boundary_and_interior() {
+        // Two antipodal points fix the circle; everything else is strictly interior
+        let points = [
+            Point2::new(-3.0, 1.0),
+            Point2::new(5.0, 1.0),
+            Point2::new(1.0, 2.0),
+            Point2::new(0.0, 0.0),
+            Point2::new(3.0, -1.0),
+        ];
+        let circle = Circle2::from_min_enclosing(&points).unwrap();
+        assert_relative_eq!(circle.center, Point2::new(1.0, 1.0), epsilon = 1e-12);
+        assert_relative_eq!(circle.r(), 4.0, epsilon = 1e-12);
+    }
+
+    #[test]
     fn simple_tangent_corner() {
         let corner = Point2::new(1.0, 1.0);
         let v0 = Vector2::new(-1.0, 0.0);
@@ -1226,26 +1285,45 @@ mod tests {
 
     #[test]
     fn stress_tangent_and_point() -> Result<()> {
-        let mut random = RandomGeometry2::new();
+        // Seeded so a failure is reproducible and so this can never join the flaky-by-RNG set.
+        let mut random = RandomGeometry2::from_seed(0xc12c_1e2d);
         for _ in 0..1000 {
             let c = random.circle2(10.0, 0.5, 5.0);
             let a0 = random.angle_sym_pi();
-            let a1 = random.angle_sym_pi();
             let m = c.at_angle(a0);
-            let p = c.point_at_angle(a1);
 
             let line = match random.bool() {
                 true => m.direction_line(),
                 false => m.direction_line().reversed(),
             };
 
-            let result = Circle2::from_tangent_and_point(&line, &p);
+            // A target point near the tangent line (angle near the tangency angle) makes the
+            // construction ill-conditioned relative to the 1e-5 round-trip tolerance, so draws
+            // whose perpendicular distance from the line is below 1e-2 are resampled.
+            let p = loop {
+                let a1 = random.angle_sym_pi();
+                let p = c.point_at_angle(a1);
+                if line.distance_to(&p) > 1e-2 {
+                    break p;
+                }
+            };
+
+            let result = Circle2::from_tangent_and_point(&line, &p)?;
 
             assert_relative_eq!(result.center, c.center, epsilon = 1.0e-5);
             assert_relative_eq!(result.r(), c.r(), epsilon = 1.0e-5);
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn tangent_and_point_on_line_is_error() {
+        let line = Line2::new(Point2::origin(), Vector2::x());
+        // A point on the tangent line away from the tangency point
+        assert!(Circle2::from_tangent_and_point(&line, &Point2::new(3.0, 0.0)).is_err());
+        // The tangency point itself
+        assert!(Circle2::from_tangent_and_point(&line, &Point2::origin()).is_err());
     }
 
     #[test]

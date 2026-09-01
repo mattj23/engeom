@@ -4,7 +4,7 @@
 
 use crate::UnitVec2;
 use crate::common::{PCoords, SPCoords};
-use crate::geom2::{Boundary2, Curve2, CurveStation2, Point2, Vector2};
+use crate::geom2::{Boundary2, Curve2, CurveGroup2, CurveStation2, Point2, Vector2};
 use crate::na::{SVector, Unit};
 
 /// The result of projecting a single point onto a [`SurfaceTarget2`], used as the correspondence
@@ -103,9 +103,9 @@ impl Default for AlignSurfMatch2 {
 ///
 /// A target derived from measured rather than nominal geometry should populate
 /// [`AlignSurfMatch2::sigma`] via [`AlignSurfMatch2::with_sigma`], interpolating its own
-/// uncertainty to the match position. Neither `Curve2` nor `Boundary2` does so today: a `Curve2`
-/// is a bare polyline with no attributes to draw from, and a `Boundary2` is analytic geometry for
-/// which measurement uncertainty isn't meaningful.
+/// uncertainty to the match position. None of `Curve2`, `CurveGroup2`, or `Boundary2` does so
+/// today: curves are bare polylines with no attributes to draw from, and a `Boundary2` is
+/// analytic geometry for which measurement uncertainty isn't meaningful.
 pub trait SurfaceTarget2: Sync + Send {
     fn find_align_match(&self, p: &Point2) -> AlignSurfMatch2;
 }
@@ -120,12 +120,27 @@ impl SurfaceTarget2 for Curve2 {
     }
 }
 
+impl SurfaceTarget2 for CurveGroup2 {
+    /// The match is found by the group's own member scan, and everything about it, including
+    /// whether the projection clamped to an open end, is judged against the member that owns it.
+    /// A group mixing closed loops and open segments therefore behaves at every position like
+    /// the single curve that position belongs to.
+    fn find_align_match(&self, p: &Point2) -> AlignSurfMatch2 {
+        let (m, station) = self.at_closest_to_point(p);
+        let curve = &self.curves()[m];
+        let sp = station.surface_point();
+
+        let is_on = curve.is_closed() || !is_curve_endpoint(&station, curve);
+        AlignSurfMatch2::new(sp.point, sp.normal, is_on, 1.0)
+    }
+}
+
 /// Returns true if `station` sits exactly at one of the two open ends of `curve`.
 ///
 /// `Curve2::at_closest_to_point` clamps to the nearest edge, so a projection past either end of
 /// an open curve always lands with `fraction` exactly `0.0` or `1.0` at the first or last edge
 /// respectively; there is no tolerance band to worry about.
-fn is_curve_endpoint(station: &CurveStation2, curve: &Curve2) -> bool {
+pub(crate) fn is_curve_endpoint(station: &CurveStation2, curve: &Curve2) -> bool {
     let last_edge = curve.count() - 2;
     (station.index() == 0 && station.fraction() == 0.0)
         || (station.index() == last_edge && station.fraction() == 1.0)
@@ -241,5 +256,77 @@ mod tests {
         let boundary = ccw_square_boundary(false);
         let m = boundary.find_align_match(&Point2::new(1.0, -5.0));
         assert!(m.is_on);
+    }
+
+    // ============================================================================================
+    // CurveGroup2 as a target
+    // ============================================================================================
+
+    /// A group mixing a closed square (the `ccw_square_curve` fixture, spanning (0,0) to (2,2))
+    /// with a detached open segment running from (10, 0) to (12, 0), wound so its normal points
+    /// in -y.
+    fn mixed_group() -> CurveGroup2 {
+        let open = Curve2::from_points(
+            &[Point2::new(10.0, 0.0), Point2::new(12.0, 0.0)],
+            1e-8,
+            false,
+        )
+        .unwrap();
+        CurveGroup2::new(vec![ccw_square_curve(true), open]).unwrap()
+    }
+
+    #[test]
+    fn group_interior_matches_are_on_for_both_members() {
+        let group = mixed_group();
+
+        // Below the bottom edge of the closed square.
+        let m = group.find_align_match(&Point2::new(1.0, -5.0));
+        assert!(m.is_on);
+        assert_relative_eq!(m.point, Point2::new(1.0, 0.0), epsilon = 1e-12);
+
+        // Below the middle of the open segment.
+        let m = group.find_align_match(&Point2::new(11.0, -5.0));
+        assert!(m.is_on);
+        assert_relative_eq!(m.point, Point2::new(11.0, 0.0), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn group_match_past_an_open_members_end_is_not_on() {
+        let group = mixed_group();
+
+        // Past the right end of the open segment, which clamps to (12, 0).
+        let m = group.find_align_match(&Point2::new(15.0, 0.0));
+        assert!(!m.is_on);
+        assert_relative_eq!(m.point, Point2::new(12.0, 0.0), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn group_closed_member_never_reports_off() {
+        let group = mixed_group();
+
+        // The seam vertex of the closed square, which on an open curve would be an endpoint.
+        let m = group.find_align_match(&Point2::new(-5.0, 0.0));
+        assert!(m.is_on);
+    }
+
+    #[test]
+    fn group_normal_comes_from_the_owning_member() {
+        let group = mixed_group();
+
+        // The square is wound counter-clockwise, so its bottom edge points -y...
+        let m = group.find_align_match(&Point2::new(1.0, -5.0));
+        assert_relative_eq!(
+            m.normal.into_inner(),
+            Vector2::new(0.0, -1.0),
+            epsilon = 1e-12
+        );
+
+        // ...and its right edge points +x, which is nothing like the segment's -y normal.
+        let m = group.find_align_match(&Point2::new(5.0, 1.0));
+        assert_relative_eq!(
+            m.normal.into_inner(),
+            Vector2::new(1.0, 0.0),
+            epsilon = 1e-12
+        );
     }
 }

@@ -57,6 +57,47 @@ pub fn mean_and_stdev(values: &[f64]) -> Option<(f64, f64)> {
     Some((mean, variance.sqrt()))
 }
 
+/// Compute the median of a slice of f64 values, or `None` if the slice is empty.
+///
+/// The slice is copied and sorted internally, so the caller's ordering is left alone. NaN values
+/// sort to the end via `f64::total_cmp` and will therefore skew the result; screen for them with
+/// [`has_nan`] first if that matters.
+///
+/// An even-length slice returns the mean of the two middle values.
+///
+/// # Arguments
+///
+/// * `values`: the slice of f64 values to take the median of
+///
+/// returns: Option<f64>
+///
+/// # Examples
+///
+/// ```
+/// use engeom::common::vec_f64::median;
+/// assert_eq!(median(&[3.0, 1.0, 2.0]), Some(2.0));
+///
+/// // An even count averages the middle pair.
+/// assert_eq!(median(&[1.0, 2.0, 3.0, 4.0]), Some(2.5));
+///
+/// assert_eq!(median(&[]), None);
+/// ```
+pub fn median(values: &[f64]) -> Option<f64> {
+    if values.is_empty() {
+        return None;
+    }
+
+    let mut sorted = values.to_vec();
+    sorted.sort_by(|a, b| a.total_cmp(b));
+
+    let n = sorted.len();
+    Some(if n.is_multiple_of(2) {
+        0.5 * (sorted[n / 2 - 1] + sorted[n / 2])
+    } else {
+        sorted[n / 2]
+    })
+}
+
 /// Checks if a slice contains any NaN values
 ///
 /// # Arguments
@@ -226,6 +267,13 @@ pub fn sort_and_dedup(values: &mut Vec<f64>, tol: Option<f64>) {
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
+
+    #[test]
+    fn median_handles_both_parities() {
+        assert_eq!(median(&[3.0, 1.0, 2.0]), Some(2.0));
+        assert_eq!(median(&[4.0, 1.0, 3.0, 2.0]), Some(2.5));
+        assert_eq!(median(&[]), None);
+    }
 
     #[test]
     fn mean_value_empty_returns_nan() {

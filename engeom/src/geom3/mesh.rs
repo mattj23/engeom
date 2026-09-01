@@ -1,39 +1,54 @@
 //! This module contains an abstraction for a mesh of triangles, represented by vertices and their
 //! indices into the vertex list.  This abstraction is built around the `TriMesh` type from the
 //! `parry3d` crate.
+//!
+//! For the connectivity-first view of the same surface, used by repair, smoothing and decimation,
+//! see [`half_edge3`](crate::geom3::half_edge3). [`MeshEditor`] is the handle which converts across,
+//! runs a sequence of edits, and converts back.
 
 pub mod algorithms;
 mod collisions;
 mod conformal;
 pub mod data;
-mod edges;
+pub(crate) mod edges;
+mod editor;
 pub mod filtering;
-pub mod half_edge;
-mod measurement;
+mod flat_domain;
+pub(crate) mod measurement;
 mod nav_structure;
 mod outline;
+pub mod patches;
 mod queries;
 pub mod sampling;
 mod section;
-mod uv_mapping;
+mod transverse;
+mod view;
+pub mod voxelize;
 
 use crate::common::{IndexMask, PCoords};
+use crate::geom3::attributes3::{FaceAttrSet3, PointAttrSet3};
 use crate::na::SVector;
 use crate::{Iso3, Point2, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
 pub use collisions::MeshCollisionSet;
-pub use data::{Attr3, MeshAttrSet3, MeshData3};
+pub use data::{Attr3, MeshData3};
 pub use edges::MeshEdges;
-pub use half_edge::HalfEdgeMesh;
+pub use editor::{EditReport, MeshEditor};
+pub use flat_domain::FlatDomain;
+pub use measurement::SurfaceDeviation;
 pub use nav_structure::MeshNav;
 use parry3d_f64::bounding_volume::Aabb;
 use parry3d_f64::shape::{TriMesh, TriMeshFlags};
 use parry3d_f64::transformation;
-pub use uv_mapping::UvMapping;
+pub use patches::{PatchFilter, PatchLabels, PatchStats};
+pub use section::PlanarSection;
+pub use transverse::{TransverseOptions, TransversePlane};
+pub use view::MeshView3;
 
+use crate::io::write_tc_mesh_file;
 #[cfg(feature = "ply")]
-use crate::io::PlyWriteOpts;
+use crate::io::{PlyWriteOpts, write_ply_mesh};
 #[cfg(feature = "stl")]
-use crate::io::StlWriteOpts;
+use crate::io::{StlWriteOpts, write_stl_mesh};
 use std::path::Path;
 
 /// A struct that represents a point on the surface of a mesh, including the index of the face
@@ -108,8 +123,9 @@ impl PCoords<3> for MeshSurfPoint {
 /// editing mesh data, or when working with serialization. Converting between the two is done with
 /// `from_data`/`to_data`, or the equivalent `TryFrom`/`From` implementations.
 ///
-/// Both types carry the same `MeshAttrSet3` of per-element attributes, so a mesh loaded with
-/// measured normals, colors, or uncertainties keeps them across the conversion in either direction.
+/// Both types carry the same `PointAttrSet3` and `FaceAttrSet3` of per-element attributes. A mesh
+/// loaded with measured normals, colors, or uncertainties therefore preserves them when converted
+/// in either direction.
 ///
 /// # Invariants
 ///
@@ -121,9 +137,9 @@ impl PCoords<3> for MeshSurfPoint {
 #[derive(Clone)]
 pub struct Mesh3 {
     shape: TriMesh,
-    attrs: MeshAttrSet3,
+    point_attrs: PointAttrSet3,
+    face_attrs: FaceAttrSet3,
     is_solid: bool,
-    uv: Option<UvMapping>,
 }
 
 // ===============================================================================================
@@ -175,9 +191,19 @@ impl Mesh3 {
 // ===============================================================================================
 
 impl Mesh3 {
-    /// Get a reference to the full set of per-element attributes attached to this mesh.
-    pub fn attrs(&self) -> &MeshAttrSet3 {
-        &self.attrs
+    /// Get a reference to the per-point attributes attached to this mesh.
+    pub fn point_attrs(&self) -> &PointAttrSet3 {
+        &self.point_attrs
+    }
+
+    /// Get a reference to the per-face attributes attached to this mesh.
+    pub fn face_attrs(&self) -> &FaceAttrSet3 {
+        &self.face_attrs
+    }
+
+    /// Returns true if the mesh carries any attributes in either domain.
+    pub fn has_attrs(&self) -> bool {
+        !self.point_attrs.is_empty() || !self.face_attrs.is_empty()
     }
 
     /// Get the per-point unit normals, if present.
@@ -185,38 +211,45 @@ impl Mesh3 {
     /// These are whatever was measured or stored, not a computed quantity. Use
     /// `compute_point_normals` to derive normals from the faces.
     pub fn point_normals(&self) -> Option<&[UnitVec3]> {
-        self.attrs.point_normals()
+        self.point_attrs.normals()
     }
 
     /// Get the per-point RGB colors, if present.
     pub fn point_colors(&self) -> Option<&[[u8; 3]]> {
-        self.attrs.point_colors()
+        self.point_attrs.colors()
     }
 
     /// Get the per-point standard deviations, if present. These are 1-sigma values in the mesh's
     /// own length units.
     pub fn point_stdev(&self) -> Option<&[f64]> {
-        self.attrs.point_stdev()
+        self.point_attrs.stdev()
+    }
+
+    /// Get the per-point flat coordinates, if present: each point's position in a flattened 2D
+    /// chart of the surface, expressed in the mesh's own length units. See
+    /// [`set_point_flat`](Self::set_point_flat).
+    pub fn point_flat(&self) -> Option<&[Point2]> {
+        self.point_attrs.flat()
     }
 
     /// Get the per-face RGB colors, if present.
     pub fn face_colors(&self) -> Option<&[[u8; 3]]> {
-        self.attrs.face_colors()
+        self.face_attrs.colors()
     }
 
     /// Get the per-face labels, if present.
     pub fn face_labels(&self) -> Option<&[u32]> {
-        self.attrs.face_labels()
+        self.face_attrs.labels()
     }
 
     /// Get the open-map per-point attribute stored under the given name, if present.
     pub fn point_attr(&self, name: &str) -> Option<&Attr3> {
-        self.attrs.point_attr(name)
+        self.point_attrs.attr(name)
     }
 
     /// Get the open-map per-face attribute stored under the given name, if present.
     pub fn face_attr(&self, name: &str) -> Option<&Attr3> {
-        self.attrs.face_attr(name)
+        self.face_attrs.attr(name)
     }
 }
 
@@ -233,7 +266,7 @@ impl Mesh3 {
     ///
     /// returns: `Result<()>`
     pub fn set_point_normals(&mut self, values: Option<Vec<UnitVec3>>) -> Result<()> {
-        self.attrs.set_point_normals(values, self.point_count())
+        self.point_attrs.set_normals(values, self.point_count())
     }
 
     /// Set or clear the per-point RGB colors.
@@ -244,7 +277,7 @@ impl Mesh3 {
     ///
     /// returns: `Result<()>`
     pub fn set_point_colors(&mut self, values: Option<Vec<[u8; 3]>>) -> Result<()> {
-        self.attrs.set_point_colors(values, self.point_count())
+        self.point_attrs.set_colors(values, self.point_count())
     }
 
     /// Set or clear the per-point standard deviations, which must be 1-sigma values in the mesh's
@@ -257,7 +290,25 @@ impl Mesh3 {
     ///
     /// returns: `Result<()>`
     pub fn set_point_stdev(&mut self, values: Option<Vec<f64>>) -> Result<()> {
-        self.attrs.set_point_stdev(values, self.point_count())
+        self.point_attrs.set_stdev(values, self.point_count())
+    }
+
+    /// Set or clear the per-point flat coordinates: the position of each point in a flattened 2D
+    /// chart of the surface, such as the output of boundary first flattening. These are not
+    /// texture coordinates; they express the mesh's own length units in a plane. They scale with
+    /// the geometry under a uniform scale while remaining fixed under a rigid transform.
+    ///
+    /// Set this after finalizing the mesh because the values are validated against the point count
+    /// at the time of the call. The flat-domain queries (`compute_flat_domain`) use this attribute.
+    ///
+    /// # Arguments
+    ///
+    /// * `values`: the flat coordinates to store, or `None` to clear them. Must match the point
+    ///   count.
+    ///
+    /// returns: `Result<()>`
+    pub fn set_point_flat(&mut self, values: Option<Vec<Point2>>) -> Result<()> {
+        self.point_attrs.set_flat(values, self.point_count())
     }
 
     /// Set or clear the per-face RGB colors.
@@ -268,7 +319,7 @@ impl Mesh3 {
     ///
     /// returns: `Result<()>`
     pub fn set_face_colors(&mut self, values: Option<Vec<[u8; 3]>>) -> Result<()> {
-        self.attrs.set_face_colors(values, self.face_count())
+        self.face_attrs.set_colors(values, self.face_count())
     }
 
     /// Set or clear the per-face labels.
@@ -279,7 +330,7 @@ impl Mesh3 {
     ///
     /// returns: `Result<()>`
     pub fn set_face_labels(&mut self, values: Option<Vec<u32>>) -> Result<()> {
-        self.attrs.set_face_labels(values, self.face_count())
+        self.face_attrs.set_labels(values, self.face_count())
     }
 
     /// Insert an open-map per-point attribute under the given name, replacing any attribute already
@@ -292,8 +343,7 @@ impl Mesh3 {
     ///
     /// returns: `Result<()>`
     pub fn insert_point_attr(&mut self, name: &str, attr: Attr3) -> Result<()> {
-        self.attrs
-            .insert_point_attr(name, attr, self.shape.vertices().len())
+        self.point_attrs.insert_attr(name, attr, self.point_count())
     }
 
     /// Insert an open-map per-face attribute under the given name, replacing any attribute already
@@ -306,36 +356,53 @@ impl Mesh3 {
     ///
     /// returns: `Result<()>`
     pub fn insert_face_attr(&mut self, name: &str, attr: Attr3) -> Result<()> {
-        self.attrs
-            .insert_face_attr(name, attr, self.shape.indices().len())
+        self.face_attrs.insert_attr(name, attr, self.face_count())
     }
 
     /// Remove and return the open-map per-point attribute stored under the given name.
     pub fn remove_point_attr(&mut self, name: &str) -> Option<Attr3> {
-        self.attrs.remove_point_attr(name)
+        self.point_attrs.remove_attr(name)
     }
 
     /// Remove and return the open-map per-face attribute stored under the given name.
     pub fn remove_face_attr(&mut self, name: &str) -> Option<Attr3> {
-        self.attrs.remove_face_attr(name)
+        self.face_attrs.remove_attr(name)
     }
 
-    /// Replace the entire set of per-element attributes.
+    /// Replace the entire set of per-point attributes without changing the face domain.
     ///
     /// # Arguments
     ///
-    /// * `attrs`: the attribute set to attach, whose arrays must match the point and face counts
+    /// * `attrs`: the per-point attributes to attach, whose arrays must match the point count
     ///
     /// returns: `Result<()>`, leaving the existing attributes untouched on failure
-    pub fn set_attrs(&mut self, attrs: MeshAttrSet3) -> Result<()> {
-        attrs.validate(self.point_count(), self.face_count())?;
-        self.attrs = attrs;
+    pub fn set_point_attrs(&mut self, attrs: PointAttrSet3) -> Result<()> {
+        attrs.validate(self.point_count())?;
+        self.point_attrs = attrs;
         Ok(())
     }
 
-    /// Remove and return the entire set of per-element attributes, leaving the mesh with none.
-    pub fn take_attrs(&mut self) -> MeshAttrSet3 {
-        std::mem::take(&mut self.attrs)
+    /// Replace the entire set of per-face attributes without changing the point domain.
+    ///
+    /// # Arguments
+    ///
+    /// * `attrs`: the per-face attributes to attach, whose arrays must match the face count
+    ///
+    /// returns: `Result<()>`, leaving the existing attributes untouched on failure
+    pub fn set_face_attrs(&mut self, attrs: FaceAttrSet3) -> Result<()> {
+        attrs.validate(self.face_count())?;
+        self.face_attrs = attrs;
+        Ok(())
+    }
+
+    /// Remove and return all per-point attributes, leaving that domain empty on the mesh.
+    pub fn take_point_attrs(&mut self) -> PointAttrSet3 {
+        std::mem::take(&mut self.point_attrs)
+    }
+
+    /// Remove and return all per-face attributes, leaving that domain empty on the mesh.
+    pub fn take_face_attrs(&mut self) -> FaceAttrSet3 {
+        std::mem::take(&mut self.face_attrs)
     }
 }
 
@@ -350,29 +417,27 @@ impl Mesh3 {
     /// faces, so there is no correct way to carry an attribute array through them, which is why
     /// they live here rather than on the `MeshData3` conversion path.
     ///
+    /// Set attributes, including the flat coordinates of a flattened mesh, afterward through their
+    /// own setters. The setters validate them against the point and face counts that remain after
+    /// cleanup.
+    ///
     /// # Arguments
     ///
-    /// * `vertices`:
-    /// * `triangles`:
-    /// * `is_solid`:
-    /// * `merge_duplicates`:
-    /// * `delete_degenerate`:
-    /// * `uv`:
+    /// * `vertices`: the point positions
+    /// * `triangles`: the faces, as triples of indices into `vertices`
+    /// * `is_solid`: whether distance queries should treat points inside the mesh as being at zero
+    ///   distance
+    /// * `merge_duplicates`: merge points which compare equal as `f64`, and drop the duplicate
+    ///   faces that produces
+    /// * `delete_degenerate`: drop faces with zero area or repeated indices
     ///
-    /// returns: Result<Mesh3, Box<dyn Error, Global>>
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
+    /// returns: `Result<Mesh3>`, failing if a face refers to a point which does not exist
     pub fn new_with_options(
         vertices: Vec<Point3>,
         triangles: Vec<[u32; 3]>,
         is_solid: bool,
         merge_duplicates: bool,
         delete_degenerate: bool,
-        uv: Option<Vec<Point2>>,
     ) -> Result<Self> {
         let mut flags = TriMeshFlags::empty();
         if merge_duplicates {
@@ -384,18 +449,12 @@ impl Mesh3 {
             flags |= TriMeshFlags::DELETE_DEGENERATE_TRIANGLES;
         }
 
-        let uv_mapping = if let Some(uv) = uv {
-            Some(UvMapping::new(uv, triangles.clone())?)
-        } else {
-            None
-        };
-
         let shape = TriMesh::with_flags(vertices, triangles, flags)?;
         Ok(Self {
             shape,
-            attrs: MeshAttrSet3::empty(),
+            point_attrs: PointAttrSet3::empty(),
+            face_attrs: FaceAttrSet3::empty(),
             is_solid,
-            uv: uv_mapping,
         })
     }
 
@@ -403,17 +462,18 @@ impl Mesh3 {
         let shape = TriMesh::new(vertices, triangles).expect("Failed to create TriMesh");
         Self {
             shape,
-            attrs: MeshAttrSet3::empty(),
+            point_attrs: PointAttrSet3::empty(),
+            face_attrs: FaceAttrSet3::empty(),
             is_solid,
-            uv: None,
         }
     }
+
     pub fn from_trimesh(shape: TriMesh, is_solid: bool) -> Self {
         Self {
             shape,
-            attrs: MeshAttrSet3::empty(),
+            point_attrs: PointAttrSet3::empty(),
+            face_attrs: FaceAttrSet3::empty(),
             is_solid,
-            uv: None,
         }
     }
 }
@@ -422,17 +482,17 @@ impl Mesh3 {
 // Serialization
 // ===============================================================================================
 //
-// Every one of these goes through `MeshData3`, which is where the format support lives. Loading
-// costs a bounding volume hierarchy build on top of the read, and saving costs a copy of the point
-// and face buffers, for the reason given on `to_data`. Work directly with `MeshData3` when you have
-// no need for the acceleration structure.
+// Loading goes through `MeshData3`, where the readers live, and builds a bounding volume hierarchy
+// after the read. Saving gives the writers a borrowed `MeshView3` over this mesh's buffers, so
+// nothing is copied. Work directly with `MeshData3` when you do not need the acceleration
+// structure.
 
 impl Mesh3 {
     /// Load a triangle mesh from a PLY file, preserving every property the file carries.
     ///
     /// The file must have a `vertex` element with `x`, `y`, and `z` properties, and a `face`
     /// element with at least one face. A PLY point cloud is refused, since there is nothing for an
-    /// acceleration structure to be built over; load those with `PointCloudData3::load_ply`.
+    /// acceleration structure to be built over; load those with `PointCloud3::load_ply`.
     ///
     /// # Arguments
     ///
@@ -456,7 +516,7 @@ impl Mesh3 {
     /// returns: `Result<()>`
     #[cfg(feature = "ply")]
     pub fn save_ply(&self, path: &Path, opts: &PlyWriteOpts) -> Result<()> {
-        self.to_data().save_ply(path, opts)
+        write_ply_mesh(path, self, opts)
     }
 
     /// Load a triangle mesh from an STL file, in either the ascii or binary encoding.
@@ -485,15 +545,8 @@ impl Mesh3 {
         merge_duplicates: bool,
         delete_degenerate: bool,
     ) -> Result<Self> {
-        let (points, faces, _) = MeshData3::load_stl(path)?.into_parts();
-        Self::new_with_options(
-            points,
-            faces,
-            is_solid,
-            merge_duplicates,
-            delete_degenerate,
-            None,
-        )
+        let (points, faces, _, _) = MeshData3::load_stl(path)?.into_parts();
+        Self::new_with_options(points, faces, is_solid, merge_duplicates, delete_degenerate)
     }
 
     /// Write this mesh to an STL file, which carries geometry and nothing else.
@@ -510,7 +563,7 @@ impl Mesh3 {
     /// returns: `Result<()>`
     #[cfg(feature = "stl")]
     pub fn save_stl(&self, path: &Path, opts: &StlWriteOpts) -> Result<()> {
-        self.to_data().save_stl(path, opts)
+        write_stl_mesh(path, self, opts)
     }
 
     /// Load a triangle mesh from a GOM `.g3d` file, the format written by GOM's Atos scanner and
@@ -525,6 +578,35 @@ impl Mesh3 {
     /// returns: `Result<Mesh3>`
     pub fn load_g3d(path: &Path, is_solid: bool) -> Result<Self> {
         Self::from_data(MeshData3::load_g3d(path)?, is_solid)
+    }
+
+    /// Load a triangle mesh from a tolerance-compressed `.tcmesh` file. See
+    /// [`MeshData3::load_tcmesh`] for the guarantees the format makes.
+    ///
+    /// # Arguments
+    ///
+    /// * `path`: the path to the `.tcmesh` file
+    /// * `is_solid`: whether distance queries should treat points inside the mesh as being at
+    ///   zero distance
+    ///
+    /// returns: `Result<Mesh3>`
+    pub fn load_tcmesh(path: &Path, is_solid: bool) -> Result<Self> {
+        Self::from_data(MeshData3::load_tcmesh(path)?, is_solid)
+    }
+
+    /// Write this mesh to a tolerance-compressed `.tcmesh` file, which carries geometry and
+    /// nothing else. See [`MeshData3::save_tcmesh`] for what the tolerance buys and for the vertex
+    /// renumbering the format performs.
+    ///
+    /// # Arguments
+    ///
+    /// * `path`: the path to write to, which is overwritten if it already exists
+    /// * `tol`: the largest acceptable round-trip position error for any vertex, in the same units
+    ///   as the coordinates
+    ///
+    /// returns: `Result<()>`, failing if the mesh carries any attributes
+    pub fn save_tcmesh(&self, path: &Path, tol: f64) -> Result<()> {
+        write_tc_mesh_file(path, self, tol)
     }
 }
 
@@ -549,7 +631,7 @@ impl Mesh3 {
     /// returns: `Result<Mesh3>`, failing if the mesh has no faces, since there is nothing to build
     /// an acceleration structure over
     pub fn from_data(data: MeshData3, is_solid: bool) -> Result<Self> {
-        let (points, faces, attrs) = data.into_parts();
+        let (points, faces, point_attrs, face_attrs) = data.into_parts();
 
         if faces.is_empty() {
             return Err(
@@ -563,9 +645,9 @@ impl Mesh3 {
         let shape = TriMesh::new(points, faces)?;
         Ok(Self {
             shape,
-            attrs,
+            point_attrs,
+            face_attrs,
             is_solid,
-            uv: None,
         })
     }
 
@@ -580,7 +662,8 @@ impl Mesh3 {
         MeshData3::new_with_attrs(
             self.points().to_vec(),
             self.faces().to_vec(),
-            self.attrs.clone(),
+            self.point_attrs.clone(),
+            self.face_attrs.clone(),
         )
         .expect(
             "A Mesh3's attributes are validated against its point and face counts on every \
@@ -602,7 +685,8 @@ impl Mesh3 {
 impl TryFrom<MeshData3> for Mesh3 {
     type Error = Box<dyn std::error::Error>;
 
-    /// Build an accelerated mesh which is **not** solid. Use `Mesh3::from_data` to choose.
+    /// Build an accelerated mesh which is **not** solid. Use `Mesh3::from_data` or
+    /// `MeshData3::into_mesh` to specify whether the mesh is solid.
     fn try_from(value: MeshData3) -> Result<Self> {
         Mesh3::from_data(value, false)
     }
@@ -624,7 +708,8 @@ impl Mesh3 {
     /// those hold directions rather than positions, only the rotation component has any effect.
     pub fn transform_in_place(&mut self, transform: &Iso3) {
         self.shape.transform_vertices(transform);
-        self.attrs.transform_in_place(transform);
+        self.point_attrs.transform_in_place(transform);
+        self.face_attrs.transform_in_place(transform);
     }
 
     /// Returns a new mesh with all vertices transformed by the given isometry, leaving the
@@ -665,8 +750,11 @@ impl Mesh3 {
             .scaled(&Vector3::new(scale, scale, scale));
 
         let mut result = Mesh3::from_trimesh(new_shape, self.is_solid);
-        result.attrs = self.attrs.clone();
-        result.attrs.scale_in_place(scale);
+        result.point_attrs = self.point_attrs.clone();
+        result.face_attrs = self.face_attrs.clone();
+
+        // Only the point domain has anything with length units.
+        result.point_attrs.scale_in_place(scale);
 
         if scale < 0.0 {
             result.flip_normals_in_place();
@@ -707,7 +795,7 @@ impl Mesh3 {
     /// changed.
     pub fn flip_normals_in_place(&mut self) {
         self.shape.reverse();
-        self.attrs.flip_in_place();
+        self.point_attrs.flip_in_place();
     }
 }
 
@@ -756,18 +844,16 @@ impl Mesh3 {
     ///
     /// returns: `Result<()>`
     pub fn append_in_place(&mut self, other: &Mesh3) -> Result<()> {
-        // For now, both meshes must have an empty UV mapping
-        if self.uv.is_some() || other.uv.is_some() {
-            return Err("Cannot append meshes with UV mappings".into());
-        }
+        // Both attribute domains are checked before anything is modified because these checks are
+        // the only steps that can fail. Extending the point domain before checking the face domain
+        // would leave the mesh only partially appended if a face attribute were mismatched.
+        self.point_attrs.check_extend_from(&other.point_attrs)?;
+        self.face_attrs.check_extend_from(&other.face_attrs)?;
 
-        // The attributes are merged into a copy first, because that is the step which can fail.
-        // Only once it has succeeded is either the geometry or this mesh's attribute set touched.
-        let mut merged = self.attrs.clone();
-        merged.extend_from(&other.attrs)?;
+        self.point_attrs.apply_extend_from(&other.point_attrs)?;
+        self.face_attrs.apply_extend_from(&other.face_attrs)?;
 
         self.shape.append(&other.shape);
-        self.attrs = merged;
 
         Ok(())
     }
@@ -784,69 +870,25 @@ impl Mesh3 {
     ///
     /// returns: `Result<()>`
     pub fn check_attribute_loss(&self, operation: &str, allow_loss: bool) -> Result<()> {
-        if allow_loss || self.attrs.is_empty() {
+        if allow_loss || !self.has_attrs() {
             return Ok(());
         }
-
-        let mut lost = self.attrs.point_attr_labels();
-        lost.extend(self.attrs.face_attr_labels());
 
         Err(format!(
             "Taking {} would discard the attributes on this mesh ({}), because it produces \
              topology with no index mapping back to the original. Pass `allow_attribute_loss` to \
              accept this.",
             operation,
-            lost.join(", ")
+            self.view().attr_labels().join(", ")
         )
         .into())
     }
 
-    pub fn uv(&self) -> Option<&UvMapping> {
-        self.uv.as_ref()
+    /// Borrow this mesh as the read-only view accepted by the file writers.
+    pub fn view(&self) -> MeshView3<'_> {
+        MeshView3::from(self)
     }
 
-    pub fn uv_to_3d(&self, uv: &Point2) -> Option<MeshSurfPoint> {
-        let (i, bc) = self.uv()?.triangle(uv)?;
-        self.at_barycentric(i, bc).ok()
-    }
-
-    pub fn project_to_uv(&self, p: &impl PCoords<3>) -> Option<Point2> {
-        let uv_map = self.uv()?;
-        let mp = self.surface_closest_to(p);
-        Some(uv_map.point(mp.face_index, mp.bc))
-    }
-
-    pub fn uv_with_tol(
-        &self,
-        point: &Point3,
-        max_dist: f64,
-        max_angle: f64,
-        transform: Option<&Iso3>,
-    ) -> Option<(Point2, f64)> {
-        if let Some(uv_map) = self.uv() {
-            let point = if let Some(transform) = transform {
-                transform * point
-            } else {
-                *point
-            };
-
-            if let Some((prj, id, loc)) = self.project_with_tol(&point, max_dist, max_angle, None) {
-                let triangle = self.shape.triangle(id);
-                if let Some(normal) = triangle.normal() {
-                    let uv = uv_map.point(id, loc.barycentric_coordinates().unwrap());
-                    // Now find the depth
-                    let sp = SurfacePoint3::new(prj.point, normal);
-                    Some((uv, sp.scalar_projection(&point)))
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
     /// Create a new `MeshNav` structure for this mesh. This structure is used to efficiently
     /// navigate the mesh through edges and faces.  It is recommended to use this if you will be
     /// performing multiple structural queries on the mesh, so that the structure does not need to
@@ -855,18 +897,71 @@ impl Mesh3 {
         MeshNav::new(self)
     }
 
-    /// Calculates the patches in the mesh. If you are going to be doing multiple queries of the
-    /// structure of the mesh, either use the half-edge representation, or generate a `MeshNav`
-    /// through the `compute_nav()` method to avoid having to recompute the mesh structure each time.
+    /// Label every face with the connected patch it belongs to.
+    ///
+    /// The labeling costs one `u32` per face regardless of how many patches the mesh splits into.
+    /// Use `PatchLabels::mask_where` or `mask_of` to turn the result into face masks, one at a
+    /// time, rather than materializing all of them at once. See `MeshNav::patch_labels` for the
+    /// connectivity rule.
+    ///
+    /// This builds a `MeshNav` on every call. Build one yourself with `compute_nav()` if you are
+    /// going to query the structure of the mesh more than once.
     ///
     /// # Arguments
     ///
-    /// * `mask`:
+    /// * `mask`: an optional mask restricting which faces take part, as if the mesh had been
+    ///   pruned to it.
     ///
-    /// returns: Result<Vec<IndexMask, Global>, Box<dyn Error, Global>>
-    pub fn compute_patches(&self, mask: Option<&IndexMask>) -> Result<Vec<IndexMask>> {
+    /// returns: `Result<PatchLabels>`
+    pub fn compute_patch_labels(&self, mask: Option<&IndexMask>) -> Result<PatchLabels> {
         let nav = self.compute_nav();
-        nav.patches(mask)
+        nav.patch_labels(mask)
+    }
+
+    /// Build a face mask selecting the connected patches which pass a filter.
+    ///
+    /// Use this rather than `remove_small_patches` when you want to see what would be discarded,
+    /// or to combine the selection with other criteria before extracting.
+    ///
+    /// # Arguments
+    ///
+    /// * `filter`: which patches are worth keeping
+    ///
+    /// returns: `Result<IndexMask>` over the mesh's faces
+    pub fn patch_mask(&self, filter: &PatchFilter) -> Result<IndexMask> {
+        let nav = self.compute_nav();
+        nav.patch_mask(filter, None)
+    }
+
+    /// Discard the connected patches which fail a filter, returning what is left.
+    ///
+    /// This is the tool for cleaning flying patches and speckle out of scan data. Every attribute
+    /// survives, because dropping whole faces keeps an index mapping back to the original.
+    ///
+    /// If no patch fails the filter the mesh is returned unchanged, rather than rebuilt, so a
+    /// filter which finds nothing to do is cheap and preserves the UV mapping.
+    ///
+    /// # Arguments
+    ///
+    /// * `filter`: which patches are worth keeping
+    ///
+    /// returns: `Result<Mesh3>`, failing if the filter would discard every face, since a mesh
+    /// needs at least one face
+    pub fn remove_small_patches(&self, filter: &PatchFilter) -> Result<Self> {
+        let mask = self.patch_mask(filter)?;
+        let kept = mask.count_true();
+
+        if kept == 0 {
+            return Err(
+                "Every patch was discarded by the filter, which would leave an empty mesh".into(),
+            );
+        }
+
+        if kept == self.faces().len() {
+            return Ok(self.clone());
+        }
+
+        self.extract_subset_faces(&mask)
     }
 
     /// Gets the boundary points of each patch in the mesh.  This function will return a list of
@@ -967,50 +1062,64 @@ impl Mesh3 {
         Self::from_primitive(MeshData3::create_box(length, width, height), is_solid)
     }
 
-    /// Create a spherical mesh centered at the origin.
+    /// Create a closed spherical mesh centered at the origin, with its poles on the local `z`
+    /// axis.
     ///
     /// See `MeshData3::create_sphere`.
     ///
     /// # Arguments
     ///
-    /// * `radius`: radius of the sphere
-    /// * `n_theta`: number of subdivisions around the polar direction
-    /// * `n_phi`: number of subdivisions around the azimuthal direction
+    /// * `radius`: radius of the sphere, which must be positive and finite
+    /// * `tol`: the maximum allowed deviation of a facet from the true sphere, which must be
+    ///   positive and finite. No matter how loose this is, a full turn around the equator never
+    ///   gets fewer than 8 segments and a pole-to-pole sweep never gets fewer than 4.
     ///
-    /// returns: `Mesh3`
-    pub fn create_sphere(radius: f64, n_theta: usize, n_phi: usize) -> Self {
-        Self::from_primitive(MeshData3::create_sphere(radius, n_theta, n_phi), true)
+    /// returns: `Result<Mesh3>`, failing if `radius` or `tol` is invalid
+    pub fn create_sphere(radius: f64, tol: f64) -> Result<Self> {
+        Ok(Self::from_primitive(
+            MeshData3::create_sphere(radius, tol)?,
+            true,
+        ))
     }
 
-    /// Create a cylindrical mesh centered at the origin and aligned with the local `y` axis.
+    /// Create a closed cylindrical mesh centered at the origin and aligned with the local `z`
+    /// axis.
     ///
     /// See `MeshData3::create_cylinder`.
     ///
     /// # Arguments
     ///
-    /// * `radius`: radius of the cylinder
-    /// * `height`: full height of the cylinder, along the y axis
-    /// * `steps`: number of subdivisions around the circumference
+    /// * `radius`: radius of the cylinder, which must be positive and finite
+    /// * `height`: full height of the cylinder, along the z-axis
+    /// * `tol`: the maximum allowed chordal deviation of the wall, which must be positive and
+    ///   finite. The circumference never gets fewer than 8 segments, no matter how loose this is.
     ///
-    /// returns: `Mesh3`
-    pub fn create_cylinder(radius: f64, height: f64, steps: usize) -> Self {
-        Self::from_primitive(MeshData3::create_cylinder(radius, height, steps), true)
+    /// returns: `Result<Mesh3>`, failing if `radius` or `tol` is invalid
+    pub fn create_cylinder(radius: f64, height: f64, tol: f64) -> Result<Self> {
+        Ok(Self::from_primitive(
+            MeshData3::create_cylinder(radius, height, tol)?,
+            true,
+        ))
     }
 
-    /// Create a conical mesh centered at the origin and aligned with the local `y` axis, with its
-    /// apex at `+height/2` and its base at `-height/2`.
+    /// Create a closed conical mesh centered at the origin and aligned with the local `z` axis,
+    /// with its apex at `+height/2` and its base at `-height/2`.
     ///
     /// See `MeshData3::create_cone`.
     ///
     /// # Arguments
     ///
-    /// * `radius`: radius of the base of the cone
-    /// * `height`: full height of the cone, along the y axis
-    /// * `steps`: number of subdivisions around the circumference
+    /// * `radius`: radius of the base of the cone, which must be positive and finite
+    /// * `height`: full height of the cone, along the z-axis
+    /// * `tol`: the maximum allowed chordal deviation of the base circle, which must be positive
+    ///   and finite. The base never gets fewer than 8 segments, no matter how loose this is.
     ///
-    /// returns: `Mesh3`
-    pub fn create_cone(radius: f64, height: f64, steps: usize) -> Self {
-        Self::from_primitive(MeshData3::create_cone(radius, height, steps), true)
+    /// returns: `Result<Mesh3>`, failing if `radius` or `tol` is invalid
+    pub fn create_cone(radius: f64, height: f64, tol: f64) -> Result<Self> {
+        Ok(Self::from_primitive(
+            MeshData3::create_cone(radius, height, tol)?,
+            true,
+        ))
     }
 
     /// Create a flat, filled circle mesh lying in the XY plane, centered at the origin, with the
@@ -1020,38 +1129,47 @@ impl Mesh3 {
     ///
     /// # Arguments
     ///
-    /// * `radius`: radius of the circle
-    /// * `segments`: number of perimeter points, and of triangles. Must be at least 3.
+    /// * `radius`: radius of the circle, which must be positive and finite
+    /// * `tol`: the maximum allowed chordal deviation of the perimeter, which must be positive
+    ///   and finite
     ///
-    /// returns: `Mesh3`
-    pub fn create_circle(radius: f64, segments: usize) -> Self {
-        Self::from_primitive(MeshData3::create_circle(radius, segments), false)
+    /// returns: `Result<Mesh3>`, failing if `radius` or `tol` is invalid
+    pub fn create_circle(radius: f64, tol: f64) -> Result<Self> {
+        Ok(Self::from_primitive(
+            MeshData3::create_circle(radius, tol)?,
+            false,
+        ))
     }
 
     /// Create a capsule mesh spanning the segment between two points.
     ///
     /// See `MeshData3::create_capsule`.
-    pub fn create_capsule(
-        p0: &Point3,
-        p1: &Point3,
-        radius: f64,
-        n_theta: usize,
-        n_phi: usize,
-    ) -> Self {
-        Self::from_primitive(
-            MeshData3::create_capsule(p0, p1, radius, n_theta, n_phi),
+    ///
+    /// returns: `Result<Mesh3>`, failing if `radius` or `tol` is invalid, or if the two points are
+    /// coincident
+    pub fn create_capsule(p0: &Point3, p1: &Point3, radius: f64, tol: f64) -> Result<Self> {
+        Ok(Self::from_primitive(
+            MeshData3::create_capsule(p0, p1, radius, tol)?,
             true,
-        )
+        ))
     }
 
     /// Create a cylindrical mesh spanning the segment between two points.
     ///
     /// See `MeshData3::create_cylinder_between`.
-    pub fn create_cylinder_between(p0: &Point3, p1: &Point3, radius: f64, steps: usize) -> Self {
-        Self::from_primitive(
-            MeshData3::create_cylinder_between(p0, p1, radius, steps),
+    ///
+    /// returns: `Result<Mesh3>`, failing if `radius` or `tol` is invalid, or if the two points are
+    /// coincident
+    pub fn create_cylinder_between(
+        p0: &Point3,
+        p1: &Point3,
+        radius: f64,
+        tol: f64,
+    ) -> Result<Self> {
+        Ok(Self::from_primitive(
+            MeshData3::create_cylinder_between(p0, p1, radius, tol)?,
             true,
-        )
+        ))
     }
 
     /// Create a rectangular beam spanning the segment between two points.
@@ -1110,9 +1228,39 @@ mod tests {
     use parry3d_f64::query::SplitResult;
     use std::f64::consts::FRAC_PI_2;
 
+    /// `Mesh3` reaches the format through `MeshData3`, and the only thing it adds is the `is_solid`
+    /// flag, which the file does not carry and the caller therefore has to supply on load.
+    #[test]
+    fn a_tcmesh_round_trips_and_is_solid_comes_from_the_caller() -> Result<()> {
+        let mesh = Mesh3::create_sphere(1.0, 0.025)?;
+        let tol = 1e-5;
+        let file = TempFile::new("tcmesh-round-trip", "tcmesh");
+
+        mesh.save_tcmesh(file.path(), tol)?;
+
+        let recovered = Mesh3::load_tcmesh(file.path(), true)?;
+        assert_eq!(recovered.point_count(), mesh.point_count());
+        assert_eq!(recovered.face_count(), mesh.face_count());
+        assert!(recovered.is_solid());
+
+        assert!(!Mesh3::load_tcmesh(file.path(), false)?.is_solid());
+
+        Ok(())
+    }
+
+    #[test]
+    fn saving_a_tcmesh_refuses_a_mesh_carrying_attributes() -> Result<()> {
+        let mesh = Mesh3::from_data(attributed_data(), false)?;
+        let file = TempFile::new("tcmesh-refused", "tcmesh");
+
+        assert!(mesh.save_tcmesh(file.path(), 1e-5).is_err());
+
+        Ok(())
+    }
+
     #[test]
     fn point_normals_match_point_count() -> Result<()> {
-        let mesh = Mesh3::create_sphere(1.0, 40, 40);
+        let mesh = Mesh3::create_sphere(1.0, 6.0e-3)?;
         let normals = mesh.compute_point_normals()?;
 
         assert_eq!(normals.len(), mesh.points().len());
@@ -1120,10 +1268,14 @@ mod tests {
         Ok(())
     }
 
-    /// The stanford bunny asset carries a defect: faces 300 and 538 are the same triangle wound in
-    /// opposite directions, and point 140 belongs to nothing else. Its two incident normals cancel,
+    /// The stanford bunny asset carries a defect: faces 207 and 209 are the same triangle wound in
+    /// opposite directions, and point 128 belongs to nothing else. Its two incident normals cancel,
     /// so it genuinely has no normal, and the computation is expected to say so rather than
     /// normalizing the floating point residue into a direction, which is what it used to do.
+    ///
+    /// The indices moved when the fixture was re-encoded from micro-mesh to tcmesh, which renumbers
+    /// vertices. The defect itself is unchanged: the same pair of opposed triangles, the same lone
+    /// point, verified rather than assumed when the numbers were updated.
     #[test]
     fn point_normals_report_the_bunny_asset_defect() {
         let mesh = stanford_bun_4();
@@ -1131,7 +1283,7 @@ mod tests {
         let err = mesh.compute_point_normals().unwrap_err();
 
         assert!(
-            err.to_string().starts_with("Point 140 has no well-defined"),
+            err.to_string().starts_with("Point 128 has no well-defined"),
             "unexpected error: {err}"
         );
     }
@@ -1153,7 +1305,7 @@ mod tests {
     /// the normals they compute have to agree exactly rather than merely being close.
     #[test]
     fn point_normals_agree_with_mesh_data() -> Result<()> {
-        let mesh = Mesh3::create_sphere(1.0, 40, 40);
+        let mesh = Mesh3::create_sphere(1.0, 6.0e-3)?;
         let from_mesh = mesh.compute_point_normals()?;
         let from_data = mesh.to_data().compute_point_normals()?;
 
@@ -1190,7 +1342,7 @@ mod tests {
     fn scale_copy_scales_spherical_radius() -> Result<()> {
         let radius = 1.0;
         let scale = 2.5;
-        let mesh = Mesh3::create_sphere(radius, 100, 100);
+        let mesh = Mesh3::create_sphere(radius, radius * 1.0e-3)?;
         let scaled = mesh.scale_copy(scale)?;
 
         assert_eq!(mesh.points().len(), scaled.points().len());
@@ -1206,7 +1358,7 @@ mod tests {
     fn offset_points_copy_preserves_spherical_radius() -> Result<()> {
         let radius = 1.0;
         let offset = 0.1;
-        let mesh = Mesh3::create_sphere(radius, 100, 100);
+        let mesh = Mesh3::create_sphere(radius, radius * 1.0e-3)?;
         let offset_mesh = mesh.offset_points_copy(offset)?;
 
         assert_eq!(mesh.points().len(), offset_mesh.points().len());
@@ -1238,6 +1390,12 @@ mod tests {
         data.set_point_normals(Some(vec![UnitVec3::new_normalize(Vector3::z()); 3]))
             .unwrap();
         data.set_point_stdev(Some(vec![0.1, 0.2, 0.3])).unwrap();
+        data.set_point_flat(Some(vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(2.0, 0.0),
+            Point2::new(0.0, 2.0),
+        ]))
+        .unwrap();
         data.set_face_labels(Some(vec![7])).unwrap();
         data.insert_point_attr("confidence", Attr3::Scalar(vec![0.5, 0.6, 0.7]))
             .unwrap();
@@ -1260,7 +1418,8 @@ mod tests {
 
         assert_eq!(after.points(), before.points());
         assert_eq!(after.faces(), before.faces());
-        assert_eq!(after.attrs(), before.attrs());
+        assert_eq!(after.point_attrs(), before.point_attrs());
+        assert_eq!(after.face_attrs(), before.face_attrs());
 
         Ok(())
     }
@@ -1298,7 +1457,8 @@ mod tests {
         assert!(!mesh.is_solid());
 
         let data: MeshData3 = mesh.into();
-        assert_eq!(data.attrs(), attributed_data().attrs());
+        assert_eq!(data.point_attrs(), attributed_data().point_attrs());
+        assert_eq!(data.face_attrs(), attributed_data().face_attrs());
 
         Ok(())
     }
@@ -1310,6 +1470,7 @@ mod tests {
     #[test]
     fn transform_rotates_the_direction_attributes() -> Result<()> {
         let mut mesh = Mesh3::from_data(attributed_data(), false)?;
+        mesh.insert_face_attr("face_dir", Attr3::Vector(vec![Vector3::x()]))?;
 
         // A quarter turn about +z, which maps +x onto +y, plus a translation.
         let iso = Iso3::new(Vector3::new(10.0, 0.0, 0.0), Vector3::z() * FRAC_PI_2);
@@ -1336,16 +1497,44 @@ mod tests {
             epsilon = 1.0e-12
         );
 
+        // The face domain is a separate set and must be rotated as well.
+        assert_relative_eq!(
+            mesh.face_attr("face_dir").unwrap().as_vector().unwrap()[0],
+            Vector3::y(),
+            epsilon = 1.0e-12
+        );
+
         // Scalars are untouched.
         assert_eq!(mesh.point_stdev().unwrap(), &[0.1, 0.2, 0.3]);
 
         Ok(())
     }
 
+    /// A mesh carrying only a face attribute is not bare, which ensures that checking only the
+    /// point domain cannot incorrectly classify it as bare.
     #[test]
-    fn scaling_scales_the_standard_deviations() -> Result<()> {
+    fn a_face_only_attribute_counts_as_having_attrs() -> Result<()> {
+        let mut mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
+        assert!(!mesh.has_attrs());
+
+        mesh.set_face_labels(Some(vec![0; mesh.face_count()]))?;
+        assert!(mesh.has_attrs());
+        assert!(mesh.point_attrs().is_empty());
+        assert!(mesh.check_attribute_loss("a test", false).is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn scaling_scales_the_standard_deviations_and_flat_coordinates() -> Result<()> {
         let mesh = Mesh3::from_data(attributed_data(), false)?;
         let scaled = mesh.scale_copy(25.4)?;
+
+        assert_relative_eq!(
+            scaled.point_flat().unwrap()[1].coords,
+            Point2::new(2.0 * 25.4, 0.0).coords,
+            epsilon = 1.0e-12
+        );
 
         for (actual, expected) in scaled
             .point_stdev()
@@ -1394,8 +1583,14 @@ mod tests {
         assert_eq!(mesh.face_labels().unwrap(), &[7, 7]);
         assert_eq!(mesh.point_attr("confidence").unwrap().len(), 6);
 
-        mesh.attrs()
-            .validate(mesh.point_count(), mesh.face_count())?;
+        // Flat coordinates concatenate like any other attribute. The two charts overlap in the
+        // plane, and the caller is responsible for resolving that overlap if necessary.
+        let flat = mesh.point_flat().unwrap();
+        assert_eq!(flat.len(), 6);
+        assert_eq!(flat[4], Point2::new(2.0, 0.0));
+
+        mesh.point_attrs().validate(mesh.point_count())?;
+        mesh.face_attrs().validate(mesh.face_count())?;
 
         Ok(())
     }
@@ -1415,6 +1610,28 @@ mod tests {
         assert_eq!(mesh.point_count(), 3);
         assert_eq!(mesh.face_count(), 1);
         assert_eq!(mesh.point_stdev().unwrap(), &[0.1, 0.2, 0.3]);
+
+        Ok(())
+    }
+
+    /// The two domains are separate sets, so a face-domain mismatch must be caught before the point
+    /// domain is modified. Otherwise, the mesh would be left with extended point attributes but
+    /// unchanged geometry and face attributes.
+    #[test]
+    fn a_face_domain_rejection_leaves_the_point_domain_untouched() -> Result<()> {
+        let mut mesh = Mesh3::from_data(attributed_data(), false)?;
+
+        let mut unlabeled = attributed_data();
+        unlabeled.set_face_labels(None)?;
+        let other = Mesh3::from_data(unlabeled, false)?;
+
+        assert!(mesh.append_in_place(&other).is_err());
+
+        assert_eq!(mesh.point_count(), 3);
+        assert_eq!(mesh.face_count(), 1);
+        assert_eq!(mesh.point_stdev().unwrap(), &[0.1, 0.2, 0.3]);
+        assert_eq!(mesh.point_attr("confidence").unwrap().len(), 3);
+        assert_eq!(mesh.face_labels().unwrap(), &[7]);
 
         Ok(())
     }
@@ -1440,8 +1657,14 @@ mod tests {
     fn labeled_box() -> Result<Mesh3> {
         let mut mesh = Mesh3::create_box(1.0, 1.0, 1.0, false);
         let stdev = (0..mesh.point_count()).map(|i| i as f64).collect();
+        let flat = mesh
+            .points()
+            .iter()
+            .map(|p| Point2::new(p.x, p.y))
+            .collect();
         let labels = (0..mesh.face_count() as u32).collect();
         mesh.set_point_stdev(Some(stdev))?;
+        mesh.set_point_flat(Some(flat))?;
         mesh.set_face_labels(Some(labels))?;
         Ok(mesh)
     }
@@ -1458,7 +1681,8 @@ mod tests {
 
         // The attribute arrays have to match the counts of the mesh they ended up on.
         assert_eq!(sub.point_stdev().unwrap().len(), sub.point_count());
-        sub.attrs().validate(sub.point_count(), sub.face_count())?;
+        sub.point_attrs().validate(sub.point_count())?;
+        sub.face_attrs().validate(sub.face_count())?;
 
         // The surviving standard deviations are exactly those of the points the faces reference.
         let kept: Vec<f64> = mesh
@@ -1467,6 +1691,14 @@ mod tests {
             .map(|i| mesh.point_stdev().unwrap()[i])
             .collect();
         assert_eq!(sub.point_stdev().unwrap(), kept.as_slice());
+
+        // Flat coordinates travel with their points in the same way.
+        let kept_flat: Vec<Point2> = mesh
+            .compute_unique_point_mask(&mask)?
+            .iter_true()
+            .map(|i| mesh.point_flat().unwrap()[i])
+            .collect();
+        assert_eq!(sub.point_flat().unwrap(), kept_flat.as_slice());
 
         Ok(())
     }
@@ -1478,7 +1710,8 @@ mod tests {
 
         assert_eq!(sub.face_count(), 2);
         assert_eq!(sub.face_labels().unwrap(), &[2, 3]);
-        sub.attrs().validate(sub.point_count(), sub.face_count())?;
+        sub.point_attrs().validate(sub.point_count())?;
+        sub.face_attrs().validate(sub.face_count())?;
 
         Ok(())
     }
@@ -1531,8 +1764,8 @@ mod tests {
         // Accepting the loss lets it through, and the halves come back bare.
         match mesh.split(&plane, true)? {
             SplitResult::Pair(a, b) => {
-                assert!(a.attrs().is_empty());
-                assert!(b.attrs().is_empty());
+                assert!(!a.has_attrs());
+                assert!(!b.has_attrs());
             }
             _ => panic!("expected the plane to cut the box in two"),
         }
@@ -1549,7 +1782,7 @@ mod tests {
         let mesh = labeled_box()?;
 
         assert!(mesh.convex_hull(false).is_err());
-        assert!(mesh.convex_hull(true)?.attrs().is_empty());
+        assert!(!mesh.convex_hull(true)?.has_attrs());
 
         let bare = Mesh3::create_box(1.0, 1.0, 1.0, false);
         assert!(bare.convex_hull(false).is_ok());
@@ -1574,6 +1807,14 @@ mod tests {
         assert_eq!(
             through_mesh.point_normals().unwrap(),
             through_data.point_normals().unwrap()
+        );
+
+        // Preserve both domains; the face domain has nothing to scale but must not be dropped.
+        assert_eq!(through_mesh.face_attrs(), through_data.face_attrs());
+        assert_eq!(through_mesh.face_labels().unwrap(), &[7]);
+        assert_eq!(
+            through_mesh.point_attr("confidence"),
+            through_data.point_attr("confidence")
         );
 
         // The single triangle was wound +z, so mirroring must leave it wound -z.
@@ -1603,12 +1844,10 @@ mod tests {
     // ===========================================================================================
 
     /// A file on disk, removed when the test finishes with it.
-    #[cfg(any(feature = "ply", feature = "stl"))]
     struct TempFile {
         path: std::path::PathBuf,
     }
 
-    #[cfg(any(feature = "ply", feature = "stl"))]
     impl TempFile {
         fn new(name: &str, ext: &str) -> Self {
             let path = std::env::temp_dir().join(format!(
@@ -1625,7 +1864,6 @@ mod tests {
         }
     }
 
-    #[cfg(any(feature = "ply", feature = "stl"))]
     impl Drop for TempFile {
         fn drop(&mut self) {
             let _ = std::fs::remove_file(&self.path);
@@ -1660,9 +1898,9 @@ mod tests {
     #[cfg(feature = "ply")]
     #[test]
     fn loading_a_point_cloud_ply_as_a_mesh_is_refused() -> Result<()> {
-        use crate::geom3::PointCloudData3;
+        use crate::geom3::PointCloud3;
 
-        let cloud = PointCloudData3::new(vec![Point3::origin(), Point3::new(1.0, 0.0, 0.0)]);
+        let cloud = PointCloud3::new(vec![Point3::origin(), Point3::new(1.0, 0.0, 0.0)]);
         let file = TempFile::new("is-a-cloud", "ply");
         cloud.save_ply(file.path(), &PlyWriteOpts::default())?;
 
@@ -1738,16 +1976,26 @@ mod tests {
     fn set_attrs_validates_against_the_current_counts() -> Result<()> {
         let mut mesh = Mesh3::from_data(attributed_data(), false)?;
 
-        let mut bad = MeshAttrSet3::empty();
-        bad.set_face_labels(Some(vec![1, 2, 3]), 3)?;
-        assert!(mesh.set_attrs(bad).is_err());
+        let mut bad = FaceAttrSet3::empty();
+        bad.set_labels(Some(vec![1, 2, 3]), 3)?;
+        assert!(mesh.set_face_attrs(bad).is_err());
 
-        // The rejected set must have left the existing attributes in place.
+        let mut bad = PointAttrSet3::empty();
+        bad.set_stdev(Some(vec![0.1]), 1)?;
+        assert!(mesh.set_point_attrs(bad).is_err());
+
+        // The rejected sets must have left the existing attributes in place.
         assert_eq!(mesh.face_labels().unwrap(), &[7]);
+        assert_eq!(mesh.point_stdev().unwrap(), &[0.1, 0.2, 0.3]);
 
-        let taken = mesh.take_attrs();
-        assert_eq!(taken.face_labels().unwrap(), &[7]);
-        assert!(mesh.attrs().is_empty());
+        let taken = mesh.take_face_attrs();
+        assert_eq!(taken.labels().unwrap(), &[7]);
+        assert!(mesh.face_labels().is_none());
+        assert!(mesh.point_stdev().is_some());
+
+        let taken = mesh.take_point_attrs();
+        assert_eq!(taken.stdev().unwrap(), &[0.1, 0.2, 0.3]);
+        assert!(!mesh.has_attrs());
 
         Ok(())
     }

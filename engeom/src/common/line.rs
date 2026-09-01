@@ -141,6 +141,75 @@ impl<const D: usize> Line<D> {
         (pt - self.closest_point(&pt)).norm()
     }
 
+    /// Returns the parameters on this line and on `other` at which the two come closest to each
+    /// other, or `None` if they are parallel.
+    ///
+    /// The points [`at`](Line::at) these two parameters are the feet of the common perpendicular:
+    /// the segment joining them is orthogonal to both directions, and its length is the distance
+    /// between the lines. Where the lines actually meet, which is everywhere they are not parallel
+    /// in 2D, both parameters land on the single intersection point and this is equivalent to
+    /// [`intersection_param`](crate::geom2::intersection_param).
+    ///
+    /// Each parameter is in its own line's parameterization, so it is an arc length only if that
+    /// line's direction is unit length. A line built by [`to_line`](crate::common::Segment::to_line)
+    /// has direction `b - a`, so its parameter is the segment's own normalized parameter; that is
+    /// what makes "where, if anywhere, do these two segments cross" this call plus a range check on
+    /// both results.
+    ///
+    /// Parallelism is judged relative to the lengths of the two direction vectors rather than
+    /// against a fixed distance, so the answer does not change when the same geometry is expressed
+    /// at a different scale. A line with a zero-length direction is treated as parallel to
+    /// everything, since it has no direction to be perpendicular to.
+    ///
+    /// This is the closest approach of two *infinite* lines. For the closest approach of the two
+    /// finite spans, see [`Segment::closest_approach`](crate::common::Segment::closest_approach),
+    /// which is not simply this result clamped.
+    ///
+    /// # Arguments
+    ///
+    /// * `other`: the line to find the closest approach to
+    ///
+    /// returns: Option<(f64, f64)>, the parameter on `self` followed by the parameter on `other`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::{Line3, Point3, Vector3};
+    /// use approx::assert_relative_eq;
+    ///
+    /// // The x axis, and a line running parallel to the y axis which passes over it at x = 2,
+    /// // five units up in z.
+    /// let a = Line3::new(Point3::origin(), Vector3::x());
+    /// let b = Line3::new(Point3::new(2.0, 0.0, 5.0), Vector3::y());
+    ///
+    /// let (ta, tb) = a.closest_approach(&b).unwrap();
+    /// assert_relative_eq!(ta, 2.0, epsilon = 1e-12);
+    /// assert_relative_eq!(tb, 0.0, epsilon = 1e-12);
+    /// assert_relative_eq!((a.at(ta) - b.at(tb)).norm(), 5.0, epsilon = 1e-12);
+    ///
+    /// // Parallel lines have no unique closest approach.
+    /// let c = Line3::new(Point3::new(0.0, 1.0, 0.0), Vector3::x());
+    /// assert!(a.closest_approach(&c).is_none());
+    /// ```
+    pub fn closest_approach(&self, other: &Line<D>) -> Option<(f64, f64)> {
+        let w = self.origin - other.origin;
+        let a = self.direction.norm_squared();
+        let b = self.direction.dot(&other.direction);
+        let c = other.direction.norm_squared();
+        let d = self.direction.dot(&w);
+        let e = other.direction.dot(&w);
+
+        // `a * c - b^2` is `|d1|^2 |d2|^2 sin^2(theta)`, so comparing it against `a * c` tests the
+        // angle between the lines and nothing else. A zero-length direction makes `a * c` zero and
+        // fails the test, which is the intended answer.
+        let denom = a * c - b * b;
+        if denom <= 1.0e-14 * a * c {
+            return None;
+        }
+
+        Some(((b * e - c * d) / denom, (a * e - b * d) / denom))
+    }
+
     /// Return a new line whose direction is spherically interpolated between this instance and
     /// `other`, and whose origin is _linearly interpolated_ between this instance and `other`.
     ///
@@ -457,5 +526,143 @@ mod tests {
             1.0,
             epsilon = 1e-6
         );
+    }
+
+    // closest_approach tests ────────────────────────────────────────────────
+
+    #[test]
+    fn closest_approach_of_skew_axes() {
+        // The x axis and a line along y passing over it at x = 2, three units up in z. The common
+        // perpendicular is the z segment between them, so both feet are at the crossing in plan.
+        let a = Line::<3>::new(Point3::origin(), Vector3::x());
+        let b = Line::<3>::new(Point3::new(2.0, 0.0, 3.0), Vector3::y());
+
+        let (ta, tb) = a.closest_approach(&b).unwrap();
+        assert_relative_eq!(ta, 2.0, epsilon = 1e-12);
+        assert_relative_eq!(tb, 0.0, epsilon = 1e-12);
+        assert_relative_eq!((a.at(ta) - b.at(tb)).norm(), 3.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn closest_approach_of_intersecting_lines_is_the_intersection() {
+        // Two lines which genuinely meet, at (3, 4, 0). Both feet must land on that single point.
+        let a = Line::<3>::new(Point3::origin(), Vector3::new(3.0, 4.0, 0.0));
+        let b = Line::<3>::new(Point3::new(3.0, 0.0, 0.0), Vector3::new(0.0, 4.0, 0.0));
+
+        let (ta, tb) = a.closest_approach(&b).unwrap();
+        assert_relative_eq!(a.at(ta), Point3::new(3.0, 4.0, 0.0), epsilon = 1e-12);
+        assert_relative_eq!(b.at(tb), Point3::new(3.0, 4.0, 0.0), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn closest_approach_in_2d_matches_the_intersection_parameters() {
+        // In 2D non-parallel lines always meet, so the closest approach and the intersection are
+        // the same question asked twice. This pins the two answers together.
+        let a = Line::<2>::new(Point2::new(1.0, 1.0), Vector2::new(2.0, 1.0));
+        let b = Line::<2>::new(Point2::new(4.0, 0.0), Vector2::new(-1.0, 3.0));
+
+        let (ta, tb) = a.closest_approach(&b).unwrap();
+        let (ia, ib) =
+            crate::geom2::intersection_param(&a.origin, &a.direction, &b.origin, &b.direction)
+                .unwrap();
+
+        assert_relative_eq!(ta, ia, epsilon = 1e-12);
+        assert_relative_eq!(tb, ib, epsilon = 1e-12);
+        assert_relative_eq!(a.at(ta), b.at(tb), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn closest_approach_refuses_parallel_and_degenerate_lines() {
+        let x = Line::<3>::new(Point3::origin(), Vector3::x());
+
+        // Parallel, same direction.
+        let parallel = Line::<3>::new(Point3::new(0.0, 1.0, 0.0), Vector3::x());
+        assert!(x.closest_approach(&parallel).is_none());
+
+        // Antiparallel, and scaled, which must not change the verdict.
+        let anti = Line::<3>::new(Point3::new(0.0, 1.0, 0.0), Vector3::new(-7.0, 0.0, 0.0));
+        assert!(x.closest_approach(&anti).is_none());
+
+        // Collinear with itself.
+        assert!(x.closest_approach(&x).is_none());
+
+        // A zero-length direction has no direction to be perpendicular to.
+        let point = Line::<3>::new(Point3::new(0.0, 1.0, 0.0), Vector3::zeros());
+        assert!(x.closest_approach(&point).is_none());
+        assert!(point.closest_approach(&x).is_none());
+    }
+
+    #[test]
+    fn closest_approach_is_scale_invariant() {
+        // The same two lines, one of them with a direction vector a million times longer. The feet
+        // must not move, so the parameter must shrink by exactly that factor.
+        let a = Line::<3>::new(Point3::origin(), Vector3::x());
+        let b = Line::<3>::new(Point3::new(2.0, 0.0, 3.0), Vector3::y());
+        let b_long = Line::<3>::new(b.origin, b.direction * 1.0e6);
+
+        let (ta, tb) = a.closest_approach(&b).unwrap();
+        let (ta_long, tb_long) = a.closest_approach(&b_long).unwrap();
+
+        assert_relative_eq!(ta, ta_long, epsilon = 1e-12);
+        assert_relative_eq!(tb, tb_long * 1.0e6, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn stress_closest_approach_is_perpendicular_to_both() {
+        // The defining property: the segment joining the two feet is orthogonal to both directions.
+        // Nothing here is compared against another implementation, only against the definition.
+        let mut rand = RandomGeometry::<3>::from_seed(0x5eed_1abe);
+
+        for _ in 0..2000 {
+            let a = Line::<3>::new(rand.point(10.0), rand.unit_vec().into_inner());
+            let b = Line::<3>::new(rand.point(10.0), rand.unit_vec().into_inner());
+
+            // Skip the near-parallel draws, where the feet are ill-conditioned by nature rather
+            // than by any fault of the arithmetic.
+            let sin_sq = 1.0 - a.direction.dot(&b.direction).powi(2);
+            if sin_sq < 1.0e-6 {
+                continue;
+            }
+
+            let (ta, tb) = a.closest_approach(&b).unwrap();
+            let joining = b.at(tb) - a.at(ta);
+
+            assert_relative_eq!(joining.dot(&a.direction), 0.0, epsilon = 1e-9);
+            assert_relative_eq!(joining.dot(&b.direction), 0.0, epsilon = 1e-9);
+        }
+    }
+
+    #[test]
+    fn stress_closest_approach_beats_dense_sampling() {
+        // The independent check: no pair of points sampled along the two lines may be closer than
+        // the analytic answer claims. Measured rather than asserted, in the manner of the rest of
+        // the crate.
+        let mut rand = RandomGeometry::<3>::from_seed(0xc10_5e57);
+
+        for _ in 0..200 {
+            let a = Line::<3>::new(rand.point(5.0), rand.unit_vec().into_inner());
+            let b = Line::<3>::new(rand.point(5.0), rand.unit_vec().into_inner());
+
+            let sin_sq = 1.0 - a.direction.dot(&b.direction).powi(2);
+            if sin_sq < 1.0e-4 {
+                continue;
+            }
+
+            let (ta, tb) = a.closest_approach(&b).unwrap();
+            let best = (a.at(ta) - b.at(tb)).norm();
+
+            // Sample a window around the analytic feet; nothing in it may be closer.
+            let n = 60;
+            for i in 0..=n {
+                let sa = ta + 4.0 * (i as f64 / n as f64 - 0.5);
+                for j in 0..=n {
+                    let sb = tb + 4.0 * (j as f64 / n as f64 - 0.5);
+                    assert!(
+                        (a.at(sa) - b.at(sb)).norm() >= best - 1.0e-9,
+                        "sampled pair at ({sa}, {sb}) beat the analytic closest approach {best}"
+                    );
+                }
+            }
+        }
     }
 }

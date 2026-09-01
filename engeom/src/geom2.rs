@@ -6,6 +6,7 @@ mod boundary2;
 mod circle2;
 mod cubic_spline2;
 mod curve2;
+mod curve_group2;
 pub mod hull;
 mod iso2;
 mod line2;
@@ -16,7 +17,7 @@ use crate::AngleDir;
 use crate::AngleDir::Cw;
 use crate::common::surface_point::SurfacePoint;
 use crate::common::svd_basis::SvdBasis;
-use crate::common::{PCoords, SurfacePointCollection};
+use crate::common::{PCoords, SPCoords, SurfacePointCollection};
 use crate::na::SVector;
 use parry2d_f64::na::UnitComplex;
 use serde::{Deserialize, Serialize};
@@ -28,8 +29,9 @@ pub type UnitVec2 = parry2d_f64::na::Unit<Vector2>;
 pub type Iso2 = parry2d_f64::na::Isometry2<f64>;
 pub type SvdBasis2 = SvdBasis<2>;
 pub type Ray2 = parry2d_f64::query::Ray;
-pub type Alignment2 = crate::common::align::Alignment<UnitComplex<f64>, 2>;
+pub type Align2 = crate::common::align::Alignment<UnitComplex<f64>, 2>;
 pub type AlignOutcome2 = crate::common::align::AlignOutcome<UnitComplex<f64>, 2>;
+pub type MultiOutcome2 = crate::common::align::MultiOutcome<UnitComplex<f64>, 2>;
 pub type KdTree2 = crate::common::kd_tree::KdTree<2>;
 
 /// A point in 2D space paired with a unit normal direction, representing a position on a
@@ -46,6 +48,7 @@ pub use self::arc2::Arc2;
 pub use self::boundary2::*;
 pub use self::circle2::{Circle2, CircleTangency};
 pub use self::cubic_spline2::CubicSpline2;
+pub use self::curve_group2::CurveGroup2;
 pub use self::curve2::{Curve2, CurvePartitioner2, CurveStation2};
 pub use self::iso2::IsoExtensions2;
 pub use self::line2::{Line2, LineOps2, intersect_lines, intersect_rays, intersection_param};
@@ -135,6 +138,12 @@ impl Manifold1Pos2 {
 impl PCoords<2> for Manifold1Pos2 {
     fn coords(&self) -> SVector<f64, 2> {
         self.point.coords
+    }
+}
+
+impl SPCoords<2> for Manifold1Pos2 {
+    fn normal(&self) -> UnitVec2 {
+        self.normal
     }
 }
 

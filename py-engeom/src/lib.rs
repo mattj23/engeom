@@ -1,4 +1,5 @@
 mod airfoil2;
+mod align2;
 mod align3;
 mod boundary2;
 mod bounding;
@@ -6,6 +7,7 @@ mod common;
 mod conversions;
 mod geom2;
 mod geom3;
+mod half_edge3;
 mod mesh;
 mod metrology;
 mod point_cloud;
@@ -13,6 +15,7 @@ mod raster;
 mod raster2;
 mod ray_casting;
 mod sensors;
+mod solve_report;
 mod svd_basis;
 
 use pyo3::prelude::*;
@@ -55,6 +58,7 @@ fn register_geom2(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     // Curves and other complex geometries
     child.add_class::<geom2::Curve2>()?;
     child.add_class::<geom2::CurveStation2>()?;
+    child.add_class::<geom2::CurveGroup2>()?;
 
     // Boundary geometry
     child.add_class::<boundary2::Manifold1Pos2>()?;
@@ -96,14 +100,28 @@ fn register_geom3(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_class::<mesh::MeshData3>()?;
     child.add_class::<mesh::MeshCollisionSet>()?;
     child.add_class::<mesh::FaceFilterHandle>()?;
+    child.add_class::<mesh::PatchFilter>()?;
+    child.add_class::<mesh::TransversePlane>()?;
+    child.add_class::<mesh::PlanarSection>()?;
+
+    // Half-edge mesh editing: repair, decimation, smoothing
+    child.add_class::<half_edge3::HalfEdgeMesh3>()?;
+    child.add_class::<half_edge3::RepairOpts>()?;
+    child.add_class::<half_edge3::RepairReport>()?;
+    child.add_class::<half_edge3::DecimateOpts>()?;
+    child.add_class::<half_edge3::BestEffortOpts>()?;
+    child.add_class::<half_edge3::DecimateReport>()?;
+    child.add_class::<half_edge3::DecimateStats>()?;
     child.add_class::<geom3::Curve3>()?;
     child.add_class::<geom3::CurveStation3>()?;
+    child.add_class::<geom3::CurveGroup3>()?;
+    child.add_class::<geom3::PlanarMap>()?;
     child.add_class::<geom3::CubicSpline3>()?;
     child.add_class::<geom3::CubicSplineQueries3>()?;
     child.add_class::<geom2::SplineProjection>()?;
     child.add_function(wrap_pyfunction!(geom3::fit_spline_to_points, &child)?)?;
-    child.add_class::<point_cloud::PointCloud>()?;
-    child.add_class::<point_cloud::PointCloudData3>()?;
+
+    child.add_class::<point_cloud::PointCloud3>()?;
 
     // Bounding and tools
     child.add_class::<bounding::Aabb3>()?;
@@ -115,13 +133,29 @@ fn register_geom3(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     parent_module.add_submodule(&child)
 }
 
+fn register_align2_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
+    let child = PyModule::new(parent_module.py(), "_align2")?;
+    child.add_class::<align2::Dof3>()?;
+    child.add_class::<align2::AlignParams2>()?;
+    child.add_class::<align2::Align2>()?;
+    child.add_class::<align2::AlignOutcome2>()?;
+    child.add_class::<align2::MultiOutcome2>()?;
+    child.add_function(wrap_pyfunction!(align2::points_to_curve, &child)?)?;
+    child.add_function(wrap_pyfunction!(align2::points_to_group, &child)?)?;
+    child.add_function(wrap_pyfunction!(align2::points_to_cloud, &child)?)?;
+    child.add_function(wrap_pyfunction!(align2::multi_curve_adjustment, &child)?)?;
+    parent_module.add_submodule(&child)?;
+    Ok(())
+}
+
 fn register_align3_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     let child = PyModule::new(parent_module.py(), "_align3")?;
     child.add_class::<align3::Dof6>()?;
     child.add_class::<align3::AlignParams3>()?;
-    child.add_class::<align3::Alignment3>()?;
+    child.add_class::<align3::Align3>()?;
     child.add_class::<align3::AlignOutcome3>()?;
     child.add_function(wrap_pyfunction!(align3::points_to_mesh, &child)?)?;
+    child.add_function(wrap_pyfunction!(align3::points_to_cloud, &child)?)?;
     parent_module.add_submodule(&child)
 }
 
@@ -206,6 +240,7 @@ fn py_engeom(m: &Bound<'_, PyModule>) -> PyResult<()> {
     register_raster3_module(m)?;
 
     // Alignment submodule
+    register_align2_module(m)?;
     register_align3_module(m)?;
 
     // Airfoil2 submodule

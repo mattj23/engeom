@@ -13,12 +13,12 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Ellipse, Polygon
 
 from engeom.geom2 import Point2, Vector2
-from engeom.geom3 import Aabb3, Circle3, Curve3, Iso3, Line3, Mesh3, Plane3, Point3, PointCloud, Vector3
+from engeom.geom3 import Aabb3, Circle3, Curve3, Iso3, Line3, Mesh3, Plane3, Point3, PointCloud3, Vector3
 from engeom.metrology import Distance2, Distance3
 
-from .._common import LabelPlace
+from .._common import LabelPlace, plane_basis
 from .._coerce import PointLike, to_point2, to_point3
-from ._style import merge_style
+from .._style import merge_style
 from .trace import TraceBuilder
 
 if TYPE_CHECKING:
@@ -27,23 +27,6 @@ if TYPE_CHECKING:
 # Below this ratio between a projected direction and its 3D original, the entity is considered to be
 # viewed edge-on to the point where the projection carries no usable information.
 _DEGENERATE = 1.0e-9
-
-
-def _plane_basis(normal: Vector3) -> tuple[Vector3, Vector3]:
-    """
-    Build an orthonormal pair of vectors spanning the plane with the given normal.
-
-    The pair is deterministic but otherwise arbitrary, since a plane normal alone does not fix a
-    rotation about itself. The world axis least aligned with the normal is used as the seed, which
-    keeps the construction numerically well conditioned for every possible normal.
-
-    :param normal: the plane normal. Need not be unit length.
-    :return: two orthonormal vectors, both perpendicular to `normal` and to each other.
-    """
-    n = normal.normalized()
-    seed = min((Vector3.x_axis(), Vector3.y_axis(), Vector3.z_axis()), key=lambda a: abs(n.dot(a)))
-    u = n.cross(seed).normalized()
-    return u, n.cross(u)
 
 
 class ViewPort3:
@@ -64,7 +47,12 @@ class ViewPort3:
     def __init__(self, view: Iso3, helper: AxesHelper):
         """
         :param view: the isometry transforming 3D space into the 2D image plane, where +X is to the
-            right, +Y is up, and +Z points into the image plane.
+            right, +Y is up, and +Z points out of the image towards the viewer. The three are not
+            free to choose: with +X right and +Y up, a rigid transform has to have +Z coming
+            towards the viewer, since the other choice makes the frame left-handed and no longer a
+            rotation. This is the same convention as VTK's camera, so
+            `PlotterHelper.camera_pose` returns a view that can be handed straight to
+            `AxesHelper.viewport` and draws the same picture the render window shows.
         :param helper: the helper whose axes to draw onto.
         """
         self.view = view
@@ -145,7 +133,7 @@ class ViewPort3:
             drawn.append(self.helper.ax.plot(points[:, 0], points[:, 1], **kwargs)[0])
         return drawn
 
-    def draw_point_cloud(self, *clouds: PointCloud, marker: str = ".", markersize: float = 1.0,
+    def draw_point_cloud(self, *clouds: PointCloud3, marker: str = ".", markersize: float = 1.0,
                          color: str | None = None, alpha: float | None = None,
                          label: str | None = None, **kwargs) -> list[Line2D]:
         """
@@ -207,7 +195,7 @@ class ViewPort3:
         patches = []
         for circle in circles:
             in_view = self.view @ circle
-            u, v = _plane_basis(in_view.normal)
+            u, v = plane_basis(in_view.normal)
             # The circle is the image of the unit circle under [r*u | r*v]; dropping z leaves a 2x2
             # whose singular values are the projected semi-axes and whose left singular vectors give
             # their directions.
@@ -264,7 +252,7 @@ class ViewPort3:
         patches = []
         for plane in planes:
             origin = plane.project_point(anchor)
-            u, v = _plane_basis(plane.normal)
+            u, v = plane_basis(plane.normal)
             corners = [origin + u * half + v * half, origin - u * half + v * half,
                        origin - u * half - v * half, origin + u * half - v * half]
             projected = [self.view @ corner for corner in corners]

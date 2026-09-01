@@ -1,12 +1,12 @@
 import numpy
 import pytest
 from numpy import linalg
-from engeom.geom3 import Mesh3, Iso3, Plane3
+from engeom.geom3 import Mesh3, Iso3, Plane3, PatchFilter, PointCloud3, Vector3, TransversePlane
 from engeom.common import IndexMask
 
 
 def test_mesh_offset_points_copy():
-    m = Mesh3.create_sphere(1.0, 100, 100)
+    m = Mesh3.create_sphere(1.0, 1.0e-3)
     n = m.offset_points_copy(0.1)
 
     for v in n.points:
@@ -29,7 +29,7 @@ def test_mesh_compute_point_normals_of_a_box_point_along_the_diagonals():
 
 
 def test_mesh_compute_point_normals_is_cached():
-    m = Mesh3.create_sphere(1.0, 20, 20)
+    m = Mesh3.create_sphere(1.0, 0.025)
     assert m.compute_point_normals() is m.compute_point_normals()
 
 
@@ -171,17 +171,122 @@ def test_mesh_extract_subset_faces_matches_the_index_route():
     assert numpy.array_equal(by_mask.faces, by_indices.faces)
 
 
-def test_mesh_compute_patches_finds_disconnected_pieces():
+def test_mesh_compute_patch_labels_finds_disconnected_pieces():
     m = Mesh3.create_box(1.0, 1.0, 1.0)
     other = Mesh3.create_box(1.0, 1.0, 1.0)
     other.transform_in_place(Iso3.from_translation(10.0, 0.0, 0.0))
     m.append_in_place(other)
 
-    patches = m.compute_patches()
+    labels = m.compute_patch_labels()
 
-    assert len(patches) == 2
-    assert all(len(p) == m.face_count for p in patches)
-    assert sum(p.count_true() for p in patches) == m.face_count
+    assert labels.dtype == numpy.uint32
+    assert len(labels) == m.face_count
+    assert set(numpy.unique(labels)) == {0, 1}
+
+    # Both boxes tessellate the same way, so the faces split evenly between the two patches.
+    counts = numpy.bincount(labels)
+    assert list(counts) == [m.face_count // 2, m.face_count // 2]
+
+    # Patches are numbered by their lowest-indexed face, so the box appended first is patch 0.
+    assert labels[0] == 0
+    assert labels[-1] == 1
+
+
+def test_mesh_compute_patch_labels_marks_masked_faces():
+    m = Mesh3.create_box(1.0, 1.0, 1.0)
+    other = Mesh3.create_box(1.0, 1.0, 1.0)
+    other.transform_in_place(Iso3.from_translation(10.0, 0.0, 0.0))
+    m.append_in_place(other)
+
+    # Keep only the first box, which is the first half of the faces.
+    half = m.face_count // 2
+    mask = IndexMask.from_indices(range(half), m.face_count)
+
+    labels = m.compute_patch_labels(mask)
+
+    no_patch = 2**32 - 1
+    assert set(numpy.unique(labels)) == {0, no_patch}
+    assert numpy.all(labels[: m.face_count // 2] == 0)
+    assert numpy.all(labels[m.face_count // 2 :] == no_patch)
+
+
+def _body_with_flyer() -> Mesh3:
+    """A body with a small flyer parked well away from it, as scan data tends to produce."""
+    m = Mesh3.create_box(20.0, 20.0, 20.0)
+    flyer = Mesh3.create_box(0.5, 0.5, 0.5)
+    flyer.transform_in_place(Iso3.from_translation(300.0, 0.0, 0.0))
+    m.append_in_place(flyer)
+    return m
+
+
+def test_mesh_remove_small_patches_drops_the_flyer():
+    m = _body_with_flyer()
+    assert m.compute_patch_labels().max() == 1
+
+    cleaned = m.remove_small_patches(PatchFilter.keep_largest())
+
+    assert cleaned.face_count == 12
+    assert cleaned.compute_patch_labels().max() == 0
+
+    # With the flyer gone the bounding box is the body alone.
+    lo, hi = cleaned.aabb.min, cleaned.aabb.max
+    assert hi.x - lo.x == pytest.approx(20.0, abs=1e-9)
+
+
+@pytest.mark.parametrize(
+    "filter_",
+    [
+        PatchFilter(min_faces=None, min_area=10.0),
+        PatchFilter(min_aabb_diagonal=5.0),
+        PatchFilter(min_area_fraction=0.01),
+        PatchFilter(keep_largest_n=1),
+    ],
+)
+def test_mesh_remove_small_patches_criteria_each_catch_the_flyer(filter_):
+    cleaned = _body_with_flyer().remove_small_patches(filter_)
+    assert cleaned.face_count == 12
+
+
+def test_mesh_patch_mask_reports_what_would_be_kept():
+    m = _body_with_flyer()
+    mask = m.patch_mask(PatchFilter.keep_largest())
+
+    assert len(mask) == m.face_count
+    assert mask.count_true == 12
+    kept = mask.to_indices()
+    assert list(kept) == list(range(12))
+
+
+def test_mesh_remove_small_patches_keeping_everything_is_a_no_op():
+    m = _body_with_flyer()
+    same = m.remove_small_patches(PatchFilter())
+
+    assert same.face_count == m.face_count
+    assert same.point_count == m.point_count
+
+
+def test_mesh_remove_small_patches_rejects_discarding_everything():
+    m = _body_with_flyer()
+    with pytest.raises(ValueError):
+        m.remove_small_patches(PatchFilter(min_faces=1_000_000))
+
+
+def test_patch_filter_exposes_its_criteria():
+    f = PatchFilter(min_faces=50, min_area_fraction=0.01)
+
+    assert f.min_faces == 50
+    assert f.min_area_fraction == 0.01
+    assert f.min_area is None
+    assert f.min_aabb_diagonal is None
+    assert f.keep_largest_n is None
+    assert PatchFilter.keep_largest().keep_largest_n == 1
+
+
+def test_face_select_keep_patches():
+    m = _body_with_flyer()
+    kept = m.face_select("all").keep_patches(PatchFilter.keep_largest(), "keep").to_mesh()
+
+    assert kept.face_count == 12
 
 
 def test_mesh_find_points_in_tol_is_indexed_by_the_given_points():
@@ -242,22 +347,22 @@ def test_filter_vertices_near_point():
 
 
 def test_filter_expand_dilates_and_erodes():
-    m = Mesh3.create_sphere(1.0, 20, 20)
+    m = Mesh3.create_sphere(1.0, 0.025)
     seed = IndexMask.from_indices([0], m.face_count)
 
     grown = m.face_select().by_mask(seed, "add").expand("add").to_mask()
-    assert grown.count_true() > 1
+    assert grown.count_true > 1
     assert (grown & seed) == seed  # dilation keeps what it started with
 
     # Erosion needs a border to eat into. A closed sphere has none when everything is selected, so
     # erode the dilated patch instead, which does.
     eroded = m.face_select().by_mask(grown, "add").expand("remove").to_mask()
-    assert eroded.count_true() < grown.count_true()
+    assert eroded.count_true < grown.count_true
 
 
 def test_filter_expand_remove_on_a_closed_mesh_selection_is_a_no_op():
     """Erosion works from the unselected side, so a fully selected closed mesh has nothing to erode."""
-    m = Mesh3.create_sphere(1.0, 20, 20)
+    m = Mesh3.create_sphere(1.0, 0.025)
 
     eroded = m.face_select("all").expand("remove").collect_indices()
 
@@ -265,7 +370,7 @@ def test_filter_expand_remove_on_a_closed_mesh_selection_is_a_no_op():
 
 
 def test_filter_expand_n_matches_repeated_expand():
-    m = Mesh3.create_sphere(1.0, 20, 20)
+    m = Mesh3.create_sphere(1.0, 0.025)
     seed = IndexMask.from_indices([0], m.face_count)
 
     once_twice = (m.face_select().by_mask(seed, "add")
@@ -277,7 +382,7 @@ def test_filter_expand_n_matches_repeated_expand():
 
 
 def test_filter_expand_respects_the_exclude_mask():
-    m = Mesh3.create_sphere(1.0, 20, 20)
+    m = Mesh3.create_sphere(1.0, 0.025)
     seed = IndexMask.from_indices([0], m.face_count)
 
     free = m.face_select().by_mask(seed, "add").expand("add").to_mask()
@@ -376,3 +481,229 @@ def test_mesh_distance_and_face_closest_to():
     assert 0 <= face < m.face_count
     # That face has to be one of the two on the +Z side.
     assert numpy.allclose(m.compute_face_normals()[face], [0.0, 0.0, 1.0])
+
+
+def test_mesh_sample_poisson_returns_a_cloud_with_normals_on_the_surface():
+    m = Mesh3.create_box(10.0, 6.0, 4.0, is_solid=False)
+    cloud = m.sample_poisson(1.0)
+
+    assert isinstance(cloud, PointCloud3)
+    assert cloud.points.shape == (len(cloud), 3)
+    assert cloud.point_normals.shape == (len(cloud), 3)
+    assert len(cloud) > 100
+
+    # Every sample lies on the box surface, and its normal is that of the face it lies on.
+    assert numpy.allclose(m.measure_deviations(cloud.points, "point"), 0.0, atol=1e-9)
+    assert numpy.allclose(linalg.norm(cloud.point_normals, axis=1), 1.0)
+
+    # The thinning is deterministic.
+    assert numpy.array_equal(cloud.points, m.sample_poisson(1.0).points)
+
+
+def test_mesh_sample_dense_is_finer_than_poisson():
+    m = Mesh3.create_box(10.0, 6.0, 4.0, is_solid=False)
+    dense = m.sample_dense(0.5)
+    poisson = m.sample_poisson(1.0)
+
+    assert isinstance(dense, PointCloud3)
+    assert dense.point_normals is not None
+    assert len(dense) > len(poisson)
+    assert numpy.allclose(m.measure_deviations(dense.points, "point"), 0.0, atol=1e-9)
+
+
+def test_mesh_sample_uniform_draws_the_requested_count():
+    m = Mesh3.create_box(10.0, 6.0, 4.0, is_solid=False)
+    cloud = m.sample_uniform(250)
+
+    assert isinstance(cloud, PointCloud3)
+    assert len(cloud) == 250
+    assert cloud.point_normals.shape == (250, 3)
+    assert numpy.allclose(m.measure_deviations(cloud.points, "point"), 0.0, atol=1e-9)
+
+
+def grid_mesh(n: int = 4) -> Mesh3:
+    """An (n x n)-vertex flat grid in the xy plane: one patch, one boundary loop, no holes."""
+    xs, ys = numpy.meshgrid(numpy.arange(n, dtype=float), numpy.arange(n, dtype=float))
+    points = numpy.column_stack([xs.ravel(), ys.ravel(), numpy.zeros(n * n)])
+    faces = []
+    for r in range(n - 1):
+        for c in range(n - 1):
+            a = r * n + c
+            faces.append([a, a + 1, a + n + 1])
+            faces.append([a, a + n + 1, a + n])
+    return Mesh3(points, numpy.array(faces, dtype=numpy.uint32))
+
+
+def test_mesh_point_flat_round_trips_and_clears():
+    m = Mesh3.create_box(1.0, 1.0, 1.0)
+    assert m.point_flat is None
+
+    flat = numpy.random.default_rng(3).random((m.point_count, 2))
+    m.set_point_flat(flat)
+    assert m.point_flat.shape == (m.point_count, 2)
+    assert numpy.allclose(m.point_flat, flat)
+
+    m.set_point_flat(None)
+    assert m.point_flat is None
+
+
+def test_mesh_set_point_flat_rejects_a_length_mismatch():
+    m = Mesh3.create_box(1.0, 1.0, 1.0)
+    with pytest.raises(ValueError):
+        m.set_point_flat(numpy.zeros((m.point_count - 1, 2)))
+
+
+def test_mesh_boundary_first_flatten_output_is_accepted_as_point_flat():
+    m = grid_mesh()
+    flat = m.boundary_first_flatten()
+    assert flat.shape == (m.point_count, 2)
+
+    m.set_point_flat(flat)
+    assert numpy.allclose(m.point_flat, flat)
+
+
+def _walls_only(mesh: Mesh3) -> IndexMask:
+    """A face mask for a z-axis cylinder or cone that keeps the wall and drops the caps."""
+    normals = mesh.compute_face_normals()
+    keep = [i for i, n in enumerate(normals) if n[2] > -0.5 and abs(n[2]) < 0.99]
+    return IndexMask.from_indices(keep, mesh.face_count)
+
+
+def test_transverse_plane_of_a_cylinder_is_normal_to_its_axis():
+    m = Mesh3.create_cylinder(1.0, 4.0, 1e-3)
+    # A guess 20 degrees off the axis, from a point on the wall.
+    result = m.transverse_plane(1.0, 0.0, 0.3, Vector3(0.36, 0.0, 1.0), faces=_walls_only(m))
+
+    assert isinstance(result, TransversePlane)
+    assert abs(result.plane.normal.z) > 1.0 - 1e-9
+    assert result.residual < 1e-9
+    assert abs(result.coverage - 0.5) < 1e-3
+    # Close to the coverage; equal only when the point is at the center of the section.
+    assert 0.4 < result.sensitivity < 0.5
+    assert result.face_count > 0
+    assert result.band > 0.0
+    assert result.evaluations > 0
+    assert "TransversePlane(" in repr(result)
+
+
+def test_transverse_plane_of_a_cone_from_the_axis():
+    m = Mesh3.create_cone(1.0, 2.0, 1e-3)
+    result = m.transverse_plane(0.0, 0.0, 0.0, Vector3(0.0, 0.3, 1.0), faces=_walls_only(m))
+
+    assert abs(result.plane.normal.z) > 1.0 - 1e-9
+    assert result.residual < 1e-9
+    # The normal follows the guess's orientation.
+    assert result.plane.normal.z > 0.0
+
+
+def test_transverse_plane_accepts_options():
+    m = Mesh3.create_cylinder(1.0, 4.0, 1e-3)
+    result = m.transverse_plane(
+        1.0, 0.0, 0.0, Vector3(0.0, 0.0, 1.0), faces=_walls_only(m), band=0.05, max_evaluations=50, tol=1e-8
+    )
+    assert result.band == 0.05
+    assert abs(result.plane.normal.z) > 1.0 - 1e-9
+
+
+def test_transverse_plane_rejects_a_single_flat_face():
+    m = Mesh3.create_box(2.0, 2.0, 2.0, False)
+    normals = m.compute_face_normals()
+    top = IndexMask.from_indices([i for i, n in enumerate(normals) if n[2] > 0.5], m.face_count)
+    with pytest.raises(ValueError, match="undetermined"):
+        m.transverse_plane(0.0, 0.0, 1.0, Vector3(1.0, 0.0, 0.0), faces=top)
+
+
+def test_transverse_plane_rejects_bad_options():
+    m = Mesh3.create_cylinder(1.0, 4.0, 1e-3)
+    with pytest.raises(ValueError):
+        m.transverse_plane(1.0, 0.0, 0.0, Vector3(0.0, 0.0, 1.0), taper_tilt=3.2)
+    with pytest.raises(ValueError):
+        m.transverse_plane(1.0, 0.0, 0.0, Vector3(0.0, 0.0, 0.0))
+
+
+def _box_top_faces(m: Mesh3) -> IndexMask:
+    """The upward-facing box faces, whose samples all lie on one known plane."""
+    normals = m.compute_face_normals()
+    return IndexMask.from_indices([i for i, n in enumerate(normals) if n[2] > 0.5], m.face_count)
+
+
+def test_sample_voxel_surface_puts_points_on_the_surface():
+    m = Mesh3.create_box(4.0, 4.0, 4.0, False)
+    cloud = m.sample_voxel_surface(0.5)
+
+    assert len(cloud) > 0
+    assert cloud.point_normals is not None
+
+    # Every sample lies on the mesh, distinguishing this from a point-cloud voxel reduction.
+    assert numpy.max(numpy.abs(m.measure_deviations(cloud.points, "point"))) < 1e-9
+
+
+def test_sample_voxel_surface_density_follows_the_voxel_size():
+    m = Mesh3.create_box(4.0, 4.0, 4.0, False)
+    coarse = m.sample_voxel_surface(1.0)
+    fine = m.sample_voxel_surface(0.5)
+    assert len(fine) > len(coarse)
+
+
+def test_sample_voxel_surface_is_deterministic():
+    m = Mesh3.create_box(4.0, 4.0, 4.0, False)
+    first = m.sample_voxel_surface(0.5)
+    second = m.sample_voxel_surface(0.5)
+    assert numpy.array_equal(first.points, second.points)
+
+
+def test_sample_voxel_surface_honors_the_face_mask():
+    m = Mesh3.create_box(4.0, 4.0, 4.0, False)
+
+    masked = m.sample_voxel_surface(0.5, faces=_box_top_faces(m))
+    full = m.sample_voxel_surface(0.5)
+
+    assert 0 < len(masked) < len(full)
+    # Only the top face was sampled, so every point sits on the top plane of the box.
+    assert numpy.allclose(masked.points[:, 2], 2.0)
+
+
+def test_sample_voxel_surface_rejects_bad_arguments():
+    m = Mesh3.create_box(4.0, 4.0, 4.0, False)
+    with pytest.raises(ValueError):
+        m.sample_voxel_surface(0.0)
+    with pytest.raises(ValueError):
+        m.sample_voxel_surface(-1.0)
+    with pytest.raises(ValueError):
+        m.sample_voxel_surface(0.5, faces=IndexMask.from_indices([0], m.face_count + 1))
+
+
+def test_sample_poisson_honors_the_face_mask():
+    m = Mesh3.create_box(4.0, 4.0, 4.0, False)
+    masked = m.sample_poisson(0.5, faces=_box_top_faces(m))
+
+    assert 0 < len(masked) < len(m.sample_poisson(0.5))
+    assert numpy.allclose(masked.points[:, 2], 2.0)
+
+
+def test_sample_dense_honors_the_face_mask():
+    m = Mesh3.create_box(4.0, 4.0, 4.0, False)
+    masked = m.sample_dense(0.5, faces=_box_top_faces(m))
+
+    assert 0 < len(masked) < len(m.sample_dense(0.5))
+    assert numpy.allclose(masked.points[:, 2], 2.0)
+
+
+def test_sample_poisson_and_dense_reject_a_mask_of_the_wrong_length():
+    m = Mesh3.create_box(4.0, 4.0, 4.0, False)
+    wrong = IndexMask.from_indices([0], m.face_count + 1)
+
+    with pytest.raises(ValueError, match="does not match"):
+        m.sample_poisson(0.5, faces=wrong)
+    with pytest.raises(ValueError, match="does not match"):
+        m.sample_dense(0.5, faces=wrong)
+
+
+@pytest.mark.parametrize("bad", [0.0, -1.0, float("nan"), float("inf")])
+def test_sample_poisson_and_dense_reject_a_nonsense_spacing(bad):
+    m = Mesh3.create_box(4.0, 4.0, 4.0, False)
+
+    with pytest.raises(ValueError):
+        m.sample_poisson(bad)
+    with pytest.raises(ValueError):
+        m.sample_dense(bad)

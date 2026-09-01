@@ -1,0 +1,45 @@
+[package]
+name = "tol-compress"
+description = "Tolerance-bounded compression of spatial coordinate data, for storing geometry in the smallest space that still guarantees a round-trip accuracy."
+license = "MIT OR Apache-2.0"
+# Deliberately NOT `version.workspace = true`. This crate releases on its own cadence, under its
+# own `tol-compress-vX.Y.Z` tags, independent of the engeom version.
+version = "0.2.0"
+edition.workspace = true
+rust-version = "1.88"
+readme = "README.md"
+repository = "https://github.com/mattj23/engeom"
+documentation = "https://docs.rs/tol-compress"
+keywords = ["compression", "mesh", "geometry", "metrology", "serialization"]
+categories = ["compression", "encoding", "science"]
+
+# The PLY fixtures under `tests/data` are deliberately NOT excluded. They were only used for
+# developing the format, so it's tempting to try to leave them out, but `tests/real_fixtures.rs` 
+# ships either and then all of its tests fail. So...175KiB seems like the lesser of the two evils.
+
+[lib]
+# The unit-test harness is not a benchmark, and cargo would otherwise run it as one and reject
+# criterion's arguments.
+bench = false
+
+[features]
+default = []
+# Generators for the benchmark corpus. Dependency-free, but test scaffolding rather than format
+# code, so it stays off unless asked for.
+corpus = []
+
+[dependencies]
+
+# Nothing here reaches a consumer of the crate: dev-dependencies are not part of the published
+# dependency graph, so `cargo add tol-compress` still pulls in nothing at all.
+[dev-dependencies]
+criterion = "0.7.0"
+
+[[example]]
+name = "size_report"
+required-features = ["corpus"]
+
+[[bench]]
+name = "throughput"
+harness = false
+required-features = ["corpus"]

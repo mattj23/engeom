@@ -25,6 +25,14 @@ For now, these are the guidelines for user-facing structs that represent some co
 > [!NOTE]
 > **Known exception: the `Dof` family.** `Dof3` (in `geom2::align2`) and `Dof6` (in `geom3::align3`) are numbered by their degree-of-freedom count, not by dimension. This collides visually with the suffix rule above: `Dof3` lives in the 2D module but its `3` refers to `tx`/`ty`/`rz`. The count is the more useful thing to convey for these types, so the exception stands deliberately. Note to future self: don't get clever and "fix" `Dof3` to `Dof2`.
 
+## Coherence with Foreign Library Entity Names
+
+This example came up while working on mesh decimation. The `alum` library uses the spelling "decimater" due to its OpenMesh origins, while the spelling "decimator" is more comfortable to Americans and throws off less spell-checkers.
+
+In cases where a library has an undesirable or unfamiliar spelling of an entity, whether or not it may be renamed in interacting parts of `engeom` depends on how public facing the entity is.  An inconsistent spelling is worse than an unfamiliar one, so if `engeom` requires that a user is interacting with that entity directly as a normal part of the associated workflow, it's better to keep the spelling consistent.
+
+In the case of "decimater" vs "decimator", `alum`'s `alum::Decimater` is not directly needed for normal uses of the decimation machinery, and `alum`'s half edge `PolyMeshT` is wrapped by our `HalfEdgeMesh3`.  Because `alum` is mostly contained, and in congruence with wrapping `alum` in the event that it would ever need to be replaced, I chose to use the spelling `Decimator` within `engeom`.
+
 ## General Conventions for Function Names
 
 These conventions apply to the naming of all functions, including trait and struct implementations.
@@ -108,8 +116,6 @@ This is worth doing when *all* the following hold:
 - The operation is part of the everyday surface that users will reach for, not an obscure corner.
 - The extension trait already owns that part of the namespace, so the addition completes an existing family instead of starting a redundant parallel one.
 
-The worked example is `IsoExtensions2/3::from_translation` and `from_rotation`, added July 2026. nalgebra spells these `Iso3::translation(x, y, z)` and `Iso3::rotation(axisangle)`, which read as accessors rather than the constructors they are. `IsoExtensions3` already held twelve `from_*` constructors (`from_array`, six `from_basis_*`, `from_rot_axis`, `from_rx`/`ry`/`rz`, `from_z_arbitrary_xy`), so the two most basic constructors were a hole in that family: autocompleting `Iso3::from_` suggested no way to build a plain translation.  Additionally, nalgebra uses the name `translation` for both the constructor *and* the isometry's public field, so `iso.translation.x` and `Iso3::translation(..)` sit side by side meaning different things; `from_translation` can't be confused with the field. 
-
 # Implementation Conventions
 
 ## Geometric Primitives
@@ -161,6 +167,31 @@ wrapped_rust_function(MyVariant.method3(true, n=1000))
 
 Structs that bundle independent fields (a product type, not a sum type) get an ordinary keyword `__init__` with sensible defaults, rather than being hidden behind factory staticmethods. `Dof6` is the reference example: `Dof6(tx=True, ty=True, ..., rz=True)`.
 
+## Properties vs. methods
+
+A zero-argument accessor is a `#[getter]` when it names **inherent state or a cheap derived value** of the object: a noun like `length`, `normal`, `point_count`, `a`/`b`, or an `is_`/`has_` predicate. It stays a plain method when it takes arguments, when it can fail, or when it has to build something substantial on each call. If it builds something substantial that *is* inherent state, cache it and make it a property anyway; `Mesh3.points` is the reference example, holding the built numpy array in an `Option<Py<PyArray2<f64>>>` field so that repeated reads cost nothing.
+
+Arity is what separates a property from a method of the same name, and it does so cleanly: `Plane3.normal` and `CubicSpline2.normal(t)` are different things, so they are spelled differently, and no rule is needed to reconcile them.
+
+The same concept must be reached the same way on every type that has it. This drifted badly before it was noticed: `mesh.point_count` was a property while `cloud.point_count()` was a method, `segment.length` was a property while `curve.length()` was a method, and so on across eight names and seventeen accessors, all of it unintentional. `py-engeom/python/tests/test_accessor_consistency.py` now fails on any accessor that is a property on one type and a zero-argument method on another.
+
+Note that the stub drift test cannot catch this. The `.pyi` files were accurate the whole time, faithfully recording a `def` wherever the Rust said method; what disagreed was the runtime surface with itself.
+
+That first check only compares names appearing on two or more types, which is how `Cone3.base_center` stayed a method: nothing else has a `base_center` to disagree with. A second check catches it from the other direction, by requiring every zero-argument method whose name reads as a noun to be either a property or a recorded decision in `DELIBERATE_METHODS`, with the reason written beside it. The decisions made so far:
+
+| Kept a method | Why |
+|---|---|
+| `Curve2/3.at_front`, `at_back`, `Boundary2.at_start`, `at_end` | the rest of the `at_` family takes arguments, and splitting it would read worse than either extreme |
+| `CubicSpline2/3.arc_length` | Gauss-Legendre quadrature, not a stored value |
+| `Iso2.flipped`, `Iso3.flipped_around_*`, `Circle3/Plane3.normal_reversed` | bare past-participles returning a modified copy |
+| `Iso2/3.inverse` | a derived transform rather than state, and the two dimensions agree |
+| `Vector2/3.norm` | `norm()` is the spelling in numpy and in nalgebra, which `Vector3` wraps |
+| `IndexMask.any`, `all` | mirror `ndarray.any()`/`.all()`; `count_true` is a property, naming a quantity rather than mirroring numpy |
+| `AfGeometry.max_thickness`, `max_thickness_circle` | search the inscribed circle stack |
+
+> [!NOTE]
+> One accessor is deliberately left copying on each read: `Align2.residuals` and `Align3.residuals` build a fresh numpy array every time, because caching it would cost those types the `Clone` they need to be extractable from a Python object. It is the smaller cost in any case, since `AlignOutcome.alignment` clones the whole alignment, residuals included, every time it is read.
+
 > [!IMPORTANT]
 > The `.pyi` need to be kept up-to-date with the binding signatures. I have a simple automated name tester in `py-engeom/python/tests/test_stub_drift.py`, which we'll see if it proves to be useful in the long term.
 
@@ -168,39 +199,82 @@ Structs that bundle independent fields (a product type, not a sum type) get an o
 
 The plotting helpers in `py-engeom/python/engeom/plot/` are pure Python wrappers that draw `engeom` entities onto some third-party plotting object. They aren't bindings, so nothing above about crossing the Rust boundary applies to them, but they *are* public API and had drifted badly.
 
-These conventions came out of the matplotlib overhaul (August 2026). They're written down because the PyVista helper still has to be done and most of the decisions should apply.
+These conventions came out of the matplotlib overhaul (August 2026), and the PyVista helper was brought onto them afterwards. Where the two backends differ it is because the host libraries differ: argument names follow the host (`linewidth` in matplotlib, `line_width` in PyVista), while anything that isn't the host's word for something is the same in both.
 
-## API Surface shape
+## API surface shape
 
-- `draw_` prefixes anything that adds an artist.** A method without the prefix configures or queries instead. This splits the API surface so any editor with autocomplete gives you a makeshift table of contents for drawing functions, which seem to be the ones that you spend the most time jumping around between during ordinary use.  Note: when doing the `pyvista` helper, I may consider using `add_` to match the existing convention instead of `draw_`...at this point I'm still undecided.
+- **`draw_` prefixes anything that adds an artist.** A method without the prefix configures or queries instead. This splits the API surface so an editor's autocomplete provides a makeshift table of contents for the drawing functions used most often. The PyVista helper also uses `draw_`, rather than the `add_` that would match PyVista's own `add_mesh` and `add_points`, so the convention is consistent across backends and `draw_circle` means the same thing whichever helper is in hand.
 
-- Names are singular and take varargs.** `draw_circle(*circles)`, not `draw_circles`. One rule with no per-method judgement, chosen because `draw_circle(c)` is 95% of calls and has to read naturally. Drawing nothing returns an empty list rather than raising, so a computed and possibly empty collection needs no special case at the call site.
+- **Names are singular and take varargs.** Use `draw_circle(*circles)`, not `draw_circles`. This avoids per-method judgment while allowing the common `draw_circle(c)` call to read naturally. Drawing nothing returns an empty list rather than raising, so a computed and possibly empty collection needs no special case at the call site.
 
 > [!NOTE]
 > **Known exception: `draw_normals`.** It's plural because the varargs are *sources* (curves or boundaries) and the entities drawn are the normals sampled along them; one call on one source draws `count` arrows. The name describes what lands on the plot, which is the thing the user is looking for in autocomplete. `draw_point` is a different sort of exception: it's singular and varargs per the rule, but additionally accepts a single `(n, 2)` array, since that's the form the rest of the library hands point sets back in. The two are told apart by `numpy.ndim`, which reports 0 for an `engeom` primitive, 1 for a loose coordinate, and 2 for an array.
 
-- Every `draw_*` returns its artists, annotated.** A varargs method returns one artist per entity in the order given; a composite returns every artist it added, in draw order. This is what lets a caller drop down to the host library for anything the helper doesn't expose, and it's the reason `helper.ax` alone isn't sufficient, since finding an artist again after the fact is worse than being handed it. Two deliberate departures: `draw_point` returns a single artist because all its points go into one, and `draw_airfoil` returns a `dict` keyed by element name because with six named parts, indices into a flat list would shift whenever an element was suppressed.
+> [!NOTE]
+> **Known exceptions on the PyVista side: `draw_mesh` and `draw_point_cloud`.** Both take one entity rather than varargs, because their `scalars`, `highlight` and `use_colors` arguments describe that one entity's per-point or per-face data and could not be shared across several. `draw_point` is singular-with-varargs but returns a single actor, since every point given goes into one, and it also accepts an `(n, 3)` array or a `PointCloud3` for the same reason its matplotlib counterpart accepts an array.
 
-- A more specific verb wins where the host has a separate entry point for it.** `fill_curve` stays `fill_curve` rather than becoming `draw_curve(fill=True)`, because filling goes through `Axes.fill` and stroking through `Axes.plot`, and the two accept disjoint keyword arguments, so a flag switching between them would be a discoverability trap. Where the host takes a real flag on one artist, it stays a flag: `draw_circle(..., fill=False)` maps onto `Circle(fill=)`.  This isn't ideal, but if I find a better way I may change it.
+- **Two of PyVista's arguments cannot simply be repeated across a varargs call.** An actor `name` replaces any existing actor of that name, so reusing one would leave only the last entity drawn; it is suffixed with the entity's index when more than one is drawn. A legend `label` would produce one identical entry per entity, so only the first carries it and the group gets a single legend entry. Both are handled in one place, `_per_entity`.
 
-- No `get_`,** same as the Rust rule. `get_3d_viewport` became `viewport`.
+- **Every `draw_*` method returns its artists and annotates the return type.** A varargs method returns one artist per entity in the order given; a composite returns every artist it added, in draw order. This lets callers use the host library directly for anything the helper does not expose. Merely exposing `helper.ax` is insufficient because recovering an artist afterward is less useful than returning it directly. There are two deliberate departures: `draw_point` returns a single artist because all its points go into one, and `draw_airfoil` returns a `dict` keyed by element name because, with six named parts, indices into a flat list would shift whenever an element was suppressed.
 
-## API Structure
+- **A more specific verb wins where the host has a separate entry point for it.** `fill_curve` stays `fill_curve` rather than becoming `draw_curve(fill=True)`, because filling goes through `Axes.fill` and stroking through `Axes.plot`. The two accept disjoint keyword arguments, so a flag switching between them would make the accepted options harder to discover. Where the host takes a real flag on one artist, it stays a flag: `draw_circle(..., fill=False)` maps onto `Circle(fill=)`. This is not ideal, but it can change if a better convention emerges.
 
-- Ideally, wrap instead of subclass, and keep the host object public.** `helper.ax` and `helper.pv` are the documented escape hatch. 
+- **No `get_`,** following the Rust rule. `get_3d_viewport` became `viewport`.
 
-- The helper is named `<HostType>Helper`,** after the object it wraps rather than the backend: `AxesHelper`, `PlotterHelper`. The backend prefix was redundant with the host-type noun once the module path already named the backend. The `Helper` suffix stays because `Axes` and `Plotter` are names users have in scope in the same file, and shadowing them would be hostile.
+## API structure
 
-- One public module per backend** under `engeom.plot`, so the import statement *is* the dependency declaration. Each backend imports its dependency at the top of its `__init__` behind a single guard that re-raises with a message naming the package and the install command. `engeom.plot` itself stays backend-neutral and must not pull either one in, and there's a test asserting that via `sys.modules` in a subprocess. Naming a submodule `matplotlib` is safe: Python 3 absolute imports mean `import matplotlib` inside it resolves to the real package.
+- **Prefer wrapping to subclassing, and keep the host object public.** `helper.ax` and `helper.pv` are the documented escape hatches.
+
+- **The PyVista helper is also attached to the plotter as `plotter.engeom`.** Wrapping is the right internal structure, but it leaves two very similar objects in scope at every call site. Mixing `helper.draw_mesh(...)` with `plotter.add_points(...)` makes them appear unrelated, while the attachment reflects that the helper belongs to that plotter. It uses PyVista's component mechanism (0.48+), which constructs the helper lazily on first access and caches it on the plotter. `PlotterHelper(plotter)` still works and provides access on older PyVista versions.
+
+  Registering against `pyvista.BasePlotter` rather than `Plotter` is deliberate, so that the Qt and background plotters from `pyvistaqt` get it too. It is declared as a `pyvista.plotter_components` entry point in `py-engeom/pyproject.toml`, so `plotter.engeom` resolves in a session that never imported `engeom.plot.pyvista`. Attaching to someone else's class has to be undoable, so `register()` and `unregister()` are public and tested.
+
+- **The one subclass, `EngeomPlotter`, exists only so editors can see the accessor.** An attribute attached at runtime is invisible to a type checker reading `pyvista.Plotter`, undermining the discoverability provided by the `draw_` prefix. The subclass declares `engeom: PlotterHelper` and nothing else, using an annotation rather than an assignment so it does not shadow the descriptor that does the work. This is not a license to subclass for behavior.
+
+- **The helper is named `<HostType>Helper`,** after the object it wraps rather than the backend: `AxesHelper`, `PlotterHelper`. A backend prefix would be redundant once the module path names the backend. The `Helper` suffix remains because users commonly have `Axes` and `Plotter` in scope in the same file, and shadowing those names would be hostile.
+
+- **Use one public module per backend** under `engeom.plot`, so the import statement *is* the dependency declaration. Each backend imports its dependency at the top of its `__init__` behind a single guard that re-raises with a message naming the package and installation command. `engeom.plot` itself remains backend-neutral and must not import either dependency; a subprocess test asserts this through `sys.modules`. Naming a submodule `matplotlib` is safe because Python 3 absolute imports ensure that `import matplotlib` inside it resolves to the real package.
 
 ## Arguments and styling
 
-- Name the common styling arguments; keep `**kwargs` open.** Each `draw_*` spells out the handful of arguments that get used constantly (`color`, `linewidth`, `linestyle`, `alpha`, `label`, and the patch/text equivalents) as real keyword parameters so editors complete them, and still forwards an open untyped `**kwargs` for everything else the host accepts. I considered PEP 692 `Unpack[TypedDict]` for this and rejected it: it *closes* the set to type checkers, so every valid-but-unlisted matplotlib argument would be flagged as an error.
+- **Name the common styling arguments, but keep `**kwargs` open.** Each `draw_*` method spells out the frequently used arguments (`color`, `linewidth`, `linestyle`, `alpha`, `label`, and the patch/text equivalents) as real keyword parameters so editors can complete them. It also forwards an open, untyped `**kwargs` for everything else the host accepts. PEP 692's `Unpack[TypedDict]` was considered and rejected because it *closes* the set to type checkers, causing every valid but unlisted Matplotlib argument to be flagged as an error.
 
 > [!IMPORTANT]
 > Naming a styling argument means an unsupplied one arrives as `None`, and forwarding that is **not** the same as omitting it. `Axes.plot(color=None)` overrides matplotlib's color cycle, so two `draw_curve` calls would come out the same color. Route named styling arguments through `_style.merge_style`, which drops the `None`s. There is no collision risk with `**kwargs`: a named argument binds to its parameter and never reaches the dict, so Python rejects a duplicate before the merge runs.  The downside is that you can't deliberately insert a `None`, which may have some consequences for certain methods.  I'm not sure what the best thing to do is here.
 
-- Where possible, composite draw methods get one argument per element, doing double duty as toggle and style.** `False` suppresses the element, `True` or `None` accepts the defaults, and a dict of keyword arguments is merged **over** the defaults rather than replacing them, because restyling one property must not silently discard the rest of an element's designed appearance. `_style.element_style` resolves this; note that it tests `value is False` rather than falsiness, so that an empty dict means "defaults" instead of "suppress". `draw_airfoil` is the worked example. The alternative, a separate `camber=True` plus `camber_kwargs={...}` per element, doubles the signature for no gain.
+- **Where possible, composite draw methods have one argument per element, serving as both toggle and style.** `False` suppresses the element, `True` or `None` accepts the defaults, and a dictionary of keyword arguments is merged **over** the defaults rather than replacing them. This ensures that restyling one property does not silently discard the rest of an element's designed appearance. `_style.element_style` resolves this; it tests `value is False` rather than falsiness, so an empty dictionary means "defaults" instead of "suppress." `draw_airfoil` is the worked example. The alternative—a separate `camber=True` plus `camber_kwargs={...}` for each element—doubles the signature for no gain.
+
+## Unbounded entities
+
+A `Plane3` has no origin, orientation or size, and a `Line3` has no ends, so neither can be drawn without deciding how much of it to show. The PyVista helper takes an `extent` argument for this: an `Aabb3`, anything carrying a bounding box, an `(n, 3)` array of points, or `None` to mean everything already drawn into the active renderer. The entity is then clipped to that box, so the drawn polygon follows the shape of the region rather than being an arbitrary square floating in it, and a `pad` fraction grows the box so a plane cutting through a part protrudes past it instead of stopping flush with its surface.
+
+`None` being the default is the point of the whole thing: draw the part, then draw the plane through it, with nothing to work out at the call site. An empty scene is refused rather than defaulted, because PyVista reports a two-unit cube for a renderer with nothing in it and sizing an entity against that placeholder would draw something plausible and wrong.
+
+An entity that misses the extent raises, naming its position in the argument list, rather than being skipped. Skipping would break the rule that a varargs method returns one artist per entity in the order given, by shifting every later index.
+
+The Matplotlib `ViewPort3` predates this and requires an explicit `center` and `size` on every call. Its `draw_plane` and `draw_line` should move to the same `extent` argument, minus the scene-bounds default, which has no equivalent on an axes.
+
+## The view convention
+
+Both backends describe a view as an `Iso3` transforming world space into the image plane, where **+X is to the right, +Y is up, and +Z points out of the image towards the viewer**. The third of those is not a free choice: with +X right and +Y up, a rigid transform has to have +Z coming towards the viewer, because the other arrangement is left-handed and therefore not a rotation at all. It is also what VTK and OpenGL use for a camera.
+
+`PlotterHelper.camera_pose` returns a view in this convention and `view_pose` takes one, so a view found by dragging the render window can be replayed later or handed to `AxesHelper.viewport` to draw a line diagram from the same angle. VTK does not keep its camera's up vector square to the view direction, so `camera_pose` orthogonalizes before building the frame; without that, `Iso3` rejects the matrix outright.
+
+`ViewPort3` had this documented backward for a while, saying +Z pointed into the image. Only the sentence was wrong: every drawing it produced, including the hidden-line classification in `draw_mesh_outline`, was already using the convention above. This distinction is worth knowing if a saved view looks mirrored, because flipping the isometry is not the fix.
+
+## Coloring, and the order of specificity
+
+Where an entity can be colored several ways, the arguments are ranked by specificity, and the most specific wins: an explicit `color`, then `scalars`, then a `highlight`, and finally the entity's stored colors through `use_colors`. `scalars` and `highlight` cannot be combined because each sets every element's color; asking for both raises rather than silently choosing one. Giving an explicit `color` precedence over stored colors required a deliberate choice: PyVista will not accept a color and scalars together, and the argument written by the caller is more specific than the colors already stored on the entity.
+
+A `highlight` is drawn as per-element colors on the one actor rather than as a second actor over the selection, so it cannot z-fight with the surface beneath it and brings no scalar bar with it. It takes an `IndexMask`, a boolean array, or indices; a mask knows how many elements it covers, which is what tells a selection of faces from one of points without the caller saying which.
+
+## Interaction
+
+A widget or picker takes a callback and passes it `engeom` entities rather than the host library's raw values. The plane widget reports a `Plane3` instead of a normal-and-origin pair, surface picking reports a `SurfacePoint3` instead of a bare coordinate, and face picking reports an `IndexMask` over the mesh's own faces instead of the renumbered cells of an extracted dataset. The callback can therefore be ordinary `engeom` code with no knowledge of the render window, and its values are the same types already accepted by the Rust side.
+
+Face picking works because `to_polydata` records each face's original index on every dataset it builds, in the `FACE_ID` array. PyVista's filters carry cell data through, whereas VTK's own original-cell-ids are discarded by the extraction a rubber-band selection performs, so that stamp is the only thing relating a selection back to the mesh it came from.
+
+Anything the helper switches on it also switches off: the component's `__plotter_close__` releases the pickers and widgets when the plotter closes. PyVista calls that on every close and a plotter can be closed more than once, so it has to be safe to run again with nothing left to do.
 
 ## Documentation and tests
 

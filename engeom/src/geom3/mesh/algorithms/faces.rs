@@ -81,7 +81,7 @@ pub fn compute_face_centers(points: &[Point3], faces: &[[u32; 3]]) -> Result<Vec
 }
 
 /// Look up the three points of a face, naming the face in the error if an index is out of range.
-fn face_points(points: &[Point3], face: &[u32; 3], index: usize) -> Result<[Point3; 3]> {
+pub(super) fn face_points(points: &[Point3], face: &[u32; 3], index: usize) -> Result<[Point3; 3]> {
     let mut out = [Point3::origin(); 3];
     for (slot, i) in out.iter_mut().zip(face.iter()) {
         *slot = *points.get(*i as usize).ok_or_else(|| {
