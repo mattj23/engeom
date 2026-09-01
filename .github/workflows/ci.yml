@@ -62,8 +62,8 @@ jobs:
       # because every kiddo 6.x does (its own source only needs the 1.88 let-chains), while
       # tol-compress does not depend on kiddo and keeps its true 1.88 promise. Both toolchains are
       # installed and each check pins the one it is verifying.
-      - uses: dtolnay/rust-toolchain@1.88.0
-      - uses: dtolnay/rust-toolchain@1.89.0
+      - uses: dtolnay/rust-toolchain@1.100.0
+      - uses: dtolnay/rust-toolchain@1.100.0
       - uses: Swatinem/rust-cache@v2
       - name: Check with no features
         run: cargo +1.89.0 check -p engeom

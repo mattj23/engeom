@@ -135,7 +135,7 @@ jobs:
       - uses: actions/checkout@v7
       # Verifies the `rust-version` promised in tol-compress/Cargo.toml, which is a promise made to
       # every consumer of the published crate.
-      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: dtolnay/rust-toolchain@1.100.0
       - uses: Swatinem/rust-cache@v2
       - name: Check with no features
         run: cargo check -p tol-compress
