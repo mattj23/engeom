@@ -3,7 +3,7 @@ resolver = "3"
 members = ["engeom", "py-engeom", "tol-compress", "utilities"]
 
 [workspace.package]
-version = "0.4.4"
+version = "0.5.0"
 edition = "2024"
 
 [workspace.dependencies]
@@ -13,19 +13,6 @@ rand = "0.10.0"
 rand_distr = "0.6.0"
 rayon = "1.11.0"
 
-# This is here for the tests. Everything in this workspace is numeric code over meshes with tens of
-# thousands of faces, and unoptimized it runs upwards of 20x slower: on a 20 core machine the mesh
-# decimation tests go from 39 seconds to over 14 minutes, and CI runs on four cores. That is what
-# turned the CI test job from slow into apparently hung.
-#
-# Set on `dev` rather than on `test` because `test` inherits from `dev`, so one block covers
-# `cargo build`, `cargo test` and `maturin develop` alike and keeps them sharing artifacts. Setting
-# the two to different opt-levels would build every dependency twice into `target/debug` under
-# separate metadata hashes, and alternating between a build and a test would rebuild the world.
-#
-# `debug_assertions` and the integer overflow checks stay on, which is the reason to do this rather
-# than to run CI with `--release`. The overflow checks are worth keeping over the index arithmetic
-# that goes through parry and alum.
 [profile.dev]
 opt-level = 2
 
