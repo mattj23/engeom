@@ -108,9 +108,18 @@ jobs:
           - runner: windows-latest
             target: x64
             python_arch: x64
-          - runner: windows-11-arm
+          # Cross-compiled from the x64 runner rather than built natively on windows-11-arm.
+          # kiddo's build script asks `yep-cache-line-size` for the L1 line size, and its aarch64
+          # path executes `mrs <reg>, ctr_el0`. Windows does not permit that system register read
+          # from user mode, so a native arm64 build script dies with STATUS_ILLEGAL_INSTRUCTION
+          # (0xc000001d) before a single crate is compiled. That build script only attempts the
+          # detection when TARGET == HOST, so cross-compiling skips the offending call outright and
+          # falls back to its 64-byte assumption. pyo3's abi3 feature plus its generated import
+          # library mean no arm64 interpreter is needed to link, which is why the host x64 Python
+          # below is sufficient. Revisit if yep-cache-line-size grows a Windows guard.
+          - runner: windows-latest
             target: aarch64
-            python_arch: arm64
+            python_arch: x64
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
