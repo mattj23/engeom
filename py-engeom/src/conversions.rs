@@ -1,6 +1,6 @@
 //! This module has conversion helpers for numpy arrays and other engeom types
 
-use engeom::na::{Point, SVector};
+use engeom::na::{DMatrix, Point, SVector};
 use engeom::{Point2, Point3, SurfacePoint3, Vector2, Vector3};
 use numpy::ndarray::{Array1, Array2, ArrayView2};
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};
@@ -149,6 +149,19 @@ pub fn array_to_faces(array: &ArrayView2<'_, u32>) -> PyResult<Vec<[u32; 3]>> {
         .into_iter()
         .map(|row| [row[0], row[1], row[2]])
         .collect())
+}
+
+/// Convert a `DMatrix<f64>` into a 2D numpy array of shape `(rows, cols)`.
+///
+/// Use this helper for grid-shaped data such as a rendered depth image. The other conversion
+/// helpers operate on `(n, D)` lists of points or vectors.
+///
+/// `DMatrix` stores its elements column by column while `Array2` stores them row by row, so the
+/// underlying buffer cannot be handed over directly: doing so would silently transpose the result
+/// whenever the matrix is not square, and would still scramble a square one. Elements are copied
+/// through the index operator instead.
+pub fn matrix_to_array(m: &DMatrix<f64>) -> Array2<f64> {
+    Array2::from_shape_fn((m.nrows(), m.ncols()), |(i, j)| m[(i, j)])
 }
 
 // ================================================================================================

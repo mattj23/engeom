@@ -3,6 +3,7 @@ mod align2;
 mod align3;
 mod boundary2;
 mod bounding;
+mod camera;
 mod common;
 mod conversions;
 mod geom2;
@@ -206,6 +207,14 @@ fn register_sensor_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
 
     child.add_class::<sensors::LaserProfile>()?;
     child.add_class::<sensors::PanningLaserProfile>()?;
+
+    child.add_class::<camera::Sensor>()?;
+    child.add_class::<camera::ThinLens>()?;
+    child.add_class::<camera::PinholeCamera>()?;
+    child.add_class::<camera::Camera>()?;
+    child.add_class::<camera::ViewBuffer>()?;
+    child.add_function(wrap_pyfunction!(camera::look_at, &child)?)?;
+    child.add("WAVELENGTH_550NM_MM", camera::WAVELENGTH_550NM_MM)?;
 
     parent_module.add_submodule(&child)
 }

@@ -60,6 +60,69 @@ impl Circle3 {
         Plane3::new(self.normal, self.normal.dot(&self.center.coords))
     }
 
+    /// Compute a deterministic orthonormal frame for the circle. The returned isometry transforms
+    /// a point from the circle frame into world coordinates.
+    ///
+    /// The frame uses the orientation of the circle's plane and has its origin at the circle's
+    /// center. Its z axis is the circle normal. Its x axis is the world x axis projected into the
+    /// circle's plane, with the world y axis used when the normal is too close to x for a stable
+    /// projection. Because this rule matches `Plane3::compute_frame`, a circle and its plane use
+    /// the same in-plane x direction.
+    ///
+    /// The frame is derived from the circle's fields rather than stored, so a caller using it in
+    /// a loop should compute it once and keep it.
+    ///
+    /// returns: Isometry<f64, Unit<Quaternion<f64>>, 3>
+    pub fn compute_frame(&self) -> Iso3 {
+        Iso3::from_parts(self.center.into(), self.plane().compute_frame().rotation)
+    }
+
+    /// The point on the circle's perimeter at a given angle about its normal, measured from the x
+    /// axis of `compute_frame` and increasing toward that frame's y axis.
+    ///
+    /// Because the frame is referenced to the world, transforming a circle does not preserve its zero angle
+    /// with it: `(iso * circle).point_at_angle(a)` is not in general
+    /// `iso * circle.point_at_angle(a)`, although the two circles are the same set of points.
+    ///
+    /// The frame is derived on each call, so use `to_points` when sampling many angles.
+    ///
+    /// # Arguments
+    ///
+    /// * `angle`: the angle in radians about the circle's normal, following the right hand rule
+    ///
+    /// returns: Point3
+    pub fn point_at_angle(&self, angle: f64) -> Point3 {
+        self.compute_frame() * self.local_at_angle(angle)
+    }
+
+    /// The point at an angle, expressed in the circle's own frame.
+    fn local_at_angle(&self, angle: f64) -> Point3 {
+        Point3::new(self.radius * angle.cos(), self.radius * angle.sin(), 0.0)
+    }
+
+    /// Sample points evenly spaced around the circle's perimeter, starting at the zero angle of
+    /// `point_at_angle` and proceeding by the right hand rule about the normal.
+    ///
+    /// The first point is not repeated at the end, so `count` points describe an inscribed
+    /// regular polygon of `count` sides. To build a closed polyline, or to project one with
+    /// `Camera::project_polyline`, append a copy of the first point.
+    ///
+    /// # Arguments
+    ///
+    /// * `count`: the number of points to generate. Zero produces an empty vector, and one
+    ///   produces the point at the zero angle.
+    ///
+    /// returns: Vec<Point3>
+    pub fn to_points(&self, count: usize) -> Vec<Point3> {
+        let frame = self.compute_frame();
+        (0..count)
+            .map(|i| {
+                let angle = std::f64::consts::TAU * i as f64 / count as f64;
+                frame * self.local_at_angle(angle)
+            })
+            .collect()
+    }
+
     /// Returns a new circle transformed by the given isometry, without modifying the original.
     pub fn transformed_by(&self, iso: &Iso3) -> Self {
         Self {
@@ -214,8 +277,9 @@ mod tests {
     use crate::Curve3;
     use crate::common::linear_space;
     use crate::common::random_geometry::RandomGeometry3;
+    use crate::geom3::IsoExtensions3;
     use approx::assert_relative_eq;
-    use std::f64::consts::PI;
+    use std::f64::consts::{FRAC_PI_2, PI};
 
     /// Build a circle with a non-trivial orientation
     fn tilted_circle() -> Circle3 {
@@ -251,6 +315,138 @@ mod tests {
             .iter()
             .map(|&t| sample_circle_point(circle, t))
             .collect()
+    }
+
+    #[test]
+    fn the_frame_of_a_circle_in_the_xy_plane_sits_at_its_center() {
+        let c = Circle3::new(
+            Point3::new(1.0, 2.0, 3.0),
+            UnitVec3::new_normalize(Vector3::z()),
+            2.0,
+        );
+        let frame = c.compute_frame();
+        assert_relative_eq!(frame.origin(), Point3::new(1.0, 2.0, 3.0), epsilon = 1e-12);
+        assert_relative_eq!(frame.z().into_inner(), Vector3::z(), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn point_at_angle_on_a_z_normal_circle() {
+        let c = Circle3::new(Point3::origin(), UnitVec3::new_normalize(Vector3::z()), 2.0);
+        assert_relative_eq!(
+            c.point_at_angle(0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            epsilon = 1e-12
+        );
+        assert_relative_eq!(
+            c.point_at_angle(FRAC_PI_2),
+            Point3::new(0.0, 2.0, 0.0),
+            epsilon = 1e-12
+        );
+        assert_relative_eq!(
+            c.point_at_angle(PI),
+            Point3::new(-2.0, 0.0, 0.0),
+            epsilon = 1e-12
+        );
+        assert_relative_eq!(
+            c.point_at_angle(-FRAC_PI_2),
+            Point3::new(0.0, -2.0, 0.0),
+            epsilon = 1e-12
+        );
+    }
+
+    #[test]
+    fn the_frame_shares_the_rule_used_by_the_plane() {
+        // The circle frame is the plane frame moved to the circle center, so a circle and the
+        // plane it lies in agree about which in-plane direction is x.
+        let c = Circle3::new(
+            Point3::new(3.0, -1.0, 4.0),
+            UnitVec3::new_normalize(Vector3::new(1.0, 2.0, 3.0)),
+            1.5,
+        );
+        assert_relative_eq!(
+            c.compute_frame().rotation,
+            c.plane().compute_frame().rotation,
+            epsilon = 1e-12
+        );
+    }
+
+    #[test]
+    fn to_points_inscribes_a_regular_polygon() {
+        let c = Circle3::new(Point3::origin(), UnitVec3::new_normalize(Vector3::z()), 1.0);
+        let pts = c.to_points(4);
+        assert_eq!(pts.len(), 4);
+        assert_relative_eq!(pts[0], Point3::new(1.0, 0.0, 0.0), epsilon = 1e-12);
+        assert_relative_eq!(pts[1], Point3::new(0.0, 1.0, 0.0), epsilon = 1e-12);
+        assert_relative_eq!(pts[2], Point3::new(-1.0, 0.0, 0.0), epsilon = 1e-12);
+        assert_relative_eq!(pts[3], Point3::new(0.0, -1.0, 0.0), epsilon = 1e-12);
+
+        // On a hexagon the chord equals the radius, which is a property only a regular one has
+        let hex = c.to_points(6);
+        for (a, b) in hex.iter().zip(hex.iter().cycle().skip(1).take(6)) {
+            assert_relative_eq!((b - a).norm(), 1.0, epsilon = 1e-12);
+        }
+    }
+
+    #[test]
+    fn to_points_does_not_repeat_the_first_point() {
+        let c = Circle3::new(Point3::origin(), UnitVec3::new_normalize(Vector3::z()), 1.0);
+        let pts = c.to_points(8);
+        assert_eq!(pts.len(), 8);
+        assert!((pts.first().unwrap() - pts.last().unwrap()).norm() > 0.5);
+    }
+
+    #[test]
+    fn to_points_handles_small_counts() {
+        let c = Circle3::new(Point3::origin(), UnitVec3::new_normalize(Vector3::z()), 3.0);
+        assert!(c.to_points(0).is_empty());
+        assert_relative_eq!(c.to_points(1)[0], c.point_at_angle(0.0), epsilon = 1e-12);
+        let two = c.to_points(2);
+        assert_relative_eq!((two[1] - two[0]).norm(), 6.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn to_points_agrees_with_point_at_angle() {
+        let c = Circle3::new(
+            Point3::new(1.0, 2.0, 3.0),
+            UnitVec3::new_normalize(Vector3::new(-1.0, 0.5, 2.0)),
+            2.5,
+        );
+        let pts = c.to_points(9);
+        for (i, p) in pts.iter().enumerate() {
+            let angle = std::f64::consts::TAU * i as f64 / 9.0;
+            assert_relative_eq!(*p, c.point_at_angle(angle), epsilon = 1e-12);
+        }
+    }
+
+    #[test]
+    fn stress_sampled_points_lie_on_the_circle() {
+        let mut rg = RandomGeometry3::new();
+        for _ in 0..100 {
+            let c = random_circle(&mut rg);
+            for p in c.to_points(37) {
+                assert_relative_eq!((p - c.center).norm(), c.radius, epsilon = 1e-9);
+                assert_relative_eq!(c.plane().signed_distance_to_point(&p), 0.0, epsilon = 1e-9);
+            }
+        }
+    }
+
+    #[test]
+    fn the_frame_traces_the_same_circle_as_the_independent_helper() {
+        // `sample_circle_point` chooses its in-plane basis by a different rule. The two methods
+        // therefore produce the same set of points with different zero-angle positions.
+        let mut rg = RandomGeometry3::new();
+        for _ in 0..25 {
+            let c = random_circle(&mut rg);
+            for &t in linear_space(-PI, PI, 20).iter() {
+                let p = sample_circle_point(&c, t);
+                assert_relative_eq!((p - c.center).norm(), c.radius, epsilon = 1e-9);
+                // The point from the helper is reachable at some angle of the new frame
+                let frame = c.compute_frame();
+                let local = frame.inverse() * p;
+                assert_relative_eq!(local.z, 0.0, epsilon = 1e-9);
+                assert_relative_eq!(c.point_at_angle(local.y.atan2(local.x)), p, epsilon = 1e-9);
+            }
+        }
     }
 
     #[test]

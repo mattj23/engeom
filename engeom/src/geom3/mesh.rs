@@ -1301,6 +1301,238 @@ mod tests {
         Ok(())
     }
 
+    /// Reduce an outline to a canonical, order-independent form: the midpoint of each segment
+    /// divided by `scale`, paired with its visibility code, sorted.
+    ///
+    /// The outline's segment order comes from iterating a `HashMap` of edges. Rust seeds each new
+    /// `HashMap` differently, so two calls on the same mesh can emit the same segments in
+    /// different orders. Sorting makes comparisons independent of that order.
+    fn outline_key(outline: &[(Point3, Point3, u8)], scale: f64) -> Vec<([f64; 3], u8)> {
+        let mut v: Vec<([f64; 3], u8)> = outline
+            .iter()
+            .map(|(a, b, k)| {
+                let m = (a.coords + b.coords) * 0.5 / scale;
+                ([m.x, m.y, m.z], *k)
+            })
+            .collect();
+        v.sort_by(|p, q| {
+            p.0[0]
+                .total_cmp(&q.0[0])
+                .then(p.0[1].total_cmp(&q.0[1]))
+                .then(p.0[2].total_cmp(&q.0[2]))
+        });
+        v
+    }
+
+    #[test]
+    fn perspective_outline_survives_a_point_with_no_normal() -> Result<()> {
+        let mesh = stanford_bun_4();
+        let outline = mesh.compute_perspective_outline(&Point3::new(0.0, 0.0, 500.0), 1.0, None)?;
+        assert!(!outline.is_empty());
+        Ok(())
+    }
+
+    /// At a sufficient distance, every sight line is effectively parallel, so the perspective
+    /// and parallel outlines must agree at their common limit.
+    ///
+    /// The view direction is deliberately generic. Looking at a box down one of its own axes
+    /// leaves four faces mathematically edge-on, where `facing.dot(n)` is zero and the straddle
+    /// test sits on a knife edge, so any infinitesimal divergence between the two views flips
+    /// their classification. Along (1, 2, 3) the smallest dot is 0.267 and the test is stable.
+    #[test]
+    fn a_distant_eye_reproduces_the_parallel_outline() -> Result<()> {
+        let mesh = Mesh3::create_box(2.0, 3.0, 4.0, true);
+        let facing = UnitVec3::new_normalize(Vector3::new(1.0, 2.0, 3.0));
+        let parallel = mesh.compute_visual_outline(facing, 0.5, None)?;
+        let perspective = mesh.compute_perspective_outline(
+            &(Point3::origin() + facing.into_inner() * 1e7),
+            0.5,
+            None,
+        )?;
+
+        assert_eq!(parallel.len(), perspective.len());
+
+        // Match by nearest neighbor rather than by index because the segment order comes
+        // from HashMap iteration and is not stable between two calls.
+        let a = outline_key(&parallel, 1.0);
+        let b = outline_key(&perspective, 1.0);
+        let mut tag_matches = 0;
+        for (m0, k0) in &a {
+            let (best, dist) = b
+                .iter()
+                .map(|(m1, k1)| {
+                    let d = (0..3).map(|i| (m0[i] - m1[i]).powi(2)).sum::<f64>().sqrt();
+                    (*k1, d)
+                })
+                .fold((0u8, f64::MAX), |acc, x| if x.1 < acc.1 { x } else { acc });
+
+            // The two paths displace their points off the surface by different amounts on
+            // purpose, so a matched pair agrees only to within the larger of the two nudges.
+            assert!(
+                dist < 2e-2,
+                "no counterpart within tolerance for {m0:?}, nearest {dist}"
+            );
+            if best == *k0 {
+                tag_matches += 1;
+            }
+        }
+
+        // The silhouette selection has to agree outright. The hidden line tags are allowed a
+        // little slack: the two paths lift their rays off the surface by different amounts, so a
+        // segment whose sight line grazes the surface can land on either side of the test.
+        assert!(
+            tag_matches * 100 >= a.len() * 95,
+            "only {tag_matches} of {} visibility tags agreed",
+            a.len()
+        );
+        Ok(())
+    }
+
+    /// The silhouette of a sphere seen from a finite distance is not its great circle. For radius
+    /// r seen from distance d the silhouette is the circle at z = r^2 / d with radius
+    /// r * sqrt(1 - r^2 / d^2), which is a smaller circle nearer the eye. A parallel outline of
+    /// the same view would put it at z = 0 with radius r, so this cannot pass by accident.
+    #[test]
+    fn the_perspective_silhouette_of_a_sphere_is_not_its_great_circle() -> Result<()> {
+        let r = 10.0;
+        let d = 40.0;
+        let mesh = Mesh3::create_sphere(r, 0.05)?;
+        let outline = mesh.compute_perspective_outline(&Point3::new(0.0, 0.0, d), 1.0, None)?;
+
+        let expect_z = r * r / d;
+        let expect_radius = r * (1.0 - (r * r) / (d * d)).sqrt();
+
+        let visible: Vec<_> = outline.iter().filter(|(_, _, k)| *k == 0).collect();
+        assert!(!visible.is_empty());
+        for (a, _, _) in &visible {
+            assert_relative_eq!(a.z, expect_z, epsilon = 0.5);
+            assert_relative_eq!(a.x.hypot(a.y), expect_radius, epsilon = 0.5);
+        }
+        Ok(())
+    }
+
+    /// The occlusion ray has to stop at the eye. Unbounded, it runs past the camera and strikes
+    /// whatever is behind it, which marks a perfectly visible outline hidden.
+    #[test]
+    fn geometry_behind_the_eye_does_not_occlude() -> Result<()> {
+        let near_square = Mesh3::new(
+            vec![
+                Point3::new(-50.0, -50.0, 0.0),
+                Point3::new(50.0, -50.0, 0.0),
+                Point3::new(50.0, 50.0, 0.0),
+                Point3::new(-50.0, 50.0, 0.0),
+            ],
+            vec![[0, 1, 2], [0, 2, 3]],
+            false,
+        );
+        let mut both = near_square.clone();
+        let mut far = near_square.clone();
+        far.transform_in_place(&Iso3::translation(0.0, 0.0, 1000.0));
+        both.append_in_place(&far)?;
+
+        // The eye sits between the two squares, so an unbounded ray from the near square toward
+        // it would carry on and hit the far one.
+        let outline =
+            both.compute_perspective_outline(&Point3::new(0.0, 0.0, 500.0), 20.0, None)?;
+
+        let near_segments: Vec<_> = outline.iter().filter(|(a, _, _)| a.z < 500.0).collect();
+        assert!(!near_segments.is_empty());
+        assert!(
+            near_segments.iter().all(|(_, _, k)| *k == 0),
+            "the near square should be entirely visible from an eye in front of it"
+        );
+        Ok(())
+    }
+
+    /// An occluder genuinely between the eye and an edge does still hide it.
+    #[test]
+    fn an_occluder_between_the_eye_and_an_edge_hides_it() -> Result<()> {
+        let big = Mesh3::new(
+            vec![
+                Point3::new(-50.0, -50.0, 0.0),
+                Point3::new(50.0, -50.0, 0.0),
+                Point3::new(50.0, 50.0, 0.0),
+                Point3::new(-50.0, 50.0, 0.0),
+            ],
+            vec![[0, 1, 2], [0, 2, 3]],
+            false,
+        );
+        let mut scene = big.clone();
+        let blocker = Mesh3::new(
+            vec![
+                Point3::new(-60.0, -60.0, 250.0),
+                Point3::new(60.0, -60.0, 250.0),
+                Point3::new(60.0, 60.0, 250.0),
+                Point3::new(-60.0, 60.0, 250.0),
+            ],
+            vec![[0, 1, 2], [0, 2, 3]],
+            false,
+        );
+        scene.append_in_place(&blocker)?;
+
+        let outline =
+            scene.compute_perspective_outline(&Point3::new(0.0, 0.0, 500.0), 20.0, None)?;
+        let lower: Vec<_> = outline.iter().filter(|(a, _, _)| a.z < 100.0).collect();
+        assert!(!lower.is_empty());
+        assert!(
+            lower.iter().all(|(_, _, k)| *k == 1),
+            "a square fully covered by a nearer one should be hidden"
+        );
+        Ok(())
+    }
+
+    /// The perspective epsilon is a fraction of the mesh, so the same shape modeled at two scales
+    /// draws the same picture. An absolute epsilon would not survive this.
+    #[test]
+    fn a_perspective_outline_is_scale_free() -> Result<()> {
+        // Scaled by a power of two so the scaling is exact in binary and the test measures the
+        // algorithm rather than the rounding of the scaled vertices.
+        let small = Mesh3::create_box(2.0, 3.0, 4.0, true);
+        let large = small.scale_copy(1024.0)?;
+
+        let a = small.compute_perspective_outline(&Point3::new(20.0, 30.0, 40.0), 0.5, None)?;
+        let b = large.compute_perspective_outline(
+            &Point3::new(20480.0, 30720.0, 40960.0),
+            512.0,
+            None,
+        )?;
+
+        assert_eq!(a.len(), b.len());
+        let ka = outline_key(&a, 1.0);
+        let kb = outline_key(&b, 1024.0);
+        for ((m0, k0), (m1, k1)) in ka.iter().zip(kb.iter()) {
+            assert_eq!(k0, k1, "classification changed with scale at {m0:?}");
+            for i in 0..3 {
+                assert_relative_eq!(m0[i], m1[i], epsilon = 1e-9);
+            }
+        }
+        Ok(())
+    }
+
+    /// `fill_gaps` never terminates when asked for a non-positive spacing, so both outline
+    /// entry points reject it rather than hanging.
+    #[test]
+    fn a_non_positive_max_edge_length_is_rejected() {
+        let mesh = Mesh3::create_box(1.0, 1.0, 1.0, true);
+        let facing = UnitVec3::new_normalize(Vector3::z());
+        let eye = Point3::new(0.0, 0.0, 10.0);
+
+        assert!(mesh.compute_visual_outline(facing, 0.0, None).is_err());
+        assert!(mesh.compute_visual_outline(facing, -1.0, None).is_err());
+        assert!(mesh.compute_visual_outline(facing, f64::NAN, None).is_err());
+        assert!(mesh.compute_perspective_outline(&eye, 0.0, None).is_err());
+        assert!(mesh.compute_perspective_outline(&eye, -1.0, None).is_err());
+    }
+
+    #[test]
+    fn an_eye_on_the_surface_does_not_panic() -> Result<()> {
+        let mesh = Mesh3::create_box(2.0, 2.0, 2.0, true);
+        let vertex = mesh.points()[0];
+        let outline = mesh.compute_perspective_outline(&vertex, 0.5, None)?;
+        assert!(!outline.is_empty());
+        Ok(())
+    }
+
     /// The accelerated type and the plain container are two representations of the same buffers, so
     /// the normals they compute have to agree exactly rather than merely being close.
     #[test]

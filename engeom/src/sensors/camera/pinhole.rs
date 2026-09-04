@@ -19,7 +19,7 @@ use parry3d_f64::query::Ray;
 /// # Intrinsic parameters
 /// * `fx` / `fy` – focal lengths in pixels along the horizontal and vertical axes
 /// * `cx` / `cy` – principal point (optical center) in pixel coordinates
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PinholeCamera {
     pub fx: f64,
     pub fy: f64,
@@ -213,7 +213,7 @@ mod tests {
 
     #[test]
     fn camera_origin_is_at_iso_translation() {
-        // The ray origin for any image point should be the camera centre in world space.
+        // The ray origin for any image point should be the camera center in world space.
         let cam = PinholeCamera::new(500.0, 500.0, 320.0, 240.0);
         let iso = camera_at_z_neg10();
         let img_pt = Point2::new(100.0, 150.0);
