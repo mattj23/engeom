@@ -5,7 +5,7 @@ use super::Camera;
 use crate::common::IndexMask;
 use crate::geom3::IsoExtensions3;
 use crate::na::DMatrix;
-use crate::raster2::Point2I;
+use crate::raster2::{Point2I, RasterMask};
 use crate::{Iso3, Mesh3, Point3, PointCloud3, SurfacePoint3, UnitVec3, Vector3};
 use parry3d_f64::query::{Ray, RayCast};
 use parry3d_f64::shape::FeatureId;
@@ -263,6 +263,23 @@ impl ViewBuffer {
     /// much of the frame the part fills and whether the pose wastes image area.
     pub fn hit_fraction(&self) -> f64 {
         self.hit_count() as f64 / self.pixels.len() as f64
+    }
+
+    /// Return the target silhouette as a raster mask, with every pixel that saw a surface set to
+    /// true.
+    ///
+    /// This mask connects a rendered view to the `raster2` tools. Their mask and distance
+    /// operations can compare the shape seen by the camera with a segmented image.
+    pub fn hit_mask(&self) -> RasterMask {
+        let width = self.width() as usize;
+        let mut mask = RasterMask::empty(self.width(), self.height());
+        for (index, pixel) in self.pixels.iter().enumerate() {
+            if pixel.is_hit() {
+                let p = Point2I::new((index % width) as i32, (index / width) as i32);
+                mask.set_point_unchecked(p, true);
+            }
+        }
+        mask
     }
 
     /// Build a matrix with one value per pixel and `NaN` wherever a pixel saw nothing. Each
@@ -600,6 +617,22 @@ mod tests {
         // uses to report a back face.
         assert!((hit.face() as usize) < buffer.target_face_count());
         assert_relative_eq!(hit.depth(), 500.0, epsilon = 1e-9);
+    }
+
+    #[test]
+    fn hit_mask_marks_the_pixels_that_saw_the_surface() {
+        // A square that covers only part of the frame: the mask must agree with the hit count,
+        // be true where the square is, and be false in a corner that looks past it.
+        let cam = test_camera();
+        let buffer = ViewBuffer::render(&cam, &looking_down(500.0), &square(2.0), None);
+        let mask = buffer.hit_mask();
+
+        assert_eq!(mask.width(), buffer.width());
+        assert_eq!(mask.height(), buffer.height());
+        assert_eq!(mask.count_true(), buffer.hit_count());
+        assert!(buffer.hit_count() > 0);
+        assert!(mask.get_point(Point2I::new(50, 50)));
+        assert!(!mask.get_point(Point2I::new(0, 0)));
     }
 
     #[test]

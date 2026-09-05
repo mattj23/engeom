@@ -1,9 +1,11 @@
 use crate::Result;
+use crate::image::imageops::{self, FilterType};
 use crate::image::{GenericImage, GrayImage, ImageFormat, ImageReader, Luma};
+use crate::na::DMatrix;
 use crate::raster2::index_iter::IndexIter;
 use crate::raster2::{LabeledRegions, Point2I, zhang_suen_thinning};
 use faer::prelude::default;
-use imageproc::distance_transform::Norm;
+use imageproc::distance_transform::{Norm, euclidean_squared_distance_transform};
 use imageproc::drawing::{
     draw_filled_circle_mut, draw_filled_rect_mut, draw_hollow_circle_mut, draw_hollow_rect_mut,
     draw_polygon_mut,
@@ -538,6 +540,154 @@ impl RasterMask {
         LabeledRegions::from_connected(&self.buffer, connectivity, Luma([0]))
     }
 
+    /// Return the interior boundary of the mask: the true pixels that have at least one false
+    /// neighbor among their eight in-bounds neighbors.
+    ///
+    /// Neighbors beyond the raster edge are treated as true, so a region cut off by the raster
+    /// produces no boundary along the cut. This behavior prevents field-of-view artifacts from
+    /// being reported as properties of the region. A consumer that matches boundaries against
+    /// physical contours, such as a silhouette fit, therefore does not receive boundary pixels
+    /// with no physical counterpart.
+    ///
+    /// returns: RasterMask
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::raster2::{Point2I, RasterMask};
+    /// let mut mask = RasterMask::empty(5, 5);
+    /// mask.draw_rect_mut(Point2I::new(0, 0), Point2I::new(3, 3), true, true);
+    ///
+    /// let edges = mask.edges();
+    /// // The corner against the frame is not a boundary, the interior-facing corner is.
+    /// assert!(!edges.get_point(Point2I::new(0, 0)));
+    /// assert!(edges.get_point(Point2I::new(2, 2)));
+    /// ```
+    pub fn edges(&self) -> RasterMask {
+        let width = self.width() as i32;
+        let height = self.height() as i32;
+        let mut output = RasterMask::empty(self.width(), self.height());
+
+        for p in self.iter_true() {
+            'neighbors: for dy in -1..=1 {
+                for dx in -1..=1 {
+                    let n = Point2I::new(p.x + dx, p.y + dy);
+                    let in_bounds = n.x >= 0 && n.y >= 0 && n.x < width && n.y < height;
+                    if in_bounds && !self.get_point(n) {
+                        output.set_point_unchecked(p, true);
+                        break 'neighbors;
+                    }
+                }
+            }
+        }
+
+        output
+    }
+
+    /// Return a copy of the mask with every enclosed area filled, leaving only its outer
+    /// contour survives as a boundary.
+    ///
+    /// A false region is filled unless a path of false pixels connects it to the raster border.
+    /// The result is computed by flood-filling the false pixels that are four-connected to the
+    /// border and selecting everything else. A false notch that touches the border therefore
+    /// stays open. For a silhouette, such a notch represents real background, and its walls are
+    /// physical contours.
+    ///
+    /// Use this form when treating the mask as a silhouette. The boundary of an enclosed false
+    /// region, such as a specular highlight or printed text read as background, does not
+    /// correspond to a physical contour.
+    ///
+    /// returns: RasterMask
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::raster2::{Point2I, RasterMask};
+    /// let mut mask = RasterMask::empty(7, 7);
+    /// mask.draw_rect_mut(Point2I::new(1, 1), Point2I::new(6, 6), true, true);
+    /// mask.set_point(Point2I::new(3, 3), false).unwrap();
+    ///
+    /// let solid = mask.solidified();
+    /// assert!(solid.get_point(Point2I::new(3, 3)));
+    /// ```
+    pub fn solidified(&self) -> RasterMask {
+        self.get_flood_fill_from_borders(Connectivity::Four).not()
+    }
+
+    /// Return a mask containing only the largest connected region of true pixels, or `None` if
+    /// the mask has no true pixels. When two regions tie for the largest size, the one with the
+    /// lowest label from `connected_regions` is kept.
+    ///
+    /// # Arguments
+    ///
+    /// * `connectivity`: whether pixels touching only diagonally belong to the same region.
+    ///
+    /// returns: Option<RasterMask>
+    pub fn largest_region(&self, connectivity: Connectivity) -> Option<RasterMask> {
+        let labeled = self.connected_regions(connectivity);
+        let largest = labeled
+            .iter()
+            .max_by_key(|r| (r.count(), u32::MAX - r.label()))?;
+        let label = largest.label();
+
+        let mut output = RasterMask::empty(self.width(), self.height());
+        for p in self.iter_true() {
+            if labeled.label_at(p) == label {
+                output.set_point_unchecked(p, true);
+            }
+        }
+        Some(output)
+    }
+
+    /// Return the mask resampled onto a raster of a different size.
+    ///
+    /// The mask is resampled by bilinear filtering of its 0/255 buffer followed by a threshold
+    /// at the halfway value, so a reduced copy keeps a pixel wherever at least half of the
+    /// source area behind it was set. A plain nearest-neighbor reduction would instead erode or
+    /// jitter the region boundary by up to one source pixel at each reduction step.
+    ///
+    /// # Arguments
+    ///
+    /// * `width`: the width of the resampled mask, greater than zero.
+    /// * `height`: the height of the resampled mask, greater than zero.
+    ///
+    /// returns: RasterMask
+    pub fn resized(&self, width: u32, height: u32) -> RasterMask {
+        let resampled = imageops::resize(&self.buffer, width, height, FilterType::Triangle);
+        let mut output = RasterMask::new(resampled);
+        for pixel in output.buffer.pixels_mut() {
+            pixel[0] = if pixel[0] > 127 { 255 } else { 0 };
+        }
+        output
+    }
+
+    /// Compute the exact Euclidean distance from every pixel to the nearest true pixel of the
+    /// mask, as a matrix in the raster's row/column layout.
+    ///
+    /// A true pixel has a distance of zero. If the mask has no true pixels, every entry
+    /// of the result is infinite.
+    ///
+    /// returns: DMatrix<f64>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use engeom::raster2::{Point2I, RasterMask};
+    /// let mut mask = RasterMask::empty(4, 4);
+    /// mask.set_point(Point2I::new(1, 1), true).unwrap();
+    ///
+    /// let distance = mask.distance_transform();
+    /// assert_eq!(distance[(1, 1)], 0.0);
+    /// assert_eq!(distance[(1, 2)], 1.0);                       // row 1, column 2 = pixel (2, 1)
+    /// assert_eq!(distance[(3, 3)], (8.0_f64).sqrt());
+    /// ```
+    pub fn distance_transform(&self) -> DMatrix<f64> {
+        let squared = euclidean_squared_distance_transform(&self.buffer);
+        DMatrix::from_fn(self.height() as usize, self.width() as usize, |r, c| {
+            squared.get_pixel(c as u32, r as u32)[0].sqrt()
+        })
+    }
+
     pub fn convex_hull(&self) -> Vec<Point2I> {
         let result = imageproc::geometry::convex_hull(self);
         result.into_iter().map(|p| Point2I::new(p.x, p.y)).collect()
@@ -665,6 +815,120 @@ impl From<&RasterMask> for Vec<IpPoint> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
+
+    #[test]
+    fn edges_skip_the_frame_but_not_the_interior() {
+        // A 3x3 block in the corner of a 5x5 raster. The two sides against the frame are cut
+        // off by the field of view and produce no edge; the two interior-facing sides do.
+        let mut mask = RasterMask::empty(5, 5);
+        mask.draw_rect_mut(Point2I::new(0, 0), Point2I::new(3, 3), true, true);
+
+        let edges = mask.edges();
+        assert!(!edges.get_point(Point2I::new(0, 0)));
+        assert!(!edges.get_point(Point2I::new(1, 1)));
+        assert!(edges.get_point(Point2I::new(2, 0)));
+        assert!(edges.get_point(Point2I::new(2, 2)));
+        assert!(edges.get_point(Point2I::new(0, 2)));
+        assert_eq!(edges.count_true(), 5);
+    }
+
+    #[test]
+    fn edges_of_a_full_mask_are_empty() {
+        let mut mask = RasterMask::empty(4, 4);
+        mask.not_mut();
+        assert_eq!(mask.edges().count_true(), 0);
+    }
+
+    #[test]
+    fn solidified_fills_an_enclosed_hole() {
+        let mut mask = RasterMask::empty(7, 7);
+        mask.draw_rect_mut(Point2I::new(1, 1), Point2I::new(6, 6), true, true);
+        mask.set_point(Point2I::new(3, 3), false).unwrap();
+
+        let solid = mask.solidified();
+        assert!(solid.get_point(Point2I::new(3, 3)));
+        assert_eq!(solid.count_true(), 25);
+    }
+
+    #[test]
+    fn solidified_fills_a_pocket_that_stops_short_of_the_frame() {
+        // A false pocket one pixel in from the top of the raster, enclosed on every side. The
+        // top row of true pixels seals it off from the border, so it must be filled.
+        let mut mask = RasterMask::empty(5, 5);
+        mask.not_mut();
+        mask.set_point(Point2I::new(2, 1), false).unwrap();
+        mask.set_point(Point2I::new(2, 2), false).unwrap();
+
+        let solid = mask.solidified();
+        assert_eq!(solid.count_true(), 25);
+    }
+
+    #[test]
+    fn solidified_leaves_an_open_bay_alone() {
+        // The same shape, but with the enclosing top row removed so the bay connects to the
+        // exterior around the top of the raster. Nothing encloses it, so nothing is filled.
+        let mut mask = RasterMask::empty(5, 5);
+        mask.draw_rect_mut(Point2I::new(0, 1), Point2I::new(5, 5), true, true);
+        mask.set_point(Point2I::new(2, 1), false).unwrap();
+        mask.set_point(Point2I::new(2, 2), false).unwrap();
+
+        let solid = mask.solidified();
+        assert!(!solid.get_point(Point2I::new(2, 1)));
+        assert!(!solid.get_point(Point2I::new(2, 2)));
+    }
+
+    #[test]
+    fn largest_region_keeps_only_the_biggest_blob() {
+        let mut mask = RasterMask::empty(10, 10);
+        mask.draw_rect_mut(Point2I::new(0, 0), Point2I::new(3, 3), true, true);
+        mask.draw_rect_mut(Point2I::new(5, 5), Point2I::new(9, 9), true, true);
+
+        let largest = mask.largest_region(Connectivity::Four).unwrap();
+        assert_eq!(largest.count_true(), 16);
+        assert!(largest.get_point(Point2I::new(6, 6)));
+        assert!(!largest.get_point(Point2I::new(1, 1)));
+    }
+
+    #[test]
+    fn largest_region_of_an_empty_mask_is_none() {
+        let mask = RasterMask::empty(6, 6);
+        assert!(mask.largest_region(Connectivity::Eight).is_none());
+    }
+
+    #[test]
+    fn resized_halves_a_half_full_mask() {
+        let mut mask = RasterMask::empty(8, 8);
+        mask.draw_rect_mut(Point2I::new(0, 0), Point2I::new(4, 8), true, true);
+
+        let small = mask.resized(4, 4);
+        assert_eq!(small.count_true(), 8);
+        assert!(small.get_point(Point2I::new(1, 2)));
+        assert!(!small.get_point(Point2I::new(2, 2)));
+    }
+
+    #[test]
+    fn distance_transform_measures_to_the_nearest_true_pixel() {
+        let mut mask = RasterMask::empty(4, 4);
+        mask.set_point(Point2I::new(1, 1), true).unwrap();
+
+        let distance = mask.distance_transform();
+        assert_eq!(distance.nrows(), 4);
+        assert_eq!(distance.ncols(), 4);
+        assert_relative_eq!(distance[(1, 1)], 0.0);
+        assert_relative_eq!(distance[(1, 2)], 1.0);
+        assert_relative_eq!(distance[(2, 1)], 1.0);
+        assert_relative_eq!(distance[(2, 2)], std::f64::consts::SQRT_2);
+        assert_relative_eq!(distance[(3, 3)], 8.0_f64.sqrt());
+        assert_relative_eq!(distance[(0, 3)], 5.0_f64.sqrt());
+    }
+
+    #[test]
+    fn distance_transform_of_an_empty_mask_is_infinite() {
+        let mask = RasterMask::empty(3, 3);
+        let distance = mask.distance_transform();
+        assert!(distance.iter().all(|d| d.is_infinite()));
+    }
 
     #[test]
     fn count_true() -> Result<()> {
