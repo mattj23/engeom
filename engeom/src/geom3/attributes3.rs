@@ -22,10 +22,22 @@ use crate::common::IndexMask;
 use crate::{Iso3, Result, Vector3};
 use std::collections::HashMap;
 
-/// Attribute names which may not be used as keys in the open attribute maps, because they name a
-/// quantity that either already has a typed field or is computed on demand. As a precaution we're
-/// going to reject them to prevent any quantity from having two homes that can silently disagree.
-pub(crate) const RESERVED_ATTR_NAMES: [&str; 11] = [
+/// Attribute names that may not be used as keys in the point-domain open attribute map. Each name
+/// identifies a quantity that already has a typed field or is computed on demand. Rejecting these
+/// names prevents a quantity from having two representations that can silently disagree.
+///
+/// `label` and `labels` are not reserved here. The point domain has no typed labels field, and an
+/// open `Attr3::Label` already receives the required handling (voxel reduction takes the mode
+/// rather than the mean), so reserving the name would only refuse files that use it, such as
+/// PCL's labeled point types.
+pub(crate) const RESERVED_POINT_ATTR_NAMES: [&str; 9] = [
+    "normal", "normals", "color", "colors", "stdev", "std_dev", "flat", "flat_x", "flat_y",
+];
+
+/// Attribute names that may not be used as keys in the face-domain open attribute map for the same
+/// reason as `RESERVED_POINT_ATTR_NAMES`. The face domain has a typed labels field, so `label` and
+/// `labels` are also reserved.
+pub(crate) const RESERVED_FACE_ATTR_NAMES: [&str; 11] = [
     "normal", "normals", "color", "colors", "stdev", "std_dev", "label", "labels", "flat",
     "flat_x", "flat_y",
 ];
@@ -227,13 +239,22 @@ pub(crate) fn check_len(actual: Option<usize>, expected: usize, name: &str) -> R
     }
 }
 
-/// Verify that a name is not one of the reserved open-map keys.
-pub(crate) fn check_reserved(name: &str) -> Result<()> {
-    if RESERVED_ATTR_NAMES.contains(&name) {
+/// Verify that a name is not a reserved open-map key for a domain.
+///
+/// # Arguments
+///
+/// * `name`: the key being inserted
+/// * `reserved`: the reserved names of the domain, `RESERVED_POINT_ATTR_NAMES` or
+///   `RESERVED_FACE_ATTR_NAMES`
+/// * `domain`: the domain's name for the error message, `point` or `face`
+///
+/// returns: `Result<()>`
+pub(crate) fn check_reserved(name: &str, reserved: &[&str], domain: &str) -> Result<()> {
+    if reserved.contains(&name) {
         return Err(format!(
-            "'{name}' is a reserved attribute name. Quantities which have a typed field or are \
-             computed on demand (normals, colors, standard deviations, flat coordinates, labels) \
-             must be set through their own accessor, so that they cannot have two homes which disagree."
+            "'{name}' is a reserved {domain} attribute name. Quantities which have a typed field \
+             or are computed on demand must be set through their own accessor, so that they \
+             cannot have two homes which disagree."
         )
         .into());
     }

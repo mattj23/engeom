@@ -24,8 +24,8 @@
 //! it is talking about.
 
 use super::{
-    Attr3, check_both_or_neither, check_keys_match, check_len, check_reserved, check_same_variant,
-    clone_indexed, clone_masked, extend_option,
+    Attr3, RESERVED_FACE_ATTR_NAMES, check_both_or_neither, check_keys_match, check_len,
+    check_reserved, check_same_variant, clone_indexed, clone_masked, extend_option,
 };
 use crate::common::IndexMask;
 use crate::{Iso3, Result};
@@ -141,7 +141,7 @@ impl FaceAttrSet3 {
     ///
     /// returns: `Result<()>`
     pub fn insert_attr(&mut self, name: &str, attr: Attr3, n_faces: usize) -> Result<()> {
-        check_reserved(name)?;
+        check_reserved(name, &RESERVED_FACE_ATTR_NAMES, "face")?;
         check_len(Some(attr.len()), n_faces, name)?;
         self.open.insert(name.to_string(), attr);
         Ok(())
@@ -302,7 +302,6 @@ impl FaceAttrSet3 {
 mod tests {
     use super::*;
     use crate::Vector3;
-    use crate::geom3::attributes3::RESERVED_ATTR_NAMES;
     use approx::assert_relative_eq;
     use std::f64::consts::FRAC_PI_2;
 
@@ -377,7 +376,7 @@ mod tests {
     fn open_map_rejects_reserved_names() {
         let mut attrs = FaceAttrSet3::empty();
 
-        for name in RESERVED_ATTR_NAMES {
+        for name in RESERVED_FACE_ATTR_NAMES {
             assert!(
                 attrs
                     .insert_attr(name, Attr3::Scalar(vec![0.0; N]), N)

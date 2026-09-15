@@ -15,7 +15,7 @@ use crate::common::{VoxelGroups, compute_voxel_groups};
 use crate::geom3::Aabb3;
 use crate::geom3::attributes3::{Attr3, PointAttrSet3};
 use crate::geom3::point_cloud::CloudIndex3;
-use crate::io::load_pcd_points;
+use crate::io::{PcdReadOpts, load_pcd_points};
 use crate::{Iso3, KdTree3, Point2, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
 use std::fmt;
 use std::path::Path;
@@ -243,13 +243,18 @@ impl PointCloud3 {
     /// the open attribute map. See `engeom::io::read_pcd_points` for the full mapping and for the
     /// fields which are refused rather than stored lossily.
     ///
+    /// By default, this method refuses a file if a point has a finite position but an invalid
+    /// normal. For example, PCL's normal estimation writes NaN normals for points with too few
+    /// neighbors. Set `opts.invalid_normals` to drop those points or the normals instead.
+    ///
     /// # Arguments
     ///
     /// * `path`: the path to the PCD file
+    /// * `opts`: how to handle point data that the file contains but the cloud cannot represent
     ///
     /// returns: `Result<PointCloud3>`
-    pub fn load_pcd(path: &Path) -> Result<Self> {
-        let (points, attrs) = load_pcd_points(path)?;
+    pub fn load_pcd(path: &Path, opts: &PcdReadOpts) -> Result<Self> {
+        let (points, attrs) = load_pcd_points(path, opts)?;
         Ok(Self { points, attrs })
     }
 

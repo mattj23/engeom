@@ -1473,6 +1473,33 @@ mod tests {
         read_ply_mesh_data(Cursor::new(buffer))
     }
 
+    /// A vertex `label` is an open point attribute, while a face `label` uses the typed face labels.
+    /// One file can carry both, and each survives a round trip in its own domain.
+    #[test]
+    fn vertex_and_face_labels_land_in_their_own_domains() -> Result<()> {
+        let text = "ply\nformat ascii 1.0\nelement vertex 3\nproperty float x\nproperty float y\n\
+                    property float z\nproperty uint label\nelement face 1\n\
+                    property list uchar int vertex_indices\nproperty uint label\nend_header\n\
+                    0 0 0 5\n1 0 0 6\n0 1 0 5\n3 0 1 2 42\n";
+        let mesh = read_ply_mesh_data(Cursor::new(text))?;
+
+        let point_labels = |m: &MeshData3| {
+            m.point_attr("label")
+                .and_then(|a| a.as_label())
+                .map(|v| v.to_vec())
+        };
+        assert_eq!(point_labels(&mesh), Some(vec![5, 6, 5]));
+        assert_eq!(mesh.face_labels(), Some(&[42][..]));
+
+        let mut buffer = Vec::new();
+        write_ply_to(&mut buffer, &mesh, &PlyWriteOpts::default())?;
+        let back = read_ply_mesh_data(Cursor::new(buffer))?;
+        assert_eq!(point_labels(&back), Some(vec![5, 6, 5]));
+        assert_eq!(back.face_labels(), Some(&[42][..]));
+
+        Ok(())
+    }
+
     /// A mesh carrying every typed field and one open attribute of each `Attr3` variant.
     fn loaded_mesh() -> MeshData3 {
         let mut mesh = MeshData3::new(

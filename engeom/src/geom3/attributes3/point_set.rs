@@ -37,8 +37,8 @@
 //! also useful to callers working with point clouds.
 
 use super::{
-    Attr3, check_both_or_neither, check_keys_match, check_len, check_reserved, check_same_variant,
-    clone_indexed, clone_masked, extend_option,
+    Attr3, RESERVED_POINT_ATTR_NAMES, check_both_or_neither, check_keys_match, check_len,
+    check_reserved, check_same_variant, clone_indexed, clone_masked, extend_option,
 };
 use crate::common::IndexMask;
 use crate::{Iso3, Point2, Result, UnitVec3};
@@ -228,7 +228,7 @@ impl PointAttrSet3 {
     ///
     /// returns: `Result<()>`
     pub fn insert_attr(&mut self, name: &str, attr: Attr3, n_points: usize) -> Result<()> {
-        check_reserved(name)?;
+        check_reserved(name, &RESERVED_POINT_ATTR_NAMES, "point")?;
         check_len(Some(attr.len()), n_points, name)?;
         self.open.insert(name.to_string(), attr);
         Ok(())
@@ -454,7 +454,6 @@ impl PointAttrSet3 {
 mod tests {
     use super::*;
     use crate::Vector3;
-    use crate::geom3::attributes3::RESERVED_ATTR_NAMES;
     use approx::assert_relative_eq;
     use std::f64::consts::FRAC_PI_2;
 
@@ -572,7 +571,7 @@ mod tests {
     fn open_map_rejects_reserved_names() {
         let mut attrs = PointAttrSet3::empty();
 
-        for name in RESERVED_ATTR_NAMES {
+        for name in RESERVED_POINT_ATTR_NAMES {
             assert!(
                 attrs
                     .insert_attr(name, Attr3::Scalar(vec![0.0; N]), N)
@@ -585,6 +584,13 @@ mod tests {
         assert!(
             attrs
                 .insert_attr("scanner_color_temp", Attr3::Scalar(vec![0.0; N]), N)
+                .is_ok()
+        );
+
+        // Points have no typed labels field, so the name is free for an open label attribute.
+        assert!(
+            attrs
+                .insert_attr("label", Attr3::Label(vec![0; N]), N)
                 .is_ok()
         );
     }

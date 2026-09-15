@@ -7,6 +7,37 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 
+/// Options controlling how a PCD file is read.
+#[non_exhaustive]
+#[derive(Debug, Clone, Default)]
+pub struct PcdReadOpts {
+    /// What to do with a point that has a finite position but a normal that is not a valid
+    /// direction. Defaults to [`PcdInvalidNormals::Error`].
+    pub invalid_normals: PcdInvalidNormals,
+}
+
+/// How to handle a point that has a finite position but a normal that is not a valid direction,
+/// meaning a normal with a non-finite component or zero length.
+///
+/// PCL's normal estimation writes a NaN normal for any point with too few neighbors, so files with
+/// normals from PCL often contain invalid normals. The typed point normals cannot hold a missing
+/// value for a single point, so every option that accepts such a file discards some data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PcdInvalidNormals {
+    /// Refuse the file. This is the default, because both alternatives discard data.
+    #[default]
+    Error,
+
+    /// Drop every point with an invalid normal, along with all of its attributes. The cloud keeps
+    /// valid normals for every remaining point, but its geometry contains only a subset of the
+    /// file's points.
+    DropPoints,
+
+    /// Keep every point and discard the normals of the whole cloud, including the valid ones. The
+    /// reader discards the normals only if at least one kept point has an invalid normal.
+    DropNormals,
+}
+
 /// Load the points and per-point attributes from a PCD file.
 ///
 /// See `read_pcd_points` for the supported encodings, how fields map onto attributes, and which
@@ -15,11 +46,12 @@ use std::path::Path;
 /// # Arguments
 ///
 /// * `path`: the path to the `.pcd` file
+/// * `opts`: how to handle point data that the file contains but the result cannot represent
 ///
 /// returns: `Result<(Vec<Point3>, PointAttrSet3)>`
-pub fn load_pcd_points(path: &Path) -> Result<(Vec<Point3>, PointAttrSet3)> {
+pub fn load_pcd_points(path: &Path, opts: &PcdReadOpts) -> Result<(Vec<Point3>, PointAttrSet3)> {
     let file = BufReader::new(File::open(path)?);
-    read_pcd_points(file)
+    read_pcd_points(file, opts)
 }
 
 /// Read the points and per-point attributes of a PCD file from a buffered source.
@@ -58,7 +90,8 @@ pub fn load_pcd_points(path: &Path) -> Result<(Vec<Point3>, PointAttrSet3)> {
 ///   finite is **dropped**. PCL marks the invalid cells of an organized cloud with NaN positions,
 ///   and the unordered point set this reader produces has no grid to hold them in.
 /// - `normal_x`, `normal_y`, `normal_z` become the point normals. A file must have all three or
-///   none, and a kept point with a non-finite or zero-length normal is an error.
+///   none. A kept point whose normal has a non-finite component or zero length is handled by
+///   `opts.invalid_normals`, which refuses the file by default. See [`PcdInvalidNormals`].
 /// - `rgb` or `rgba` becomes the point colors. Both are packed into four bytes as `0xAARRGGBB`
 ///   whether the field is declared `F` or `U`, and the alpha byte is discarded. In an ASCII
 ///   payload, an all-digit token that fits in a `u32` is the packed integer (which is how PCL writes
@@ -72,14 +105,19 @@ pub fn load_pcd_points(path: &Path) -> Result<(Vec<Point3>, PointAttrSet3)> {
 ///   `name_1`, and so on. Multi-value PCD fields are usually histograms or descriptors, and storing
 ///   a triple as an `Attr3::Vector` would cause it to rotate as a spatial direction when the cloud
 ///   is transformed.
-/// - A field whose name is reserved by the attribute set (PCL's `label`, for example) is refused.
+/// - A field whose name is reserved by the point attribute set, such as `normals` or `stdev`, is
+///   refused. PCL's `label` field is not reserved and lands in the open map as labels.
 ///
 /// # Arguments
 ///
 /// * `source`: a buffered reader positioned at the start of the PCD file
+/// * `opts`: how to handle point data that the file contains but the result cannot represent
 ///
 /// returns: `Result<(Vec<Point3>, PointAttrSet3)>`
-pub fn read_pcd_points<R: BufRead>(mut source: R) -> Result<(Vec<Point3>, PointAttrSet3)> {
+pub fn read_pcd_points<R: BufRead>(
+    mut source: R,
+    opts: &PcdReadOpts,
+) -> Result<(Vec<Point3>, PointAttrSet3)> {
     let header = read_header(&mut source)?;
 
     let raw = match header.data {
@@ -88,7 +126,7 @@ pub fn read_pcd_points<R: BufRead>(mut source: R) -> Result<(Vec<Point3>, PointA
         DataKind::BinaryCompressed => read_binary_compressed(&mut source, &header)?,
     };
 
-    route(&header, &raw)
+    route(&header, &raw, opts)
 }
 
 // ===============================================================================================
@@ -658,7 +696,11 @@ fn is_packed_color(name: &str) -> bool {
     name == "rgb" || name == "rgba"
 }
 
-fn route(header: &PcdHeader, raw: &[Vec<u8>]) -> Result<(Vec<Point3>, PointAttrSet3)> {
+fn route(
+    header: &PcdHeader,
+    raw: &[Vec<u8>],
+    opts: &PcdReadOpts,
+) -> Result<(Vec<Point3>, PointAttrSet3)> {
     let n = header.points;
     let find = |name: &str| header.fields.iter().position(|f| f.name == name);
 
@@ -670,51 +712,36 @@ fn route(header: &PcdHeader, raw: &[Vec<u8>]) -> Result<(Vec<Point3>, PointAttrS
     let y = coordinate("y")?;
     let z = coordinate("z")?;
 
-    let keep: Vec<usize> = (0..n)
+    let mut keep: Vec<usize> = (0..n)
         .filter(|&i| x[i].is_finite() && y[i].is_finite() && z[i].is_finite())
         .collect();
-    let m = keep.len();
 
+    // The normals are resolved before anything else is built from `keep`, because dropping points
+    // with invalid normals changes which points survive.
+    let normals = match (find("normal_x"), find("normal_y"), find("normal_z")) {
+        (Some(ix), Some(iy), Some(iz)) => {
+            let nx = single_values(&header.fields[ix], &raw[ix], n)?;
+            let ny = single_values(&header.fields[iy], &raw[iy], n)?;
+            let nz = single_values(&header.fields[iz], &raw[iz], n)?;
+            resolve_normals([&nx, &ny, &nz], &mut keep, opts.invalid_normals)?
+        }
+        (None, None, None) => None,
+        _ => {
+            return Err(
+                "PCD file has only some of the 'normal_x', 'normal_y', and 'normal_z' fields, \
+                 but normals need all three"
+                    .into(),
+            );
+        }
+    };
+
+    let m = keep.len();
     let points = keep
         .iter()
         .map(|&i| Point3::new(x[i], y[i], z[i]))
         .collect();
     let mut attrs = PointAttrSet3::empty();
-
-    match (find("normal_x"), find("normal_y"), find("normal_z")) {
-        (Some(ix), Some(iy), Some(iz)) => {
-            let nx = single_values(&header.fields[ix], &raw[ix], n)?;
-            let ny = single_values(&header.fields[iy], &raw[iy], n)?;
-            let nz = single_values(&header.fields[iz], &raw[iz], n)?;
-
-            let mut normals = Vec::with_capacity(m);
-            for &p in &keep {
-                let v = Vector3::new(nx[p], ny[p], nz[p]);
-                if !v.iter().all(|c| c.is_finite()) {
-                    return Err(format!(
-                        "PCD point {p} has a finite position but a non-finite normal ({}, {}, {})",
-                        v.x, v.y, v.z
-                    )
-                    .into());
-                }
-                let unit = UnitVec3::try_new(v, 1.0e-12).ok_or_else(|| {
-                    format!(
-                        "PCD point {p} has a normal of zero length, which cannot be a direction"
-                    )
-                })?;
-                normals.push(unit);
-            }
-            attrs.set_normals(Some(normals), m)?;
-        }
-        (None, None, None) => {}
-        _ => {
-            return Err(
-                "PCD file has only some of the 'normal_x', 'normal_y', and 'normal_z' \
-                        fields, but normals need all three"
-                    .into(),
-            );
-        }
-    }
+    attrs.set_normals(normals, m)?;
 
     let color_field = match (find("rgb"), find("rgba")) {
         (Some(_), Some(_)) => {
@@ -781,6 +808,53 @@ fn route(header: &PcdHeader, raw: &[Vec<u8>]) -> Result<(Vec<Point3>, PointAttrS
     Ok((points, attrs))
 }
 
+/// Build normals for the kept points according to the invalid-normal policy. Remove points from
+/// `keep` when the policy drops them.
+fn resolve_normals(
+    [nx, ny, nz]: [&[f64]; 3],
+    keep: &mut Vec<usize>,
+    policy: PcdInvalidNormals,
+) -> Result<Option<Vec<UnitVec3>>> {
+    let direction = |p: usize| {
+        let v = Vector3::new(nx[p], ny[p], nz[p]);
+        if v.iter().all(|c| c.is_finite()) {
+            UnitVec3::try_new(v, 1.0e-12)
+        } else {
+            None
+        }
+    };
+
+    match policy {
+        PcdInvalidNormals::Error => {
+            let mut normals = Vec::with_capacity(keep.len());
+            for &p in keep.iter() {
+                let unit = direction(p).ok_or_else(|| {
+                    format!(
+                        "PCD point {p} has a finite position but its normal ({}, {}, {}) is not a \
+                         valid direction. Set the invalid_normals read option to drop these \
+                         points or the normals instead.",
+                        nx[p], ny[p], nz[p]
+                    )
+                })?;
+                normals.push(unit);
+            }
+            Ok(Some(normals))
+        }
+        PcdInvalidNormals::DropPoints => {
+            let mut normals = Vec::with_capacity(keep.len());
+            keep.retain(|&p| match direction(p) {
+                Some(unit) => {
+                    normals.push(unit);
+                    true
+                }
+                None => false,
+            });
+            Ok(Some(normals))
+        }
+        PcdInvalidNormals::DropNormals => Ok(keep.iter().map(|&p| direction(p)).collect()),
+    }
+}
+
 /// Decode every point's value of a field which must hold a single value per point.
 fn single_values(def: &FieldDef, raw: &[u8], n: usize) -> Result<Vec<f64>> {
     if def.count != 1 {
@@ -833,8 +907,13 @@ mod tests {
     use approx::assert_relative_eq;
     use std::io::Cursor;
 
+    /// Read with the default options.
+    fn read(bytes: impl AsRef<[u8]>) -> Result<(Vec<Point3>, PointAttrSet3)> {
+        read_pcd_points(Cursor::new(bytes.as_ref()), &PcdReadOpts::default())
+    }
+
     fn error_of(bytes: impl AsRef<[u8]>) -> String {
-        match read_pcd_points(Cursor::new(bytes.as_ref())) {
+        match read(bytes) {
             Ok(_) => panic!("expected the PCD data to be refused"),
             Err(e) => e.to_string(),
         }
@@ -974,7 +1053,7 @@ mod tests {
     }
 
     fn check_sample(bytes: Vec<u8>) -> Result<()> {
-        let (points, attrs) = read_pcd_points(Cursor::new(bytes))?;
+        let (points, attrs) = read(bytes)?;
 
         assert_eq!(
             points,
@@ -1040,7 +1119,10 @@ mod tests {
     /// vertex's index in the PLY, and its normals point away from the vertex centroid.
     #[test]
     fn reads_a_binary_compressed_file_from_pypcd4() -> Result<()> {
-        let (points, attrs) = load_pcd_points(&get_test_file_path("bun_zipper_res4.pcd"))?;
+        let (points, attrs) = load_pcd_points(
+            &get_test_file_path("bun_zipper_res4.pcd"),
+            &PcdReadOpts::default(),
+        )?;
 
         assert_eq!(points.len(), 453);
         assert_relative_eq!(points[0].x, -0.0312216, epsilon = 1.0e-6);
@@ -1071,7 +1153,10 @@ mod tests {
     fn pypcd4_file_agrees_with_the_ply_it_was_made_from() -> Result<()> {
         let (expected, ply_attrs, _) =
             crate::io::load_ply_points(&get_test_file_path("bun_zipper_res4.ply"))?;
-        let (points, attrs) = load_pcd_points(&get_test_file_path("bun_zipper_res4.pcd"))?;
+        let (points, attrs) = load_pcd_points(
+            &get_test_file_path("bun_zipper_res4.pcd"),
+            &PcdReadOpts::default(),
+        )?;
 
         // Both files store float32 positions and intensities, so they agree without tolerance.
         assert_eq!(points, expected);
@@ -1102,7 +1187,7 @@ mod tests {
         let text = "# written by hand\r\nFIELDS x y z\r\nSIZE 8 8 8\r\nTYPE F F F\r\n\r\n\
                     WIDTH 2\r\nHEIGHT 2\r\nDATA ascii\r\n1 2 3\r\nnan nan nan\r\n\r\n4 5 6\r\n\
                     7 8 9\r\n";
-        let (points, attrs) = read_pcd_points(Cursor::new(text))?;
+        let (points, attrs) = read(text)?;
 
         assert_eq!(
             points,
@@ -1121,7 +1206,7 @@ mod tests {
     fn reads_an_empty_cloud() -> Result<()> {
         let text = "FIELDS x y z\nSIZE 4 4 4\nTYPE F F F\nWIDTH 0\nHEIGHT 1\nPOINTS 0\n\
                     DATA binary_compressed\n";
-        let (points, attrs) = read_pcd_points(Cursor::new(text))?;
+        let (points, attrs) = read(text)?;
 
         assert!(points.is_empty());
         assert!(attrs.is_empty());
@@ -1146,8 +1231,76 @@ mod tests {
         ];
 
         for text in variants {
-            let (_, attrs) = read_pcd_points(Cursor::new(text.as_str()))?;
+            let (_, attrs) = read(text.as_str())?;
             assert_eq!(attrs.colors(), Some(&[[0x10, 0x20, 0x30]][..]), "{text}");
+        }
+
+        Ok(())
+    }
+
+    /// PCL's labeled point types store segmentation output in a `label` field, which lands in the
+    /// open attribute map as labels.
+    #[test]
+    fn reads_a_label_field_as_an_open_label_attribute() -> Result<()> {
+        let text = "FIELDS x y z rgb label\nSIZE 4 4 4 4 4\nTYPE F F F U U\nWIDTH 2\nDATA ascii\n\
+                    1 2 3 16711680 4\n4 5 6 255 9\n";
+        let (_, attrs) = read(text)?;
+
+        assert_eq!(
+            attrs.attr("label").and_then(|a| a.as_label()),
+            Some(&[4, 9][..])
+        );
+        assert_eq!(attrs.colors(), Some(&[[255, 0, 0], [0, 0, 255]][..]));
+
+        Ok(())
+    }
+
+    #[test]
+    fn invalid_normals_follow_the_read_option() -> Result<()> {
+        // A valid normal, a NaN normal, an invalid position whose normal is ignored, a zero normal,
+        // and another valid normal.
+        let text = "FIELDS x y z normal_x normal_y normal_z intensity\n\
+                    SIZE 4 4 4 4 4 4 4\nTYPE F F F F F F F\nWIDTH 5\nDATA ascii\n\
+                    1 0 0 0 0 1 0.5\n2 0 0 nan nan nan 1.5\nnan nan nan nan 0 0 2.5\n\
+                    4 0 0 0 0 0 3.5\n5 0 0 0 1 0 4.5\n";
+        let read_with =
+            |invalid_normals| read_pcd_points(Cursor::new(text), &PcdReadOpts { invalid_normals });
+        let xs = |points: &[Point3]| points.iter().map(|p| p.x).collect::<Vec<_>>();
+        let intensity = |attrs: &PointAttrSet3| {
+            attrs
+                .attr("intensity")
+                .and_then(|a| a.as_scalar())
+                .map(|v| v.to_vec())
+        };
+
+        let err = read_with(PcdInvalidNormals::Error).unwrap_err().to_string();
+        assert!(err.contains("PCD point 1 "), "{err}");
+
+        let (points, attrs) = read_with(PcdInvalidNormals::DropPoints)?;
+        assert_eq!(xs(&points), vec![1.0, 5.0]);
+        let normals: Vec<Vector3> = attrs
+            .normals()
+            .expect("the valid normals are kept")
+            .iter()
+            .map(|n| n.into_inner())
+            .collect();
+        assert_eq!(normals, vec![Vector3::z(), Vector3::y()]);
+        assert_eq!(intensity(&attrs), Some(vec![0.5, 4.5]));
+
+        let (points, attrs) = read_with(PcdInvalidNormals::DropNormals)?;
+        assert_eq!(xs(&points), vec![1.0, 2.0, 4.0, 5.0]);
+        assert!(attrs.normals().is_none());
+        assert_eq!(intensity(&attrs), Some(vec![0.5, 1.5, 3.5, 4.5]));
+
+        // With no invalid normal among the kept points, neither drop option changes anything.
+        for invalid_normals in [
+            PcdInvalidNormals::DropPoints,
+            PcdInvalidNormals::DropNormals,
+        ] {
+            let opts = PcdReadOpts { invalid_normals };
+            let (points, attrs) = read_pcd_points(Cursor::new(sample_ascii()), &opts)?;
+            assert_eq!(points.len(), 2);
+            assert_eq!(attrs.normals().map(|n| n.len()), Some(2));
         }
 
         Ok(())
@@ -1160,7 +1313,7 @@ mod tests {
         // This value is outside the label range but is exactly representable as a double. The
         // dropped point's value is not exactly representable and must not affect the decision.
         let text = format!("{header}1 2 3 5000000000\nnan nan nan 9007199254740993\n");
-        let (points, attrs) = read_pcd_points(Cursor::new(text))?;
+        let (points, attrs) = read(text)?;
         assert_eq!(points.len(), 1);
         assert_eq!(
             attrs.attr("stamp").and_then(|a| a.as_scalar()),
@@ -1251,17 +1404,17 @@ mod tests {
                 "declares 11 uncompressed bytes",
             ),
             (
-                "FIELDS x y z label\nSIZE 4 4 4 4\nTYPE F F F U\nWIDTH 1\nDATA ascii\n1 2 3 4\n"
+                "FIELDS x y z normals\nSIZE 4 4 4 4\nTYPE F F F U\nWIDTH 1\nDATA ascii\n1 2 3 4\n"
                     .to_string(),
-                "'label' is a reserved attribute name",
+                "'normals' is a reserved point attribute name",
             ),
             (
                 format!("{normals}WIDTH 1\nDATA ascii\n1 2 3 nan 0 0\n"),
-                "non-finite normal",
+                "normal (NaN, 0, 0) is not a valid direction",
             ),
             (
                 format!("{normals}WIDTH 1\nDATA ascii\n1 2 3 0 0 0\n"),
-                "zero length",
+                "normal (0, 0, 0) is not a valid direction",
             ),
         ];
 
