@@ -1,6 +1,7 @@
 mod binary_mesh;
 mod g3d;
 mod lptf3;
+mod pcd;
 mod ply;
 mod stl;
 pub mod tol_compress;
@@ -11,6 +12,7 @@ use crate::{Point3, Result, Vector3};
 pub use binary_mesh::*;
 pub use g3d::*;
 pub use lptf3::*;
+pub use pcd::*;
 use serde::Serialize;
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};

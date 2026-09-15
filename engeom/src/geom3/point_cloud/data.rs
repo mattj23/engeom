@@ -15,13 +15,13 @@ use crate::common::{VoxelGroups, compute_voxel_groups};
 use crate::geom3::Aabb3;
 use crate::geom3::attributes3::{Attr3, PointAttrSet3};
 use crate::geom3::point_cloud::CloudIndex3;
+use crate::io::load_pcd_points;
 use crate::{Iso3, KdTree3, Point2, Point3, Result, SurfacePoint3, UnitVec3, Vector3};
 use std::fmt;
+use std::path::Path;
 
 #[cfg(feature = "ply")]
 use crate::io::{PlyWriteOpts, load_ply_points, write_ply_points};
-#[cfg(feature = "ply")]
-use std::path::Path;
 
 /// A container for the raw data of a point cloud: a buffer of points and the per-point attributes
 /// attached to them.
@@ -227,6 +227,29 @@ impl PointCloud3 {
             .into());
         }
 
+        Ok(Self { points, attrs })
+    }
+
+    /// Load a point cloud from a PCD file, the Point Cloud Library's format, preserving every
+    /// field the file carries.
+    ///
+    /// This method reads all three payload encodings: `ascii`, `binary`, and `binary_compressed`.
+    /// Points whose position is not finite are **dropped**: PCL marks the invalid cells of an
+    /// organized cloud with NaN positions, and a `PointCloud3` has no grid to hold them in. The
+    /// file's `VIEWPOINT` is not applied, so the points stay in the frame they were stored in.
+    ///
+    /// The `normal_x`, `normal_y`, and `normal_z` fields become the point normals, and `rgb` or
+    /// `rgba` becomes the point colors, with any alpha discarded. Every other field is carried into
+    /// the open attribute map. See `engeom::io::read_pcd_points` for the full mapping and for the
+    /// fields which are refused rather than stored lossily.
+    ///
+    /// # Arguments
+    ///
+    /// * `path`: the path to the PCD file
+    ///
+    /// returns: `Result<PointCloud3>`
+    pub fn load_pcd(path: &Path) -> Result<Self> {
+        let (points, attrs) = load_pcd_points(path)?;
         Ok(Self { points, attrs })
     }
 
