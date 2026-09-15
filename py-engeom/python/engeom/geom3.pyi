@@ -5886,6 +5886,35 @@ class PointCloud3:
         """
         ...
 
+    @staticmethod
+    def load_pcd(
+            path: str | Path,
+            *,
+            invalid_normals: Literal["error", "drop_points", "drop_normals"] = "error",
+    ) -> PointCloud3:
+        """
+        Load a point cloud from a PCD file, the Point Cloud Library's format, preserving every field the file carries.
+
+        This method reads all three payload encodings: `ascii`, `binary`, and `binary_compressed`. It drops points
+        whose position is not finite because PCL marks the invalid cells of an organized cloud with NaN positions,
+        and a `PointCloud3` has no grid to hold them in. The method does not apply the file's `VIEWPOINT`, so the
+        points stay in their stored frame.
+
+        `normal_x`, `normal_y`, and `normal_z` become `point_normals`. The `rgb` or `rgba` field becomes
+        `point_colors`, with any alpha discarded. Every other field is carried as an open attribute under its own
+        name. A field with more than one value per point is split into `name_0`, `name_1`, and so on. Integer fields
+        become labels when every value fits in an unsigned 32-bit integer. The method refuses a 64-bit integer that
+        a double cannot represent exactly rather than rounding it.
+
+        :param path: the path to the PCD file.
+        :param invalid_normals: how to handle a point whose position is finite but whose normal has a non-finite
+            component or zero length, such as the NaN normals PCL's normal estimation writes for points with too few
+            neighbors. `"error"` refuses the file, `"drop_points"` removes those points along with all their
+            attributes, and `"drop_normals"` keeps every point but discards the normals of the whole cloud.
+        :return: the loaded point data.
+        """
+        ...
+
     def save_ply(self, path: str | Path, binary: bool = True):
         """
         Write this point cloud to a PLY file, preserving every attribute it carries.

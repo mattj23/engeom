@@ -45,6 +45,18 @@ pub fn lptf3_load_from_args(
     }
 }
 
+/// Parse the `invalid_normals` value passed to `PointCloud3.load_pcd`.
+fn pcd_invalid_normals_from_str(s: &str) -> PyResult<engeom::io::PcdInvalidNormals> {
+    match s {
+        "error" => Ok(engeom::io::PcdInvalidNormals::Error),
+        "drop_points" => Ok(engeom::io::PcdInvalidNormals::DropPoints),
+        "drop_normals" => Ok(engeom::io::PcdInvalidNormals::DropNormals),
+        _ => Err(PyValueError::new_err(format!(
+            "Invalid invalid_normals '{s}', expected 'error', 'drop_points', or 'drop_normals'"
+        ))),
+    }
+}
+
 /// The pair of arrays `estimate_normals` hands back: an `(n, 3)` of unit normals and an `(n,)` of
 /// per-point confidences.
 type NormalEstimateArrays<'py> = (Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<f64>>);
@@ -166,6 +178,16 @@ impl PointCloud3 {
     fn load_ply(path: PathBuf) -> PyResult<Self> {
         let inner =
             engeom::PointCloud3::load_ply(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(inner))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (path, *, invalid_normals = "error"))]
+    fn load_pcd(path: PathBuf, invalid_normals: &str) -> PyResult<Self> {
+        let mut opts = engeom::io::PcdReadOpts::default();
+        opts.invalid_normals = pcd_invalid_normals_from_str(invalid_normals)?;
+        let inner = engeom::PointCloud3::load_pcd(&path, &opts)
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
         Ok(Self::from_inner(inner))
     }
 

@@ -15,6 +15,8 @@ query itself.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy
 import pytest
 
@@ -287,3 +289,82 @@ def test_cloud_point_flat_round_trips_and_clears():
 
     cloud.set_point_flat(None)
     assert cloud.point_flat is None
+
+
+# ================================================================================================
+# PCD loading
+# ================================================================================================
+
+BUNNY_PCD = Path(__file__).parents[3] / "engeom" / "tests" / "data" / "bun_zipper_res4.pcd"
+
+
+def write_pcd_with_a_nan_normal(path: Path) -> Path:
+    """
+    Write three points. The middle point has a finite position and the NaN normal that PCL's normal estimation
+    writes for a point with too few neighbors.
+    """
+    path.write_text(
+        "FIELDS x y z normal_x normal_y normal_z\n"
+        "SIZE 4 4 4 4 4 4\n"
+        "TYPE F F F F F F\n"
+        "WIDTH 3\n"
+        "DATA ascii\n"
+        "0 0 0 0 0 1\n"
+        "1 0 0 nan nan nan\n"
+        "0 1 0 0 1 0\n"
+    )
+    return path
+
+
+def test_load_pcd_reads_a_binary_compressed_file():
+    cloud = PointCloud3.load_pcd(BUNNY_PCD)
+
+    # The file holds 455 points, two of which have NaN positions and are dropped.
+    assert cloud.points.shape == (453, 3)
+    assert cloud.points[0] == pytest.approx([-0.0312216, 0.126304, 0.00514924], abs=1e-6)
+
+    # The fixture's colors are derived from each point's index, so any misalignment shows up here.
+    colors = cloud.point_colors
+    assert colors.dtype == numpy.uint8
+    i = numpy.arange(453)
+    assert numpy.array_equal(colors, numpy.stack([i % 256, (7 * i) % 256, (13 * i) % 256], axis=1))
+
+    normals = cloud.point_normals
+    assert normals.shape == (453, 3)
+    assert numpy.linalg.norm(normals, axis=1) == pytest.approx(numpy.ones(453))
+
+
+def test_load_pcd_refuses_an_invalid_normal_by_default(tmp_path):
+    path = write_pcd_with_a_nan_normal(tmp_path / "nan-normal.pcd")
+
+    with pytest.raises(OSError, match="not a valid direction"):
+        PointCloud3.load_pcd(path)
+
+
+def test_load_pcd_can_drop_the_points_with_invalid_normals(tmp_path):
+    path = write_pcd_with_a_nan_normal(tmp_path / "nan-normal.pcd")
+
+    cloud = PointCloud3.load_pcd(path, invalid_normals="drop_points")
+
+    assert numpy.array_equal(cloud.points, [[0.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+    assert numpy.array_equal(cloud.point_normals, [[0.0, 0.0, 1.0], [0.0, 1.0, 0.0]])
+
+
+def test_load_pcd_can_drop_the_normals(tmp_path):
+    path = write_pcd_with_a_nan_normal(tmp_path / "nan-normal.pcd")
+
+    cloud = PointCloud3.load_pcd(path, invalid_normals="drop_normals")
+
+    assert cloud.points.shape == (3, 3)
+    assert cloud.point_normals is None
+
+
+def test_load_pcd_checks_the_invalid_normals_keyword(tmp_path):
+    path = write_pcd_with_a_nan_normal(tmp_path / "nan-normal.pcd")
+
+    with pytest.raises(ValueError, match="drop_points"):
+        PointCloud3.load_pcd(path, invalid_normals="skip")
+
+    # The choice is keyword-only, so the method refuses a positional string.
+    with pytest.raises(TypeError):
+        PointCloud3.load_pcd(path, "drop_points")
