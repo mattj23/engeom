@@ -215,6 +215,27 @@ impl PointCloud3 {
         Ok(Self::from_inner(inner))
     }
 
+    /// Read a `.tcrpf3` row-organized point file.
+    ///
+    /// The load keywords have the same meaning as for `load_lptf3`. By default, every point is
+    /// loaded. `take_every=n` thins to approximately one point per `n` row pitches in both
+    /// directions. Supplying `look_scale`, `weight_scale`, and `max_move` adds Gaussian smoothing
+    /// after thinning, using the discarded full-resolution points.
+    #[staticmethod]
+    #[pyo3(signature = (path, take_every=1, look_scale=None, weight_scale=None, max_move=None))]
+    fn load_tc_row_points(
+        path: PathBuf,
+        take_every: u32,
+        look_scale: Option<f64>,
+        weight_scale: Option<f64>,
+        max_move: Option<f64>,
+    ) -> PyResult<Self> {
+        let load = lptf3_load_from_args(take_every, look_scale, weight_scale, max_move)?;
+        let inner = engeom::io::load_tc_row_points(&path, load)
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        Ok(Self::from_inner(inner))
+    }
+
     // --- Buffers and attributes --------------------------------------------------------------
 
     #[getter]

@@ -24,6 +24,8 @@ impl Lptf3DsParams {
 
 pub struct Lptf3Downsampled {
     pub rows: Vec<Vec<Point3>>,
+    /// The nominal y-coordinate of each row, taken from its source frame rather than its points.
+    pub row_y: Vec<f64>,
     pub colors: Option<Vec<Vec<u8>>>,
     pub y_translation: f64,
 }
@@ -47,6 +49,7 @@ pub fn load_downsample_filter_lptf3(
     // of the points matching with a flattening of `all_points`.
     let mut all_points = Vec::new();
     let mut all_colors = Vec::new();
+    let mut all_y = Vec::new();
     let mut row_data = Vec::new();
 
     while let Some(full) = loader.get_next_frame_points()? {
@@ -58,6 +61,7 @@ pub fn load_downsample_filter_lptf3(
         }
         all_points.push(row);
         all_colors.push(c_row);
+        all_y.push(full.y_pos);
         row_data.push(full.to_take)
     }
 
@@ -125,9 +129,11 @@ pub fn load_downsample_filter_lptf3(
     combined.sort_by_key(|(row_i1, _, _)| *row_i1);
     let mut final_rows = Vec::with_capacity(combined.len());
     let mut final_row_colors = Vec::with_capacity(combined.len());
-    for (_, row_points, row_colors) in combined {
+    let mut final_row_y = Vec::with_capacity(combined.len());
+    for (row_i, row_points, row_colors) in combined {
         final_rows.push(row_points);
         final_row_colors.push(row_colors);
+        final_row_y.push(all_y[row_i]);
     }
 
     let c = if loader.has_color {
@@ -137,12 +143,13 @@ pub fn load_downsample_filter_lptf3(
     };
     Ok(Lptf3Downsampled {
         rows: final_rows,
+        row_y: final_row_y,
         colors: c,
         y_translation: loader.y_translation,
     })
 }
 
-fn adjust_by_gwm(p: &Point3, samples: &[(Point3, f64)], max_move: f64) -> Point3 {
+pub(crate) fn adjust_by_gwm(p: &Point3, samples: &[(Point3, f64)], max_move: f64) -> Point3 {
     if samples.len() < 3 {
         return *p;
     }
@@ -171,6 +178,6 @@ fn adjust_by_gwm(p: &Point3, samples: &[(Point3, f64)], max_move: f64) -> Point3
     sp.at_distance(weighted_mean)
 }
 
-fn gaussian_weight(x: f64, sigma: f64) -> f64 {
+pub(crate) fn gaussian_weight(x: f64, sigma: f64) -> f64 {
     (-0.5 * (x.powi(2) / sigma.powi(2))).exp()
 }

@@ -4,23 +4,17 @@
 //! surface reconstruction technique, which is only possible because the file format preserves the
 //! sensor's original row structure. This is both much faster and much more predictable than a
 //! general method operating on an unordered point cloud.
+//!
+//! This module contains only loading logic. Triangulation is provided by
+//! [`compute_row_scan_mesh`](crate::io::row_scan::compute_row_scan_mesh), shared with every other
+//! format that can produce a [`RowScan3`](crate::io::row_scan::RowScan3).
 
-use crate::common::triangulation::parallel_row2::{StripRowPoint, build_parallel_row_strip};
+use crate::Result;
 use crate::geom3::mesh::MeshData3;
 use crate::io::Lptf3Load;
-use crate::io::lptf3::{
-    Lptf3Rows, Lptf3UncertaintyModel, get_downfilter_point_rows, get_loader_point_rows,
-};
-use crate::{Point3, Result};
+use crate::io::lptf3::{Lptf3UncertaintyModel, get_downfilter_point_rows, get_loader_point_rows};
+use crate::io::row_scan::compute_row_scan_mesh;
 use std::path::Path;
-
-/// The maximum edge ratio for the strip triangulation, in which candidate faces are evaluated in
-/// the flattened 2D space of the two rows being joined.
-const STRIP_EDGE_RATIO: f64 = 2.0;
-
-/// The maximum edge ratio for a face measured on the actual 3D points, which rejects faces that
-/// looked reasonable in the flattened space but span a depth discontinuity in the scan.
-const WORLD_EDGE_RATIO: f64 = 5.0;
 
 pub fn load_lptf3_mesh_data_core(
     file_path: &Path,
@@ -33,193 +27,30 @@ pub fn load_lptf3_mesh_data_core(
         Lptf3Load::SmoothSample(params) => get_downfilter_point_rows(file_path, params),
     }?;
 
-    let max_spacing = rows.take_every as f64 * rows.y_translation * 2.0;
-
-    // Flatten the rows into the point buffer, recording where each row's points landed so the
-    // triangulation can refer to them by their final index.
-    let (mut points, strip_rows) = flatten_rows(&rows);
-    let mut colors = flatten_colors(&rows);
-    let mut faces = build_faces(&points, &strip_rows, &rows.points, max_spacing)?;
-
-    drop_orphan_points(&mut points, &mut faces, &mut colors);
-
-    let mut mesh = MeshData3::new(points, faces)?;
-    attach_attrs(&mut mesh, colors, model)?;
+    let mut mesh = compute_row_scan_mesh(&rows)?;
+    attach_uncertainty(&mut mesh, model)?;
 
     Ok(mesh)
 }
 
-/// Copy the row-structured points into a single buffer, returning it alongside the per-row strip
-/// points which carry each point's index in that buffer.
-fn flatten_rows(rows: &Lptf3Rows) -> (Vec<Point3>, Vec<Vec<StripRowPoint>>) {
-    let total = rows.points.iter().map(|r| r.len()).sum();
-    let mut points = Vec::with_capacity(total);
-    let mut strip_rows = Vec::with_capacity(rows.points.len());
-
-    for row in rows.points.iter() {
-        let mut strip_row = Vec::with_capacity(row.len());
-        for p in row.iter() {
-            strip_row.push(StripRowPoint::new(p.x, points.len() as u32));
-            points.push(*p);
-        }
-        strip_rows.push(strip_row);
-    }
-
-    (points, strip_rows)
-}
-
-/// Flatten the sensor's color/intensity channel into a single buffer aligned with the flattened
-/// point buffer, expanding each single 8-bit value to gray.
-fn flatten_colors(rows: &Lptf3Rows) -> Option<Vec<[u8; 3]>> {
-    rows.colors
-        .as_ref()
-        .map(|color_rows| color_rows.iter().flatten().map(|&c| [c, c, c]).collect())
-}
-
-/// Triangulate between each adjacent pair of rows, discarding faces which span a gap larger than
-/// the scan's row spacing allows.
-fn build_faces(
-    points: &[Point3],
-    strip_rows: &[Vec<StripRowPoint>],
-    point_rows: &[Vec<Point3>],
-    max_spacing: f64,
-) -> Result<Vec<[u32; 3]>> {
-    let mut faces = Vec::new();
-
-    // A file with zero or one row has nothing to triangulate between, and the subtraction below
-    // must not be allowed to underflow.
-    for row_i in 0..strip_rows.len().saturating_sub(1) {
-        if point_rows[row_i].is_empty() || point_rows[row_i + 1].is_empty() {
-            continue; // Skip empty rows
-        }
-
-        let y0 = point_rows[row_i][0].y;
-        let y1 = point_rows[row_i + 1][0].y;
-
-        // If the rows are too far apart, skip the triangulation
-        if (y1 - y0).abs() > max_spacing {
-            continue;
-        }
-
-        let row0 = &strip_rows[row_i];
-        let row1 = &strip_rows[row_i + 1];
-
-        // Build the strip triangulation between the two rows
-        let r = build_parallel_row_strip(row0, y0, row1, y1, STRIP_EDGE_RATIO)?;
-        for [i0, i1, i2] in r {
-            // Check the edge ratio on the actual 3D points, which the flattened triangulation
-            // could not see.
-            let pa = points[i0 as usize];
-            let pb = points[i1 as usize];
-            let pc = points[i2 as usize];
-
-            let ea = (pa - pb).norm();
-            let eb = (pb - pc).norm();
-            let ec = (pc - pa).norm();
-
-            // TODO: decide whether to reject faces which stand exactly on end.
-            //
-            // The sensor quantizes x, so two points in the same row can land on the same x value
-            // at different depths. A face joining that pair to a point in the next row is exactly
-            // vertical, with a normal that has no z component at all, and it represents a step in
-            // the surface which the sensor could not actually resolve rather than measured
-            // geometry. On the sample scan these are about 0.05% of the faces.
-            //
-            // Rejecting them would leave the points on either side of the step unconnected in that
-            // direction, which may be more honest, or may just punch holes along every edge in the
-            // part. Needs a decision before the loader is relied on for measurement.
-            let edge_ratio = ea.max(eb).max(ec) / max_spacing;
-            if edge_ratio < WORLD_EDGE_RATIO {
-                faces.push([i1, i0, i2]);
-            }
-        }
-    }
-
-    Ok(faces)
-}
-
-/// Remove every point which no face references, renumbering the faces and subsetting the color
-/// buffer to match. Returns the number of points removed.
+/// Attach modeled measurement uncertainty when a model is supplied.
 ///
-/// A scan always produces some of these: the edge criteria reject the faces around a dropout or a
-/// depth discontinuity, and the first and last rows of a scan can end up with nothing to join to.
-/// Those points are real measurements, but they are not part of a surface, and a mesh is being
-/// asked for here rather than a point cloud. Leaving them in produces a mesh whose point normals
-/// are undefined and whose bounds describe geometry that isn't in the triangulation. Use
-/// `load_lptf3` instead when every measured point matters.
-fn drop_orphan_points(
-    points: &mut Vec<Point3>,
-    faces: &mut [[u32; 3]],
-    colors: &mut Option<Vec<[u8; 3]>>,
-) -> usize {
-    let mut used = vec![false; points.len()];
-    for f in faces.iter() {
-        for i in f.iter() {
-            used[*i as usize] = true;
-        }
-    }
-
-    let removed = used.iter().filter(|u| !**u).count();
-    if removed == 0 {
-        return 0;
-    }
-
-    // Build the map from old index to new, then compact everything indexed by a point.
-    let mut remap = vec![u32::MAX; points.len()];
-    let mut next = 0u32;
-    for (old, u) in used.iter().enumerate() {
-        if *u {
-            remap[old] = next;
-            next += 1;
-        }
-    }
-
-    *points = points
-        .iter()
-        .zip(used.iter())
-        .filter(|(_, u)| **u)
-        .map(|(p, _)| *p)
-        .collect();
-
-    if let Some(c) = colors {
-        *c = c
-            .iter()
-            .zip(used.iter())
-            .filter(|(_, u)| **u)
-            .map(|(v, _)| *v)
-            .collect();
-    }
-
-    for f in faces.iter_mut() {
-        for i in f.iter_mut() {
-            *i = remap[*i as usize];
-        }
-    }
-
-    removed
-}
-
-/// Attach the per-point attributes the scan carries: the sensor's color/intensity channel, and the
-/// modeled measurement uncertainty if a model was supplied.
-fn attach_attrs(
+/// Evaluate the model after meshing because the mesher removes points that belong to no face. This
+/// keeps the attribute aligned with retained points.
+fn attach_uncertainty(
     mesh: &mut MeshData3,
-    colors: Option<Vec<[u8; 3]>>,
     model: Option<&dyn Lptf3UncertaintyModel>,
 ) -> Result<()> {
-    if colors.is_some() {
-        mesh.set_point_colors(colors)?;
-    }
+    let Some(m) = model else {
+        return Ok(());
+    };
 
-    if let Some(m) = model {
-        let stdev = mesh
-            .points()
-            .iter()
-            .map(|p| m.value(p.x, p.z))
-            .collect::<Vec<_>>();
-        mesh.set_point_stdev(Some(stdev))?;
-    }
-
-    Ok(())
+    let stdev = mesh
+        .points()
+        .iter()
+        .map(|p| m.value(p.x, p.z))
+        .collect::<Vec<_>>();
+    mesh.set_point_stdev(Some(stdev))
 }
 
 // ===============================================================================================
@@ -652,6 +483,7 @@ mod tests {
 mod real_scan_tests {
     use super::*;
     use crate::geom3::mesh::algorithms::normals::compute_face_normal;
+    use crate::io::row_scan::WORLD_EDGE_RATIO;
     use crate::io::{DiffTanModel, Lptf3DsParams, load_lptf3, load_lptf3_mesh_data};
     use crate::tests::get_test_file_path;
     use approx::assert_relative_eq;

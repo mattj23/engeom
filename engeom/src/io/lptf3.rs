@@ -48,11 +48,13 @@ mod uncertainty;
 use crate::geom3::mesh::MeshData3;
 use crate::io::lptf3::downsample::load_downsample_filter_lptf3;
 use crate::io::lptf3::mesh::load_lptf3_mesh_data_core;
+use crate::io::row_scan::{RowAxis, RowScan3};
 use crate::{Point3, PointCloud3, Result};
 use std::path::Path;
 
 pub use self::comprehensive::*;
 pub use self::downsample::Lptf3DsParams;
+pub(crate) use self::downsample::{adjust_by_gwm, gaussian_weight};
 pub use self::loader::Lptf3Loader;
 pub use self::uncertainty::*;
 
@@ -263,22 +265,13 @@ fn load_downfilter_points(file_path: &Path, params: Lptf3DsParams) -> Result<Loa
     Ok((points, colors))
 }
 
-/// The rows of points recovered from a LPTF3 file, in the order they were scanned. Each inner
-/// vector is one profile, sorted in ascending order by X coordinate.
-///
-/// When `colors` is `Some`, it has exactly the same row and column structure as `points`, so a
-/// flattening of the two stays aligned element for element.
-struct Lptf3Rows {
-    take_every: u32,
-    y_translation: f64,
-    points: Vec<Vec<Point3>>,
-    colors: Option<Vec<Vec<u8>>>,
-}
-
-fn get_loader_point_rows(file_path: &Path, take_every: Option<u32>) -> Result<Lptf3Rows> {
+/// Recover LPTF3 points as the shared row-scan intermediate. Each row is one profile sorted by
+/// ascending x-coordinate, with the source frame's y-position as its nominal strip coordinate.
+fn get_loader_point_rows(file_path: &Path, take_every: Option<u32>) -> Result<RowScan3> {
     let mut loader = Lptf3Loader::new(file_path, take_every, true)?;
     let mut point_rows = Vec::new();
     let mut color_rows = Vec::new();
+    let mut row_y = Vec::new();
 
     while let Some(full) = loader.get_next_frame_points()? {
         let mut row = Vec::new();
@@ -292,6 +285,7 @@ fn get_loader_point_rows(file_path: &Path, take_every: Option<u32>) -> Result<Lp
         if !row.is_empty() {
             point_rows.push(row);
             color_rows.push(c_row);
+            row_y.push(full.y_pos);
         }
     }
 
@@ -301,22 +295,26 @@ fn get_loader_point_rows(file_path: &Path, take_every: Option<u32>) -> Result<Lp
         None
     };
 
-    Ok(Lptf3Rows {
-        take_every: take_every.unwrap_or(1),
-        y_translation: loader.y_translation,
-        points: point_rows,
-        colors,
-    })
+    RowScan3::new_unchecked(
+        point_rows,
+        row_y,
+        loader.y_translation,
+        take_every.unwrap_or(1),
+        RowAxis::X,
+    )?
+    .with_colors(colors)
 }
 
-fn get_downfilter_point_rows(file_path: &Path, params: Lptf3DsParams) -> Result<Lptf3Rows> {
+fn get_downfilter_point_rows(file_path: &Path, params: Lptf3DsParams) -> Result<RowScan3> {
     let result = load_downsample_filter_lptf3(file_path, params)?;
-    Ok(Lptf3Rows {
-        take_every: params.take_every,
-        y_translation: result.y_translation,
-        points: result.rows,
-        colors: result.colors,
-    })
+    RowScan3::new_unchecked(
+        result.rows,
+        result.row_y,
+        result.y_translation,
+        params.take_every,
+        RowAxis::X,
+    )?
+    .with_colors(result.colors)
 }
 
 fn expand_colors(colors: &[u8]) -> Vec<[u8; 3]> {

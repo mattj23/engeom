@@ -12,6 +12,10 @@
 //!   [`curve::CHORD_TOL`], a key the format stores and never interprets.
 //! - The format stores geometry only, so writing a mesh carrying attributes is an error naming
 //!   them rather than a silent loss. See the [`mesh`] module.
+//! - A [`RowPointsScan3`](row_points::RowPointsScan3) carries a row pitch, column pitch, and row
+//!   axis. These values are not properties of the stored points, so they are stored as item metadata
+//!   under the keys in the [`row_points`] module.
 
 pub mod curve;
 pub mod mesh;
+pub mod row_points;
