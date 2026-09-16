@@ -94,13 +94,14 @@ Theoretically, the tolerance based compression will do the best when the ratio o
 
 This section should have enough information to get you started, but the module documentation on [docs.rs](https://docs.rs/tol-compress) carries the byte-level detail, and a full specification will follow once the format is complete.
 
-A file begins with a **12 byte container header**: the magic `TOLC`, a format version, a "kind" byte (mesh, polyline or cloud, in 2D or 3D), a reserved compression byte, flags, and an item count N.  Optional file level **metadata** follows, a sorted key-value map of `Bool`, `I64`, `F64`, `Text` and `Bytes` values.  Metadata is stored and never interpreted, so a caller can record whatever their domain needs without the format learning anything about it.
+A file begins with a **12 byte container header**: the magic `TOLC`, a format version, a "kind" byte (mesh, polyline, cloud, or row-organized points, in 2D or 3D), a reserved compression byte, flags, and an item count N.  Optional file level **metadata** follows, a sorted key-value map of `Bool`, `I64`, `F64`, `Text` and `Bytes` values.  Metadata is stored and never interpreted, so a caller can record whatever their domain needs without the format learning anything about it.
 
 Then there are N **items**, each with a short preamble (flags, optional name, optional metadata, a reserved attribute count) followed by the geometry blocks its kind calls for:
 
 - A **points block** records one anchor box as `f64` with the bit width per axis the whole set needs, then one or more partitions.  Each partition stores its own corners as codes on the anchor's lattice rather than as `f64`, then its own bit width per axis, then the codes packed back to back with no padding between them.  Widths are exact rather than rounded up to whole bytes, and an axis whose values are all identical costs no bits at all.  Partitioning lets a set whose points bunch up in places avoid charging every point for the extent of the whole, and the encoder cuts the sequence where it already is rather than moving points around, so point order survives.
 
   Corners are codes rather than `f64` because an `f64` places a value to a relative precision of 1e-16 when the lattice it anchors resolves to about `2 x tol`.  At a typical metrology resolution that takes a 3D partition header from 56 bytes to about 20, and since a cut has to earn its header back, that is also what sets how finely the encoder can afford to cut.
+- A **row block**, for row-organized points, records how a rasterizing sensor grouped the points: each row's sweep ordinal, point count, and optional per-point column indices, all as delta-coded streams. Consecutive ordinals and dense columns encode as runs of zeros, so grouping a full raster costs a fraction of a bit per point. An ordinal records the row's position in the sensor sweep rather than its position in the file, so a dropped row leaves a gap without pulling neighboring rows together.
 - An **index block**, for meshes, stores triangles either as absolute indices at an exact width or as distances back from a running high-water mark, whichever measures smaller.  The second is much smaller on real meshes.  Both are exact; connectivity is never approximated.
 
 The tolerance itself is deliberately not stored.  It is derivable from the bounds and widths already present, and the derived figure is the guarantee actually achieved.
@@ -121,9 +122,10 @@ The point block layout changed once, at format version 2, when partitions arrive
 Working and measured:
 
 - Meshes, polylines and point clouds, in 2D and 3D, as named collections with metadata.
+- Row-organized points in 3D (`.tcrpf3`) for rasterizing sensors, preserving the grouping that makes the points meshable without surface reconstruction.
 - Exact per-axis bit widths, including zero-width degenerate axes.
 - Face and vertex renumbering with high-water-mark index coding, plus per-block adaptive widths.
-- A dimension-generic point block: `points::write_points` and `read_points` handle any dimension from 1 to 255 and are tested through 4D.  Containers are a different matter, since the file's kind byte names only `Cloud2`, `Cloud3`, `Polyline2`, `Polyline3` and `Mesh3`, so a cloud above three dimensions has nothing to be written as and `cloud::write_to` panics on one.  Reaching higher dimensions means either using the block encoder directly or spending a new kind byte.
+- A dimension-generic point block: `points::write_points` and `read_points` handle any dimension from 1 to 255 and are tested through 4D.  Containers are a different matter, since the file's kind byte names only `Cloud2`, `Cloud3`, `Polyline2`, `Polyline3`, `Mesh3` and `RowPoints3`, so a cloud above three dimensions has nothing to be written as and `cloud::write_to` panics on one.  Reaching higher dimensions means either using the block encoder directly or spending a new kind byte.
 - Partitioning of a point sequence into runs that each carry their own box and widths, cutting the caller's order in place so that nothing is reordered.  Worth a third of the coordinates on a structured surface and rather more on scattered clusters, and nothing at all where the sequence has no locality.
 - A single `Effort` setting, `Quick`, `Balanced` or `Thorough`, standing in for how hard the encoder searches rather than a flag per technique.  It never changes what comes back, never reaches the reader, and a higher level never produces a larger file.
 

@@ -56,6 +56,10 @@ pub const MAGIC: [u8; 4] = *b"TOLC";
 pub const VERSION: u8 = 2;
 
 /// What a container holds.
+///
+/// This enum is non-exhaustive so a later version can define another kind without breaking callers
+/// that match on it.
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Kind {
     /// Triangle meshes in 3D.
@@ -68,6 +72,8 @@ pub enum Kind {
     Cloud2,
     /// Unordered point sets in 3D.
     Cloud3,
+    /// Points in 3D grouped into the ordered rows produced by a rasterizing sensor.
+    RowPoints3,
 }
 
 impl Kind {
@@ -79,6 +85,7 @@ impl Kind {
             Kind::Polyline3 => 3,
             Kind::Cloud2 => 4,
             Kind::Cloud3 => 5,
+            Kind::RowPoints3 => 6,
         }
     }
 
@@ -94,6 +101,7 @@ impl Kind {
             3 => Ok(Kind::Polyline3),
             4 => Ok(Kind::Cloud2),
             5 => Ok(Kind::Cloud3),
+            6 => Ok(Kind::RowPoints3),
             _ => Err(Error::Malformed("unknown container kind")),
         }
     }
@@ -102,7 +110,7 @@ impl Kind {
     pub fn dimension(self) -> usize {
         match self {
             Kind::Polyline2 | Kind::Cloud2 => 2,
-            Kind::Mesh3 | Kind::Polyline3 | Kind::Cloud3 => 3,
+            Kind::Mesh3 | Kind::Polyline3 | Kind::Cloud3 | Kind::RowPoints3 => 3,
         }
     }
 
@@ -114,6 +122,7 @@ impl Kind {
             Kind::Polyline3 => "tccurve3",
             Kind::Cloud2 => "tccloud2",
             Kind::Cloud3 => "tccloud3",
+            Kind::RowPoints3 => "tcrpf3",
         }
     }
 }
@@ -432,12 +441,13 @@ mod tests {
     use crate::metadata::Value;
     use std::io::Cursor;
 
-    const ALL_KINDS: [Kind; 5] = [
+    const ALL_KINDS: [Kind; 6] = [
         Kind::Mesh3,
         Kind::Polyline2,
         Kind::Polyline3,
         Kind::Cloud2,
         Kind::Cloud3,
+        Kind::RowPoints3,
     ];
 
     #[test]
@@ -465,6 +475,7 @@ mod tests {
         assert_eq!(Kind::Polyline3.as_byte(), 3);
         assert_eq!(Kind::Cloud2.as_byte(), 4);
         assert_eq!(Kind::Cloud3.as_byte(), 5);
+        assert_eq!(Kind::RowPoints3.as_byte(), 6);
 
         for kind in ALL_KINDS {
             assert_eq!(Kind::from_byte(kind.as_byte()).unwrap(), kind);
@@ -478,10 +489,14 @@ mod tests {
         assert_eq!(Kind::Cloud2.dimension(), 2);
         assert_eq!(Kind::Polyline3.dimension(), 3);
         assert_eq!(Kind::Cloud3.dimension(), 3);
+        assert_eq!(Kind::RowPoints3.dimension(), 3);
 
         assert_eq!(Kind::Mesh3.extension(), "tcmesh");
         assert_eq!(Kind::Polyline2.extension(), "tccurve2");
         assert_eq!(Kind::Polyline3.extension(), "tccurve3");
+        assert_eq!(Kind::Cloud2.extension(), "tccloud2");
+        assert_eq!(Kind::Cloud3.extension(), "tccloud3");
+        assert_eq!(Kind::RowPoints3.extension(), "tcrpf3");
     }
 
     #[test]
