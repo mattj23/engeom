@@ -15,6 +15,7 @@ mod point_cloud;
 mod raster;
 mod raster2;
 mod ray_casting;
+mod row_points;
 mod sensors;
 mod solve_report;
 mod svd_basis;
@@ -123,6 +124,7 @@ fn register_geom3(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     child.add_function(wrap_pyfunction!(geom3::fit_spline_to_points, &child)?)?;
 
     child.add_class::<point_cloud::PointCloud3>()?;
+    child.add_class::<row_points::RowPointsScan3>()?;
 
     // Bounding and tools
     child.add_class::<bounding::Aabb3>()?;

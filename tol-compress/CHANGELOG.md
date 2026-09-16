@@ -5,6 +5,39 @@ This crate releases on its own cadence, under `tol-compress-vX.Y.Z` tags.
 Versions below 1.0 follow Cargo's convention that the minor position carries breaking changes, so
 `0.1` and `0.2` are not compatible and Cargo will not substitute one for the other.
 
+## 0.3.0
+
+### A new kind: `RowPoints3`, conventionally `.tcrpf3`
+
+Rasterizing sensors (snapshot profilers, time-of-flight cameras, structured light) produce their
+points grouped into rows. This grouping allows meshing by triangulating neighboring rows into
+strips without surface reconstruction. Writing the points as a cloud discards the grouping; the new
+`row_points` container preserves it.
+
+The format is more general than a raster. Rows can contain different numbers of points, ordinals can
+have gaps where rows were dropped, and column indices are optional. A laser-line sweep, for example,
+identifies each point's profile but has no meaningful index across that profile.
+
+The grouping is stored in a new `rows` block beside the existing points block. It contains each
+row's sweep ordinal, point count, and optional per-point column indices, all delta-coded through
+`blocks`. Consecutive ordinals and dense columns encode as runs of zeros. On a full raster, the
+complete block uses a fraction of a bit per point and measured less than 1% larger than writing the
+same points as `Cloud3`.
+
+Row pitch, sensor frame, handedness, and units are stored as `Metadata` rather than dedicated fields
+because the crate assigns no meaning to a row.
+
+### `Kind` gained a variant, and is now `#[non_exhaustive]`
+
+`Kind::RowPoints3` uses kind byte 6. Adding it breaks downstream `match` expressions that exhaustively
+cover the previous variants, making this a minor-position release. `Kind` is now
+`#[non_exhaustive]`, so adding another kind will not cause the same breakage.
+
+### The format version did not change
+
+The format version remains 2. A 0.2 reader rejects a `.tcrpf3` file as an unknown kind through
+`Kind::from_byte` without misreading it, and 0.3 reads every file written by 0.2 unchanged.
+
 ## 0.2.0
 
 ### The file format changed, and 0.1 files cannot be read

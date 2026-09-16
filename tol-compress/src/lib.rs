@@ -17,13 +17,14 @@
 //!
 //! # Where to start
 //!
-//! Most callers want one of the three container modules, which read and write whole files:
+//! Most callers want one of the four container modules, which read and write whole files:
 //!
 //! | module | holds | extension |
 //! |---|---|---|
 //! | [`mesh`] | triangle meshes in 3D | `.tcmesh` |
 //! | [`polyline`] | ordered polylines in 2D or 3D, open or closed | `.tccurve2`, `.tccurve3` |
 //! | [`cloud`] | unordered point sets in 2D or 3D | `.tccloud2`, `.tccloud3` |
+//! | [`row_points`] | points in 3D grouped into the rows a rasterizing sensor produced | `.tcrpf3` |
 //!
 //! ```no_run
 //! use std::path::Path;
@@ -62,6 +63,7 @@
 //! - [`points`] encodes coordinates in any number of dimensions against a tolerance, and
 //!   [`quantize`] and [`bounds`] are where the tolerance guarantee is actually decided.
 //! - [`indices`] encodes simplex connectivity, exactly, at whichever of its two codings is smaller.
+//! - [`rows`] encodes the integer grouping that assigns a sequence of points to sensor rows.
 //! - [`reorder`] renumbers a mesh so its indices compress. [`mesh`] applies this by default; see
 //!   its documentation if you hold per-vertex data outside the file.
 //! - [`segment`] plans where a point sequence wants to be cut into partitions, and [`transform`]
@@ -102,6 +104,8 @@ pub mod polyline;
 pub mod quantize;
 mod raw;
 pub mod reorder;
+pub mod row_points;
+pub mod rows;
 pub mod segment;
 pub mod transform;
 
@@ -131,3 +135,5 @@ pub use points::{read_points, write_points, write_points_with};
 pub use polyline::{Polyline, Polyline2, Polyline3};
 pub use quantize::{Quantizer, bits_for_tol};
 pub use reorder::{Reordering, permute};
+pub use row_points::{PointRow3, RowPoints3};
+pub use rows::{RowLayout, read_rows, write_rows};

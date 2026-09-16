@@ -2662,6 +2662,38 @@ class Mesh3:
         """
         ...
 
+    @staticmethod
+    def load_tc_row_points(
+        file_path: str | Path,
+        take_every: int = 1,
+        look_scale: float | None = None,
+        weight_scale: float | None = None,
+        max_move: float | None = None,
+    ) -> Mesh3:
+        """
+        Read a `.tcrpf3` row-organized point file and mesh it by triangulating adjacent rows.
+
+        Points that belong to no face are discarded, so the point buffer is a subset of what
+        `PointCloud3.load_tc_row_points` returns for the same file.
+
+        The load keywords mean what they do for `load_lptf3`:
+
+        * If `take_every` is 1 (the default) and no smoothing parameters are given, every point is loaded.
+        * If `take_every` is greater than 1, the scan is thinned to approximately one point per N row pitches in
+          both directions, producing approximately square spacing.
+        * If `look_scale`, `weight_scale`, and `max_move` are all given, a Gaussian smoothing filter is applied
+          after thinning and uses the discarded full-resolution points. These three parameters form an
+          all-or-nothing group.
+
+        :param file_path: the path to the tcrpf3 file.
+        :param take_every: thin to approximately one point per N row pitches.
+        :param look_scale: the smoothing neighborhood size, as a multiple of the row spacing.
+        :param weight_scale: the Gaussian-weight sigma, as a fraction of the look distance.
+        :param max_move: the maximum smoothing displacement, in the file's length units.
+        :return: the loaded mesh.
+        """
+        ...
+
     def save_stl(self, path: str | Path, binary: bool = True, allow_attribute_loss: bool = False):
         """
         Write the mesh to an STL file, which carries geometry and nothing else.
@@ -5327,6 +5359,38 @@ class MeshData3:
         """
         ...
 
+    @staticmethod
+    def load_tc_row_points(
+        path: str | Path,
+        take_every: int = 1,
+        look_scale: float | None = None,
+        weight_scale: float | None = None,
+        max_move: float | None = None,
+    ) -> MeshData3:
+        """
+        Read a `.tcrpf3` row-organized point file and mesh it by triangulating adjacent rows.
+
+        Points that belong to no face are discarded, so the point buffer is a subset of what
+        `PointCloud3.load_tc_row_points` returns for the same file.
+
+        The load keywords mean what they do for `load_lptf3`:
+
+        * If `take_every` is 1 (the default) and no smoothing parameters are given, every point is loaded.
+        * If `take_every` is greater than 1, the scan is thinned to approximately one point per N row pitches in
+          both directions, producing approximately square spacing.
+        * If `look_scale`, `weight_scale`, and `max_move` are all given, a Gaussian smoothing filter is applied
+          after thinning and uses the discarded full-resolution points. These three parameters form an
+          all-or-nothing group.
+
+        :param path: the path to the tcrpf3 file.
+        :param take_every: thin to approximately one point per N row pitches.
+        :param look_scale: the smoothing neighborhood size, as a multiple of the row spacing.
+        :param weight_scale: the Gaussian-weight sigma, as a fraction of the look distance.
+        :param max_move: the maximum smoothing displacement, in the file's length units.
+        :return: the loaded mesh.
+        """
+        ...
+
     @property
     def points(self) -> NDArray[float]:
         """
@@ -5846,6 +5910,147 @@ class MeshData3:
         ...
 
 
+class RowPointsScan3:
+    """
+    A scan whose points are grouped into the rows produced by a rasterizing sensor. This is the in-memory form of a
+    `.tcrpf3` file.
+
+    Use this type to read and write the row structure. To process the geometry, load the file as `PointCloud3` or
+    `Mesh3`, which applies thinning and, for a mesh, row-strip triangulation.
+    """
+
+    @staticmethod
+    def from_rows(
+        rows: list[NDArray[float]],
+        ordinals: NDArray[numpy.uint32],
+        row_pitch: float,
+        *,
+        columns: list[NDArray[numpy.uint32]] | None = None,
+        col_pitch: float | None = None,
+        along: str = "x",
+        name: str | None = None,
+        metadata: dict[str, bool | int | float | str | bytes] | None = None,
+    ) -> RowPointsScan3:
+        """
+        Build a scan from its rows.
+
+        Each row is an (n, 3) point array with an ordinal that records its position in the sensor sweep. Ordinals
+        must strictly increase. A skipped row leaves an ordinal gap instead of causing later rows to be renumbered.
+
+        :param rows: one (n, 3) float64 array of points per row.
+        :param ordinals: a (rows,) uint32 array giving each row's position in the sweep.
+        :param row_pitch: the nominal distance between consecutive row ordinals.
+        :param columns: one (n,) uint32 array per row of each point's index across the row, if the sensor has one.
+        :param col_pitch: the nominal spacing between points along a row, if it is known.
+        :param along: which world axis varies along a row, "x" (the default) or "y".
+        :param name: an optional identifier, preserved through a round trip.
+        :param metadata: additional scan data, stored without interpretation.
+        :return: the scan, ready to be written.
+        """
+        ...
+
+    @staticmethod
+    def read(path: str | Path) -> RowPointsScan3:
+        """
+        Read a scan from a `.tcrpf3` file, without thinning or meshing it.
+
+        :param path: the path to the tcrpf3 file.
+        :return: the scan as it was written.
+        """
+        ...
+
+    def write(self, path: str | Path, tol: float) -> None:
+        """
+        Write the scan to a `.tcrpf3` file.
+
+        `tol` is the maximum round-trip position error for any point, in the coordinate units. The format uses the
+        narrowest storage width that guarantees this tolerance, so a looser `tol` produces a smaller file. When
+        studying the source data's quantization, set `tol` well below that quantization to make storage error
+        negligible.
+
+        :param path: the path to write to, which is overwritten if it exists.
+        :param tol: the largest acceptable round-trip position error for any point.
+        """
+        ...
+
+    @property
+    def row_count(self) -> int:
+        """
+        The number of rows in the scan.
+        """
+        ...
+
+    @property
+    def point_count(self) -> int:
+        """
+        The total number of points across every row.
+        """
+        ...
+
+    @property
+    def row_pitch(self) -> float:
+        """
+        The nominal distance between consecutive row ordinals.
+        """
+        ...
+
+    @property
+    def col_pitch(self) -> float | None:
+        """
+        The nominal spacing between points along a row, if the scan records one.
+        """
+        ...
+
+    @property
+    def along(self) -> str:
+        """
+        Which world axis varies along a row, "x" or "y".
+        """
+        ...
+
+    @property
+    def name(self) -> str | None:
+        """
+        The scan's name, if it has one.
+        """
+        ...
+
+    @property
+    def ordinals(self) -> NDArray[numpy.uint32]:
+        """
+        Each row's position in the sensor's sweep, as a (rows,) array of dtype uint32.
+        """
+        ...
+
+    @property
+    def metadata(self) -> dict[str, bool | int | float | str | bytes]:
+        """
+        Additional scan data recorded by the writer.
+
+        Row pitch, column pitch, and the along axis are exposed through attributes with those names and do not
+        appear in this dictionary.
+        """
+        ...
+
+    def row(self, index: int) -> NDArray[float]:
+        """
+        The points of one row, as an (n, 3) array of dtype float64.
+
+        :param index: the row's position in the scan, independent of its ordinal.
+        :return: the row's points.
+        """
+        ...
+
+    def row_columns(self, index: int) -> NDArray[numpy.uint32] | None:
+        """
+        The column indices of one row, or None if the scan has no column indices.
+
+        :param index: the row's position in the scan, independent of its ordinal.
+        :return: the row's column indices, as an (n,) array of dtype uint32.
+        """
+        ...
+
+
 class PointCloud3:
     """
     A 3D point cloud: a buffer of points and the per-point attributes attached to them.
@@ -5911,6 +6116,35 @@ class PointCloud3:
             component or zero length, such as the NaN normals PCL's normal estimation writes for points with too few
             neighbors. `"error"` refuses the file, `"drop_points"` removes those points along with all their
             attributes, and `"drop_normals"` keeps every point but discards the normals of the whole cloud.
+        :return: the loaded point data.
+        """
+        ...
+
+    @staticmethod
+    def load_tc_row_points(
+        path: str | Path,
+        take_every: int = 1,
+        look_scale: float | None = None,
+        weight_scale: float | None = None,
+        max_move: float | None = None,
+    ) -> PointCloud3:
+        """
+        Read a `.tcrpf3` row-organized point file.
+
+        The load keywords mean what they do for `load_lptf3`:
+
+        * If `take_every` is 1 (the default) and no smoothing parameters are given, every point is loaded.
+        * If `take_every` is greater than 1, the scan is thinned to approximately one point per N row pitches in
+          both directions, producing approximately square spacing.
+        * If `look_scale`, `weight_scale`, and `max_move` are all given, a Gaussian smoothing filter is applied
+          after thinning and uses the discarded full-resolution points. These three parameters form an
+          all-or-nothing group.
+
+        :param path: the path to the tcrpf3 file.
+        :param take_every: thin to approximately one point per N row pitches.
+        :param look_scale: the smoothing neighborhood size, as a multiple of the row spacing.
+        :param weight_scale: the Gaussian-weight sigma, as a fraction of the look distance.
+        :param max_move: the maximum smoothing displacement, in the file's length units.
         :return: the loaded point data.
         """
         ...
