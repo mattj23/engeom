@@ -21,7 +21,15 @@ import numpy
 import pytest
 
 from engeom.common import IndexMask
-from engeom.geom3 import Iso3, Point3, PointCloud3
+from engeom.geom3 import (
+    Iso3,
+    Mesh3,
+    MeshData3,
+    PatchFilter,
+    Point3,
+    PointCloud3,
+    RepairOpts,
+)
 
 
 def triangle_points() -> numpy.ndarray:
@@ -368,3 +376,313 @@ def test_load_pcd_checks_the_invalid_normals_keyword(tmp_path):
     # The choice is keyword-only, so the method refuses a positional string.
     with pytest.raises(TypeError):
         PointCloud3.load_pcd(path, "drop_points")
+
+# ================================================================================================
+# Normal orientation
+# ================================================================================================
+
+
+def _sphere_cloud(radius: float = 5.0, spacing: float = 0.3) -> PointCloud3:
+    return Mesh3.create_sphere(radius, radius * 0.002).sample_poisson(spacing)
+
+
+def test_estimate_normals_from_a_viewpoint_faces_it():
+    """A point cannot be seen from behind, so every normal must face the viewpoint."""
+    cloud = _sphere_cloud()
+    viewpoint = numpy.array([0.0, 0.0, 1000.0])
+
+    normals, confidence = cloud.estimate_normals(radius=0.75, viewpoint=viewpoint)
+
+    assert normals.shape == (cloud.point_count, 3)
+    assert confidence.shape == (cloud.point_count,)
+
+    toward = viewpoint - cloud.points
+    assert numpy.all(numpy.sum(normals * toward, axis=1) >= 0.0)
+
+
+def test_estimate_normals_from_per_point_viewpoints_can_orient_a_sphere():
+    """One external viewpoint per point orients a closed shape outward where one viewpoint cannot."""
+    cloud = _sphere_cloud()
+    points = cloud.points
+
+    normals, _ = cloud.estimate_normals(radius=0.75, viewpoints=points * 2.0)
+
+    # Outward means agreeing with the direction from the middle of the sphere.
+    assert numpy.all(numpy.sum(normals * points, axis=1) > 0.0)
+
+
+def test_estimate_normals_by_propagation_agrees_with_the_sampled_normals():
+    cloud = _sphere_cloud()
+    truth = cloud.point_normals
+
+    normals, _ = cloud.estimate_normals(radius=0.75, propagate_k=12)
+
+    agreement = numpy.mean(numpy.sum(normals * truth, axis=1) > 0.0)
+    # Propagation seeds the topmost point with an upward normal, which points outward on a sphere.
+    # The recovered set should therefore match the sampled normals or reverse all of them.
+    assert agreement > 0.99 or agreement < 0.01
+
+
+def test_estimate_normals_still_takes_must_match_and_radius_positionally():
+    """The original call signature predates the orientation arguments and must remain compatible."""
+    cloud = _sphere_cloud(5.0, 0.4)
+    outward = cloud.points
+
+    normals, confidence = cloud.estimate_normals(outward, 1.0)
+
+    assert normals.shape == (cloud.point_count, 3)
+    assert confidence.shape == (cloud.point_count,)
+    assert numpy.all(numpy.sum(normals * outward, axis=1) >= 0.0)
+
+
+def test_estimate_normals_requires_a_radius():
+    """`radius` has a default only to make `must_match` optional; omitting it is an error."""
+    cloud = _sphere_cloud(2.0, 0.5)
+
+    with pytest.raises(ValueError, match="radius"):
+        cloud.estimate_normals(viewpoint=[0.0, 0.0, 10.0])
+
+    with pytest.raises(ValueError, match="radius"):
+        cloud.estimate_normals(numpy.tile([0.0, 0.0, 1.0], (cloud.point_count, 1)))
+
+
+def test_estimate_normals_needs_exactly_one_direction_source():
+    cloud = _sphere_cloud(2.0, 0.5)
+    up = numpy.tile([0.0, 0.0, 1.0], (cloud.point_count, 1))
+
+    # None given.
+    with pytest.raises(ValueError):
+        cloud.estimate_normals(radius=0.75)
+
+    # Two given.
+    with pytest.raises(ValueError):
+        cloud.estimate_normals(radius=0.75, viewpoint=[0.0, 0.0, 10.0], propagate_k=12)
+
+    with pytest.raises(ValueError):
+        cloud.estimate_normals(up, 0.75, viewpoint=[0.0, 0.0, 10.0])
+
+    # A neighbor count of zero links a point to nothing.
+    with pytest.raises(ValueError):
+        cloud.estimate_normals(radius=0.75, propagate_k=0)
+
+
+def test_estimate_point_spacing_recovers_the_sampling_radius():
+    for spacing in (0.2, 0.4):
+        cloud = _sphere_cloud(5.0, spacing)
+        measured = cloud.estimate_point_spacing()
+        assert spacing * 0.98 <= measured < spacing * 1.5
+
+    assert PointCloud3.empty().estimate_point_spacing() == 0.0
+
+
+# ================================================================================================
+# Surface reconstruction
+# ================================================================================================
+
+
+def test_reconstruct_surface_recovers_a_sphere():
+    """A smooth, closed sphere has no features for the field to round."""
+    radius = 5.0
+    spacing = 0.25
+    source = Mesh3.create_sphere(radius, radius * 0.002)
+    cloud = source.sample_poisson(spacing)
+
+    mesh, report = cloud.reconstruct_surface(spacing)
+
+    assert len(mesh.faces) > 10_000
+    assert report.faces == len(mesh.faces)
+    assert report.points_used == cloud.point_count
+    assert report.points_dropped == 0
+    assert report.known_voxels > 0
+    assert report.cells_visited > 0
+    assert report.repair is not None
+
+    # No orientation pass was requested, so the report contains no orientation results.
+    assert report.components is None
+    assert report.normals_flipped is None
+
+    # Every vertex must lie within one-tenth of a voxel of the true sphere.
+    error = numpy.abs(numpy.linalg.norm(mesh.points, axis=1) - radius)
+    assert error.max() < 0.1 * spacing
+
+
+def test_reconstruct_surface_estimates_and_propagates_normals():
+    radius = 5.0
+    spacing = 0.25
+    cloud = Mesh3.create_sphere(radius, radius * 0.002).sample_poisson(spacing)
+    cloud.set_point_normals(None)
+
+    mesh, report = cloud.reconstruct_surface(
+        spacing, normal_radius=spacing * 2.5, propagate_k=12
+    )
+
+    assert len(mesh.faces) > 10_000
+    assert report.components == 1
+    assert report.normals_flipped is not None
+
+    error = numpy.abs(numpy.linalg.norm(mesh.points, axis=1) - radius)
+    assert error.max() < 0.15 * spacing
+
+
+def test_reconstruct_surface_estimates_from_a_viewpoint():
+    spacing = 0.25
+    cloud = Mesh3.create_sphere(5.0, 0.01).sample_poisson(spacing)
+    cloud.set_point_normals(None)
+
+    mesh, report = cloud.reconstruct_surface(
+        spacing, normal_radius=spacing * 2.5, viewpoint=[0.0, 0.0, 1000.0]
+    )
+
+    assert len(mesh.faces) > 1000
+    # Viewpoint orientation does not use a graph, so there are no components to report.
+    assert report.components is None
+
+
+def test_reconstruct_surface_needs_normals_from_somewhere():
+    spacing = 0.3
+    cloud = Mesh3.create_sphere(2.0, 0.01).sample_poisson(spacing)
+    cloud.set_point_normals(None)
+
+    with pytest.raises(ValueError, match="no normals"):
+        cloud.reconstruct_surface(spacing)
+
+
+def test_reconstruct_surface_needs_exactly_one_direction_source():
+    spacing = 0.3
+    cloud = Mesh3.create_sphere(2.0, 0.01).sample_poisson(spacing)
+
+    # Estimation requires an orientation source.
+    with pytest.raises(ValueError):
+        cloud.reconstruct_surface(spacing, normal_radius=0.75)
+
+    # Estimation accepts only one orientation source.
+    with pytest.raises(ValueError):
+        cloud.reconstruct_surface(
+            spacing, normal_radius=0.75, viewpoint=[0.0, 0.0, 10.0], propagate_k=12
+        )
+
+    # An orientation source cannot apply when normal estimation is disabled.
+    with pytest.raises(ValueError):
+        cloud.reconstruct_surface(spacing, propagate_k=12)
+
+
+def test_reconstruct_surface_rejects_options_that_cannot_work():
+    spacing = 0.3
+    cloud = Mesh3.create_sphere(2.0, 0.01).sample_poisson(spacing)
+
+    for voxel_size in (0.0, -1.0):
+        with pytest.raises(ValueError):
+            cloud.reconstruct_surface(voxel_size)
+
+    # A band thinner than the diagonal of a cell cannot hold a crossing with all eight corners.
+    for band_width in (1.0, 1.7):
+        with pytest.raises(ValueError):
+            cloud.reconstruct_surface(spacing, band_width=band_width)
+
+    # The smallest band that can work.
+    mesh, _ = cloud.reconstruct_surface(spacing, band_width=1.75)
+    assert len(mesh.faces) > 0
+
+    with pytest.raises(ValueError):
+        cloud.reconstruct_surface(spacing, min_normal_confidence=-0.1)
+
+    with pytest.raises(ValueError):
+        PointCloud3.empty().reconstruct_surface(spacing)
+
+
+def test_reconstruct_surface_turns_inside_out_with_reversed_normals():
+    """Downstream processing does not correct reversed normals."""
+    spacing = 0.25
+    cloud = Mesh3.create_sphere(5.0, 0.01).sample_poisson(spacing)
+    cloud.set_point_normals(-cloud.point_normals)
+
+    mesh, _ = cloud.reconstruct_surface(spacing)
+
+    # All face normals should point toward the center.
+    tri = mesh.points[mesh.faces]
+    normals = numpy.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+    centroids = tri.mean(axis=1)
+    assert numpy.all(numpy.sum(normals * centroids, axis=1) < 0.0)
+
+
+def test_reconstruct_surface_defaults_to_the_cheaper_repair():
+    """Reconstruction omits two unnecessary repair passes. The default and full repair sets must
+    produce meshes with the same size, providing evidence for that default."""
+    spacing = 0.25
+    cloud = Mesh3.create_sphere(5.0, 0.01).sample_poisson(spacing)
+
+    default_mesh, _ = cloud.reconstruct_surface(spacing)
+    full_mesh, _ = cloud.reconstruct_surface(spacing, repair=RepairOpts())
+    named_mesh, _ = cloud.reconstruct_surface(
+        spacing, repair=RepairOpts.assuming_oriented_edges()
+    )
+
+    assert len(default_mesh.faces) == len(full_mesh.faces)
+    assert len(default_mesh.points) == len(full_mesh.points)
+    assert len(named_mesh.faces) == len(default_mesh.faces)
+
+
+def test_repair_opts_assuming_oriented_edges_drops_only_the_edge_passes():
+    cheap = RepairOpts.assuming_oriented_edges()
+
+    assert not cheap.resolve_nonmanifold_edges
+    assert not cheap.orient_consistently
+
+    full = RepairOpts()
+    assert cheap.drop_degenerate == full.drop_degenerate
+    assert cheap.drop_duplicate_faces == full.drop_duplicate_faces
+    assert cheap.split_bowtie_vertices == full.split_bowtie_vertices
+    assert cheap.drop_isolated_vertices == full.drop_isolated_vertices
+
+
+def test_reconstruct_surface_accepts_repair_and_patch_options():
+    spacing = 0.25
+    cloud = Mesh3.create_sphere(5.0, 0.01).sample_poisson(spacing)
+
+    # Python skips repair by disabling every repair pass.
+    mesh, report = cloud.reconstruct_surface(spacing, repair=RepairOpts.none())
+    assert len(mesh.faces) == report.raw_faces
+
+    filtered, _ = cloud.reconstruct_surface(
+        spacing, patch_filter=PatchFilter.keep_largest()
+    )
+    assert len(filtered.faces) > 0
+
+    smoothed, _ = cloud.reconstruct_surface(spacing, smooth_iterations=2)
+    assert len(smoothed.faces) > 0
+
+
+def test_reconstruct_surface_drops_points_below_the_confidence_threshold():
+    spacing = 0.25
+    cloud = Mesh3.create_sphere(5.0, 0.01).sample_poisson(spacing)
+
+    # Each point is far from the sphere and the other added points. It is therefore alone within the
+    # estimation radius and cannot support a plane fit.
+    strays = numpy.array([[40.0 + i * 10.0, 0.0, 0.0] for i in range(5)])
+    widened = PointCloud3(numpy.vstack([cloud.points, strays]))
+
+    _, report = widened.reconstruct_surface(
+        spacing,
+        normal_radius=spacing * 2.5,
+        viewpoint=[0.0, 0.0, 1000.0],
+        min_normal_confidence=0.01,
+    )
+
+    assert report.points_dropped == len(strays)
+    assert report.points_used == cloud.point_count
+
+def test_reconstruct_surface_returns_buffers_the_caller_converts():
+    """The pipeline returns buffers because it does not query a bounding volume hierarchy."""
+    spacing = 0.25
+    cloud = Mesh3.create_sphere(5.0, 0.01).sample_poisson(spacing)
+
+    data, _ = cloud.reconstruct_surface(spacing)
+
+    assert isinstance(data, MeshData3)
+    assert len(data.faces) > 1000
+
+    # The caller converts the buffers before performing spatial queries.
+    mesh = data.to_mesh(is_solid=False)
+    assert isinstance(mesh, Mesh3)
+    assert len(mesh.faces) == len(data.faces)
+    assert mesh.point_closest_to(100.0, 0.0, 0.0) is not None

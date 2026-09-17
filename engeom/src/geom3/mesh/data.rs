@@ -14,6 +14,7 @@
 mod editing;
 mod filtering;
 mod operations;
+mod patches;
 mod primitives;
 mod subsets;
 

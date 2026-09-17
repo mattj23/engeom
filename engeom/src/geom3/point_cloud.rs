@@ -35,14 +35,25 @@
 //! abstraction it turns out to have been a bad choice, I know to revert it and not try this again.
 
 mod data;
+pub mod implicit_field;
 mod normal_estimation;
+pub mod orientation;
+mod reconstruction;
 
 use crate::common::kd_tree::KdTreeSearch;
 use crate::common::points::dist;
 use crate::{KdTree3, Mesh3, Point3, Result};
 
 pub use data::{PointCloud3, VOXEL_COHERENCE_ATTR, VOXEL_COUNT_ATTR};
-pub use normal_estimation::NormalEstimates;
+pub use implicit_field::{FieldSample3, ImlsField3, ImplicitField3, compute_sdf_grid};
+pub use normal_estimation::{
+    NormalEstimates, estimate_axes_by_neighborhood, estimate_by_neighborhood,
+};
+pub use orientation::{
+    NormalOrientation3, OrientationReport3, must_match_toward, orient_by_propagation,
+    orient_by_viewpoint, orient_by_viewpoints,
+};
+pub use reconstruction::{FieldKind3, NormalSource3, ReconstructOpts3, ReconstructReport3};
 
 /// Finding which points of one entity are also covered by another, by testing whether the closest
 /// point in each direction agrees.
@@ -144,6 +155,83 @@ impl<'a> CloudIndex3<'a> {
             self.tree.get(),
             radius,
         ))
+    }
+
+    /// Estimate a normal at every point and choose its direction.
+    ///
+    /// A plane fit gives an axis without a direction, and `orientation` selects between its two
+    /// possible directions. Prefer a viewpoint when the scan records its sensor position. Use
+    /// propagation when no viewpoint is available, subject to the limitations described in the
+    /// [`orientation`] module documentation.
+    ///
+    /// # Arguments
+    ///
+    /// * `radius`: the neighborhood radius used to fit each plane, in the units of the points
+    /// * `orientation`: where the direction of the normals should come from
+    ///
+    /// returns: `Result<(NormalEstimates, OrientationReport3)>`, failing if a per-point viewpoint
+    /// array is the wrong length or propagation cannot index the number of points
+    pub fn estimate_normals_oriented(
+        &self,
+        radius: f64,
+        orientation: &NormalOrientation3,
+    ) -> Result<(NormalEstimates, OrientationReport3)> {
+        match orientation {
+            NormalOrientation3::Viewpoint(viewpoint) => {
+                let mut estimates = normal_estimation::estimate_axes_by_neighborhood(
+                    self.points(),
+                    self.tree.get(),
+                    radius,
+                );
+                let flipped = orientation::orient_by_viewpoint(
+                    self.points(),
+                    &mut estimates.normals,
+                    viewpoint,
+                );
+                Ok((
+                    estimates,
+                    OrientationReport3 {
+                        flipped,
+                        components: None,
+                    },
+                ))
+            }
+
+            NormalOrientation3::Viewpoints(viewpoints) => {
+                let mut estimates = normal_estimation::estimate_axes_by_neighborhood(
+                    self.points(),
+                    self.tree.get(),
+                    radius,
+                );
+                let flipped = orientation::orient_by_viewpoints(
+                    self.points(),
+                    &mut estimates.normals,
+                    viewpoints,
+                )?;
+                Ok((
+                    estimates,
+                    OrientationReport3 {
+                        flipped,
+                        components: None,
+                    },
+                ))
+            }
+
+            NormalOrientation3::Propagate { k } => {
+                let mut estimates = normal_estimation::estimate_axes_by_neighborhood(
+                    self.points(),
+                    self.tree.get(),
+                    radius,
+                );
+                let report = orientation::orient_by_propagation(
+                    self.points(),
+                    &mut estimates.normals,
+                    self.tree.get(),
+                    *k,
+                )?;
+                Ok((estimates, report))
+            }
+        }
     }
 }
 

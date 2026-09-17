@@ -13,6 +13,18 @@ rand = "0.10.0"
 rand_distr = "0.6.0"
 rayon = "1.11.0"
 
+# Benchmarks enable cross-crate inlining because the measured hot paths call `kiddo` and `parry`
+# once per voxel corner or triangle. The default 16 codegen units prevent inlining across those
+# boundaries and understate potential performance. Debug information does not affect code generation
+# and lets a sampling profiler attribute time to the inner loops.
+#
+# `[profile.release]` deliberately retains the Cargo defaults so ordinary builds and Python wheels
+# do not incur a full LTO link until measurements show that the additional build time is worthwhile.
+[profile.bench]
+lto = "thin"
+codegen-units = 1
+debug = true
+
 [profile.dev]
 opt-level = 2
 

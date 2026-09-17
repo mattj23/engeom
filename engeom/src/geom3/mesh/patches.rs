@@ -10,9 +10,10 @@
 //! face regardless of how many patches there are, and can still hand out masks on request for the
 //! callers that want them.
 
+use crate::Result;
 use crate::common::IndexMask;
 use crate::common::points::triangle_area;
-use crate::{Mesh3, Result};
+use crate::geom3::mesh::view::MeshView3;
 
 /// A per-face patch decomposition of a mesh.
 ///
@@ -181,7 +182,8 @@ impl PatchLabels {
     /// * `mesh`: the mesh the labeling was computed on, whose face count must match
     ///
     /// returns: `Result<Vec<PatchStats>>` indexed by patch label
-    pub fn compute_stats(&self, mesh: &Mesh3) -> Result<Vec<PatchStats>> {
+    pub fn compute_stats<'a>(&self, mesh: impl Into<MeshView3<'a>>) -> Result<Vec<PatchStats>> {
+        let mesh = mesh.into();
         let faces = mesh.faces();
         if faces.len() != self.labels.len() {
             return Err(format!(
@@ -433,6 +435,7 @@ impl PatchFilter {
 mod tests {
     use super::*;
     use crate::Iso3;
+    use crate::Mesh3;
     use approx::assert_relative_eq;
 
     /// Two boxes far enough apart to be separate patches, with exactly known area and extent. The

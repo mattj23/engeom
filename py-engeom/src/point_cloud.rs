@@ -6,7 +6,8 @@ use crate::conversions::{
     unit_vectors_to_array,
 };
 use crate::geom3::Iso3;
-use crate::mesh::Mesh3;
+use crate::half_edge3::{RepairOpts, RepairReport};
+use crate::mesh::{Mesh3, MeshData3, PatchFilter};
 use engeom::PointCloudOverlap;
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::{PyIOError, PyValueError};
@@ -54,6 +55,132 @@ fn pcd_invalid_normals_from_str(s: &str) -> PyResult<engeom::io::PcdInvalidNorma
         _ => Err(PyValueError::new_err(format!(
             "Invalid invalid_normals '{s}', expected 'error', 'drop_points', or 'drop_normals'"
         ))),
+    }
+}
+
+/// Build an `engeom::NormalOrientation3` from the flattened orientation keyword arguments.
+///
+/// The three arguments are mutually exclusive, and exactly one is required. Each argument carries
+/// a different payload, so the supplied argument also identifies the orientation method without a
+/// tagged value.
+fn normal_orientation_from_args(
+    viewpoint: Option<[f64; 3]>,
+    viewpoints: Option<PyReadonlyArray2<f64>>,
+    propagate_k: Option<usize>,
+) -> PyResult<engeom::NormalOrientation3> {
+    let given =
+        viewpoint.is_some() as u8 + viewpoints.is_some() as u8 + propagate_k.is_some() as u8;
+
+    if given != 1 {
+        return Err(PyValueError::new_err(
+            "Supply exactly one of `viewpoint`, `viewpoints`, or `propagate_k` to say where the \
+             direction of the normals should come from",
+        ));
+    }
+
+    if let Some(v) = viewpoint {
+        return Ok(engeom::NormalOrientation3::Viewpoint(engeom::Point3::new(
+            v[0], v[1], v[2],
+        )));
+    }
+
+    if let Some(v) = viewpoints {
+        let points = array_to_points3(&v.as_array())?;
+        return Ok(engeom::NormalOrientation3::Viewpoints(points));
+    }
+
+    let k = propagate_k.expect("one of the three was given");
+    if k == 0 {
+        return Err(PyValueError::new_err(
+            "`propagate_k` must be at least 1, since a point linked to no neighbors has nothing to \
+             agree with",
+        ));
+    }
+    Ok(engeom::NormalOrientation3::Propagate { k })
+}
+
+/// What a reconstruction did at each stage.
+///
+/// The report helps diagnose reconstruction problems. A `components` value greater than one
+/// indicates that normal orientation required a separate seed guess in multiple regions. A large
+/// `cells_skipped_unknown` value next to a small `cells_visited` value indicates that the band was
+/// too thin to contain the surface.
+#[pyclass(skip_from_py_object, module = "engeom.geom3")]
+#[derive(Clone)]
+pub struct ReconstructReport3 {
+    inner: engeom::ReconstructReport3,
+}
+
+#[pymethods]
+impl ReconstructReport3 {
+    #[getter]
+    fn points_used(&self) -> usize {
+        self.inner.points_used
+    }
+
+    #[getter]
+    fn points_dropped(&self) -> usize {
+        self.inner.points_dropped
+    }
+
+    #[getter]
+    fn active_blocks(&self) -> usize {
+        self.inner.active_blocks
+    }
+
+    #[getter]
+    fn known_voxels(&self) -> usize {
+        self.inner.known_voxels
+    }
+
+    #[getter]
+    fn cells_visited(&self) -> usize {
+        self.inner.cells_visited
+    }
+
+    #[getter]
+    fn cells_skipped_unknown(&self) -> usize {
+        self.inner.cells_skipped_unknown
+    }
+
+    #[getter]
+    fn normals_flipped(&self) -> Option<usize> {
+        self.inner.orientation.as_ref().map(|o| o.flipped)
+    }
+
+    #[getter]
+    fn components(&self) -> Option<usize> {
+        self.inner.orientation.as_ref().and_then(|o| o.components)
+    }
+
+    #[getter]
+    fn raw_vertices(&self) -> usize {
+        self.inner.raw_vertices
+    }
+
+    #[getter]
+    fn raw_faces(&self) -> usize {
+        self.inner.raw_faces
+    }
+
+    #[getter]
+    fn repair(&self) -> Option<RepairReport> {
+        self.inner.repair.map(RepairReport::from_inner)
+    }
+
+    #[getter]
+    fn faces(&self) -> usize {
+        self.inner.faces
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "<ReconstructReport3 points_used={} faces={} known_voxels={} components={:?}>",
+            self.inner.points_used,
+            self.inner.faces,
+            self.inner.known_voxels,
+            self.components()
+        )
     }
 }
 
@@ -496,26 +623,138 @@ impl PointCloud3 {
     /// fewer than three neighbors get `+Z` at zero confidence.
     ///
     /// `must_match` supplies one direction per point which the estimate is flipped to agree with.
-    /// A plane fit recovers an axis rather than a direction and cannot resolve the sign on its own,
-    /// so this is required rather than optional: for scan data the usual choice is the vector from
-    /// each point back toward the sensor.
+    /// A plane fit recovers an axis without a direction and cannot resolve the sign independently.
+    /// This argument was originally required. For scan data, the usual value is the vector from
+    /// each point toward the sensor.
+    /// # Why `radius` carries a default it must not take
+    ///
+    /// `must_match` was originally the only way to resolve a normal's sign. It preceded `radius`,
+    /// and both arguments were positional. It is now one of four alternatives and must be optional,
+    /// while Python requires every argument after an argument with a default to also have a default.
+    /// Reordering the arguments would break existing positional calls, so `radius` has a default
+    /// and the method rejects the call if it is omitted.
+    #[pyo3(signature = (must_match=None, radius=None, *, viewpoint=None, viewpoints=None, propagate_k=None))]
     fn estimate_normals<'py>(
         &self,
         py: Python<'py>,
-        must_match: PyReadonlyArray2<'py, f64>,
-        radius: f64,
+        must_match: Option<PyReadonlyArray2<'py, f64>>,
+        radius: Option<f64>,
+        viewpoint: Option<[f64; 3]>,
+        viewpoints: Option<PyReadonlyArray2<'py, f64>>,
+        propagate_k: Option<usize>,
     ) -> PyResult<NormalEstimateArrays<'py>> {
-        let must_match = array_to_vectors3(&must_match.as_array())?;
+        let radius = radius.ok_or_else(|| {
+            PyValueError::new_err(
+                "`radius` is required. It sits after `must_match` and carries a default only so \
+                 that `must_match` can be left out, so pass it by keyword when you are not \
+                 supplying `must_match`.",
+            )
+        })?;
 
-        let estimates = self
-            .index()?
-            .estimate_normals(&must_match, radius)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let estimates = if let Some(must_match) = must_match {
+            if viewpoint.is_some() || viewpoints.is_some() || propagate_k.is_some() {
+                return Err(PyValueError::new_err(
+                    "`must_match` already says which way the normals face, so it cannot be \
+                     combined with `viewpoint`, `viewpoints`, or `propagate_k`",
+                ));
+            }
+
+            let must_match = array_to_vectors3(&must_match.as_array())?;
+            self.index()?
+                .estimate_normals(&must_match, radius)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?
+        } else {
+            let orientation = normal_orientation_from_args(viewpoint, viewpoints, propagate_k)?;
+            self.index()?
+                .estimate_normals_oriented(radius, &orientation)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?
+                .0
+        };
 
         let normals = unit_vectors_to_array(&estimates.normals).into_pyarray(py);
         let confidence = scalars_to_array(&estimates.confidence).into_pyarray(py);
 
         Ok((normals, confidence))
+    }
+
+    /// Build a triangle mesh from this cloud.
+    ///
+    /// See the Python stub for the stages, what the result promises, and what it does not.
+    #[pyo3(signature = (
+        voxel_size,
+        *,
+        band_width=2.0,
+        normal_radius=None,
+        viewpoint=None,
+        viewpoints=None,
+        propagate_k=None,
+        min_normal_confidence=0.0,
+        repair=None,
+        patch_filter=None,
+        smooth_iterations=0,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn reconstruct_surface(
+        &self,
+        voxel_size: f64,
+        band_width: f64,
+        normal_radius: Option<f64>,
+        viewpoint: Option<[f64; 3]>,
+        viewpoints: Option<PyReadonlyArray2<f64>>,
+        propagate_k: Option<usize>,
+        min_normal_confidence: f64,
+        repair: Option<RepairOpts>,
+        patch_filter: Option<PatchFilter>,
+        smooth_iterations: usize,
+    ) -> PyResult<(MeshData3, ReconstructReport3)> {
+        let normals = match normal_radius {
+            None => {
+                if viewpoint.is_some() || viewpoints.is_some() || propagate_k.is_some() {
+                    return Err(PyValueError::new_err(
+                        "`viewpoint`, `viewpoints`, and `propagate_k` only apply when \
+                         `normal_radius` is given, since without it the cloud's own normals are \
+                         used as they are",
+                    ));
+                }
+                engeom::NormalSource3::Existing
+            }
+            Some(radius) => engeom::NormalSource3::Estimate {
+                radius,
+                orientation: normal_orientation_from_args(viewpoint, viewpoints, propagate_k)?,
+            },
+        };
+
+        // An unset `RepairOpts` runs the default passes. Pass `RepairOpts.none()` to disable every
+        // pass, which has the same effect as skipping repair.
+        //
+        // Match the `ReconstructOpts3` default. Reconstruction omits two passes made unnecessary by
+        // its extraction, and callers that supply no options must receive the same preset.
+        let repair_opts = repair
+            .map(|r| *r.get_inner())
+            .unwrap_or_else(engeom::geom3::half_edge3::RepairOpts::assuming_oriented_edges);
+
+        let opts = engeom::ReconstructOpts3::new(voxel_size)
+            .with_band_width(band_width)
+            .with_normals(normals)
+            .with_min_normal_confidence(min_normal_confidence)
+            .with_repair(Some(repair_opts))
+            .with_patch_filter(patch_filter.map(|f| *f.get_inner()))
+            .with_smooth_iterations(smooth_iterations);
+
+        let (mesh, report) = self
+            .index()?
+            .reconstruct_surface(&opts)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        Ok((
+            MeshData3::from_inner(mesh),
+            ReconstructReport3 { inner: report },
+        ))
+    }
+
+    /// The median distance from a point to its nearest neighbor, used to select the voxel size.
+    fn estimate_point_spacing(&self) -> PyResult<f64> {
+        Ok(self.index()?.estimate_point_spacing())
     }
 
     /// Find the indices of points in this cloud which overlap a mesh, by checking that the closest

@@ -91,5 +91,9 @@ name = "mesh_decimate"
 harness = false
 
 [[bench]]
+name = "reconstruct"
+harness = false
+
+[[bench]]
 name = "kd_tree"
 harness = false

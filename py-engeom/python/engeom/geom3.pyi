@@ -6401,23 +6401,154 @@ class PointCloud3:
 
     def estimate_normals(
             self,
-            must_match: NDArray[float],
-            radius: float,
+            must_match: NDArray[float] | None = None,
+            radius: float | None = None,
+            *,
+            viewpoint: Iterable[float] | None = None,
+            viewpoints: NDArray[float] | None = None,
+            propagate_k: int | None = None,
     ) -> Tuple[NDArray[float], NDArray[float]]:
         """
         Estimate a normal at every point by fitting a plane to the neighbors within `radius`.
 
-        A plane fit recovers an axis rather than a direction and cannot resolve the sign on its own, which is why
-        `must_match` is required rather than optional: each estimated normal is flipped to agree with the
-        corresponding row. For scan data the usual choice is the vector from each point back toward the sensor.
+        A plane fit recovers an axis without a direction and cannot resolve the sign independently. Exactly one of
+        `must_match`, `viewpoint`, `viewpoints`, or `propagate_k` must specify the normal orientation.
+
+        `radius` is required despite its apparent default. It follows `must_match` because `must_match` was the only
+        orientation method in the original API, and reordering the arguments would break existing positional calls.
+        Pass `radius` by keyword when you do not supply `must_match`.
+
+        * `must_match` gives one direction per point. Each estimated normal is flipped to agree with its direction.
+        * `viewpoint` is a single position from which the surface was measured. A point cannot be seen from behind,
+          so every normal is oriented toward this position. Use this option when the scan records its origin.
+        * `viewpoints` is one position per point, for a scan taken while the sensor was moving.
+        * `propagate_k` links each point to that many nearest neighbors and propagates orientation agreement outward
+          from a seed. Use it for data without a known viewpoint. Twelve is a reasonable value. This method is a
+          heuristic: it seeds each connected piece by orienting the topmost point upward, and an incorrect seed
+          reverses the entire piece. It also assumes that sampling is fine relative to the rate of surface curvature;
+          orientation becomes nearly arbitrary where this assumption does not hold.
 
         Points with fewer than three neighbors within the radius are given `+Z` at zero confidence.
 
         :param must_match: an `(n, 3)` array of directions, one per point, which the estimates are flipped to agree
         with.
-        :param radius: the neighborhood radius used for the plane fit.
+        :param radius: the neighborhood radius used for the plane fit. Required, despite its default.
+        :param viewpoint: a single `(3,)` position the surface was measured from.
+        :param viewpoints: an `(n, 3)` array of positions, one per point.
+        :param propagate_k: how many neighbors to link each point to when propagating agreement.
         :return: a tuple of an `(n, 3)` array of unit normals and an `(n,)` array of confidences in `[0, 1]`, where
         low confidence means the neighborhood was not plane-like, as on an edge or in a sparse region.
+        :raises ValueError: if `radius` was left out, if the number of direction sources given is not exactly one, or
+        if a per-point array is the wrong length.
+        """
+        ...
+
+    def estimate_point_spacing(self) -> float:
+        """
+        The median distance from a point to its nearest neighbor.
+
+        Use this value to select a voxel size for `reconstruct_surface`. A grid much finer than the point spacing
+        provides no additional resolution and consumes memory in proportion to the cube of the size ratio. A much
+        coarser grid discards available scan detail. The median prevents a few distant outliers from shifting the
+        estimate, as they would shift the mean.
+
+        :return: the median nearest neighbor distance, or 0.0 for a cloud of fewer than two points.
+        """
+        ...
+
+    def reconstruct_surface(
+            self,
+            voxel_size: float,
+            *,
+            band_width: float = 2.0,
+            normal_radius: float | None = None,
+            viewpoint: Iterable[float] | None = None,
+            viewpoints: NDArray[float] | None = None,
+            propagate_k: int | None = None,
+            min_normal_confidence: float = 0.0,
+            repair: RepairOpts | None = None,
+            patch_filter: PatchFilter | None = None,
+            smooth_iterations: int = 0,
+    ) -> Tuple[MeshData3, ReconstructReport3]:
+        """
+        Reconstruct triangle-mesh data from this cloud.
+
+        This method creates a signed distance field by averaging each point's tangent plane over a weighted
+        neighborhood. It samples the field onto a narrow band of voxels around the points and extracts the surface
+        where the field crosses zero. It then repairs the raw triangles into a manifold mesh and optionally filters
+        and smooths the result. These operations work directly on point and face buffers.
+
+        ### Why the result is `MeshData3`
+
+        Reconstruction does not query a bounding volume hierarchy. Building the hierarchy for more than half a
+        million triangles takes longer than all other reconstruction stages combined, so this method returns
+        unaccelerated `MeshData3`. This also avoids building an unused hierarchy when the caller only writes the
+        result to a file or continues processing its buffers.
+
+        Call `result.to_mesh(is_solid=...)` when you need closest-point queries, ray casts, or deviation measurement.
+        The caller must select `is_solid` because reconstruction cannot determine whether the result encloses a
+        volume.
+
+        ### What the result promises
+
+        The surface is not closed, and the API makes no claim that it is. A scan sees one side of an object, so
+        reconstruction stops where the data stops and does not generate the missing surface.
+
+        Vertices lie near the measured points and are not necessarily coincident with them. Averaging reduces
+        measurement noise, but this method is unsuitable when every result vertex must be an actual measurement.
+
+        ### What to expect from it
+
+        Measured against the primitives the clouds were sampled from, at a voxel the same size as the point spacing:
+
+        | Shape | Reference to result | Result to reference | Pieces |
+        |---|---|---|---|
+        | Sphere | 0.04 voxels | 0.04 voxels | 1 |
+        | Cylinder | 0.32 voxels | 0.45 voxels | 28 |
+        | Box | 0.43 voxels | 0.93 voxels | 9 |
+
+        Smooth shapes reconstruct accurately. The field rounds sharp edges across its width, which moves the surface
+        and can separate it where the rounding pulls away from both faces. The resulting pieces represent valid
+        surface regions, so use `patch_filter` carefully.
+
+        ### Normals
+
+        Leave `normal_radius` unset to use the cloud's existing normals, which must be present and oriented. Set
+        `normal_radius` to estimate normals. In that case, exactly one of `viewpoint`, `viewpoints`, or `propagate_k`
+        must specify their orientation. See `estimate_normals` for details about each option.
+
+        An incorrectly oriented normal creates a region with the wrong field sign and a surface bubble in the mesh.
+        Reversing every normal turns the entire result inside out.
+
+        :param voxel_size: the grid spacing, in the units of the cloud, which sets the result resolution. It should
+        be at least the point spacing; see `estimate_point_spacing`.
+        :param band_width: how far the field reaches, in voxels. Must be at least 1.75, because a cell holding a
+        piece of surface has corners up to `sqrt(3)` voxels away from it and is left out if one of them was never
+        evaluated. Larger values smooth more and cost more.
+        :param normal_radius: the neighborhood radius for estimating normals, or `None` to use the cloud's existing
+        normals.
+        :param viewpoint: a single `(3,)` position the surface was measured from.
+        :param viewpoints: an `(n, 3)` array of positions, one per point.
+        :param propagate_k: how many neighbors to link each point to when propagating agreement.
+        :param min_normal_confidence: points whose normal confidence falls below this are left out of the field
+        entirely. A neighborhood too sparse to define a plane receives an arbitrary normal with zero confidence,
+        which can otherwise add an incorrectly signed contribution to the field. Zero keeps all points. This option
+        applies only when normals are estimated.
+        :param repair: the repair passes to run over the raw triangles. `None` runs
+        `RepairOpts.assuming_oriented_edges()`, which omits two passes made unnecessary by this extraction. Together,
+        these passes account for most of the repair cost. Pass `RepairOpts()` to run the full set, or
+        `RepairOpts.none()` to disable every pass, which can leave a nonmanifold mesh.
+        :param patch_filter: the connected patches to keep, or `None` to keep all patches. Use this option carefully
+        on shapes with sharp edges. A cylinder that reconstructs into 28 valid pieces is within 0.32 voxels of the
+        original as a whole. `PatchFilter.keep_largest()` removes a cap and increases that distance to 8.86 voxels.
+        Prefer a filter that defines debris explicitly, such as a minimum face count or area fraction, and compare
+        the patch count with the expected part geometry.
+        :param smooth_iterations: how many smoothing passes to run at the end. Zero leaves the surface as
+        extracted.
+        :return: a tuple of the unaccelerated mesh data and a report of what each stage did.
+        :raises ValueError: if the voxel size is not positive and finite, the band width is below 1.75, the cloud is
+        empty, the cloud has no normals when estimation is disabled, the confidence threshold removes all points,
+        or the field and grid produce no surface.
         """
         ...
 
@@ -6479,6 +6610,104 @@ class PointCloud3:
         ...
 
 
+class ReconstructReport3:
+    """
+    What a `PointCloud3.reconstruct_surface` call did at each stage.
+
+    The report helps diagnose reconstruction problems. A `components` value greater than one indicates that normal
+    orientation required a separate seed guess in multiple regions. A large `cells_skipped_unknown` value next to a
+    small `cells_visited` value indicates that the band was too thin to contain the surface.
+    """
+
+    @property
+    def points_used(self) -> int:
+        """
+        Points that contributed to the field after confidence filtering.
+        """
+        ...
+
+    @property
+    def points_dropped(self) -> int:
+        """
+        Points left out for falling below the confidence threshold.
+        """
+        ...
+
+    @property
+    def active_blocks(self) -> int:
+        """
+        Blocks of voxels the band covered.
+        """
+        ...
+
+    @property
+    def known_voxels(self) -> int:
+        """
+        Voxels the field wrote a value into.
+        """
+        ...
+
+    @property
+    def cells_visited(self) -> int:
+        """
+        Cells triangulated after all eight corners were evaluated.
+        """
+        ...
+
+    @property
+    def cells_skipped_unknown(self) -> int:
+        """
+        Cells omitted because they touch an unsupported voxel at the edge of the band.
+        """
+        ...
+
+    @property
+    def normals_flipped(self) -> int | None:
+        """
+        How many normals the orientation pass reversed, or `None` when the cloud arrived with its own normals.
+        """
+        ...
+
+    @property
+    def components(self) -> int | None:
+        """
+        The number of connected pieces that propagation seeded independently, or `None` when directions came from a
+        viewpoint or the cloud's existing normals.
+
+        A value greater than one is a warning. Each piece starts from a guessed orientation, and an incorrect guess
+        reverses the entire piece.
+        """
+        ...
+
+    @property
+    def raw_vertices(self) -> int:
+        """
+        Vertices produced by extraction before repair.
+        """
+        ...
+
+    @property
+    def raw_faces(self) -> int:
+        """
+        Faces produced by extraction before repair.
+        """
+        ...
+
+    @property
+    def repair(self) -> RepairReport | None:
+        """
+        What the repair passes changed, or `None` when every pass was turned off.
+        """
+        ...
+
+    @property
+    def faces(self) -> int:
+        """
+        Faces in the returned mesh.
+        """
+        ...
+
+
 class RepairOpts:
     """
     Which repair passes to attempt when building a `HalfEdgeMesh3` from measured data.
@@ -6508,6 +6737,30 @@ class RepairOpts:
             fan.
         :param orient_consistently: flip faces so that every face in a connected component agrees on which side is out.
         :param drop_isolated_vertices: drop points which no surviving face references.
+        """
+        ...
+
+    @staticmethod
+    def assuming_oriented_edges() -> RepairOpts:
+        """
+        Create an option set with every pass except the two that repair edge topology. Use it only for input known to
+        have each edge shared by at most two faces and each face wound consistently with its neighbors.
+
+        `PointCloud3.reconstruct_surface` uses this preset when no repair options are given. A mesh extracted from a
+        scalar field satisfies the condition by construction, so `resolve_nonmanifold_edges` and
+        `orient_consistently` search for defects that cannot occur. On a reconstruction of 100,000 points, these two
+        passes account for 83 percent of a full repair, while the full repair accounts for 80 percent of the total
+        reconstruction cost.
+
+        The preset still removes degenerate and duplicate faces, splits bowtie vertices, and removes isolated points
+        because the condition does not prevent these defects. A field value of exactly zero at a grid corner places
+        two vertices at the same position; a reconstructed box contained 2,518 resulting zero-area faces. Marching
+        cubes also does not guarantee vertex topology, and a reconstructed cylinder contained 123 bowtie vertices.
+
+        The preset does not verify the condition. A mesh with a folded or non-orientable region retains the fold. Use
+        the default constructor when the input's provenance is unknown.
+
+        :return: the new option set.
         """
         ...
 

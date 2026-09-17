@@ -41,7 +41,9 @@ use parry3d_f64::query::Ray;
 pub use planar_map::{PlanarMap, PlaneFrame};
 pub use plane3::Plane3;
 pub use point_cloud::{
-    CloudIndex3, PointCloud3, PointCloudOverlap, VOXEL_COHERENCE_ATTR, VOXEL_COUNT_ATTR,
+    CloudIndex3, FieldKind3, NormalEstimates, NormalOrientation3, NormalSource3,
+    OrientationReport3, PointCloud3, PointCloudOverlap, ReconstructOpts3, ReconstructReport3,
+    VOXEL_COHERENCE_ATTR, VOXEL_COUNT_ATTR,
 };
 pub use segment3::Segment3;
 pub use sphere3::Sphere3;

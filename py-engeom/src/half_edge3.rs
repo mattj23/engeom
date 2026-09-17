@@ -142,6 +142,19 @@ impl RepairOpts {
         }
     }
 
+    /// Enable every pass except the two that repair edge topology. Use this preset only when each
+    /// edge is known to be shared by at most two faces and each face has consistent winding with
+    /// its neighbors.
+    ///
+    /// `PointCloud3.reconstruct_surface` uses this preset when no options are given. See the Python
+    /// stub for its preconditions and enabled passes.
+    #[staticmethod]
+    fn assuming_oriented_edges() -> Self {
+        Self {
+            inner: InnerRepairOpts::assuming_oriented_edges(),
+        }
+    }
+
     /// Every pass disabled, as a base for turning on only what you want.
     #[staticmethod]
     fn none() -> Self {
@@ -419,6 +432,13 @@ impl BestEffortOpts {
 #[derive(Clone)]
 pub struct RepairReport {
     inner: engeom::geom3::half_edge3::RepairReport,
+}
+
+impl RepairReport {
+    /// Wrap a core-crate report for use by other binding modules that produce one.
+    pub fn from_inner(inner: engeom::geom3::half_edge3::RepairReport) -> Self {
+        Self { inner }
+    }
 }
 
 #[pymethods]

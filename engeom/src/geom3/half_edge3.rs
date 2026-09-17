@@ -36,7 +36,7 @@ pub(crate) mod difference;
 mod repair;
 mod smoothing;
 
-use crate::{Mesh3, Point3, Result, Vector3};
+use crate::{Mesh3, MeshData3, MeshView3, Point3, Result, Vector3};
 use alum::{
     Adaptor, CrossProductAdaptor, DotProductAdaptor, FloatScalarAdaptor, Handle, HasIterators,
     HasTopology, VectorAngleAdaptor, VectorLengthAdaptor, VectorNormalizeAdaptor,
@@ -226,6 +226,22 @@ impl HalfEdgeMesh3 {
     ///
     /// returns: `Result<Mesh3>`, failing if the structure has no faces left
     pub fn to_mesh(&mut self, is_solid: bool) -> Result<Mesh3> {
+        let data = self.to_mesh_data()?;
+        Mesh3::from_data(data, is_solid)
+    }
+
+    /// Collect the structure into buffers without building a bounding volume hierarchy.
+    ///
+    /// This method stops one step before [`HalfEdgeMesh3::to_mesh`]. A caller that will continue
+    /// editing, write the result to a file, or pass it to another operation does not need the
+    /// hierarchy that `Mesh3` builds eagerly. Building that hierarchy is expensive for a mesh with
+    /// several hundred thousand faces.
+    ///
+    /// Attributes are not retained because the structure does not track them through edits. This
+    /// is the same behavior as [`HalfEdgeMesh3::to_mesh`].
+    ///
+    /// returns: `Result<MeshData3>`, failing if nothing is left after garbage collection
+    pub fn to_mesh_data(&mut self) -> Result<MeshData3> {
         self.garbage_collect()?;
 
         let vertices = self.clone_vertices()?;
@@ -237,7 +253,7 @@ impl HalfEdgeMesh3 {
             );
         }
 
-        Ok(Mesh3::new(vertices, faces, is_solid))
+        MeshData3::new(vertices, faces)
     }
 
     /// The number of vertices, including any which are deleted but not yet collected.
@@ -310,6 +326,40 @@ impl TryFrom<&Mesh3> for HalfEdgeMesh3 {
     /// edge shared by three faces and refuses a fold, but accepts a bowtie whose fans are both
     /// open.
     fn try_from(value: &Mesh3) -> std::result::Result<Self, Self::Error> {
+        let mut result = HalfEdgeMesh3::new();
+        let mut indices = Vec::new();
+        for v in value.points() {
+            let handle = result
+                .inner
+                .add_vertex(v.coords)
+                .map_err(|e| format!("Failed to add vertex: {:?}", e))?;
+            indices.push(handle);
+        }
+
+        for f in value.faces() {
+            result
+                .inner
+                .add_tri_face(
+                    indices[f[0] as usize],
+                    indices[f[1] as usize],
+                    indices[f[2] as usize],
+                )
+                .map_err(|e| format!("Failed to add face: {:?}", e))?;
+        }
+
+        Ok(result)
+    }
+}
+
+impl<'a> TryFrom<MeshView3<'a>> for HalfEdgeMesh3 {
+    type Error = Box<dyn std::error::Error>;
+
+    /// Build the structure from any value that can be borrowed as a mesh. This conversion lets
+    /// `MeshData3` enter the half-edge structure without first building a bounding volume hierarchy.
+    ///
+    /// This is the strict path, with the same limitation as the `&Mesh3` conversion: it tests what
+    /// `alum` accepts, which does not constitute a manifoldness test.
+    fn try_from(value: MeshView3<'a>) -> std::result::Result<Self, Self::Error> {
         let mut result = HalfEdgeMesh3::new();
         let mut indices = Vec::new();
         for v in value.points() {

@@ -1,4 +1,14 @@
-//! This module contains tools for working with 3D voxel grids.
+//! This module contains tools for working with 3D voxel grids and the surfaces extracted from
+//! them.
+
+mod marching_cubes;
+mod mc_tables;
+mod sparse_grid;
+
+pub use marching_cubes::{IsoSurfaceStats3, extract_isosurface};
+pub use sparse_grid::{
+    BLOCK_EDGE, BLOCK_VOXELS, Block3, BlockKey3, SdfVoxel, SparseGrid3, VoxelKey3, VoxelValue,
+};
 
 use std::collections::HashSet;
 

@@ -88,6 +88,52 @@ impl Default for RepairOpts {
 }
 
 impl RepairOpts {
+    /// Enable every pass except the two that repair edge topology. Use this preset only when each
+    /// edge is known to be shared by at most two faces and each face has consistent winding with
+    /// its neighbors.
+    ///
+    /// # When this is the right choice
+    ///
+    /// A mesh extracted from a scalar field satisfies this condition by construction.
+    /// `raster3::extract_isosurface` shares one vertex per grid edge and fills each loop so every
+    /// edge is traversed once in each direction. Its tests verify this behavior across hundreds of
+    /// random fields. Running `resolve_nonmanifold_edges` and `orient_consistently` on such a mesh
+    /// searches for defects that cannot occur.
+    ///
+    /// This search is expensive. On a reconstruction of 100,000 points, the two passes account for
+    /// 83 percent of a full repair, while the full repair accounts for 80 percent of the total
+    /// reconstruction cost. Both passes build a hash map with a `Vec` allocated for each edge, and
+    /// their cost grows faster than the face count.
+    ///
+    /// # What it still does, and why
+    ///
+    /// The preset still removes degenerate and duplicate faces, splits bowtie vertices, and removes
+    /// isolated points because the edge-topology condition does not prevent these defects:
+    ///
+    /// - A field value of exactly zero at a grid corner places two vertices at the same position and
+    ///   creates zero-area faces. A reconstructed box contained 2,518 such faces.
+    /// - Marching cubes does not guarantee vertex topology. Two sheets can meet at one point when
+    ///   neighboring cells resolve an ambiguous face in opposite ways. A reconstructed cylinder
+    ///   contained 123 bowtie vertices.
+    /// - Duplicate faces have not been observed in extracted meshes. The method does not preclude
+    ///   them, and this pass accounts for only one or two percent of the total cost.
+    ///
+    /// # If the assumption does not hold
+    ///
+    /// This preset does not verify the condition. A triangle soup with a folded or non-orientable
+    /// region retains the fold, and the result is nonmanifold. Use [`RepairOpts::default`] when the
+    /// input's provenance is unknown.
+    pub fn assuming_oriented_edges() -> Self {
+        Self {
+            drop_degenerate: true,
+            drop_duplicate_faces: true,
+            resolve_nonmanifold_edges: false,
+            split_bowtie_vertices: true,
+            orient_consistently: false,
+            drop_isolated_vertices: true,
+        }
+    }
+
     /// Every pass disabled, as a base for turning on only what you want.
     pub fn none() -> Self {
         Self {
@@ -801,6 +847,28 @@ impl HalfEdgeMesh3 {
 
 #[cfg(test)]
 mod tests {
+    /// The less expensive preset must differ from the full set only in the two edge-topology passes.
+    /// Any other difference would silently disable cleanup that reconstruction requires.
+    #[test]
+    fn assuming_oriented_edges_only_drops_the_edge_topology_passes() {
+        use super::RepairOpts;
+
+        let full = RepairOpts::default();
+        let cheap = RepairOpts::assuming_oriented_edges();
+
+        assert!(!cheap.resolve_nonmanifold_edges);
+        assert!(!cheap.orient_consistently);
+
+        assert_eq!(cheap.drop_degenerate, full.drop_degenerate);
+        assert_eq!(cheap.drop_duplicate_faces, full.drop_duplicate_faces);
+        assert_eq!(cheap.split_bowtie_vertices, full.split_bowtie_vertices);
+        assert_eq!(cheap.drop_isolated_vertices, full.drop_isolated_vertices);
+
+        // Verify that the full set enables both passes, making the comparison meaningful.
+        assert!(full.resolve_nonmanifold_edges);
+        assert!(full.orient_consistently);
+    }
+
     use super::*;
 
     fn tri(a: u32, b: u32, c: u32) -> [u32; 3] {

@@ -1,23 +1,28 @@
 //! This module has a struct that provides quick lookups of associations between faces and
 //! edges in a triangular mesh.
 
-use crate::Mesh3;
 use crate::Result;
 use crate::common::IndexMask;
 use crate::geom3::mesh::edges::edge_key;
 use crate::geom3::mesh::patches::{PatchFilter, PatchLabels};
+use crate::geom3::mesh::view::MeshView3;
 use faer::prelude::default;
 use parry3d_f64::utils::hashmap::HashMap;
 use parry3d_f64::utils::hashset::HashSet;
 
 pub struct MeshNav<'a> {
-    pub mesh: &'a Mesh3,
+    pub mesh: MeshView3<'a>,
     pub face_to_edges: Vec<[[u32; 2]; 3]>,
     pub edge_to_faces: HashMap<[u32; 2], Vec<u32>>,
 }
 
 impl<'a> MeshNav<'a> {
-    pub fn new(mesh: &'a Mesh3) -> Self {
+    /// Build a navigation structure over any value that can be borrowed as a mesh.
+    ///
+    /// Accepting a view lets `MeshData3` use this structure without first building an unused
+    /// bounding volume hierarchy. Navigation uses only the face list.
+    pub fn new(mesh: impl Into<MeshView3<'a>>) -> Self {
+        let mesh = mesh.into();
         let mut face_to_edges = Vec::new();
         let mut edge_to_faces: HashMap<[u32; 2], Vec<u32>> = HashMap::with_hasher(default());
 
@@ -356,6 +361,7 @@ impl<'a> MeshNav<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Mesh3;
     use crate::raster2::{Point2I, RasterMapping, RasterMask};
     use crate::{Point2, To2D, To3D};
 
